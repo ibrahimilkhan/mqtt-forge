@@ -1,0 +1,64 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{505E4E72-35AD-4936-8374-068D0D68AFE5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MQFaker.Domain", "src\MQFaker.Domain\MQFaker.Domain.csproj", "{B6CE5F85-1BEE-46D1-85A2-C98BC78CEA2A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MQFaker.Application", "src\MQFaker.Application\MQFaker.Application.csproj", "{AEB18F8C-B2B3-46DE-94CC-084C4B54D66B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MQFaker.Infrastructure", "src\MQFaker.Infrastructure\MQFaker.Infrastructure.csproj", "{365075ED-8E3C-4D83-BD9B-5EA8DE812C43}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MQFaker.Api", "src\MQFaker.Api\MQFaker.Api.csproj", "{8418377C-AAA4-4391-BF6D-3196C5F02F7E}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0492A484-72C5-48E7-AB58-5325C1E53E89}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MQFaker.UnitTests", "tests\MQFaker.UnitTests\MQFaker.UnitTests.csproj", "{12AA8838-7FD7-486A-90A1-C61060F50BB4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MQFaker.IntegrationTests", "tests\MQFaker.IntegrationTests\MQFaker.IntegrationTests.csproj", "{380AE00F-BB09-423B-98B4-60E8459C3C59}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{B6CE5F85-1BEE-46D1-85A2-C98BC78CEA2A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B6CE5F85-1BEE-46D1-85A2-C98BC78CEA2A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B6CE5F85-1BEE-46D1-85A2-C98BC78CEA2A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B6CE5F85-1BEE-46D1-85A2-C98BC78CEA2A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AEB18F8C-B2B3-46DE-94CC-084C4B54D66B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AEB18F8C-B2B3-46DE-94CC-084C4B54D66B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AEB18F8C-B2B3-46DE-94CC-084C4B54D66B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AEB18F8C-B2B3-46DE-94CC-084C4B54D66B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{365075ED-8E3C-4D83-BD9B-5EA8DE812C43}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{365075ED-8E3C-4D83-BD9B-5EA8DE812C43}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{365075ED-8E3C-4D83-BD9B-5EA8DE812C43}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{365075ED-8E3C-4D83-BD9B-5EA8DE812C43}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8418377C-AAA4-4391-BF6D-3196C5F02F7E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8418377C-AAA4-4391-BF6D-3196C5F02F7E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8418377C-AAA4-4391-BF6D-3196C5F02F7E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8418377C-AAA4-4391-BF6D-3196C5F02F7E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{12AA8838-7FD7-486A-90A1-C61060F50BB4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{12AA8838-7FD7-486A-90A1-C61060F50BB4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{12AA8838-7FD7-486A-90A1-C61060F50BB4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{12AA8838-7FD7-486A-90A1-C61060F50BB4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{380AE00F-BB09-423B-98B4-60E8459C3C59}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{380AE00F-BB09-423B-98B4-60E8459C3C59}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{380AE00F-BB09-423B-98B4-60E8459C3C59}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{380AE00F-BB09-423B-98B4-60E8459C3C59}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{B6CE5F85-1BEE-46D1-85A2-C98BC78CEA2A} = {505E4E72-35AD-4936-8374-068D0D68AFE5}
+		{AEB18F8C-B2B3-46DE-94CC-084C4B54D66B} = {505E4E72-35AD-4936-8374-068D0D68AFE5}
+		{365075ED-8E3C-4D83-BD9B-5EA8DE812C43} = {505E4E72-35AD-4936-8374-068D0D68AFE5}
+		{8418377C-AAA4-4391-BF6D-3196C5F02F7E} = {505E4E72-35AD-4936-8374-068D0D68AFE5}
+		{12AA8838-7FD7-486A-90A1-C61060F50BB4} = {0492A484-72C5-48E7-AB58-5325C1E53E89}
+		{380AE00F-BB09-423B-98B4-60E8459C3C59} = {0492A484-72C5-48E7-AB58-5325C1E53E89}
+	EndGlobalSection
+EndGlobal
