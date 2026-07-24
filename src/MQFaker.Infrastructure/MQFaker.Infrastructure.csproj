@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\MQFaker.Application\MQFaker.Application.csproj" />
+    <ProjectReference Include="..\MQFaker.Domain\MQFaker.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MQTTnet" Version="5.2.0.1603" />
+  </ItemGroup>
+
+  <PropertyGroup>
+  </PropertyGroup>
+
+</Project>
