@@ -1,4 +1,5 @@
 using MQFaker.Domain.Abstractions;
+using MQFaker.Domain.Exceptions;
 using MQFaker.Domain.Models;
 using MQTTnet;
 using MQTTnet.Protocol;
@@ -19,6 +20,9 @@ public sealed class MqttnetPublisher : IMqttPublisher
             .WithQualityOfServiceLevel((MqttQualityOfServiceLevel)request.Qos)
             .WithRetainFlag(request.Retain)
             .Build();
+
+        if (!_client.IsConnected)
+            throw new NotConnectedException("Yayın yapmadan önce bir broker'a bağlanın.");
 
         await _client.PublishAsync(message, ct);
     }

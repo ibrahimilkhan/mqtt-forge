@@ -23,9 +23,9 @@ public sealed class ConnectionController : ControllerBase
         var settings = await _service.GetSavedSettingsAsync(ct);
         if (settings is null) return NoContent();
 
-        return Ok(new ConnectRequestDto(
-            settings.Host, settings.Port, settings.ClientId,
-            settings.Username, settings.Password, settings.UseTls));
+        return Ok(new SavedConnectionDto(
+            settings.Host, settings.Port, settings.ClientId, settings.Username,
+            HasPassword: !string.IsNullOrEmpty(settings.Password), settings.UseTls));
     }
 
     [HttpPost]

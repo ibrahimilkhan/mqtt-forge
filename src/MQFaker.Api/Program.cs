@@ -1,6 +1,7 @@
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using MQFaker.Api;
+using MQFaker.Api.ErrorHandling;
 using MQFaker.Api.Validation;
 using Serilog;
 
@@ -12,6 +13,7 @@ builder.Services.AddControllers();
 builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<ConnectRequestDtoValidator>();
 builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<MqttExceptionHandler>();
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.WithOrigins("http://localhost:5173").AllowAnyHeader().AllowAnyMethod()));
 

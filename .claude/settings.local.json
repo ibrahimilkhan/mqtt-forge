@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(python3:*)",
+      "Bash(dotnet:*)",
+      "Bash(mkdir:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Edit",
+      "Write"
+    ],
+    "ask": ["Bash(git push:*)"],
+    "deny": ["Bash(rm -rf:*)", "Read(./.env)", "Read(./.env.*)"]
+  }
+}
