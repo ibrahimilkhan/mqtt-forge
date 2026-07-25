@@ -17,7 +17,7 @@ builder.Services.AddExceptionHandler<MqttExceptionHandler>();
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.WithOrigins("http://localhost:5173").AllowAnyHeader().AllowAnyMethod()));
 
-builder.Services.AddMqFaker(builder.Configuration);
+builder.Services.AddMqFaker();
 
 var app = builder.Build();
 
