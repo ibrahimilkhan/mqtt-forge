@@ -1,16 +1,16 @@
 using System.Net;
 using System.Net.Http.Json;
-using Microsoft.AspNetCore.Mvc.Testing;
 using MQFaker.Api.Contracts;
+using MQFaker.IntegrationTests.Support;
 using Xunit;
 
 namespace MQFaker.IntegrationTests.Api;
 
-public class PublishEndpointTests : IClassFixture<WebApplicationFactory<Program>>
+public class PublishEndpointTests : IClassFixture<MqFakerApiFactory>
 {
-    private readonly WebApplicationFactory<Program> _factory;
+    private readonly MqFakerApiFactory _factory;
 
-    public PublishEndpointTests(WebApplicationFactory<Program> factory) => _factory = factory;
+    public PublishEndpointTests(MqFakerApiFactory factory) => _factory = factory;
 
     [Fact]
     public async Task Publish_with_empty_topic_returns_400()
@@ -44,6 +44,16 @@ public class PublishEndpointTests : IClassFixture<WebApplicationFactory<Program>
         response.EnsureSuccessStatusCode();
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("Disconnected", body);
+    }
+
+    [Fact]
+    public async Task GetSavedSettings_returns_204_when_nothing_saved()
+    {
+        var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/api/connection/settings");
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
 
     [Fact]
