@@ -2,7 +2,7 @@ using MQTTnet;
 
 namespace MQFaker.Infrastructure.Mqtt;
 
-// Bağlantı yöneticisi ve publisher'ın paylaştığı tek MQTTnet client örneğini tutor.
+// Bağlantı yöneticisi ve publisher'ın paylaştığı tek MQTTnet client örneğini tutar.
 // Gate, aynı client üzerindeki bağlantı durumu değişikliklerini serileştirir.
 public sealed class MqttnetClientProvider : IDisposable
 {
