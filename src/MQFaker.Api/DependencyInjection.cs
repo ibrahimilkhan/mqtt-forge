@@ -7,16 +7,22 @@ namespace MQFaker.Api;
 
 public static class DependencyInjection
 {
-    public static IServiceCollection AddMqFaker(this IServiceCollection services, IConfiguration config)
+    public static IServiceCollection AddMqFaker(this IServiceCollection services)
     {
         // Tek MQTTnet client tüm istekler arasında paylaşılır (tek aktif bağlantı)
         services.AddSingleton<MqttnetClientProvider>();
         services.AddSingleton<IMqttConnectionManager, MqttnetConnectionManager>();
         services.AddSingleton<IMqttPublisher, MqttnetPublisher>();
 
-        var settingsPath = config["MqFaker:SettingsPath"]
-            ?? Path.Combine(AppContext.BaseDirectory, "connection-settings.json");
-        services.AddSingleton<IConnectionSettingsStore>(_ => new JsonConnectionSettingsStore(settingsPath));
+        // Ayar yolu kayıt anında değil çözümleme anında okunur; böylece testler gibi
+        // yapılandırmayı sonradan ekleyen barındırıcılar da geçerli değeri verebilir.
+        services.AddSingleton<IConnectionSettingsStore>(sp =>
+        {
+            var config = sp.GetRequiredService<IConfiguration>();
+            var path = config["MqFaker:SettingsPath"]
+                ?? Path.Combine(AppContext.BaseDirectory, "connection-settings.json");
+            return new JsonConnectionSettingsStore(path);
+        });
 
         services.AddSingleton<ConnectionService>();
         services.AddSingleton<PublishService>();
