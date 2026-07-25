@@ -16,6 +16,18 @@ public sealed class ConnectionController : ControllerBase
     [HttpGet]
     public IActionResult GetState() => Ok(new { state = _service.CurrentState.ToString() });
 
+    // Panelin bağlantı formunu son kullanılan değerlerle doldurabilmesi için
+    [HttpGet("settings")]
+    public async Task<IActionResult> GetSavedSettings(CancellationToken ct)
+    {
+        var settings = await _service.GetSavedSettingsAsync(ct);
+        if (settings is null) return NoContent();
+
+        return Ok(new ConnectRequestDto(
+            settings.Host, settings.Port, settings.ClientId,
+            settings.Username, settings.Password, settings.UseTls));
+    }
+
     [HttpPost]
     public async Task<IActionResult> Connect(ConnectRequestDto dto, CancellationToken ct)
     {

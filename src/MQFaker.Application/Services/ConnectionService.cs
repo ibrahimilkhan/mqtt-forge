@@ -25,4 +25,8 @@ public sealed class ConnectionService
     }
 
     public Task DisconnectAsync(CancellationToken ct) => _manager.DisconnectAsync(ct);
+
+    // En son başarılı bağlantının ayarlarını döner; hiç kaydedilmemişse null
+    public Task<BrokerConnectionSettings?> GetSavedSettingsAsync(CancellationToken ct) =>
+        _store.LoadAsync(ct);
 }
