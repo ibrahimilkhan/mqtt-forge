@@ -24,6 +24,11 @@ var app = builder.Build();
 // Beklenmedik hataları tek yerde ProblemDetails'e çevirir
 app.UseExceptionHandler();
 app.UseCors();
+
+// wwwroot'taki geliştirme test konsolunu servis eder
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.MapControllers();
 
 app.Run();
