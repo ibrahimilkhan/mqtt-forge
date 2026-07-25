@@ -1,25 +1,30 @@
+using FluentValidation;
+using FluentValidation.AspNetCore;
+using MQFaker.Api;
+using MQFaker.Api.Validation;
+using Serilog;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+builder.Host.UseSerilog((ctx, cfg) => cfg.ReadFrom.Configuration(ctx.Configuration));
 
 builder.Services.AddControllers();
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddFluentValidationAutoValidation();
+builder.Services.AddValidatorsFromAssemblyContaining<ConnectRequestDtoValidator>();
+builder.Services.AddProblemDetails();
+builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
+    p.WithOrigins("http://localhost:5173").AllowAnyHeader().AllowAnyMethod()));
+
+builder.Services.AddMqFaker(builder.Configuration);
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
-
-app.UseHttpsRedirection();
-
-app.UseAuthorization();
-
+// Beklenmedik hataları tek yerde ProblemDetails'e çevirir
+app.UseExceptionHandler();
+app.UseCors();
 app.MapControllers();
 
 app.Run();
+
+// Integration testlerinin WebApplicationFactory ile erişebilmesi için
+public partial class Program;
