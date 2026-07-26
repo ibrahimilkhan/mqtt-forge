@@ -116,6 +116,35 @@
     border-bottom: 1px solid var(--rule);
   }
 
+  /* ---- ayar sekmeleri ---- */
+  .tabs {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .tab {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    margin-bottom: -1px;
+    padding: 9px 12px;
+    cursor: pointer;
+  }
+  .tab:hover { color: var(--ink); background: none; }
+  .tab[aria-selected="true"] {
+    color: var(--ink);
+    border-bottom-color: var(--signal);
+  }
+  .tab:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
+
   .row { display: flex; gap: 10px; margin-bottom: 10px; }
   .row > * { flex: 1; min-width: 0; }
   .row .narrow { flex: 0 0 96px; }
@@ -322,10 +351,9 @@
     margin-right: 5px;
   }
 
+  /* Özet başlığın hemen yanında durur; sağa yaslamak gözü satır boyunca gezdiriyordu */
   .meta {
     flex: none;
-    margin-left: auto;
-    padding-left: 16px;
     font-size: 9.5px;
     color: var(--muted);
     letter-spacing: 0.05em;
@@ -359,8 +387,12 @@
 <div class="layout">
   <section class="panel">
 
-    <div class="block">
-      <h2 class="eyebrow">Broker</h2>
+    <div class="tabs" role="tablist" aria-label="Ayarlar">
+      <button class="tab" role="tab" id="tab-broker" aria-controls="panel-broker" aria-selected="true">Broker</button>
+      <button class="tab" role="tab" id="tab-subs" aria-controls="panel-subs" aria-selected="false">Abonelik</button>
+    </div>
+
+    <div class="block" id="panel-broker" role="tabpanel" aria-labelledby="tab-broker">
       <div class="row">
         <div><label for="host">Sunucu</label><input type="text" id="host" value="localhost"></div>
         <div class="narrow"><label for="port">Port</label><input type="number" id="port" value="1883"></div>
@@ -383,8 +415,7 @@
       <p class="note" id="saved-note" hidden></p>
     </div>
 
-    <div class="block">
-      <h2 class="eyebrow">Abonelik</h2>
+    <div class="block" id="panel-subs" role="tabpanel" aria-labelledby="tab-subs" hidden>
       <div class="row">
         <div><label for="filter">Konu filtresi</label><input type="text" id="filter" value="sensors/#"></div>
       </div>
@@ -554,6 +585,16 @@ $('btn-publish').addEventListener('click', async () => {
     write({ kind: 'fault', verb: 'Yayınlanamadı', topic, body: await describeError(r) });
   }
 });
+
+// ---- ayar sekmeleri ----
+const tabs = [...document.querySelectorAll('.tab')];
+tabs.forEach(tab => tab.addEventListener('click', () => {
+  for (const t of tabs) {
+    const secili = t === tab;
+    t.setAttribute('aria-selected', String(secili));
+    $(t.getAttribute('aria-controls')).hidden = !secili;
+  }
+}));
 
 // ---- abonelikler ----
 async function refreshFilters() {
