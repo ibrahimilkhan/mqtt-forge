@@ -1,10 +1,46 @@
 <!DOCTYPE html>
-<html lang="tr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MQFaker — Test Konsolu</title>
+<title>MQFaker — Test Console</title>
 <style>
+  /* Self-hosted variable fonts: the tool must work on air-gapped networks,
+     and typography must look the same on every operating system.
+     Latin and Latin-Ext are separate files; payloads may carry either. */
+  @font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url('/fonts/inter-latin.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  }
+  @font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url('/fonts/inter-latin-ext.woff2') format('woff2');
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+  }
+  @font-face {
+    font-family: 'JetBrains Mono';
+    font-style: normal;
+    font-weight: 400 800;
+    font-display: swap;
+    src: url('/fonts/jetbrains-mono-latin.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  }
+  @font-face {
+    font-family: 'JetBrains Mono';
+    font-style: normal;
+    font-weight: 400 800;
+    font-display: swap;
+    src: url('/fonts/jetbrains-mono-latin-ext.woff2') format('woff2');
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+  }
+
   :root {
     --paper:   #eaedf1;
     --surface: #ffffff;
@@ -15,23 +51,29 @@
     --live:    #0d7a63;
     --fault:   #ab3520;
 
-    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
-    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   }
 
   * { box-sizing: border-box; }
 
+  /* The bar has no fixed height, so body is a vertical flex column and the layout
+     claims whatever is left. Otherwise the bar height had to be hard-coded in CSS,
+     and it broke whenever the type scale changed. */
   body {
     margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
     background: var(--paper);
     color: var(--ink);
     font-family: var(--sans);
-    font-size: 14px;
-    line-height: 1.5;
+    font-size: 15px;
+    line-height: 1.55;
     -webkit-font-smoothing: antialiased;
   }
 
-  /* ---- üst çubuk: cihaz göstergesi gibi okunur ---- */
+  /* ---- top bar: reads like an instrument panel ---- */
   .bar {
     display: flex;
     align-items: center;
@@ -46,7 +88,7 @@
   }
   .wordmark {
     font-family: var(--mono);
-    font-size: 18px;
+    font-size: 19px;
     font-weight: 600;
     letter-spacing: -0.03em;
     margin: 0;
@@ -59,7 +101,7 @@
     gap: 8px;
     margin-left: auto;
     font-family: var(--mono);
-    font-size: 12px;
+    font-size: 12.5px;
     letter-spacing: 0.06em;
     color: var(--muted);
   }
@@ -79,14 +121,14 @@
 
   @keyframes pulse { 50% { opacity: 0.35; } }
 
-  /* ---- yerleşim ---- */
-  /* Panel kapalıyken ağaç ve kayıt tüm genişliği alır */
+  /* ---- layout ---- */
+  /* With the panel closed, the tree and the log take the full width */
   .layout {
     display: grid;
     grid-template-columns: 1.1fr 1fr;
     gap: 1px;
     background: var(--rule);
-    min-height: calc(100vh - 57px);
+    flex: 1;
   }
   .layout[data-panel="open"] { grid-template-columns: minmax(300px, 360px) 1.1fr 1fr; }
 
@@ -105,15 +147,15 @@
     .wire { grid-column: auto; }
   }
 
-  /* ---- form blokları ---- */
+  /* ---- form blocks ---- */
   .block { margin-bottom: 30px; }
   .block:last-child { margin-bottom: 0; }
 
   .eyebrow {
     font-family: var(--mono);
-    font-size: 11px;
+    font-size: 11.5px;
     font-weight: 600;
-    letter-spacing: 0.16em;
+    letter-spacing: 0.13em;
     text-transform: uppercase;
     color: var(--muted);
     margin: 0 0 12px;
@@ -121,7 +163,7 @@
     border-bottom: 1px solid var(--rule);
   }
 
-  /* Başlık + yanındaki eylemler; çizgi ikisinin altından geçer */
+  /* Heading plus its actions; the rule runs beneath both */
   .pane-head {
     display: flex;
     align-items: center;
@@ -153,13 +195,13 @@
   .pane-actions button:hover { color: var(--ink); background: var(--paper); }
   .pane-actions button:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
-  /* ---- üst çubuktaki panel menüsü ---- */
+  /* ---- panel menu in the top bar ---- */
   .menu { display: flex; gap: 2px; }
   .menu-btn {
     font-family: var(--mono);
-    font-size: 11px;
+    font-size: 11.5px;
     font-weight: 600;
-    letter-spacing: 0.14em;
+    letter-spacing: 0.11em;
     text-transform: uppercase;
     color: var(--muted);
     background: none;
@@ -176,7 +218,7 @@
   }
   .menu-btn:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
-  /* ---- açılan panelin başlığı ---- */
+  /* ---- heading of the open panel ---- */
   .panel-head {
     display: flex;
     align-items: center;
@@ -188,9 +230,9 @@
   .panel-head h2 {
     margin: 0;
     font-family: var(--mono);
-    font-size: 11px;
+    font-size: 11.5px;
     font-weight: 600;
-    letter-spacing: 0.16em;
+    letter-spacing: 0.13em;
     text-transform: uppercase;
     color: var(--muted);
   }
@@ -200,7 +242,7 @@
     cursor: pointer;
     color: var(--muted);
     font-family: var(--mono);
-    font-size: 16px;
+    font-size: 17px;
     line-height: 1;
     padding: 2px 6px;
     border-radius: 2px;
@@ -215,17 +257,17 @@
   label {
     display: block;
     font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: 0.1em;
+    font-size: 11px;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--muted);
-    margin-bottom: 4px;
+    margin-bottom: 5px;
   }
 
   input[type=text], input[type=number], input[type=password], textarea {
     width: 100%;
     font-family: var(--mono);
-    font-size: 13px;
+    font-size: 14px;
     color: var(--ink);
     background: var(--surface);
     border: 1px solid var(--rule);
@@ -246,15 +288,15 @@
     flex-wrap: wrap;
     margin: 12px 0;
     font-family: var(--mono);
-    font-size: 12px;
+    font-size: 13px;
   }
   .checks label {
     display: flex;
     align-items: center;
     gap: 6px;
     margin: 0;
-    font-size: 12px;
-    letter-spacing: 0.06em;
+    font-size: 13px;
+    letter-spacing: 0.04em;
     text-transform: none;
     color: var(--ink);
     cursor: pointer;
@@ -265,9 +307,9 @@
 
   button {
     font-family: var(--mono);
-    font-size: 12px;
+    font-size: 12.5px;
     font-weight: 600;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
     padding: 10px 16px;
     border-radius: 2px;
@@ -282,19 +324,19 @@
   button:disabled { opacity: 0.35; cursor: not-allowed; }
 
   .note {
-    font-size: 12px;
+    font-size: 13px;
     color: var(--muted);
     margin-top: 10px;
   }
 
-  /* ---- imza öğesi: wire log ---- */
+  /* ---- signature element: the wire log ---- */
   .log { display: flex; flex-direction: column; gap: 2px; }
 
   .entry {
     border-left: 2px solid var(--rule);
     padding: 8px 0 10px 12px;
     font-family: var(--mono);
-    font-size: 12.5px;
+    font-size: 13.5px;
     animation: arrive 0.24s ease-out;
   }
   .entry[data-kind="sent"]  { border-left-color: var(--signal); }
@@ -311,8 +353,8 @@
     gap: 10px;
     align-items: baseline;
     color: var(--muted);
-    font-size: 10.5px;
-    letter-spacing: 0.1em;
+    font-size: 11.5px;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
   }
   .entry[data-kind="sent"]  .verb { color: var(--signal); }
@@ -329,7 +371,7 @@
     align-items: center;
     gap: 7px;
     font-family: var(--mono);
-    font-size: 11.5px;
+    font-size: 12.5px;
     padding: 4px 6px 4px 9px;
     background: var(--surface);
     border: 1px solid var(--rule);
@@ -340,14 +382,14 @@
     cursor: pointer;
     color: var(--muted);
     font-family: var(--mono);
-    font-size: 13px;
+    font-size: 14px;
     line-height: 1;
     padding: 0 2px;
   }
   .filter button:hover { color: var(--fault); }
   .filter button:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
-  .topic { margin-top: 3px; font-size: 13px; word-break: break-all; }
+  .topic { margin-top: 3px; font-size: 14px; word-break: break-all; }
   .topic .sep { color: var(--rule); margin: 0 1px; }
 
   .body { margin-top: 2px; color: var(--ink); word-break: break-word; }
@@ -355,8 +397,8 @@
 
   .stamps { display: inline-flex; gap: 5px; margin-left: 8px; vertical-align: 1px; }
   .stamp {
-    font-size: 9.5px;
-    letter-spacing: 0.1em;
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
     padding: 1px 5px;
     border: 1px solid var(--rule);
     border-radius: 2px;
@@ -365,26 +407,26 @@
 
   .empty {
     font-family: var(--mono);
-    font-size: 12.5px;
+    font-size: 13.5px;
     color: var(--muted);
     border-left: 2px solid var(--rule);
     padding-left: 12px;
   }
 
-  /* ---- konu ağacı: broker'ın anlık topolojisi ---- */
-  .tree { font-family: var(--mono); font-size: 12.5px; font-weight: 600; }
+  /* ---- topic tree: the broker's live topology ---- */
+  .tree { font-family: var(--mono); font-size: 13.5px; font-weight: 600; }
 
   .node {
     display: flex;
     align-items: baseline;
     gap: 8px;
-    /* Girinti seviye başına sabit adım; derin konular sağa savrulmasın */
+    /* Fixed indent step per level, so deep topics don't drift off to the right */
     padding: 3px 6px 3px calc(var(--depth) * 14px + 6px);
     border-radius: 2px;
     position: relative;
   }
-  /* Boşluk yalnızca 1. seviye kardeşlere: her seviyede verilse derin
-     ağaçlarda birikip gereksiz seyrelmeye yol açardı */
+  /* Spacing only for top-level siblings: applied at every level it would
+     accumulate in deep trees and thin them out needlessly */
   .tree > .branch + .branch > .node { margin-top: 9px; }
   .node[data-branch="true"] { cursor: pointer; }
   .node[data-branch="true"]:hover { background: var(--paper); }
@@ -393,17 +435,17 @@
     flex: none;
     width: 10px;
     color: var(--muted);
-    font-size: 9px;
+    font-size: 10px;
     transition: transform 0.12s ease;
   }
   .branch[data-open="false"] > .node .twisty { transform: rotate(-90deg); }
   .branch[data-open="false"] > .kids { display: none; }
   .node[data-branch="false"] .twisty { visibility: hidden; }
 
-  /* Tüm seviyeler aynı kalınlıkta; dal olduğunu ok işareti zaten söylüyor */
+  /* Every level shares one weight; the twisty already says it's a branch */
   .seg { flex: none; color: var(--ink); }
 
-  /* Değer konu adının hemen yanında durur; göz ikisini birlikte okur */
+  /* The value sits right beside the topic name; the eye reads them as one */
   .val {
     color: var(--signal);
     min-width: 0;
@@ -411,26 +453,29 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* '=' konuyu değerden ayırır; değer yoksa hiç çıkmaz */
+  /* '=' separates topic from value; it never appears when there is no value */
   .val:not(:empty)::before {
     content: '=';
     color: var(--rule);
     margin-right: 5px;
   }
 
-  /* Özet başlığın hemen yanında durur; sağa yaslamak gözü satır boyunca gezdiriyordu */
+  /* The summary sits next to the heading; right-aligning it walked the eye across the row.
+     It stays lighter than the topic name so the name is read first — the distinction
+     comes from weight rather than size, because 8.5px was simply unreadable. */
   .meta {
     flex: none;
-    font-size: 8.5px;
+    font-size: 11px;
+    font-weight: 400;
     color: var(--muted);
-    letter-spacing: 0.05em;
+    letter-spacing: 0.02em;
   }
-  /* Dal açıkken içeriği zaten görünür; özet gereksiz gürültü olur.
-     Yalnızca gerçek dallara uygulanır: yaprakların açılacak içeriği yok,
-     kendi mesaj sayaçları her zaman görünmeli. */
+  /* An open branch already shows its contents, so the summary is just noise.
+     Applies to real branches only: leaves have nothing to expand, and their own
+     message counters must stay visible at all times. */
   .branch[data-open="true"] > .node[data-branch="true"] > .meta { display: none; }
 
-  /* mesaj gelince ilgili satır bir kez yanıp söner */
+  /* the matching row flashes once when a message arrives */
   .node.flash { animation: flash 700ms ease-out; }
   @keyframes flash {
     from { background: color-mix(in srgb, var(--signal) 26%, transparent); }
@@ -447,14 +492,14 @@
 <div class="bar">
   <h1 class="wordmark">MQ<span>Faker</span></h1>
 
-  <nav class="menu" aria-label="Paneller">
+  <nav class="menu" aria-label="Panels">
     <button class="menu-btn" data-panel="panel-broker" aria-expanded="false">Broker</button>
-    <button class="menu-btn" data-panel="panel-subs" aria-expanded="false">Abonelik</button>
-    <button class="menu-btn" data-panel="panel-publish" aria-expanded="false">Mesaj</button>
+    <button class="menu-btn" data-panel="panel-subs" aria-expanded="false">Subscribe</button>
+    <button class="menu-btn" data-panel="panel-publish" aria-expanded="false">Publish</button>
   </nav>
 
   <div class="readout" id="readout" data-state="Disconnected">
-    <span class="lamp"></span><span id="readout-text">BAĞLI DEĞİL</span>
+    <span class="lamp"></span><span id="readout-text">DISCONNECTED</span>
   </div>
 </div>
 
@@ -462,27 +507,27 @@
   <aside class="panel" id="panel-broker" hidden>
     <div class="panel-head">
       <h2>Broker</h2>
-      <button class="close" data-close aria-label="Broker panelini kapat">×</button>
+      <button class="close" data-close aria-label="Close broker panel">×</button>
     </div>
     <div class="block">
       <div class="row">
-        <div><label for="host">Sunucu</label><input type="text" id="host" value="localhost"></div>
+        <div><label for="host">Host</label><input type="text" id="host" value="localhost"></div>
         <div class="narrow"><label for="port">Port</label><input type="number" id="port" value="1883"></div>
       </div>
       <div class="row">
-        <div><label for="clientId">İstemci kimliği</label><input type="text" id="clientId" value="mqfaker-console"></div>
+        <div><label for="clientId">Client ID</label><input type="text" id="clientId" value="mqfaker-console"></div>
       </div>
       <div class="row">
-        <div><label for="username">Kullanıcı</label><input type="text" id="username" placeholder="isteğe bağlı"></div>
-        <div><label for="password">Şifre</label><input type="password" id="password" placeholder="isteğe bağlı"></div>
+        <div><label for="username">Username</label><input type="text" id="username" placeholder="optional"></div>
+        <div><label for="password">Password</label><input type="password" id="password" placeholder="optional"></div>
       </div>
       <div class="checks">
-        <label><input type="checkbox" id="useTls"> TLS kullan</label>
-        <label><input type="checkbox" id="autoSubscribe" checked> Bağlanınca her konuya abone ol</label>
+        <label><input type="checkbox" id="useTls"> Use TLS</label>
+        <label><input type="checkbox" id="autoSubscribe" checked> Subscribe to every topic on connect</label>
       </div>
       <div class="actions">
-        <button id="btn-connect">Bağlan</button>
-        <button id="btn-disconnect" class="ghost">Bağlantıyı kes</button>
+        <button id="btn-connect">Connect</button>
+        <button id="btn-disconnect" class="ghost">Disconnect</button>
       </div>
       <p class="note" id="saved-note" hidden></p>
     </div>
@@ -490,12 +535,12 @@
 
   <aside class="panel" id="panel-subs" hidden>
     <div class="panel-head">
-      <h2>Abonelik</h2>
-      <button class="close" data-close aria-label="Abonelik panelini kapat">×</button>
+      <h2>Subscribe</h2>
+      <button class="close" data-close aria-label="Close subscribe panel">×</button>
     </div>
     <div class="block">
       <div class="row">
-        <div><label for="filter">Konu filtresi</label><input type="text" id="filter" value="sensors/#"></div>
+        <div><label for="filter">Topic filter</label><input type="text" id="filter" value="sensors/#"></div>
       </div>
       <div class="checks">
         <label><input type="radio" name="subqos" value="0" checked> QoS 0</label>
@@ -503,7 +548,7 @@
         <label><input type="radio" name="subqos" value="2"> QoS 2</label>
       </div>
       <div class="actions">
-        <button id="btn-subscribe">Abone ol</button>
+        <button id="btn-subscribe">Subscribe</button>
       </div>
       <div class="filters" id="filters"></div>
     </div>
@@ -511,39 +556,39 @@
 
   <aside class="panel" id="panel-publish" hidden>
     <div class="panel-head">
-      <h2>Mesaj</h2>
-      <button class="close" data-close aria-label="Mesaj panelini kapat">×</button>
+      <h2>Publish</h2>
+      <button class="close" data-close aria-label="Close publish panel">×</button>
     </div>
     <div class="block">
       <div class="row">
-        <div><label for="topic">Konu</label><input type="text" id="topic" value="sensors/temp"></div>
+        <div><label for="topic">Topic</label><input type="text" id="topic" value="sensors/temp"></div>
       </div>
       <div class="row">
-        <div><label for="payload">İçerik</label><textarea id="payload">23.5</textarea></div>
+        <div><label for="payload">Payload</label><textarea id="payload">23.5</textarea></div>
       </div>
       <div class="checks">
         <label><input type="radio" name="qos" value="0" checked> QoS 0</label>
         <label><input type="radio" name="qos" value="1"> QoS 1</label>
         <label><input type="radio" name="qos" value="2"> QoS 2</label>
-        <label><input type="checkbox" id="retain"> Sakla</label>
+        <label><input type="checkbox" id="retain"> Retain</label>
       </div>
       <div class="actions">
-        <button id="btn-publish">Yayınla</button>
+        <button id="btn-publish">Publish</button>
       </div>
     </div>
   </aside>
 
   <section class="tree-pane">
     <div class="pane-head">
-      <h2 class="eyebrow">Konu ağacı</h2>
+      <h2 class="eyebrow">Topic tree</h2>
       <div class="pane-actions">
-        <button id="btn-expand" title="Tümünü genişlet" aria-label="Tümünü genişlet">
+        <button id="btn-expand" title="Expand all" aria-label="Expand all">
           <svg viewBox="0 0 16 16" aria-hidden="true">
             <path d="M4 3.5 L8 7.5 L12 3.5"/>
             <path d="M4 8.5 L8 12.5 L12 8.5"/>
           </svg>
         </button>
-        <button id="btn-collapse" title="Tümünü daralt" aria-label="Tümünü daralt">
+        <button id="btn-collapse" title="Collapse all" aria-label="Collapse all">
           <svg viewBox="0 0 16 16" aria-hidden="true">
             <path d="M4 7.5 L8 3.5 L12 7.5"/>
             <path d="M4 12.5 L8 8.5 L12 12.5"/>
@@ -552,16 +597,16 @@
       </div>
     </div>
     <div class="tree" id="tree">
-      <p class="empty">Henüz konu yok. Bağlandığınızda broker'ın ağacı burada oluşur.</p>
+      <p class="empty">No topics yet. Connect to a broker and its tree builds here.</p>
     </div>
   </section>
 
   <section class="wire">
     <div class="pane-head">
-      <h2 class="eyebrow">Hat kaydı</h2>
+      <h2 class="eyebrow">Wire log</h2>
     </div>
     <div class="log" id="log">
-      <p class="empty">Henüz bir şey gönderilmedi. Bir broker'a bağlanın, sonra mesaj yayınlayın.</p>
+      <p class="empty">Nothing on the wire yet. Connect to a broker, then publish a message.</p>
     </div>
   </section>
 </div>
@@ -572,7 +617,7 @@ const $ = id => document.getElementById(id);
 const log = $('log');
 const MAX_ENTRIES = 500;
 
-// Konu yolunu MQTT'deki gibi parçalara ayırıp ayraçları soluklaştırır
+// Splits the topic path into MQTT segments and dims the separators
 function renderTopic(topic) {
   return topic.split('/').map(escapeHtml).join('<span class="sep">/</span>');
 }
@@ -585,7 +630,7 @@ function write({ kind, verb, topic, body, stamps }) {
   const empty = log.querySelector('.empty');
   if (empty) empty.remove();
 
-  const time = new Date().toLocaleTimeString('tr-TR', { hour12: false });
+  const time = new Date().toLocaleTimeString('en-GB', { hour12: false });
   const el = document.createElement('div');
   el.className = 'entry';
   el.dataset.kind = kind;
@@ -596,12 +641,12 @@ function write({ kind, verb, topic, body, stamps }) {
   `;
   log.prepend(el);
 
-  // '#' aboneliğinde yoğun bir broker sayfayı şişirebilir; en eskileri at
+  // On a '#' subscription a busy broker can bloat the page; drop the oldest
   while (log.childElementCount > MAX_ENTRIES) log.lastElementChild.remove();
 }
 
 function setState(state) {
-  const map = { Connected: 'BAĞLI', Disconnected: 'BAĞLI DEĞİL', Connecting: 'BAĞLANIYOR', Faulted: 'HATA' };
+  const map = { Connected: 'CONNECTED', Disconnected: 'DISCONNECTED', Connecting: 'CONNECTING', Faulted: 'FAULTED' };
   const readout = $('readout');
   readout.dataset.state = state;
   const where = state === 'Connected' ? ` · ${$('host').value}:${$('port').value}` : '';
@@ -612,7 +657,7 @@ function setState(state) {
   $('btn-disconnect').disabled = offline;
 }
 
-// Sunucu hatalarını ProblemDetails'ten okunabilir metne çevirir
+// Turns a server error into readable text from its ProblemDetails body
 async function describeError(response) {
   try {
     const p = await response.json();
@@ -644,24 +689,24 @@ $('btn-connect').addEventListener('click', async () => {
 
   if (r.ok) {
     setState((await r.json()).state);
-    write({ kind: 'ok', verb: 'Bağlandı', body: `${payload.host}:${payload.port} · ${payload.clientId}` });
-    resetTree(); // yeni bağlantı, yeni ağaç; saklı mesajlar hemen yeniden doldurur
+    write({ kind: 'ok', verb: 'Connected', body: `${payload.host}:${payload.port} · ${payload.clientId}` });
+    resetTree(); // new connection, new tree; retained messages refill it right away
     if ($('autoSubscribe').checked) await subscribe('#', 0);
     await refreshFilters();
   } else {
     setState('Faulted');
-    write({ kind: 'fault', verb: 'Bağlanamadı', body: await describeError(r) });
+    write({ kind: 'fault', verb: 'Connect failed', body: await describeError(r) });
   }
 });
 
 $('btn-disconnect').addEventListener('click', async () => {
   const r = await fetch('/api/connection', { method: 'DELETE' });
   if (r.ok) {
-    write({ kind: 'ok', verb: 'Bağlantı kesildi' });
+    write({ kind: 'ok', verb: 'Disconnected' });
     await refreshState();
     await refreshFilters();
   } else {
-    write({ kind: 'fault', verb: 'Kesilemedi', body: await describeError(r) });
+    write({ kind: 'fault', verb: 'Disconnect failed', body: await describeError(r) });
   }
 });
 
@@ -679,38 +724,38 @@ $('btn-publish').addEventListener('click', async () => {
 
   if (r.ok) {
     const stamps = [`QoS ${qos}`];
-    if (retain) stamps.push('SAKLI');
-    write({ kind: 'sent', verb: 'Yayınlandı', topic, body: payload, stamps });
+    if (retain) stamps.push('RETAINED');
+    write({ kind: 'sent', verb: 'Published', topic, body: payload, stamps });
   } else {
-    write({ kind: 'fault', verb: 'Yayınlanamadı', topic, body: await describeError(r) });
+    write({ kind: 'fault', verb: 'Publish failed', topic, body: await describeError(r) });
   }
 });
 
-// ---- panel menüsü ----
+// ---- panel menu ----
 const menuButtons = [...document.querySelectorAll('.menu-btn')];
 const layout = document.querySelector('.layout');
 
-// Aynı anda tek panel açılır; açık panelin düğmesi işaretli kalır
+// Only one panel is open at a time; its menu button stays marked
 function showPanel(id) {
   for (const btn of menuButtons) {
-    const acik = btn.dataset.panel === id;
-    btn.setAttribute('aria-expanded', String(acik));
-    $(btn.dataset.panel).hidden = !acik;
+    const isOpen = btn.dataset.panel === id;
+    btn.setAttribute('aria-expanded', String(isOpen));
+    $(btn.dataset.panel).hidden = !isOpen;
   }
   layout.dataset.panel = id ? 'open' : 'closed';
 }
 
 menuButtons.forEach(btn => btn.addEventListener('click', () => {
-  const zatenAcik = btn.getAttribute('aria-expanded') === 'true';
-  showPanel(zatenAcik ? null : btn.dataset.panel);
+  const alreadyOpen = btn.getAttribute('aria-expanded') === 'true';
+  showPanel(alreadyOpen ? null : btn.dataset.panel);
 }));
 
 document.querySelectorAll('[data-close]').forEach(btn =>
   btn.addEventListener('click', () => showPanel(null)));
 
-showPanel('panel-broker'); // ilk iş bağlanmak; kapatıldıktan sonra menüden açılır
+showPanel('panel-broker'); // connecting comes first; reopen from the menu once closed
 
-// ---- abonelikler ----
+// ---- subscriptions ----
 async function refreshFilters() {
   const filters = await (await fetch('/api/subscriptions')).json();
   const box = $('filters');
@@ -724,7 +769,7 @@ async function refreshFilters() {
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.textContent = '×';
-    remove.title = `${f} aboneliğini bırak`;
+    remove.title = `Unsubscribe from ${f}`;
     remove.addEventListener('click', () => unsubscribe(f));
     chip.append(remove);
 
@@ -735,9 +780,9 @@ async function refreshFilters() {
 async function unsubscribe(topicFilter) {
   const r = await fetch(`/api/subscriptions?topicFilter=${encodeURIComponent(topicFilter)}`, { method: 'DELETE' });
   if (r.ok) {
-    write({ kind: 'ok', verb: 'Abonelik bırakıldı', topic: topicFilter });
+    write({ kind: 'ok', verb: 'Unsubscribed', topic: topicFilter });
   } else {
-    write({ kind: 'fault', verb: 'Bırakılamadı', topic: topicFilter, body: await describeError(r) });
+    write({ kind: 'fault', verb: 'Unsubscribe failed', topic: topicFilter, body: await describeError(r) });
   }
   await refreshFilters();
 }
@@ -750,9 +795,9 @@ async function subscribe(topicFilter, qos) {
   });
 
   if (r.ok) {
-    write({ kind: 'ok', verb: 'Abone olundu', topic: topicFilter, stamps: [`QoS ${qos}`] });
+    write({ kind: 'ok', verb: 'Subscribed', topic: topicFilter, stamps: [`QoS ${qos}`] });
   } else {
-    write({ kind: 'fault', verb: 'Abone olunamadı', topic: topicFilter, body: await describeError(r) });
+    write({ kind: 'fault', verb: 'Subscribe failed', topic: topicFilter, body: await describeError(r) });
   }
 }
 
@@ -761,17 +806,17 @@ $('btn-subscribe').addEventListener('click', async () => {
   await refreshFilters();
 });
 
-// ---- konu ağacı ----
+// ---- topic tree ----
 const treeBox = $('tree');
 const treeRoot = { children: new Map(), kidsEl: treeBox, parent: null };
 
-// Genişlet/Daralt yalnızca mevcut dalları değil sonradan gelenleri de etkiler
-let yeniDalAcik = false;
+// Expand/Collapse affects branches that arrive later, not just the existing ones
+let newBranchesOpen = false;
 
 function makeBranch(name, depth, parent) {
   const branchEl = document.createElement('div');
   branchEl.className = 'branch';
-  branchEl.dataset.open = String(yeniDalAcik); // varsayılan kapalı; özet zaten başlıkta görünür
+  branchEl.dataset.open = String(newBranchesOpen); // closed by default; the summary already shows on the heading
   branchEl.dataset.name = name;
 
   const nodeEl = document.createElement('div');
@@ -804,28 +849,30 @@ function makeBranch(name, depth, parent) {
       branchEl.dataset.open = branchEl.dataset.open === 'true' ? 'false' : 'true';
   });
 
-  // Tek kalıcı dinleyici: yanıp sönme bitince sınıfı bırakma, bayat durum kalmasın
+  // One permanent listener: drop the class when the flash ends so no stale state lingers
   nodeEl.addEventListener('animationend', () => nodeEl.classList.remove('flash'));
 
-  // Kardeşler alfabetik sırada tutulur; ağaç mesaj geldikçe zıplamaz
+  // Siblings stay in alphabetical order; the tree doesn't jump as messages arrive
   let before = null;
   for (const sibling of parent.kidsEl.children) {
-    if (sibling.dataset.name.localeCompare(name, 'tr') > 0) { before = sibling; break; }
+    if (sibling.dataset.name.localeCompare(name, 'en') > 0) { before = sibling; break; }
   }
   parent.kidsEl.insertBefore(branchEl, before);
 
   return {
     children: new Map(), parent, branchEl, nodeEl, valEl: val, metaEl: meta, kidsEl,
-    hits: 0,        // bu konuya doğrudan gelen mesaj sayısı
-    subTopics: 0,   // altındaki (kendisi dahil) mesaj almış konu sayısı
-    subMessages: 0  // altındaki (kendisi dahil) toplam mesaj sayısı
+    hits: 0,        // messages delivered directly to this topic
+    subTopics: 0,   // topics beneath it (itself included) that have received a message
+    subMessages: 0  // total messages beneath it (itself included)
   };
 }
 
-// Dal başlıklarında alt ağacın özeti, yapraklarda konunun kendi sayacı görünür
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+// Branch headings show the subtree summary; leaves show their own counter
 function renderMeta(node) {
   node.metaEl.textContent = node.children.size > 0
-    ? `${node.subTopics} konu · ${node.subMessages} mesaj`
+    ? `${plural(node.subTopics, 'topic')} · ${plural(node.subMessages, 'message')}`
     : (node.hits > 1 ? `×${node.hits}` : '');
 }
 
@@ -838,7 +885,7 @@ function ensureNode(segments) {
       node.children.set(seg, child);
       if (node.nodeEl) {
         node.nodeEl.dataset.branch = 'true';
-        renderMeta(node); // yaprakken dal oldu: sayacı özete dönüşür
+        renderMeta(node); // it was a leaf and became a branch: its counter turns into a summary
       }
     }
     node = child;
@@ -846,14 +893,14 @@ function ensureNode(segments) {
   return node;
 }
 
-// Kapalı bir dalın içindeki satır görünmez; o durumda en yakın görünen ataya iner
+// A row inside a collapsed branch is invisible; fall back to the nearest visible ancestor
 function flash(node) {
   let target = node;
   while (target.parent?.nodeEl && target.nodeEl.offsetParent === null) target = target.parent;
 
   const el = target.nodeEl;
   el.classList.remove('flash');
-  void el.offsetWidth; // reflow: aynı satıra art arda mesaj gelirse animasyon yeniden başlasın
+  void el.offsetWidth; // reflow: restart the animation when messages hit the same row back to back
   el.classList.add('flash');
 }
 
@@ -866,7 +913,7 @@ function applyToTree(message) {
   node.hits++;
   node.valEl.textContent = message.payload;
 
-  // Özet sayaçları kendisinden köke kadar tüm atalara yayılır
+  // Summary counters propagate from this node up to the root
   for (let n = node; n?.nodeEl; n = n.parent) {
     n.subMessages++;
     if (firstMessageHere) n.subTopics++;
@@ -876,24 +923,24 @@ function applyToTree(message) {
   flash(node);
 }
 
-function tumDallar(acik) {
-  yeniDalAcik = acik;
-  for (const branch of treeBox.querySelectorAll('.branch')) branch.dataset.open = String(acik);
+function setAllBranches(open) {
+  newBranchesOpen = open;
+  for (const branch of treeBox.querySelectorAll('.branch')) branch.dataset.open = String(open);
 }
 
-$('btn-expand').addEventListener('click', () => tumDallar(true));
-$('btn-collapse').addEventListener('click', () => tumDallar(false));
+$('btn-expand').addEventListener('click', () => setAllBranches(true));
+$('btn-collapse').addEventListener('click', () => setAllBranches(false));
 
 function resetTree() {
   treeRoot.children.clear();
   treeBox.textContent = '';
   const empty = document.createElement('p');
   empty.className = 'empty';
-  empty.textContent = 'Henüz konu yok. Bağlandığınızda broker\'ın ağacı burada oluşur.';
+  empty.textContent = 'No topics yet. Connect to a broker and its tree builds here.';
   treeBox.append(empty);
 }
 
-// ---- canlı akış ----
+// ---- live stream ----
 const hub = new signalR.HubConnectionBuilder()
   .withUrl('/hubs/mqtt')
   .withAutomaticReconnect()
@@ -901,12 +948,12 @@ const hub = new signalR.HubConnectionBuilder()
 
 hub.on('messageReceived', m => {
   const stamps = [`QoS ${m.qos}`];
-  if (m.retain) stamps.push('SAKLI');
-  write({ kind: 'recv', verb: 'Geldi', topic: m.topic, body: m.payload, stamps });
+  if (m.retain) stamps.push('RETAINED');
+  write({ kind: 'recv', verb: 'Received', topic: m.topic, body: m.payload, stamps });
   applyToTree(m);
 });
 
-// Açılışta durumu, kayıtlı ayarları ve abonelikleri geri yükle
+// On load, restore connection state, saved settings and active subscriptions
 (async function init() {
   await hub.start();
   await refreshState();
@@ -924,7 +971,7 @@ hub.on('messageReceived', m => {
 
   if (s.hasPassword) {
     const note = $('saved-note');
-    note.textContent = 'Şifre kaydedildi ama güvenlik gereği geri gönderilmiyor. Bağlanmak için yeniden girin.';
+    note.textContent = 'A password is saved but never sent back. Enter it again to connect.';
     note.hidden = false;
   }
 })();
