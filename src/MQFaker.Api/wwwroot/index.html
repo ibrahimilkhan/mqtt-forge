@@ -304,20 +304,22 @@
   .branch[data-open="false"] > .kids { display: none; }
   .node[data-branch="false"] .twisty { visibility: hidden; }
 
-  .seg { color: var(--ink); }
+  .seg { flex: none; color: var(--ink); }
   .node[data-branch="true"] > .seg { font-weight: 600; }
 
+  /* Değer konu adının hemen yanında durur; göz ikisini birlikte okur */
   .val {
     color: var(--signal);
-    margin-left: auto;
-    padding-left: 14px;
-    max-width: 55%;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .hits {
+
+  .meta {
     flex: none;
+    margin-left: auto;
+    padding-left: 16px;
     font-size: 9.5px;
     color: var(--muted);
     letter-spacing: 0.05em;
@@ -601,7 +603,7 @@ const treeRoot = { children: new Map(), kidsEl: treeBox, parent: null };
 function makeBranch(name, depth, parent) {
   const branchEl = document.createElement('div');
   branchEl.className = 'branch';
-  branchEl.dataset.open = 'true';
+  branchEl.dataset.open = 'false'; // dallar kapalı başlar; özet zaten başlıkta görünür
   branchEl.dataset.name = name;
 
   const nodeEl = document.createElement('div');
@@ -620,10 +622,10 @@ function makeBranch(name, depth, parent) {
   const val = document.createElement('span');
   val.className = 'val';
 
-  const hits = document.createElement('span');
-  hits.className = 'hits';
+  const meta = document.createElement('span');
+  meta.className = 'meta';
 
-  nodeEl.append(twisty, seg, val, hits);
+  nodeEl.append(twisty, seg, val, meta);
 
   const kidsEl = document.createElement('div');
   kidsEl.className = 'kids';
@@ -644,7 +646,19 @@ function makeBranch(name, depth, parent) {
   }
   parent.kidsEl.insertBefore(branchEl, before);
 
-  return { children: new Map(), parent, branchEl, nodeEl, valEl: val, hitsEl: hits, kidsEl, hits: 0 };
+  return {
+    children: new Map(), parent, branchEl, nodeEl, valEl: val, metaEl: meta, kidsEl,
+    hits: 0,        // bu konuya doğrudan gelen mesaj sayısı
+    subTopics: 0,   // altındaki (kendisi dahil) mesaj almış konu sayısı
+    subMessages: 0  // altındaki (kendisi dahil) toplam mesaj sayısı
+  };
+}
+
+// Dal başlıklarında alt ağacın özeti, yapraklarda konunun kendi sayacı görünür
+function renderMeta(node) {
+  node.metaEl.textContent = node.children.size > 0
+    ? `${node.subTopics} konu · ${node.subMessages} mesaj`
+    : (node.hits > 1 ? `×${node.hits}` : '');
 }
 
 function ensureNode(segments) {
@@ -654,7 +668,10 @@ function ensureNode(segments) {
     if (!child) {
       child = makeBranch(seg, depth, node);
       node.children.set(seg, child);
-      if (node.nodeEl) node.nodeEl.dataset.branch = 'true';
+      if (node.nodeEl) {
+        node.nodeEl.dataset.branch = 'true';
+        renderMeta(node); // yaprakken dal oldu: sayacı özete dönüşür
+      }
     }
     node = child;
   });
@@ -676,9 +693,18 @@ function applyToTree(message) {
   treeBox.querySelector('.empty')?.remove();
 
   const node = ensureNode(message.topic.split('/'));
+  const firstMessageHere = node.hits === 0;
+
   node.hits++;
   node.valEl.textContent = message.payload;
-  node.hitsEl.textContent = node.hits > 1 ? `×${node.hits}` : '';
+
+  // Özet sayaçları kendisinden köke kadar tüm atalara yayılır
+  for (let n = node; n?.nodeEl; n = n.parent) {
+    n.subMessages++;
+    if (firstMessageHere) n.subTopics++;
+    renderMeta(n);
+  }
+
   flash(node);
 }
 
