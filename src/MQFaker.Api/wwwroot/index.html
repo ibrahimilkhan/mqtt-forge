@@ -350,8 +350,9 @@
     border-radius: 2px;
     position: relative;
   }
-  /* Aynı seviyedeki kardeşler arasına dikey boşluk; ağaç katlıyken de satırlar ayrışır */
-  .branch + .branch > .node { margin-top: 9px; }
+  /* Boşluk yalnızca 1. seviye kardeşlere: her seviyede verilse derin
+     ağaçlarda birikip gereksiz seyrelmeye yol açardı */
+  .tree > .branch + .branch > .node { margin-top: 9px; }
   .node[data-branch="true"] { cursor: pointer; }
   .node[data-branch="true"]:hover { background: var(--paper); }
 
