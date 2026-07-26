@@ -1,0 +1,20 @@
+  .bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding: 14px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--rule);
+    position: sticky;
+    top: 0;
+    z-index: 5;
+  }
+  .wordmark {
+    font-family: var(--mono);
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    margin: 0;
+  }
+  .wordmark span { color: var(--signal); }
