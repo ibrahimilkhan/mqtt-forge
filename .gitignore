@@ -8,3 +8,4 @@ riderModule.iml
 .DS_Store
 web/node_modules/
 web/dist/
+src/MQFaker.Api/wwwroot/
