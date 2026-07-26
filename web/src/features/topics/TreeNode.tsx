@@ -14,8 +14,8 @@ export const TreeNode = memo(function TreeNode({ node, path, depth }: Props) {
   const isBranch = node.children.size > 0;
 
   // A row inside a closed branch is invisible, so the closed branch flashes on its behalf.
-  // An open branch stays quiet; the visible descendant that was hit flashes instead.
-  const flashAt = open && isBranch ? 0 : node.lastSubHitAt;
+  // An open branch shows its descendants, so it answers only for messages addressed to it.
+  const flashAt = open && isBranch ? node.lastHitAt : node.lastSubHitAt;
 
   return (
     <div className={styles.branch} data-open={open}>
@@ -34,9 +34,10 @@ export const TreeNode = memo(function TreeNode({ node, path, depth }: Props) {
         <span className={styles.meta}>{nodeSummary(node)}</span>
       </div>
 
-      {/* A closed branch renders nothing beneath it. The old console hid its children with
-          CSS, but a broker with thousands of topics only pays for what is on screen. */}
-      {isBranch && open && (
+      {/* Children stay mounted while a branch is closed and are hidden with CSS. Dropping
+          them from the tree instead would remount every row on expand, and mounting is
+          what restarts the flash animation — the whole subtree would light up at once. */}
+      {isBranch && (
         <div className={styles.kids}>
           {[...node.children.values()].map((child) => (
             <TreeNode key={child.name} node={child} path={`${path}/${child.name}`} depth={depth + 1} />

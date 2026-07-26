@@ -5,8 +5,9 @@ import { queryKeys } from '../../api/queryKeys';
 import { Field } from '../../components/Field';
 import { PanelShell } from '../../components/PanelShell';
 import styles from '../../styles/panel.module.css';
-import { fieldError, useConnectionActions } from './useConnectionActions';
-import { useConnectionState } from './useConnectionState';
+import { useConnectionState } from '../../api/useConnectionState';
+import { fieldError } from '../../lib/problemDetails';
+import { useConnectionActions } from './useConnectionActions';
 
 const DEFAULTS = {
   host: 'localhost',

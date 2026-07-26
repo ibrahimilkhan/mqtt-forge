@@ -2,7 +2,7 @@ import { useState } from 'react';
 import styles from './App.module.css';
 import { StatusReadout } from './components/StatusReadout';
 import { BrokerPanel } from './features/connection/BrokerPanel';
-import { useBrokerAddress, useConnectionState } from './features/connection/useConnectionState';
+import { useBrokerAddress, useConnectionState } from './api/useConnectionState';
 import { WireLog } from './features/monitor/WireLog';
 import { TopicTree } from './features/topics/TopicTree';
 import { PANELS, type PanelId } from './features/panels';

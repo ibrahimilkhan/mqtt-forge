@@ -65,12 +65,7 @@
   button.ghost:hover:not(:disabled) { background: var(--ink); color: var(--surface); }
   button:disabled { opacity: 0.35; cursor: not-allowed; }
 
-  .note {
-    font-size: 13px;
-    color: var(--muted);
-    margin-top: 10px;
-  }
-
+  /* .note lives in styles/panel.module.css: every consumer is inside a panel. */
 
   .empty {
     font-family: var(--mono);

@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { connect, disconnect } from '../../api/connection';
 import { queryKeys } from '../../api/queryKeys';
 import { subscribe } from '../../api/subscriptions';
-import { ApiError } from '../../lib/problemDetails';
+import { describeError } from '../../lib/problemDetails';
 import { useLogStore } from '../../stores/logStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import type { ConnectRequest } from '../../types/api';
@@ -16,8 +16,11 @@ export function useConnectionActions() {
     // otherwise would be a lie the previous console never told.
     mutationFn: ({ request }: { request: ConnectRequest; autoSubscribe: boolean }) => connect(request),
 
-    onSuccess: async (result, { request, autoSubscribe }) => {
-      queryClient.setQueryData(queryKeys.connection, result);
+    onSuccess: async (_result, { request, autoSubscribe }) => {
+      // Refetched rather than written from the response: the hub may already have pushed a
+      // newer state — a broker that drops the session on connect — and writing the
+      // response over it would replace the truth with a stale success.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.connection });
 
       // A new connection means a new tree; retained messages refill it right away.
       useTopicTreeStore.getState().reset();
@@ -64,12 +67,3 @@ async function subscribeToEverything() {
   }
 }
 
-// Named describeError rather than describe so it cannot be confused with Vitest's global.
-export const describeError = (error: unknown) =>
-  error instanceof ApiError ? error.message : String(error);
-
-// Field errors come back keyed by the DTO property name, which is Pascal-cased.
-export function fieldError(error: unknown, field: string): string | undefined {
-  if (!(error instanceof ApiError)) return undefined;
-  return error.errors?.[field]?.[0];
-}
