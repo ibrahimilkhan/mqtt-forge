@@ -14,10 +14,6 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
 
     private ConnectionState _state = ConnectionState.Disconnected;
 
-    // Separates a disconnect the user asked for from one caused by the network or the
-    // broker; only the latter counts as Faulted.
-    private bool _disconnectRequested;
-
     public MqttnetConnectionManager(MqttnetClientProvider provider, IConnectionStateNotifier notifier)
     {
         _client = provider.Client;
@@ -41,18 +37,20 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
             await SetStateAsync(ConnectionState.Connecting);
 
             if (_client.IsConnected)
-            {
-                _disconnectRequested = true;
                 await _client.DisconnectAsync(cancellationToken: ct);
-            }
-
-            _disconnectRequested = false;
 
             try
             {
                 await _client.ConnectAsync(BuildOptions(settings), ct);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (OperationCanceledException)
+            {
+                // The caller walked away mid-handshake and nothing was established, so the
+                // honest state is Disconnected; leaving it at Connecting strands the readout.
+                await SetStateAsync(ConnectionState.Disconnected);
+                throw;
+            }
+            catch (Exception ex)
             {
                 await SetStateAsync(ConnectionState.Faulted);
                 throw new BrokerUnreachableException(
@@ -72,7 +70,6 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
         await _gate.WaitAsync(ct);
         try
         {
-            _disconnectRequested = true;
             await _client.DisconnectAsync(cancellationToken: ct);
             await SetStateAsync(ConnectionState.Disconnected);
         }
@@ -84,14 +81,15 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
 
     private Task OnDisconnectedAsync(MqttClientDisconnectedEventArgs e)
     {
-        var requested = _disconnectRequested;
-        _disconnectRequested = false;
+        // MQTTnet raises this on a background task, so it can arrive after a newer attempt
+        // has already succeeded; a live client means the event describes a link that is
+        // already history.
+        if (_client.IsConnected) return Task.CompletedTask;
 
-        // A reconnect closes the old link on purpose while a new attempt is already
-        // under way; that attempt owns the state, so leave it alone.
-        if (_state == ConnectionState.Connecting) return Task.CompletedTask;
+        // Anything this class closed on purpose has already reported its own state.
+        if (_state != ConnectionState.Connected) return Task.CompletedTask;
 
-        return SetStateAsync(requested ? ConnectionState.Disconnected : ConnectionState.Faulted);
+        return SetStateAsync(ConnectionState.Faulted);
     }
 
     // Records the new state and announces it; a repeat of the current state is not news.
