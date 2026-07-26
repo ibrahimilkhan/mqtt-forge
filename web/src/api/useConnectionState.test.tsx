@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { App } from '../../App';
-import { createFakeHub } from '../../realtime/fakeHub';
-import { useHubStatusStore } from '../../stores/hubStatusStore';
-import { server } from '../../test/server';
+import { App } from '../App';
+import { createFakeHub } from '../realtime/fakeHub';
+import { useHubStatusStore } from '../stores/hubStatusStore';
+import { server } from '../test/server';
 
 // The store outlives a single test, so a reconnect in one case must not leak into the next.
 beforeEach(() => useHubStatusStore.getState().setStatus('live'));
@@ -35,6 +36,16 @@ function renderApp(state: string) {
   return hub;
 }
 
+// The open panel has buttons that share names with the menu, so both sides are scoped:
+// the menu by its nav landmark, the panel by its own label.
+async function openPanelButton(name: 'Subscribe' | 'Publish') {
+  const menu = screen.getByRole('navigation', { name: 'Panels' });
+  await userEvent.click(within(menu).getByRole('button', { name }));
+
+  const panel = screen.getByRole('region', { name: `${name} panel` });
+  return within(panel).getByRole('button', { name });
+}
+
 describe('connection gating', () => {
   it('disables Disconnect while there is no connection', async () => {
     renderApp('Disconnected');
@@ -46,6 +57,20 @@ describe('connection gating', () => {
     renderApp('Connected');
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Disconnect' })).toBeEnabled());
+  });
+
+  it('disables Subscribe and Publish while there is no connection', async () => {
+    renderApp('Disconnected');
+
+    expect(await openPanelButton('Subscribe')).toBeDisabled();
+    expect(await openPanelButton('Publish')).toBeDisabled();
+  });
+
+  it('enables Subscribe and Publish once connected', async () => {
+    renderApp('Connected');
+
+    await waitFor(async () => expect(await openPanelButton('Subscribe')).toBeEnabled());
+    await waitFor(async () => expect(await openPanelButton('Publish')).toBeEnabled());
   });
 
   it('shows the broker address in the readout while connected', async () => {

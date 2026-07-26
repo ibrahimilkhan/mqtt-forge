@@ -40,6 +40,17 @@ describe('applyMessage', () => {
     expect(at(tree, 'a/b').subTopics).toBe(2);
   });
 
+  it('turns a leaf into a branch without losing its own counters', () => {
+    let tree = applyMessage(emptyTree(), 'a', 'own', 1000);
+    tree = applyMessage(tree, 'a/b', 'child', 2000);
+
+    expect(at(tree, 'a').hits).toBe(1);
+    expect(at(tree, 'a').latestPayload).toBe('own');
+    expect(at(tree, 'a').subTopics).toBe(2);
+    expect(at(tree, 'a').subMessages).toBe(2);
+    expect(nodeSummary(at(tree, 'a'))).toBe('2 topics · 2 messages');
+  });
+
   it('keeps siblings alphabetical whatever order they arrive in', () => {
     let tree = applyMessage(emptyTree(), 'sensors/zeta', '1', 1000);
     tree = applyMessage(tree, 'sensors/alpha', '2', 2000);

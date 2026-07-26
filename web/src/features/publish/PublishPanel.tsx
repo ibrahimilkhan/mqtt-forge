@@ -6,8 +6,8 @@ import { PanelShell } from '../../components/PanelShell';
 import { QosSelect } from '../../components/QosSelect';
 import styles from '../../styles/panel.module.css';
 import { useLogStore } from '../../stores/logStore';
-import { describeError } from '../connection/useConnectionActions';
-import { useConnectionState } from '../connection/useConnectionState';
+import { useConnectionState } from '../../api/useConnectionState';
+import { describeError } from '../../lib/problemDetails';
 
 export function PublishPanel({ onClose }: { onClose: () => void }) {
   const [topic, setTopic] = useState('sensors/temp');

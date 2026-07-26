@@ -14,6 +14,17 @@ export class ApiError extends Error {
   }
 }
 
+// What to show a user for any thrown value. Named describeError rather than describe so it
+// cannot be confused with Vitest's global.
+export const describeError = (error: unknown) =>
+  error instanceof ApiError ? error.message : String(error);
+
+// Field errors come back keyed by the DTO property name, which is Pascal-cased.
+export function fieldError(error: unknown, field: string): string | undefined {
+  if (!(error instanceof ApiError)) return undefined;
+  return error.errors?.[field]?.[0];
+}
+
 type ProblemDetails = {
   title?: string;
   detail?: string;

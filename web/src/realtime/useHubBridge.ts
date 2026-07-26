@@ -30,7 +30,9 @@ export function useHubBridge(hub: Hub) {
       },
     });
 
-    void hub.start();
+    // withAutomaticReconnect only covers drops after a successful start. If the very first
+    // start fails — the API is not up yet — nothing would ever say so.
+    hub.start().catch(() => useHubStatusStore.getState().setStatus('reconnecting'));
 
     return () => {
       unsubscribe();

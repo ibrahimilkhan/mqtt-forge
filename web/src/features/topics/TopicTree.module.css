@@ -64,6 +64,7 @@
   transition: transform 0.12s ease;
 }
 .branch[data-open="false"] > .node .twisty { transform: rotate(-90deg); }
+.branch[data-open="false"] > .kids { display: none; }
 .node[data-branch="false"] .twisty { visibility: hidden; }
 
 /* Every level shares one weight; the twisty already says it's a branch */
