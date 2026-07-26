@@ -15,4 +15,25 @@
     <ProjectReference Include="..\MQFaker.Domain\MQFaker.Domain.csproj" />
   </ItemGroup>
 
+  <!-- The interface is built as part of a Release build; skipped in Debug so backend
+       iteration does not wait on npm. Disable with -p:SkipFrontend=true. -->
+  <Target Name="BuildFrontend" BeforeTargets="Build"
+          Condition="'$(Configuration)' == 'Release' AND '$(SkipFrontend)' != 'true'">
+    <Exec Command="npm ci" WorkingDirectory="$(MSBuildProjectDirectory)/../../web"
+          Condition="!Exists('$(MSBuildProjectDirectory)/../../web/node_modules')" />
+    <Exec Command="npm run build" WorkingDirectory="$(MSBuildProjectDirectory)/../../web" />
+  </Target>
+
+  <!-- wwwroot is generated after the usual publish file list is computed, so its contents
+       are added explicitly. -->
+  <Target Name="PublishFrontend" AfterTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <FrontendFile Include="wwwroot/**" />
+      <ResolvedFileToPublish Include="@(FrontendFile->'%(FullPath)')" Exclude="@(ResolvedFileToPublish)">
+        <RelativePath>%(FrontendFile.Identity)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+
 </Project>

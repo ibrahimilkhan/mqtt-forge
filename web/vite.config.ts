@@ -11,6 +11,13 @@ export default defineConfig({
       '/hubs': { target: 'http://localhost:5169', ws: true },
     },
   },
+  build: {
+    // The API serves the built site from its own wwwroot, so one process and one port is
+    // all a user needs. emptyOutDir is required because the directory sits outside the
+    // Vite root.
+    outDir: '../src/MQFaker.Api/wwwroot',
+    emptyOutDir: true,
+  },
   test: {
     environment: 'jsdom',
     globals: false,
