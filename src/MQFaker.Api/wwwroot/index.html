@@ -80,23 +80,28 @@
   @keyframes pulse { 50% { opacity: 0.35; } }
 
   /* ---- yerleşim ---- */
+  /* Panel kapalıyken ağaç ve kayıt tüm genişliği alır */
   .layout {
     display: grid;
-    grid-template-columns: minmax(300px, 360px) 1.1fr 1fr;
+    grid-template-columns: 1.1fr 1fr;
     gap: 1px;
     background: var(--rule);
     min-height: calc(100vh - 57px);
   }
+  .layout[data-panel="open"] { grid-template-columns: minmax(300px, 360px) 1.1fr 1fr; }
+
   .panel { background: var(--paper); padding: 22px 20px 40px; }
   .tree-pane { background: var(--surface); padding: 22px 20px 40px; }
   .wire  { background: var(--surface); padding: 22px 20px 40px; }
 
   @media (max-width: 1180px) {
-    .layout { grid-template-columns: minmax(300px, 360px) 1fr; }
+    .layout { grid-template-columns: 1fr; }
+    .layout[data-panel="open"] { grid-template-columns: minmax(280px, 340px) 1fr; }
     .wire { grid-column: 1 / -1; }
   }
   @media (max-width: 800px) {
-    .layout { grid-template-columns: 1fr; }
+    .layout,
+    .layout[data-panel="open"] { grid-template-columns: 1fr; }
     .wire { grid-column: auto; }
   }
 
@@ -116,34 +121,60 @@
     border-bottom: 1px solid var(--rule);
   }
 
-  /* ---- ayar sekmeleri ---- */
-  .tabs {
+  /* ---- üst çubuktaki panel menüsü ---- */
+  .menu { display: flex; gap: 2px; }
+  .menu-btn {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 2px;
+    padding: 7px 11px;
+    cursor: pointer;
+  }
+  .menu-btn:hover { color: var(--ink); background: var(--paper); }
+  .menu-btn[aria-expanded="true"] {
+    color: var(--surface);
+    background: var(--ink);
+    border-color: var(--ink);
+  }
+  .menu-btn:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+  /* ---- açılan panelin başlığı ---- */
+  .panel-head {
     display: flex;
-    gap: 2px;
-    margin-bottom: 20px;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+    padding-bottom: 9px;
     border-bottom: 1px solid var(--rule);
   }
-  .tab {
+  .panel-head h2 {
+    margin: 0;
     font-family: var(--mono);
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.16em;
     text-transform: uppercase;
     color: var(--muted);
-    background: none;
-    border: none;
-    border-bottom: 2px solid transparent;
-    border-radius: 0;
-    margin-bottom: -1px;
-    padding: 9px 12px;
+  }
+  .close {
+    all: unset;
+    margin-left: auto;
     cursor: pointer;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 16px;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: 2px;
   }
-  .tab:hover { color: var(--ink); background: none; }
-  .tab[aria-selected="true"] {
-    color: var(--ink);
-    border-bottom-color: var(--signal);
-  }
-  .tab:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
+  .close:hover { color: var(--fault); background: var(--surface); }
+  .close:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
   .row { display: flex; gap: 10px; margin-bottom: 10px; }
   .row > * { flex: 1; min-width: 0; }
@@ -379,20 +410,25 @@
 
 <div class="bar">
   <h1 class="wordmark">MQ<span>Faker</span></h1>
+
+  <nav class="menu" aria-label="Paneller">
+    <button class="menu-btn" data-panel="panel-broker" aria-expanded="false">Broker</button>
+    <button class="menu-btn" data-panel="panel-subs" aria-expanded="false">Abonelik</button>
+    <button class="menu-btn" data-panel="panel-publish" aria-expanded="false">Mesaj</button>
+  </nav>
+
   <div class="readout" id="readout" data-state="Disconnected">
     <span class="lamp"></span><span id="readout-text">BAĞLI DEĞİL</span>
   </div>
 </div>
 
 <div class="layout">
-  <section class="panel">
-
-    <div class="tabs" role="tablist" aria-label="Ayarlar">
-      <button class="tab" role="tab" id="tab-broker" aria-controls="panel-broker" aria-selected="true">Broker</button>
-      <button class="tab" role="tab" id="tab-subs" aria-controls="panel-subs" aria-selected="false">Abonelik</button>
+  <aside class="panel" id="panel-broker" hidden>
+    <div class="panel-head">
+      <h2>Broker</h2>
+      <button class="close" data-close aria-label="Broker panelini kapat">×</button>
     </div>
-
-    <div class="block" id="panel-broker" role="tabpanel" aria-labelledby="tab-broker">
+    <div class="block">
       <div class="row">
         <div><label for="host">Sunucu</label><input type="text" id="host" value="localhost"></div>
         <div class="narrow"><label for="port">Port</label><input type="number" id="port" value="1883"></div>
@@ -414,8 +450,14 @@
       </div>
       <p class="note" id="saved-note" hidden></p>
     </div>
+  </aside>
 
-    <div class="block" id="panel-subs" role="tabpanel" aria-labelledby="tab-subs" hidden>
+  <aside class="panel" id="panel-subs" hidden>
+    <div class="panel-head">
+      <h2>Abonelik</h2>
+      <button class="close" data-close aria-label="Abonelik panelini kapat">×</button>
+    </div>
+    <div class="block">
       <div class="row">
         <div><label for="filter">Konu filtresi</label><input type="text" id="filter" value="sensors/#"></div>
       </div>
@@ -429,9 +471,14 @@
       </div>
       <div class="filters" id="filters"></div>
     </div>
+  </aside>
 
+  <aside class="panel" id="panel-publish" hidden>
+    <div class="panel-head">
+      <h2>Mesaj</h2>
+      <button class="close" data-close aria-label="Mesaj panelini kapat">×</button>
+    </div>
     <div class="block">
-      <h2 class="eyebrow">Mesaj</h2>
       <div class="row">
         <div><label for="topic">Konu</label><input type="text" id="topic" value="sensors/temp"></div>
       </div>
@@ -448,8 +495,7 @@
         <button id="btn-publish">Yayınla</button>
       </div>
     </div>
-
-  </section>
+  </aside>
 
   <section class="tree-pane">
     <h2 class="eyebrow">Konu ağacı</h2>
@@ -586,15 +632,29 @@ $('btn-publish').addEventListener('click', async () => {
   }
 });
 
-// ---- ayar sekmeleri ----
-const tabs = [...document.querySelectorAll('.tab')];
-tabs.forEach(tab => tab.addEventListener('click', () => {
-  for (const t of tabs) {
-    const secili = t === tab;
-    t.setAttribute('aria-selected', String(secili));
-    $(t.getAttribute('aria-controls')).hidden = !secili;
+// ---- panel menüsü ----
+const menuButtons = [...document.querySelectorAll('.menu-btn')];
+const layout = document.querySelector('.layout');
+
+// Aynı anda tek panel açılır; açık panelin düğmesi işaretli kalır
+function showPanel(id) {
+  for (const btn of menuButtons) {
+    const acik = btn.dataset.panel === id;
+    btn.setAttribute('aria-expanded', String(acik));
+    $(btn.dataset.panel).hidden = !acik;
   }
+  layout.dataset.panel = id ? 'open' : 'closed';
+}
+
+menuButtons.forEach(btn => btn.addEventListener('click', () => {
+  const zatenAcik = btn.getAttribute('aria-expanded') === 'true';
+  showPanel(zatenAcik ? null : btn.dataset.panel);
 }));
+
+document.querySelectorAll('[data-close]').forEach(btn =>
+  btn.addEventListener('click', () => showPanel(null)));
+
+showPanel('panel-broker'); // ilk iş bağlanmak; kapatıldıktan sonra menüden açılır
 
 // ---- abonelikler ----
 async function refreshFilters() {
