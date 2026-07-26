@@ -350,8 +350,8 @@
     border-radius: 2px;
     position: relative;
   }
-  /* Ardışık gruplar arasına nefes payı: dal başlığı bir öncekinden ayrışsın */
-  .branch + .branch > .node[data-branch="true"] { margin-top: 6px; }
+  /* Aynı seviyedeki kardeşler arasına dikey boşluk; ağaç katlıyken de satırlar ayrışır */
+  .branch + .branch > .node { margin-top: 9px; }
   .node[data-branch="true"] { cursor: pointer; }
   .node[data-branch="true"]:hover { background: var(--paper); }
 
