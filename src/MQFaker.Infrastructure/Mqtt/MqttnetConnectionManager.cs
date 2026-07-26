@@ -36,17 +36,17 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
             // can see that a new attempt already owns the state.
             await SetStateAsync(ConnectionState.Connecting);
 
-            if (_client.IsConnected)
-                await _client.DisconnectAsync(cancellationToken: ct);
-
             try
             {
+                if (_client.IsConnected)
+                    await _client.DisconnectAsync(cancellationToken: ct);
+
                 await _client.ConnectAsync(BuildOptions(settings), ct);
             }
             catch (OperationCanceledException)
             {
-                // The caller walked away mid-handshake and nothing was established, so the
-                // honest state is Disconnected; leaving it at Connecting strands the readout.
+                // The caller walked away and nothing was established, so the honest state is
+                // Disconnected; leaving it at Connecting strands the readout for good.
                 await SetStateAsync(ConnectionState.Disconnected);
                 throw;
             }
@@ -79,17 +79,28 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
         }
     }
 
-    private Task OnDisconnectedAsync(MqttClientDisconnectedEventArgs e)
+    private async Task OnDisconnectedAsync(MqttClientDisconnectedEventArgs e)
     {
-        // MQTTnet raises this on a background task, so it can arrive after a newer attempt
-        // has already succeeded; a live client means the event describes a link that is
-        // already history.
-        if (_client.IsConnected) return Task.CompletedTask;
+        // MQTTnet raises this from a fire-and-forget task, so it can land in the middle of a
+        // connect or disconnect this class is running. Those hold the gate for their whole
+        // duration and record the outcome themselves, so a drop that cannot take the gate is
+        // already someone else's business.
+        if (!await _gate.WaitAsync(0)) return;
 
-        // Anything this class closed on purpose has already reported its own state.
-        if (_state != ConnectionState.Connected) return Task.CompletedTask;
+        try
+        {
+            // A live client means the event describes a link that is already history.
+            if (_client.IsConnected) return;
 
-        return SetStateAsync(ConnectionState.Faulted);
+            // Anything this class closed on purpose has already reported its own state.
+            if (_state != ConnectionState.Connected) return;
+
+            await SetStateAsync(ConnectionState.Faulted);
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     // Records the new state and announces it; a repeat of the current state is not news.
