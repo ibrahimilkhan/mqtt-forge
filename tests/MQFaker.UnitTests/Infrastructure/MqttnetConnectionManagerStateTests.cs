@@ -71,6 +71,32 @@ public class MqttnetConnectionManagerStateTests
         await _notifier.Received(1).NotifyStateChangedAsync(ConnectionState.Faulted);
     }
 
+    [Fact]
+    public async Task ConnectAsync_reports_disconnected_when_the_attempt_is_cancelled()
+    {
+        _client.ConnectAsync(Arg.Any<MqttClientOptions>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<MqttClientConnectResult>(new OperationCanceledException()));
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => sut.ConnectAsync(_settings, CancellationToken.None));
+
+        Assert.Equal(ConnectionState.Disconnected, sut.State);
+    }
+
+    [Fact]
+    public async Task A_drop_reported_while_the_client_is_connected_is_ignored()
+    {
+        var sut = CreateSut();
+        await sut.ConnectAsync(_settings, CancellationToken.None);
+        _client.IsConnected.Returns(true); // a newer attempt has already succeeded
+
+        RaiseDisconnected();
+
+        Assert.Equal(ConnectionState.Connected, sut.State);
+        await _notifier.DidNotReceive().NotifyStateChangedAsync(ConnectionState.Faulted);
+    }
+
     // MQTTnet raises this whenever the socket closes, whoever closed it.
     private void RaiseDisconnected() =>
         _client.DisconnectedAsync += Raise.Event<Func<MqttClientDisconnectedEventArgs, Task>>(
