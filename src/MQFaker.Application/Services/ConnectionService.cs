@@ -17,7 +17,7 @@ public sealed class ConnectionService
 
     public ConnectionState CurrentState => _manager.State;
 
-    // Önce bağlanır; yalnızca bağlantı başarılıysa ayarları diske kaydeder
+    // Connects first; writes settings to disk only if the connection succeeded
     public async Task ConnectAsync(BrokerConnectionSettings settings, CancellationToken ct)
     {
         await _manager.ConnectAsync(settings, ct);
@@ -26,7 +26,7 @@ public sealed class ConnectionService
 
     public Task DisconnectAsync(CancellationToken ct) => _manager.DisconnectAsync(ct);
 
-    // En son başarılı bağlantının ayarlarını döner; hiç kaydedilmemişse null
+    // Returns the settings of the last successful connection; null if never saved
     public Task<BrokerConnectionSettings?> GetSavedSettingsAsync(CancellationToken ct) =>
         _store.LoadAsync(ct);
 }

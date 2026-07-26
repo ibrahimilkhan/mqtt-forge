@@ -6,7 +6,7 @@ using Xunit;
 
 namespace MQFaker.IntegrationTests.Api;
 
-// Tasarımın "hatalar okunabilir ProblemDetails olarak döner" sözünü doğrular
+// Verifies the design's promise that failures come back as readable ProblemDetails
 public class ErrorResponseTests : IClassFixture<MqFakerApiFactory>
 {
     private readonly MqFakerApiFactory _factory;
@@ -23,22 +23,22 @@ public class ErrorResponseTests : IClassFixture<MqFakerApiFactory>
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         var problem = await response.Content.ReadFromJsonAsync<ProblemDetailsResponse>();
-        Assert.Equal("Bağlantı yok", problem!.Title);
-        Assert.Contains("bağlanın", problem.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("Not connected", problem!.Title);
+        Assert.Contains("Connect to a broker", problem.Detail, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public async Task Connect_to_unreachable_broker_returns_502_with_readable_detail()
     {
         var client = _factory.CreateClient();
-        // Kapalı olması beklenen port; bağlantı reddedilir
+        // A port expected to be closed, so the connection is refused
         var dto = new ConnectRequestDto("127.0.0.1", 1, "probe", null, null, false);
 
         var response = await client.PostAsJsonAsync("/api/connection", dto);
 
         Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
         var problem = await response.Content.ReadFromJsonAsync<ProblemDetailsResponse>();
-        Assert.Equal("Broker'a bağlanılamadı", problem!.Title);
+        Assert.Equal("Could not connect to broker", problem!.Title);
         Assert.Contains("127.0.0.1:1", problem.Detail);
     }
 

@@ -2,8 +2,8 @@ using MQTTnet;
 
 namespace MQFaker.Infrastructure.Mqtt;
 
-// Bağlantı yöneticisi ve publisher'ın paylaştığı tek MQTTnet client örneğini tutar.
-// Gate, aynı client üzerindeki bağlantı durumu değişikliklerini serileştirir.
+// Holds the single MQTTnet client instance shared by the connection manager and publisher.
+// Gate serializes connection state changes on that same client.
 public sealed class MqttnetClientProvider : IDisposable
 {
     public IMqttClient Client { get; } = new MqttClientFactory().CreateMqttClient();

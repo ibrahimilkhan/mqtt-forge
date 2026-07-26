@@ -2,6 +2,6 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace MQFaker.Api.Hubs;
 
-// Panelin canlı mesaj akışı için bağlandığı kanal. Sunucudan istemciye tek yönlü
-// yayın yapar; istemciden çağrılabilecek bir metodu bilinçli olarak yoktur.
+// The channel the console connects to for the live message stream. Broadcasts one way,
+// server to client; it deliberately exposes no client-callable method.
 public sealed class MqttHub : Hub;

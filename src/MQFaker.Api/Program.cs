@@ -17,7 +17,7 @@ builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<ConnectRequestDtoValidator>();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<MqttExceptionHandler>();
-// AllowCredentials, React geliştirme sunucusundan kurulan SignalR bağlantısı için gerekli
+// AllowCredentials is required for the SignalR connection made from the React dev server
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.WithOrigins("http://localhost:5173").AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
 
@@ -25,22 +25,22 @@ builder.Services.AddMqFaker();
 
 var app = builder.Build();
 
-// Beklenmedik hataları tek yerde ProblemDetails'e çevirir
+// Turns unexpected errors into ProblemDetails in one place
 app.UseExceptionHandler();
 app.UseCors();
 
-// wwwroot'taki geliştirme test konsolunu servis eder
+// Serves the development test console in wwwroot
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
 app.MapControllers();
 app.MapHub<MqttHub>("/hubs/mqtt");
 
-// Abone dinleyicisi kurucusunda MQTTnet olaylarına bağlanır; ilk istek beklenmeden
-// oluşturulur ki bağlantı kurulur kurulmaz gelen mesajlar yakalanabilsin.
+// The subscriber hooks MQTTnet events in its constructor; it is created without
+// waiting for the first request so messages are caught as soon as a connection opens.
 app.Services.GetRequiredService<IMqttSubscriber>();
 
 app.Run();
 
-// Integration testlerinin WebApplicationFactory ile erişebilmesi için
+// Exposed so integration tests can reach it through WebApplicationFactory
 public partial class Program;

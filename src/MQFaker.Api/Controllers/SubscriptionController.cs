@@ -23,12 +23,12 @@ public sealed class SubscriptionController : ControllerBase
         return Accepted();
     }
 
-    // Filtre yol parçası değil query olarak alınır; '#' ve '/' yolda güvenle taşınamaz
+    // The filter is taken as a query value, not a path segment; '#' and '/' cannot travel safely in a path
     [HttpDelete]
     public async Task<IActionResult> Unsubscribe([FromQuery] string topicFilter, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(topicFilter))
-            return BadRequest(new ProblemDetails { Title = "topicFilter gerekli", Status = 400 });
+            return BadRequest(new ProblemDetails { Title = "topicFilter is required", Status = 400 });
 
         await _service.UnsubscribeAsync(topicFilter, ct);
         return NoContent();

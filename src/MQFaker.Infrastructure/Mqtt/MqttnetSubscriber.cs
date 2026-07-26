@@ -49,7 +49,7 @@ public sealed class MqttnetSubscriber : IMqttSubscriber
     private void EnsureConnected()
     {
         if (!_client.IsConnected)
-            throw new NotConnectedException("Abone olmadan önce bir broker'a bağlanın.");
+            throw new NotConnectedException("Connect to a broker before subscribing.");
     }
 
     private Task OnMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs e)
@@ -64,7 +64,7 @@ public sealed class MqttnetSubscriber : IMqttSubscriber
         return _notifier.NotifyMessageReceivedAsync(message);
     }
 
-    // Broker bağlantı düşünce abonelikler de düşer; yerel listeyi gerçekle hizalar
+    // Subscriptions die with the broker connection; realigns the local list with reality
     private Task OnDisconnectedAsync(MqttClientDisconnectedEventArgs e)
     {
         _filters.Clear();

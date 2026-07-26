@@ -21,8 +21,8 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
         ? ConnectionState.Connected
         : ConnectionState.Disconnected;
 
-    // Tek aktif bağlantı ilkesi gereği, zaten bağlıysa önce mevcut bağlantıyı kapatır;
-    // böylece kullanıcı ayarları değiştirip tekrar bağlanabilir.
+    // Per the single-active-connection rule, closes the existing connection first
+    // if already connected, so the user can change settings and reconnect.
     public async Task ConnectAsync(BrokerConnectionSettings settings, CancellationToken ct)
     {
         await _gate.WaitAsync(ct);
@@ -38,7 +38,7 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 throw new BrokerUnreachableException(
-                    $"Broker'a bağlanılamadı ({settings.Host}:{settings.Port}): {ex.Message}", ex);
+                    $"Could not connect to broker ({settings.Host}:{settings.Port}): {ex.Message}", ex);
             }
         }
         finally

@@ -2,8 +2,8 @@ using MQFaker.Domain.Models;
 
 namespace MQFaker.Domain.Abstractions;
 
-// Broker'dan gelen mesajı dış dünyaya (panele) haber verir.
-// Domain'in teslimat teknolojisini (SignalR) bilmemesi için soyutlandı.
+// Announces a message received from the broker to the outside world (the console).
+// Abstracted so the domain stays unaware of the delivery technology (SignalR).
 public interface IMessageNotifier
 {
     Task NotifyMessageReceivedAsync(MqttMessage message);

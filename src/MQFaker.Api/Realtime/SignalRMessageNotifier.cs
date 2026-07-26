@@ -5,8 +5,8 @@ using MQFaker.Domain.Models;
 
 namespace MQFaker.Api.Realtime;
 
-// IMessageNotifier'ın SignalR gerçeklemesi. Tarayıcıya mesaj itmek bir teslimat
-// meselesi olduğu için Infrastructure'da değil Api katmanında durur.
+// SignalR implementation of IMessageNotifier. Pushing messages to the browser is a
+// delivery concern, so it lives in the Api layer rather than Infrastructure.
 public sealed class SignalRMessageNotifier : IMessageNotifier
 {
     public const string MessageReceived = "messageReceived";

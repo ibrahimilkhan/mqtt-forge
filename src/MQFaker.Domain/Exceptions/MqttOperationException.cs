@@ -1,21 +1,21 @@
 namespace MQFaker.Domain.Exceptions;
 
-// MQTT işlemlerinin bilinen hata durumları; Infrastructure kütüphaneye özgü
-// istisnaları bunlara çevirir, Api de bunları HTTP durumlarına eşler.
+// Known failure states of MQTT operations; Infrastructure translates
+// library-specific exceptions into these, and Api maps them to HTTP statuses.
 public abstract class MqttOperationException : Exception
 {
     protected MqttOperationException(string message, Exception? inner = null)
         : base(message, inner) { }
 }
 
-// Broker'a ulaşılamadı, bağlantı reddedildi veya kimlik doğrulama başarısız
+// Broker unreachable, connection refused, or authentication failed
 public sealed class BrokerUnreachableException : MqttOperationException
 {
     public BrokerUnreachableException(string message, Exception? inner = null)
         : base(message, inner) { }
 }
 
-// İşlem aktif bir bağlantı gerektiriyor ama bağlantı yok
+// The operation requires an active connection, but there is none
 public sealed class NotConnectedException : MqttOperationException
 {
     public NotConnectedException(string message, Exception? inner = null)

@@ -1,6 +1,6 @@
 namespace MQFaker.Domain.Models;
 
-// Broker'a bağlanmak için gereken tüm parametreler
+// Every parameter needed to connect to a broker
 public record BrokerConnectionSettings(
     string Host,
     int Port,

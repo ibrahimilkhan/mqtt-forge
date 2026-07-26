@@ -22,7 +22,7 @@ public sealed class MqttnetPublisher : IMqttPublisher
             .Build();
 
         if (!_client.IsConnected)
-            throw new NotConnectedException("Yayın yapmadan önce bir broker'a bağlanın.");
+            throw new NotConnectedException("Connect to a broker before publishing.");
 
         await _client.PublishAsync(message, ct);
     }
