@@ -15,6 +15,7 @@ public static class DependencyInjection
         services.AddSingleton<IMqttConnectionManager, MqttnetConnectionManager>();
         services.AddSingleton<IMqttPublisher, MqttnetPublisher>();
         services.AddSingleton<IMessageNotifier, SignalRMessageNotifier>();
+        services.AddSingleton<IConnectionStateNotifier, SignalRConnectionStateNotifier>();
         services.AddSingleton<IMqttSubscriber, MqttnetSubscriber>();
 
         // The settings path is read at resolve time, not registration time, so hosts

@@ -1,8 +1,10 @@
+using MQFaker.Domain.Abstractions;
 using MQFaker.Domain.Enums;
 using MQFaker.Domain.Models;
 using MQFaker.Infrastructure.Mqtt;
 using MQFaker.IntegrationTests.Support;
 using MQTTnet;
+using NSubstitute;
 using Xunit;
 
 namespace MQFaker.IntegrationTests.Mqtt;
@@ -17,7 +19,7 @@ public class MqttnetConnectAndPublishTests : IClassFixture<MosquittoFixture>
     public async Task Connect_then_publish_delivers_message_to_subscriber()
     {
         using var provider = new MqttnetClientProvider();
-        var manager = new MqttnetConnectionManager(provider);
+        var manager = new MqttnetConnectionManager(provider, Substitute.For<IConnectionStateNotifier>());
         var publisher = new MqttnetPublisher(provider);
         var settings = new BrokerConnectionSettings(_broker.Host, _broker.Port, "mqfaker-test", null, null, false);
 

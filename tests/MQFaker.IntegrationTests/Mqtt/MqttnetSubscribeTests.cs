@@ -27,7 +27,7 @@ public class MqttnetSubscribeTests : IClassFixture<MosquittoFixture>
             .Returns(Task.CompletedTask);
 
         using var provider = new MqttnetClientProvider();
-        var manager = new MqttnetConnectionManager(provider);
+        var manager = new MqttnetConnectionManager(provider, Substitute.For<IConnectionStateNotifier>());
         var subscriber = new MqttnetSubscriber(provider, notifier);
 
         await manager.ConnectAsync(Settings("sub-test"), CancellationToken.None);
@@ -50,7 +50,7 @@ public class MqttnetSubscribeTests : IClassFixture<MosquittoFixture>
     public async Task Unsubscribe_removes_the_filter()
     {
         using var provider = new MqttnetClientProvider();
-        var manager = new MqttnetConnectionManager(provider);
+        var manager = new MqttnetConnectionManager(provider, Substitute.For<IConnectionStateNotifier>());
         var subscriber = new MqttnetSubscriber(provider, Substitute.For<IMessageNotifier>());
 
         await manager.ConnectAsync(Settings("unsub-test"), CancellationToken.None);
@@ -75,7 +75,7 @@ public class MqttnetSubscribeTests : IClassFixture<MosquittoFixture>
     public async Task Disconnecting_clears_active_filters()
     {
         using var provider = new MqttnetClientProvider();
-        var manager = new MqttnetConnectionManager(provider);
+        var manager = new MqttnetConnectionManager(provider, Substitute.For<IConnectionStateNotifier>());
         var subscriber = new MqttnetSubscriber(provider, Substitute.For<IMessageNotifier>());
 
         await manager.ConnectAsync(Settings("clear-test"), CancellationToken.None);
