@@ -82,16 +82,22 @@
   /* ---- yerleşim ---- */
   .layout {
     display: grid;
-    grid-template-columns: minmax(320px, 400px) 1fr;
+    grid-template-columns: minmax(300px, 360px) 1.1fr 1fr;
     gap: 1px;
     background: var(--rule);
     min-height: calc(100vh - 57px);
   }
   .panel { background: var(--paper); padding: 22px 20px 40px; }
+  .tree-pane { background: var(--surface); padding: 22px 20px 40px; }
   .wire  { background: var(--surface); padding: 22px 20px 40px; }
 
+  @media (max-width: 1180px) {
+    .layout { grid-template-columns: minmax(300px, 360px) 1fr; }
+    .wire { grid-column: 1 / -1; }
+  }
   @media (max-width: 800px) {
     .layout { grid-template-columns: 1fr; }
+    .wire { grid-column: auto; }
   }
 
   /* ---- form blokları ---- */
@@ -273,6 +279,57 @@
     padding-left: 12px;
   }
 
+  /* ---- konu ağacı: broker'ın anlık topolojisi ---- */
+  .tree { font-family: var(--mono); font-size: 12.5px; }
+
+  .node {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 3px 6px 3px calc(var(--depth) * 15px + 6px);
+    border-radius: 2px;
+    position: relative;
+  }
+  .node[data-branch="true"] { cursor: pointer; }
+  .node[data-branch="true"]:hover { background: var(--paper); }
+
+  .twisty {
+    flex: none;
+    width: 10px;
+    color: var(--muted);
+    font-size: 9px;
+    transition: transform 0.12s ease;
+  }
+  .branch[data-open="false"] > .node .twisty { transform: rotate(-90deg); }
+  .branch[data-open="false"] > .kids { display: none; }
+  .node[data-branch="false"] .twisty { visibility: hidden; }
+
+  .seg { color: var(--ink); }
+  .node[data-branch="true"] > .seg { font-weight: 600; }
+
+  .val {
+    color: var(--signal);
+    margin-left: auto;
+    padding-left: 14px;
+    max-width: 55%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .hits {
+    flex: none;
+    font-size: 9.5px;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+  }
+
+  /* mesaj gelince ilgili satır bir kez yanıp söner */
+  .node.flash { animation: flash 700ms ease-out; }
+  @keyframes flash {
+    from { background: color-mix(in srgb, var(--signal) 26%, transparent); }
+    to   { background: transparent; }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; }
   }
@@ -349,6 +406,13 @@
       </div>
     </div>
 
+  </section>
+
+  <section class="tree-pane">
+    <h2 class="eyebrow">Konu ağacı</h2>
+    <div class="tree" id="tree">
+      <p class="empty">Henüz konu yok. Bağlandığınızda broker'ın ağacı burada oluşur.</p>
+    </div>
   </section>
 
   <section class="wire">
@@ -438,6 +502,7 @@ $('btn-connect').addEventListener('click', async () => {
   if (r.ok) {
     setState((await r.json()).state);
     write({ kind: 'ok', verb: 'Bağlandı', body: `${payload.host}:${payload.port} · ${payload.clientId}` });
+    resetTree(); // yeni bağlantı, yeni ağaç; saklı mesajlar hemen yeniden doldurur
     if ($('autoSubscribe').checked) await subscribe('#', 0);
     await refreshFilters();
   } else {
@@ -529,6 +594,103 @@ $('btn-subscribe').addEventListener('click', async () => {
   await refreshFilters();
 });
 
+// ---- konu ağacı ----
+const treeBox = $('tree');
+const treeRoot = { children: new Map(), kidsEl: treeBox, parent: null };
+
+function makeBranch(name, depth, parent) {
+  const branchEl = document.createElement('div');
+  branchEl.className = 'branch';
+  branchEl.dataset.open = 'true';
+  branchEl.dataset.name = name;
+
+  const nodeEl = document.createElement('div');
+  nodeEl.className = 'node';
+  nodeEl.dataset.branch = 'false';
+  nodeEl.style.setProperty('--depth', depth);
+
+  const twisty = document.createElement('span');
+  twisty.className = 'twisty';
+  twisty.textContent = '▾';
+
+  const seg = document.createElement('span');
+  seg.className = 'seg';
+  seg.textContent = name;
+
+  const val = document.createElement('span');
+  val.className = 'val';
+
+  const hits = document.createElement('span');
+  hits.className = 'hits';
+
+  nodeEl.append(twisty, seg, val, hits);
+
+  const kidsEl = document.createElement('div');
+  kidsEl.className = 'kids';
+  branchEl.append(nodeEl, kidsEl);
+
+  nodeEl.addEventListener('click', () => {
+    if (nodeEl.dataset.branch === 'true')
+      branchEl.dataset.open = branchEl.dataset.open === 'true' ? 'false' : 'true';
+  });
+
+  // Tek kalıcı dinleyici: yanıp sönme bitince sınıfı bırakma, bayat durum kalmasın
+  nodeEl.addEventListener('animationend', () => nodeEl.classList.remove('flash'));
+
+  // Kardeşler alfabetik sırada tutulur; ağaç mesaj geldikçe zıplamaz
+  let before = null;
+  for (const sibling of parent.kidsEl.children) {
+    if (sibling.dataset.name.localeCompare(name, 'tr') > 0) { before = sibling; break; }
+  }
+  parent.kidsEl.insertBefore(branchEl, before);
+
+  return { children: new Map(), parent, branchEl, nodeEl, valEl: val, hitsEl: hits, kidsEl, hits: 0 };
+}
+
+function ensureNode(segments) {
+  let node = treeRoot;
+  segments.forEach((seg, depth) => {
+    let child = node.children.get(seg);
+    if (!child) {
+      child = makeBranch(seg, depth, node);
+      node.children.set(seg, child);
+      if (node.nodeEl) node.nodeEl.dataset.branch = 'true';
+    }
+    node = child;
+  });
+  return node;
+}
+
+// Kapalı bir dalın içindeki satır görünmez; o durumda en yakın görünen ataya iner
+function flash(node) {
+  let target = node;
+  while (target.parent?.nodeEl && target.nodeEl.offsetParent === null) target = target.parent;
+
+  const el = target.nodeEl;
+  el.classList.remove('flash');
+  void el.offsetWidth; // reflow: aynı satıra art arda mesaj gelirse animasyon yeniden başlasın
+  el.classList.add('flash');
+}
+
+function applyToTree(message) {
+  treeBox.querySelector('.empty')?.remove();
+
+  const node = ensureNode(message.topic.split('/'));
+  node.hits++;
+  node.valEl.textContent = message.payload;
+  node.hitsEl.textContent = node.hits > 1 ? `×${node.hits}` : '';
+  flash(node);
+}
+
+function resetTree() {
+  treeRoot.children.clear();
+  treeBox.textContent = '';
+  const empty = document.createElement('p');
+  empty.className = 'empty';
+  empty.textContent = 'Henüz konu yok. Bağlandığınızda broker\'ın ağacı burada oluşur.';
+  treeBox.append(empty);
+}
+
 // ---- canlı akış ----
 const hub = new signalR.HubConnectionBuilder()
   .withUrl('/hubs/mqtt')
@@ -539,6 +701,7 @@ hub.on('messageReceived', m => {
   const stamps = [`QoS ${m.qos}`];
   if (m.retain) stamps.push('SAKLI');
   write({ kind: 'recv', verb: 'Geldi', topic: m.topic, body: m.payload, stamps });
+  applyToTree(m);
 });
 
 // Açılışta durumu, kayıtlı ayarları ve abonelikleri geri yükle
