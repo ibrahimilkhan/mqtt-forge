@@ -6,7 +6,12 @@ namespace MQFaker.Infrastructure.Mqtt;
 // Gate serializes connection state changes on that same client.
 public sealed class MqttnetClientProvider : IDisposable
 {
-    public IMqttClient Client { get; } = new MqttClientFactory().CreateMqttClient();
+    public MqttnetClientProvider() : this(new MqttClientFactory().CreateMqttClient()) { }
+
+    // Lets tests supply a substitute client; the host always resolves the parameterless one.
+    public MqttnetClientProvider(IMqttClient client) => Client = client;
+
+    public IMqttClient Client { get; }
 
     public SemaphoreSlim Gate { get; } = new(1, 1);
 
