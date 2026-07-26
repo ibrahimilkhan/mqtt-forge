@@ -121,6 +121,32 @@
     border-bottom: 1px solid var(--rule);
   }
 
+  /* Başlık + yanındaki eylemler; çizgi ikisinin altından geçer */
+  .pane-head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 12px;
+    padding-bottom: 7px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .pane-head .eyebrow { margin: 0; padding: 0; border: none; }
+
+  .pane-actions { margin-left: auto; display: flex; gap: 2px; }
+  .pane-actions button {
+    all: unset;
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 9.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 3px 7px;
+    border-radius: 2px;
+  }
+  .pane-actions button:hover { color: var(--ink); background: var(--paper); }
+  .pane-actions button:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
   /* ---- üst çubuktaki panel menüsü ---- */
   .menu { display: flex; gap: 2px; }
   .menu-btn {
@@ -502,14 +528,22 @@
   </aside>
 
   <section class="tree-pane">
-    <h2 class="eyebrow">Konu ağacı</h2>
+    <div class="pane-head">
+      <h2 class="eyebrow">Konu ağacı</h2>
+      <div class="pane-actions">
+        <button id="btn-expand">Genişlet</button>
+        <button id="btn-collapse">Daralt</button>
+      </div>
+    </div>
     <div class="tree" id="tree">
       <p class="empty">Henüz konu yok. Bağlandığınızda broker'ın ağacı burada oluşur.</p>
     </div>
   </section>
 
   <section class="wire">
-    <h2 class="eyebrow">Hat kaydı</h2>
+    <div class="pane-head">
+      <h2 class="eyebrow">Hat kaydı</h2>
+    </div>
     <div class="log" id="log">
       <p class="empty">Henüz bir şey gönderilmedi. Bir broker'a bağlanın, sonra mesaj yayınlayın.</p>
     </div>
@@ -715,10 +749,13 @@ $('btn-subscribe').addEventListener('click', async () => {
 const treeBox = $('tree');
 const treeRoot = { children: new Map(), kidsEl: treeBox, parent: null };
 
+// Genişlet/Daralt yalnızca mevcut dalları değil sonradan gelenleri de etkiler
+let yeniDalAcik = false;
+
 function makeBranch(name, depth, parent) {
   const branchEl = document.createElement('div');
   branchEl.className = 'branch';
-  branchEl.dataset.open = 'false'; // dallar kapalı başlar; özet zaten başlıkta görünür
+  branchEl.dataset.open = String(yeniDalAcik); // varsayılan kapalı; özet zaten başlıkta görünür
   branchEl.dataset.name = name;
 
   const nodeEl = document.createElement('div');
@@ -822,6 +859,14 @@ function applyToTree(message) {
 
   flash(node);
 }
+
+function tumDallar(acik) {
+  yeniDalAcik = acik;
+  for (const branch of treeBox.querySelectorAll('.branch')) branch.dataset.open = String(acik);
+}
+
+$('btn-expand').addEventListener('click', () => tumDallar(true));
+$('btn-collapse').addEventListener('click', () => tumDallar(false));
 
 function resetTree() {
   treeRoot.children.clear();
