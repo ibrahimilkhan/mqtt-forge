@@ -1,0 +1,25 @@
+/* The bar owns placement, so the readout carries no margin of its own. */
+.readout {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.lamp {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex: none;
+}
+.readout[data-state="Connected"] { color: var(--live); }
+.readout[data-state="Connected"] .lamp {
+  background: var(--live);
+  animation: pulse 2.4s ease-in-out infinite;
+}
+.readout[data-state="Faulted"] { color: var(--fault); }
+.readout[data-state="Faulted"] .lamp { background: var(--fault); }
+
+@keyframes pulse { 50% { opacity: 0.35; } }
