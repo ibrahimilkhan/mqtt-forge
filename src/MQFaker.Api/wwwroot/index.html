@@ -305,6 +305,7 @@
       </div>
       <div class="checks">
         <label><input type="checkbox" id="useTls"> TLS kullan</label>
+        <label><input type="checkbox" id="autoSubscribe" checked> Bağlanınca her konuya abone ol</label>
       </div>
       <div class="actions">
         <button id="btn-connect">Bağlan</button>
@@ -362,6 +363,7 @@
 <script>
 const $ = id => document.getElementById(id);
 const log = $('log');
+const MAX_ENTRIES = 500;
 
 // Konu yolunu MQTT'deki gibi parçalara ayırıp ayraçları soluklaştırır
 function renderTopic(topic) {
@@ -386,6 +388,9 @@ function write({ kind, verb, topic, body, stamps }) {
     ${body ? `<div class="body">${escapeHtml(body)}</div>` : ''}
   `;
   log.prepend(el);
+
+  // '#' aboneliğinde yoğun bir broker sayfayı şişirebilir; en eskileri at
+  while (log.childElementCount > MAX_ENTRIES) log.lastElementChild.remove();
 }
 
 function setState(state) {
@@ -433,6 +438,7 @@ $('btn-connect').addEventListener('click', async () => {
   if (r.ok) {
     setState((await r.json()).state);
     write({ kind: 'ok', verb: 'Bağlandı', body: `${payload.host}:${payload.port} · ${payload.clientId}` });
+    if ($('autoSubscribe').checked) await subscribe('#', 0);
     await refreshFilters();
   } else {
     setState('Faulted');
@@ -504,10 +510,7 @@ async function unsubscribe(topicFilter) {
   await refreshFilters();
 }
 
-$('btn-subscribe').addEventListener('click', async () => {
-  const topicFilter = $('filter').value;
-  const qos = Number(document.querySelector('input[name=subqos]:checked').value);
-
+async function subscribe(topicFilter, qos) {
   const r = await fetch('/api/subscriptions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -519,6 +522,10 @@ $('btn-subscribe').addEventListener('click', async () => {
   } else {
     write({ kind: 'fault', verb: 'Abone olunamadı', topic: topicFilter, body: await describeError(r) });
   }
+}
+
+$('btn-subscribe').addEventListener('click', async () => {
+  await subscribe($('filter').value, Number(document.querySelector('input[name=subqos]:checked').value));
   await refreshFilters();
 });
 
