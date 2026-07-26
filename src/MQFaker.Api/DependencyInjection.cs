@@ -1,3 +1,4 @@
+using MQFaker.Api.Realtime;
 using MQFaker.Application.Services;
 using MQFaker.Domain.Abstractions;
 using MQFaker.Infrastructure.Mqtt;
@@ -13,6 +14,8 @@ public static class DependencyInjection
         services.AddSingleton<MqttnetClientProvider>();
         services.AddSingleton<IMqttConnectionManager, MqttnetConnectionManager>();
         services.AddSingleton<IMqttPublisher, MqttnetPublisher>();
+        services.AddSingleton<IMessageNotifier, SignalRMessageNotifier>();
+        services.AddSingleton<IMqttSubscriber, MqttnetSubscriber>();
 
         // Ayar yolu kayıt anında değil çözümleme anında okunur; böylece testler gibi
         // yapılandırmayı sonradan ekleyen barındırıcılar da geçerli değeri verebilir.
@@ -26,6 +29,7 @@ public static class DependencyInjection
 
         services.AddSingleton<ConnectionService>();
         services.AddSingleton<PublishService>();
+        services.AddSingleton<SubscriptionService>();
         return services;
     }
 }
