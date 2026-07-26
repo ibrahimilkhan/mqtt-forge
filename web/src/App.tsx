@@ -6,6 +6,8 @@ import styles from './App.module.css';
 import { StatusReadout } from './components/StatusReadout';
 import { BrokerPanel } from './features/connection/BrokerPanel';
 import { PANELS, type PanelId } from './features/panels';
+import { PublishPanel } from './features/publish/PublishPanel';
+import { SubscribePanel } from './features/subscribe/SubscribePanel';
 import type { Hub } from './realtime/hub';
 import { useHubBridge } from './realtime/useHubBridge';
 
@@ -25,7 +27,7 @@ export function App({ hub }: { hub: Hub }) {
           MQ<span>Faker</span>
         </h1>
 
-        <div className={styles.menu}>
+        <nav className={styles.menu} aria-label="Panels">
           {PANELS.map((panel) => (
             <button
               key={panel.id}
@@ -37,7 +39,7 @@ export function App({ hub }: { hub: Hub }) {
               {panel.label}
             </button>
           ))}
-        </div>
+        </nav>
 
         <div className={styles.readoutSlot}>
           <StatusReadout state={state} />
@@ -46,8 +48,8 @@ export function App({ hub }: { hub: Hub }) {
 
       <div className={styles.layout} data-testid="layout" data-panel={openPanel ? 'open' : 'closed'}>
         {openPanel === 'broker' && <BrokerPanel onClose={() => setOpenPanel(null)} />}
-        {openPanel === 'subscribe' && <div />}
-        {openPanel === 'publish' && <div />}
+        {openPanel === 'subscribe' && <SubscribePanel onClose={() => setOpenPanel(null)} />}
+        {openPanel === 'publish' && <PublishPanel onClose={() => setOpenPanel(null)} />}
         <section className={styles.treePane} />
         <section className={styles.wire} />
       </div>

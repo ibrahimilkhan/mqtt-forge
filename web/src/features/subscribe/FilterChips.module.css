@@ -1,0 +1,25 @@
+/* badges for the active subscriptions */
+.filters { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.filters:empty { display: none; }
+.filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  padding: 4px 6px 4px 9px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+}
+.filter button {
+  all: unset;
+  cursor: pointer;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.filter button:hover { color: var(--fault); }
+.filter button:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
