@@ -8,6 +8,7 @@ import { QosSelect } from '../../components/QosSelect';
 import styles from '../../styles/panel.module.css';
 import { useLogStore } from '../../stores/logStore';
 import { describeError } from '../connection/useConnectionActions';
+import { useConnectionState } from '../connection/useConnectionState';
 import { FilterChips } from './FilterChips';
 
 export function SubscribePanel({ onClose }: { onClose: () => void }) {
@@ -18,6 +19,7 @@ export function SubscribePanel({ onClose }: { onClose: () => void }) {
   const refreshFilters = () => queryClient.invalidateQueries({ queryKey: queryKeys.subscriptions });
 
   const { data: filters } = useQuery({ queryKey: queryKeys.subscriptions, queryFn: getSubscriptions });
+  const { isOnline } = useConnectionState();
 
   const subscribeMutation = useMutation({
     mutationFn: () => subscribe({ topicFilter, qos }),
@@ -63,7 +65,7 @@ export function SubscribePanel({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className={styles.actions}>
-        <button type="button" onClick={() => subscribeMutation.mutate()}>
+        <button type="button" onClick={() => subscribeMutation.mutate()} disabled={!isOnline}>
           Subscribe
         </button>
       </div>

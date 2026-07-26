@@ -22,4 +22,12 @@
 .readout[data-state="Faulted"] { color: var(--fault); }
 .readout[data-state="Faulted"] .lamp { background: var(--fault); }
 
+/* Reconnecting borrows the fault colour but keeps a pulse, so it reads as "working on it"
+   rather than "broken". */
+.readout[data-state="Reconnecting"] { color: var(--fault); }
+.readout[data-state="Reconnecting"] .lamp {
+  background: var(--fault);
+  animation: pulse 1s ease-in-out infinite;
+}
+
 @keyframes pulse { 50% { opacity: 0.35; } }

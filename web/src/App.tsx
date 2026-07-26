@@ -1,10 +1,8 @@
-import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { getConnectionState } from './api/connection';
-import { queryKeys } from './api/queryKeys';
 import styles from './App.module.css';
 import { StatusReadout } from './components/StatusReadout';
 import { BrokerPanel } from './features/connection/BrokerPanel';
+import { useBrokerAddress, useConnectionState } from './features/connection/useConnectionState';
 import { WireLog } from './features/monitor/WireLog';
 import { TopicTree } from './features/topics/TopicTree';
 import { PANELS, type PanelId } from './features/panels';
@@ -12,6 +10,7 @@ import { PublishPanel } from './features/publish/PublishPanel';
 import { SubscribePanel } from './features/subscribe/SubscribePanel';
 import type { Hub } from './realtime/hub';
 import { useHubBridge } from './realtime/useHubBridge';
+import { useHubStatusStore } from './stores/hubStatusStore';
 
 export function App({ hub }: { hub: Hub }) {
   useHubBridge(hub);
@@ -19,8 +18,9 @@ export function App({ hub }: { hub: Hub }) {
   // Connecting comes first; the panel can be reopened from the menu once closed.
   const [openPanel, setOpenPanel] = useState<PanelId | null>('broker');
 
-  const { data } = useQuery({ queryKey: queryKeys.connection, queryFn: getConnectionState });
-  const state = data?.state ?? 'Disconnected';
+  const { state } = useConnectionState();
+  const where = useBrokerAddress();
+  const hubStatus = useHubStatusStore((s) => s.status);
 
   return (
     <>
@@ -44,7 +44,7 @@ export function App({ hub }: { hub: Hub }) {
         </nav>
 
         <div className={styles.readoutSlot}>
-          <StatusReadout state={state} />
+          <StatusReadout state={state} where={where} reconnecting={hubStatus === 'reconnecting'} />
         </div>
       </div>
 
