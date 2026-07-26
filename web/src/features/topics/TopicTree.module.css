@@ -1,0 +1,105 @@
+/* Heading plus its actions; the rule runs beneath both */
+.paneHead {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--rule);
+}
+.paneHead .eyebrow { margin: 0; padding: 0; border: none; }
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.paneActions { margin-left: auto; display: flex; gap: 2px; }
+.paneActions button {
+  all: unset;
+  display: flex;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 4px;
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1;
+}
+.paneActions button:hover { color: var(--ink); background: var(--paper); }
+.paneActions button:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+/* ---- topic tree: the broker's live topology ---- */
+.tree { font-family: var(--mono); font-size: 13.5px; font-weight: 600; }
+
+.node {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  /* Fixed indent step per level, so deep topics don't drift off to the right */
+  padding: 3px 6px 3px calc(var(--depth) * 14px + 6px);
+  border-radius: 2px;
+  position: relative;
+  /* The row is remounted when a message lands on it, which restarts this animation. */
+  animation: flash 700ms ease-out;
+}
+/* Spacing only for top-level siblings: applied at every level it would
+   accumulate in deep trees and thin them out needlessly */
+.tree > .branch + .branch > .node { margin-top: 9px; }
+.node[data-branch="true"] { cursor: pointer; }
+.node[data-branch="true"]:hover { background: var(--paper); }
+
+.twisty {
+  flex: none;
+  width: 10px;
+  color: var(--muted);
+  font-size: 10px;
+  transition: transform 0.12s ease;
+}
+.branch[data-open="false"] > .node .twisty { transform: rotate(-90deg); }
+.node[data-branch="false"] .twisty { visibility: hidden; }
+
+/* Every level shares one weight; the twisty already says it's a branch */
+.seg { flex: none; color: var(--ink); }
+
+/* The value sits right beside the topic name; the eye reads them as one */
+.val {
+  color: var(--signal);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* '=' separates topic from value; it never appears when there is no value */
+.val:not(:empty)::before {
+  content: '=';
+  color: var(--rule);
+  margin-right: 5px;
+}
+
+/* The summary sits next to the heading; right-aligning it walked the eye across the row.
+   It stays lighter than the topic name so the name is read first — the distinction
+   comes from weight rather than size, because 8.5px was simply unreadable. */
+.meta {
+  flex: none;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+/* An open branch already shows its contents, so the summary is just noise.
+   Applies to real branches only: leaves have nothing to expand, and their own
+   message counters must stay visible at all times. */
+.branch[data-open="true"] > .node[data-branch="true"] > .meta { display: none; }
+
+@keyframes flash {
+  from { background: color-mix(in srgb, var(--signal) 26%, transparent); }
+  to   { background: transparent; }
+}

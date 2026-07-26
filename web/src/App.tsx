@@ -5,6 +5,8 @@ import { queryKeys } from './api/queryKeys';
 import styles from './App.module.css';
 import { StatusReadout } from './components/StatusReadout';
 import { BrokerPanel } from './features/connection/BrokerPanel';
+import { WireLog } from './features/monitor/WireLog';
+import { TopicTree } from './features/topics/TopicTree';
 import { PANELS, type PanelId } from './features/panels';
 import { PublishPanel } from './features/publish/PublishPanel';
 import { SubscribePanel } from './features/subscribe/SubscribePanel';
@@ -50,8 +52,12 @@ export function App({ hub }: { hub: Hub }) {
         {openPanel === 'broker' && <BrokerPanel onClose={() => setOpenPanel(null)} />}
         {openPanel === 'subscribe' && <SubscribePanel onClose={() => setOpenPanel(null)} />}
         {openPanel === 'publish' && <PublishPanel onClose={() => setOpenPanel(null)} />}
-        <section className={styles.treePane} />
-        <section className={styles.wire} />
+        <section className={styles.treePane}>
+          <TopicTree />
+        </section>
+        <section className={styles.wire}>
+          <WireLog />
+        </section>
       </div>
     </>
   );
