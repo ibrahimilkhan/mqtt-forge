@@ -10,8 +10,8 @@ public sealed class JsonConnectionSettingsStore : IConnectionSettingsStore
 
     public JsonConnectionSettingsStore(string filePath) => _filePath = filePath;
 
-    // Bozuk/okunamayan dosyayı hata olarak değil "kayıt yok" olarak ele alır;
-    // ayarlar yalnızca bir kolaylık önbelleği olduğu için uygulama kendi kendini toparlar.
+    // Treats a corrupt/unreadable file as "no saved settings" rather than an error;
+    // settings are only a convenience cache, so the app recovers on its own.
     public async Task<BrokerConnectionSettings?> LoadAsync(CancellationToken ct)
     {
         if (!File.Exists(_filePath)) return null;
@@ -27,8 +27,8 @@ public sealed class JsonConnectionSettingsStore : IConnectionSettingsStore
         }
     }
 
-    // Önce geçici dosyaya yazıp sonra yer değiştirir; yazma yarıda kalırsa
-    // mevcut ayar dosyası bozulmadan kalır.
+    // Writes to a temp file then swaps it in; if the write is interrupted,
+    // the existing settings file stays intact.
     public async Task SaveAsync(BrokerConnectionSettings settings, CancellationToken ct)
     {
         var directory = Path.GetDirectoryName(_filePath);

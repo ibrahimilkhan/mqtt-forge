@@ -39,7 +39,7 @@ public class SubscriptionEndpointTests : IClassFixture<MqFakerApiFactory>, IClas
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
 
-    // Uçtan uca: abone ol -> harici yayıncı mesaj bassın -> SignalR ile panele düşsün
+    // End to end: subscribe -> an external publisher sends -> it reaches the console over SignalR
     [Fact]
     public async Task Incoming_message_reaches_a_SignalR_client()
     {

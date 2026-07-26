@@ -4,8 +4,8 @@ using Microsoft.Extensions.Configuration;
 
 namespace MQFaker.IntegrationTests.Support;
 
-// API'yi her test sınıfı için ayarları boş, benzersiz bir dosya yoluyla ayağa kaldırır;
-// böylece testler birbirinin kaydettiği ayarlardan etkilenmez
+// Boots the API with an empty, unique settings path per test class, so tests
+// are not affected by settings another test saved
 public sealed class MqFakerApiFactory : WebApplicationFactory<Program>
 {
     private readonly string _settingsPath =

@@ -1,6 +1,6 @@
 namespace MQFaker.Api.Contracts;
 
-// Kaydedilmiş ayarların panele dönen hâli. Şifre bilinçli olarak yoktur;
-// yalnızca kayıtlı bir şifre bulunduğu bilgisi taşınır.
+// Saved settings as returned to the console. The password is deliberately absent;
+// only the fact that one is stored is carried.
 public record SavedConnectionDto(
     string Host, int Port, string ClientId, string? Username, bool HasPassword, bool UseTls);

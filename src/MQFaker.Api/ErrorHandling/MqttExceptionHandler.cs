@@ -4,8 +4,8 @@ using MQFaker.Domain.Exceptions;
 
 namespace MQFaker.Api.ErrorHandling;
 
-// Bilinen MQTT hatalarını okunabilir ProblemDetails'e çevirir; diğer istisnaları
-// bir sonraki işleyiciye (varsayılan 500) bırakır.
+// Turns known MQTT failures into readable ProblemDetails; leaves other exceptions
+// to the next handler (default 500).
 public sealed class MqttExceptionHandler : IExceptionHandler
 {
     private readonly IProblemDetailsService _problemDetailsService;
@@ -18,8 +18,8 @@ public sealed class MqttExceptionHandler : IExceptionHandler
     {
         var (status, title) = exception switch
         {
-            BrokerUnreachableException => (StatusCodes.Status502BadGateway, "Broker'a bağlanılamadı"),
-            NotConnectedException => (StatusCodes.Status409Conflict, "Bağlantı yok"),
+            BrokerUnreachableException => (StatusCodes.Status502BadGateway, "Could not connect to broker"),
+            NotConnectedException => (StatusCodes.Status409Conflict, "Not connected"),
             _ => (0, string.Empty)
         };
 

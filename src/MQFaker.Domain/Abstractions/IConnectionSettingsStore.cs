@@ -2,7 +2,7 @@ using MQFaker.Domain.Models;
 
 namespace MQFaker.Domain.Abstractions;
 
-// Son bağlantı ayarlarını yerel olarak saklar; uygulama açılışında geri yükler
+// Persists the last connection settings locally; restored on application start
 public interface IConnectionSettingsStore
 {
     Task<BrokerConnectionSettings?> LoadAsync(CancellationToken ct);

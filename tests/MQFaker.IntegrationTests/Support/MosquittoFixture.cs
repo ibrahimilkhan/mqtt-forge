@@ -5,7 +5,7 @@ using Xunit;
 
 namespace MQFaker.IntegrationTests.Support;
 
-// Test süresince tek bir Mosquitto broker container'ı ayağa kaldırır
+// Starts a single Mosquitto broker container for the lifetime of the tests
 public sealed class MosquittoFixture : IAsyncLifetime
 {
     private readonly IContainer _container = new ContainerBuilder("eclipse-mosquitto:2")

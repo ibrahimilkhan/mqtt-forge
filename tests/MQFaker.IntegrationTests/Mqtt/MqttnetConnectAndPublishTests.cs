@@ -21,7 +21,7 @@ public class MqttnetConnectAndPublishTests : IClassFixture<MosquittoFixture>
         var publisher = new MqttnetPublisher(provider);
         var settings = new BrokerConnectionSettings(_broker.Host, _broker.Port, "mqfaker-test", null, null, false);
 
-        // Bağımsız bir doğrulama abonesi kurar; üretim kodundan ayrı, sadece testin gözü
+        // An independent verifying subscriber, separate from production code: the test's own eye
         using var verifier = new MqttClientFactory().CreateMqttClient();
         var received = new TaskCompletionSource<string>();
         verifier.ApplicationMessageReceivedAsync += e =>

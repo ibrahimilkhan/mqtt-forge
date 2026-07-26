@@ -10,15 +10,15 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddMqFaker(this IServiceCollection services)
     {
-        // Tek MQTTnet client tüm istekler arasında paylaşılır (tek aktif bağlantı)
+        // A single MQTTnet client is shared across all requests (one active connection)
         services.AddSingleton<MqttnetClientProvider>();
         services.AddSingleton<IMqttConnectionManager, MqttnetConnectionManager>();
         services.AddSingleton<IMqttPublisher, MqttnetPublisher>();
         services.AddSingleton<IMessageNotifier, SignalRMessageNotifier>();
         services.AddSingleton<IMqttSubscriber, MqttnetSubscriber>();
 
-        // Ayar yolu kayıt anında değil çözümleme anında okunur; böylece testler gibi
-        // yapılandırmayı sonradan ekleyen barındırıcılar da geçerli değeri verebilir.
+        // The settings path is read at resolve time, not registration time, so hosts
+        // that add configuration later — such as tests — still supply the right value.
         services.AddSingleton<IConnectionSettingsStore>(sp =>
         {
             var config = sp.GetRequiredService<IConfiguration>();

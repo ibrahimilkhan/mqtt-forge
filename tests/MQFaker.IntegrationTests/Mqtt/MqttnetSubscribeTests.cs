@@ -35,7 +35,7 @@ public class MqttnetSubscribeTests : IClassFixture<MosquittoFixture>
 
         Assert.Contains("sensors/#", subscriber.ActiveFilters);
 
-        // Harici bir yayıncı gerçekten broker'a mesaj bassın
+        // Have an external publisher actually send a message to the broker
         using var external = new MqttClientFactory().CreateMqttClient();
         await external.ConnectAsync(new MqttClientOptionsBuilder()
             .WithTcpServer(_broker.Host, _broker.Port).Build());
@@ -84,7 +84,7 @@ public class MqttnetSubscribeTests : IClassFixture<MosquittoFixture>
 
         await manager.DisconnectAsync(CancellationToken.None);
 
-        // Kopma olayı asenkron tetiklenir; kısa bir pencere tanı
+        // The disconnect event fires asynchronously; allow a short window
         var deadline = DateTime.UtcNow.AddSeconds(5);
         while (subscriber.ActiveFilters.Count > 0 && DateTime.UtcNow < deadline)
             await Task.Delay(50);

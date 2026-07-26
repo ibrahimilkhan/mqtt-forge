@@ -1,4 +1,4 @@
 namespace MQFaker.Domain.Models;
 
-// TopicFilter joker karakter içerebilir: tek seviye için '+', çok seviye için '#'
+// TopicFilter may contain wildcards: '+' for a single level, '#' for multiple levels
 public record SubscriptionRequest(string TopicFilter, int Qos);
