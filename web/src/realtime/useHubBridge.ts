@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { queryKeys } from '../api/queryKeys';
 import { createFrameBuffer } from '../lib/frameBuffer';
+import { useHubStatusStore } from '../stores/hubStatusStore';
 import { useLogStore } from '../stores/logStore';
 import { useTopicTreeStore } from '../stores/topicTreeStore';
 import type { MqttMessage } from '../types/api';
@@ -20,9 +21,13 @@ export function useHubBridge(hub: Hub) {
     const unsubscribe = hub.subscribe({
       messageReceived: (message) => buffer.push(message),
       connectionStateChanged: (payload) => queryClient.setQueryData(queryKeys.connection, payload),
+      reconnecting: () => useHubStatusStore.getState().setStatus('reconnecting'),
       // While the hub was down the broker state may have moved on; refetch rather than
       // trust what is cached.
-      reconnected: () => void queryClient.invalidateQueries(),
+      reconnected: () => {
+        useHubStatusStore.getState().setStatus('live');
+        void queryClient.invalidateQueries();
+      },
     });
 
     void hub.start();

@@ -6,6 +6,7 @@ import { Field } from '../../components/Field';
 import { PanelShell } from '../../components/PanelShell';
 import styles from '../../styles/panel.module.css';
 import { fieldError, useConnectionActions } from './useConnectionActions';
+import { useConnectionState } from './useConnectionState';
 
 const DEFAULTS = {
   host: 'localhost',
@@ -22,6 +23,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
 
   const { data: saved } = useQuery({ queryKey: queryKeys.savedSettings, queryFn: getSavedSettings });
   const { connectMutation, disconnectMutation } = useConnectionActions();
+  const { isOnline } = useConnectionState();
 
   // Saved settings arrive after the first render; the password is never returned.
   useEffect(() => {
@@ -128,7 +130,12 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
         <button type="button" onClick={submit} disabled={connectMutation.isPending}>
           Connect
         </button>
-        <button type="button" className="ghost" onClick={() => disconnectMutation.mutate()}>
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => disconnectMutation.mutate()}
+          disabled={!isOnline}
+        >
           Disconnect
         </button>
       </div>

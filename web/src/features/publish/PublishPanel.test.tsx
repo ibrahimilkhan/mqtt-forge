@@ -9,6 +9,9 @@ import { server } from '../../test/server';
 import { PublishPanel } from './PublishPanel';
 
 function renderPanel() {
+  // Publishing needs a live broker; without one the button is disabled by design.
+  server.use(http.get('/api/connection', () => HttpResponse.json({ state: 'Connected' })));
+
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>

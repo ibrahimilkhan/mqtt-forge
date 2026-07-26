@@ -7,12 +7,14 @@ import { QosSelect } from '../../components/QosSelect';
 import styles from '../../styles/panel.module.css';
 import { useLogStore } from '../../stores/logStore';
 import { describeError } from '../connection/useConnectionActions';
+import { useConnectionState } from '../connection/useConnectionState';
 
 export function PublishPanel({ onClose }: { onClose: () => void }) {
   const [topic, setTopic] = useState('sensors/temp');
   const [payload, setPayload] = useState('23.5');
   const [qos, setQos] = useState(0);
   const [retain, setRetain] = useState(false);
+  const { isOnline } = useConnectionState();
 
   const publishMutation = useMutation({
     mutationFn: () => publish({ topic, payload, qos, retain }),
@@ -48,7 +50,7 @@ export function PublishPanel({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className={styles.actions}>
-        <button type="button" onClick={() => publishMutation.mutate()}>
+        <button type="button" onClick={() => publishMutation.mutate()} disabled={!isOnline}>
           Publish
         </button>
       </div>
