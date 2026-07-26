@@ -135,14 +135,20 @@
   .pane-actions { margin-left: auto; display: flex; gap: 2px; }
   .pane-actions button {
     all: unset;
+    display: flex;
     cursor: pointer;
-    font-family: var(--mono);
-    font-size: 9.5px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
     color: var(--muted);
-    padding: 3px 7px;
+    padding: 4px;
     border-radius: 2px;
+  }
+  .pane-actions svg {
+    width: 15px;
+    height: 15px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
   .pane-actions button:hover { color: var(--ink); background: var(--paper); }
   .pane-actions button:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
@@ -531,8 +537,18 @@
     <div class="pane-head">
       <h2 class="eyebrow">Konu ağacı</h2>
       <div class="pane-actions">
-        <button id="btn-expand">Genişlet</button>
-        <button id="btn-collapse">Daralt</button>
+        <button id="btn-expand" title="Tümünü genişlet" aria-label="Tümünü genişlet">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M4 3.5 L8 7.5 L12 3.5"/>
+            <path d="M4 8.5 L8 12.5 L12 8.5"/>
+          </svg>
+        </button>
+        <button id="btn-collapse" title="Tümünü daralt" aria-label="Tümünü daralt">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M4 7.5 L8 3.5 L12 7.5"/>
+            <path d="M4 12.5 L8 8.5 L12 12.5"/>
+          </svg>
+        </button>
       </div>
     </div>
     <div class="tree" id="tree">
