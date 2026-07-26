@@ -200,6 +200,7 @@
     animation: arrive 0.24s ease-out;
   }
   .entry[data-kind="sent"]  { border-left-color: var(--signal); }
+  .entry[data-kind="recv"]  { border-left-color: var(--ink); }
   .entry[data-kind="ok"]    { border-left-color: var(--live); }
   .entry[data-kind="fault"] { border-left-color: var(--fault); }
 
@@ -217,9 +218,36 @@
     text-transform: uppercase;
   }
   .entry[data-kind="sent"]  .verb { color: var(--signal); }
+  .entry[data-kind="recv"]  .verb { color: var(--ink); }
   .entry[data-kind="ok"]    .verb { color: var(--live); }
   .entry[data-kind="fault"] .verb { color: var(--fault); }
   .verb { font-weight: 600; }
+
+  /* aktif abonelik rozetleri */
+  .filters { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .filters:empty { display: none; }
+  .filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    padding: 4px 6px 4px 9px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+  }
+  .filter button {
+    all: unset;
+    cursor: pointer;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1;
+    padding: 0 2px;
+  }
+  .filter button:hover { color: var(--fault); }
+  .filter button:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
   .topic { margin-top: 3px; font-size: 13px; word-break: break-all; }
   .topic .sep { color: var(--rule); margin: 0 1px; }
@@ -286,6 +314,22 @@
     </div>
 
     <div class="block">
+      <h2 class="eyebrow">Abonelik</h2>
+      <div class="row">
+        <div><label for="filter">Konu filtresi</label><input type="text" id="filter" value="sensors/#"></div>
+      </div>
+      <div class="checks">
+        <label><input type="radio" name="subqos" value="0" checked> QoS 0</label>
+        <label><input type="radio" name="subqos" value="1"> QoS 1</label>
+        <label><input type="radio" name="subqos" value="2"> QoS 2</label>
+      </div>
+      <div class="actions">
+        <button id="btn-subscribe">Abone ol</button>
+      </div>
+      <div class="filters" id="filters"></div>
+    </div>
+
+    <div class="block">
       <h2 class="eyebrow">Mesaj</h2>
       <div class="row">
         <div><label for="topic">Konu</label><input type="text" id="topic" value="sensors/temp"></div>
@@ -314,6 +358,7 @@
   </section>
 </div>
 
+<script src="/lib/signalr.min.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const log = $('log');
@@ -349,8 +394,10 @@ function setState(state) {
   readout.dataset.state = state;
   const where = state === 'Connected' ? ` · ${$('host').value}:${$('port').value}` : '';
   $('readout-text').textContent = (map[state] || state) + where;
-  $('btn-publish').disabled = state !== 'Connected';
-  $('btn-disconnect').disabled = state !== 'Connected';
+  const offline = state !== 'Connected';
+  $('btn-publish').disabled = offline;
+  $('btn-subscribe').disabled = offline;
+  $('btn-disconnect').disabled = offline;
 }
 
 // Sunucu hatalarını ProblemDetails'ten okunabilir metne çevirir
@@ -386,6 +433,7 @@ $('btn-connect').addEventListener('click', async () => {
   if (r.ok) {
     setState((await r.json()).state);
     write({ kind: 'ok', verb: 'Bağlandı', body: `${payload.host}:${payload.port} · ${payload.clientId}` });
+    await refreshFilters();
   } else {
     setState('Faulted');
     write({ kind: 'fault', verb: 'Bağlanamadı', body: await describeError(r) });
@@ -397,6 +445,7 @@ $('btn-disconnect').addEventListener('click', async () => {
   if (r.ok) {
     write({ kind: 'ok', verb: 'Bağlantı kesildi' });
     await refreshState();
+    await refreshFilters();
   } else {
     write({ kind: 'fault', verb: 'Kesilemedi', body: await describeError(r) });
   }
@@ -423,9 +472,73 @@ $('btn-publish').addEventListener('click', async () => {
   }
 });
 
-// Açılışta durumu ve kayıtlı ayarları geri yükle
+// ---- abonelikler ----
+async function refreshFilters() {
+  const filters = await (await fetch('/api/subscriptions')).json();
+  const box = $('filters');
+  box.textContent = '';
+
+  for (const f of filters) {
+    const chip = document.createElement('span');
+    chip.className = 'filter';
+    chip.append(f);
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = '×';
+    remove.title = `${f} aboneliğini bırak`;
+    remove.addEventListener('click', () => unsubscribe(f));
+    chip.append(remove);
+
+    box.append(chip);
+  }
+}
+
+async function unsubscribe(topicFilter) {
+  const r = await fetch(`/api/subscriptions?topicFilter=${encodeURIComponent(topicFilter)}`, { method: 'DELETE' });
+  if (r.ok) {
+    write({ kind: 'ok', verb: 'Abonelik bırakıldı', topic: topicFilter });
+  } else {
+    write({ kind: 'fault', verb: 'Bırakılamadı', topic: topicFilter, body: await describeError(r) });
+  }
+  await refreshFilters();
+}
+
+$('btn-subscribe').addEventListener('click', async () => {
+  const topicFilter = $('filter').value;
+  const qos = Number(document.querySelector('input[name=subqos]:checked').value);
+
+  const r = await fetch('/api/subscriptions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ topicFilter, qos })
+  });
+
+  if (r.ok) {
+    write({ kind: 'ok', verb: 'Abone olundu', topic: topicFilter, stamps: [`QoS ${qos}`] });
+  } else {
+    write({ kind: 'fault', verb: 'Abone olunamadı', topic: topicFilter, body: await describeError(r) });
+  }
+  await refreshFilters();
+});
+
+// ---- canlı akış ----
+const hub = new signalR.HubConnectionBuilder()
+  .withUrl('/hubs/mqtt')
+  .withAutomaticReconnect()
+  .build();
+
+hub.on('messageReceived', m => {
+  const stamps = [`QoS ${m.qos}`];
+  if (m.retain) stamps.push('SAKLI');
+  write({ kind: 'recv', verb: 'Geldi', topic: m.topic, body: m.payload, stamps });
+});
+
+// Açılışta durumu, kayıtlı ayarları ve abonelikleri geri yükle
 (async function init() {
+  await hub.start();
   await refreshState();
+  await refreshFilters();
 
   const r = await fetch('/api/connection/settings');
   if (r.status !== 200) return;
