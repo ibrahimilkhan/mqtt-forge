@@ -315,6 +315,12 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  /* '=' konuyu değerden ayırır; değer yoksa hiç çıkmaz */
+  .val:not(:empty)::before {
+    content: '=';
+    color: var(--rule);
+    margin-right: 5px;
+  }
 
   .meta {
     flex: none;
@@ -324,6 +330,10 @@
     color: var(--muted);
     letter-spacing: 0.05em;
   }
+  /* Dal açıkken içeriği zaten görünür; özet gereksiz gürültü olur.
+     Yalnızca gerçek dallara uygulanır: yaprakların açılacak içeriği yok,
+     kendi mesaj sayaçları her zaman görünmeli. */
+  .branch[data-open="true"] > .node[data-branch="true"] > .meta { display: none; }
 
   /* mesaj gelince ilgili satır bir kez yanıp söner */
   .node.flash { animation: flash 700ms ease-out; }
