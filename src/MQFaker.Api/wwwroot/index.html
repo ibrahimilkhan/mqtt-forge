@@ -346,10 +346,12 @@
     display: flex;
     align-items: baseline;
     gap: 8px;
-    padding: 3px 6px 3px calc(var(--depth) * 15px + 6px);
+    padding: 3px 6px 3px calc(var(--depth) * 19px + 6px);
     border-radius: 2px;
     position: relative;
   }
+  /* Ardışık gruplar arasına nefes payı: dal başlığı bir öncekinden ayrışsın */
+  .branch + .branch > .node[data-branch="true"] { margin-top: 6px; }
   .node[data-branch="true"] { cursor: pointer; }
   .node[data-branch="true"]:hover { background: var(--paper); }
 
@@ -385,7 +387,7 @@
   /* Özet başlığın hemen yanında durur; sağa yaslamak gözü satır boyunca gezdiriyordu */
   .meta {
     flex: none;
-    font-size: 9.5px;
+    font-size: 8.5px;
     color: var(--muted);
     letter-spacing: 0.05em;
   }
