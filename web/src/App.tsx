@@ -4,6 +4,7 @@ import { getConnectionState } from './api/connection';
 import { queryKeys } from './api/queryKeys';
 import styles from './App.module.css';
 import { StatusReadout } from './components/StatusReadout';
+import { BrokerPanel } from './features/connection/BrokerPanel';
 import { PANELS, type PanelId } from './features/panels';
 import type { Hub } from './realtime/hub';
 import { useHubBridge } from './realtime/useHubBridge';
@@ -44,7 +45,7 @@ export function App({ hub }: { hub: Hub }) {
       </div>
 
       <div className={styles.layout} data-testid="layout" data-panel={openPanel ? 'open' : 'closed'}>
-        {openPanel === 'broker' && <div />}
+        {openPanel === 'broker' && <BrokerPanel onClose={() => setOpenPanel(null)} />}
         {openPanel === 'subscribe' && <div />}
         {openPanel === 'publish' && <div />}
         <section className={styles.treePane} />
