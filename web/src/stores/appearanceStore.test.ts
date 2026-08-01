@@ -48,6 +48,29 @@ describe('persistence', () => {
     });
   });
 
+  it('partialize excludes non-persisted fields from the stored JSON', () => {
+    // Add a temporary non-function field to prove partialize is actually filtering.
+    const state = useAppearanceStore.getState();
+    useAppearanceStore.setState({ ...state, tempDebugField: 'should-not-persist' } as any);
+
+    try {
+      useAppearanceStore.getState().setSize(17);
+
+      const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!).state;
+      // Assert tempDebugField does not appear (partialize must be running).
+      expect('tempDebugField' in stored).toBe(false);
+      // Assert the three choices are still persisted correctly.
+      expect(stored).toEqual({
+        sans: 'inter',
+        mono: 'jetbrains',
+        size: 17,
+      });
+    } finally {
+      // Restore the store to its clean state.
+      useAppearanceStore.getState().reset();
+    }
+  });
+
   it('restores a stored choice on rehydration', async () => {
     localStorage.setItem(
       STORAGE_KEY,
@@ -85,5 +108,32 @@ describe('persistence', () => {
     } finally {
       Storage.prototype.setItem = originalSetItem;
     }
+  });
+
+  it('migrate runs when the stored version differs, and preserves valid choices', async () => {
+    // Seed storage with version 0 (mismatched) carrying a valid old payload.
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ state: { sans: 'system', mono: 'system', size: 16 }, version: 0 }),
+    );
+
+    await useAppearanceStore.persist.rehydrate();
+
+    // migrate should have sanitized and preserved the choice.
+    const { sans, mono, size } = useAppearanceStore.getState();
+    expect({ sans, mono, size }).toEqual({ sans: 'system', mono: 'system', size: 16 });
+  });
+
+  it('migrate coerces corrupt payloads to defaults even under version mismatch', async () => {
+    // Seed storage with version 0 carrying corrupt data; migrate should fall back to defaults.
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ state: { sans: 'invalid-id', mono: 123, size: 'not-a-number' }, version: 0 }),
+    );
+
+    await useAppearanceStore.persist.rehydrate();
+
+    const { sans, mono, size } = useAppearanceStore.getState();
+    expect({ sans, mono, size }).toEqual(DEFAULTS);
   });
 });
