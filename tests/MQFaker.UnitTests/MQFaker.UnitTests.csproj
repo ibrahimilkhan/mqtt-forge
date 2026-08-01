@@ -28,6 +28,7 @@
     <ProjectReference Include="..\..\src\MQFaker.Domain\MQFaker.Domain.csproj" />
     <ProjectReference Include="..\..\src\MQFaker.Application\MQFaker.Application.csproj" />
     <ProjectReference Include="..\..\src\MQFaker.Infrastructure\MQFaker.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\MQFaker.Desktop\MQFaker.Desktop.csproj" />
   </ItemGroup>
 
 </Project>

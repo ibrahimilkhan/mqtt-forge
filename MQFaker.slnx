@@ -3,6 +3,7 @@
   <Project Path="src/MQFaker.Application/MQFaker.Application.csproj" />
   <Project Path="src/MQFaker.Infrastructure/MQFaker.Infrastructure.csproj" />
   <Project Path="src/MQFaker.Api/MQFaker.Api.csproj" />
+  <Project Path="src/MQFaker.Desktop/MQFaker.Desktop.csproj" />
   <Project Path="tests/MQFaker.UnitTests/MQFaker.UnitTests.csproj" />
   <Project Path="tests/MQFaker.IntegrationTests/MQFaker.IntegrationTests.csproj" />
 </Solution>
