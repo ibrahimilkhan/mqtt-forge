@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>MQFaker</AssemblyName>
+    <RootNamespace>MQFaker.Desktop</RootNamespace>
+  </PropertyGroup>
+
+  <!-- A console-SDK project that hosts ASP.NET Core needs the framework reference stated
+       outright; it does not arrive on its own through the project reference. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Photino.NET" Version="4.0.16" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MQFaker.Api\MQFaker.Api.csproj" />
+  </ItemGroup>
+
+</Project>
