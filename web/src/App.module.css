@@ -13,7 +13,7 @@
 }
 .wordmark {
   font-family: var(--mono);
-  font-size: 19px;
+  font-size: var(--t-title);
   font-weight: 600;
   letter-spacing: -0.03em;
   margin: 0;
@@ -27,7 +27,7 @@
 .menu { display: flex; gap: 2px; }
 .menuBtn {
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--t-label);
   font-weight: 600;
   letter-spacing: 0.11em;
   text-transform: uppercase;

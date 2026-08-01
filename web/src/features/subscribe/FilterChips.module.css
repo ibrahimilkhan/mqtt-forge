@@ -6,7 +6,7 @@
   align-items: center;
   gap: 7px;
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: var(--t-small);
   padding: 4px 6px 4px 9px;
   background: var(--surface);
   border: 1px solid var(--rule);
@@ -17,7 +17,7 @@
   cursor: pointer;
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 14px;
+  font-size: var(--t-code);
   line-height: 1;
   padding: 0 2px;
 }
