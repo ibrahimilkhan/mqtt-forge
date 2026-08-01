@@ -36,6 +36,19 @@ it in Release too.
 
 `src/MQFaker.Api/wwwroot` is generated output and is not tracked.
 
+## Docker
+
+```
+docker build -t mqfaker .
+docker run -d -p 5169:5169 --name mqfaker mqfaker
+```
+
+Open http://localhost:5169. Stop it with `docker stop mqfaker`.
+
+The container binds `0.0.0.0`, so the panel is reachable from other devices on the same
+network — that is what the Mobile panel's QR code is for. On a shared network anyone who
+can reach the port can publish to your broker.
+
 ## Tests
 
 ```
