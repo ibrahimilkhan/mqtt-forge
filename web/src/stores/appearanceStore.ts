@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
 import { DEFAULTS, MONO, SANS, SIZE, type MonoId, type SansId } from '../features/appearance/fonts';
 
 export type AppearanceChoices = { sans: SansId; mono: MonoId; size: number };
@@ -48,6 +48,24 @@ export const useAppearanceStore = create<AppearanceState>()(
       version: 1,
       partialize: ({ sans, mono, size }) => ({ sans, mono, size }),
       merge: (persisted, current) => ({ ...current, ...sanitize(persisted) }),
+      // Without this a future version bump would discard the stored choice; sanitize already
+      // copes with any shape, so migrating is strictly better than falling back to defaults.
+      migrate: (state) => sanitize(state),
+      storage: createJSONStorage(() => {
+        const ls = localStorage; // Throws when storage is blocked; createJSONStorage catches that.
+        return {
+          getItem: (key) => ls.getItem(key),
+          // A failed write must not interrupt the workflow: the choice still applies to this tab.
+          setItem: (key, value) => {
+            try {
+              ls.setItem(key, value);
+            } catch {
+              // Ignored on purpose — a full quota or a blocked write is not worth an error.
+            }
+          },
+          removeItem: (key) => ls.removeItem(key),
+        };
+      }),
     },
   ),
 );

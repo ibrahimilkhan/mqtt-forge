@@ -2,7 +2,10 @@
 // The two bundled families are the ones self-hosted under public/fonts; the system
 // entries download nothing, which is why the tool still works on an air-gapped network.
 export const SANS = {
-  inter: { label: 'Inter', stack: "'Inter', system-ui, sans-serif" },
+  inter: {
+    label: 'Inter',
+    stack: "'Inter', -apple-system, BlinkMacSystemFont, \"Segoe UI\", system-ui, sans-serif",
+  },
   system: {
     label: 'System sans',
     stack: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
@@ -10,7 +13,10 @@ export const SANS = {
 } as const;
 
 export const MONO = {
-  jetbrains: { label: 'JetBrains Mono', stack: "'JetBrains Mono', ui-monospace, monospace" },
+  jetbrains: {
+    label: 'JetBrains Mono',
+    stack: "'JetBrains Mono', ui-monospace, \"SF Mono\", SFMono-Regular, Menlo, Consolas, monospace",
+  },
   system: {
     label: 'System mono',
     stack: 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace',
