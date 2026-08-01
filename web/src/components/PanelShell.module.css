@@ -1,4 +1,15 @@
-.panel { background: var(--paper); padding: 22px 20px 40px; }
+/* A grid column like the tree and the log: it scrolls on its own rather than
+   growing the row, so switching panels never changes the layout's height. */
+.panel {
+  background: var(--paper);
+  padding: 22px 20px 40px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+@media (max-width: 1180px) {
+  .panel { overflow-y: visible; }
+}
 
 .panelHead {
   display: flex;

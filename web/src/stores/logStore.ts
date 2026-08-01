@@ -42,6 +42,7 @@ export const useLogStore = create<LogState>((set) => ({
 function toEntry(message: MqttMessage): LogEntry {
   const stamps = [`QoS ${message.qos}`];
   if (message.retain) stamps.push('RETAINED');
+  stamps.push(payloadSize(message.payload));
 
   return {
     id: nextId++,
@@ -52,6 +53,12 @@ function toEntry(message: MqttMessage): LogEntry {
     body: message.payload,
     stamps,
   };
+}
+
+// What went over the wire is bytes, so a payload of accented text is longer than it looks.
+function payloadSize(payload: string): string {
+  const bytes = new TextEncoder().encode(payload).length;
+  return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} kB`;
 }
 
 // A '#' subscription on a busy broker would otherwise grow the list without bound.

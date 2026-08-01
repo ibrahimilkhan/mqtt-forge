@@ -21,8 +21,53 @@
   border-bottom: 1px solid var(--rule);
 }
 
+/* ---- what the log is pointed at ---- */
+.focus {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+  min-width: 0;
+}
+.focusTopic {
+  font-family: var(--mono);
+  font-size: var(--t-small);
+  color: var(--signal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.focus button {
+  all: unset;
+  flex: none;
+  cursor: pointer;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: var(--t-code);
+  line-height: 1;
+  padding: 0 2px;
+}
+.focus button:hover { color: var(--fault); }
+.focus button:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
 /* ---- signature element: the wire log ---- */
 .log { display: flex; flex-direction: column; gap: 2px; }
+
+/* The list stops at five so the pane stays readable; this reaches for the rest. */
+.more {
+  all: unset;
+  display: block;
+  margin-top: 10px;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 5px 0;
+}
+.more:hover { color: var(--signal); }
+.more:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 .entry {
   border-left: 2px solid var(--rule);
@@ -69,4 +114,10 @@
   border: 1px solid var(--rule);
   border-radius: 2px;
   color: var(--muted);
+}
+/* A retained message is the broker replaying its last known value, not live traffic —
+   worth telling apart at a glance from the QoS and size stamps beside it. */
+.stamp[data-stamp="RETAINED"] {
+  color: var(--signal);
+  border-color: color-mix(in srgb, var(--signal) 45%, transparent);
 }

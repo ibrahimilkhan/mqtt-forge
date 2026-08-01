@@ -1,5 +1,7 @@
 import { memo, type CSSProperties } from 'react';
+import { treeFilter } from '../../lib/topicMatch';
 import { nodeSummary, type TopicNode } from '../../lib/topicTree';
+import { useSelectionStore } from '../../stores/selectionStore';
 import { isPathOpen, useTopicTreeStore } from '../../stores/topicTreeStore';
 import styles from './TopicTree.module.css';
 
@@ -10,6 +12,9 @@ type Props = { node: TopicNode; path: string; depth: number };
 export const TreeNode = memo(function TreeNode({ node, path, depth }: Props) {
   const open = useTopicTreeStore((state) => isPathOpen(state, path));
   const toggle = useTopicTreeStore((state) => state.toggle);
+  const filter = treeFilter(path);
+  const selected = useSelectionStore((state) => state.selected?.filter === filter);
+  const select = useSelectionStore((state) => state.select);
 
   const isBranch = node.children.size > 0;
 
@@ -25,13 +30,37 @@ export const TreeNode = memo(function TreeNode({ node, path, depth }: Props) {
         key={flashAt}
         className={styles.node}
         data-branch={isBranch}
+        data-selected={selected}
         style={{ '--depth': depth } as CSSProperties}
-        onClick={() => isBranch && toggle(path)}
       >
-        <span className={styles.twisty}>▾</span>
-        <span className={styles.seg}>{node.name}</span>
-        <span className={styles.val}>{node.latestPayload ?? ''}</span>
-        <span className={styles.meta}>{nodeSummary(node)}</span>
+        {/* The twisty opens the branch and the rest of the row focuses the wire log on it,
+            so collapsing a branch never costs you the focus. Two sibling buttons, because
+            one cannot be nested inside the other. */}
+        {isBranch ? (
+          <button
+            type="button"
+            className={styles.twisty}
+            onClick={() => toggle(path)}
+            aria-label={`${open ? 'Collapse' : 'Expand'} ${path}`}
+          >
+            ▾
+          </button>
+        ) : (
+          <span className={styles.twisty} aria-hidden="true">
+            ▾
+          </span>
+        )}
+
+        <button
+          type="button"
+          className={styles.pick}
+          aria-pressed={selected}
+          onClick={() => select({ label: path, filter })}
+        >
+          <span className={styles.seg}>{node.name}</span>
+          <span className={styles.val}>{node.latestPayload ?? ''}</span>
+          <span className={styles.meta}>{nodeSummary(node)}</span>
+        </button>
       </div>
 
       {/* Children stay mounted while a branch is closed and are hidden with CSS. Dropping
