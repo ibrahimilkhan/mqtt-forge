@@ -12,6 +12,11 @@ public sealed class SingleInstance : IDisposable
     private const string Doorbell = "focus";
 
     private readonly string _name;
+    private readonly object _gate = new();
+    // Owned by this instance so Dispose() can end the signal loop on its own, instead of relying
+    // on the caller to have cancelled its token first (that used to be the caller's job, and the
+    // loop would happily build a brand-new server after Dispose() had already run).
+    private readonly CancellationTokenSource _disposalCts = new();
     private NamedPipeServerStream _server;
     private bool _disposed;
 
@@ -58,16 +63,33 @@ public sealed class SingleInstance : IDisposable
     {
         _ = Task.Run(async () =>
         {
-            while (!ct.IsCancellationRequested)
+            // Linking means either the caller cancelling or Dispose() cancelling ends the loop;
+            // previously only the caller's token was honoured, so Dispose() alone did nothing.
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _disposalCts.Token);
+            var token = linked.Token;
+
+            while (!token.IsCancellationRequested)
             {
+                NamedPipeServerStream server;
+                lock (_gate)
+                {
+                    if (_disposed) return;
+                    server = _server;
+                }
+
                 try
                 {
-                    await _server.WaitForConnectionAsync(ct);
-                    using (var reader = new StreamReader(_server, leaveOpen: true))
-                        if (await reader.ReadLineAsync(ct) == Doorbell) onSignal();
+                    await server.WaitForConnectionAsync(token);
+                    using (var reader = new StreamReader(server, leaveOpen: true))
+                        if (await reader.ReadLineAsync(token) == Doorbell) onSignal();
                 }
                 catch (OperationCanceledException)
                 {
+                    return;
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Dispose() tore down the server we were waiting on while we were waiting on it.
                     return;
                 }
                 catch (IOException)
@@ -75,10 +97,15 @@ public sealed class SingleInstance : IDisposable
                     // A caller that hung up mid-message is not worth tearing the loop down for.
                 }
 
-                // A server stream serves one connection; the next caller needs a fresh one.
-                _server.Dispose();
-                if (ct.IsCancellationRequested) return;
-                _server = CreateServer(_name);
+                // A server stream serves one connection; the next caller needs a fresh one. Do the
+                // swap under the same gate Dispose() uses, so a Dispose() that runs between the two
+                // lines above and here can never be followed by a replacement server nothing owns.
+                lock (_gate)
+                {
+                    if (_disposed) return;
+                    server.Dispose();
+                    _server = CreateServer(_name);
+                }
             }
         }, ct);
     }
@@ -91,7 +118,9 @@ public sealed class SingleInstance : IDisposable
     // macOS backs named pipes with Unix domain sockets, whose path is capped at 104 bytes,
     // and the OS temp directory alone can already eat half that budget. Hashing to a fixed,
     // short name keeps every pipe path well under the limit regardless of what is passed in
-    // or how long the platform's temp path happens to be.
+    // or how long the platform's temp path happens to be. The cost: a pipe file stuck in the
+    // OS temp directory (e.g. after a crash) can no longer be matched back to its logical name
+    // by inspection alone — recompute this hash from the candidate name to identify it.
     private static string PipeName(string name)
     {
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(name));
@@ -100,8 +129,17 @@ public sealed class SingleInstance : IDisposable
 
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
-        _server.Dispose();
+        lock (_gate)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            // Cancel before disposing the server: a loop blocked in WaitForConnectionAsync then
+            // sees a graceful OperationCanceledException rather than racing to observe the dispose
+            // as an ObjectDisposedException instead (both are handled, but this is the tidier path).
+            _disposalCts.Cancel();
+            _server.Dispose();
+        }
+
+        _disposalCts.Dispose();
     }
 }
