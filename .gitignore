@@ -6,6 +6,8 @@ riderModule.iml
 .idea/
 .superpowers/
 .DS_Store
-web/node_modules/
+node_modules/
 web/dist/
+web/certs/
+*.bak
 src/MQFaker.Api/wwwroot/
