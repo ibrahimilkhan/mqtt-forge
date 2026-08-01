@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
+import { networkUrl } from './plugins/network-url.ts';
 
 // Testing on a phone means serving over the LAN address rather than localhost, and the
 // browser APIs the panel relies on are only handed out in a secure context. The cert is
@@ -16,7 +17,7 @@ const https =
     : undefined;
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), networkUrl()],
   server: {
     // Binding to every interface is what puts the dev server on the LAN address; localhost
     // keeps working alongside it.
