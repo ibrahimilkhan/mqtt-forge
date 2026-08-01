@@ -1,10 +1,56 @@
-namespace MQFaker.Desktop;
+using MQFaker.Api;
+using MQFaker.Desktop;
+using MQFaker.Domain.Abstractions;
+using Microsoft.Extensions.DependencyInjection;
+using Photino.NET;
 
-// Placeholder entry point. OutputType=Exe requires one to compile at all; the actual
-// Photino shell that replaces this body lands in a later task.
-internal static class Program
+const string InstanceName = "mqfaker-desktop";
+
+// A GUI launch (double-clicking the app, or macOS re-opening it) does not guarantee a
+// working directory pointed at the app itself - it can be the user's home directory or
+// root. WebApplication's default content root comes from the working directory, and the
+// interface files ship next to this executable, so the two have to be pinned together
+// explicitly rather than left to whatever launched the process.
+Environment.CurrentDirectory = AppContext.BaseDirectory;
+
+// A second launch should surface the window that is already open rather than start a
+// rival host on a different port, which the user could not tell apart.
+var instance = SingleInstance.TryAcquire(InstanceName);
+if (instance is null)
 {
-    private static void Main()
-    {
-    }
+    SingleInstance.SignalExisting(InstanceName, TimeSpan.FromSeconds(2));
+    return 0;
 }
+
+using var shutdown = new CancellationTokenSource();
+using (instance)
+{
+    var port = PortFinder.FirstFree(5169);
+    var app = MqFakerHost.Build(args, urls: $"http://0.0.0.0:{port}");
+    await app.StartAsync();
+
+    var window = new PhotinoWindow()
+        .SetTitle("MQFaker")
+        .SetUseOsDefaultSize(false)
+        .SetSize(1280, 860)
+        .Load(new Uri($"http://localhost:{port}"));
+
+    // The listener runs off the window thread, so the focus call has to be marshalled back.
+    instance.ListenForSignals(() => window.Invoke(() =>
+    {
+        window.SetMinimized(false);
+        window.SetTopMost(true);
+        window.SetTopMost(false);
+    }), shutdown.Token);
+
+    window.WaitForClose();
+    await shutdown.CancelAsync();
+
+    // Close the broker session before the process leaves, so the broker is not left
+    // holding one for a window that is gone.
+    await app.Services.GetRequiredService<IMqttConnectionManager>()
+        .DisconnectAsync(CancellationToken.None);
+    await app.StopAsync();
+}
+
+return 0;
