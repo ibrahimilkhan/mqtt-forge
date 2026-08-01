@@ -19,7 +19,7 @@ export const LogEntryRow = memo(function LogEntryRow({ entry }: { entry: LogEntr
           {entry.stamps && (
             <span className={styles.stamps}>
               {entry.stamps.map((stamp) => (
-                <span key={stamp} className={styles.stamp}>
+                <span key={stamp} className={styles.stamp} data-stamp={stamp}>
                   {stamp}
                 </span>
               ))}

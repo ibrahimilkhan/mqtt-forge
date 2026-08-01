@@ -53,8 +53,16 @@
 /* Spacing only for top-level siblings: applied at every level it would
    accumulate in deep trees and thin them out needlessly */
 .tree > .branch + .branch > .node { margin-top: 9px; }
-.node[data-branch="true"] { cursor: pointer; }
-.node[data-branch="true"]:hover { background: var(--paper); }
+.node:hover { background: var(--paper); }
+/* The focused row keeps a mark of its own, so it stays legible under the hover tint */
+.node[data-selected="true"] { background: var(--paper); box-shadow: inset 2px 0 0 var(--signal); }
+
+/* The twisty opens the branch; the rest of the row picks it. Both are buttons, so both
+   need the app's reset before they can be laid out. */
+.twisty,
+.pick { all: unset; cursor: pointer; }
+.twisty:focus-visible,
+.pick:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 .twisty {
   flex: none;
@@ -62,6 +70,14 @@
   color: var(--muted);
   font-size: var(--t-micro);
   transition: transform 0.12s ease;
+}
+
+.pick {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
 }
 .branch[data-open="false"] > .node .twisty { transform: rotate(-90deg); }
 .branch[data-open="false"] > .kids { display: none; }
@@ -98,7 +114,7 @@
 /* An open branch already shows its contents, so the summary is just noise.
    Applies to real branches only: leaves have nothing to expand, and their own
    message counters must stay visible at all times. */
-.branch[data-open="true"] > .node[data-branch="true"] > .meta { display: none; }
+.branch[data-open="true"] > .node[data-branch="true"] > .pick > .meta { display: none; }
 
 @keyframes flash {
   from { background: color-mix(in srgb, var(--signal) 26%, transparent); }

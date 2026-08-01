@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { useSelectionStore } from '../../stores/selectionStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import type { MqttMessage } from '../../types/api';
 import { TopicTree } from './TopicTree';
@@ -16,6 +17,7 @@ const message = (topic: string, payload = '1'): MqttMessage => ({
 beforeEach(() => {
   useTopicTreeStore.setState({ defaultOpen: false });
   useTopicTreeStore.getState().reset();
+  useSelectionStore.getState().clear();
 });
 
 describe('TopicTree', () => {
@@ -36,7 +38,7 @@ describe('TopicTree', () => {
     render(<TopicTree />);
 
     expect(branchOf('sensors')).toHaveAttribute('data-open', 'false');
-    await userEvent.click(screen.getByText('sensors'));
+    await userEvent.click(screen.getByRole('button', { name: 'Expand sensors' }));
 
     expect(branchOf('sensors')).toHaveAttribute('data-open', 'true');
     expect(screen.getByText('temp')).toBeInTheDocument();
@@ -78,7 +80,7 @@ describe('TopicTree', () => {
   it('leaves an open branch alone when the message was for a descendant', async () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '1')]);
     render(<TopicTree />);
-    await userEvent.click(screen.getByText('sensors'));
+    await userEvent.click(screen.getByRole('button', { name: 'Expand sensors' }));
     const branchRow = rowKeyOf('sensors');
     const leafRow = rowKeyOf('temp');
 
@@ -91,12 +93,62 @@ describe('TopicTree', () => {
   it('flashes an open branch when the message was addressed to it', async () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '1'), message('sensors', 'own')]);
     render(<TopicTree />);
-    await userEvent.click(screen.getByText('sensors'));
+    await userEvent.click(screen.getByRole('button', { name: 'Expand sensors' }));
     const branchRow = rowKeyOf('sensors');
 
     useTopicTreeStore.getState().apply([message('sensors', 'own again')]);
 
     await waitFor(() => expect(rowKeyOf('sensors')).not.toBe(branchRow));
+  });
+
+  it('focuses the wire log on the clicked node and everything beneath it', async () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
+    render(<TopicTree />);
+
+    await userEvent.click(screen.getByText('sensors'));
+
+    expect(useSelectionStore.getState().selected).toEqual({ label: 'sensors', filter: 'sensors/#' });
+  });
+
+  it('focuses a leaf on its own full path', async () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
+    render(<TopicTree />);
+    await userEvent.click(screen.getByRole('button', { name: 'Expand sensors' }));
+
+    await userEvent.click(screen.getByText('temp'));
+
+    expect(useSelectionStore.getState().selected).toEqual({
+      label: 'sensors/temp',
+      filter: 'sensors/temp/#',
+    });
+  });
+
+  it('leaves the branch closed when the row is clicked', async () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
+    render(<TopicTree />);
+
+    await userEvent.click(screen.getByText('sensors'));
+
+    expect(branchOf('sensors')).toHaveAttribute('data-open', 'false');
+  });
+
+  it('drops the focus when the selected node is clicked again', async () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
+    render(<TopicTree />);
+
+    await userEvent.click(screen.getByText('sensors'));
+    await userEvent.click(screen.getByText('sensors'));
+
+    expect(useSelectionStore.getState().selected).toBeNull();
+  });
+
+  it('marks the focused row', async () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
+    render(<TopicTree />);
+
+    await userEvent.click(screen.getByText('sensors'));
+
+    expect(screen.getByText('sensors').closest('[data-branch]')).toHaveAttribute('data-selected', 'true');
   });
 
   it('collapses every branch', async () => {
