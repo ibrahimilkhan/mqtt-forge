@@ -21,7 +21,13 @@ public static class MqFakerHost
 
         builder.Host.UseSerilog((ctx, cfg) => cfg.ReadFrom.Configuration(ctx.Configuration));
 
-        builder.Services.AddControllers();
+        // ASP.NET Core's default part discovery only walks the entry assembly's dependency
+        // graph for MVC-referencing libraries. The desktop shell's entry assembly is
+        // MQFaker.Desktop, not this one, so without stating the part explicitly the
+        // controllers defined here are silently invisible to routing (every API call 404s)
+        // when this host is started from that entry point.
+        builder.Services.AddControllers()
+            .AddApplicationPart(typeof(MqFakerHost).Assembly);
         builder.Services.AddSignalR();
         builder.Services.AddFluentValidationAutoValidation();
         builder.Services.AddValidatorsFromAssemblyContaining<ConnectRequestDtoValidator>();

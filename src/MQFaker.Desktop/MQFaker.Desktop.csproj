@@ -20,4 +20,16 @@
     <ProjectReference Include="..\MQFaker.Api\MQFaker.Api.csproj" />
   </ItemGroup>
 
+  <!-- MQFaker.Api serves the interface via its own wwwroot, resolved against ITS content
+       root. This project hosts that same code from a different content root (its own
+       output directory), so the built interface has to be copied alongside it explicitly -
+       referencing the Api project does not bring its wwwroot along on its own. -->
+  <ItemGroup>
+    <Content Include="..\MQFaker.Api\wwwroot\**">
+      <Link>wwwroot\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>
