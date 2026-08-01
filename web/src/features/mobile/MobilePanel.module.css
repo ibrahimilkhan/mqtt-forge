@@ -1,0 +1,31 @@
+/* The plate carries the white background out to the quiet zone, so the code keeps its
+   contrast against the panel in either appearance. */
+.plate {
+  background: #fff;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 10px;
+  display: flex;
+  justify-content: center;
+}
+
+/* Capped rather than fluid: past a point a bigger code is no easier to scan, and the
+   column it sits in can be wide. */
+.code {
+  display: block;
+  width: 100%;
+  max-width: 220px;
+  height: auto;
+  /* The module grid is integer-aligned, so smoothing it only blurs the edges scanners
+     are looking for. */
+  image-rendering: pixelated;
+  shape-rendering: crispEdges;
+}
+
+.address {
+  font-family: var(--mono);
+  font-size: var(--t-code);
+  color: var(--ink);
+  margin: 12px 0 0;
+  overflow-wrap: anywhere;
+}
