@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { useAppearanceStore } from '../../stores/appearanceStore';
 import { AppearancePanel } from './AppearancePanel';
 import { startApplyingAppearance } from './applyAppearance';
-import { MONO, SANS } from './fonts';
+import { MONO, SANS, SIZE } from './fonts';
 
 const root = () => document.documentElement;
 
@@ -53,6 +53,16 @@ describe('AppearancePanel', () => {
     expect(root().style.fontSize).toBe('17px');
     expect(screen.getByText('17px')).toBeInTheDocument();
     expect(slider).toHaveAttribute('aria-valuetext', '17 pixels');
+    stop();
+  });
+
+  it('takes its bounds from SIZE rather than a hardcoded range', () => {
+    const { stop } = renderPanel();
+    const slider = screen.getByRole('slider', { name: 'Base size' });
+
+    expect(slider).toHaveAttribute('min', String(SIZE.min));
+    expect(slider).toHaveAttribute('max', String(SIZE.max));
+    expect(slider).toHaveAttribute('step', String(SIZE.step));
     stop();
   });
 
