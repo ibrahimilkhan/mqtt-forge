@@ -1,0 +1,25 @@
+/* The app has no other <select>, so the control's look is defined here rather than in
+   global.css: nothing else would use it. */
+.select {
+  width: 100%;
+  font-family: var(--mono);
+  font-size: var(--t-code);
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 8px 9px;
+}
+
+.slider { display: flex; align-items: center; gap: 10px; }
+.slider input { flex: 1; min-width: 0; accent-color: var(--signal); }
+
+/* Fixed width so the row does not jump as the reading goes from 9px to 20px */
+.reading {
+  flex: none;
+  width: 44px;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: var(--t-small);
+  color: var(--muted);
+}
