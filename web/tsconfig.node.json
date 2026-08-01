@@ -19,5 +19,7 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["vite.config.ts"]
+  /* Guard tests in src (e.g. typeScale.test.ts) use node: imports and Node APIs;
+     include them here alongside config so they get Node types via tsconfig.node.json. */
+  "include": ["vite.config.ts", "src/styles/typeScale.test.ts"]
 }
