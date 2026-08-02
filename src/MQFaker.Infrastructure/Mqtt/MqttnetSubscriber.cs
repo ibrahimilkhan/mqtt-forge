@@ -72,7 +72,7 @@ public sealed class MqttnetSubscriber : IMqttSubscriber
         return _notifier.NotifyMessageReceivedAsync(message);
     }
 
-    // Subscriptions die with the broker connection; realigns the local list with reality
+    // Subscriptions die with the connection; clears local list to match
     private Task OnDisconnectedAsync(MqttClientDisconnectedEventArgs e)
     {
         _filters.Clear();

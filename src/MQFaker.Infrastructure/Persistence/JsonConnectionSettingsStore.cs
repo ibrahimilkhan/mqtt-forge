@@ -10,8 +10,7 @@ public sealed class JsonConnectionSettingsStore : IConnectionSettingsStore
 
     public JsonConnectionSettingsStore(string filePath) => _filePath = filePath;
 
-    // Treats a corrupt/unreadable file as "no saved settings" rather than an error;
-    // settings are only a convenience cache, so the app recovers on its own.
+    // Corrupt/unreadable file is treated as no saved settings (settings are just a cache)
     public async Task<BrokerConnectionSettings?> LoadAsync(CancellationToken ct)
     {
         if (!File.Exists(_filePath)) return null;
@@ -27,8 +26,7 @@ public sealed class JsonConnectionSettingsStore : IConnectionSettingsStore
         }
     }
 
-    // Writes to a temp file then swaps it in; if the write is interrupted,
-    // the existing settings file stays intact.
+    // Writes to a temp file then swaps in, so an interrupted write can't corrupt the existing file
     public async Task SaveAsync(BrokerConnectionSettings settings, CancellationToken ct)
     {
         var directory = Path.GetDirectoryName(_filePath);
