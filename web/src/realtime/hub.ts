@@ -17,7 +17,7 @@ export interface Hub {
 // Retry interval once withAutomaticReconnect gives up on its own schedule (~30s).
 const MANUAL_RETRY_DELAY_MS = 5000;
 
-// Module-scope singleton so StrictMode's double mount can't open two connections.
+// Factory, not the singleton — do not call this from a component; use the exported hub below.
 export function createSignalRHub(url = '/hubs/mqtt'): Hub {
   const connection = new signalR.HubConnectionBuilder().withUrl(url).withAutomaticReconnect().build();
 
@@ -83,4 +83,5 @@ export function createSignalRHub(url = '/hubs/mqtt'): Hub {
   };
 }
 
+// Module-scope singleton so StrictMode's double mount can't open two connections.
 export const hub = createSignalRHub();
