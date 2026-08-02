@@ -17,6 +17,8 @@ RUN dotnet publish src/MQFaker.Api -c Release -p:SkipFrontend=true -o /app
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 COPY --from=build /app ./
+# Pre-owned by APP_UID so a volume mounted here inherits write access under the non-root user
+RUN mkdir -p /data && chown $APP_UID /data
 USER $APP_UID
 EXPOSE 5169
 ENTRYPOINT ["./MQFaker.Api"]

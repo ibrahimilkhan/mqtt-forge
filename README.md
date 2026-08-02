@@ -49,6 +49,16 @@ The container binds `0.0.0.0`, so the panel is reachable from other devices on t
 network — that is what the Mobile panel's QR code is for. On a shared network anyone who
 can reach the port can publish to your broker.
 
+Saved connection settings live inside the container and are lost on `docker rm`. To keep
+them, point the app at a mounted volume instead:
+
+```
+docker run -d -p 5169:5169 \
+  -e MqFaker__SettingsPath=/data/connection-settings.json \
+  -v mqfaker-data:/data \
+  --name mqfaker mqfaker
+```
+
 ## Desktop app
 
 ```
