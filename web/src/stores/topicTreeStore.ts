@@ -4,7 +4,7 @@ import type { MqttMessage } from '../types/api';
 
 type TreeState = {
   root: TopicNode;
-  // Only paths the user has clicked appear here; everything else follows defaultOpen.
+  // Only user-clicked paths appear here; others follow defaultOpen.
   openPaths: ReadonlyMap<string, boolean>;
   defaultOpen: boolean;
   apply: (messages: MqttMessage[]) => void;
@@ -27,8 +27,7 @@ export const useTopicTreeStore = create<TreeState>((set, get) => ({
       return { openPaths };
     }),
 
-  // Expand/Collapse all also decides how branches that arrive later start out, so the
-  // per-path choices are dropped rather than rewritten.
+  // Also sets the default for branches that arrive later, so per-path choices are dropped.
   setAllOpen: (open) => set({ openPaths: new Map(), defaultOpen: open }),
 
   reset: () => set({ root: emptyTree(), openPaths: new Map(), defaultOpen: get().defaultOpen }),
