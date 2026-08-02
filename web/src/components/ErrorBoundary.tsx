@@ -3,8 +3,7 @@ import { Component, type ErrorInfo, type ReactNode } from 'react';
 type Props = { children: ReactNode };
 type State = { error: Error | null };
 
-// A render crash should not leave a blank page with no way back. Class syntax is not a
-// style choice here: React offers no hook equivalent for catching render errors.
+// Class syntax required: React has no hook equivalent for catching render errors.
 export class ErrorBoundary extends Component<Props, State> {
   state: State = { error: null };
 

@@ -1,7 +1,6 @@
 type Props = { name: string; value: number; onChange: (qos: number) => void };
 
-// The labels carry no class of their own: they sit inside the panel's .checks row, which
-// styles them, exactly as the markup in the previous console did.
+// Labels are unstyled; the panel's .checks row styles them.
 export function QosSelect({ name, value, onChange }: Props) {
   return (
     <>

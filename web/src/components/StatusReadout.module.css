@@ -1,4 +1,4 @@
-/* The bar owns placement, so the readout carries no margin of its own. */
+/* Bar owns placement; no margin here. */
 .readout {
   display: flex;
   align-items: center;
@@ -22,8 +22,7 @@
 .readout[data-state="Faulted"] { color: var(--fault); }
 .readout[data-state="Faulted"] .lamp { background: var(--fault); }
 
-/* Reconnecting borrows the fault colour but keeps a pulse, so it reads as "working on it"
-   rather than "broken". */
+/* Fault colour with a pulse — reads as "working on it", not "broken". */
 .readout[data-state="Reconnecting"] { color: var(--fault); }
 .readout[data-state="Reconnecting"] .lamp {
   background: var(--fault);

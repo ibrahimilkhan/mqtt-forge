@@ -4,8 +4,7 @@ import styles from './StatusReadout.module.css';
 type Props = { state: ConnectionState; where?: string; reconnecting?: boolean };
 
 export function StatusReadout({ state, where, reconnecting = false }: Props) {
-  // A hub that is re-establishing itself outranks the broker state: until it is back,
-  // what the page shows about the broker is stale by definition.
+  // Reconnecting outranks broker state: until the hub is back, that state is stale.
   const label = reconnecting
     ? 'RECONNECTING'
     : where

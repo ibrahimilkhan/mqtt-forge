@@ -5,8 +5,7 @@ import { useAppearanceStore } from '../../stores/appearanceStore';
 import styles from './AppearancePanel.module.css';
 import { MONO, SANS, SIZE, type MonoId, type SansId } from './fonts';
 
-// No selector here on purpose: the panel displays all three values, so it has to
-// re-render whenever any of them changes.
+// No selector: the panel shows all three values, so it must re-render on any change.
 export function AppearancePanel({ onClose }: { onClose: () => void }) {
   const { sans, mono, size, setSans, setMono, setSize, reset } = useAppearanceStore();
 
@@ -56,7 +55,7 @@ export function AppearancePanel({ onClose }: { onClose: () => void }) {
               max={SIZE.max}
               step={SIZE.step}
               value={size}
-              // A screen reader would otherwise read the bare number with no unit.
+              // Otherwise a screen reader reads the bare number with no unit.
               aria-valuetext={`${size} pixels`}
               onChange={(event) => setSize(Number(event.target.value))}
             />

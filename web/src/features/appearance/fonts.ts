@@ -1,6 +1,5 @@
-// The single place that knows which choices exist and what CSS each one means.
-// The two bundled families are the ones self-hosted under public/fonts; the system
-// entries download nothing, which is why the tool still works on an air-gapped network.
+// Bundled families are self-hosted under public/fonts; system entries need no download,
+// which keeps the tool working on an air-gapped network.
 export const SANS = {
   inter: {
     label: 'Inter',

@@ -9,7 +9,7 @@ import { server } from '../../test/server';
 import { SubscribePanel } from './SubscribePanel';
 
 function renderPanel() {
-  // Subscribing needs a live broker; without one the button is disabled by design.
+  // Subscribe button is disabled without a live broker.
   server.use(http.get('/api/connection', () => HttpResponse.json({ state: 'Connected' })));
 
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });

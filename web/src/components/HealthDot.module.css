@@ -1,4 +1,4 @@
-/* Fixed to the viewport corner, small enough to never block content beneath it */
+/* Fixed to the viewport corner; small enough not to block content beneath it. */
 .dot {
   position: fixed;
   right: 16px;

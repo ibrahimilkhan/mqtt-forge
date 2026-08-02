@@ -6,7 +6,7 @@ function Boom(): never {
   throw new Error('render exploded');
 }
 
-// React logs the caught error; silence it so the run stays readable.
+// Silences React's console.error for the caught error.
 beforeEach(() => vi.spyOn(console, 'error').mockImplementation(() => {}));
 afterEach(() => vi.restoreAllMocks());
 

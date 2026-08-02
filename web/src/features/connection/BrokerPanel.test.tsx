@@ -39,7 +39,7 @@ describe('BrokerPanel', () => {
 
     renderPanel();
 
-    // The form renders with its defaults first and is filled once the query resolves.
+    // Defaults render first; filled once the query resolves.
     await waitFor(() => expect(screen.getByLabelText('Host')).toHaveValue('broker.example'));
     expect(screen.getByLabelText('Port')).toHaveValue(8883);
     expect(screen.getByLabelText('Client ID')).toHaveValue('saved-client');

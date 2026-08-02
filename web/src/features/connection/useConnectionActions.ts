@@ -11,18 +11,14 @@ export function useConnectionActions() {
   const queryClient = useQueryClient();
 
   const connectMutation = useMutation({
-    // Only the connection itself decides whether this succeeded. Auto-subscribing is a
-    // convenience layered on top: if it fails the broker is still connected, and saying
-    // otherwise would be a lie the previous console never told.
+    // Success means the connection itself succeeded; auto-subscribe failure doesn't count against it.
     mutationFn: ({ request }: { request: ConnectRequest; autoSubscribe: boolean }) => connect(request),
 
     onSuccess: async (result, { request, autoSubscribe }) => {
-      // Refetched rather than written from the response: the hub may already have pushed a
-      // newer state — a broker that drops the session on connect — and writing the
-      // response over it would replace the truth with a stale success.
+      // Refetch, don't write the response: the hub may have already pushed a newer state.
       void queryClient.invalidateQueries({ queryKey: queryKeys.connection });
 
-      // Same settings as the live session: the API left it alone, so the console does too.
+      // API left the settings alone, so the console does too.
       if (result.alreadyConnected) {
         useLogStore.getState().push({
           kind: 'ok',
@@ -32,7 +28,7 @@ export function useConnectionActions() {
         return;
       }
 
-      // A new connection means a new tree; retained messages refill it right away.
+      // New connection, new tree — retained messages refill it right away.
       useTopicTreeStore.getState().reset();
       useLogStore.getState().push({
         kind: 'ok',
@@ -64,8 +60,7 @@ export function useConnectionActions() {
   return { connectMutation, disconnectMutation };
 }
 
-// The '#' subscription the connect form offers. Reported on its own line, so a failure
-// here reads as a failed subscription rather than a failed connection.
+// Reported on its own log line, so a failure here reads as a subscribe failure, not a connect failure.
 async function subscribeToEverything() {
   try {
     await subscribe({ topicFilter: '#', qos: 0 });

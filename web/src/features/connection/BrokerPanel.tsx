@@ -29,7 +29,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
   const guardedConnect = useGuardedMutate(connectMutation);
   const guardedDisconnect = useGuardedMutate(disconnectMutation);
 
-  // Saved settings arrive after the first render; the password is never returned.
+  // Arrives after first render; password is never returned by the API.
   useEffect(() => {
     if (!saved) return;
     setForm({
