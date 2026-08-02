@@ -3,7 +3,7 @@ import { networkUrl } from 'virtual:network-url';
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 
 type MobileUrl =
-  /** An address another device can actually open. */
+  /** Not loopback — the best address we have, but reachability from another device is unconfirmed. */
   | { kind: 'reachable'; url: string }
   /** Loopback only — useless on a phone. */
   | { kind: 'loopback'; url: string };

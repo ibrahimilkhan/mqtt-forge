@@ -42,7 +42,8 @@ if (outcome == DesktopBind.Outcome.Unavailable)
 }
 else
 {
-    // Window loads a LAN address, not localhost, so the Mobile panel's window.location-based QR code works
+    // Window loads a LAN address, not localhost, so the Mobile panel's window.location-based QR
+    // code has something to encode — a successful bind doesn't guarantee a phone can reach it.
     var host = outcome == DesktopBind.Outcome.Lan ? LanAddress.ChooseForThisMachine() : IPAddress.Loopback;
     window.Load(new Uri($"http://{host}:{port}"));
 }
