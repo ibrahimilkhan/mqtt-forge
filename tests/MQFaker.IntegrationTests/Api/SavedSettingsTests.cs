@@ -41,18 +41,35 @@ public class SavedSettingsTests : IClassFixture<MqFakerApiFactory>, IClassFixtur
     }
 
     [Fact]
-    public async Task Connecting_twice_succeeds_by_replacing_the_active_connection()
+    public async Task Connecting_twice_with_identical_settings_is_a_no_op()
     {
         var client = _factory.CreateClient();
         var connect = new ConnectRequestDto(_broker.Host, _broker.Port, "twice-test", null, null, false);
 
         var first = await client.PostAsJsonAsync("/api/connection", connect);
         Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Contains("\"alreadyConnected\":false", await first.Content.ReadAsStringAsync());
 
         var second = await client.PostAsJsonAsync("/api/connection", connect);
         Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+        Assert.Contains("\"alreadyConnected\":true", await second.Content.ReadAsStringAsync());
 
         var state = await client.GetAsync("/api/connection");
         Assert.Contains("Connected", await state.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Connecting_twice_with_different_settings_reconnects()
+    {
+        var client = _factory.CreateClient();
+        var first = new ConnectRequestDto(_broker.Host, _broker.Port, "differ-test-1", null, null, false);
+        var second = new ConnectRequestDto(_broker.Host, _broker.Port, "differ-test-2", null, null, false);
+
+        var firstResponse = await client.PostAsJsonAsync("/api/connection", first);
+        Assert.Contains("\"alreadyConnected\":false", await firstResponse.Content.ReadAsStringAsync());
+
+        var secondResponse = await client.PostAsJsonAsync("/api/connection", second);
+        Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
+        Assert.Contains("\"alreadyConnected\":false", await secondResponse.Content.ReadAsStringAsync());
     }
 }

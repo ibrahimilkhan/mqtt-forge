@@ -102,6 +102,25 @@ describe('BrokerPanel', () => {
     await waitFor(() => expect(useTopicTreeStore.getState().root.children.size).toBe(0));
   });
 
+  it('leaves the tree and log alone when the API reports the settings are unchanged', async () => {
+    server.use(
+      http.post('/api/connection', () =>
+        HttpResponse.json({ state: 'Connected', alreadyConnected: true }),
+      ),
+    );
+    useTopicTreeStore
+      .getState()
+      .apply([{ topic: 'stale/topic', payload: '1', qos: 0, retain: false, receivedAt: '2026-07-26T10:00:00Z' }]);
+
+    renderPanel();
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+
+    await waitFor(() =>
+      expect(useLogStore.getState().entries[0]).toMatchObject({ kind: 'ok', verb: 'Already connected' }),
+    );
+    expect(useTopicTreeStore.getState().root.children.size).toBe(1);
+  });
+
   it('logs a fault with the reason when the broker refuses', async () => {
     server.use(
       http.post('/api/connection', () =>
