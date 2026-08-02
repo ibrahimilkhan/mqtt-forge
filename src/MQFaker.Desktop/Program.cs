@@ -23,56 +23,59 @@ if (instance is null)
 }
 
 using var shutdown = new CancellationTokenSource();
-using (instance)
+
+// A DMG volume is read-only, so settings cannot live next to this executable like the
+// API and Docker builds do; the per-user data directory is writable regardless of where
+// the app was launched from.
+var settingsPath = Path.Combine(
+    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+    "MQFaker", "connection-settings.json");
+
+var port = PortFinder.FirstFree(5169);
+var app = MqFakerHost.Build(
+    [.. args, $"--MqFaker:SettingsPath={settingsPath}"],
+    urls: $"http://0.0.0.0:{port}");
+await app.StartAsync();
+
+// Loading at "localhost" would leave window.location on loopback even though the host is
+// reachable over the LAN - the Mobile panel's QR code depends on window.location alone, so
+// the window has to be pointed at an address a phone could use. Falls back to loopback by
+// itself when the machine has no such address, so the app still opens when offline.
+var host = LanAddress.ChooseForThisMachine();
+var window = new PhotinoWindow()
+    .SetTitle("MQFaker")
+    .SetUseOsDefaultSize(false)
+    .SetSize(1280, 860)
+    .Load(new Uri($"http://{host}:{port}"));
+
+// The listener runs off the window thread, so the focus call has to be marshalled back.
+instance.ListenForSignals(() => window.Invoke(() =>
 {
-    // A DMG volume is read-only, so settings cannot live next to this executable like the
-    // API and Docker builds do; the per-user data directory is writable regardless of where
-    // the app was launched from.
-    var settingsPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "MQFaker", "connection-settings.json");
+    window.SetMinimized(false);
+    window.SetTopMost(true);
+    window.SetTopMost(false);
+}), shutdown.Token);
 
-    var port = PortFinder.FirstFree(5169);
-    var app = MqFakerHost.Build(
-        [.. args, $"--MqFaker:SettingsPath={settingsPath}"],
-        urls: $"http://0.0.0.0:{port}");
-    await app.StartAsync();
+window.WaitForClose();
+await shutdown.CancelAsync();
 
-    // Loading at "localhost" would leave window.location on loopback even though the host is
-    // reachable over the LAN - the Mobile panel's QR code depends on window.location alone, so
-    // the window has to be pointed at an address a phone could use. Falls back to loopback by
-    // itself when the machine has no such address, so the app still opens when offline.
-    var host = LanAddress.ChooseForThisMachine();
-    var window = new PhotinoWindow()
-        .SetTitle("MQFaker")
-        .SetUseOsDefaultSize(false)
-        .SetSize(1280, 860)
-        .Load(new Uri($"http://{host}:{port}"));
+// Release the lock before the slow shutdown work below, so a relaunch while this instance
+// is still disconnecting can acquire it and open its own window right away instead of
+// ringing a doorbell nobody answers.
+instance.Dispose();
 
-    // The listener runs off the window thread, so the focus call has to be marshalled back.
-    instance.ListenForSignals(() => window.Invoke(() =>
-    {
-        window.SetMinimized(false);
-        window.SetTopMost(true);
-        window.SetTopMost(false);
-    }), shutdown.Token);
-
-    window.WaitForClose();
-    await shutdown.CancelAsync();
-
-    try
-    {
-        // Close the broker session before the process leaves, so the broker is not left
-        // holding one for a window that is gone.
-        await app.Services.GetRequiredService<IMqttConnectionManager>()
-            .DisconnectAsync(CancellationToken.None);
-    }
-    finally
-    {
-        // Must still run even if DisconnectAsync above throws - otherwise the host never
-        // shuts down and the process is left hanging instead of exiting cleanly.
-        await app.StopAsync();
-    }
+try
+{
+    // Close the broker session before the process leaves, so the broker is not left
+    // holding one for a window that is gone.
+    await app.Services.GetRequiredService<IMqttConnectionManager>()
+        .DisconnectAsync(CancellationToken.None);
+}
+finally
+{
+    // Must still run even if DisconnectAsync above throws - otherwise the host never
+    // shuts down and the process is left hanging instead of exiting cleanly.
+    await app.StopAsync();
 }
 
 return 0;
