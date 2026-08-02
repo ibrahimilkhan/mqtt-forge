@@ -16,7 +16,7 @@ public sealed class ConnectionController : ControllerBase
     [HttpGet]
     public IActionResult GetState() => Ok(new { state = _service.CurrentState.ToString() });
 
-    // Lets the console prefill the connection form with the last used values
+    // Lets the console prefill the connection form
     [HttpGet("settings")]
     public async Task<IActionResult> GetSavedSettings(CancellationToken ct)
     {

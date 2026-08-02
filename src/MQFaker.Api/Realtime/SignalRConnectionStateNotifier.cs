@@ -5,8 +5,7 @@ using MQFaker.Domain.Enums;
 
 namespace MQFaker.Api.Realtime;
 
-// SignalR implementation of IConnectionStateNotifier. The console reads the state as a
-// string, the same shape GET /api/connection returns, so both paths look alike.
+// State sent as a string, matching the shape of GET /api/connection
 public sealed class SignalRConnectionStateNotifier : IConnectionStateNotifier
 {
     public const string ConnectionStateChanged = "connectionStateChanged";

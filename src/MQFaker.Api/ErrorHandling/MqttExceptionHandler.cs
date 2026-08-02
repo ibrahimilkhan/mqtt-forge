@@ -4,8 +4,7 @@ using MQFaker.Domain.Exceptions;
 
 namespace MQFaker.Api.ErrorHandling;
 
-// Turns known MQTT failures into readable ProblemDetails; leaves other exceptions
-// to the next handler (default 500).
+// Known MQTT failures become ProblemDetails; others fall through to the default 500
 public sealed class MqttExceptionHandler : IExceptionHandler
 {
     private readonly IProblemDetailsService _problemDetailsService;
