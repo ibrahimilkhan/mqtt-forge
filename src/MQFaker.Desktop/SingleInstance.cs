@@ -159,7 +159,7 @@ public sealed class SingleInstance : IDisposable
         }
         catch (IOException)
         {
-            // Best effort: the lock is already released via flock; the file's absence isn't guaranteed
+            // Best effort: FileShare.None means our own still-open handle can block this delete
         }
         catch (UnauthorizedAccessException)
         {
