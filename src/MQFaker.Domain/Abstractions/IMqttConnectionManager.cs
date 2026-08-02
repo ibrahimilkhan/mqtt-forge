@@ -3,7 +3,7 @@ using MQFaker.Domain.Models;
 
 namespace MQFaker.Domain.Abstractions;
 
-// Manages the lifecycle of the single active broker connection
+// Manages the single active broker connection's lifecycle
 public interface IMqttConnectionManager
 {
     ConnectionState State { get; }
