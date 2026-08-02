@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useSelectionStore } from '../../stores/selectionStore';
@@ -159,5 +159,31 @@ describe('TopicTree', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Collapse all' }));
 
     expect(branchOf('a')).toHaveAttribute('data-open', 'false');
+  });
+
+  // Already safe: toggle/setAllOpen/select are synchronous store writes with no network
+  // call, so firing them back to back without waiting cannot leave a stale in-flight
+  // request or an inconsistent server/UI state - only the ordinary last-write-wins result.
+  it('settles on a consistent state when the twisty is clicked rapidly with no waits', () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp')]);
+    render(<TopicTree />);
+    const twisty = screen.getByRole('button', { name: 'Expand sensors' });
+
+    fireEvent.click(twisty);
+    fireEvent.click(twisty);
+    fireEvent.click(twisty);
+
+    expect(branchOf('sensors')).toHaveAttribute('data-open', 'true');
+  });
+
+  it('settles on a consistent state when expand/collapse all are hammered with no waits', () => {
+    useTopicTreeStore.getState().apply([message('a/x')]);
+    render(<TopicTree />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse all' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+
+    expect(branchOf('a')).toHaveAttribute('data-open', 'true');
   });
 });

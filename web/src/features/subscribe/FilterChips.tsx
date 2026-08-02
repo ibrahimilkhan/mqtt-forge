@@ -1,9 +1,9 @@
 import { useSelectionStore } from '../../stores/selectionStore';
 import styles from './FilterChips.module.css';
 
-type Props = { filters: string[]; onRemove: (filter: string) => void };
+type Props = { filters: string[]; onRemove: (filter: string) => void; pendingFilter?: string };
 
-export function FilterChips({ filters, onRemove }: Props) {
+export function FilterChips({ filters, onRemove, pendingFilter }: Props) {
   const selected = useSelectionStore((state) => state.selected);
   const select = useSelectionStore((state) => state.select);
 
@@ -21,7 +21,12 @@ export function FilterChips({ filters, onRemove }: Props) {
           >
             {filter}
           </button>
-          <button type="button" onClick={() => onRemove(filter)} aria-label={`Unsubscribe from ${filter}`}>
+          <button
+            type="button"
+            onClick={() => onRemove(filter)}
+            disabled={pendingFilter === filter}
+            aria-label={`Unsubscribe from ${filter}`}
+          >
             ×
           </button>
         </span>

@@ -8,6 +8,7 @@ import styles from '../../styles/panel.module.css';
 import { useLogStore } from '../../stores/logStore';
 import { useConnectionState } from '../../api/useConnectionState';
 import { describeError } from '../../lib/problemDetails';
+import { useGuardedMutate } from '../../lib/useGuardedMutate';
 
 export function PublishPanel({ onClose }: { onClose: () => void }) {
   const [topic, setTopic] = useState('sensors/temp');
@@ -26,6 +27,7 @@ export function PublishPanel({ onClose }: { onClose: () => void }) {
     onError: (error) =>
       useLogStore.getState().push({ kind: 'fault', verb: 'Publish failed', topic, body: describeError(error) }),
   });
+  const guardedPublish = useGuardedMutate(publishMutation);
 
   return (
     <PanelShell title="Publish" onClose={onClose}>
@@ -50,7 +52,11 @@ export function PublishPanel({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className={styles.actions}>
-        <button type="button" onClick={() => publishMutation.mutate()} disabled={!isOnline}>
+        <button
+          type="button"
+          onClick={() => guardedPublish()}
+          disabled={!isOnline || publishMutation.isPending}
+        >
           Publish
         </button>
       </div>

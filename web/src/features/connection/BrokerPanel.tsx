@@ -7,6 +7,7 @@ import { PanelShell } from '../../components/PanelShell';
 import styles from '../../styles/panel.module.css';
 import { useConnectionState } from '../../api/useConnectionState';
 import { fieldError } from '../../lib/problemDetails';
+import { useGuardedMutate } from '../../lib/useGuardedMutate';
 import { useConnectionActions } from './useConnectionActions';
 
 const DEFAULTS = {
@@ -25,6 +26,8 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
   const { data: saved } = useQuery({ queryKey: queryKeys.savedSettings, queryFn: getSavedSettings });
   const { connectMutation, disconnectMutation } = useConnectionActions();
   const { isOnline } = useConnectionState();
+  const guardedConnect = useGuardedMutate(connectMutation);
+  const guardedDisconnect = useGuardedMutate(disconnectMutation);
 
   // Saved settings arrive after the first render; the password is never returned.
   useEffect(() => {
@@ -40,7 +43,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
   }, [saved]);
 
   const submit = () =>
-    connectMutation.mutate({
+    guardedConnect({
       request: {
         host: form.host,
         port: Number(form.port),
@@ -134,8 +137,8 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
         <button
           type="button"
           className="ghost"
-          onClick={() => disconnectMutation.mutate()}
-          disabled={!isOnline}
+          onClick={() => guardedDisconnect()}
+          disabled={!isOnline || disconnectMutation.isPending}
         >
           Disconnect
         </button>
