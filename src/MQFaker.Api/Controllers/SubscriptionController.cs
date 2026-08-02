@@ -23,7 +23,7 @@ public sealed class SubscriptionController : ControllerBase
         return Accepted();
     }
 
-    // The filter is taken as a query value, not a path segment; '#' and '/' cannot travel safely in a path
+    // Query value, not a path segment: '#' and '/' aren't path-safe
     [HttpDelete]
     public async Task<IActionResult> Unsubscribe([FromQuery] string topicFilter, CancellationToken ct)
     {

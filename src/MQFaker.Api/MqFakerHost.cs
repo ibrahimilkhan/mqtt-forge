@@ -8,9 +8,7 @@ using Serilog;
 
 namespace MQFaker.Api;
 
-// Both entry points build the same host: the API's own Program and the desktop shell,
-// which starts this in-process behind a window. The desktop shell picks its port at
-// runtime, which is why urls can override configuration.
+// Shared by Program and the desktop shell; urls overrides config since desktop picks its port at runtime
 public static class MqFakerHost
 {
     public static WebApplication Build(string[] args, string? urls = null)
@@ -21,11 +19,7 @@ public static class MqFakerHost
 
         builder.Host.UseSerilog((ctx, cfg) => cfg.ReadFrom.Configuration(ctx.Configuration));
 
-        // ASP.NET Core's default part discovery only walks the entry assembly's dependency
-        // graph for MVC-referencing libraries. The desktop shell's entry assembly is
-        // MQFaker.Desktop, not this one, so without stating the part explicitly the
-        // controllers defined here are silently invisible to routing (every API call 404s)
-        // when this host is started from that entry point.
+        // Without this, controllers 404 when the entry assembly is MQFaker.Desktop, not this one
         builder.Services.AddControllers()
             .AddApplicationPart(typeof(MqFakerHost).Assembly);
         builder.Services.AddSignalR();
@@ -34,8 +28,7 @@ public static class MqFakerHost
         builder.Services.AddProblemDetails();
         builder.Services.AddExceptionHandler<MqttExceptionHandler>();
 
-        // Only development runs the interface on a separate origin; both shipped packages
-        // serve it from this same host. AllowCredentials is required by SignalR.
+        // Dev only: shipped packages serve the UI from this host. AllowCredentials is required by SignalR
         if (builder.Environment.IsDevelopment())
             builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
                 p.WithOrigins("http://localhost:5173").AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
@@ -44,19 +37,16 @@ public static class MqFakerHost
 
         var app = builder.Build();
 
-        // Turns unexpected errors into ProblemDetails in one place
         app.UseExceptionHandler();
         if (app.Environment.IsDevelopment()) app.UseCors();
 
-        // Serves the interface from wwwroot
         app.UseDefaultFiles();
         app.UseStaticFiles();
 
         app.MapControllers();
         app.MapHub<MqttHub>("/hubs/mqtt");
 
-        // The subscriber hooks MQTTnet events in its constructor; it is created without
-        // waiting for the first request so messages are caught as soon as a connection opens.
+        // Resolved eagerly so its ctor hooks MQTTnet events before the first request
         app.Services.GetRequiredService<IMqttSubscriber>();
 
         return app;

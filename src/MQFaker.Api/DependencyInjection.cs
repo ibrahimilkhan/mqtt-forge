@@ -10,7 +10,7 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddMqFaker(this IServiceCollection services)
     {
-        // A single MQTTnet client is shared across all requests (one active connection)
+        // Single MQTTnet client for all requests (one active connection)
         services.AddSingleton<MqttnetClientProvider>();
         services.AddSingleton<IMqttConnectionManager, MqttnetConnectionManager>();
         services.AddSingleton<IMqttPublisher, MqttnetPublisher>();
@@ -18,8 +18,7 @@ public static class DependencyInjection
         services.AddSingleton<IConnectionStateNotifier, SignalRConnectionStateNotifier>();
         services.AddSingleton<IMqttSubscriber, MqttnetSubscriber>();
 
-        // The settings path is read at resolve time, not registration time, so hosts
-        // that add configuration later — such as tests — still supply the right value.
+        // Read at resolve time, not registration, so late-configuring hosts (tests) still work
         services.AddSingleton<IConnectionSettingsStore>(sp =>
         {
             var config = sp.GetRequiredService<IConfiguration>();
