@@ -20,6 +20,7 @@ export default defineConfig({
     host: true,
     https,
     // Proxy avoids CORS by keeping the browser on one origin; ws needed for SignalR.
+    // Targets stay on localhost — the API only listens there, host:true just exposes Vite.
     proxy: {
       '/api': 'http://localhost:5169',
       '/hubs': { target: 'http://localhost:5169', ws: true },
@@ -28,6 +29,7 @@ export default defineConfig({
   build: {
     // API serves the built site from its own wwwroot.
     outDir: '../src/MQFaker.Api/wwwroot',
+    // outDir sits outside the Vite root, so Vite won't auto-clean it; force it or stale hashed assets pile up.
     emptyOutDir: true,
   },
   test: {
