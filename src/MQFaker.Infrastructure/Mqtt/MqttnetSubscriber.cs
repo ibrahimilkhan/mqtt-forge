@@ -3,6 +3,7 @@ using MQFaker.Domain.Abstractions;
 using MQFaker.Domain.Exceptions;
 using MQFaker.Domain.Models;
 using MQTTnet;
+using MQTTnet.Exceptions;
 using MQTTnet.Protocol;
 
 namespace MQFaker.Infrastructure.Mqtt;
@@ -28,12 +29,19 @@ public sealed class MqttnetSubscriber : IMqttSubscriber
     {
         EnsureConnected();
 
-        await _client.SubscribeAsync(
-            new MqttTopicFilterBuilder()
-                .WithTopic(request.TopicFilter)
-                .WithQualityOfServiceLevel((MqttQualityOfServiceLevel)request.Qos)
-                .Build(),
-            ct);
+        try
+        {
+            await _client.SubscribeAsync(
+                new MqttTopicFilterBuilder()
+                    .WithTopic(request.TopicFilter)
+                    .WithQualityOfServiceLevel((MqttQualityOfServiceLevel)request.Qos)
+                    .Build(),
+                ct);
+        }
+        catch (MqttProtocolViolationException ex)
+        {
+            throw new MessageRejectedException($"Could not subscribe to '{request.TopicFilter}': {ex.Message}", ex);
+        }
 
         _filters[request.TopicFilter] = 0;
     }

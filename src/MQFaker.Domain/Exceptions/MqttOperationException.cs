@@ -21,3 +21,11 @@ public sealed class NotConnectedException : MqttOperationException
     public NotConnectedException(string message, Exception? inner = null)
         : base(message, inner) { }
 }
+
+// The broker or the protocol itself refused this specific message - topic or payload too
+// large - independent of whether the connection is otherwise healthy
+public sealed class MessageRejectedException : MqttOperationException
+{
+    public MessageRejectedException(string message, Exception? inner = null)
+        : base(message, inner) { }
+}

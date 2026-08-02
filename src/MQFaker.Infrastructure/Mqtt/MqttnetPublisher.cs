@@ -2,6 +2,7 @@ using MQFaker.Domain.Abstractions;
 using MQFaker.Domain.Exceptions;
 using MQFaker.Domain.Models;
 using MQTTnet;
+using MQTTnet.Exceptions;
 using MQTTnet.Protocol;
 
 namespace MQFaker.Infrastructure.Mqtt;
@@ -14,6 +15,9 @@ public sealed class MqttnetPublisher : IMqttPublisher
 
     public async Task PublishAsync(PublishRequest request, CancellationToken ct)
     {
+        if (!_client.IsConnected)
+            throw new NotConnectedException("Connect to a broker before publishing.");
+
         var message = new MqttApplicationMessageBuilder()
             .WithTopic(request.Topic)
             .WithPayload(request.Payload)
@@ -21,9 +25,18 @@ public sealed class MqttnetPublisher : IMqttPublisher
             .WithRetainFlag(request.Retain)
             .Build();
 
-        if (!_client.IsConnected)
-            throw new NotConnectedException("Connect to a broker before publishing.");
-
-        await _client.PublishAsync(message, ct);
+        try
+        {
+            await _client.PublishAsync(message, ct);
+        }
+        catch (MqttProtocolViolationException ex)
+        {
+            throw new MessageRejectedException($"Could not publish to '{request.Topic}': {ex.Message}", ex);
+        }
+        catch (MqttClientUnexpectedDisconnectReceivedException ex)
+            when (ex.ReasonCode == MqttDisconnectReasonCode.PacketTooLarge)
+        {
+            throw new MessageRejectedException($"The broker rejected the message to '{request.Topic}' as too large.", ex);
+        }
     }
 }
