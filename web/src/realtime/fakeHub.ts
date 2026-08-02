@@ -1,6 +1,6 @@
 import type { HubEvents } from './hub';
 
-// Lets tests push hub events without a SignalR server.
+// Lets tests emit hub events without a real SignalR server.
 export function createFakeHub() {
   const handlerSets: Array<Partial<HubEvents>> = [];
 
@@ -27,6 +27,6 @@ export function createFakeHub() {
     },
   };
 
-  // Structurally a Hub, plus the two handles tests need.
+  // Structurally a Hub, plus test-only handles (startCount, emit).
   return fake;
 }

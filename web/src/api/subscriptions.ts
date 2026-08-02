@@ -6,6 +6,6 @@ export const getSubscriptions = () => request<string[]>('/api/subscriptions');
 export const subscribe = (body: SubscribeRequest) =>
   request<void>('/api/subscriptions', { method: 'POST', ...json(body) });
 
-// The filter travels as a query value; '#' and '/' cannot be carried in a path segment.
+// Query value, not a path segment — '#' and '/' can't survive in one.
 export const unsubscribe = (topicFilter: string) =>
   request<void>(`/api/subscriptions?topicFilter=${encodeURIComponent(topicFilter)}`, { method: 'DELETE' });

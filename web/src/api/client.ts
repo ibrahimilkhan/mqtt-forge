@@ -1,7 +1,6 @@
 import { toApiError } from '../lib/problemDetails';
 
-// The single place a request leaves the app. Anything other than 2xx becomes an ApiError,
-// so callers never branch on status codes.
+// Turns any non-2xx response into an ApiError so callers never branch on status codes.
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
@@ -10,7 +9,7 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) throw await toApiError(response);
 
-  // 202 Accepted and 204 No Content carry nothing to parse.
+  // 202/204 responses carry nothing to parse.
   const isJson = response.headers.get('content-type')?.includes('json') ?? false;
   return (isJson ? await response.json() : undefined) as T;
 }

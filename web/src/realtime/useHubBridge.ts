@@ -8,7 +8,7 @@ import { useTopicTreeStore } from '../stores/topicTreeStore';
 import type { MqttMessage } from '../types/api';
 import type { Hub } from './hub';
 
-// The one place hub events meet application state. Mounted once, from App.
+// Where hub events meet application state; mounted once, from App.
 export function useHubBridge(hub: Hub) {
   const queryClient = useQueryClient();
 
@@ -22,16 +22,14 @@ export function useHubBridge(hub: Hub) {
       messageReceived: (message) => buffer.push(message),
       connectionStateChanged: (payload) => queryClient.setQueryData(queryKeys.connection, payload),
       reconnecting: () => useHubStatusStore.getState().setStatus('reconnecting'),
-      // While the hub was down the broker state may have moved on; refetch rather than
-      // trust what is cached.
+      // Broker state may have moved on while the hub was down; refetch, don't trust the cache.
       reconnected: () => {
         useHubStatusStore.getState().setStatus('live');
         void queryClient.invalidateQueries();
       },
     });
 
-    // The hub itself keeps retrying after this; this catch only stops an unhandled
-    // rejection from surfacing and sets the status for the first failed attempt.
+    // Hub keeps retrying on its own; this just quiets the unhandled rejection and sets status.
     hub.start().catch(() => useHubStatusStore.getState().setStatus('reconnecting'));
 
     return () => {

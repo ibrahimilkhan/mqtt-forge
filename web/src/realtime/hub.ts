@@ -10,16 +10,14 @@ export type HubEvents = {
 
 export interface Hub {
   start(): Promise<void>;
-  // Returns the function that removes these handlers again.
+  // Returns an unsubscribe function.
   subscribe(handlers: Partial<HubEvents>): () => void;
 }
 
-// How long to wait between manual reconnect attempts once withAutomaticReconnect has
-// given up on its own schedule (about 30 seconds).
+// Retry interval once withAutomaticReconnect gives up on its own schedule (~30s).
 const MANUAL_RETRY_DELAY_MS = 5000;
 
-// The live stream connection. It is created once at module scope rather than inside a
-// component, so StrictMode's double mount cannot open two connections to the hub.
+// Module-scope singleton so StrictMode's double mount can't open two connections.
 export function createSignalRHub(url = '/hubs/mqtt'): Hub {
   const connection = new signalR.HubConnectionBuilder().withUrl(url).withAutomaticReconnect().build();
 
@@ -29,10 +27,8 @@ export function createSignalRHub(url = '/hubs/mqtt'): Hub {
   const notifyReconnecting = () => reconnectingHandlers.forEach((handler) => handler());
   const notifyReconnected = () => reconnectedHandlers.forEach((handler) => handler());
 
-  // withAutomaticReconnect only retries a drop for its own schedule, then calls onclose
-  // instead of onreconnected; a dead-on-arrival first start also lands here without ever
-  // reaching onreconnecting. Both cases keep retrying by hand so the hub actually recovers
-  // once the API comes back, instead of sitting closed while the UI still says reconnecting.
+  // onclose fires both when withAutomaticReconnect exhausts its schedule and on a
+  // dead-on-arrival first start; retry by hand in both cases so the hub still recovers.
   connection.onclose(() => {
     notifyReconnecting();
     retryUntilConnected();
@@ -67,8 +63,7 @@ export function createSignalRHub(url = '/hubs/mqtt'): Hub {
         registered.push(() => connection.off('connectionStateChanged', handler));
       }
 
-      // signalR offers no way to remove lifecycle handlers; the connection outlives the
-      // app, so there is nothing to clean up for these two.
+      // signalR has no lifecycle-handler removal API; harmless since the connection outlives the app.
       if (handlers.reconnecting) {
         const handler = handlers.reconnecting;
         connection.onreconnecting(() => handler());
