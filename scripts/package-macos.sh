@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Builds a self-contained .app and wraps it in a .dmg. Unsigned: on first launch the user
-# has to allow it through Gatekeeper (right-click, Open).
+# Builds a self-contained .app and wraps it in a .dmg. Unsigned: allow through Gatekeeper on first launch.
 set -euo pipefail
 
 ARCH="${1:-osx-arm64}"

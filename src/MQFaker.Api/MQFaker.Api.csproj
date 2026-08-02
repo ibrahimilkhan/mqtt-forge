@@ -11,8 +11,7 @@
     <ProjectReference Include="..\MQFaker.Domain\MQFaker.Domain.csproj" />
   </ItemGroup>
 
-  <!-- The interface is built as part of a Release build; skipped in Debug so backend
-       iteration does not wait on npm. Disable with -p:SkipFrontend=true. -->
+  <!-- Release-only, so Debug backend iteration doesn't wait on npm; -p:SkipFrontend=true disables it. -->
   <Target Name="BuildFrontend" BeforeTargets="Build"
           Condition="'$(Configuration)' == 'Release' AND '$(SkipFrontend)' != 'true'">
     <Exec Command="npm ci" WorkingDirectory="$(MSBuildProjectDirectory)/../../web"
@@ -20,8 +19,7 @@
     <Exec Command="npm run build" WorkingDirectory="$(MSBuildProjectDirectory)/../../web" />
   </Target>
 
-  <!-- wwwroot is generated after the usual publish file list is computed, so its contents
-       are added explicitly. -->
+  <!-- wwwroot doesn't exist at project evaluation time, so its files must be added explicitly here. -->
   <Target Name="PublishFrontend" AfterTargets="ComputeFilesToPublish">
     <ItemGroup>
       <FrontendFile Include="wwwroot/**" />
