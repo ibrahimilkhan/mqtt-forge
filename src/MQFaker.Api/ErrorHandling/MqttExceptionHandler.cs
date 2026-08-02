@@ -20,6 +20,7 @@ public sealed class MqttExceptionHandler : IExceptionHandler
         {
             BrokerUnreachableException => (StatusCodes.Status502BadGateway, "Could not connect to broker"),
             NotConnectedException => (StatusCodes.Status409Conflict, "Not connected"),
+            MessageRejectedException => (StatusCodes.Status400BadRequest, "Message rejected"),
             _ => (0, string.Empty)
         };
 

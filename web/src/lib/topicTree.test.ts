@@ -101,6 +101,16 @@ describe('nodeSummary', () => {
   });
 });
 
+describe('a pathologically deep topic', () => {
+  it('does not overflow the stack on a topic with thousands of segments', () => {
+    const topic = Array.from({ length: 8000 }, (_, i) => `s${i}`).join('/');
+
+    const tree = applyMessage(emptyTree(), topic, 'x', 1000);
+
+    expect(at(tree, topic).latestPayload).toBe('x');
+  });
+});
+
 describe('applyMessages', () => {
   it('applies a whole batch in order', () => {
     const tree = applyMessages(

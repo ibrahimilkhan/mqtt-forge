@@ -23,7 +23,7 @@ const leaf = (name: string): TopicNode => ({
 });
 
 export function applyMessage(root: TopicNode, topic: string, payload: string, at: number): TopicNode {
-  return insert(root, topic.split('/'), 0, payload, at).node;
+  return insert(root, topic.split('/'), payload, at).node;
 }
 
 export function applyMessages(
@@ -42,42 +42,44 @@ export function nodeSummary(node: TopicNode): string {
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
 
 // Rebuilds only the nodes on the message's path; every other branch keeps its identity.
+// Iterative on purpose: a topic is free to have thousands of '/' segments, and a
+// recursive walk that deep used to overflow the call stack.
 function insert(
-  node: TopicNode,
+  root: TopicNode,
   segments: string[],
-  depth: number,
   payload: string,
   at: number,
 ): { node: TopicNode; isNewTopic: boolean } {
-  if (depth === segments.length) {
-    const isNewTopic = node.hits === 0;
-    return {
-      node: {
-        ...node,
-        hits: node.hits + 1,
-        latestPayload: payload,
-        lastHitAt: at,
-        lastSubHitAt: at,
-        subMessages: node.subMessages + 1,
-        subTopics: node.subTopics + (isNewTopic ? 1 : 0),
-      },
-      isNewTopic,
+  const path = [root];
+  for (const name of segments) {
+    const parent = path[path.length - 1];
+    path.push(parent.children.get(name) ?? leaf(name));
+  }
+
+  const target = path[path.length - 1];
+  const isNewTopic = target.hits === 0;
+  let node: TopicNode = {
+    ...target,
+    hits: target.hits + 1,
+    latestPayload: payload,
+    lastHitAt: at,
+    lastSubHitAt: at,
+    subMessages: target.subMessages + 1,
+    subTopics: target.subTopics + (isNewTopic ? 1 : 0),
+  };
+
+  for (let i = path.length - 2; i >= 0; i--) {
+    const parent = path[i];
+    node = {
+      ...parent,
+      children: withChild(parent.children, segments[i], node),
+      subMessages: parent.subMessages + 1,
+      subTopics: parent.subTopics + (isNewTopic ? 1 : 0),
+      lastSubHitAt: at,
     };
   }
 
-  const name = segments[depth];
-  const child = insert(node.children.get(name) ?? leaf(name), segments, depth + 1, payload, at);
-
-  return {
-    node: {
-      ...node,
-      children: withChild(node.children, name, child.node),
-      subMessages: node.subMessages + 1,
-      subTopics: node.subTopics + (child.isNewTopic ? 1 : 0),
-      lastSubHitAt: at,
-    },
-    isNewTopic: child.isNewTopic,
-  };
+  return { node, isNewTopic };
 }
 
 // Children are stored in alphabetical order so the tree does not jump around as messages
