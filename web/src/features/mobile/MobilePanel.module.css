@@ -1,5 +1,4 @@
-/* The plate carries the white background out to the quiet zone, so the code keeps its
-   contrast against the panel in either appearance. */
+/* White background extends to the quiet zone, keeping contrast in either appearance. */
 .plate {
   background: #fff;
   border: 1px solid var(--rule);
@@ -9,15 +8,13 @@
   justify-content: center;
 }
 
-/* Capped rather than fluid: past a point a bigger code is no easier to scan, and the
-   column it sits in can be wide. */
+/* Capped, not fluid — past a point a bigger code isn't easier to scan. */
 .code {
   display: block;
   width: 100%;
   max-width: 220px;
   height: auto;
-  /* The module grid is integer-aligned, so smoothing it only blurs the edges scanners
-     are looking for. */
+  /* Avoids smoothing the integer-aligned module grid, which would blur scan edges. */
   image-rendering: pixelated;
   shape-rendering: crispEdges;
 }

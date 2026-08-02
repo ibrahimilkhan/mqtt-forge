@@ -1,5 +1,4 @@
-/* The app has no other <select>, so the control's look is defined here rather than in
-   global.css: nothing else would use it. */
+/* Defined here, not global.css: the app has no other <select> to share it with. */
 .select {
   width: 100%;
   font-family: var(--mono);
@@ -14,7 +13,7 @@
 .slider { display: flex; align-items: center; gap: 10px; }
 .slider input { flex: 1; min-width: 0; accent-color: var(--signal); }
 
-/* Fixed width so the row does not jump as the reading goes from 12px to 20px */
+/* Fixed width so the row doesn't jump as the reading goes from 12px to 20px. */
 .reading {
   flex: none;
   width: 44px;

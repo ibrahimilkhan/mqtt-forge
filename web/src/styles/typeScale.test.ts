@@ -4,10 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { DEFAULTS, MONO, SANS } from '../features/appearance/fonts.js';
 
-// Not `fileURLToPath(new URL('..', import.meta.url))`: Vite statically rewrites the
-// literal `new URL('...', import.meta.url)` pattern into an asset-URL resolution, which
-// under Vitest's dev-server transform resolves against http://localhost, not the
-// filesystem. Two dirname() calls land on the same directory (src/) without tripping it.
+// Not `new URL('..', import.meta.url)`: Vite statically rewrites that literal pattern to
+// an asset URL, which resolves against localhost under Vitest, not the filesystem.
 const SRC = dirname(dirname(fileURLToPath(import.meta.url)));
 
 function cssFiles(): string[] {
@@ -16,12 +14,10 @@ function cssFiles(): string[] {
     .map((entry) => join(SRC, entry));
 }
 
-// Matches both the `font-size` longhand and a px size riding inside the `font` shorthand
-// (e.g. `font: 600 14px/1.2 var(--mono)`), case-insensitively so `14PX` cannot slip through.
+// Matches `font-size` and a px size inside the `font` shorthand, case-insensitively.
 const FONT_SIZE_PX = /font(?:-size)?:[^;}]*?\b[\d.]+px/gi;
 
-// A px font-size cannot be scaled by the appearance panel, so tokens.css is the only
-// file allowed to name one: it holds the scale and the root base the scale hangs off.
+// A px font-size can't be scaled by the appearance panel, so only tokens.css may declare one.
 describe('type scale', () => {
   it('declares no px font-size outside tokens.css', () => {
     const offenders = cssFiles()
@@ -61,9 +57,7 @@ describe('type scale', () => {
     const remValueOf = (name: string) => Number(declarations.find((d) => d.name === name)!.rawValue.match(REM)![1]);
 
     const BASE = 15;
-    // The design table's px column is the rounded intent — 0.767 * 15 = 11.505 and
-    // 1.133 * 15 = 16.995 and 1.267 * 15 = 19.005 — so compare with a small tolerance
-    // instead of exact equality.
+    // px column is rounded intent (e.g. 0.767 * 15 = 11.505), so allow a small tolerance.
     const expectedPxAt15: Record<string, number> = {
       micro: 10.5,
       label: 11.5,

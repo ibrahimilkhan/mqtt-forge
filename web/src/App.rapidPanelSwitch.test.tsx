@@ -17,9 +17,8 @@ function renderApp() {
 
 const menu = () => within(screen.getByRole('navigation', { name: 'Panels' }));
 
-// A panel mounts a useQuery for its own data; switching away before that request settles is
-// exactly what a fast click through the menu produces, and is the scenario React warns about
-// with "Cannot update a component while rendering a different component" or an act() warning.
+// Fast menu clicks switch away before a panel's own useQuery settles — the scenario
+// React warns about with an unmounted-update or act() warning.
 describe('rapid panel switching', () => {
   let errors: unknown[] = [];
 
@@ -53,14 +52,12 @@ describe('rapid panel switching', () => {
     fireEvent.click(menu().getByRole('button', { name: 'Mobile' }));
     fireEvent.click(menu().getByRole('button', { name: 'Settings' }));
 
-    // Let every in-flight request from the discarded panels settle.
+    // Let in-flight requests from discarded panels settle.
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 60));
     });
 
-    // React's own wording for a setState reaching an unmounted tree or a render outside
-    // act() - not a blanket console.error check, since React Query logs unrelated dev
-    // warnings of its own that have nothing to do with rapid panel switching.
+    // React's own wording, not a blanket console.error check — React Query logs unrelated warnings too.
     const unmountWarnings = errors.filter((entry) =>
       /not wrapped in act|cannot update a component|unmounted component|memory leak/i.test(String(entry)),
     );

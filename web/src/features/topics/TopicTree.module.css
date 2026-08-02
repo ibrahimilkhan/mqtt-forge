@@ -1,4 +1,4 @@
-/* Heading plus its actions; the rule runs beneath both */
+/* Heading plus its actions; the rule runs beneath both. */
 .paneHead {
   display: flex;
   align-items: center;
@@ -43,24 +43,23 @@
   display: flex;
   align-items: baseline;
   gap: 8px;
-  /* Fixed indent step per level, so deep topics don't drift off to the right */
+  /* Fixed indent step per level, so deep topics don't drift off to the right. */
   padding: 3px 6px 3px calc(var(--depth) * 14px + 6px);
   border-radius: 2px;
   position: relative;
-  /* The row is remounted when a message lands on it, which restarts this animation. */
+  /* Remounted on message arrival, which restarts this animation. */
   animation: flash 700ms ease-out;
 }
-/* Spacing only for top-level siblings: applied at every level it would
-   accumulate in deep trees and thin them out needlessly */
+/* Top-level siblings only; every level would thin the spacing out in deep trees. */
 .tree > .branch + .branch > .node { margin-top: 9px; }
 .node:hover { background: var(--paper); }
-/* Selected reads darker than hover, with a neutral stripe instead of --signal */
+/* Darker than hover, with a neutral stripe instead of --signal. */
 .node[data-selected="true"] { background: var(--rule); box-shadow: inset 2px 0 0 var(--muted); }
-/* Animations don't advance while hidden, so a collapsed branch would freeze mid-flash */
+/* A hidden element's animation freezes on its first frame, so a collapsed branch would
+   otherwise stick in the flash colour; disable it explicitly instead. */
 .branch[data-open="false"] > .kids .node { animation: none; }
 
-/* The twisty opens the branch; the rest of the row picks it. Both are buttons, so both
-   need the app's reset before they can be laid out. */
+/* Two buttons, both need the app's reset: twisty opens the branch, the rest picks it. */
 .twisty,
 .pick { all: unset; cursor: pointer; }
 .twisty:focus-visible,
@@ -85,10 +84,10 @@
 .branch[data-open="false"] > .kids { display: none; }
 .node[data-branch="false"] .twisty { visibility: hidden; }
 
-/* Every level shares one weight; the twisty already says it's a branch */
+/* One weight for every level; the twisty already marks it as a branch. */
 .seg { flex: none; color: var(--ink); }
 
-/* The value sits right beside the topic name; the eye reads them as one */
+/* Sits right beside the topic name, so the eye reads them as one. */
 .val {
   color: var(--signal);
   min-width: 0;
@@ -96,16 +95,14 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* '=' separates topic from value; it never appears when there is no value */
+/* '=' only when there's a value to separate from the topic. */
 .val:not(:empty)::before {
   content: '=';
   color: var(--rule);
   margin-right: 5px;
 }
 
-/* The summary sits next to the heading; right-aligning it walked the eye across the row.
-   It stays lighter than the topic name so the name is read first — the distinction
-   comes from weight rather than size, because 8.5px was simply unreadable. */
+/* Lighter weight (not smaller size — 8.5px was unreadable) so the name reads first. */
 .meta {
   flex: none;
   font-size: var(--t-label);
@@ -113,7 +110,7 @@
   color: var(--muted);
   letter-spacing: 0.02em;
 }
-/* An open branch already shows its children, so its own summary is noise */
+/* Noise once the branch is open and its children already show the detail. */
 .branch[data-open="true"] > .node[data-branch="true"] > .pick > .meta { display: none; }
 
 @keyframes flash {

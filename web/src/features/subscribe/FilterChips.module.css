@@ -1,4 +1,4 @@
-/* badges for the active subscriptions */
+/* Badges for the active subscriptions. */
 .filters { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .filters:empty { display: none; }
 .filter {

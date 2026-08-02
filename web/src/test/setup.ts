@@ -5,8 +5,7 @@ import { server } from './server';
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
 
-// Testing Library only registers its own cleanup when Vitest runs with globals enabled,
-// and this project keeps globals off — without this, rendered trees pile up across tests.
+// Needed because globals are off, so Testing Library's own auto-cleanup never registers.
 afterEach(() => {
   cleanup();
   server.resetHandlers();

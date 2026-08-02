@@ -1,5 +1,4 @@
-/* Form styles the three panels and Field all share. It lives under styles/ rather than
-   beside a component because no single component owns it. */
+/* Shared form styles; lives under styles/ since no single component owns it. */
 
 .row { display: flex; gap: 10px; margin-bottom: 10px; }
 .row > * { flex: 1; min-width: 0; }
