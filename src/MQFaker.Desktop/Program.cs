@@ -29,11 +29,16 @@ using (instance)
     var app = MqFakerHost.Build(args, urls: $"http://0.0.0.0:{port}");
     await app.StartAsync();
 
+    // Loading at "localhost" would leave window.location on loopback even though the host is
+    // reachable over the LAN - the Mobile panel's QR code depends on window.location alone, so
+    // the window has to be pointed at an address a phone could use. Falls back to loopback by
+    // itself when the machine has no such address, so the app still opens when offline.
+    var host = LanAddress.ChooseForThisMachine();
     var window = new PhotinoWindow()
         .SetTitle("MQFaker")
         .SetUseOsDefaultSize(false)
         .SetSize(1280, 860)
-        .Load(new Uri($"http://localhost:{port}"));
+        .Load(new Uri($"http://{host}:{port}"));
 
     // The listener runs off the window thread, so the focus call has to be marshalled back.
     instance.ListenForSignals(() => window.Invoke(() =>
@@ -46,11 +51,19 @@ using (instance)
     window.WaitForClose();
     await shutdown.CancelAsync();
 
-    // Close the broker session before the process leaves, so the broker is not left
-    // holding one for a window that is gone.
-    await app.Services.GetRequiredService<IMqttConnectionManager>()
-        .DisconnectAsync(CancellationToken.None);
-    await app.StopAsync();
+    try
+    {
+        // Close the broker session before the process leaves, so the broker is not left
+        // holding one for a window that is gone.
+        await app.Services.GetRequiredService<IMqttConnectionManager>()
+            .DisconnectAsync(CancellationToken.None);
+    }
+    finally
+    {
+        // Must still run even if DisconnectAsync above throws - otherwise the host never
+        // shuts down and the process is left hanging instead of exiting cleanly.
+        await app.StopAsync();
+    }
 }
 
 return 0;
