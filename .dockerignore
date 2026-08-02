@@ -7,4 +7,4 @@ tests
 .git
 .claude
 web/certs
-web/dist
+dist
