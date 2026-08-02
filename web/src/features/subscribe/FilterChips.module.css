@@ -21,5 +21,6 @@
   line-height: 1;
   padding: 0 2px;
 }
-.filter button:hover { color: var(--fault); }
+/* all: unset misses the global button:hover fill; :not(:disabled) matches its specificity so this wins. */
+.filter button:hover:not(:disabled) { color: var(--fault); background: none; }
 .filter button:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
