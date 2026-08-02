@@ -143,4 +143,30 @@ describe('SubscribePanel', () => {
 
     await waitFor(() => expect(calls).toBe(1));
   });
+
+  it('releases a chip whose unsubscribe failed even when another chip was dismissed in the same tick', async () => {
+    const calls: string[] = [];
+    server.use(
+      http.get('/api/subscriptions', () => HttpResponse.json(['aaa/#', 'bbb/#'])),
+      http.delete('/api/subscriptions', ({ request }) => {
+        calls.push(new URL(request.url).searchParams.get('topicFilter')!);
+        return HttpResponse.json({ title: 'fault' }, { status: 400 });
+      }),
+    );
+
+    renderPanel();
+    const aaa = await screen.findByRole('button', { name: 'Unsubscribe from aaa/#' });
+    const bbb = await screen.findByRole('button', { name: 'Unsubscribe from bbb/#' });
+
+    // Same tick: both keys must pass the guard independently.
+    fireEvent.click(aaa);
+    fireEvent.click(bbb);
+
+    await waitFor(() => expect(calls).toEqual(['aaa/#', 'bbb/#']));
+
+    // Both failed and the chips survive; aaa/# must not be stuck disabled forever.
+    fireEvent.click(aaa);
+
+    await waitFor(() => expect(calls).toEqual(['aaa/#', 'bbb/#', 'aaa/#']));
+  });
 });
