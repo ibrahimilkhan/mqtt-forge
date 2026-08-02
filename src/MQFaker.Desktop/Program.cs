@@ -25,8 +25,17 @@ if (instance is null)
 using var shutdown = new CancellationTokenSource();
 using (instance)
 {
+    // A DMG volume is read-only, so settings cannot live next to this executable like the
+    // API and Docker builds do; the per-user data directory is writable regardless of where
+    // the app was launched from.
+    var settingsPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "MQFaker", "connection-settings.json");
+
     var port = PortFinder.FirstFree(5169);
-    var app = MqFakerHost.Build(args, urls: $"http://0.0.0.0:{port}");
+    var app = MqFakerHost.Build(
+        [.. args, $"--MqFaker:SettingsPath={settingsPath}"],
+        urls: $"http://0.0.0.0:{port}");
     await app.StartAsync();
 
     // Loading at "localhost" would leave window.location on loopback even though the host is

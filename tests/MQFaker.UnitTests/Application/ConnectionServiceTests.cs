@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using MQFaker.Application.Services;
 using MQFaker.Domain.Abstractions;
 using MQFaker.Domain.Enums;
@@ -11,9 +12,10 @@ public class ConnectionServiceTests
 {
     private readonly IMqttConnectionManager _manager = Substitute.For<IMqttConnectionManager>();
     private readonly IConnectionSettingsStore _store = Substitute.For<IConnectionSettingsStore>();
+    private readonly ILogger<ConnectionService> _logger = Substitute.For<ILogger<ConnectionService>>();
     private readonly BrokerConnectionSettings _settings = new("localhost", 1883, "id", null, null, false);
 
-    private ConnectionService CreateSut() => new(_manager, _store);
+    private ConnectionService CreateSut() => new(_manager, _store, _logger);
 
     [Fact]
     public async Task ConnectAsync_connects_via_manager()
@@ -46,6 +48,19 @@ public class ConnectionServiceTests
             () => sut.ConnectAsync(_settings, CancellationToken.None));
 
         await _store.DidNotReceive().SaveAsync(Arg.Any<BrokerConnectionSettings>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ConnectAsync_succeeds_even_when_saving_settings_fails()
+    {
+        _store.SaveAsync(_settings, Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new IOException("disk full")));
+        var sut = CreateSut();
+
+        var exception = await Record.ExceptionAsync(() => sut.ConnectAsync(_settings, CancellationToken.None));
+
+        Assert.Null(exception);
+        await _manager.Received(1).ConnectAsync(_settings, Arg.Any<CancellationToken>());
     }
 
     [Fact]
