@@ -6,8 +6,7 @@
     <RootNamespace>MQFaker.Desktop</RootNamespace>
   </PropertyGroup>
 
-  <!-- A console-SDK project that hosts ASP.NET Core needs the framework reference stated
-       outright; it does not arrive on its own through the project reference. -->
+  <!-- A console-SDK project hosting ASP.NET Core doesn't get this via the project reference, so it's declared explicitly. -->
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
@@ -20,16 +19,26 @@
     <ProjectReference Include="..\MQFaker.Api\MQFaker.Api.csproj" />
   </ItemGroup>
 
-  <!-- MQFaker.Api serves the interface via its own wwwroot, resolved against ITS content
-       root. This project hosts that same code from a different content root (its own
-       output directory), so the built interface has to be copied alongside it explicitly -
-       referencing the Api project does not bring its wwwroot along on its own. -->
-  <ItemGroup>
-    <Content Include="..\MQFaker.Api\wwwroot\**">
-      <Link>wwwroot\%(RecursiveDir)%(Filename)%(Extension)</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-    </Content>
-  </ItemGroup>
+  <!-- This project runs from a different content root than MQFaker.Api, so its built interface has to be copied in explicitly. -->
+  <!-- Api's Release build empties wwwroot and refills it with new hashes, so the glob must be resolved at execution time, not evaluation time. -->
+  <Target Name="CopyFrontendAssets" AfterTargets="Build" Condition="Exists('$(MSBuildProjectDirectory)/../MQFaker.Api/wwwroot')">
+    <ItemGroup>
+      <FrontendAsset Include="$(MSBuildProjectDirectory)/../MQFaker.Api/wwwroot/**" />
+    </ItemGroup>
+    <RemoveDir Directories="$(OutDir)wwwroot" Condition="Exists('$(OutDir)wwwroot')" />
+    <Copy SourceFiles="@(FrontendAsset)" DestinationFolder="$(OutDir)wwwroot/%(RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- Same resolve-at-execution-time reasoning applies to publish, which computes its file list on its own schedule. -->
+  <Target Name="PublishFrontendAssets" AfterTargets="ComputeFilesToPublish" Condition="Exists('$(MSBuildProjectDirectory)/../MQFaker.Api/wwwroot')">
+    <RemoveDir Directories="$(PublishDir)wwwroot" Condition="Exists('$(PublishDir)wwwroot')" />
+    <ItemGroup>
+      <FrontendPublishAsset Include="$(MSBuildProjectDirectory)/../MQFaker.Api/wwwroot/**" />
+      <ResolvedFileToPublish Include="@(FrontendPublishAsset->'%(FullPath)')" Exclude="@(ResolvedFileToPublish)">
+        <RelativePath>wwwroot/%(RecursiveDir)%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
 
 </Project>
