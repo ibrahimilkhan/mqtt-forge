@@ -30,8 +30,8 @@ export function useHubBridge(hub: Hub) {
       },
     });
 
-    // withAutomaticReconnect only covers drops after a successful start. If the very first
-    // start fails — the API is not up yet — nothing would ever say so.
+    // The hub itself keeps retrying after this; this catch only stops an unhandled
+    // rejection from surfacing and sets the status for the first failed attempt.
     hub.start().catch(() => useHubStatusStore.getState().setStatus('reconnecting'));
 
     return () => {
