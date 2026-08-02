@@ -16,11 +16,21 @@ export function useConnectionActions() {
     // otherwise would be a lie the previous console never told.
     mutationFn: ({ request }: { request: ConnectRequest; autoSubscribe: boolean }) => connect(request),
 
-    onSuccess: async (_result, { request, autoSubscribe }) => {
+    onSuccess: async (result, { request, autoSubscribe }) => {
       // Refetched rather than written from the response: the hub may already have pushed a
       // newer state — a broker that drops the session on connect — and writing the
       // response over it would replace the truth with a stale success.
       void queryClient.invalidateQueries({ queryKey: queryKeys.connection });
+
+      // Same settings as the live session: the API left it alone, so the console does too.
+      if (result.alreadyConnected) {
+        useLogStore.getState().push({
+          kind: 'ok',
+          verb: 'Already connected',
+          body: `${request.host}:${request.port} · ${request.clientId}`,
+        });
+        return;
+      }
 
       // A new connection means a new tree; retained messages refill it right away.
       useTopicTreeStore.getState().reset();

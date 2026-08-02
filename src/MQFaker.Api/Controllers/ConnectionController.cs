@@ -33,8 +33,8 @@ public sealed class ConnectionController : ControllerBase
     {
         var settings = new BrokerConnectionSettings(
             dto.Host, dto.Port, dto.ClientId, dto.Username, dto.Password, dto.UseTls);
-        await _service.ConnectAsync(settings, ct);
-        return Ok(new { state = _service.CurrentState.ToString() });
+        var alreadyConnected = await _service.ConnectAsync(settings, ct);
+        return Ok(new { state = _service.CurrentState.ToString(), alreadyConnected });
     }
 
     [HttpDelete]

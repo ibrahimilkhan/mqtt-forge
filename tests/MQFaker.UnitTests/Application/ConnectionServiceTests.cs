@@ -81,4 +81,32 @@ public class ConnectionServiceTests
 
         Assert.Equal(ConnectionState.Connected, sut.CurrentState);
     }
+
+    [Fact]
+    public async Task ConnectAsync_skips_the_manager_when_already_connected_with_identical_settings()
+    {
+        _manager.State.Returns(ConnectionState.Connected);
+        var sut = CreateSut();
+        await sut.ConnectAsync(_settings, CancellationToken.None);
+
+        var alreadyConnected = await sut.ConnectAsync(_settings, CancellationToken.None);
+
+        Assert.True(alreadyConnected);
+        await _manager.Received(1).ConnectAsync(_settings, Arg.Any<CancellationToken>());
+        await _store.Received(1).SaveAsync(_settings, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ConnectAsync_reconnects_when_already_connected_but_settings_differ()
+    {
+        _manager.State.Returns(ConnectionState.Connected);
+        var sut = CreateSut();
+        await sut.ConnectAsync(_settings, CancellationToken.None);
+        var different = _settings with { Host = "otherhost" };
+
+        var alreadyConnected = await sut.ConnectAsync(different, CancellationToken.None);
+
+        Assert.False(alreadyConnected);
+        await _manager.Received(1).ConnectAsync(different, Arg.Any<CancellationToken>());
+    }
 }

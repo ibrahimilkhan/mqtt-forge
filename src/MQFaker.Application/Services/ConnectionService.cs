@@ -11,6 +11,9 @@ public sealed class ConnectionService
     private readonly IConnectionSettingsStore _store;
     private readonly ILogger<ConnectionService> _logger;
 
+    // Settings behind the current live connection, to detect a redundant repeat
+    private BrokerConnectionSettings? _connectedSettings;
+
     public ConnectionService(IMqttConnectionManager manager, IConnectionSettingsStore store,
         ILogger<ConnectionService> logger)
     {
@@ -21,10 +24,18 @@ public sealed class ConnectionService
 
     public ConnectionState CurrentState => _manager.State;
 
+    // Returns true when the request was a no-op because it matched the live connection.
     // Connects first; a failed settings write is logged but does not fail an otherwise-successful connect
-    public async Task ConnectAsync(BrokerConnectionSettings settings, CancellationToken ct)
+    public async Task<bool> ConnectAsync(BrokerConnectionSettings settings, CancellationToken ct)
     {
+        if (_manager.State == ConnectionState.Connected && settings == _connectedSettings)
+        {
+            _logger.LogInformation("Connect skipped, already connected with the same settings");
+            return true;
+        }
+
         await _manager.ConnectAsync(settings, ct);
+        _connectedSettings = settings;
 
         try
         {
@@ -34,6 +45,8 @@ public sealed class ConnectionService
         {
             _logger.LogWarning(ex, "Connected, but failed to save connection settings");
         }
+
+        return false;
     }
 
     public Task DisconnectAsync(CancellationToken ct) => _manager.DisconnectAsync(ct);
