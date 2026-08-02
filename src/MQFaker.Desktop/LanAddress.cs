@@ -12,18 +12,39 @@ namespace MQFaker.Desktop;
 // first place.
 public static class LanAddress
 {
+    // An address on its own does not say whether it came from a real network adapter or a
+    // tunnel one - Choose() needs the interface type alongside it to tell the two apart.
+    public readonly record struct LanCandidate(IPAddress Address, NetworkInterfaceType InterfaceType);
+
     // Pure: given what the network already reports, decide which one to hand to the window.
     // Kept free of any OS call so "no LAN address" and "several candidates, one of them
     // link-local" are ordinary unit tests instead of things that only reproduce on a
     // particular machine's network setup.
-    public static IPAddress Choose(IReadOnlyList<IPAddress> candidates) =>
-        candidates.FirstOrDefault(IsUsable) ?? IPAddress.Loopback;
+    //
+    // Genuine adapters (Ethernet, Wi-Fi) are ranked ahead of tunnel/point-to-point ones rather
+    // than excluding the latter outright. VPN clients (utun, Tailscale, WireGuard, corporate
+    // VPNs) commonly expose a real, routable IPv4 address on a Tunnel-type interface, and
+    // NetworkInterface.GetAllNetworkInterfaces() gives no ordering guarantee - without this
+    // rule, a VPN address can win purely because it enumerated first, pointing the QR code
+    // somewhere the phone on the same Wi-Fi cannot reach (the original bug this file exists to
+    // fix). Ranking instead of excluding keeps the tunnel address available as a last resort:
+    // a machine connected only through a VPN still needs the app to open at a reachable address
+    // rather than falling all the way back to loopback.
+    public static IPAddress Choose(IReadOnlyList<LanCandidate> candidates) =>
+        candidates
+            .Where(c => IsUsable(c.Address))
+            .OrderByDescending(c => IsGenuineLocalAdapter(c.InterfaceType))
+            .Select(c => c.Address)
+            .FirstOrDefault() ?? IPAddress.Loopback;
 
     // The app has to open even on a machine with no network connectivity at all (offline use
     // matters more than the QR code), so falling back to loopback here is not an error path -
     // it is the expected outcome on that machine, and Choose() above is what makes it explicit
     // and testable rather than an accidental side effect of an empty list.
     public static IPAddress ChooseForThisMachine() => Choose(EnumerateCandidates());
+
+    private static bool IsGenuineLocalAdapter(NetworkInterfaceType type) =>
+        type is NetworkInterfaceType.Ethernet or NetworkInterfaceType.Wireless80211;
 
     private static bool IsUsable(IPAddress address) =>
         address.AddressFamily == AddressFamily.InterNetwork &&
@@ -42,11 +63,11 @@ public static class LanAddress
     // Thin I/O layer: everything that actually asks the OS about interface state lives here,
     // on purpose, so it never needs to be unit-tested directly - Choose() above owns the
     // decision and is what the tests exercise.
-    private static IReadOnlyList<IPAddress> EnumerateCandidates() =>
+    private static IReadOnlyList<LanCandidate> EnumerateCandidates() =>
         NetworkInterface.GetAllNetworkInterfaces()
             .Where(nic => nic.OperationalStatus == OperationalStatus.Up)
             .Where(nic => nic.NetworkInterfaceType != NetworkInterfaceType.Loopback)
-            .SelectMany(nic => nic.GetIPProperties().UnicastAddresses)
-            .Select(addr => addr.Address)
+            .SelectMany(nic => nic.GetIPProperties().UnicastAddresses
+                .Select(addr => new LanCandidate(addr.Address, nic.NetworkInterfaceType)))
             .ToList();
 }
