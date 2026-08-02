@@ -37,7 +37,8 @@ export function MobilePanel({ onClose }: { onClose: () => void }) {
 
           <p className={panel.note}>
             Scan from a device on the same network. The certificate is self-signed, so the browser
-            warns once before it lets you through.
+            warns once before it lets you through. If it won't load, this Mac may be refusing the
+            connection under Settings &rarr; Privacy &amp; Security &rarr; Local Network.
           </p>
         </>
       )}

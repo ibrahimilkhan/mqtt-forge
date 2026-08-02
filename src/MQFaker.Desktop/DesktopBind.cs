@@ -5,8 +5,8 @@ using Microsoft.AspNetCore.Builder;
 
 namespace MQFaker.Desktop;
 
-// Bind failures (macOS permission/firewall refusal) only surface as a thrown
-// SocketException/IOException, not via enumerating interfaces in advance
+// SocketException/IOException means a firewall/Network Extension policy refused the bind —
+// macOS's Local Network permission doesn't block bind(), so an unreachable LAN peer looks the same as success.
 public static class DesktopBind
 {
     public enum Outcome { Lan, LoopbackOnly, Unavailable }
