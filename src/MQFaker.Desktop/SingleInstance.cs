@@ -4,9 +4,17 @@ using System.Text;
 
 namespace MQFaker.Desktop;
 
-// The pipe is both the lock and the doorbell: whoever creates it is the running instance,
-// and whoever cannot create it rings to ask that the existing window be brought forward.
-// One mechanism instead of a lock file plus a separate channel.
+// The lock and the doorbell are deliberately two different mechanisms now. They used to
+// both be the named pipe: whoever created it held the lock, and whoever could not create it
+// rang the existing one instead. That worked on Windows, where a second
+// NamedPipeServerStream for the same name is genuinely refused - but on macOS/Linux a named
+// pipe is backed by a Unix domain socket file, and bind() on an already-bound path silently
+// unlinks and replaces it rather than failing. Two independent OS processes both "created"
+// the pipe there; neither ever saw a conflict. A FileStream opened without sharing Read or
+// Write access does not have that hole: .NET implements it over flock() on Unix, which
+// conflicts across processes exactly like the sharing violation it produces on Windows. So
+// the file is the lock, and the pipe goes back to doing only what it is actually good at:
+// signalling.
 public sealed class SingleInstance : IDisposable
 {
     private const string Doorbell = "focus";
@@ -17,24 +25,46 @@ public sealed class SingleInstance : IDisposable
     // on the caller to have cancelled its token first (that used to be the caller's job, and the
     // loop would happily build a brand-new server after Dispose() had already run).
     private readonly CancellationTokenSource _disposalCts = new();
+    private readonly FileStream _lockFile;
     private NamedPipeServerStream _server;
     private bool _disposed;
 
-    private SingleInstance(string name, NamedPipeServerStream server)
+    private SingleInstance(string name, FileStream lockFile, NamedPipeServerStream server)
     {
         _name = name;
+        _lockFile = lockFile;
         _server = server;
     }
 
     public static SingleInstance? TryAcquire(string name)
     {
+        FileStream lockFile;
         try
         {
-            return new SingleInstance(name, CreateServer(name));
+            // FileShare.None is what actually makes this cross-process: .NET only takes the
+            // real OS-level advisory lock on Unix (fcntl/flock) when the requested share
+            // excludes Read and Write entirely. FileShare.Delete alone was tried first and
+            // measured to NOT conflict across processes - two probes both reported ACQUIRED -
+            // so unlinking our own file in Dispose() (see the comment there) has to work
+            // around FileShare.None instead of leaning on FileShare.Delete for that.
+            lockFile = new FileStream(LockFilePath(name), FileMode.OpenOrCreate,
+                FileAccess.ReadWrite, FileShare.None);
         }
         catch (IOException)
         {
-            // Another instance already holds the single allowed server slot.
+            // Another instance already holds the lock file.
+            return null;
+        }
+
+        try
+        {
+            return new SingleInstance(name, lockFile, CreateServer(name));
+        }
+        catch (IOException)
+        {
+            // The lock file said we were alone, but the pipe disagreed (e.g. a stale pipe
+            // file from a crash the OS has not reclaimed yet). Do not report success half way.
+            lockFile.Dispose();
             return null;
         }
     }
@@ -127,6 +157,13 @@ public sealed class SingleInstance : IDisposable
         return "mqf-" + Convert.ToHexString(hash)[..16];
     }
 
+    // Same hashing, and the same reason: this is a per-user runtime lock, not a document, so
+    // the OS temp directory (already used for the pipe) is the right home for it - no
+    // permission setup, and it is on every platform's list of things safe to lose across a
+    // reboot, which is exactly this file's lifetime.
+    private static string LockFilePath(string name) =>
+        Path.Combine(Path.GetTempPath(), PipeName(name) + ".lock");
+
     public void Dispose()
     {
         lock (_gate)
@@ -141,5 +178,26 @@ public sealed class SingleInstance : IDisposable
         }
 
         _disposalCts.Dispose();
+
+        // Unlink before releasing the lock, not after. Unix does not tie an advisory lock to a
+        // path, only to the inode a handle points at, so if a racing TryAcquire opened a
+        // recreated path first and then this delete ran, it would delete THEIR file while this
+        // handle's lock (on the old, now-orphaned inode) would linger, unable to be reacquired.
+        // Deleting first while we still hold the lock means nobody else can be looking at this
+        // path yet, so there is nothing to accidentally delete out from under.
+        try
+        {
+            File.Delete(LockFilePath(_name));
+        }
+        catch (IOException)
+        {
+            // Best effort: the file's only job was to hold the lock we already released via
+            // the flock/sharing-violation mechanism itself, not to be reliably absent afterwards.
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+
+        _lockFile.Dispose();
     }
 }

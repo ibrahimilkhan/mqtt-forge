@@ -29,6 +29,10 @@
     <ProjectReference Include="..\..\src\MQFaker.Application\MQFaker.Application.csproj" />
     <ProjectReference Include="..\..\src\MQFaker.Infrastructure\MQFaker.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\MQFaker.Desktop\MQFaker.Desktop.csproj" />
+    <!-- Not used for its types - SingleInstanceCrossProcessTests launches its built output as a
+         real second OS process, so this reference exists to get that output copied next to the
+         test assembly. -->
+    <ProjectReference Include="..\MQFaker.SingleInstanceProbe\MQFaker.SingleInstanceProbe.csproj" />
   </ItemGroup>
 
 </Project>
