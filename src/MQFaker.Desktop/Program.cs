@@ -1,4 +1,4 @@
-using MQFaker.Api;
+using System.Net;
 using MQFaker.Desktop;
 using MQFaker.Domain.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,22 +29,33 @@ var settingsPath = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
     "MQFaker", "connection-settings.json");
 
-var port = PortFinder.FirstFree(5169);
-var app = MqFakerHost.Build(
-    [.. args, $"--MqFaker:SettingsPath={settingsPath}"],
-    urls: $"http://0.0.0.0:{port}");
-await app.StartAsync();
+var (app, outcome, port) = await DesktopBind.StartAsync(args, settingsPath, 5169);
 
-// Loading at "localhost" would leave window.location on loopback even though the host is
-// reachable over the LAN - the Mobile panel's QR code depends on window.location alone, so
-// the window has to be pointed at an address a phone could use. Falls back to loopback by
-// itself when the machine has no such address, so the app still opens when offline.
-var host = LanAddress.ChooseForThisMachine();
 var window = new PhotinoWindow()
     .SetTitle("MQFaker")
     .SetUseOsDefaultSize(false)
-    .SetSize(1280, 860)
-    .Load(new Uri($"http://{host}:{port}"));
+    .SetSize(1280, 860);
+
+if (outcome == DesktopBind.Outcome.Unavailable)
+{
+    // Neither 0.0.0.0 nor 127.0.0.1 would bind - nothing to load, but the window still opens
+    // and says why instead of the process exiting with no visible window at all.
+    window.LoadRawString(
+        "<body style=\"font-family: system-ui, sans-serif; padding: 2rem;\">" +
+        "<h1>MQFaker could not start</h1>" +
+        "<p>The OS refused to bind its local server on any address, including loopback. " +
+        "Check firewall or network-filtering settings, then relaunch.</p></body>");
+}
+else
+{
+    // Loading at "localhost" would leave window.location on loopback even though the host is
+    // reachable over the LAN - the Mobile panel's QR code depends on window.location alone, so
+    // the window has to be pointed at an address a phone could use. LoopbackOnly means the LAN
+    // bind was refused (denied network permission or firewall policy): the Mobile panel's
+    // existing loopback message already explains why the QR code is unavailable there.
+    var host = outcome == DesktopBind.Outcome.Lan ? LanAddress.ChooseForThisMachine() : IPAddress.Loopback;
+    window.Load(new Uri($"http://{host}:{port}"));
+}
 
 // The listener runs off the window thread, so the focus call has to be marshalled back.
 instance.ListenForSignals(() => window.Invoke(() =>
@@ -60,18 +71,26 @@ await shutdown.CancelAsync();
 // Release the lock before the slow shutdown work, so a relaunch during it gets its own window
 instance.Dispose();
 
-try
+// Unavailable means the host never started - nothing connected, nothing to stop.
+if (outcome != DesktopBind.Outcome.Unavailable)
 {
-    // Close the broker session before the process leaves, so the broker is not left
-    // holding one for a window that is gone.
-    await app.Services.GetRequiredService<IMqttConnectionManager>()
-        .DisconnectAsync(CancellationToken.None);
+    try
+    {
+        // Close the broker session before the process leaves, so the broker is not left
+        // holding one for a window that is gone.
+        await app.Services.GetRequiredService<IMqttConnectionManager>()
+            .DisconnectAsync(CancellationToken.None);
+    }
+    finally
+    {
+        // Must still run even if DisconnectAsync above throws - otherwise the host never
+        // shuts down and the process is left hanging instead of exiting cleanly.
+        await app.StopAsync();
+    }
 }
-finally
+else
 {
-    // Must still run even if DisconnectAsync above throws - otherwise the host never
-    // shuts down and the process is left hanging instead of exiting cleanly.
-    await app.StopAsync();
+    await app.DisposeAsync();
 }
 
 return 0;
