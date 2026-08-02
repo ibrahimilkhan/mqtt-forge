@@ -48,7 +48,7 @@ describe('applyMessage', () => {
     expect(at(tree, 'a').latestPayload).toBe('own');
     expect(at(tree, 'a').subTopics).toBe(2);
     expect(at(tree, 'a').subMessages).toBe(2);
-    expect(nodeSummary(at(tree, 'a'))).toBe('2 topics · 2 messages');
+    expect(nodeSummary(at(tree, 'a'))).toBe('2 topics');
   });
 
   it('keeps siblings alphabetical whatever order they arrive in', () => {
@@ -84,20 +84,20 @@ describe('applyMessage', () => {
 });
 
 describe('nodeSummary', () => {
-  it('shows a repeat counter on a leaf only once it has been hit more than once', () => {
+  it('shows nothing on a leaf, however many times it has been hit', () => {
     const once = applyMessage(emptyTree(), 'a', '1', 1000);
     expect(nodeSummary(at(once, 'a'))).toBe('');
 
     const twice = applyMessage(once, 'a', '2', 2000);
-    expect(nodeSummary(at(twice, 'a'))).toBe('×2');
+    expect(nodeSummary(at(twice, 'a'))).toBe('');
   });
 
-  it('shows a subtree summary on a branch, pluralised', () => {
+  it('shows a topic count on a branch, pluralised', () => {
     let tree = applyMessage(emptyTree(), 'a/b', '1', 1000);
-    expect(nodeSummary(at(tree, 'a'))).toBe('1 topic · 1 message');
+    expect(nodeSummary(at(tree, 'a'))).toBe('1 topic');
 
     tree = applyMessage(tree, 'a/c', '2', 2000);
-    expect(nodeSummary(at(tree, 'a'))).toBe('2 topics · 2 messages');
+    expect(nodeSummary(at(tree, 'a'))).toBe('2 topics');
   });
 });
 
