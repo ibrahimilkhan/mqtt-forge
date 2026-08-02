@@ -28,10 +28,11 @@ export function useGuardedKeyedMutate<TData, TError, TKey extends string, TConte
   return (key: TKey) => {
     if (inFlight.current.has(key)) return;
     inFlight.current.add(key);
-    mutation.mutate(key, {
-      onSettled: () => {
-        inFlight.current.delete(key);
-      },
-    });
+    // mutate()'s call-scoped onSettled is shared observer state: a second key fired before
+    // the first settles overwrites it, so cleanup uses mutateAsync's own per-call promise instead.
+    mutation
+      .mutateAsync(key)
+      .catch(() => {})
+      .finally(() => inFlight.current.delete(key));
   };
 }
