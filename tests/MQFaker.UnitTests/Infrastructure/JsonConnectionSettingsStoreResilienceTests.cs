@@ -20,6 +20,20 @@ public class JsonConnectionSettingsStoreResilienceTests : IDisposable
     }
 
     [Fact]
+    public async Task Load_returns_null_when_file_permissions_deny_read()
+    {
+        if (OperatingSystem.IsWindows()) return;
+
+        await File.WriteAllTextAsync(_path, "{}");
+        File.SetUnixFileMode(_path, UnixFileMode.None);
+        var store = new JsonConnectionSettingsStore(_path);
+
+        var result = await store.LoadAsync(CancellationToken.None);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
     public async Task Save_leaves_no_temp_file_behind()
     {
         var store = new JsonConnectionSettingsStore(_path);

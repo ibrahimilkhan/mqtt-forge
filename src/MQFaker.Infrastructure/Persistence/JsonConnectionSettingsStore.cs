@@ -21,7 +21,7 @@ public sealed class JsonConnectionSettingsStore : IConnectionSettingsStore
             await using var stream = File.OpenRead(_filePath);
             return await JsonSerializer.DeserializeAsync<BrokerConnectionSettings>(stream, cancellationToken: ct);
         }
-        catch (Exception ex) when (ex is JsonException or IOException)
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
             return null;
         }
