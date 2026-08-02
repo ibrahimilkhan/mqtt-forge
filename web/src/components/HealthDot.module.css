@@ -1,0 +1,30 @@
+/* Fixed to the viewport corner, small enough to never block content beneath it */
+.dot {
+  position: fixed;
+  right: 16px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  padding: 5px 11px;
+  z-index: 10;
+  pointer-events: none;
+}
+.lamp {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex: none;
+}
+.dot[data-state="success"] { color: var(--live); }
+.dot[data-state="success"] .lamp { background: var(--live); }
+.dot[data-state="error"] { color: var(--fault); }
+.dot[data-state="error"] .lamp { background: var(--fault); }

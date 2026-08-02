@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import styles from './App.module.css';
+import { HealthDot } from './components/HealthDot';
 import { StatusReadout } from './components/StatusReadout';
 import { BrokerPanel } from './features/connection/BrokerPanel';
 import { useBrokerAddress, useConnectionState } from './api/useConnectionState';
@@ -59,6 +60,8 @@ export function App({ hub }: { hub: Hub }) {
           <WireLog />
         </section>
       </div>
+
+      <HealthDot />
     </>
   );
 }
