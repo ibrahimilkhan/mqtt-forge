@@ -2,13 +2,12 @@ using MQTTnet;
 
 namespace MQFaker.Infrastructure.Mqtt;
 
-// Holds the single MQTTnet client instance shared by the connection manager and publisher.
-// Gate serializes connection state changes on that same client.
+// Shared MQTTnet client; Gate serializes connection-state changes on it
 public sealed class MqttnetClientProvider : IDisposable
 {
     public MqttnetClientProvider() : this(new MqttClientFactory().CreateMqttClient()) { }
 
-    // Lets tests supply a substitute client; the host always resolves the parameterless one.
+    // Lets tests substitute a client; host uses the parameterless ctor
     public MqttnetClientProvider(IMqttClient client) => Client = client;
 
     public IMqttClient Client { get; }

@@ -12,13 +12,10 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
     private readonly SemaphoreSlim _gate;
     private readonly IConnectionStateNotifier _notifier;
 
-    // The client is the only authority on whether a link exists. This field records which
-    // flavour of "not connected" applies and is ignored while the client is up, so no
-    // ordering of MQTTnet's background disconnect event can make State call a dead link
-    // alive.
+    // Reason we're offline; ignored while client reports connected, avoiding disconnect-event races
     private ConnectionState _offlineState = ConnectionState.Disconnected;
 
-    // What listeners were last told, so the same state is not announced twice.
+    // Last state announced, to avoid duplicate notifications
     private int _announced = (int)ConnectionState.Disconnected;
 
     public MqttnetConnectionManager(MqttnetClientProvider provider, IConnectionStateNotifier notifier)
@@ -33,8 +30,7 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
     public ConnectionState State =>
         _client.IsConnected ? ConnectionState.Connected : _offlineState;
 
-    // Per the single-active-connection rule, closes the existing connection first if
-    // already connected, so the user can change settings and reconnect.
+    // Single-active-connection rule: disconnect any existing link before reconnecting
     public async Task ConnectAsync(BrokerConnectionSettings settings, CancellationToken ct)
     {
         await _gate.WaitAsync(ct);
@@ -47,15 +43,14 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
                 if (_client.IsConnected)
                     await _client.DisconnectAsync(cancellationToken: ct);
 
-                // Announced once the old link is down; until then State still reports the
-                // connection this attempt is replacing.
+                // Announce only after the old link is down
                 await AnnounceAsync();
 
                 await _client.ConnectAsync(BuildOptions(settings), ct);
             }
             catch (OperationCanceledException)
             {
-                // The caller walked away and nothing was established.
+                // Caller cancelled, not a failure
                 _offlineState = ConnectionState.Disconnected;
                 await AnnounceAsync();
                 throw;
@@ -68,9 +63,8 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
                     $"Could not connect to broker ({settings.Host}:{settings.Port}): {ex.Message}", ex);
             }
 
-            // From here on, being offline means the link died rather than was closed on
-            // purpose — including a session the broker drops the instant it opens, which
-            // State reports without this method having to observe it.
+            // Post-connect, offline now means the link died, not a deliberate close
+            // (also covers the broker dropping the session the instant it opens)
             _offlineState = ConnectionState.Faulted;
             await AnnounceAsync();
         }
@@ -85,8 +79,7 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
         await _gate.WaitAsync(ct);
         try
         {
-            // Recorded before the call: MQTTnet tears the socket down even when sending the
-            // DISCONNECT packet fails, so this is the right flavour either way.
+            // Set before the call: socket closes even if sending DISCONNECT fails
             _offlineState = ConnectionState.Disconnected;
             await _client.DisconnectAsync(cancellationToken: ct);
         }
@@ -97,8 +90,7 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
         }
     }
 
-    // MQTTnet raises this from a fire-and-forget task. It needs no judgement of its own:
-    // State already answers what happened, because whoever closed the link recorded why.
+    // Fire-and-forget MQTTnet event; State already reflects why, no judgement needed here
     private Task OnDisconnectedAsync(MqttClientDisconnectedEventArgs e) => AnnounceAsync();
 
     private Task AnnounceAsync()
