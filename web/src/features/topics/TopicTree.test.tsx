@@ -48,7 +48,7 @@ describe('TopicTree', () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '21.5'), message('sensors/humidity', '54')]);
     render(<TopicTree />);
 
-    expect(screen.getByText('2 topics · 2 messages')).toBeInTheDocument();
+    expect(screen.getByText('2 topics')).toBeInTheDocument();
     expect(screen.getByText('21.5')).toBeInTheDocument();
   });
 

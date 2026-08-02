@@ -54,8 +54,10 @@
    accumulate in deep trees and thin them out needlessly */
 .tree > .branch + .branch > .node { margin-top: 9px; }
 .node:hover { background: var(--paper); }
-/* The focused row keeps a mark of its own, so it stays legible under the hover tint */
-.node[data-selected="true"] { background: var(--paper); box-shadow: inset 2px 0 0 var(--signal); }
+/* Selected reads darker than hover, with a neutral stripe instead of --signal */
+.node[data-selected="true"] { background: var(--rule); box-shadow: inset 2px 0 0 var(--muted); }
+/* Animations don't advance while hidden, so a collapsed branch would freeze mid-flash */
+.branch[data-open="false"] > .kids .node { animation: none; }
 
 /* The twisty opens the branch; the rest of the row picks it. Both are buttons, so both
    need the app's reset before they can be laid out. */
@@ -111,12 +113,10 @@
   color: var(--muted);
   letter-spacing: 0.02em;
 }
-/* An open branch already shows its contents, so the summary is just noise.
-   Applies to real branches only: leaves have nothing to expand, and their own
-   message counters must stay visible at all times. */
+/* An open branch already shows its children, so its own summary is noise */
 .branch[data-open="true"] > .node[data-branch="true"] > .pick > .meta { display: none; }
 
 @keyframes flash {
-  from { background: color-mix(in srgb, var(--signal) 26%, transparent); }
+  from { background: color-mix(in srgb, var(--ink) 20%, transparent); }
   to   { background: transparent; }
 }

@@ -34,12 +34,9 @@ export function applyMessages(
   return messages.reduce((tree, message) => applyMessage(tree, message.topic, message.payload, at), root);
 }
 
-// Branch headings show the subtree summary; leaves show their own counter.
+// Branch headings show the topic count; leaves show nothing.
 export function nodeSummary(node: TopicNode): string {
-  if (node.children.size > 0) {
-    return `${plural(node.subTopics, 'topic')} · ${plural(node.subMessages, 'message')}`;
-  }
-  return node.hits > 1 ? `×${node.hits}` : '';
+  return node.children.size > 0 ? plural(node.subTopics, 'topic') : '';
 }
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
