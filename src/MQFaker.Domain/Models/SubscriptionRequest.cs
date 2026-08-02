@@ -1,4 +1,4 @@
 namespace MQFaker.Domain.Models;
 
-// TopicFilter may contain wildcards: '+' for a single level, '#' for multiple levels
+// TopicFilter wildcards: '+' single level, '#' multi-level
 public record SubscriptionRequest(string TopicFilter, int Qos);
