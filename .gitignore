@@ -11,3 +11,4 @@ web/dist/
 web/certs/
 *.bak
 src/MQFaker.Api/wwwroot/
+dist/
