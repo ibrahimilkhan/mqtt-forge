@@ -4,7 +4,6 @@ export type TopicNode = {
   latestPayload: string | null;
   hits: number;          // messages delivered directly to this topic
   subTopics: number;     // topics at or beneath it with a message
-  subMessages: number;   // total messages at or beneath it
   lastHitAt: number;     // last message on this exact topic
   lastSubHitAt: number;  // last message at or beneath it; drives the flash
 };
@@ -17,7 +16,6 @@ const leaf = (name: string): TopicNode => ({
   latestPayload: null,
   hits: 0,
   subTopics: 0,
-  subMessages: 0,
   lastHitAt: 0,
   lastSubHitAt: 0,
 });
@@ -63,7 +61,6 @@ function insert(
     latestPayload: payload,
     lastHitAt: at,
     lastSubHitAt: at,
-    subMessages: target.subMessages + 1,
     subTopics: target.subTopics + (isNewTopic ? 1 : 0),
   };
 
@@ -72,7 +69,6 @@ function insert(
     node = {
       ...parent,
       children: withChild(parent.children, segments[i], node),
-      subMessages: parent.subMessages + 1,
       subTopics: parent.subTopics + (isNewTopic ? 1 : 0),
       lastSubHitAt: at,
     };

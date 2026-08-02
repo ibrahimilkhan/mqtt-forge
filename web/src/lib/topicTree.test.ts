@@ -28,7 +28,6 @@ describe('applyMessage', () => {
     expect(at(tree, 'sensors/temp').hits).toBe(2);
     expect(at(tree, 'sensors/temp').latestPayload).toBe('22.0');
     expect(at(tree, 'sensors').subTopics).toBe(1);
-    expect(at(tree, 'sensors').subMessages).toBe(2);
   });
 
   it('rolls sub-counters up to every ancestor', () => {
@@ -36,7 +35,6 @@ describe('applyMessage', () => {
     tree = applyMessage(tree, 'a/b/d', '2', 2000);
 
     expect(at(tree, 'a').subTopics).toBe(2);
-    expect(at(tree, 'a').subMessages).toBe(2);
     expect(at(tree, 'a/b').subTopics).toBe(2);
   });
 
@@ -47,7 +45,6 @@ describe('applyMessage', () => {
     expect(at(tree, 'a').hits).toBe(1);
     expect(at(tree, 'a').latestPayload).toBe('own');
     expect(at(tree, 'a').subTopics).toBe(2);
-    expect(at(tree, 'a').subMessages).toBe(2);
     expect(nodeSummary(at(tree, 'a'))).toBe('2 topics');
   });
 
@@ -124,7 +121,6 @@ describe('applyMessages', () => {
     );
 
     expect(at(tree, 'a/b').latestPayload).toBe('2');
-    expect(at(tree, 'a').subMessages).toBe(3);
     expect(at(tree, 'a').subTopics).toBe(2);
   });
 });

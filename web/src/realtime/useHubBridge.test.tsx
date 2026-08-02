@@ -56,7 +56,7 @@ describe('useHubBridge', () => {
     frames[0]();
 
     expect(useLogStore.getState().entries).toHaveLength(2);
-    expect(useTopicTreeStore.getState().root.children.get('sensors')?.subMessages).toBe(2);
+    expect(useTopicTreeStore.getState().root.children.get('sensors')?.subTopics).toBe(2);
   });
 
   it('writes a pushed connection state into the query cache', () => {
@@ -89,7 +89,7 @@ describe('useHubBridge', () => {
     const elapsedMs = performance.now() - start;
 
     expect(useLogStore.getState().entries).toHaveLength(MAX_LOG_ENTRIES);
-    expect(useTopicTreeStore.getState().root.children.get('sensors')?.subMessages).toBe(5000);
+    expect(useTopicTreeStore.getState().root.children.get('sensors')?.subTopics).toBe(50);
     expect(elapsedMs).toBeLessThan(5000);
   });
 
