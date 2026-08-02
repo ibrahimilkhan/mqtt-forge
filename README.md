@@ -68,6 +68,10 @@ docker run -d -p 5169:5169 \
 Produces `dist/MQFaker.dmg`. The build is unsigned, so the first launch needs
 right-click → Open rather than a double-click.
 
+Like the Docker image, the desktop app binds `0.0.0.0` — it is reachable from other
+devices on the same network, which is what the Mobile panel's QR code is for, and equally
+means anyone on a shared network who can reach it can publish to your broker.
+
 Windows (`.exe`) and Linux (AppImage) packaging is not scripted yet; both need to run on
 their own platform.
 
