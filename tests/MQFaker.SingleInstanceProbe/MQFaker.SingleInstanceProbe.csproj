@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>MQFaker.SingleInstanceProbe</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <!-- Consumed as a real second OS process by SingleInstanceCrossProcessTests, which needs
+         to know its output path from the test project's own bin directory - not something a
+         normal in-process test double could stand in for, since the whole point is exercising
+         the OS-level exclusion between two independent processes. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\MQFaker.Desktop\MQFaker.Desktop.csproj" />
+  </ItemGroup>
+
+</Project>
