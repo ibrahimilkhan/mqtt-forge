@@ -49,6 +49,18 @@ The container binds `0.0.0.0`, so the panel is reachable from other devices on t
 network — that is what the Mobile panel's QR code is for. On a shared network anyone who
 can reach the port can publish to your broker.
 
+## Desktop app
+
+```
+./scripts/package-macos.sh
+```
+
+Produces `dist/MQFaker.dmg`. The build is unsigned, so the first launch needs
+right-click → Open rather than a double-click.
+
+Windows (`.exe`) and Linux (AppImage) packaging is not scripted yet; both need to run on
+their own platform.
+
 ## Tests
 
 ```
