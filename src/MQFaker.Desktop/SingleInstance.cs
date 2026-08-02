@@ -4,26 +4,15 @@ using System.Text;
 
 namespace MQFaker.Desktop;
 
-// The lock and the doorbell are deliberately two different mechanisms now. They used to
-// both be the named pipe: whoever created it held the lock, and whoever could not create it
-// rang the existing one instead. That worked on Windows, where a second
-// NamedPipeServerStream for the same name is genuinely refused - but on macOS/Linux a named
-// pipe is backed by a Unix domain socket file, and bind() on an already-bound path silently
-// unlinks and replaces it rather than failing. Two independent OS processes both "created"
-// the pipe there; neither ever saw a conflict. A FileStream opened without sharing Read or
-// Write access does not have that hole: .NET implements it over flock() on Unix, which
-// conflicts across processes exactly like the sharing violation it produces on Windows. So
-// the file is the lock, and the pipe goes back to doing only what it is actually good at:
-// signalling.
+// File lock, not the pipe: on macOS/Linux a second named-pipe bind silently replaces rather
+// than failing, so FileShare.None's flock() is the real cross-process lock
 public sealed class SingleInstance : IDisposable
 {
     private const string Doorbell = "focus";
 
     private readonly string _name;
     private readonly object _gate = new();
-    // Owned by this instance so Dispose() can end the signal loop on its own, instead of relying
-    // on the caller to have cancelled its token first (that used to be the caller's job, and the
-    // loop would happily build a brand-new server after Dispose() had already run).
+    // Owned here so Dispose() can end the signal loop without relying on the caller's token
     private readonly CancellationTokenSource _disposalCts = new();
     private readonly FileStream _lockFile;
     private NamedPipeServerStream _server;
@@ -41,18 +30,14 @@ public sealed class SingleInstance : IDisposable
         FileStream lockFile;
         try
         {
-            // FileShare.None is what actually makes this cross-process: .NET only takes the
-            // real OS-level advisory lock on Unix (fcntl/flock) when the requested share
-            // excludes Read and Write entirely. FileShare.Delete alone was tried first and
-            // measured to NOT conflict across processes - two probes both reported ACQUIRED -
-            // so unlinking our own file in Dispose() (see the comment there) has to work
-            // around FileShare.None instead of leaning on FileShare.Delete for that.
+            // FileShare.None triggers the real flock() on Unix; FileShare.Delete alone was
+            // tested and does not conflict across processes
             lockFile = new FileStream(LockFilePath(name), FileMode.OpenOrCreate,
                 FileAccess.ReadWrite, FileShare.None);
         }
         catch (IOException)
         {
-            // Another instance already holds the lock file.
+            // Another instance holds the lock
             return null;
         }
 
@@ -62,8 +47,7 @@ public sealed class SingleInstance : IDisposable
         }
         catch (IOException)
         {
-            // The lock file said we were alone, but the pipe disagreed (e.g. a stale pipe
-            // file from a crash the OS has not reclaimed yet). Do not report success half way.
+            // Lock succeeded but pipe creation failed (e.g. stale pipe from a crash); don't report partial success
             lockFile.Dispose();
             return null;
         }
@@ -93,8 +77,7 @@ public sealed class SingleInstance : IDisposable
     {
         _ = Task.Run(async () =>
         {
-            // Linking means either the caller cancelling or Dispose() cancelling ends the loop;
-            // previously only the caller's token was honoured, so Dispose() alone did nothing.
+            // Links both tokens so Dispose() alone can end the loop, not just caller cancellation
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _disposalCts.Token);
             var token = linked.Token;
 
@@ -119,17 +102,15 @@ public sealed class SingleInstance : IDisposable
                 }
                 catch (ObjectDisposedException)
                 {
-                    // Dispose() tore down the server we were waiting on while we were waiting on it.
+                    // Dispose() tore down the server mid-wait
                     return;
                 }
                 catch (IOException)
                 {
-                    // A caller that hung up mid-message is not worth tearing the loop down for.
+                    // Caller hung up mid-message; not worth ending the loop
                 }
 
-                // A server stream serves one connection; the next caller needs a fresh one. Do the
-                // swap under the same gate Dispose() uses, so a Dispose() that runs between the two
-                // lines above and here can never be followed by a replacement server nothing owns.
+                // Swap under the same gate as Dispose(), so a race can't leave an orphaned replacement server
                 lock (_gate)
                 {
                     if (_disposed) return;
@@ -144,23 +125,15 @@ public sealed class SingleInstance : IDisposable
         new(PipeName(name), PipeDirection.In, maxNumberOfServerInstances: 1,
             PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
 
-    // A caller-supplied name can be arbitrarily long (the tests use GUID-suffixed names).
-    // macOS backs named pipes with Unix domain sockets, whose path is capped at 104 bytes,
-    // and the OS temp directory alone can already eat half that budget. Hashing to a fixed,
-    // short name keeps every pipe path well under the limit regardless of what is passed in
-    // or how long the platform's temp path happens to be. The cost: a pipe file stuck in the
-    // OS temp directory (e.g. after a crash) can no longer be matched back to its logical name
-    // by inspection alone — recompute this hash from the candidate name to identify it.
+    // macOS caps Unix-socket paths at 104 bytes; hashed to a fixed short name regardless of
+    // input length (a stray pipe file can't be reverse-mapped to its name by inspection)
     private static string PipeName(string name)
     {
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(name));
         return "mqf-" + Convert.ToHexString(hash)[..16];
     }
 
-    // Same hashing, and the same reason: this is a per-user runtime lock, not a document, so
-    // the OS temp directory (already used for the pipe) is the right home for it - no
-    // permission setup, and it is on every platform's list of things safe to lose across a
-    // reboot, which is exactly this file's lifetime.
+    // Temp dir: a per-user runtime lock, not a document — no permission setup, safe to lose on reboot
     private static string LockFilePath(string name) =>
         Path.Combine(Path.GetTempPath(), PipeName(name) + ".lock");
 
@@ -170,29 +143,23 @@ public sealed class SingleInstance : IDisposable
         {
             if (_disposed) return;
             _disposed = true;
-            // Cancel before disposing the server: a loop blocked in WaitForConnectionAsync then
-            // sees a graceful OperationCanceledException rather than racing to observe the dispose
-            // as an ObjectDisposedException instead (both are handled, but this is the tidier path).
+            // Cancel before dispose: yields a graceful OperationCanceledException rather than
+            // racing an ObjectDisposedException (both handled, but this is tidier)
             _disposalCts.Cancel();
             _server.Dispose();
         }
 
         _disposalCts.Dispose();
 
-        // Unlink before releasing the lock, not after. Unix does not tie an advisory lock to a
-        // path, only to the inode a handle points at, so if a racing TryAcquire opened a
-        // recreated path first and then this delete ran, it would delete THEIR file while this
-        // handle's lock (on the old, now-orphaned inode) would linger, unable to be reacquired.
-        // Deleting first while we still hold the lock means nobody else can be looking at this
-        // path yet, so there is nothing to accidentally delete out from under.
+        // Deletes before releasing the lock: Unix locks bind to the inode, not the path, so
+        // deleting after a racing TryAcquire recreates the path would delete their file instead
         try
         {
             File.Delete(LockFilePath(_name));
         }
         catch (IOException)
         {
-            // Best effort: the file's only job was to hold the lock we already released via
-            // the flock/sharing-violation mechanism itself, not to be reliably absent afterwards.
+            // Best effort: the lock is already released via flock; the file's absence isn't guaranteed
         }
         catch (UnauthorizedAccessException)
         {
