@@ -1,4 +1,4 @@
-/* Heading plus its actions; the rule runs beneath both */
+/* Heading plus its actions; the rule runs beneath both. */
 .paneHead {
   display: flex;
   align-items: center;
@@ -53,7 +53,7 @@
 /* ---- signature element: the wire log ---- */
 .log { display: flex; flex-direction: column; gap: 2px; }
 
-/* The list stops at five so the pane stays readable; this reaches for the rest. */
+/* List stops at five for readability; this reveals the rest. */
 .more {
   all: unset;
   display: block;
@@ -115,8 +115,7 @@
   border-radius: 2px;
   color: var(--muted);
 }
-/* A retained message is the broker replaying its last known value, not live traffic —
-   worth telling apart at a glance from the QoS and size stamps beside it. */
+/* Marks a retained (replayed) message apart from live traffic, at a glance. */
 .stamp[data-stamp="RETAINED"] {
   color: var(--signal);
   border-color: color-mix(in srgb, var(--signal) 45%, transparent);

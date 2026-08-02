@@ -1,6 +1,4 @@
-  /* Self-hosted variable fonts: the tool must work on air-gapped networks,
-     and typography must look the same on every operating system.
-     Latin and Latin-Ext are separate files; payloads may carry either. */
+  /* Self-hosted so the tool works air-gapped; Latin and Latin-Ext ship as separate files. */
   @font-face {
     font-family: 'Inter';
     font-style: normal;

@@ -16,7 +16,7 @@ import { useHubStatusStore } from './stores/hubStatusStore';
 export function App({ hub }: { hub: Hub }) {
   useHubBridge(hub);
 
-  // Connecting comes first; the panel can be reopened from the menu once closed.
+  // Connecting comes first; reopen from the menu once closed.
   const [openPanel, setOpenPanel] = useState<PanelId | null>('broker');
 
   const { state } = useConnectionState();

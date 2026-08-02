@@ -1,4 +1,4 @@
-// Mirrors the DTOs in MQFaker.Api.Contracts. ASP.NET serialises them camelCase.
+// Mirrors MQFaker.Api.Contracts; ASP.NET serialises camelCase.
 export type ConnectionState = 'Disconnected' | 'Connecting' | 'Connected' | 'Faulted';
 
 export type ConnectionStateResponse = { state: ConnectionState; alreadyConnected?: boolean };

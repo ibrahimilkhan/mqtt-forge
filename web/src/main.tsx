@@ -9,8 +9,7 @@ import './styles/global.css';
 
 const queryClient = new QueryClient();
 
-// Before the first render: the stored font and size must be in place by the time React
-// paints, otherwise the app flashes in the default type for a frame.
+// Applies the stored font/size before React paints, to avoid a flash of default type.
 startApplyingAppearance();
 
 createRoot(document.getElementById('root')!).render(

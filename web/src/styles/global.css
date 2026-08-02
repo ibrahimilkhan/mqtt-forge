@@ -3,14 +3,10 @@
 
   * { box-sizing: border-box; }
 
-  /* The bar has no fixed height, so body is a vertical flex column and the layout
-     claims whatever is left. Otherwise the bar height had to be hard-coded in CSS,
-     and it broke whenever the type scale changed. */
+  /* Bar has no fixed height, so body is a flex column and the layout claims the rest. */
   body {
     margin: 0;
-    /* A definite height, not just a minimum: with min-height alone the column below
-       still grows to its content, and the tallest panel would decide how far the
-       tree and the log backgrounds reach. The narrow layout gives it back. */
+    /* Definite height, not just min-height, so the tallest panel can't stretch it. */
     height: 100vh;
     min-height: 100vh;
     display: flex;
@@ -23,9 +19,7 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  /* React mounts here, so the column body sets up has to pass through this div,
-     otherwise it collapses to its content and the layout below never gets the
-     leftover height. */
+  /* Passes body's flex column through; otherwise this collapses to its content. */
   #root {
     flex: 1;
     min-height: 0;
@@ -89,8 +83,7 @@
     padding-left: 12px;
   }
 
-  /* Same breakpoint as the layout's: once the columns stack, pinning the app to the
-     viewport would squeeze each row into a sliver, so the page scrolls instead. */
+  /* Matches the layout's breakpoint: once columns stack, the page scrolls instead. */
   @media (max-width: 1180px) {
     body { height: auto; }
   }
