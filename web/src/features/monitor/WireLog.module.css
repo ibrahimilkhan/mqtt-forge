@@ -47,7 +47,8 @@
   line-height: 1;
   padding: 0 2px;
 }
-.focus button:hover { color: var(--fault); }
+/* all: unset misses the global button:hover fill; :not(:disabled) matches its specificity so this wins. */
+.focus button:hover:not(:disabled) { color: var(--fault); background: none; }
 .focus button:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 /* ---- signature element: the wire log ---- */
@@ -66,7 +67,8 @@
   color: var(--muted);
   padding: 5px 0;
 }
-.more:hover { color: var(--signal); }
+/* all: unset misses the global button:hover fill; :not(:disabled) matches its specificity so this wins. */
+.more:hover:not(:disabled) { color: var(--ink); background: none; }
 .more:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 .entry {

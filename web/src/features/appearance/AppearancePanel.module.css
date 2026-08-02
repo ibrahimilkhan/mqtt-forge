@@ -11,7 +11,7 @@
 }
 
 .slider { display: flex; align-items: center; gap: 10px; }
-.slider input { flex: 1; min-width: 0; accent-color: var(--signal); }
+.slider input { flex: 1; min-width: 0; accent-color: var(--ink); }
 
 /* Fixed width so the row doesn't jump as the reading goes from 12px to 20px. */
 .reading {

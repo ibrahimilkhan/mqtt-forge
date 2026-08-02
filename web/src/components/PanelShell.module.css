@@ -39,7 +39,8 @@
   padding: 2px 6px;
   border-radius: 2px;
 }
-.close:hover { color: var(--fault); background: var(--surface); }
+/* all: unset misses the global button:hover fill; :not(:disabled) matches its specificity so this wins. */
+.close:hover:not(:disabled) { color: var(--fault); background: var(--surface); }
 .close:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 .block { margin-bottom: 30px; }

@@ -68,7 +68,7 @@
     color: var(--surface);
     cursor: pointer;
   }
-  button:hover:not(:disabled) { background: var(--signal); border-color: var(--signal); }
+  button:hover:not(:disabled) { background: var(--muted); border-color: var(--muted); }
   button.ghost { background: transparent; color: var(--ink); }
   button.ghost:hover:not(:disabled) { background: var(--ink); color: var(--surface); }
   button:disabled { opacity: 0.35; cursor: not-allowed; }
