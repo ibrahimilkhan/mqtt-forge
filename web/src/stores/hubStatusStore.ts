@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type HubStatus = 'live' | 'reconnecting';
+type HubStatus = 'live' | 'reconnecting';
 
 type HubStatusState = { status: HubStatus; setStatus: (status: HubStatus) => void };
 

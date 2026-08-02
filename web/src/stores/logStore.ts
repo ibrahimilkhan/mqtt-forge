@@ -3,7 +3,7 @@ import type { MqttMessage } from '../types/api';
 
 export const MAX_LOG_ENTRIES = 500;
 
-export type LogKind = 'recv' | 'sent' | 'ok' | 'fault';
+type LogKind = 'recv' | 'sent' | 'ok' | 'fault';
 
 // The unit of the wire log. 'recv' comes from the hub, the rest from command results.
 export type LogEntry = {
@@ -16,7 +16,7 @@ export type LogEntry = {
   stamps?: string[];
 };
 
-export type NewLogEntry = Omit<LogEntry, 'id' | 'at'>;
+type NewLogEntry = Omit<LogEntry, 'id' | 'at'>;
 
 type LogState = {
   entries: LogEntry[];

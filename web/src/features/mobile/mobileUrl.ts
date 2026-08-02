@@ -2,7 +2,7 @@ import { networkUrl } from 'virtual:network-url';
 
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 
-export type MobileUrl =
+type MobileUrl =
   /** An address another device can actually open. */
   | { kind: 'reachable'; url: string }
   /** All we know is a loopback address, which is useless on a phone. */
