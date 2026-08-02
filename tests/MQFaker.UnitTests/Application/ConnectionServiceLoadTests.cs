@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using MQFaker.Application.Services;
 using MQFaker.Domain.Abstractions;
 using MQFaker.Domain.Models;
@@ -10,8 +11,9 @@ public class ConnectionServiceLoadTests
 {
     private readonly IMqttConnectionManager _manager = Substitute.For<IMqttConnectionManager>();
     private readonly IConnectionSettingsStore _store = Substitute.For<IConnectionSettingsStore>();
+    private readonly ILogger<ConnectionService> _logger = Substitute.For<ILogger<ConnectionService>>();
 
-    private ConnectionService CreateSut() => new(_manager, _store);
+    private ConnectionService CreateSut() => new(_manager, _store, _logger);
 
     [Fact]
     public async Task GetSavedSettingsAsync_returns_stored_settings()
