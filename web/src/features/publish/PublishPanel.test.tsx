@@ -39,6 +39,9 @@ describe('PublishPanel', () => {
     await waitFor(() =>
       expect(sent).toEqual({ topic: 'sensors/temp', payload: '23.5', qos: 2, retain: true }),
     );
+    // The mock resolves as soon as the handler runs, before the mutation's own onSuccess -
+    // waiting for the log entry too keeps that continuation from firing during a later test.
+    await waitFor(() => expect(useLogStore.getState().entries).toHaveLength(1));
   });
 
   it('logs what it sent, stamped with QoS and RETAINED', async () => {
@@ -79,6 +82,8 @@ describe('PublishPanel', () => {
 
     await waitFor(() => expect(button).not.toBeDisabled());
     expect(calls).toBe(1);
+    // Same as above: let the settled mutation's own log entry land before the test ends.
+    await waitFor(() => expect(useLogStore.getState().entries).toHaveLength(1));
   });
 
   it('logs a fault when publishing is refused', async () => {

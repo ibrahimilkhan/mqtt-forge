@@ -3,7 +3,7 @@ import { renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { queryKeys } from '../api/queryKeys';
-import { useLogStore } from '../stores/logStore';
+import { MAX_LOG_ENTRIES, useLogStore } from '../stores/logStore';
 import { useTopicTreeStore } from '../stores/topicTreeStore';
 import type { MqttMessage } from '../types/api';
 import { createFakeHub } from './fakeHub';
@@ -76,6 +76,21 @@ describe('useHubBridge', () => {
     hub.emit('reconnected');
 
     expect(invalidate).toHaveBeenCalled();
+  });
+
+  it('holds up under a burst of thousands of messages landing before one frame flushes', () => {
+    const hub = createFakeHub();
+    renderBridge(hub);
+    const burst = Array.from({ length: 5000 }, (_, i) => message(`sensors/${i % 50}/reading`, String(i)));
+
+    const start = performance.now();
+    for (const m of burst) hub.emit('messageReceived', m);
+    frames[0]();
+    const elapsedMs = performance.now() - start;
+
+    expect(useLogStore.getState().entries).toHaveLength(MAX_LOG_ENTRIES);
+    expect(useTopicTreeStore.getState().root.children.get('sensors')?.subMessages).toBe(5000);
+    expect(elapsedMs).toBeLessThan(5000);
   });
 
   it('stops feeding the stores after unmount', () => {
