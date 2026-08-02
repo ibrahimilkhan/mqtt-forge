@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 
-// What the wire log is focused on. The filter is the identity: the label only differs from it
-// for tree nodes, where 'sensors/room' is shown but 'sensors/room/#' is matched against.
+// filter is the identity; label differs only for tree nodes ('sensors/room' vs 'sensors/room/#').
 type Selection = { label: string; filter: string };
 
 type SelectionState = {
@@ -13,7 +12,7 @@ type SelectionState = {
 export const useSelectionStore = create<SelectionState>((set) => ({
   selected: null,
 
-  // Picking what is already picked clears it, so one click both selects and deselects.
+  // Re-picking the same selection clears it (toggle).
   select: (selection) =>
     set((state) => ({ selected: state.selected?.filter === selection.filter ? null : selection })),
 

@@ -1,5 +1,4 @@
-// Collects items and hands them over once per animation frame. A busy broker can deliver
-// hundreds of messages per second; flushing per frame caps re-renders at the refresh rate.
+// Batches items and flushes once per animation frame, capping re-render rate.
 export function createFrameBuffer<T>(flush: (batch: T[]) => void) {
   let buffer: T[] = [];
   let frame = 0;
@@ -19,8 +18,7 @@ export function createFrameBuffer<T>(flush: (batch: T[]) => void) {
       });
     },
 
-    // Called when the bridge unmounts; a frame already scheduled must not fire into a
-    // torn-down tree.
+    // Prevents an already-scheduled frame from firing after unmount.
     cancel() {
       cancelled = true;
       if (frame) cancelAnimationFrame(frame);

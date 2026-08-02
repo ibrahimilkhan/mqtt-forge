@@ -1,10 +1,8 @@
 import { useRef } from 'react';
 import type { UseMutationResult } from '@tanstack/react-query';
 
-// useMutation's isPending flips asynchronously - TanStack Query batches its listener
-// notifications onto a microtask, so two clicks fired in the same tick (no yield between
-// them) both see isPending: false and both call mutate(). A ref checked synchronously in
-// the click handler closes that gap regardless of when React gets around to re-rendering.
+// isPending updates async (batched to a microtask), so same-tick clicks both see it as
+// false; a synchronously-checked ref closes that gap.
 export function useGuardedMutate<TData, TError, TVariables, TContext>(
   mutation: UseMutationResult<TData, TError, TVariables, TContext>,
 ) {
@@ -21,8 +19,7 @@ export function useGuardedMutate<TData, TError, TVariables, TContext>(
   };
 }
 
-// Same idea, but keyed - unsubscribing filter A must not block unsubscribing filter B at
-// the same time, only a second click on the same chip while its own call is in flight.
+// Same guard, but keyed so concurrent calls for different keys don't block each other.
 export function useGuardedKeyedMutate<TData, TError, TKey extends string, TContext>(
   mutation: UseMutationResult<TData, TError, TKey, TContext>,
 ) {

@@ -3,10 +3,10 @@ export type TopicNode = {
   children: ReadonlyMap<string, TopicNode>;
   latestPayload: string | null;
   hits: number;          // messages delivered directly to this topic
-  subTopics: number;     // topics beneath it, itself included, that received a message
-  subMessages: number;   // total messages beneath it, itself included
-  lastHitAt: number;     // when a message last landed on this exact topic
-  lastSubHitAt: number;  // when a message last landed anywhere beneath it; drives the flash
+  subTopics: number;     // topics at or beneath it with a message
+  subMessages: number;   // total messages at or beneath it
+  lastHitAt: number;     // last message on this exact topic
+  lastSubHitAt: number;  // last message at or beneath it; drives the flash
 };
 
 export const emptyTree = (): TopicNode => leaf('');
@@ -34,16 +34,15 @@ export function applyMessages(
   return messages.reduce((tree, message) => applyMessage(tree, message.topic, message.payload, at), root);
 }
 
-// Branch headings show the topic count; leaves show nothing.
+// Topic count for branches; nothing for leaves.
 export function nodeSummary(node: TopicNode): string {
   return node.children.size > 0 ? plural(node.subTopics, 'topic') : '';
 }
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
 
-// Rebuilds only the nodes on the message's path; every other branch keeps its identity.
-// Iterative on purpose: a topic is free to have thousands of '/' segments, and a
-// recursive walk that deep used to overflow the call stack.
+// Rebuilds only the message's path, keeping other branches' identity. Iterative, not
+// recursive — deep topics used to overflow the call stack.
 function insert(
   root: TopicNode,
   segments: string[],
@@ -82,8 +81,7 @@ function insert(
   return { node, isNewTopic };
 }
 
-// Children are stored in alphabetical order so the tree does not jump around as messages
-// arrive and the render path never has to sort.
+// Kept alphabetical so children don't reorder as messages arrive and rendering never sorts.
 function withChild(
   children: ReadonlyMap<string, TopicNode>,
   name: string,

@@ -1,5 +1,4 @@
-// MQTT filter matching: '+' stands for one segment, '#' for whatever is left — including the
-// level it hangs off, so 'sensors/#' matches 'sensors' as well as 'sensors/room/temp'.
+// '+' matches one segment; '#' matches the rest, including its own level.
 export function matchesFilter(filter: string, topic: string): boolean {
   if (!filter) return false;
 
@@ -15,5 +14,5 @@ export function matchesFilter(filter: string, topic: string): boolean {
   return parts.length === segments.length;
 }
 
-// A tree node stands for its own topic plus everything under it, and '#' covers both.
+// '#' covers the node's own topic plus everything beneath it.
 export const treeFilter = (path: string): string => `${path}/#`;

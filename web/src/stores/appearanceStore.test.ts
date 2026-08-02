@@ -4,9 +4,7 @@ import { sanitize, STORAGE_KEY, useAppearanceStore } from './appearanceStore';
 const DEFAULTS = { sans: 'inter', mono: 'jetbrains', size: 15 };
 
 beforeEach(() => {
-  // reset() itself persists the defaults back through zustand's `persist`, so it must run
-  // before the clear below — clearing first would just be undone by that write, and the
-  // next test would observe a localStorage entry it never asked for.
+  // reset() persists defaults via `persist`, so it must run before clearing below.
   useAppearanceStore.getState().reset();
   localStorage.clear();
 });
@@ -49,7 +47,7 @@ describe('persistence', () => {
   });
 
   it('partialize excludes non-persisted fields from the stored JSON', () => {
-    // Add a temporary non-function field to prove partialize is actually filtering.
+    // Non-persisted field to prove partialize actually filters.
     const state = useAppearanceStore.getState();
     useAppearanceStore.setState({ ...state, tempDebugField: 'should-not-persist' } as any);
 
@@ -57,16 +55,13 @@ describe('persistence', () => {
       useAppearanceStore.getState().setSize(17);
 
       const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!).state;
-      // Assert tempDebugField does not appear (partialize must be running).
       expect('tempDebugField' in stored).toBe(false);
-      // Assert the three choices are still persisted correctly.
       expect(stored).toEqual({
         sans: 'inter',
         mono: 'jetbrains',
         size: 17,
       });
     } finally {
-      // Restore the store to its clean state.
       useAppearanceStore.getState().reset();
     }
   });
@@ -81,7 +76,7 @@ describe('persistence', () => {
 
     const { sans, mono, size, setSans } = useAppearanceStore.getState();
     expect({ sans, mono, size }).toEqual({ sans: 'system', mono: 'system', size: 18 });
-    expect(typeof setSans).toBe('function'); // The replace-on-hydrate must not drop the actions.
+    expect(typeof setSans).toBe('function'); // replace-on-hydrate must keep the actions.
   });
 
   it('rehydrates a corrupt stored value to the defaults rather than propagating it', async () => {
@@ -111,7 +106,6 @@ describe('persistence', () => {
   });
 
   it('migrate runs when the stored version differs, and preserves valid choices', async () => {
-    // Seed storage with version 0 (mismatched) carrying a valid old payload.
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({ state: { sans: 'system', mono: 'system', size: 16 }, version: 0 }),
@@ -119,13 +113,11 @@ describe('persistence', () => {
 
     await useAppearanceStore.persist.rehydrate();
 
-    // migrate should have sanitized and preserved the choice.
     const { sans, mono, size } = useAppearanceStore.getState();
     expect({ sans, mono, size }).toEqual({ sans: 'system', mono: 'system', size: 16 });
   });
 
   it('migrate coerces corrupt payloads to defaults even under version mismatch', async () => {
-    // Seed storage with version 0 carrying corrupt data; migrate should fall back to defaults.
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({ state: { sans: 'invalid-id', mono: 123, size: 'not-a-number' }, version: 0 }),

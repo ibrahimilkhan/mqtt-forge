@@ -5,7 +5,7 @@ export const MAX_LOG_ENTRIES = 500;
 
 type LogKind = 'recv' | 'sent' | 'ok' | 'fault';
 
-// The unit of the wire log. 'recv' comes from the hub, the rest from command results.
+// 'recv' comes from the hub; the rest come from command results.
 export type LogEntry = {
   id: number;
   kind: LogKind;
@@ -55,12 +55,12 @@ function toEntry(message: MqttMessage): LogEntry {
   };
 }
 
-// What went over the wire is bytes, so a payload of accented text is longer than it looks.
+// Byte length, not char length — accented text is longer on the wire.
 function payloadSize(payload: string): string {
   const bytes = new TextEncoder().encode(payload).length;
   return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} kB`;
 }
 
-// A '#' subscription on a busy broker would otherwise grow the list without bound.
+// Bounds growth from a '#' subscription on a busy broker.
 const cap = (entries: LogEntry[]) =>
   entries.length > MAX_LOG_ENTRIES ? entries.slice(0, MAX_LOG_ENTRIES) : entries;

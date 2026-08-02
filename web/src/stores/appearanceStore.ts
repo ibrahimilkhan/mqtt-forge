@@ -13,8 +13,7 @@ type AppearanceState = AppearanceChoices & {
 
 export const STORAGE_KEY = 'mqfaker.appearance';
 
-// Anything may sit in localStorage: a hand-edited value, or an id a later build dropped.
-// Every stored field is checked against the catalogue before it reaches the UI.
+// Validates stored fields against the catalogue, since localStorage may hold a stale or hand-edited value.
 export function sanitize(raw: unknown): AppearanceChoices {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { ...DEFAULTS };
 
@@ -30,10 +29,8 @@ export function sanitize(raw: unknown): AppearanceChoices {
   };
 }
 
-// Client state, like hubStatusStore: nothing here is fetched, so it belongs in a store
-// rather than in the query cache. Only the three choices are persisted — the CSS stacks
-// are derived from the catalogue, so editing the catalogue cannot leave a stale font
-// string behind in someone's browser.
+// Client state, not fetched, so a store rather than the query cache. Only the three
+// choices persist; CSS stacks are derived from the catalogue at read time.
 export const useAppearanceStore = create<AppearanceState>()(
   persist(
     (set) => ({
@@ -48,19 +45,18 @@ export const useAppearanceStore = create<AppearanceState>()(
       version: 1,
       partialize: ({ sans, mono, size }) => ({ sans, mono, size }),
       merge: (persisted, current) => ({ ...current, ...sanitize(persisted) }),
-      // Without this a future version bump would discard the stored choice; sanitize already
-      // copes with any shape, so migrating is strictly better than falling back to defaults.
+      // Migrates rather than discarding on version bump; sanitize handles any shape.
       migrate: (state) => sanitize(state),
       storage: createJSONStorage(() => {
-        const ls = localStorage; // Throws when storage is blocked; createJSONStorage catches that.
+        const ls = localStorage; // May throw if storage is blocked; createJSONStorage catches it.
         return {
           getItem: (key) => ls.getItem(key),
-          // A failed write must not interrupt the workflow: the choice still applies to this tab.
+          // A failed write shouldn't break the tab; the choice still applies in memory.
           setItem: (key, value) => {
             try {
               ls.setItem(key, value);
             } catch {
-              // Ignored on purpose — a full quota or a blocked write is not worth an error.
+              // Ignored: a full quota or blocked write isn't worth surfacing.
             }
           },
           removeItem: (key) => ls.removeItem(key),

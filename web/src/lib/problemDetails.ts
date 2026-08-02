@@ -1,5 +1,4 @@
-// Reduces the backend's ProblemDetails response to a single error type, so components
-// deal with this type rather than with HTTP details.
+// Wraps the backend's ProblemDetails response as a single error type.
 export class ApiError extends Error {
   readonly status: number;
   readonly title?: string;
@@ -14,12 +13,11 @@ export class ApiError extends Error {
   }
 }
 
-// What to show a user for any thrown value. Named describeError rather than describe so it
-// cannot be confused with Vitest's global.
+// Named describeError, not describe, to avoid clashing with Vitest's global.
 export const describeError = (error: unknown) =>
   error instanceof ApiError ? error.message : String(error);
 
-// Field errors come back keyed by the DTO property name, which is Pascal-cased.
+// Keyed by the DTO property name, which is Pascal-cased.
 export function fieldError(error: unknown, field: string): string | undefined {
   if (!(error instanceof ApiError)) return undefined;
   return error.errors?.[field]?.[0];
@@ -34,7 +32,7 @@ type ProblemDetails = {
 export async function toApiError(response: Response): Promise<ApiError> {
   let problem: ProblemDetails = {};
 
-  // A failing proxy or gateway answers with HTML, or with nothing at all.
+  // A failing proxy may answer with HTML or nothing at all.
   try {
     problem = (await response.json()) as ProblemDetails;
   } catch {
