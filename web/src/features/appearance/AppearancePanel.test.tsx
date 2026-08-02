@@ -77,4 +77,21 @@ describe('AppearancePanel', () => {
     expect(screen.getByLabelText('Sans font')).toHaveValue('inter');
     stop();
   });
+
+  // Already safe: every control here writes straight to the Zustand store with no network
+  // call, so hammering it with no waits between clicks cannot leave a stale request or an
+  // inconsistent server/UI state - just the ordinary result of whichever write lands last.
+  it('stays consistent when Restore defaults is hammered with no waits', async () => {
+    const { stop } = renderPanel();
+    await userEvent.selectOptions(screen.getByLabelText('Sans font'), 'system');
+    const restore = screen.getByRole('button', { name: 'Restore defaults' });
+
+    fireEvent.click(restore);
+    fireEvent.click(restore);
+    fireEvent.click(restore);
+
+    expect(root().style.getPropertyValue('--sans')).toBe(SANS.inter.stack);
+    expect(screen.getByLabelText('Sans font')).toHaveValue('inter');
+    stop();
+  });
 });

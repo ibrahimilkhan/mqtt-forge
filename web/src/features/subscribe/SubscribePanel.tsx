@@ -9,6 +9,7 @@ import styles from '../../styles/panel.module.css';
 import { useLogStore } from '../../stores/logStore';
 import { useConnectionState } from '../../api/useConnectionState';
 import { describeError } from '../../lib/problemDetails';
+import { useGuardedKeyedMutate, useGuardedMutate } from '../../lib/useGuardedMutate';
 import { FilterChips } from './FilterChips';
 
 export function SubscribePanel({ onClose }: { onClose: () => void }) {
@@ -47,6 +48,9 @@ export function SubscribePanel({ onClose }: { onClose: () => void }) {
         .push({ kind: 'fault', verb: 'Unsubscribe failed', topic: filter, body: describeError(error) }),
   });
 
+  const guardedSubscribe = useGuardedMutate(subscribeMutation);
+  const guardedUnsubscribe = useGuardedKeyedMutate(unsubscribeMutation);
+
   return (
     <PanelShell title="Subscribe" onClose={onClose}>
       <div className={styles.row}>
@@ -65,12 +69,20 @@ export function SubscribePanel({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className={styles.actions}>
-        <button type="button" onClick={() => subscribeMutation.mutate()} disabled={!isOnline}>
+        <button
+          type="button"
+          onClick={() => guardedSubscribe()}
+          disabled={!isOnline || subscribeMutation.isPending}
+        >
           Subscribe
         </button>
       </div>
 
-      <FilterChips filters={filters ?? []} onRemove={(filter) => unsubscribeMutation.mutate(filter)} />
+      <FilterChips
+        filters={filters ?? []}
+        onRemove={guardedUnsubscribe}
+        pendingFilter={unsubscribeMutation.isPending ? unsubscribeMutation.variables : undefined}
+      />
     </PanelShell>
   );
 }

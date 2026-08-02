@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useLogStore } from '../../stores/logStore';
@@ -57,6 +57,28 @@ describe('PublishPanel', () => {
         stamps: ['QoS 0', 'RETAINED'],
       }),
     );
+  });
+
+  it('ignores extra clicks fired while a publish is already in flight', async () => {
+    let calls = 0;
+    server.use(
+      http.post('/api/publish', async () => {
+        calls += 1;
+        await delay(20);
+        return new HttpResponse(null, { status: 202 });
+      }),
+    );
+
+    renderPanel();
+    const button = await screen.findByRole('button', { name: 'Publish' });
+    await waitFor(() => expect(button).not.toBeDisabled());
+
+    fireEvent.click(button);
+    fireEvent.click(button);
+    fireEvent.click(button);
+
+    await waitFor(() => expect(button).not.toBeDisabled());
+    expect(calls).toBe(1);
   });
 
   it('logs a fault when publishing is refused', async () => {

@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useLogStore } from '../../stores/logStore';
@@ -154,5 +154,49 @@ describe('BrokerPanel', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
 
     expect(await screen.findByText('Host is required')).toBeInTheDocument();
+  });
+
+  it('ignores extra clicks fired while a connect is already in flight', async () => {
+    let calls = 0;
+    server.use(
+      http.post('/api/connection', async () => {
+        calls += 1;
+        await delay(20);
+        return HttpResponse.json({ state: 'Connected' });
+      }),
+      http.post('/api/subscriptions', () => new HttpResponse(null, { status: 202 })),
+    );
+
+    renderPanel();
+    const button = await screen.findByRole('button', { name: 'Connect' });
+
+    fireEvent.click(button);
+    fireEvent.click(button);
+    fireEvent.click(button);
+
+    await waitFor(() => expect(button).not.toBeDisabled());
+    expect(calls).toBe(1);
+  });
+
+  it('ignores extra clicks fired while a disconnect is already in flight', async () => {
+    let calls = 0;
+    server.use(
+      http.get('/api/connection', () => HttpResponse.json({ state: 'Connected' })),
+      http.delete('/api/connection', async () => {
+        calls += 1;
+        await delay(20);
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+
+    renderPanel();
+    const button = await screen.findByRole('button', { name: 'Disconnect' });
+    await waitFor(() => expect(button).not.toBeDisabled());
+
+    fireEvent.click(button);
+    fireEvent.click(button);
+    fireEvent.click(button);
+
+    await waitFor(() => expect(calls).toBe(1));
   });
 });
