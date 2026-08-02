@@ -24,9 +24,7 @@ if (instance is null)
 
 using var shutdown = new CancellationTokenSource();
 
-// A DMG volume is read-only, so settings cannot live next to this executable like the
-// API and Docker builds do; the per-user data directory is writable regardless of where
-// the app was launched from.
+// A DMG mounts read-only, so settings live in the per-user data dir instead of next to the exe
 var settingsPath = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
     "MQFaker", "connection-settings.json");
@@ -59,9 +57,7 @@ instance.ListenForSignals(() => window.Invoke(() =>
 window.WaitForClose();
 await shutdown.CancelAsync();
 
-// Release the lock before the slow shutdown work below, so a relaunch while this instance
-// is still disconnecting can acquire it and open its own window right away instead of
-// ringing a doorbell nobody answers.
+// Release the lock before the slow shutdown work, so a relaunch during it gets its own window
 instance.Dispose();
 
 try

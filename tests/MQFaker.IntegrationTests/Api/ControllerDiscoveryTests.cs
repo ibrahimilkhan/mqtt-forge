@@ -6,11 +6,7 @@ using MQFaker.Api;
 
 namespace MQFaker.IntegrationTests.Api;
 
-// WebApplicationFactory<Program> pins ApplicationName to "MQFaker.Api", so default part
-// discovery finds the controllers in this project even without AddApplicationPart - every
-// factory-based test here stays green if that line is deleted. The desktop shell's entry
-// assembly is never MQFaker.Api, so this builds the real host with an entry assembly that
-// isn't either, which is what actually depends on that line.
+// WebApplicationFactory pins ApplicationName to "MQFaker.Api", masking a deleted AddApplicationPart - this builds the real host under a different entry assembly, like the desktop shell
 public sealed class ControllerDiscoveryTests
 {
     [Fact]
