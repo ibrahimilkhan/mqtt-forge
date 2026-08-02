@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// A minimal stand-in for the parts of @microsoft/signalr that hub.ts touches, so the
-// retry behaviour can be driven deterministically instead of through a real socket.
+// Minimal stand-in for the @microsoft/signalr parts hub.ts touches, for deterministic retries.
 let startImpl: () => Promise<void>;
 let closeCallback: (() => void) | undefined;
 

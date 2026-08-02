@@ -8,7 +8,7 @@ import { createFakeHub } from '../realtime/fakeHub';
 import { useHubStatusStore } from '../stores/hubStatusStore';
 import { server } from '../test/server';
 
-// The store outlives a single test, so a reconnect in one case must not leak into the next.
+// Store outlives a test; reset so one case's reconnect doesn't leak into the next.
 beforeEach(() => useHubStatusStore.getState().setStatus('live'));
 
 function renderApp(state: string) {
@@ -36,8 +36,7 @@ function renderApp(state: string) {
   return hub;
 }
 
-// The open panel has buttons that share names with the menu, so both sides are scoped:
-// the menu by its nav landmark, the panel by its own label.
+// Menu and panel share button names, so scope each: menu by nav landmark, panel by label.
 async function openPanelButton(name: 'Subscribe' | 'Publish') {
   const menu = screen.getByRole('navigation', { name: 'Panels' });
   await userEvent.click(within(menu).getByRole('button', { name }));
