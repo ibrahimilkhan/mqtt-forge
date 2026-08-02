@@ -2,7 +2,7 @@ import { memo } from 'react';
 import type { LogEntry } from '../../stores/logStore';
 import styles from './WireLog.module.css';
 
-// Entries never change once written, so memoising means a new arrival re-renders one row.
+// Entries are immutable, so memoising means a new arrival re-renders only one row.
 export const LogEntryRow = memo(function LogEntryRow({ entry }: { entry: LogEntry }) {
   return (
     <div className={styles.entry} data-kind={entry.kind} data-testid="entry">
@@ -33,7 +33,7 @@ export const LogEntryRow = memo(function LogEntryRow({ entry }: { entry: LogEntr
   );
 });
 
-// Splits the topic into MQTT segments so the separators can be dimmed.
+// Splits into segments so the '/' separators can be dimmed.
 function Topic({ topic }: { topic: string }) {
   return (
     <>

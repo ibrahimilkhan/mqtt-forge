@@ -14,8 +14,7 @@ beforeEach(() => {
   root().removeAttribute('style');
 });
 
-// The panel only writes to the store; the subscription is what reaches the document, so
-// these tests start it exactly as main.tsx does.
+// Panel only writes to the store; start the subscription too, as main.tsx does.
 function renderPanel() {
   const stop = startApplyingAppearance();
   const result = render(<AppearancePanel onClose={() => {}} />);
@@ -45,9 +44,7 @@ describe('AppearancePanel', () => {
     const { stop } = renderPanel();
     const slider = screen.getByRole('slider', { name: 'Base size' });
 
-    // jsdom does not implement the native arrow-key stepping behaviour of a range
-    // input (userEvent.keyboard leaves the value untouched), so the value change a
-    // real key press would produce is delivered directly via a change event instead.
+    // jsdom doesn't support range-input arrow-key stepping; fire the change directly.
     fireEvent.change(slider, { target: { value: '17' } });
 
     expect(root().style.fontSize).toBe('17px');
@@ -78,9 +75,7 @@ describe('AppearancePanel', () => {
     stop();
   });
 
-  // Already safe: every control here writes straight to the Zustand store with no network
-  // call, so hammering it with no waits between clicks cannot leave a stale request or an
-  // inconsistent server/UI state - just the ordinary result of whichever write lands last.
+  // Already safe: synchronous store writes, no network call, so no guard needed here.
   it('stays consistent when Restore defaults is hammered with no waits', async () => {
     const { stop } = renderPanel();
     await userEvent.selectOptions(screen.getByLabelText('Sans font'), 'system');

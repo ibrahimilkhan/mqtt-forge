@@ -5,7 +5,7 @@ import { QrCode } from './QrCode';
 
 const MARGIN = 4;
 
-/** What the encoder says the code should be, independent of how the component draws it. */
+/** Expected code straight from the encoder, independent of how the component draws it. */
 function reference(value: string) {
   const code = qrcode(0, 'M');
   code.addData(value);

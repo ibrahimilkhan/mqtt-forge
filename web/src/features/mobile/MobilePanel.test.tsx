@@ -3,8 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MobilePanel } from './MobilePanel';
 
-// The address normally comes from the dev server through the virtual module, which has
-// nothing to report under the test runner; the getter lets each test choose.
+// Real address comes from the dev server's virtual module; the getter lets tests fake it.
 const network = vi.hoisted(() => ({ url: null as string | null }));
 vi.mock('virtual:network-url', () => ({
   get networkUrl() {

@@ -7,8 +7,7 @@ import styles from './TopicTree.module.css';
 
 type Props = { node: TopicNode; path: string; depth: number };
 
-// Memoised on the node object: an unchanged branch keeps its identity through an update,
-// so only the rows on the message's path re-render.
+// Memoised on the node object, so only rows on the message's path re-render.
 export const TreeNode = memo(function TreeNode({ node, path, depth }: Props) {
   const open = useTopicTreeStore((state) => isPathOpen(state, path));
   const toggle = useTopicTreeStore((state) => state.toggle);
@@ -18,24 +17,20 @@ export const TreeNode = memo(function TreeNode({ node, path, depth }: Props) {
 
   const isBranch = node.children.size > 0;
 
-  // A row inside a closed branch is invisible, so the closed branch flashes on its behalf.
-  // An open branch shows its descendants, so it answers only for messages addressed to it.
+  // Closed branch flashes on behalf of its (invisible) rows; open branch only for itself.
   const flashAt = open && isBranch ? node.lastHitAt : node.lastSubHitAt;
 
   return (
     <div className={styles.branch} data-open={open}>
       <div
-        // Remounting on a new stamp restarts the CSS animation, which is what the old
-        // console achieved by forcing a reflow.
+        // Remounting on a new stamp restarts the flash animation.
         key={flashAt}
         className={styles.node}
         data-branch={isBranch}
         data-selected={selected}
         style={{ '--depth': depth } as CSSProperties}
       >
-        {/* The twisty opens the branch and the rest of the row focuses the wire log on it,
-            so collapsing a branch never costs you the focus. Two sibling buttons, because
-            one cannot be nested inside the other. */}
+        {/* Sibling buttons: twisty toggles the branch, the rest selects it for the wire log. */}
         {isBranch ? (
           <button
             type="button"
@@ -63,9 +58,7 @@ export const TreeNode = memo(function TreeNode({ node, path, depth }: Props) {
         </button>
       </div>
 
-      {/* Children stay mounted while a branch is closed and are hidden with CSS. Dropping
-          them from the tree instead would remount every row on expand, and mounting is
-          what restarts the flash animation — the whole subtree would light up at once. */}
+      {/* Kept mounted, hidden by CSS — unmounting would remount on expand and flash the whole subtree. */}
       {isBranch && (
         <div className={styles.kids}>
           {[...node.children.values()].map((child) => (

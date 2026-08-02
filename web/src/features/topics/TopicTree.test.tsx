@@ -29,8 +29,7 @@ describe('TopicTree', () => {
     ).toBeInTheDocument();
   });
 
-  // Children stay mounted while a branch is closed, so the assertion is on the branch's
-  // own state rather than on the presence of its rows.
+  // Children stay mounted when closed, so assert on the branch's state, not row presence.
   const branchOf = (name: string) => screen.getByText(name).closest('[data-open]');
 
   it('keeps a branch closed until it is opened', async () => {
@@ -63,8 +62,7 @@ describe('TopicTree', () => {
     expect(branchOf('b')).toHaveAttribute('data-open', 'true');
   });
 
-  // The flash is a CSS animation restarted by remounting the row, so "does it flash" is
-  // "did the row's key change". These pin which row answers for a message.
+  // Flash = remount, so "does it flash" reduces to "did the row's key change".
   const rowKeyOf = (name: string) => screen.getByText(name).closest('[data-branch]');
 
   it('flashes a closed branch when a message lands on something beneath it', async () => {
@@ -161,9 +159,7 @@ describe('TopicTree', () => {
     expect(branchOf('a')).toHaveAttribute('data-open', 'false');
   });
 
-  // Already safe: toggle/setAllOpen/select are synchronous store writes with no network
-  // call, so firing them back to back without waiting cannot leave a stale in-flight
-  // request or an inconsistent server/UI state - only the ordinary last-write-wins result.
+  // Already safe: synchronous store writes, no network call, so no guard needed here.
   it('settles on a consistent state when the twisty is clicked rapidly with no waits', () => {
     useTopicTreeStore.getState().apply([message('sensors/temp')]);
     render(<TopicTree />);

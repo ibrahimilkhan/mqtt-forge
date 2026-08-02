@@ -11,8 +11,7 @@ export function FilterChips({ filters, onRemove, pendingFilter }: Props) {
     <div className={styles.filters}>
       {filters.map((filter) => (
         <span key={filter} className={styles.filter} data-selected={selected?.filter === filter}>
-          {/* Two sibling buttons rather than one nested in the other: a chip both focuses the
-              wire log and unsubscribes, and nested buttons are not valid HTML. */}
+          {/* Sibling buttons, not nested — nested buttons aren't valid HTML. */}
           <button
             type="button"
             className={styles.pick}

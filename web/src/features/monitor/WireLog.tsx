@@ -48,8 +48,7 @@ export function WireLog() {
 
       {selected && matching.length === 0 && <p className="empty">No traffic on {selected.label} yet.</p>}
 
-      {/* Keying on the filter remounts the list when the focus moves, which is what folds an
-          expanded list back to five without a separate reset. */}
+      {/* Keying on the filter remounts the list on focus change, folding it back to five. */}
       {selected && matching.length > 0 && <EntryList key={selected.filter} entries={matching} />}
     </>
   );

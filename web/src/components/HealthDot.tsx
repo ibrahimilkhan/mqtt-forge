@@ -12,7 +12,7 @@ const LABEL: Record<'pending' | 'error' | 'success', string> = {
 };
 
 export function HealthDot() {
-  // Keeps polling in a backgrounded tab too, so the reading is never stale on return
+  // Keeps polling in a backgrounded tab so the reading isn't stale on return.
   const { status } = useQuery({
     queryKey: queryKeys.health,
     queryFn: getHealth,

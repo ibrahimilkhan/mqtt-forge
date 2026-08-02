@@ -7,7 +7,7 @@ import { WireLog } from './WireLog';
 
 const chip = { label: 'sensors/#', filter: 'sensors/#' };
 
-// Oldest first, so the newest ends up at the head of the store.
+// Oldest first, so the newest lands at the head of the store.
 const received = (...topics: string[]) =>
   topics.forEach((topic) => useLogStore.getState().push({ kind: 'recv', verb: 'Received', topic }));
 

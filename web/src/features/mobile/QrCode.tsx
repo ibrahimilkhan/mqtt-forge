@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import qrcode from 'qrcode-generator';
 
-/** Quiet zone the spec asks for, in modules. Scanners get unreliable without it. */
+/** Quiet zone required by spec; scanners get unreliable without it. */
 const MARGIN = 4;
 
 export function QrCode({ value, label, className }: { value: string; label: string; className?: string }) {
@@ -9,8 +9,7 @@ export function QrCode({ value, label, className }: { value: string; label: stri
 
   return (
     <svg viewBox={`0 0 ${size} ${size}`} className={className} role="img" aria-label={label}>
-      {/* Deliberately not themed. A QR code has to be dark-on-light to scan reliably, so
-          the plate stays white and the modules black in both light and dark appearance. */}
+      {/* Deliberately not themed — must stay dark-on-light to scan reliably. */}
       <rect width={size} height={size} fill="#fff" />
       <path d={path} fill="#000" />
     </svg>
