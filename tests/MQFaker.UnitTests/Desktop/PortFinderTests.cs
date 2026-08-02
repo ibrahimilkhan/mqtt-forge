@@ -37,8 +37,7 @@ public sealed class PortFinderTests
         Assert.Throws<IOException>(() => PortFinder.FirstFree(taken, attempts: 1));
     }
 
-    // Asks the OS for a port, then releases it. Racy in principle, fine in practice:
-    // the OS hands out ports it is not already using.
+    // Racy in principle, fine in practice: the OS won't hand out a port it's already using
     private static int FreePortForTest()
     {
         using var probe = new TcpListener(IPAddress.Loopback, 0);

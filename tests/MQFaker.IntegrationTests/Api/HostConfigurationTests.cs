@@ -6,8 +6,8 @@ namespace MQFaker.IntegrationTests.Api;
 
 public sealed class HostConfigurationTests
 {
-    // The published app has no launchSettings.json, so the port has to come from
-    // configuration or Kestrel silently falls back to 5000 — the port macOS AirPlay uses.
+    // No launchSettings.json in the published app; without Urls config, Kestrel falls back
+    // to 5000 (macOS AirPlay's port)
     [Fact]
     public void Urls_are_pinned_so_the_published_app_does_not_fall_back_to_port_5000()
     {

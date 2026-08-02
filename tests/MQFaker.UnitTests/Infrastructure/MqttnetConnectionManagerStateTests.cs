@@ -64,8 +64,7 @@ public class MqttnetConnectionManagerStateTests
     public async Task ConnectAsync_reports_disconnected_when_cancelled_while_closing_the_previous_link()
     {
         _client.IsConnected.Returns(true);
-        // MQTTnet tears the socket down in a finally, so the link is gone even when the
-        // DISCONNECT call itself is cancelled — same as when it throws for any other reason.
+        // Socket closes in a finally even if DISCONNECT is cancelled — same as any other throw
         _client.DisconnectAsync(Arg.Any<MqttClientDisconnectOptions>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
@@ -102,8 +101,7 @@ public class MqttnetConnectionManagerStateTests
         var sut = CreateSut();
         await sut.ConnectAsync(_settings, CancellationToken.None);
 
-        // MQTTnet tears the socket down in a finally, so the link is gone even when
-        // sending the DISCONNECT packet fails.
+        // Socket closes in a finally even if sending DISCONNECT fails
         _client.DisconnectAsync(Arg.Any<MqttClientDisconnectOptions>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
@@ -138,8 +136,7 @@ public class MqttnetConnectionManagerStateTests
         GivenConnectSucceeds();
         var sut = CreateSut();
 
-        // A duplicate client id makes the broker close the session the instant it opens.
-        // The drop lands while ConnectAsync is still finishing.
+        // Duplicate client id: broker closes the session before ConnectAsync finishes
         _client.ConnectAsync(Arg.Any<MqttClientOptions>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {

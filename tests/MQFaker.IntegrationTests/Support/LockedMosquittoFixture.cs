@@ -5,8 +5,7 @@ using Xunit;
 
 namespace MQFaker.IntegrationTests.Support;
 
-// A broker with one real user - "the-real-user" / "the-real-password" - so a connect
-// attempt with any other credentials comes back rejected, the same as a real typo'd password
+// One real user (the-real-user/the-real-password); any other credentials are rejected like a real typo
 public sealed class LockedMosquittoFixture : IAsyncLifetime
 {
     private readonly IContainer _container = new ContainerBuilder("eclipse-mosquitto:2")

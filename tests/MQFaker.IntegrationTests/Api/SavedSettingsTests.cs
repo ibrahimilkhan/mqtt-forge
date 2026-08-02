@@ -6,7 +6,7 @@ using Xunit;
 
 namespace MQFaker.IntegrationTests.Api;
 
-// Verifies saved settings are readable again and that the password never leaks out
+// Saved settings are readable again; the password never leaks out
 public class SavedSettingsTests : IClassFixture<MqFakerApiFactory>, IClassFixture<MosquittoFixture>
 {
     private readonly MqFakerApiFactory _factory;
