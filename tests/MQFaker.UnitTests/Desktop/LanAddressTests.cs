@@ -14,8 +14,7 @@ public sealed class LanAddressTests
     private static readonly IPAddress Ipv6Lan = IPAddress.Parse("fe80::1");
     private static readonly IPAddress TunnelAddress = IPAddress.Parse("100.64.0.5");
 
-    // Most tests here are not about interface type, so default to a genuine adapter and let
-    // the ordering tests below spell out Tunnel/Ppp explicitly.
+    // Defaults to a genuine adapter; ordering tests below spell out Tunnel explicitly
     private static LanCandidate OnEthernet(IPAddress address) => new(address, NetworkInterfaceType.Ethernet);
 
     private static LanCandidate OnTunnel(IPAddress address) => new(address, NetworkInterfaceType.Tunnel);
@@ -39,8 +38,7 @@ public sealed class LanAddressTests
     [Fact]
     public void Falls_back_to_loopback_when_every_candidate_is_unusable()
     {
-        // Only loopback and link-local addresses on offer - nothing another device could
-        // actually reach, which is exactly the "no LAN address" case the fallback exists for.
+        // Only unreachable addresses on offer — the case the fallback exists for
         var chosen = Choose([OnEthernet(Loopback), OnEthernet(LinkLocal), OnEthernet(Ipv6Lan)]);
 
         Assert.Equal(IPAddress.Loopback, chosen);
@@ -49,8 +47,7 @@ public sealed class LanAddressTests
     [Fact]
     public void Skips_a_link_local_address_in_favour_of_a_real_one()
     {
-        // Link-local addresses are assigned by the OS itself when DHCP fails; a device on the
-        // network cannot route to one, so it must not win just because it enumerated first.
+        // Link-local (DHCP-fail) address must not win by enumerating first
         var chosen = Choose([OnEthernet(LinkLocal), OnEthernet(Lan)]);
 
         Assert.Equal(Lan, chosen);
@@ -67,9 +64,7 @@ public sealed class LanAddressTests
     [Fact]
     public void Ignores_ipv6_candidates()
     {
-        // The window is loaded via a plain "http://{host}:{port}" URI; an IPv6 literal needs
-        // bracket syntax to be valid there, which the caller does not add. Restricting to IPv4
-        // keeps the produced URI valid without extra formatting logic.
+        // IPv6 needs bracket syntax the caller doesn't add; restricting to IPv4 keeps the URI valid
         var chosen = Choose([OnEthernet(Ipv6Lan)]);
 
         Assert.Equal(IPAddress.Loopback, chosen);
@@ -78,9 +73,7 @@ public sealed class LanAddressTests
     [Fact]
     public void Prefers_a_lan_adapter_over_a_tunnel_when_the_tunnel_enumerates_first()
     {
-        // A VPN's utun/Tailscale/WireGuard interface can expose a real, routable address, so
-        // enumeration order alone must not decide - the genuine adapter has to win even when
-        // the tunnel happens to come first.
+        // A VPN tunnel can be routable too, so the genuine adapter must win regardless of enumeration order
         var chosen = Choose([OnTunnel(TunnelAddress), OnEthernet(Lan)]);
 
         Assert.Equal(Lan, chosen);
@@ -97,9 +90,7 @@ public sealed class LanAddressTests
     [Fact]
     public void Falls_back_to_a_tunnel_address_when_it_is_the_only_usable_candidate()
     {
-        // A machine connected only through a VPN still needs the app to open at a reachable
-        // address; tunnel addresses are ranked last, not excluded, so this stays usable instead
-        // of dropping all the way back to loopback.
+        // VPN-only machines still need a reachable address; tunnels are ranked last, not excluded
         var chosen = Choose([OnTunnel(TunnelAddress)]);
 
         Assert.Equal(TunnelAddress, chosen);

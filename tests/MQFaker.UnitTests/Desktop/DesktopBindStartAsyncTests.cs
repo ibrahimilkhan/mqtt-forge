@@ -4,8 +4,7 @@ using MQFaker.Desktop;
 
 namespace MQFaker.UnitTests.Desktop;
 
-// Exercises the real bind attempts DesktopBindTests deliberately does not - proof that the
-// fallback actually happens against a real socket refusal, not just the pure Decide() table.
+// Exercises real bind attempts, unlike DesktopBindTests' pure Decide() table
 public sealed class DesktopBindStartAsyncTests
 {
     [Fact]
@@ -33,9 +32,8 @@ public sealed class DesktopBindStartAsyncTests
         var settingsPath = TempSettingsPath();
         var candidate = FreePortForTest();
 
-        // 10.255.255.254 is not an address this machine owns, so binding to it fails with
-        // SocketException(AddressNotAvailable) on every attempt - confirmed by hand against a
-        // real Kestrel host, the exact shape a firewall/Local-Network-permission refusal takes.
+        // 10.255.255.254 isn't owned by this machine; binding fails the same way a
+        // firewall/permission refusal does
         var unreachable = IPAddress.Parse("10.255.255.254");
 
         var (app, outcome, port) = await DesktopBind.StartAsync([], settingsPath, candidate, unreachable);

@@ -6,7 +6,7 @@ using Xunit;
 
 namespace MQFaker.IntegrationTests.Api;
 
-// Verifies the design's promise that failures come back as readable ProblemDetails
+// Failures come back as readable ProblemDetails
 public class ErrorResponseTests : IClassFixture<MqFakerApiFactory>
 {
     private readonly MqFakerApiFactory _factory;

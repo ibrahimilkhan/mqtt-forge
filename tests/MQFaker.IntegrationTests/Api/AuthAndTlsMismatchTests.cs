@@ -24,9 +24,8 @@ public class WrongCredentialsTests : IClassFixture<MqFakerApiFactory>, IClassFix
         var client = _factory.CreateClient();
         var dto = new ConnectRequestDto(_broker.Host, _broker.Port, "wrong-creds", "someone", "not-the-password", false);
 
-        // The broker sends CONNACK "not authorised" then closes the socket - MQTTnet's
-        // ConnectAsync returns rather than throwing, so this is the same "closed right after
-        // connecting" case ConnectionManager already reports as Faulted, not an exception.
+        // Broker sends CONNACK "not authorised" then closes; ConnectAsync returns without
+        // throwing, so this is the Faulted path, not an exception
         var response = await client.PostAsJsonAsync("/api/connection", dto);
 
         response.EnsureSuccessStatusCode();
@@ -52,8 +51,7 @@ public class TlsMismatchTests : IClassFixture<MqFakerApiFactory>, IClassFixture<
     public async Task Connect_with_tls_to_a_plaintext_broker_returns_502_not_a_hang()
     {
         var client = _factory.CreateClient();
-        // The fixture's listener speaks plain MQTT; asking for TLS against it is the
-        // mismatch a wrong port or a misconfigured broker produces in the field.
+        // Fixture speaks plain MQTT; TLS request mimics a real misconfigured-broker mismatch
         var dto = new ConnectRequestDto(_broker.Host, _broker.Port, "tls-mismatch", null, null, true);
 
         var response = await client.PostAsJsonAsync("/api/connection", dto)

@@ -8,8 +8,7 @@ using Xunit;
 
 namespace MQFaker.IntegrationTests.Mqtt;
 
-// A topic or payload that is technically valid MQTT but far past what anyone would type by
-// hand - the kind a fuzzer or a runaway publisher produces in production
+// Technically valid MQTT but far past hand-typed size — what a fuzzer or runaway publisher produces
 public class MessageLimitsTests : IClassFixture<MosquittoFixture>
 {
     private readonly MosquittoFixture _broker;

@@ -6,7 +6,8 @@ using MQFaker.Api;
 
 namespace MQFaker.IntegrationTests.Api;
 
-// WebApplicationFactory pins ApplicationName to "MQFaker.Api", masking a deleted AddApplicationPart - this builds the real host under a different entry assembly, like the desktop shell
+// WebApplicationFactory pins ApplicationName to MQFaker.Api, masking a deleted AddApplicationPart;
+// this builds under a different entry assembly instead, like the desktop shell
 public sealed class ControllerDiscoveryTests
 {
     [Fact]

@@ -31,8 +31,7 @@ public sealed class DesktopBindTests
     [Fact]
     public void Prefers_the_lan_bind_even_if_loopback_was_also_reported_as_working()
     {
-        // The real driver never tries loopback once the LAN bind has already succeeded, but
-        // Decide() should not depend on that - the LAN result alone must be authoritative.
+        // Driver never tries loopback after LAN succeeds, but Decide() shouldn't depend on that
         var outcome = DesktopBind.Decide(lanBindSucceeded: true, loopbackBindSucceeded: true);
 
         Assert.Equal(DesktopBind.Outcome.Lan, outcome);

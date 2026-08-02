@@ -63,9 +63,7 @@ public sealed class SingleInstanceTests
     [Fact]
     public async Task Dispose_leaves_no_stray_pipe_file_after_a_signal_was_serviced()
     {
-        // NamedPipeServerStream is backed by a Unix domain socket file on macOS/Linux; on Windows
-        // a named pipe is a kernel object with nothing on disk to check, so this regression check
-        // (which inspects the temp directory for a leaked socket file) only applies on Unix.
+        // Named pipes are Unix-socket-file-backed only on macOS/Linux; this leak check doesn't apply on Windows
         if (OperatingSystem.IsWindows()) return;
 
         var tempDir = Path.GetTempPath();
@@ -74,16 +72,11 @@ public sealed class SingleInstanceTests
         var name = UniqueName();
         var holder = SingleInstance.TryAcquire(name)!;
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        // RunContinuationsAsynchronously keeps the test's own await from being hijacked onto the
-        // background loop's thread ahead of the loop's own remaining statements below.
+        // Keeps the test's await from hijacking the background loop's thread
         var signalled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        // Dispose from inside the signal callback: this runs synchronously on the background
-        // loop's own thread, exactly where the loop is about to tear down the just-used server
-        // and build a replacement. Pinning Dispose() there reproduces the reported race every
-        // time, instead of hoping the scheduler happens to interleave it at just the wrong moment
-        // (the caller's own token, cts above, is deliberately never cancelled first, mirroring the
-        // ordinary `using var holder = SingleInstance.TryAcquire(...)` pattern from the report).
+        // Disposing inside the callback pins the race on the loop's own thread, reproducing it
+        // deterministically instead of relying on scheduler luck
         holder.ListenForSignals(() =>
         {
             holder.Dispose();
@@ -93,10 +86,7 @@ public sealed class SingleInstanceTests
         Assert.True(SingleInstance.SignalExisting(name, TimeSpan.FromSeconds(5)));
         await signalled.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        // Give the loop's own thread time to finish whatever runs right after the signal callback
-        // returns (disposing the just-used server and, on the buggy code path, constructing an
-        // unguarded replacement) before inspecting the temp directory. A leaked file never goes
-        // away on its own, so once this window has passed, a single check is enough.
+        // Lets the loop finish its post-callback work before checking; a leaked file never disappears on its own
         await Task.Delay(300);
 
         var leaked = Directory.GetFiles(tempDir, "CoreFxPipe_mqf-*").Except(before).ToArray();

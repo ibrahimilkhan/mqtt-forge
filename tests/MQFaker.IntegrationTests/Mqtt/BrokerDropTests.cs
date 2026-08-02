@@ -9,9 +9,7 @@ using Xunit;
 
 namespace MQFaker.IntegrationTests.Mqtt;
 
-// The broker, not the app, ends the session mid-flight - a restart, an idle timeout, an
-// admin kicking the client. A second client using the same client id makes a real broker
-// do exactly that, without needing to actually restart the container.
+// Broker, not the app, ends the session; a same-client-id impostor makes a real broker do that
 public class BrokerDropTests : IClassFixture<MosquittoFixture>
 {
     private readonly MosquittoFixture _broker;
@@ -28,8 +26,7 @@ public class BrokerDropTests : IClassFixture<MosquittoFixture>
         await manager.ConnectAsync(settings, CancellationToken.None);
         Assert.Equal(ConnectionState.Connected, manager.State);
 
-        // MQTT requires the broker to close the older session when the same client id
-        // reconnects; the victim finds out through its own DisconnectedAsync event.
+        // Broker closes the older session on a same-client-id reconnect; victim learns via its own DisconnectedAsync
         using var impostor = new MqttClientFactory().CreateMqttClient();
         await impostor.ConnectAsync(new MqttClientOptionsBuilder()
             .WithTcpServer(_broker.Host, _broker.Port).WithClientId("drop-victim").Build());

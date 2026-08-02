@@ -6,8 +6,7 @@ namespace MQFaker.IntegrationTests.Api;
 
 public sealed class CorsPolicyTests
 {
-    // In both shipped packages the interface is served by the API itself, so a
-    // cross-origin allowance for the Vite dev server is dead configuration there.
+    // Shipped packages serve the UI from the API itself, so dev-only CORS doesn't apply there
     [Fact]
     public async Task Production_does_not_answer_with_a_cross_origin_allowance()
     {

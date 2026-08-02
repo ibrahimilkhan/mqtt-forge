@@ -1,10 +1,7 @@
 using MQFaker.Desktop;
 
-// Minimal by design: this process exists only so SingleInstanceCrossProcessTests can launch a
-// genuinely separate OS process and observe whether SingleInstance.TryAcquire refuses it while
-// another real process holds the lock - something no in-process test can exercise, since .NET's
-// own bookkeeping already refuses a second in-process pipe server regardless of what the
-// cross-process locking primitive actually does.
+// Separate OS process so tests can observe cross-process locking; an in-process test can't,
+// since .NET already refuses a second in-process pipe server regardless of the lock itself
 if (args.Length != 1)
 {
     Console.Error.WriteLine("usage: MQFaker.SingleInstanceProbe <lock-name>");
@@ -24,9 +21,7 @@ using (instance)
     Console.WriteLine("ACQUIRED");
     Console.Out.Flush();
 
-    // Hold the lock until the test says to let go, so the second process has a real window in
-    // which the first is still holding it. Console.In.ReadLine() blocks until the test writes a
-    // line to this process's redirected stdin (or closes it, which also unblocks with null).
+    // Holds the lock until the test signals via stdin (a closed pipe also unblocks, with null)
     Console.In.ReadLine();
 }
 
