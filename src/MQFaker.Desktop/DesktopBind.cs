@@ -5,27 +5,19 @@ using Microsoft.AspNetCore.Builder;
 
 namespace MQFaker.Desktop;
 
-// Program.cs must still open a window even when the OS will not let Kestrel bind to
-// 0.0.0.0 - macOS Local Network permission refusal and firewall/Network-Extension policy
-// both surface the same way empirically: a thrown SocketException/IOException out of
-// StartAsync (verified by forcing a bind failure directly), not anything LanAddress could
-// see in advance by enumerating interfaces. Kept pure so the three outcomes are ordinary
-// unit tests instead of things that only reproduce with a live firewall rule.
+// Bind failures (macOS permission/firewall refusal) only surface as a thrown
+// SocketException/IOException, not via enumerating interfaces in advance
 public static class DesktopBind
 {
     public enum Outcome { Lan, LoopbackOnly, Unavailable }
 
-    // Pure: given what the two bind attempts already told us, decide the outcome.
     public static Outcome Decide(bool lanBindSucceeded, bool loopbackBindSucceeded) =>
         lanBindSucceeded ? Outcome.Lan :
         loopbackBindSucceeded ? Outcome.LoopbackOnly :
         Outcome.Unavailable;
 
-    // Thin I/O layer: makes the real bind attempts Decide() above only reasons about
-    // abstractly. The two bind-address parameters default to 0.0.0.0/127.0.0.1 for real use;
-    // tests override them with an address this machine cannot bind to, forcing the same
-    // SocketException a firewall or denied Local Network permission would produce, without
-    // touching OS firewall state.
+    // Tests override the bind addresses with an unbindable one to simulate a firewall/permission
+    // failure without touching real OS state
     public static async Task<(WebApplication App, Outcome Outcome, int Port)> StartAsync(
         string[] args,
         string settingsPath,
@@ -61,8 +53,7 @@ public static class DesktopBind
         {
             if (loopbackApp is not null) await loopbackApp.DisposeAsync();
 
-            // Nothing bindable anywhere - hand back an unstarted host purely so the tuple's
-            // App is never null; the caller skips it entirely once it sees Unavailable.
+            // Unstarted host only so App is never null; caller skips it on Unavailable
             var fallback = Build(args, settingsPath, urls: null);
             return (fallback, Decide(lanBindSucceeded: false, loopbackBindSucceeded: false), candidatePort);
         }
