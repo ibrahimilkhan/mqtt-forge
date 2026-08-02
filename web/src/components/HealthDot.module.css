@@ -1,4 +1,4 @@
-/* Fixed to the viewport corner; small enough not to block content beneath it. */
+/* Fixed to the viewport corner; the panes below reserve padding so it never sits over a row. */
 .dot {
   position: fixed;
   right: 16px;
@@ -16,6 +16,15 @@
   padding: 5px 11px;
   z-index: 10;
   pointer-events: none;
+}
+/* Below 1180px the panes stop scrolling internally and the whole page scrolls instead, so a
+   fixed corner pill would ride over whatever row lands there; drop it into the flow instead. */
+@media (max-width: 1180px) {
+  .dot {
+    position: static;
+    width: fit-content;
+    margin: 16px auto 0;
+  }
 }
 .lamp {
   width: 6px;
