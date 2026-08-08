@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using MQFaker.Application.Services;
 using MQFaker.Domain.Abstractions;
 using MQFaker.Domain.Enums;
+using MQFaker.Domain.Exceptions;
 using MQFaker.Domain.Models;
 using NSubstitute;
 using Xunit;
@@ -109,4 +110,64 @@ public class ConnectionServiceTests
         Assert.False(alreadyConnected);
         await _manager.Received(1).ConnectAsync(different, Arg.Any<CancellationToken>());
     }
+
+    [Fact]
+    public async Task CancelAttempt_aborts_an_in_flight_connect()
+    {
+        var started = new TaskCompletionSource();
+        _manager.ConnectAsync(_settings, Arg.Any<CancellationToken>())
+            .Returns(call => BlockUntilCancelled(call.Arg<CancellationToken>(), started));
+        var sut = CreateSut();
+
+        var connecting = sut.ConnectAsync(_settings, CancellationToken.None);
+        await started.Task;
+        sut.CancelAttempt();
+
+        await Assert.ThrowsAsync<ConnectAttemptAbortedException>(() => Settle(connecting));
+    }
+
+    // The caller's own token going down means the browser left, not that anyone asked to abort;
+    // the failure that actually happened is the one worth reporting.
+    [Fact]
+    public async Task ConnectAsync_reports_the_original_failure_when_the_caller_goes_away()
+    {
+        using var caller = new CancellationTokenSource();
+        _manager.ConnectAsync(_settings, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                caller.Cancel();
+                return Task.FromException(new InvalidOperationException("socket died"));
+            });
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => sut.ConnectAsync(_settings, caller.Token));
+    }
+
+    [Fact]
+    public void CancelAttempt_does_nothing_when_no_attempt_is_in_flight()
+    {
+        var sut = CreateSut();
+
+        Assert.Null(Record.Exception(sut.CancelAttempt));
+    }
+
+    // The attempt disposes its own source on the way out, so a late abort must not touch it.
+    [Fact]
+    public async Task CancelAttempt_does_nothing_once_the_attempt_has_finished()
+    {
+        var sut = CreateSut();
+        await sut.ConnectAsync(_settings, CancellationToken.None);
+
+        Assert.Null(Record.Exception(sut.CancelAttempt));
+    }
+
+    private static async Task BlockUntilCancelled(CancellationToken token, TaskCompletionSource started)
+    {
+        started.SetResult();
+        await Task.Delay(Timeout.Infinite, token);
+    }
+
+    // An attempt nobody cancelled would otherwise hang the run rather than fail it.
+    private static Task Settle(Task attempt) => attempt.WaitAsync(TimeSpan.FromSeconds(5));
 }
