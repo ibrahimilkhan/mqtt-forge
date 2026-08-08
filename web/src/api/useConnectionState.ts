@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import type { ConnectionState } from '../types/api';
-import { getConnectionState, getSavedSettings } from './connection';
+import { getConnectionState } from './connection';
 import { queryKeys } from './queryKeys';
 
 // Shared connection query so panels don't each own one; lives here since no feature owns it.
@@ -13,15 +13,17 @@ export function useConnectionState() {
   return {
     state,
     failure: data?.failure,
+    link: data?.connection ?? undefined,
     isOnline: state === 'Connected',
     isConnecting: state === 'Connecting',
   };
 }
 
-// Reads the last-saved connect settings, so no component holds onto the typed form.
+// The live link, not the saved settings: those record the last connect that WORKED, which is a
+// different question from what is up now — and saving them is allowed to fail without failing
+// the connect. The link comes from the same payload as the state, so the two cannot disagree.
 export function useBrokerAddress(): string | undefined {
-  const { isOnline } = useConnectionState();
-  const { data: saved } = useQuery({ queryKey: queryKeys.savedSettings, queryFn: getSavedSettings });
+  const { link } = useConnectionState();
 
-  return isOnline && saved ? `${saved.host}:${saved.port}` : undefined;
+  return link ? `${link.host}:${link.port}` : undefined;
 }
