@@ -10,3 +10,8 @@ export const connect = (body: ConnectRequest) =>
   request<ConnectionStateResponse>('/api/connection', { method: 'POST', ...json(body) });
 
 export const disconnect = () => request<void>('/api/connection', { method: 'DELETE' });
+
+// Calls off an attempt still in flight — the attempt, not the connection. The request that
+// started it may belong to a panel the user has since navigated away from, so the abort is
+// its own request rather than a hang-up on that one.
+export const cancelConnect = () => request<void>('/api/connection/attempt', { method: 'DELETE' });

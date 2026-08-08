@@ -9,8 +9,10 @@ import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import { server } from '../../test/server';
 import { BrokerPanel } from './BrokerPanel';
 
-function renderPanel() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+const newQueryClient = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+// Takes a client so a test can reopen the panel against the state the first one left behind.
+function renderPanel(queryClient = newQueryClient()) {
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
@@ -21,6 +23,39 @@ beforeEach(() => {
   useLogStore.getState().clear();
   useTopicTreeStore.getState().reset();
 });
+
+// Mirrors the API's abort flow: the connect stays open and the state reads Connecting until
+// something calls the attempt off, and only then does the POST answer — with a 409.
+function trackAttempt() {
+  let state = 'Disconnected';
+  let calledOff!: () => void;
+  const cancellation = new Promise<void>((resolve) => {
+    calledOff = resolve;
+  });
+
+  const attempt = {
+    cancelled: false,
+    handlers: [
+      http.get('/api/connection', () => HttpResponse.json({ state })),
+      http.post('/api/connection', async () => {
+        state = 'Connecting';
+        await cancellation;
+        return HttpResponse.json(
+          { title: 'Connect aborted', detail: 'The attempt was cancelled.', reason: 'aborted' },
+          { status: 409 },
+        );
+      }),
+      http.delete('/api/connection/attempt', () => {
+        attempt.cancelled = true;
+        state = 'Disconnected';
+        calledOff();
+        return new HttpResponse(null, { status: 204 });
+      }),
+    ],
+  };
+
+  return attempt;
+}
 
 describe('BrokerPanel', () => {
   it('fills the form from the saved settings', async () => {
@@ -262,6 +297,66 @@ describe('BrokerPanel', () => {
 
     await waitFor(() => expect(button).not.toBeDisabled());
     expect(calls).toBe(1);
+  });
+
+  // An attempt already running when the panel opens is the state a user lands in after
+  // switching panels; the server knows about it even though this mount never started it.
+  it('offers Abort for an attempt that was already running when it opened', async () => {
+    server.use(http.get('/api/connection', () => HttpResponse.json({ state: 'Connecting' })));
+
+    renderPanel();
+
+    expect(await screen.findByRole('button', { name: 'Abort' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Connect' })).not.toBeInTheDocument();
+  });
+
+  it('calls the attempt off when Abort is pressed', async () => {
+    let cancelled = false;
+    server.use(
+      http.get('/api/connection', () => HttpResponse.json({ state: 'Connecting' })),
+      http.delete('/api/connection/attempt', () => {
+        cancelled = true;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+
+    renderPanel();
+    await userEvent.click(await screen.findByRole('button', { name: 'Abort' }));
+
+    await waitFor(() => expect(cancelled).toBe(true));
+  });
+
+  // The complaint this whole thing is about: leave the panel mid-connect, come back, and the
+  // attempt you started is nowhere to be seen.
+  it('finds the running attempt again after the panel is closed and reopened', async () => {
+    const attempt = trackAttempt();
+    server.use(...attempt.handlers);
+    const queryClient = newQueryClient();
+
+    const first = renderPanel(queryClient);
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+    await screen.findByRole('button', { name: 'Abort' });
+    first.unmount();
+    renderPanel(queryClient);
+
+    // Not just showing the button — the reopened panel can actually stop the attempt.
+    await userEvent.click(await screen.findByRole('button', { name: 'Abort' }));
+    await waitFor(() => expect(attempt.cancelled).toBe(true));
+  });
+
+  it('logs an aborted attempt as aborted, and leaves no fault on screen', async () => {
+    const attempt = trackAttempt();
+    server.use(...attempt.handlers);
+
+    renderPanel();
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Abort' }));
+
+    await waitFor(() =>
+      expect(useLogStore.getState().entries[0]).toMatchObject({ verb: 'Connect aborted' }),
+    );
+    expect(useLogStore.getState().entries[0].kind).not.toBe('fault');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('ignores extra clicks fired while a disconnect is already in flight', async () => {
