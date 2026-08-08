@@ -16,6 +16,7 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
     private readonly SemaphoreSlim _gate;
     private readonly IConnectionStateNotifier _notifier;
     private readonly TimeSpan _connectTimeout;
+    private readonly TimeProvider _time;
 
     // Watches the TLS handshake, because the exception that escapes it has already forgotten
     // which rule the certificate broke. Attempts are serialised by the gate, so one is enough.
@@ -31,16 +32,22 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
     // so a drop can name the endpoint it was connected to.
     private BrokerConnectionSettings? _attempted;
 
+    // The link that is up. Read through the IsConnected gate, same as the failure, so a dead
+    // link cannot describe itself as a live one.
+    private BrokerLink? _link;
+
     // Last payload announced, to avoid duplicate notifications
     private string _announced = $"{ConnectionState.Disconnected}/";
 
     public MqttnetConnectionManager(
-        MqttnetClientProvider provider, IConnectionStateNotifier notifier, TimeSpan? connectTimeout = null)
+        MqttnetClientProvider provider, IConnectionStateNotifier notifier,
+        TimeSpan? connectTimeout = null, TimeProvider? timeProvider = null)
     {
         _client = provider.Client;
         _gate = provider.Gate;
         _notifier = notifier;
         _connectTimeout = connectTimeout ?? DefaultConnectTimeout;
+        _time = timeProvider ?? TimeProvider.System;
 
         _client.DisconnectedAsync += OnDisconnectedAsync;
     }
@@ -50,6 +57,8 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
 
     public BrokerFailure? Failure => _client.IsConnected ? null : Describe();
 
+    public BrokerLink? Link => _client.IsConnected ? _link : null;
+
     // Single-active-connection rule: disconnect any existing link before reconnecting
     public async Task ConnectAsync(BrokerConnectionSettings settings, CancellationToken ct)
     {
@@ -58,6 +67,7 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
         {
             _offlineState = ConnectionState.Connecting;
             _failureReason = null;
+            _link = null;
             _attempted = settings;
             _tls.Reset();
             MqttClientConnectResult result;
@@ -121,6 +131,9 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
             _failureReason = refused
                 ? BrokerFailureClassifier.Classify(result.ResultCode, HasCredentials(settings))
                 : null;
+
+            // Only where the broker accepted; a refusal leaves no link to describe.
+            _link = refused ? null : LinkTo(settings, result);
 
             // Post-connect, offline now means the link died, not a deliberate close
             // (also covers the broker dropping the session the instant it opens)
@@ -199,6 +212,18 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
         _failureReason is { } reason && _attempted is { } at
             ? new BrokerFailure(reason, at.Host, at.Port, at.ClientId, at.UseTls)
             : null;
+
+    private BrokerLink LinkTo(BrokerConnectionSettings settings, MqttClientConnectResult result) =>
+        new(settings.Host, settings.Port, settings.ClientId, settings.Username, settings.UseTls,
+            _time.GetUtcNow(),
+            result.IsSessionPresent,
+            // MQTT 5 lets the broker name the client itself. An echo of the id we asked for
+            // tells the user nothing, so only a different one is worth a line.
+            result.AssignedClientIdentifier is { Length: > 0 } assigned && assigned != settings.ClientId
+                ? assigned
+                : null,
+            // Zero is MQTTnet for "the broker imposed none", not a keep-alive of no seconds.
+            result.ServerKeepAlive == 0 ? null : (ushort?)result.ServerKeepAlive);
 
     private MqttClientOptions BuildOptions(BrokerConnectionSettings settings)
     {
