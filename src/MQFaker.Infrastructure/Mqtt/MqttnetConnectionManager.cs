@@ -194,18 +194,19 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
 
     private Task AnnounceAsync()
     {
-        // One read of the client's own state, so the two halves of the payload cannot disagree
+        // One read of the client's own state, so the three parts of the payload cannot disagree
         // with each other when a disconnect lands between them.
         var connected = _client.IsConnected;
         var state = connected ? ConnectionState.Connected : _offlineState;
         var failure = connected ? null : Describe();
+        var link = connected ? _link : null;
 
         // Keyed on the whole payload, not just the state: a Faulted whose reason was worked out
         // after a first, reasonless announcement would otherwise never reach the console.
         var key = $"{state}/{failure?.Reason}";
         if (Interlocked.Exchange(ref _announced, key) == key) return Task.CompletedTask;
 
-        return _notifier.NotifyStateChangedAsync(state, failure);
+        return _notifier.NotifyStateChangedAsync(state, failure, link);
     }
 
     private BrokerFailure? Describe() =>

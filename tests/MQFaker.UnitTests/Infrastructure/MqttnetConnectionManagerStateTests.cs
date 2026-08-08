@@ -36,8 +36,10 @@ public class MqttnetConnectionManagerStateTests
         Assert.Equal(ConnectionState.Connected, sut.State);
         Received.InOrder(() =>
         {
-            _notifier.NotifyStateChangedAsync(ConnectionState.Connecting, Arg.Any<BrokerFailure?>());
-            _notifier.NotifyStateChangedAsync(ConnectionState.Connected, Arg.Any<BrokerFailure?>());
+            _notifier.NotifyStateChangedAsync(
+                ConnectionState.Connecting, Arg.Any<BrokerFailure?>(), Arg.Any<BrokerLink?>());
+            _notifier.NotifyStateChangedAsync(
+                ConnectionState.Connected, Arg.Any<BrokerFailure?>(), Arg.Any<BrokerLink?>());
         });
     }
 
@@ -52,7 +54,8 @@ public class MqttnetConnectionManagerStateTests
             () => sut.ConnectAsync(_settings, CancellationToken.None));
 
         Assert.Equal(ConnectionState.Faulted, sut.State);
-        await _notifier.Received(1).NotifyStateChangedAsync(ConnectionState.Faulted, Arg.Any<BrokerFailure?>());
+        await _notifier.Received(1).NotifyStateChangedAsync(
+            ConnectionState.Faulted, Arg.Any<BrokerFailure?>(), Arg.Any<BrokerLink?>());
     }
 
     [Fact]
@@ -82,7 +85,8 @@ public class MqttnetConnectionManagerStateTests
 
         Assert.Equal(BrokerFailureReason.CredentialsRejected, error.Reason);
         Assert.Equal(ConnectionState.Faulted, sut.State);
-        await _notifier.Received(1).NotifyStateChangedAsync(ConnectionState.Faulted, Arg.Any<BrokerFailure?>());
+        await _notifier.Received(1).NotifyStateChangedAsync(
+            ConnectionState.Faulted, Arg.Any<BrokerFailure?>(), Arg.Any<BrokerLink?>());
     }
 
     [Fact]
@@ -356,7 +360,10 @@ public class MqttnetConnectionManagerStateTests
 
         Assert.Equal(BrokerFailureReason.SessionTakenOver, sut.Failure!.Reason);
         await _notifier.Received(1)
-            .NotifyStateChangedAsync(ConnectionState.Faulted, Arg.Is<BrokerFailure>(f => f!.Reason == BrokerFailureReason.SessionTakenOver));
+            .NotifyStateChangedAsync(
+                ConnectionState.Faulted,
+                Arg.Is<BrokerFailure>(f => f!.Reason == BrokerFailureReason.SessionTakenOver),
+                Arg.Any<BrokerLink?>());
     }
 
     [Fact]
@@ -399,7 +406,8 @@ public class MqttnetConnectionManagerStateTests
         RaiseDisconnected();
 
         Assert.Equal(ConnectionState.Disconnected, sut.State);
-        await _notifier.DidNotReceive().NotifyStateChangedAsync(ConnectionState.Faulted, Arg.Any<BrokerFailure?>());
+        await _notifier.DidNotReceive().NotifyStateChangedAsync(
+            ConnectionState.Faulted, Arg.Any<BrokerFailure?>(), Arg.Any<BrokerLink?>());
     }
 
     [Fact]
@@ -421,7 +429,8 @@ public class MqttnetConnectionManagerStateTests
             () => sut.DisconnectAsync(CancellationToken.None));
 
         Assert.Equal(ConnectionState.Disconnected, sut.State);
-        await _notifier.DidNotReceive().NotifyStateChangedAsync(ConnectionState.Faulted, Arg.Any<BrokerFailure?>());
+        await _notifier.DidNotReceive().NotifyStateChangedAsync(
+            ConnectionState.Faulted, Arg.Any<BrokerFailure?>(), Arg.Any<BrokerLink?>());
     }
 
     [Fact]
@@ -435,7 +444,8 @@ public class MqttnetConnectionManagerStateTests
         RaiseDisconnected();
 
         Assert.Equal(ConnectionState.Faulted, sut.State);
-        await _notifier.Received(1).NotifyStateChangedAsync(ConnectionState.Faulted, Arg.Any<BrokerFailure?>());
+        await _notifier.Received(1).NotifyStateChangedAsync(
+            ConnectionState.Faulted, Arg.Any<BrokerFailure?>(), Arg.Any<BrokerLink?>());
     }
 
     [Fact]
@@ -456,7 +466,8 @@ public class MqttnetConnectionManagerStateTests
         await sut.ConnectAsync(_settings, CancellationToken.None);
 
         Assert.Equal(ConnectionState.Faulted, sut.State);
-        await _notifier.DidNotReceive().NotifyStateChangedAsync(ConnectionState.Connected, Arg.Any<BrokerFailure?>());
+        await _notifier.DidNotReceive().NotifyStateChangedAsync(
+            ConnectionState.Connected, Arg.Any<BrokerFailure?>(), Arg.Any<BrokerLink?>());
     }
 
     [Fact]
@@ -470,7 +481,8 @@ public class MqttnetConnectionManagerStateTests
         RaiseDisconnected();
 
         Assert.Equal(ConnectionState.Connected, sut.State);
-        await _notifier.DidNotReceive().NotifyStateChangedAsync(ConnectionState.Faulted, Arg.Any<BrokerFailure?>());
+        await _notifier.DidNotReceive().NotifyStateChangedAsync(
+            ConnectionState.Faulted, Arg.Any<BrokerFailure?>(), Arg.Any<BrokerLink?>());
     }
 
     // The real client flips IsConnected as part of connecting; a substitute has to be told to.
