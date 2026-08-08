@@ -99,6 +99,14 @@ describe('ConnectionSummary', () => {
     expect(await readValue('Keep-alive')).toHaveTextContent('30 sec');
   });
 
+  // A zero here means MQTT keep-alive was turned off, not a keep-alive of no seconds, so it
+  // dashes the same as the broker saying nothing — do not "fix" this to render "0 sec".
+  it('dashes a keep-alive of zero rather than reading it as no seconds', async () => {
+    renderSummary({ ...LINK, serverKeepAlive: 0 });
+
+    expect(await readValue('Keep-alive')).toHaveTextContent('—');
+  });
+
   // The count lands a tick after the block does: the subscriptions query only starts once
   // there is a link to count filters for.
   it('counts the topic filters in play', async () => {
