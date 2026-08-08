@@ -80,24 +80,29 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
 
                 result = await _client.ConnectAsync(BuildOptions(settings), attempt.Token);
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            catch (Exception) when (ct.IsCancellationRequested)
             {
-                // Caller cancelled, not a failure
+                // Caller went away. Whatever shape the abandoned attempt came back in, nothing
+                // here is worth reporting as a broker failure.
                 _offlineState = ConnectionState.Disconnected;
                 await AnnounceAsync();
                 throw;
             }
-            catch (OperationCanceledException)
+            catch (Exception ex) when (attempt.IsCancellationRequested || ex is OperationCanceledException)
             {
-                // Nobody asked to stop, so this is our deadline — or MQTTnet turning an aborted
-                // socket into a cancellation, which is a dead attempt either way.
+                // Our deadline. Its shape is not to be trusted: MQTTnet swallows a cancelled read
+                // and reports it as a closed connection, which is indistinguishable from a peer
+                // that hung up — measured against a port that accepts TCP and then says nothing.
+                // Our own token is the only honest witness. The bare OperationCanceledException
+                // covers the TCP phase, where MQTTnet does surface a cancellation, and an aborted
+                // socket, which it converts into one.
                 _offlineState = ConnectionState.Faulted;
                 _failureReason = BrokerFailureReason.Timeout;
                 await AnnounceAsync();
                 throw new BrokerUnreachableException(
                     BrokerFailureReason.Timeout,
                     $"The broker at {settings.Host}:{settings.Port} did not answer within "
-                    + $"{_connectTimeout.TotalSeconds:0} seconds.");
+                    + $"{_connectTimeout.TotalSeconds:0} seconds.", ex);
             }
             catch (Exception ex)
             {

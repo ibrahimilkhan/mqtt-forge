@@ -7,6 +7,7 @@ using MQFaker.Domain.Exceptions;
 using MQFaker.Domain.Models;
 using MQFaker.Infrastructure.Mqtt;
 using MQTTnet;
+using MQTTnet.Adapter;
 using MQTTnet.Exceptions;
 using NSubstitute;
 using Xunit;
@@ -123,6 +124,39 @@ public class MqttnetConnectionManagerStateTests
 
         Assert.Equal(BrokerFailureReason.Timeout, error.Reason);
         Assert.Equal(ConnectionState.Faulted, sut.State);
+    }
+
+    // Measured against a port that accepts TCP and then says nothing: MQTTnet swallows the
+    // cancelled read and reports it as a closed connection, so the exception's shape proves
+    // nothing. Our own deadline token is the only honest witness that time ran out.
+    [Fact]
+    public async Task ConnectAsync_calls_our_own_deadline_a_timeout_whatever_shape_it_comes_back_in()
+    {
+        _client.ConnectAsync(Arg.Any<MqttClientOptions>(), Arg.Any<CancellationToken>())
+            .Returns(call => SwallowsTheCancellation(call.Arg<CancellationToken>()));
+        var sut = new MqttnetConnectionManager(
+            new MqttnetClientProvider(_client), _notifier, TimeSpan.FromMilliseconds(50));
+
+        var error = await Assert.ThrowsAsync<BrokerUnreachableException>(
+            () => sut.ConnectAsync(_settings, CancellationToken.None));
+
+        Assert.Equal(BrokerFailureReason.Timeout, error.Reason);
+    }
+
+    private static async Task<MqttClientConnectResult> SwallowsTheCancellation(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(Timeout.Infinite, token);
+        }
+        catch (OperationCanceledException)
+        {
+            // swallowed, exactly as MQTTnet's read path does
+        }
+
+        throw new MqttConnectingFailedException(
+            "Error while authenticating. Connection closed.",
+            new MqttCommunicationException("Connection closed."));
     }
 
     // MQTTnet's channel adapter turns SocketError.OperationAborted into a cancellation, so an
