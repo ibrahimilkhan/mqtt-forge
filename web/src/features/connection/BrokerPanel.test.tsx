@@ -160,12 +160,46 @@ describe('BrokerPanel', () => {
   it('shows why a live connection dropped', async () => {
     server.use(
       http.get('/api/connection', () =>
-        HttpResponse.json({ state: 'Faulted', reason: 'sessionTakenOver' }),
+        HttpResponse.json({
+          state: 'Faulted',
+          failure: {
+            reason: 'sessionTakenOver',
+            host: 'broker.example',
+            port: 1883,
+            clientId: 'live-client',
+            useTls: false,
+          },
+        }),
+      ),
+    );
+
+    renderPanel();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "Another client connected with the client ID 'live-client'.",
+    );
+  });
+
+  // The saved settings record the last connect that WORKED, so they are the wrong thing to
+  // name when an attempt to somewhere else is what failed.
+  it('names the broker the failure is about, not the one last saved', async () => {
+    server.use(
+      http.get('/api/connection', () =>
+        HttpResponse.json({
+          state: 'Faulted',
+          failure: {
+            reason: 'refused',
+            host: 'localhost',
+            port: 1999,
+            clientId: 'probe',
+            useTls: false,
+          },
+        }),
       ),
       http.get('/api/connection/settings', () =>
         HttpResponse.json({
           host: 'broker.example',
-          port: 1883,
+          port: 8883,
           clientId: 'saved-client',
           username: null,
           hasPassword: false,
@@ -177,11 +211,11 @@ describe('BrokerPanel', () => {
     renderPanel();
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      "Another client connected with the client ID 'saved-client'.",
+      'Nothing is listening at localhost:1999.',
     );
   });
 
-  it('stays quiet when the connection state carries no reason', async () => {
+  it('stays quiet when the connection state carries no failure', async () => {
     server.use(http.get('/api/connection', () => HttpResponse.json({ state: 'Faulted' })));
 
     renderPanel();

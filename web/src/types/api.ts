@@ -1,10 +1,20 @@
 // Mirrors MQFaker.Api.Contracts; ASP.NET serialises camelCase.
 export type ConnectionState = 'Disconnected' | 'Connecting' | 'Connected' | 'Faulted';
 
-// reason is set only alongside Faulted, and only when the API could work out a cause.
+// Set only alongside Faulted, and only when the API could work out a cause. It names the
+// broker too: the saved settings record the last SUCCESSFUL connect, so a failed attempt to
+// somewhere else leaves nothing on this side to match it against.
+export type BrokerFailure = {
+  reason: string;
+  host: string;
+  port: number;
+  clientId: string;
+  useTls: boolean;
+};
+
 export type ConnectionStateResponse = {
   state: ConnectionState;
-  reason?: string | null;
+  failure?: BrokerFailure | null;
   alreadyConnected?: boolean;
 };
 

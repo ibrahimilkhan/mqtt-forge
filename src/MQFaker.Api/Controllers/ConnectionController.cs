@@ -18,7 +18,7 @@ public sealed class ConnectionController : ControllerBase
         Ok(new
         {
             state = _service.CurrentState.ToString(),
-            reason = FailureReasonName.Of(_service.CurrentFailure)
+            failure = BrokerFailureDto.Of(_service.CurrentFailure)
         });
 
     // Lets the console prefill the connection form
