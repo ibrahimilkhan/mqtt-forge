@@ -1,11 +1,12 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { connect, disconnect } from '../../api/connection';
+import { cancelConnect, connect, disconnect } from '../../api/connection';
 import { queryKeys } from '../../api/queryKeys';
 import { subscribe } from '../../api/subscriptions';
 import { describeError } from '../../lib/problemDetails';
 import { useLogStore } from '../../stores/logStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import type { ConnectRequest } from '../../types/api';
+import { wasAborted } from './connectFailure';
 
 export function useConnectionActions() {
   const queryClient = useQueryClient();
@@ -42,8 +43,26 @@ export function useConnectionActions() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.savedSettings });
     },
 
+    // An attempt the user called off is not a failure, and there is nothing to explain: they
+    // know why it stopped. Reported here rather than by the abort itself, because this is the
+    // request that actually ended.
     onError: (error) =>
-      useLogStore.getState().push({ kind: 'fault', verb: 'Connect failed', body: describeError(error) }),
+      useLogStore
+        .getState()
+        .push(
+          wasAborted(error)
+            ? { kind: 'ok', verb: 'Connect aborted' }
+            : { kind: 'fault', verb: 'Connect failed', body: describeError(error) },
+        ),
+  });
+
+  const abortMutation = useMutation({
+    mutationFn: cancelConnect,
+    // The attempt's own 409 carries the outcome; a second line here would just repeat it.
+    // Refetch anyway: with the hub down, nothing else would clear Connecting off the screen.
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: queryKeys.connection }),
+    onError: (error) =>
+      useLogStore.getState().push({ kind: 'fault', verb: 'Abort failed', body: describeError(error) }),
   });
 
   const disconnectMutation = useMutation({
@@ -57,7 +76,7 @@ export function useConnectionActions() {
       useLogStore.getState().push({ kind: 'fault', verb: 'Disconnect failed', body: describeError(error) }),
   });
 
-  return { connectMutation, disconnectMutation };
+  return { connectMutation, disconnectMutation, abortMutation };
 }
 
 // Reported on its own log line, so a failure here reads as a subscribe failure, not a connect failure.

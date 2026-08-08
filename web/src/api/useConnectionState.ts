@@ -8,7 +8,14 @@ export function useConnectionState() {
   const { data } = useQuery({ queryKey: queryKeys.connection, queryFn: getConnectionState });
   const state: ConnectionState = data?.state ?? 'Disconnected';
 
-  return { state, failure: data?.failure, isOnline: state === 'Connected' };
+  // isConnecting comes off the API's own state, not a mutation, so a panel that never started
+  // the attempt — one reopened after a switch — still sees it running.
+  return {
+    state,
+    failure: data?.failure,
+    isOnline: state === 'Connected',
+    isConnecting: state === 'Connecting',
+  };
 }
 
 // Reads the last-saved connect settings, so no component holds onto the typed form.

@@ -54,12 +54,19 @@ export function describeFailureReason(
   return reason ? SENTENCE[reason]?.(attempt) : undefined;
 }
 
+// The one reason that asks for no sentence anywhere: the user stopped the attempt themselves,
+// so they already know what happened and nothing went wrong to explain.
+export const wasAborted = (error: unknown) =>
+  error instanceof ApiError && error.reason === 'aborted';
+
 // One line explaining why a connect attempt failed, or nothing when there is nothing to add.
 export function describeConnectFailure(error: unknown, attempt: Attempt): string | undefined {
   if (!(error instanceof ApiError)) return undefined;
 
   // Field errors already print under the inputs they belong to.
   if (error.errors) return undefined;
+
+  if (wasAborted(error)) return undefined;
 
   // An unrecognised reason — including one a newer backend invented — falls back to the
   // detail rather than leaving the user with a blank line.

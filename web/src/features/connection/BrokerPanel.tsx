@@ -25,10 +25,16 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
   const [autoSubscribe, setAutoSubscribe] = useState(true);
 
   const { data: saved } = useQuery({ queryKey: queryKeys.savedSettings, queryFn: getSavedSettings });
-  const { connectMutation, disconnectMutation } = useConnectionActions();
-  const { isOnline, failure: faulted } = useConnectionState();
+  const { connectMutation, disconnectMutation, abortMutation } = useConnectionActions();
+  const { isOnline, isConnecting, failure: faulted } = useConnectionState();
   const guardedConnect = useGuardedMutate(connectMutation);
   const guardedDisconnect = useGuardedMutate(disconnectMutation);
+  const guardedAbort = useGuardedMutate(abortMutation);
+
+  // Two sources because they cover different gaps: isPending answers the instant this panel
+  // fires, before the API has been asked anything; isConnecting is the only one a panel that
+  // was closed when the attempt started — or reopened since — has to go on.
+  const attemptRunning = isConnecting || connectMutation.isPending;
 
   // Arrives after first render; password is never returned by the API.
   useEffect(() => {
@@ -141,9 +147,15 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className={styles.actions}>
-        <button type="button" onClick={submit} disabled={connectMutation.isPending}>
-          Connect
-        </button>
+        {attemptRunning ? (
+          <button type="button" onClick={() => guardedAbort()} disabled={abortMutation.isPending}>
+            Abort
+          </button>
+        ) : (
+          <button type="button" onClick={submit}>
+            Connect
+          </button>
+        )}
         <button
           type="button"
           className="ghost"
