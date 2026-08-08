@@ -66,9 +66,16 @@ public static class BrokerFailureClassifier
         MqttClientConnectResultCode.BadAuthenticationMethod => BrokerFailureReason.CredentialsRejected,
         MqttClientConnectResultCode.Banned => BrokerFailureReason.Banned,
         MqttClientConnectResultCode.ClientIdentifierNotValid => BrokerFailureReason.ClientIdRejected,
-
-        // A 3.1.1-only broker lands here too: MQTTnet maps return code 1 onto this
         MqttClientConnectResultCode.UnsupportedProtocolVersion => BrokerFailureReason.ProtocolVersionUnsupported,
+
+        // An MQTT 3.1.1 broker answering our MQTT 5 CONNECT. MQTTnet translates return codes
+        // only when the CLIENT speaks 3.1.1; on the v5 path it casts the byte straight through.
+        // 1-5 are unused in the v5 space, so a v3 refusal arrives as itself.
+        (MqttClientConnectResultCode)1 => BrokerFailureReason.ProtocolVersionUnsupported,
+        (MqttClientConnectResultCode)2 => BrokerFailureReason.ClientIdRejected,
+        (MqttClientConnectResultCode)3 => BrokerFailureReason.BrokerBusy,
+        (MqttClientConnectResultCode)4 or (MqttClientConnectResultCode)5 =>
+            credentialsSupplied ? BrokerFailureReason.CredentialsRejected : BrokerFailureReason.CredentialsRequired,
 
         MqttClientConnectResultCode.ServerUnavailable
             or MqttClientConnectResultCode.ServerBusy

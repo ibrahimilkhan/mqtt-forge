@@ -31,8 +31,8 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
     // so a drop can name the endpoint it was connected to.
     private BrokerConnectionSettings? _attempted;
 
-    // Last state announced, to avoid duplicate notifications
-    private int _announced = (int)ConnectionState.Disconnected;
+    // Last payload announced, to avoid duplicate notifications
+    private string _announced = $"{ConnectionState.Disconnected}/";
 
     public MqttnetConnectionManager(
         MqttnetClientProvider provider, IConnectionStateNotifier notifier, TimeSpan? connectTimeout = null)
@@ -48,10 +48,7 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
     public ConnectionState State =>
         _client.IsConnected ? ConnectionState.Connected : _offlineState;
 
-    public BrokerFailure? Failure =>
-        _client.IsConnected || _failureReason is not { } reason || _attempted is not { } at
-            ? null
-            : new BrokerFailure(reason, at.Host, at.Port, at.ClientId, at.UseTls);
+    public BrokerFailure? Failure => _client.IsConnected ? null : Describe();
 
     // Single-active-connection rule: disconnect any existing link before reconnecting
     public async Task ConnectAsync(BrokerConnectionSettings settings, CancellationToken ct)
@@ -96,8 +93,8 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
                 // Our own token is the only honest witness. The bare OperationCanceledException
                 // covers the TCP phase, where MQTTnet does surface a cancellation, and an aborted
                 // socket, which it converts into one.
-                _offlineState = ConnectionState.Faulted;
                 _failureReason = BrokerFailureReason.Timeout;
+                _offlineState = ConnectionState.Faulted;
                 await AnnounceAsync();
                 throw new BrokerUnreachableException(
                     BrokerFailureReason.Timeout,
@@ -106,8 +103,8 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
             }
             catch (Exception ex)
             {
-                _offlineState = ConnectionState.Faulted;
                 _failureReason = Explain(ex, settings);
+                _offlineState = ConnectionState.Faulted;
                 await AnnounceAsync();
                 throw new BrokerUnreachableException(
                     _failureReason.Value,
@@ -118,12 +115,16 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
             // tell the caller a connection it never got was made.
             var refused = result.ResultCode != MqttClientConnectResultCode.Success;
 
-            // Post-connect, offline now means the link died, not a deliberate close
-            // (also covers the broker dropping the session the instant it opens)
-            _offlineState = ConnectionState.Faulted;
+            // Reason first, state second. MQTTnet dispatches its disconnect event from the thread
+            // pool, so a handler landing between these two writes would see a fault with nothing
+            // to say — and latch that. Written this way it sees a state that is not yet a fault.
             _failureReason = refused
                 ? BrokerFailureClassifier.Classify(result.ResultCode, HasCredentials(settings))
                 : null;
+
+            // Post-connect, offline now means the link died, not a deliberate close
+            // (also covers the broker dropping the session the instant it opens)
+            _offlineState = ConnectionState.Faulted;
             await AnnounceAsync();
 
             if (refused)
@@ -180,11 +181,24 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
 
     private Task AnnounceAsync()
     {
-        var state = State;
-        if (Interlocked.Exchange(ref _announced, (int)state) == (int)state) return Task.CompletedTask;
+        // One read of the client's own state, so the two halves of the payload cannot disagree
+        // with each other when a disconnect lands between them.
+        var connected = _client.IsConnected;
+        var state = connected ? ConnectionState.Connected : _offlineState;
+        var failure = connected ? null : Describe();
 
-        return _notifier.NotifyStateChangedAsync(state, Failure);
+        // Keyed on the whole payload, not just the state: a Faulted whose reason was worked out
+        // after a first, reasonless announcement would otherwise never reach the console.
+        var key = $"{state}/{failure?.Reason}";
+        if (Interlocked.Exchange(ref _announced, key) == key) return Task.CompletedTask;
+
+        return _notifier.NotifyStateChangedAsync(state, failure);
     }
+
+    private BrokerFailure? Describe() =>
+        _failureReason is { } reason && _attempted is { } at
+            ? new BrokerFailure(reason, at.Host, at.Port, at.ClientId, at.UseTls)
+            : null;
 
     private MqttClientOptions BuildOptions(BrokerConnectionSettings settings)
     {
