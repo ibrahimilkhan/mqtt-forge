@@ -11,7 +11,11 @@ public static class BrokerFailureClassifier
 {
     // A connect attempt fails in two shapes: it throws before the broker answers, or it
     // answers with a refusing CONNACK. This overload covers the first.
-    public static BrokerFailureReason Classify(Exception exception)
+    //
+    // useTls is the caller's own setting, not something read off the exception: a plaintext
+    // broker answers a TLS hello by closing the socket, which surfaces as a bare IOException
+    // that looks like nothing in particular. Only the caller knows TLS was in play.
+    public static BrokerFailureReason Classify(Exception exception, bool useTls = false)
     {
         // MQTTnet wraps the real cause, sometimes more than once, so walk the whole chain
         for (Exception? current = exception; current is not null; current = current.InnerException)
@@ -27,7 +31,8 @@ public static class BrokerFailureClassifier
             if (reason != BrokerFailureReason.Unknown) return reason;
         }
 
-        return BrokerFailureReason.Unknown;
+        // Checked last, so a socket that never opened outranks it — TLS can't be at fault yet
+        return useTls ? BrokerFailureReason.TlsFailed : BrokerFailureReason.Unknown;
     }
 
     // ...and this one the CONNACK the broker sent back to refuse us.

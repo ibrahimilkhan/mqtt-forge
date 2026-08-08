@@ -43,6 +43,34 @@ public class BrokerFailureClassifierTests
         Assert.Equal(BrokerFailureReason.TlsFailed, BrokerFailureClassifier.Classify(exception));
     }
 
+    // A plaintext broker answers a TLS hello with nothing, and .NET reports that as a bare
+    // IOException. Only the caller knows TLS was asked for, so only the caller can say.
+    [Fact]
+    public void Classify_reads_a_tls_failure_from_a_handshake_that_ended_early()
+    {
+        var exception = new MqttCommunicationException(
+            new IOException("Received an unexpected EOF or 0 bytes from the transport stream."));
+
+        Assert.Equal(BrokerFailureReason.TlsFailed, BrokerFailureClassifier.Classify(exception, useTls: true));
+    }
+
+    [Fact]
+    public void Classify_does_not_blame_tls_when_tls_was_never_asked_for()
+    {
+        var exception = new MqttCommunicationException(new IOException("connection closed"));
+
+        Assert.Equal(BrokerFailureReason.Unknown, BrokerFailureClassifier.Classify(exception, useTls: false));
+    }
+
+    // TLS can't be at fault before the socket is even open.
+    [Fact]
+    public void Classify_lets_a_socket_error_outrank_the_tls_hint()
+    {
+        var exception = new MqttCommunicationException(new SocketException((int)SocketError.ConnectionRefused));
+
+        Assert.Equal(BrokerFailureReason.Refused, BrokerFailureClassifier.Classify(exception, useTls: true));
+    }
+
     [Fact]
     public void Classify_walks_the_whole_inner_chain()
     {
