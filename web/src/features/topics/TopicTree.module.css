@@ -48,21 +48,20 @@
   padding: 3px 6px 3px calc(var(--depth) * 14px + 6px);
   border-radius: 2px;
   position: relative;
-  /* Remounted on message arrival, which restarts this animation. */
-  animation: flash 700ms ease-out;
 }
-/* Top-level siblings only; every level would thin the spacing out in deep trees. */
-.tree > .branch + .branch > .node { margin-top: 9px; }
+/* Traffic marker. Deliberately not animated: every row used to run its own 700ms fade out of
+   phase with its neighbours, and a busy broker turned that into a screen-wide strobe. A row
+   receiving messages simply stays this colour until it falls quiet. */
+.node[data-active="true"] { background: color-mix(in srgb, var(--ink) 9%, transparent); }
+/* Top-level rows only; every level would thin the spacing out in deep trees. */
+.tree > .node[data-depth="0"] { margin-top: 9px; }
+.tree > .node[data-depth="0"]:first-child { margin-top: 0; }
 /* Lift on hover rather than tint, so no colour reads into the row. */
 .node:hover { box-shadow: 0 1px 4px rgb(19 26 36 / 0.14); }
 /* The only row that fills, with a neutral stripe instead of --signal. */
 .node[data-selected="true"] { background: var(--rule); box-shadow: inset 2px 0 0 var(--muted); }
 /* box-shadow does not merge across rules; restate the stripe alongside the lift. */
 .node[data-selected="true"]:hover { box-shadow: inset 2px 0 0 var(--muted), 0 1px 4px rgb(19 26 36 / 0.14); }
-/* A hidden element's animation freezes on its first frame, so a collapsed branch would
-   otherwise stick in the flash colour; disable it explicitly instead. */
-.branch[data-open="false"] > .kids .node { animation: none; }
-
 /* Two buttons, both need the app's reset: twisty opens the branch, the rest picks it. */
 .twisty,
 .pick { all: unset; cursor: pointer; }
@@ -88,9 +87,16 @@
   flex: 1;
   min-width: 0;
 }
-.branch[data-open="false"] > .node .twisty { transform: rotate(-90deg); }
-.branch[data-open="false"] > .kids { display: none; }
+.node[data-open="false"] .twisty { transform: rotate(-90deg); }
 .node[data-branch="false"] .twisty { visibility: hidden; }
+
+/* Only reachable on a broker firehose; says plainly that the tree is not the whole picture. */
+.capped {
+  margin: 10px 0 0;
+  font-family: var(--mono);
+  font-size: var(--t-small);
+  color: var(--muted);
+}
 
 /* One weight for every level; the twisty already marks it as a branch. */
 .seg { flex: none; color: var(--ink); }
@@ -119,9 +125,4 @@
   letter-spacing: 0.02em;
 }
 /* Noise once the branch is open and its children already show the detail. */
-.branch[data-open="true"] > .node[data-branch="true"] > .pick > .meta { display: none; }
-
-@keyframes flash {
-  from { background: color-mix(in srgb, var(--ink) 20%, transparent); }
-  to   { background: transparent; }
-}
+.node[data-open="true"][data-branch="true"] > .pick > .meta { display: none; }

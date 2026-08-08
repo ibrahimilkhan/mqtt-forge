@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { applyMessage, applyMessages, emptyTree, nodeSummary, type TopicNode } from './topicTree';
+import {
+  applyMessage,
+  applyMessages,
+  emptyTree,
+  flattenTree,
+  nodeSummary,
+  type TopicNode,
+} from './topicTree';
 
 // Walks a slash-separated path and fails loudly if it is missing, so assertions read flat.
 function at(root: TopicNode, path: string): TopicNode {
@@ -105,6 +112,75 @@ describe('a pathologically deep topic', () => {
     const tree = applyMessage(emptyTree(), topic, 'x', 1000);
 
     expect(at(tree, topic).latestPayload).toBe('x');
+  });
+});
+
+describe('flattenTree', () => {
+  const allClosed = () => false;
+  const allOpen = () => true;
+  const paths = (rows: ReadonlyArray<{ path: string }>) => rows.map((row) => row.path);
+
+  const tree = (...topics: string[]) =>
+    applyMessages(
+      emptyTree(),
+      topics.map((topic) => ({ topic, payload: '1' })),
+      1000,
+    );
+
+  it('stops at the top level while every branch is closed', () => {
+    const { rows } = flattenTree(tree('sensors/room/temp', 'lights/hall'), allClosed, 100);
+
+    expect(paths(rows)).toEqual(['lights', 'sensors']);
+  });
+
+  it('walks into a branch the caller reports as open', () => {
+    const isOpen = (path: string) => path === 'sensors';
+
+    const { rows } = flattenTree(tree('sensors/room/temp', 'sensors/humidity'), isOpen, 100);
+
+    expect(paths(rows)).toEqual(['sensors', 'sensors/humidity', 'sensors/room']);
+  });
+
+  it('lists a subtree depth-first, in the order the rows are drawn', () => {
+    const { rows } = flattenTree(tree('a/x/1', 'a/y', 'b'), allOpen, 100);
+
+    expect(paths(rows)).toEqual(['a', 'a/x', 'a/x/1', 'a/y', 'b']);
+  });
+
+  it('reports the depth and kind of each row', () => {
+    const { rows } = flattenTree(tree('a/b'), allOpen, 100);
+
+    expect(rows.map((row) => [row.depth, row.isBranch])).toEqual([
+      [0, true],
+      [1, false],
+    ]);
+  });
+
+  it('passes the open flag through, so a row can draw its own twisty', () => {
+    const { rows } = flattenTree(tree('a/b'), (path) => path === 'a', 100);
+
+    expect(rows.map((row) => row.open)).toEqual([true, false]);
+  });
+
+  it('stops at the limit and counts what it left out', () => {
+    const { rows, hidden } = flattenTree(tree('a', 'b', 'c', 'd', 'e'), allOpen, 2);
+
+    expect(paths(rows)).toEqual(['a', 'b']);
+    expect(hidden).toBe(3);
+  });
+
+  it('counts nothing as hidden when the whole visible tree fits', () => {
+    const { hidden } = flattenTree(tree('a', 'b'), allOpen, 100);
+
+    expect(hidden).toBe(0);
+  });
+
+  it('does not overflow the stack on a topic with thousands of segments', () => {
+    const topic = Array.from({ length: 8000 }, (_, i) => `s${i}`).join('/');
+
+    const { rows } = flattenTree(applyMessage(emptyTree(), topic, 'x', 1000), allOpen, 10_000);
+
+    expect(rows).toHaveLength(8000);
   });
 });
 

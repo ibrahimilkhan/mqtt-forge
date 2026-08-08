@@ -55,9 +55,12 @@ function toEntry(message: MqttMessage): LogEntry {
   };
 }
 
+// One encoder for the process; this runs once per message on a broker firehose.
+const encoder = new TextEncoder();
+
 // Byte length, not char length — accented text is longer on the wire.
 function payloadSize(payload: string): string {
-  const bytes = new TextEncoder().encode(payload).length;
+  const bytes = encoder.encode(payload).length;
   return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} kB`;
 }
 

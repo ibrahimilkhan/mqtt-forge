@@ -10,7 +10,7 @@ import { useConnectionState } from '../../api/useConnectionState';
 import { describeError } from '../../lib/problemDetails';
 import { useGuardedMutate } from '../../lib/useGuardedMutate';
 
-export function PublishPanel({ onClose }: { onClose: () => void }) {
+export function PublishPanel() {
   const [topic, setTopic] = useState('sensors/temp');
   const [payload, setPayload] = useState('23.5');
   const [qos, setQos] = useState(0);
@@ -30,7 +30,7 @@ export function PublishPanel({ onClose }: { onClose: () => void }) {
   const guardedPublish = useGuardedMutate(publishMutation);
 
   return (
-    <PanelShell title="Publish" onClose={onClose}>
+    <PanelShell title="Publish">
       <div className={styles.row}>
         <Field label="Topic" htmlFor="topic">
           <input id="topic" type="text" value={topic} onChange={(e) => setTopic(e.target.value)} />

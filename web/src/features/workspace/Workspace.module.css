@@ -1,0 +1,47 @@
+/* Fixed places: the panel column (when one is open), topics in the middle, and a right column
+   split into log over publish. Nothing moves between them — only the boundaries do.
+   The fr values are whole tokens because fr is not allowed inside calc(), and minmax(0, …) keeps
+   the shares honest: a bare fr track never shrinks below its content, so one pane full of long
+   topic names would quietly take the others' width. */
+.grid {
+  display: grid;
+  grid-template-columns:
+    minmax(0, var(--panel)) auto
+    minmax(0, var(--tree)) auto
+    minmax(0, var(--right));
+  gap: 1px;
+  background: var(--rule);
+  flex: 1;
+  /* Stops a tall pane from pushing the row past the viewport. */
+  min-height: 0;
+}
+
+/* With no panel the row starts at the topics column, so its track and handle are simply absent. */
+.grid[data-panel='closed'] {
+  grid-template-columns: minmax(0, var(--tree)) auto minmax(0, var(--right));
+}
+
+.right {
+  display: grid;
+  grid-template-rows: minmax(0, var(--log)) auto minmax(0, var(--publish));
+  gap: 1px;
+  background: var(--rule);
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Panes bring their own background and padding; the cell only has to hold them. */
+.pane {
+  display: grid;
+  /* Both zeroed because a grid item defaults to min-content in either direction. */
+  min-height: 0;
+  min-width: 0;
+}
+.pane > * { min-height: 0; }
+
+@media (max-width: 1180px) {
+  /* No room for columns, so everything stacks in the order it sat in and the page scrolls. */
+  .grid,
+  .grid[data-panel='closed'] { grid-template-columns: 1fr; min-height: auto; }
+  .right { grid-template-rows: auto auto auto; }
+}

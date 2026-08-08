@@ -47,10 +47,10 @@ describe('rapid panel switching', () => {
     renderApp();
 
     fireEvent.click(menu().getByRole('button', { name: 'Subscribe' }));
-    fireEvent.click(menu().getByRole('button', { name: 'Publish' }));
     fireEvent.click(menu().getByRole('button', { name: 'Broker' }));
     fireEvent.click(menu().getByRole('button', { name: 'Mobile' }));
     fireEvent.click(menu().getByRole('button', { name: 'Settings' }));
+    fireEvent.click(menu().getByRole('button', { name: 'Subscribe' }));
 
     // Let in-flight requests from discarded panels settle.
     await act(async () => {

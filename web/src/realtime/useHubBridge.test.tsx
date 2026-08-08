@@ -51,8 +51,7 @@ describe('useHubBridge', () => {
     const hub = createFakeHub();
     renderBridge(hub);
 
-    hub.emit('messageReceived', message('sensors/temp', '21.5'));
-    hub.emit('messageReceived', message('sensors/humidity', '54'));
+    hub.emit('messagesReceived', [message('sensors/temp', '21.5'), message('sensors/humidity', '54')]);
     frames[0]();
 
     expect(useLogStore.getState().entries).toHaveLength(2);
@@ -83,8 +82,9 @@ describe('useHubBridge', () => {
     renderBridge(hub);
     const burst = Array.from({ length: 5000 }, (_, i) => message(`sensors/${i % 50}/reading`, String(i)));
 
+    // In batches, the way the hub sends them, all landing inside the same frame.
     const start = performance.now();
-    for (const m of burst) hub.emit('messageReceived', m);
+    for (let i = 0; i < burst.length; i += 256) hub.emit('messagesReceived', burst.slice(i, i + 256));
     frames[0]();
     const elapsedMs = performance.now() - start;
 
@@ -97,7 +97,7 @@ describe('useHubBridge', () => {
     const hub = createFakeHub();
     const { unmount } = renderBridge(hub);
 
-    hub.emit('messageReceived', message('a'));
+    hub.emit('messagesReceived', [message('a')]);
     unmount();
     frames.forEach((frame) => frame());
 

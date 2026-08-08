@@ -1,10 +1,11 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { MAX_TREE_ROWS } from '../../lib/topicTree';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import type { MqttMessage } from '../../types/api';
-import { TopicTree } from './TopicTree';
+import { ACTIVE_WINDOW_MS, TopicTree } from './TopicTree';
 
 const message = (topic: string, payload = '1'): MqttMessage => ({
   topic,
@@ -29,7 +30,6 @@ describe('TopicTree', () => {
     ).toBeInTheDocument();
   });
 
-  // Children stay mounted when closed, so assert on the branch's state, not row presence.
   const branchOf = (name: string) => screen.getByText(name).closest('[data-open]');
 
   it('keeps a branch closed until it is opened', async () => {
@@ -43,11 +43,39 @@ describe('TopicTree', () => {
     expect(screen.getByText('temp')).toBeInTheDocument();
   });
 
+  // The whole point of the flattening: a broker with 20k topics must not put 20k rows in the DOM.
+  it('leaves the rows beneath a closed branch out of the document', () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
+    render(<TopicTree />);
+
+    expect(screen.queryByText('temp')).not.toBeInTheDocument();
+  });
+
+  it('drops the rows again when the branch is collapsed', async () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
+    render(<TopicTree />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Expand sensors' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Collapse sensors' }));
+
+    expect(screen.queryByText('temp')).not.toBeInTheDocument();
+  });
+
+  it('stops drawing past its row ceiling and says how many it held back', () => {
+    const topics = Array.from({ length: MAX_TREE_ROWS + 3 }, (_, i) => message(`t${i}`));
+    useTopicTreeStore.getState().apply(topics);
+    render(<TopicTree />);
+
+    expect(screen.getByText('3 more topics not shown')).toBeInTheDocument();
+  });
+
   it('summarises a branch and shows the payload on a leaf', async () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '21.5'), message('sensors/humidity', '54')]);
     render(<TopicTree />);
 
     expect(screen.getByText('2 topics')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Expand sensors' }));
     expect(screen.getByText('21.5')).toBeInTheDocument();
   });
 
@@ -62,41 +90,68 @@ describe('TopicTree', () => {
     expect(branchOf('b')).toHaveAttribute('data-open', 'true');
   });
 
-  // Flash = remount, so "does it flash" reduces to "did the row's key change".
-  const rowKeyOf = (name: string) => screen.getByText(name).closest('[data-branch]');
+  // Traffic reads as a steady tint on the row, held while messages keep coming.
+  const rowOf = (name: string) => screen.getByText(name).closest('[data-branch]');
 
-  it('flashes a closed branch when a message lands on something beneath it', async () => {
+  it('tints a closed branch when a message lands on something beneath it', () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '1')]);
     render(<TopicTree />);
-    const before = rowKeyOf('sensors');
 
-    useTopicTreeStore.getState().apply([message('sensors/temp', '2')]);
-
-    await waitFor(() => expect(rowKeyOf('sensors')).not.toBe(before));
+    expect(rowOf('sensors')).toHaveAttribute('data-active', 'true');
   });
 
-  it('leaves an open branch alone when the message was for a descendant', async () => {
+  it('leaves an open branch untinted when the message was for a descendant', async () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '1')]);
     render(<TopicTree />);
     await userEvent.click(screen.getByRole('button', { name: 'Expand sensors' }));
-    const branchRow = rowKeyOf('sensors');
-    const leafRow = rowKeyOf('temp');
 
-    useTopicTreeStore.getState().apply([message('sensors/temp', '2')]);
-
-    await waitFor(() => expect(rowKeyOf('temp')).not.toBe(leafRow));
-    expect(rowKeyOf('sensors')).toBe(branchRow);
+    expect(rowOf('temp')).toHaveAttribute('data-active', 'true');
+    expect(rowOf('sensors')).toHaveAttribute('data-active', 'false');
   });
 
-  it('flashes an open branch when the message was addressed to it', async () => {
+  it('tints an open branch when the message was addressed to it', async () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '1'), message('sensors', 'own')]);
     render(<TopicTree />);
     await userEvent.click(screen.getByRole('button', { name: 'Expand sensors' }));
-    const branchRow = rowKeyOf('sensors');
 
-    useTopicTreeStore.getState().apply([message('sensors', 'own again')]);
+    expect(rowOf('sensors')).toHaveAttribute('data-active', 'true');
+  });
 
-    await waitFor(() => expect(rowKeyOf('sensors')).not.toBe(branchRow));
+  // The point of the change: a row under constant traffic holds one colour instead of
+  // restarting a fade per message, which was what made a busy broker strobe.
+  it('holds the tint through a second message rather than restarting anything', () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp', '1')]);
+    render(<TopicTree />);
+    const row = rowOf('sensors');
+
+    useTopicTreeStore.getState().apply([message('sensors/temp', '2')]);
+
+    expect(rowOf('sensors')).toBe(row);
+    expect(rowOf('sensors')).toHaveAttribute('data-active', 'true');
+  });
+
+  it('drops the tint once the topic falls quiet', async () => {
+    vi.useFakeTimers();
+    try {
+      useTopicTreeStore.getState().apply([message('sensors/temp', '1')]);
+      render(<TopicTree />);
+      expect(rowOf('sensors')).toHaveAttribute('data-active', 'true');
+
+      await act(async () => {
+        vi.advanceTimersByTime(ACTIVE_WINDOW_MS + 50);
+      });
+
+      expect(rowOf('sensors')).toHaveAttribute('data-active', 'false');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('has no fade animation left to stack up', () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp', '1')]);
+    render(<TopicTree />);
+
+    expect(getComputedStyle(rowOf('sensors')!).animationName).toBe('none');
   });
 
   it('focuses the wire log on the clicked node and everything beneath it', async () => {

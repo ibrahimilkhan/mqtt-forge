@@ -1,0 +1,37 @@
+/* The negative margins pull the bar over the 1px grid gaps on either side, so the seam reads as
+   one deliberate rule rather than three stacked hairlines. */
+.handle {
+  position: relative;
+  background: var(--rule);
+  touch-action: none;
+  user-select: none;
+}
+
+.handle[data-axis='x'] {
+  width: 3px;
+  margin: 0 -1px;
+  cursor: col-resize;
+}
+
+.handle[data-axis='y'] {
+  height: 3px;
+  margin: -1px 0;
+  cursor: row-resize;
+}
+
+/* A 3px bar is too thin to grab, so the pointer target reaches past it on both sides. */
+.handle::after {
+  content: '';
+  position: absolute;
+}
+.handle[data-axis='x']::after { inset-block: 0; inset-inline: -5px; }
+.handle[data-axis='y']::after { inset-inline: 0; inset-block: -5px; }
+
+.handle:hover,
+.handle:focus-visible { background: var(--ink); }
+.handle:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+/* The columns stack below this width, so a side-by-side seam has nothing left to divide. */
+@media (max-width: 1180px) {
+  .handle { display: none; }
+}
