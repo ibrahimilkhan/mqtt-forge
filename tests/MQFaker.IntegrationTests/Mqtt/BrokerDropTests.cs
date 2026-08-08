@@ -45,6 +45,7 @@ public class BrokerDropTests : IClassFixture<MosquittoFixture>
             manager.Failure);
         await notifier.Received(1).NotifyStateChangedAsync(
             ConnectionState.Faulted,
-            Arg.Is<BrokerFailure>(f => f!.Reason == BrokerFailureReason.SessionTakenOver));
+            Arg.Is<BrokerFailure>(f => f!.Reason == BrokerFailureReason.SessionTakenOver),
+            Arg.Any<BrokerLink?>());
     }
 }

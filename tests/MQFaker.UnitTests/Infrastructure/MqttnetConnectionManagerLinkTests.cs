@@ -1,4 +1,5 @@
 using MQFaker.Domain.Abstractions;
+using MQFaker.Domain.Enums;
 using MQFaker.Domain.Exceptions;
 using MQFaker.Domain.Models;
 using MQFaker.Infrastructure.Mqtt;
@@ -144,6 +145,45 @@ public class MqttnetConnectionManagerLinkTests
         await sut.DisconnectAsync(CancellationToken.None);
 
         Assert.Null(sut.Link);
+    }
+
+    // The console replaces its whole connection cache from this payload, so a link left out of
+    // it is a link the console forgets the moment anything else changes.
+    [Fact]
+    public async Task The_announcement_carries_the_link_that_came_up()
+    {
+        GivenConnectSucceeds();
+        var sut = CreateSut();
+
+        await sut.ConnectAsync(_settings, CancellationToken.None);
+
+        await _notifier.Received(1).NotifyStateChangedAsync(
+            ConnectionState.Connected,
+            Arg.Any<BrokerFailure?>(),
+            Arg.Is<BrokerLink?>(link => link!.Host == "localhost" && link.Port == 1883));
+    }
+
+    [Fact]
+    public async Task The_announcement_carries_no_link_once_the_broker_drops_us()
+    {
+        GivenConnectSucceeds();
+        var sut = CreateSut();
+        await sut.ConnectAsync(_settings, CancellationToken.None);
+
+        _client.IsConnected.Returns(false);
+        _client.DisconnectedAsync += Raise.Event<Func<MqttClientDisconnectedEventArgs, Task>>(
+            new MqttClientDisconnectedEventArgs(
+                clientWasConnected: true,
+                connectResult: null,
+                reason: MqttClientDisconnectReason.ServerShuttingDown,
+                reasonString: null,
+                userProperties: null,
+                exception: null));
+
+        // Every argument is a matcher on purpose: NSubstitute cannot mix a raw null with
+        // Arg.Any in the same call without going ambiguous.
+        await _notifier.Received(1).NotifyStateChangedAsync(
+            ConnectionState.Faulted, Arg.Any<BrokerFailure?>(), Arg.Is<BrokerLink?>(link => link == null));
     }
 
     // The real client flips IsConnected as part of connecting; a substitute has to be told to.

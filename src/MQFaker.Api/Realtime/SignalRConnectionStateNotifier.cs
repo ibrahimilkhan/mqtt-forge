@@ -16,8 +16,13 @@ public sealed class SignalRConnectionStateNotifier : IConnectionStateNotifier
 
     public SignalRConnectionStateNotifier(IHubContext<MqttHub> hub) => _hub = hub;
 
-    public Task NotifyStateChangedAsync(ConnectionState state, BrokerFailure? failure) =>
+    public Task NotifyStateChangedAsync(ConnectionState state, BrokerFailure? failure, BrokerLink? link) =>
         _hub.Clients.All.SendAsync(
             ConnectionStateChanged,
-            new { state = state.ToString(), failure = BrokerFailureDto.Of(failure) });
+            new
+            {
+                state = state.ToString(),
+                failure = BrokerFailureDto.Of(failure),
+                connection = BrokerLinkDto.Of(link)
+            });
 }
