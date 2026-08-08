@@ -19,7 +19,7 @@ export function useHubBridge(hub: Hub) {
     });
 
     const unsubscribe = hub.subscribe({
-      messageReceived: (message) => buffer.push(message),
+      messagesReceived: (messages) => buffer.pushAll(messages),
       connectionStateChanged: (payload) => queryClient.setQueryData(queryKeys.connection, payload),
       reconnecting: () => useHubStatusStore.getState().setStatus('reconnecting'),
       // Broker state may have moved on while the hub was down; refetch, don't trust the cache.

@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { useLogStore } from '../../stores/logStore';
 import { server } from '../../test/server';
 import { PublishPanel } from './PublishPanel';
@@ -16,7 +16,7 @@ function renderPanel() {
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
-  return render(<PublishPanel onClose={vi.fn()} />, { wrapper });
+  return render(<PublishPanel />, { wrapper });
 }
 
 beforeEach(() => useLogStore.getState().clear());

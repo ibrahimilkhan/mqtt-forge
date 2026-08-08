@@ -37,9 +37,12 @@ function renderApp(state: string) {
 }
 
 // Menu and panel share button names, so scope each: menu by nav landmark, panel by label.
+// Publish has a fixed place in the workspace; only Subscribe has to be opened first.
 async function openPanelButton(name: 'Subscribe' | 'Publish') {
-  const menu = screen.getByRole('navigation', { name: 'Panels' });
-  await userEvent.click(within(menu).getByRole('button', { name }));
+  if (name === 'Subscribe') {
+    const menu = screen.getByRole('navigation', { name: 'Panels' });
+    await userEvent.click(within(menu).getByRole('button', { name }));
+  }
 
   const panel = screen.getByRole('region', { name: `${name} panel` });
   return within(panel).getByRole('button', { name });

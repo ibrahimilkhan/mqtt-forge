@@ -83,6 +83,12 @@
     padding-left: 12px;
   }
 
+  /* Pane heads become drag handles once the workspace hands them its props, and every pane head
+     styles itself in its own module — so the affordance is declared once, here. */
+  [draggable="true"] { cursor: grab; }
+  [draggable="true"]:active { cursor: grabbing; }
+  [draggable="true"]:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; }
+
   /* Matches the layout's breakpoint: once columns stack, the page scrolls instead. */
   @media (max-width: 1180px) {
     body { height: auto; }

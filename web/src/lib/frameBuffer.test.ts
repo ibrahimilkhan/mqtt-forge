@@ -51,6 +51,39 @@ describe('createFrameBuffer', () => {
     expect(flush).toHaveBeenNthCalledWith(2, [2]);
   });
 
+  it('takes a whole batch at once, since the server already groups them', () => {
+    const frames = stubFrames();
+    const flush = vi.fn();
+    const buffer = createFrameBuffer<number>(flush);
+
+    buffer.pushAll([1, 2]);
+    buffer.pushAll([3]);
+    frames[0]();
+
+    expect(flush).toHaveBeenCalledExactlyOnceWith([1, 2, 3]);
+  });
+
+  it('schedules no frame for an empty batch', () => {
+    const frames = stubFrames();
+    const buffer = createFrameBuffer<number>(vi.fn());
+
+    buffer.pushAll([]);
+
+    expect(frames).toHaveLength(0);
+  });
+
+  it('drops a batch handed over after cancellation', () => {
+    const frames = stubFrames();
+    const flush = vi.fn();
+    const buffer = createFrameBuffer<number>(flush);
+
+    buffer.cancel();
+    buffer.pushAll([1]);
+
+    expect(frames).toHaveLength(0);
+    expect(flush).not.toHaveBeenCalled();
+  });
+
   it('drops what it holds when cancelled', () => {
     const frames = stubFrames();
     const flush = vi.fn();

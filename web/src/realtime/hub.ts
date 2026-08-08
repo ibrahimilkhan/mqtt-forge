@@ -2,7 +2,8 @@ import * as signalR from '@microsoft/signalr';
 import type { ConnectionStateResponse, MqttMessage } from '../types/api';
 
 export type HubEvents = {
-  messageReceived: (message: MqttMessage) => void;
+  // Batched server-side: a busy broker outruns one frame per message.
+  messagesReceived: (messages: MqttMessage[]) => void;
   connectionStateChanged: (payload: ConnectionStateResponse) => void;
   reconnecting: () => void;
   reconnected: () => void;
@@ -51,10 +52,10 @@ export function createSignalRHub(url = '/hubs/mqtt'): Hub {
     subscribe(handlers) {
       const registered: Array<() => void> = [];
 
-      if (handlers.messageReceived) {
-        const handler = handlers.messageReceived;
-        connection.on('messageReceived', handler);
-        registered.push(() => connection.off('messageReceived', handler));
+      if (handlers.messagesReceived) {
+        const handler = handlers.messagesReceived;
+        connection.on('messagesReceived', handler);
+        registered.push(() => connection.off('messagesReceived', handler));
       }
 
       if (handlers.connectionStateChanged) {

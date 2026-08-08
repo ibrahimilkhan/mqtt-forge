@@ -32,6 +32,60 @@ export function applyMessages(
   return messages.reduce((tree, message) => applyMessage(tree, message.topic, message.payload, at), root);
 }
 
+// One drawable row. A closed branch contributes a row but none of its descendants.
+export type TopicRow = {
+  path: string;
+  node: TopicNode;
+  depth: number;
+  isBranch: boolean;
+  open: boolean;
+};
+
+// The rows a busy broker's tree is allowed to put on screen at once; the rest are counted
+// and left out. A '#' subscription can otherwise reach tens of thousands of topics.
+export const MAX_TREE_ROWS = 1500;
+
+// Flattens the visible part of the tree so rendering never walks a closed subtree.
+// Iterative, matching insert() — deep topics would overflow a recursive walk.
+export function flattenTree(
+  root: TopicNode,
+  isOpen: (path: string) => boolean,
+  limit: number,
+): { rows: TopicRow[]; hidden: number } {
+  const rows: TopicRow[] = [];
+  let hidden = 0;
+
+  // Reverse order in, so popping walks siblings alphabetically.
+  const stack: TopicRow[] = [];
+  const descend = (node: TopicNode, path: string, depth: number) => {
+    const children = [...node.children.values()];
+    for (let i = children.length - 1; i >= 0; i--) {
+      const child = children[i];
+      stack.push({
+        node: child,
+        path: path ? `${path}/${child.name}` : child.name,
+        depth,
+        isBranch: child.children.size > 0,
+        open: false,
+      });
+    }
+  };
+
+  descend(root, '', 0);
+
+  while (stack.length > 0) {
+    const row = stack.pop()!;
+    row.open = row.isBranch && isOpen(row.path);
+
+    if (rows.length < limit) rows.push(row);
+    else hidden++;
+
+    if (row.open) descend(row.node, row.path, row.depth + 1);
+  }
+
+  return { rows, hidden };
+}
+
 // Topic count for branches; nothing for leaves.
 export function nodeSummary(node: TopicNode): string {
   return node.children.size > 0 ? plural(node.subTopics, 'topic') : '';
