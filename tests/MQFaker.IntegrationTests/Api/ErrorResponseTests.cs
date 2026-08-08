@@ -40,7 +40,9 @@ public class ErrorResponseTests : IClassFixture<MqFakerApiFactory>
         var problem = await response.Content.ReadFromJsonAsync<ProblemDetailsResponse>();
         Assert.Equal("Could not connect to broker", problem!.Title);
         Assert.Contains("127.0.0.1:1", problem.Detail);
+        // The console words the sentence; this code is what tells it which sentence to word
+        Assert.Equal("refused", problem.Reason);
     }
 
-    private sealed record ProblemDetailsResponse(string Title, string Detail, int Status);
+    private sealed record ProblemDetailsResponse(string Title, string Detail, int Status, string Reason);
 }

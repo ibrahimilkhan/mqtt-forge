@@ -8,6 +8,7 @@ import styles from '../../styles/panel.module.css';
 import { useConnectionState } from '../../api/useConnectionState';
 import { fieldError } from '../../lib/problemDetails';
 import { useGuardedMutate } from '../../lib/useGuardedMutate';
+import { describeConnectFailure } from './connectFailure';
 import { useConnectionActions } from './useConnectionActions';
 
 const DEFAULTS = {
@@ -41,6 +42,10 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
       useTls: saved.useTls,
     });
   }, [saved]);
+
+  // Read off the attempt that failed, not the form, which the user may have edited since.
+  const attempted = connectMutation.variables?.request;
+  const failure = attempted && describeConnectFailure(connectMutation.error, attempted);
 
   const submit = () =>
     guardedConnect({
@@ -143,6 +148,12 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
           Disconnect
         </button>
       </div>
+
+      {failure && (
+        <p className={styles.fault} role="alert">
+          {failure}
+        </p>
+      )}
 
       {saved?.hasPassword && (
         <p className={styles.note}>A password is saved but never sent back. Enter it again to connect.</p>

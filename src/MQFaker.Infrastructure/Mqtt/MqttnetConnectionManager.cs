@@ -37,6 +37,7 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
         try
         {
             _offlineState = ConnectionState.Connecting;
+            MqttClientConnectResult result;
 
             try
             {
@@ -46,7 +47,7 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
                 // Announce only after the old link is down
                 await AnnounceAsync();
 
-                await _client.ConnectAsync(BuildOptions(settings), ct);
+                result = await _client.ConnectAsync(BuildOptions(settings), ct);
             }
             catch (OperationCanceledException)
             {
@@ -60,6 +61,7 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
                 _offlineState = ConnectionState.Faulted;
                 await AnnounceAsync();
                 throw new BrokerUnreachableException(
+                    BrokerFailureClassifier.Classify(ex),
                     $"Could not connect to broker ({settings.Host}:{settings.Port}): {ex.Message}", ex);
             }
 
@@ -67,6 +69,13 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
             // (also covers the broker dropping the session the instant it opens)
             _offlineState = ConnectionState.Faulted;
             await AnnounceAsync();
+
+            // A refusing CONNACK comes back as a result, not an exception; without this the
+            // caller would hear that a connection it never got was made.
+            if (result.ResultCode != MqttClientConnectResultCode.Success)
+                throw new BrokerUnreachableException(
+                    BrokerFailureClassifier.Classify(result.ResultCode),
+                    $"The broker at {settings.Host}:{settings.Port} refused the connection ({result.ResultCode}).");
         }
         finally
         {

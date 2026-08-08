@@ -1,3 +1,5 @@
+using MQFaker.Domain.Enums;
+
 namespace MQFaker.Domain.Exceptions;
 
 // Infrastructure translates library exceptions into these; Api maps these to HTTP statuses
@@ -10,8 +12,11 @@ public abstract class MqttOperationException : Exception
 // Broker unreachable, connection refused, or authentication failed
 public sealed class BrokerUnreachableException : MqttOperationException
 {
-    public BrokerUnreachableException(string message, Exception? inner = null)
-        : base(message, inner) { }
+    // Required, so a failure can't reach the console without saying what went wrong
+    public BrokerUnreachableException(BrokerFailureReason reason, string message, Exception? inner = null)
+        : base(message, inner) => Reason = reason;
+
+    public BrokerFailureReason Reason { get; }
 }
 
 public sealed class NotConnectedException : MqttOperationException

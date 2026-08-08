@@ -33,3 +33,9 @@
   color: var(--muted);
   margin-top: 10px;
 }
+
+/* Same shape as a note, but it reports a failure, so it carries the fault colour. */
+.fault {
+  composes: note;
+  color: var(--fault);
+}

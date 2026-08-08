@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using MQFaker.Domain.Exceptions;
@@ -27,16 +28,23 @@ public sealed class MqttExceptionHandler : IExceptionHandler
 
         context.Response.StatusCode = status;
 
+        var problemDetails = new ProblemDetails
+        {
+            Status = status,
+            Title = title,
+            Detail = exception.Message
+        };
+
+        // The console words the sentence the user reads; this says which sentence to word.
+        // Detail stays the fallback for reasons it doesn't recognise.
+        if (exception is BrokerUnreachableException broker)
+            problemDetails.Extensions["reason"] = JsonNamingPolicy.CamelCase.ConvertName(broker.Reason.ToString());
+
         return await _problemDetailsService.TryWriteAsync(new ProblemDetailsContext
         {
             HttpContext = context,
             Exception = exception,
-            ProblemDetails = new ProblemDetails
-            {
-                Status = status,
-                Title = title,
-                Detail = exception.Message
-            }
+            ProblemDetails = problemDetails
         });
     }
 }

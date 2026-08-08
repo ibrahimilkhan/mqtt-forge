@@ -1,9 +1,11 @@
+using System.Net.Sockets;
 using MQFaker.Domain.Abstractions;
 using MQFaker.Domain.Enums;
 using MQFaker.Domain.Exceptions;
 using MQFaker.Domain.Models;
 using MQFaker.Infrastructure.Mqtt;
 using MQTTnet;
+using MQTTnet.Exceptions;
 using NSubstitute;
 using Xunit;
 
@@ -43,6 +45,36 @@ public class MqttnetConnectionManagerStateTests
         await Assert.ThrowsAsync<BrokerUnreachableException>(
             () => sut.ConnectAsync(_settings, CancellationToken.None));
 
+        Assert.Equal(ConnectionState.Faulted, sut.State);
+        await _notifier.Received(1).NotifyStateChangedAsync(ConnectionState.Faulted);
+    }
+
+    [Fact]
+    public async Task ConnectAsync_carries_the_reason_the_attempt_threw()
+    {
+        _client.ConnectAsync(Arg.Any<MqttClientOptions>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<MqttClientConnectResult>(
+                new MqttCommunicationException(new SocketException((int)SocketError.ConnectionRefused))));
+        var sut = CreateSut();
+
+        var error = await Assert.ThrowsAsync<BrokerUnreachableException>(
+            () => sut.ConnectAsync(_settings, CancellationToken.None));
+
+        Assert.Equal(BrokerFailureReason.Refused, error.Reason);
+    }
+
+    // MQTTnet returns a refusing CONNACK rather than throwing, so an unchecked result
+    // would report a successful connect while the client sits there disconnected.
+    [Fact]
+    public async Task ConnectAsync_faults_when_the_broker_refuses_the_connack()
+    {
+        GivenConnectReturns(MqttClientConnectResultCode.BadUserNameOrPassword);
+        var sut = CreateSut();
+
+        var error = await Assert.ThrowsAsync<BrokerUnreachableException>(
+            () => sut.ConnectAsync(_settings, CancellationToken.None));
+
+        Assert.Equal(BrokerFailureReason.CredentialsRejected, error.Reason);
         Assert.Equal(ConnectionState.Faulted, sut.State);
         await _notifier.Received(1).NotifyStateChangedAsync(ConnectionState.Faulted);
     }
@@ -142,7 +174,7 @@ public class MqttnetConnectionManagerStateTests
             {
                 _client.IsConnected.Returns(false);
                 RaiseDisconnected();
-                return Task.FromResult<MqttClientConnectResult>(null!);
+                return Task.FromResult(Connack(MqttClientConnectResultCode.Success));
             });
 
         await sut.ConnectAsync(_settings, CancellationToken.None);
@@ -171,8 +203,16 @@ public class MqttnetConnectionManagerStateTests
             .Returns(_ =>
             {
                 _client.IsConnected.Returns(true);
-                return Task.FromResult<MqttClientConnectResult>(null!);
+                return Task.FromResult(Connack(MqttClientConnectResultCode.Success));
             });
+
+    // A refusing CONNACK leaves the client disconnected, which is why IsConnected stays false.
+    private void GivenConnectReturns(MqttClientConnectResultCode code) =>
+        _client.ConnectAsync(Arg.Any<MqttClientOptions>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(Connack(code)));
+
+    private static MqttClientConnectResult Connack(MqttClientConnectResultCode code) =>
+        new() { ResultCode = code };
 
     private void GivenDisconnectSucceeds() =>
         _client.DisconnectAsync(Arg.Any<MqttClientDisconnectOptions>(), Arg.Any<CancellationToken>())
