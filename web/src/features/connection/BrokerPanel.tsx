@@ -8,7 +8,7 @@ import styles from '../../styles/panel.module.css';
 import { useConnectionState } from '../../api/useConnectionState';
 import { fieldError } from '../../lib/problemDetails';
 import { useGuardedMutate } from '../../lib/useGuardedMutate';
-import { describeConnectFailure } from './connectFailure';
+import { describeConnectFailure, describeFailureReason } from './connectFailure';
 import { useConnectionActions } from './useConnectionActions';
 
 const DEFAULTS = {
@@ -26,7 +26,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
 
   const { data: saved } = useQuery({ queryKey: queryKeys.savedSettings, queryFn: getSavedSettings });
   const { connectMutation, disconnectMutation } = useConnectionActions();
-  const { isOnline } = useConnectionState();
+  const { isOnline, reason } = useConnectionState();
   const guardedConnect = useGuardedMutate(connectMutation);
   const guardedDisconnect = useGuardedMutate(disconnectMutation);
 
@@ -44,8 +44,12 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
   }, [saved]);
 
   // Read off the attempt that failed, not the form, which the user may have edited since.
+  // With no attempt in play the connection state still says why a live link died, and the
+  // saved settings name the broker it died on.
   const attempted = connectMutation.variables?.request;
-  const failure = attempted && describeConnectFailure(connectMutation.error, attempted);
+  const failure =
+    (attempted && describeConnectFailure(connectMutation.error, attempted)) ??
+    (saved && describeFailureReason(reason, saved));
 
   const submit = () =>
     guardedConnect({

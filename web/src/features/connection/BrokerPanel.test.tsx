@@ -156,6 +156,40 @@ describe('BrokerPanel', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Nothing is listening at localhost:1883.');
   });
 
+  // No connect attempt in play — the panel was reopened after the link died on its own.
+  it('shows why a live connection dropped', async () => {
+    server.use(
+      http.get('/api/connection', () =>
+        HttpResponse.json({ state: 'Faulted', reason: 'sessionTakenOver' }),
+      ),
+      http.get('/api/connection/settings', () =>
+        HttpResponse.json({
+          host: 'broker.example',
+          port: 1883,
+          clientId: 'saved-client',
+          username: null,
+          hasPassword: false,
+          useTls: false,
+        }),
+      ),
+    );
+
+    renderPanel();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "Another client connected with the client ID 'saved-client'.",
+    );
+  });
+
+  it('stays quiet when the connection state carries no reason', async () => {
+    server.use(http.get('/api/connection', () => HttpResponse.json({ state: 'Faulted' })));
+
+    renderPanel();
+
+    await screen.findByRole('button', { name: 'Connect' });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('shows a validation error beside the field it belongs to', async () => {
     server.use(
       http.post('/api/connection', () =>

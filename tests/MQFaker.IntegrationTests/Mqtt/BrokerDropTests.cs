@@ -36,6 +36,9 @@ public class BrokerDropTests : IClassFixture<MosquittoFixture>
             await Task.Delay(50);
 
         Assert.Equal(ConnectionState.Faulted, manager.State);
-        await notifier.Received(1).NotifyStateChangedAsync(ConnectionState.Faulted);
+        // What a real broker reports for a takeover, and what the console turns into a sentence
+        Assert.Equal(BrokerFailureReason.SessionTakenOver, manager.FailureReason);
+        await notifier.Received(1)
+            .NotifyStateChangedAsync(ConnectionState.Faulted, BrokerFailureReason.SessionTakenOver);
     }
 }

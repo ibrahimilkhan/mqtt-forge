@@ -14,7 +14,12 @@ public sealed class ConnectionController : ControllerBase
     public ConnectionController(ConnectionService service) => _service = service;
 
     [HttpGet]
-    public IActionResult GetState() => Ok(new { state = _service.CurrentState.ToString() });
+    public IActionResult GetState() =>
+        Ok(new
+        {
+            state = _service.CurrentState.ToString(),
+            reason = FailureReasonName.Of(_service.CurrentFailure)
+        });
 
     // Lets the console prefill the connection form
     [HttpGet("settings")]

@@ -44,5 +44,19 @@ public class ErrorResponseTests : IClassFixture<MqFakerApiFactory>
         Assert.Equal("refused", problem.Reason);
     }
 
+    // The 502 is gone by the time a panel reopens; the state query is what's left to ask.
+    [Fact]
+    public async Task Connection_state_keeps_reporting_why_the_last_attempt_failed()
+    {
+        var client = _factory.CreateClient();
+        await client.PostAsJsonAsync("/api/connection", new ConnectRequestDto("127.0.0.1", 1, "probe", null, null, false));
+
+        var response = await client.GetAsync("/api/connection");
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"state\":\"Faulted\"", body);
+        Assert.Contains("\"reason\":\"refused\"", body);
+    }
+
     private sealed record ProblemDetailsResponse(string Title, string Detail, int Status, string Reason);
 }

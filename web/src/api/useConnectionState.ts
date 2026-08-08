@@ -8,7 +8,7 @@ export function useConnectionState() {
   const { data } = useQuery({ queryKey: queryKeys.connection, queryFn: getConnectionState });
   const state: ConnectionState = data?.state ?? 'Disconnected';
 
-  return { state, isOnline: state === 'Connected' };
+  return { state, reason: data?.reason, isOnline: state === 'Connected' };
 }
 
 // Reads the last-saved connect settings, so no component holds onto the typed form.

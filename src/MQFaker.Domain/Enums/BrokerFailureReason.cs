@@ -12,5 +12,9 @@ public enum BrokerFailureReason
     TlsFailed,
     CredentialsRejected,
     ClientIdRejected,
-    BrokerBusy
+    BrokerBusy,
+
+    // Only a live link can end these two ways
+    SessionTakenOver,
+    BrokerClosed
 }
