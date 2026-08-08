@@ -35,6 +35,8 @@ public sealed class ConnectionService
 
     public BrokerFailure? CurrentFailure => _manager.Failure;
 
+    public BrokerLink? CurrentLink => _manager.Link;
+
     // A failed settings save is logged but doesn't fail an otherwise-successful connect
     public async Task<bool> ConnectAsync(BrokerConnectionSettings settings, CancellationToken ct)
     {
