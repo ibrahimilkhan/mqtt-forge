@@ -76,4 +76,46 @@ public class BrokerFailureClassifierTests
     {
         Assert.Equal(expected, BrokerFailureClassifier.Classify(code));
     }
+
+    [Theory]
+    [InlineData(MqttClientDisconnectReason.SessionTakenOver, BrokerFailureReason.SessionTakenOver)]
+    [InlineData(MqttClientDisconnectReason.NormalDisconnection, BrokerFailureReason.BrokerClosed)]
+    [InlineData(MqttClientDisconnectReason.ServerShuttingDown, BrokerFailureReason.BrokerClosed)]
+    [InlineData(MqttClientDisconnectReason.AdministrativeAction, BrokerFailureReason.BrokerClosed)]
+    [InlineData(MqttClientDisconnectReason.NotAuthorized, BrokerFailureReason.CredentialsRejected)]
+    [InlineData(MqttClientDisconnectReason.ServerBusy, BrokerFailureReason.BrokerBusy)]
+    [InlineData(MqttClientDisconnectReason.KeepAliveTimeout, BrokerFailureReason.Timeout)]
+    [InlineData(MqttClientDisconnectReason.TopicAliasInvalid, BrokerFailureReason.Unknown)]
+    public void Classify_reads_the_disconnect_reason(
+        MqttClientDisconnectReason reason, BrokerFailureReason expected)
+    {
+        Assert.Equal(expected, BrokerFailureClassifier.Classify(Dropped(reason)));
+    }
+
+    // The reason code says nothing when the link died under MQTTnet rather than being
+    // closed by the broker; the exception it hands over is where the cause actually is.
+    [Fact]
+    public void Classify_prefers_the_exception_a_dropped_link_carries()
+    {
+        var dropped = Dropped(
+            MqttClientDisconnectReason.NormalDisconnection,
+            new MqttCommunicationException(new SocketException((int)SocketError.TimedOut)));
+
+        Assert.Equal(BrokerFailureReason.Timeout, BrokerFailureClassifier.Classify(dropped));
+    }
+
+    // ...unless that exception says nothing either, and the code is the better guess.
+    [Fact]
+    public void Classify_falls_back_to_the_disconnect_reason_when_the_exception_is_opaque()
+    {
+        var dropped = Dropped(
+            MqttClientDisconnectReason.SessionTakenOver, new InvalidOperationException("no idea"));
+
+        Assert.Equal(BrokerFailureReason.SessionTakenOver, BrokerFailureClassifier.Classify(dropped));
+    }
+
+    private static MqttClientDisconnectedEventArgs Dropped(
+        MqttClientDisconnectReason reason, Exception? exception = null) =>
+        new(clientWasConnected: true, connectResult: null, reason, reasonString: null,
+            userProperties: null, exception);
 }

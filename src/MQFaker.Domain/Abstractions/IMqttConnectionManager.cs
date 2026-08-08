@@ -7,6 +7,9 @@ namespace MQFaker.Domain.Abstractions;
 public interface IMqttConnectionManager
 {
     ConnectionState State { get; }
+
+    // Why the link is down; null whenever there is nothing to explain
+    BrokerFailureReason? FailureReason { get; }
     Task ConnectAsync(BrokerConnectionSettings settings, CancellationToken ct);
     Task DisconnectAsync(CancellationToken ct);
 }

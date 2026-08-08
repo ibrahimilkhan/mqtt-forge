@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../../lib/problemDetails';
-import { describeConnectFailure } from './connectFailure';
+import { describeConnectFailure, describeFailureReason } from './connectFailure';
 
 const FORM = { host: 'broker.local', port: 1883, clientId: 'mqfaker-console' };
 
@@ -50,4 +50,23 @@ describe('describeConnectFailure', () => {
   it('says nothing when there is no error', () => {
     expect(describeConnectFailure(null, FORM)).toBeUndefined();
   });
+});
+
+// A link that was up and is now down; the reason arrives on the connection state, not an error.
+describe('describeFailureReason', () => {
+  it.each([
+    ['sessionTakenOver', "Another client connected with the client ID 'mqfaker-console'."],
+    ['brokerClosed', 'The broker closed the connection.'],
+    ['timeout', "broker.local:1883 didn't respond in time."],
+  ])('words %s as a sentence', (reason, expected) => {
+    expect(describeFailureReason(reason, FORM)).toBe(expected);
+  });
+
+  // No detail to fall back on here, and FAULTED in the top bar already says this much.
+  it.each([['unknown'], ['somethingNew'], [undefined], [null]])(
+    'says nothing for %s, rather than guessing',
+    (reason) => {
+      expect(describeFailureReason(reason, FORM)).toBeUndefined();
+    },
+  );
 });

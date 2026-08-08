@@ -15,6 +15,9 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
     // Reason we're offline; ignored while client reports connected, avoiding disconnect-event races
     private ConnectionState _offlineState = ConnectionState.Disconnected;
 
+    // Why that offline state is a fault, when we know; same races, so gated the same way
+    private BrokerFailureReason? _failureReason;
+
     // Last state announced, to avoid duplicate notifications
     private int _announced = (int)ConnectionState.Disconnected;
 
@@ -30,6 +33,8 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
     public ConnectionState State =>
         _client.IsConnected ? ConnectionState.Connected : _offlineState;
 
+    public BrokerFailureReason? FailureReason => _client.IsConnected ? null : _failureReason;
+
     // Single-active-connection rule: disconnect any existing link before reconnecting
     public async Task ConnectAsync(BrokerConnectionSettings settings, CancellationToken ct)
     {
@@ -37,6 +42,7 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
         try
         {
             _offlineState = ConnectionState.Connecting;
+            _failureReason = null;
             MqttClientConnectResult result;
 
             try
@@ -59,22 +65,26 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
             catch (Exception ex)
             {
                 _offlineState = ConnectionState.Faulted;
+                _failureReason = BrokerFailureClassifier.Classify(ex);
                 await AnnounceAsync();
                 throw new BrokerUnreachableException(
-                    BrokerFailureClassifier.Classify(ex),
+                    _failureReason.Value,
                     $"Could not connect to broker ({settings.Host}:{settings.Port}): {ex.Message}", ex);
             }
+
+            // A refusing CONNACK comes back as a result, not an exception; unread, it would
+            // tell the caller a connection it never got was made.
+            var refused = result.ResultCode != MqttClientConnectResultCode.Success;
 
             // Post-connect, offline now means the link died, not a deliberate close
             // (also covers the broker dropping the session the instant it opens)
             _offlineState = ConnectionState.Faulted;
+            _failureReason = refused ? BrokerFailureClassifier.Classify(result.ResultCode) : null;
             await AnnounceAsync();
 
-            // A refusing CONNACK comes back as a result, not an exception; without this the
-            // caller would hear that a connection it never got was made.
-            if (result.ResultCode != MqttClientConnectResultCode.Success)
+            if (refused)
                 throw new BrokerUnreachableException(
-                    BrokerFailureClassifier.Classify(result.ResultCode),
+                    _failureReason!.Value,
                     $"The broker at {settings.Host}:{settings.Port} refused the connection ({result.ResultCode}).");
         }
         finally
@@ -90,6 +100,7 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
         {
             // Set before the call: socket closes even if sending DISCONNECT fails
             _offlineState = ConnectionState.Disconnected;
+            _failureReason = null;
             await _client.DisconnectAsync(cancellationToken: ct);
         }
         finally
@@ -99,15 +110,22 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
         }
     }
 
-    // Fire-and-forget MQTTnet event; State already reflects why, no judgement needed here
-    private Task OnDisconnectedAsync(MqttClientDisconnectedEventArgs e) => AnnounceAsync();
+    // Fire-and-forget MQTTnet event; State already reflects whether this was a fault
+    private Task OnDisconnectedAsync(MqttClientDisconnectedEventArgs e)
+    {
+        // Only a fault needs explaining — a close we asked for already has its reason
+        if (_offlineState == ConnectionState.Faulted)
+            _failureReason = BrokerFailureClassifier.Classify(e);
+
+        return AnnounceAsync();
+    }
 
     private Task AnnounceAsync()
     {
         var state = State;
         if (Interlocked.Exchange(ref _announced, (int)state) == (int)state) return Task.CompletedTask;
 
-        return _notifier.NotifyStateChangedAsync(state);
+        return _notifier.NotifyStateChangedAsync(state, FailureReason);
     }
 
     private static MqttClientOptions BuildOptions(BrokerConnectionSettings settings)

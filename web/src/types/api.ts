@@ -1,7 +1,12 @@
 // Mirrors MQFaker.Api.Contracts; ASP.NET serialises camelCase.
 export type ConnectionState = 'Disconnected' | 'Connecting' | 'Connected' | 'Faulted';
 
-export type ConnectionStateResponse = { state: ConnectionState; alreadyConnected?: boolean };
+// reason is set only alongside Faulted, and only when the API could work out a cause.
+export type ConnectionStateResponse = {
+  state: ConnectionState;
+  reason?: string | null;
+  alreadyConnected?: boolean;
+};
 
 export type HealthResponse = { status: string };
 
