@@ -28,6 +28,11 @@
 
 .actions { display: flex; gap: 8px; margin-top: 14px; }
 
+/* For a button whose label swaps while its neighbours stay put: held to the longest word it
+   can show, so the row doesn't shift under the pointer when the label changes. Measured in ch
+   so it follows the type scale, and on the content box so the padding isn't eating into it. */
+.steadyWidth { box-sizing: content-box; min-width: 8ch; }
+
 .note {
   font-size: var(--t-small);
   color: var(--muted);

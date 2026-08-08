@@ -148,11 +148,16 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
 
       <div className={styles.actions}>
         {attemptRunning ? (
-          <button type="button" onClick={() => guardedAbort()} disabled={abortMutation.isPending}>
+          <button
+            type="button"
+            className={styles.steadyWidth}
+            onClick={() => guardedAbort()}
+            disabled={abortMutation.isPending}
+          >
             Abort
           </button>
         ) : (
-          <button type="button" onClick={submit}>
+          <button type="button" className={styles.steadyWidth} onClick={submit}>
             Connect
           </button>
         )}
