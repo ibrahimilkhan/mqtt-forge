@@ -3,6 +3,7 @@ using MQFaker.Api.Contracts;
 using MQFaker.Api.Hubs;
 using MQFaker.Domain.Abstractions;
 using MQFaker.Domain.Enums;
+using MQFaker.Domain.Models;
 
 namespace MQFaker.Api.Realtime;
 
@@ -15,8 +16,8 @@ public sealed class SignalRConnectionStateNotifier : IConnectionStateNotifier
 
     public SignalRConnectionStateNotifier(IHubContext<MqttHub> hub) => _hub = hub;
 
-    public Task NotifyStateChangedAsync(ConnectionState state, BrokerFailureReason? failure) =>
+    public Task NotifyStateChangedAsync(ConnectionState state, BrokerFailure? failure) =>
         _hub.Clients.All.SendAsync(
             ConnectionStateChanged,
-            new { state = state.ToString(), reason = FailureReasonName.Of(failure) });
+            new { state = state.ToString(), failure = BrokerFailureDto.Of(failure) });
 }

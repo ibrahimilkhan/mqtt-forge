@@ -38,7 +38,7 @@ public sealed class MqttExceptionHandler : IExceptionHandler
         // The console words the sentence the user reads; this says which sentence to word.
         // Detail stays the fallback for reasons it doesn't recognise.
         if (exception is BrokerUnreachableException broker)
-            problemDetails.Extensions["reason"] = FailureReasonName.Of(broker.Reason);
+            problemDetails.Extensions["reason"] = BrokerFailureDto.Name(broker.Reason);
 
         return await _problemDetailsService.TryWriteAsync(new ProblemDetailsContext
         {

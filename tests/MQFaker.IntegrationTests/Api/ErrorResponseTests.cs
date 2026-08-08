@@ -56,6 +56,10 @@ public class ErrorResponseTests : IClassFixture<MqFakerApiFactory>
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("\"state\":\"Faulted\"", body);
         Assert.Contains("\"reason\":\"refused\"", body);
+        // The saved settings only record a SUCCESSFUL connect, so the console cannot work out
+        // which broker this was about unless the state says so.
+        Assert.Contains("\"host\":\"127.0.0.1\"", body);
+        Assert.Contains("\"port\":1", body);
     }
 
     private sealed record ProblemDetailsResponse(string Title, string Detail, int Status, string Reason);

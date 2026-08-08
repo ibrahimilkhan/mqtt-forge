@@ -27,6 +27,10 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
     // Why that offline state is a fault, when we know; same races, so gated the same way
     private BrokerFailureReason? _failureReason;
 
+    // Which broker the fault is about. Kept for the whole life of a link, not just the attempt,
+    // so a drop can name the endpoint it was connected to.
+    private BrokerConnectionSettings? _attempted;
+
     // Last state announced, to avoid duplicate notifications
     private int _announced = (int)ConnectionState.Disconnected;
 
@@ -44,7 +48,10 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
     public ConnectionState State =>
         _client.IsConnected ? ConnectionState.Connected : _offlineState;
 
-    public BrokerFailureReason? FailureReason => _client.IsConnected ? null : _failureReason;
+    public BrokerFailure? Failure =>
+        _client.IsConnected || _failureReason is not { } reason || _attempted is not { } at
+            ? null
+            : new BrokerFailure(reason, at.Host, at.Port, at.ClientId, at.UseTls);
 
     // Single-active-connection rule: disconnect any existing link before reconnecting
     public async Task ConnectAsync(BrokerConnectionSettings settings, CancellationToken ct)
@@ -54,6 +61,7 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
         {
             _offlineState = ConnectionState.Connecting;
             _failureReason = null;
+            _attempted = settings;
             _tls.Reset();
             MqttClientConnectResult result;
 
@@ -170,7 +178,7 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
         var state = State;
         if (Interlocked.Exchange(ref _announced, (int)state) == (int)state) return Task.CompletedTask;
 
-        return _notifier.NotifyStateChangedAsync(state, FailureReason);
+        return _notifier.NotifyStateChangedAsync(state, Failure);
     }
 
     private MqttClientOptions BuildOptions(BrokerConnectionSettings settings)

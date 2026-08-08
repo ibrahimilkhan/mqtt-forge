@@ -8,8 +8,8 @@ public interface IMqttConnectionManager
 {
     ConnectionState State { get; }
 
-    // Why the link is down; null whenever there is nothing to explain
-    BrokerFailureReason? FailureReason { get; }
+    // Why the link is down and which broker that is about; null when there is nothing to explain
+    BrokerFailure? Failure { get; }
     Task ConnectAsync(BrokerConnectionSettings settings, CancellationToken ct);
     Task DisconnectAsync(CancellationToken ct);
 }
