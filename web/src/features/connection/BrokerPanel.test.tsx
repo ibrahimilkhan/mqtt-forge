@@ -140,6 +140,22 @@ describe('BrokerPanel', () => {
     );
   });
 
+  it('shows why the connect failed, in words, under the buttons', async () => {
+    server.use(
+      http.post('/api/connection', () =>
+        HttpResponse.json(
+          { title: 'Could not connect to broker', detail: 'Connection refused', reason: 'refused' },
+          { status: 502 },
+        ),
+      ),
+    );
+
+    renderPanel();
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Nothing is listening at localhost:1883.');
+  });
+
   it('shows a validation error beside the field it belongs to', async () => {
     server.use(
       http.post('/api/connection', () =>
@@ -154,6 +170,8 @@ describe('BrokerPanel', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
 
     expect(await screen.findByText('Host is required')).toBeInTheDocument();
+    // The field already says it; a second copy under the buttons would just be noise.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('ignores extra clicks fired while a connect is already in flight', async () => {

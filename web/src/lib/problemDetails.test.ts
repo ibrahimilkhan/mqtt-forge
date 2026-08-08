@@ -33,6 +33,20 @@ describe('toApiError', () => {
     expect(error.message).toBe('One or more validation errors occurred.');
   });
 
+  it('carries the failure reason the connect endpoint adds', async () => {
+    const error = await toApiError(
+      problemResponse(502, { title: 'Could not connect to broker', detail: '...', reason: 'refused' }),
+    );
+
+    expect(error.reason).toBe('refused');
+  });
+
+  it('leaves the reason undefined on errors that carry none', async () => {
+    const error = await toApiError(problemResponse(409, { title: 'Not connected' }));
+
+    expect(error.reason).toBeUndefined();
+  });
+
   it('falls back to the status when the body is not usable', async () => {
     const error = await toApiError(new Response('<html>gateway</html>', { status: 504 }));
 

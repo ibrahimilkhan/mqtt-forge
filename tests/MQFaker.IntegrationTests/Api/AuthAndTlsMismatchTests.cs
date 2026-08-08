@@ -19,17 +19,17 @@ public class WrongCredentialsTests : IClassFixture<MqFakerApiFactory>, IClassFix
     }
 
     [Fact]
-    public async Task Connect_with_credentials_the_broker_rejects_reports_faulted_not_a_500()
+    public async Task Connect_with_credentials_the_broker_rejects_returns_502_saying_so()
     {
         var client = _factory.CreateClient();
         var dto = new ConnectRequestDto(_broker.Host, _broker.Port, "wrong-creds", "someone", "not-the-password", false);
 
-        // Broker sends CONNACK "not authorised" then closes; ConnectAsync returns without
-        // throwing, so this is the Faulted path, not an exception
+        // Broker sends CONNACK "not authorised" then closes; MQTTnet returns that as a
+        // result rather than throwing, so the refusal has to be read off the result code
         var response = await client.PostAsJsonAsync("/api/connection", dto);
 
-        response.EnsureSuccessStatusCode();
-        Assert.Contains("\"state\":\"Faulted\"", await response.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        Assert.Contains("\"reason\":\"credentialsRejected\"", await response.Content.ReadAsStringAsync());
 
         var state = await client.GetAsync("/api/connection");
         Assert.Contains("Faulted", await state.Content.ReadAsStringAsync());
