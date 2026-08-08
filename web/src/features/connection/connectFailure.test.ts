@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ApiError } from '../../lib/problemDetails';
 import { describeConnectFailure, describeFailureReason } from './connectFailure';
 
-const FORM = { host: 'broker.local', port: 1883, clientId: 'mqfaker-console' };
+const FORM = { host: 'broker.local', port: 1883, clientId: 'mqfaker-console', useTls: false };
 
 const refusal = (reason?: string, message = 'raw backend detail') =>
   new ApiError(502, message, 'Could not connect to broker', undefined, reason);
@@ -11,14 +11,36 @@ describe('describeConnectFailure', () => {
   it.each([
     ['refused', 'Nothing is listening at broker.local:1883.'],
     ['hostNotFound', 'No host named broker.local.'],
+    ['nameLookupFailed', "Couldn't look up broker.local — the name server didn't answer."],
     ['unreachable', "broker.local can't be reached from this machine."],
+    ['blockedLocally', 'This machine blocked the connection to broker.local:1883.'],
     ['timeout', "broker.local:1883 didn't respond in time."],
-    ['tlsFailed', 'TLS handshake with broker.local failed.'],
+    ['tlsFailed', "The encrypted connection to broker.local couldn't be set up."],
+    ['tlsCertUntrusted', "broker.local presented a certificate this machine doesn't trust."],
+    ['tlsCertExpired', 'The certificate for broker.local has expired.'],
+    ['tlsCertNameMismatch', 'The certificate at broker.local:1883 was issued for a different name.'],
+    ['protocolVersionUnsupported', "The broker at broker.local:1883 doesn't speak MQTT 5."],
+    ['credentialsRequired', 'This broker needs a username and password.'],
     ['credentialsRejected', 'The broker rejected the username or password.'],
+    ['banned', 'The broker has banned this client.'],
     ['clientIdRejected', "The broker rejected the client ID 'mqfaker-console'."],
     ['brokerBusy', 'The broker is unavailable or too busy right now.'],
+    ['brokerRejected', 'The broker refused the connection over something this console sent.'],
   ])('words %s as a sentence', (reason, expected) => {
     expect(describeConnectFailure(refusal(reason), FORM)).toBe(expected);
+  });
+
+  // Same cause, but the useful half of the advice depends on what the user already ticked.
+  it('tells a plaintext attempt that the port might want TLS', () => {
+    expect(describeConnectFailure(refusal('noMqttResponse'), FORM)).toBe(
+      'broker.local:1883 answered, but not as an MQTT broker — check the port number, and whether it needs TLS.',
+    );
+  });
+
+  it('does not suggest TLS to someone who already ticked it', () => {
+    expect(describeConnectFailure(refusal('noMqttResponse'), { ...FORM, useTls: true })).toBe(
+      'broker.local:1883 answered, but not as an MQTT broker — check the port number.',
+    );
   });
 
   it('falls back to the backend detail when the reason is unknown', () => {
@@ -57,6 +79,9 @@ describe('describeFailureReason', () => {
   it.each([
     ['sessionTakenOver', "Another client connected with the client ID 'mqfaker-console'."],
     ['brokerClosed', 'The broker closed the connection.'],
+    ['brokerShuttingDown', 'The broker is shutting down.'],
+    ['kicked', 'An administrator disconnected this client.'],
+    ['connectionLost', 'The connection to broker.local:1883 was lost.'],
     ['timeout', "broker.local:1883 didn't respond in time."],
   ])('words %s as a sentence', (reason, expected) => {
     expect(describeFailureReason(reason, FORM)).toBe(expected);

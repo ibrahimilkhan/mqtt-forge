@@ -8,9 +8,18 @@ namespace MQFaker.Infrastructure.Mqtt;
 
 public sealed class MqttnetConnectionManager : IMqttConnectionManager
 {
+    // Long enough for a slow broker over a slow link, short enough that a black-holed host
+    // reports back instead of hanging on the OS TCP timeout (~75s on macOS, ~130s on Linux).
+    private static readonly TimeSpan DefaultConnectTimeout = TimeSpan.FromSeconds(20);
+
     private readonly IMqttClient _client;
     private readonly SemaphoreSlim _gate;
     private readonly IConnectionStateNotifier _notifier;
+    private readonly TimeSpan _connectTimeout;
+
+    // Watches the TLS handshake, because the exception that escapes it has already forgotten
+    // which rule the certificate broke. Attempts are serialised by the gate, so one is enough.
+    private readonly TlsCertificateInspector _tls = new();
 
     // Reason we're offline; ignored while client reports connected, avoiding disconnect-event races
     private ConnectionState _offlineState = ConnectionState.Disconnected;
@@ -21,11 +30,13 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
     // Last state announced, to avoid duplicate notifications
     private int _announced = (int)ConnectionState.Disconnected;
 
-    public MqttnetConnectionManager(MqttnetClientProvider provider, IConnectionStateNotifier notifier)
+    public MqttnetConnectionManager(
+        MqttnetClientProvider provider, IConnectionStateNotifier notifier, TimeSpan? connectTimeout = null)
     {
         _client = provider.Client;
         _gate = provider.Gate;
         _notifier = notifier;
+        _connectTimeout = connectTimeout ?? DefaultConnectTimeout;
 
         _client.DisconnectedAsync += OnDisconnectedAsync;
     }
@@ -43,29 +54,47 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
         {
             _offlineState = ConnectionState.Connecting;
             _failureReason = null;
+            _tls.Reset();
             MqttClientConnectResult result;
+
+            // MqttClientOptions.Timeout only applies when the caller passes an uncancellable
+            // token, and ASP.NET always passes a cancellable one, so the deadline has to be ours.
+            using var attempt = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            attempt.CancelAfter(_connectTimeout);
 
             try
             {
                 if (_client.IsConnected)
-                    await _client.DisconnectAsync(cancellationToken: ct);
+                    await _client.DisconnectAsync(cancellationToken: attempt.Token);
 
                 // Announce only after the old link is down
                 await AnnounceAsync();
 
-                result = await _client.ConnectAsync(BuildOptions(settings), ct);
+                result = await _client.ConnectAsync(BuildOptions(settings), attempt.Token);
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
                 // Caller cancelled, not a failure
                 _offlineState = ConnectionState.Disconnected;
                 await AnnounceAsync();
                 throw;
             }
+            catch (OperationCanceledException)
+            {
+                // Nobody asked to stop, so this is our deadline — or MQTTnet turning an aborted
+                // socket into a cancellation, which is a dead attempt either way.
+                _offlineState = ConnectionState.Faulted;
+                _failureReason = BrokerFailureReason.Timeout;
+                await AnnounceAsync();
+                throw new BrokerUnreachableException(
+                    BrokerFailureReason.Timeout,
+                    $"The broker at {settings.Host}:{settings.Port} did not answer within "
+                    + $"{_connectTimeout.TotalSeconds:0} seconds.");
+            }
             catch (Exception ex)
             {
                 _offlineState = ConnectionState.Faulted;
-                _failureReason = BrokerFailureClassifier.Classify(ex, settings.UseTls);
+                _failureReason = Explain(ex, settings);
                 await AnnounceAsync();
                 throw new BrokerUnreachableException(
                     _failureReason.Value,
@@ -79,7 +108,9 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
             // Post-connect, offline now means the link died, not a deliberate close
             // (also covers the broker dropping the session the instant it opens)
             _offlineState = ConnectionState.Faulted;
-            _failureReason = refused ? BrokerFailureClassifier.Classify(result.ResultCode) : null;
+            _failureReason = refused
+                ? BrokerFailureClassifier.Classify(result.ResultCode, HasCredentials(settings))
+                : null;
             await AnnounceAsync();
 
             if (refused)
@@ -113,12 +144,26 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
     // Fire-and-forget MQTTnet event; State already reflects whether this was a fault
     private Task OnDisconnectedAsync(MqttClientDisconnectedEventArgs e)
     {
-        // Only a fault needs explaining — a close we asked for already has its reason
-        if (_offlineState == ConnectionState.Faulted)
+        // MQTTnet raises this on the connect-failure path too, from a background task that
+        // lands after the attempt has already worked out why it failed — and the reason code
+        // it carries there is a leftover, not an answer. Only a link that was genuinely up
+        // has a drop to explain, which is exactly what ClientWasConnected says.
+        if (e.ClientWasConnected && _offlineState == ConnectionState.Faulted)
             _failureReason = BrokerFailureClassifier.Classify(e);
 
         return AnnounceAsync();
     }
+
+    // The classifier can only say "the certificate was refused"; the inspector saw why.
+    private BrokerFailureReason Explain(Exception exception, BrokerConnectionSettings settings)
+    {
+        var reason = BrokerFailureClassifier.Classify(exception, settings.UseTls);
+
+        return reason == BrokerFailureReason.TlsFailed ? _tls.Problem ?? reason : reason;
+    }
+
+    private static bool HasCredentials(BrokerConnectionSettings settings) =>
+        !string.IsNullOrEmpty(settings.Username);
 
     private Task AnnounceAsync()
     {
@@ -128,17 +173,22 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
         return _notifier.NotifyStateChangedAsync(state, FailureReason);
     }
 
-    private static MqttClientOptions BuildOptions(BrokerConnectionSettings settings)
+    private MqttClientOptions BuildOptions(BrokerConnectionSettings settings)
     {
         var builder = new MqttClientOptionsBuilder()
             .WithTcpServer(settings.Host, settings.Port)
             .WithClientId(settings.ClientId);
 
-        if (!string.IsNullOrEmpty(settings.Username))
+        if (HasCredentials(settings))
             builder = builder.WithCredentials(settings.Username, settings.Password);
 
         if (settings.UseTls)
-            builder = builder.WithTlsOptions(o => o.UseTls());
+            builder = builder.WithTlsOptions(o => o
+                .UseTls()
+                // Returns the same verdict MQTTnet's own default gives — it is here to see the
+                // reason, which is gone by the time the exception surfaces, not to change it.
+                .WithCertificateValidationHandler(e =>
+                    _tls.Validate(e.SslPolicyErrors, e.Chain?.ChainStatus ?? [])));
 
         return builder.Build();
     }

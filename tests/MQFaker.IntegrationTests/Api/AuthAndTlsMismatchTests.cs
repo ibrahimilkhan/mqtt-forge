@@ -34,6 +34,20 @@ public class WrongCredentialsTests : IClassFixture<MqFakerApiFactory>, IClassFix
         var state = await client.GetAsync("/api/connection");
         Assert.Contains("Faulted", await state.Content.ReadAsStringAsync());
     }
+
+    // Mosquitto answers this with the same code as a wrong password. What separates them is
+    // that nothing was typed — advice the broker cannot give and we can.
+    [Fact]
+    public async Task Connect_with_no_credentials_to_a_broker_that_wants_them_says_so()
+    {
+        var client = _factory.CreateClient();
+        var dto = new ConnectRequestDto(_broker.Host, _broker.Port, "no-creds", null, null, false);
+
+        var response = await client.PostAsJsonAsync("/api/connection", dto);
+
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        Assert.Contains("\"reason\":\"credentialsRequired\"", await response.Content.ReadAsStringAsync());
+    }
 }
 
 public class TlsMismatchTests : IClassFixture<MqFakerApiFactory>, IClassFixture<MosquittoFixture>
@@ -58,7 +72,8 @@ public class TlsMismatchTests : IClassFixture<MqFakerApiFactory>, IClassFixture<
             .WaitAsync(TimeSpan.FromSeconds(15));
 
         Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
-        // The handshake ends in a bare IOException, so only the TLS setting names this cause
-        Assert.Contains("\"reason\":\"tlsFailed\"", await response.Content.ReadAsStringAsync());
+        // The handshake ends in a bare IOException naming no cause, so only the TLS setting
+        // tells us the port simply does not speak it — which is the actionable half.
+        Assert.Contains("\"reason\":\"tlsNotOffered\"", await response.Content.ReadAsStringAsync());
     }
 }
