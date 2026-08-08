@@ -1,4 +1,6 @@
+using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Authentication;
 using MQFaker.Domain.Abstractions;
 using MQFaker.Domain.Enums;
 using MQFaker.Domain.Exceptions;
@@ -16,6 +18,9 @@ public class MqttnetConnectionManagerStateTests
     private readonly IMqttClient _client = Substitute.For<IMqttClient>();
     private readonly IConnectionStateNotifier _notifier = Substitute.For<IConnectionStateNotifier>();
     private readonly BrokerConnectionSettings _settings = new("localhost", 1883, "id", null, null, false);
+
+    // For the cases about a password being wrong, as opposed to missing
+    private BrokerConnectionSettings WithPassword => _settings with { Username = "someone", Password = "wrong" };
 
     private MqttnetConnectionManager CreateSut() => new(new MqttnetClientProvider(_client), _notifier);
 
@@ -72,7 +77,7 @@ public class MqttnetConnectionManagerStateTests
         var sut = CreateSut();
 
         var error = await Assert.ThrowsAsync<BrokerUnreachableException>(
-            () => sut.ConnectAsync(_settings, CancellationToken.None));
+            () => sut.ConnectAsync(WithPassword, CancellationToken.None));
 
         Assert.Equal(BrokerFailureReason.CredentialsRejected, error.Reason);
         Assert.Equal(ConnectionState.Faulted, sut.State);
@@ -80,35 +85,196 @@ public class MqttnetConnectionManagerStateTests
     }
 
     [Fact]
-    public async Task ConnectAsync_reports_disconnected_when_the_attempt_is_cancelled()
+    public async Task ConnectAsync_reports_disconnected_when_the_caller_cancels()
+    {
+        using var caller = new CancellationTokenSource();
+        _client.ConnectAsync(Arg.Any<MqttClientOptions>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                caller.Cancel();
+                return Task.FromException<MqttClientConnectResult>(new OperationCanceledException());
+            });
+        var sut = CreateSut();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => sut.ConnectAsync(_settings, caller.Token));
+
+        Assert.Equal(ConnectionState.Disconnected, sut.State);
+        Assert.Null(sut.FailureReason);
+    }
+
+    // MQTTnet only honours its own Timeout when the caller passes an uncancellable token, and
+    // ASP.NET always passes a cancellable one — so without a deadline of our own the attempt
+    // runs until the OS gives up, about 75 seconds on macOS.
+    [Fact]
+    public async Task ConnectAsync_faults_with_a_timeout_when_the_attempt_outlives_our_deadline()
+    {
+        _client.ConnectAsync(Arg.Any<MqttClientOptions>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                await Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>());
+                return Connack(MqttClientConnectResultCode.Success);
+            });
+        var sut = new MqttnetConnectionManager(
+            new MqttnetClientProvider(_client), _notifier, TimeSpan.FromMilliseconds(50));
+
+        var error = await Assert.ThrowsAsync<BrokerUnreachableException>(
+            () => sut.ConnectAsync(_settings, CancellationToken.None));
+
+        Assert.Equal(BrokerFailureReason.Timeout, error.Reason);
+        Assert.Equal(ConnectionState.Faulted, sut.State);
+    }
+
+    // MQTTnet's channel adapter turns SocketError.OperationAborted into a cancellation, so an
+    // uncancelled caller seeing one means the socket died, not that anybody asked to stop.
+    [Fact]
+    public async Task ConnectAsync_does_not_mistake_an_aborted_socket_for_a_cancellation()
     {
         _client.ConnectAsync(Arg.Any<MqttClientOptions>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException<MqttClientConnectResult>(new OperationCanceledException()));
         var sut = CreateSut();
 
-        await Assert.ThrowsAsync<OperationCanceledException>(
+        var error = await Assert.ThrowsAsync<BrokerUnreachableException>(
             () => sut.ConnectAsync(_settings, CancellationToken.None));
 
-        Assert.Equal(ConnectionState.Disconnected, sut.State);
+        Assert.Equal(BrokerFailureReason.Timeout, error.Reason);
+        Assert.Equal(ConnectionState.Faulted, sut.State);
     }
 
     [Fact]
-    public async Task ConnectAsync_reports_disconnected_when_cancelled_while_closing_the_previous_link()
+    public async Task ConnectAsync_reports_disconnected_when_the_caller_cancels_while_closing_the_previous_link()
     {
+        using var caller = new CancellationTokenSource();
         _client.IsConnected.Returns(true);
         // Socket closes in a finally even if DISCONNECT is cancelled — same as any other throw
         _client.DisconnectAsync(Arg.Any<MqttClientDisconnectOptions>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 _client.IsConnected.Returns(false);
+                caller.Cancel();
                 return Task.FromException(new OperationCanceledException());
             });
         var sut = CreateSut();
 
         await Assert.ThrowsAsync<OperationCanceledException>(
-            () => sut.ConnectAsync(_settings, CancellationToken.None));
+            () => sut.ConnectAsync(_settings, caller.Token));
 
         Assert.Equal(ConnectionState.Disconnected, sut.State);
+    }
+
+    // MQTTnet fires DisconnectedAsync on the connect-failure path too, from a fire-and-forget
+    // Task.Run — so it lands AFTER the attempt has already worked out why it failed. Its reason
+    // code is meaningless there (ClientWasConnected is false) and must not overwrite the answer.
+    [Fact]
+    public async Task A_disconnect_from_a_failed_attempt_does_not_overwrite_the_reason()
+    {
+        GivenConnectReturns(MqttClientConnectResultCode.BadUserNameOrPassword);
+        var sut = CreateSut();
+        await Assert.ThrowsAsync<BrokerUnreachableException>(
+            () => sut.ConnectAsync(WithPassword, CancellationToken.None));
+
+        RaiseDisconnected(MqttClientDisconnectReason.NormalDisconnection, clientWasConnected: false);
+
+        Assert.Equal(BrokerFailureReason.CredentialsRejected, sut.FailureReason);
+    }
+
+    [Fact]
+    public async Task A_disconnect_from_a_throwing_attempt_does_not_overwrite_the_reason()
+    {
+        _client.ConnectAsync(Arg.Any<MqttClientOptions>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<MqttClientConnectResult>(
+                new MqttCommunicationException(new SocketException((int)SocketError.ConnectionRefused))));
+        var sut = CreateSut();
+        await Assert.ThrowsAsync<BrokerUnreachableException>(
+            () => sut.ConnectAsync(_settings, CancellationToken.None));
+
+        RaiseDisconnected(MqttClientDisconnectReason.NormalDisconnection, clientWasConnected: false);
+
+        Assert.Equal(BrokerFailureReason.Refused, sut.FailureReason);
+    }
+
+    // The wire cannot tell "that password is wrong" from "this broker wanted one and got none".
+    [Fact]
+    public async Task ConnectAsync_says_a_password_is_needed_when_none_was_typed()
+    {
+        GivenConnectReturns(MqttClientConnectResultCode.NotAuthorized);
+        var sut = CreateSut();
+
+        var error = await Assert.ThrowsAsync<BrokerUnreachableException>(
+            () => sut.ConnectAsync(_settings, CancellationToken.None));
+
+        Assert.Equal(BrokerFailureReason.CredentialsRequired, error.Reason);
+    }
+
+    [Fact]
+    public async Task ConnectAsync_says_the_password_is_wrong_when_one_was_typed()
+    {
+        GivenConnectReturns(MqttClientConnectResultCode.NotAuthorized);
+        var sut = CreateSut();
+
+        var error = await Assert.ThrowsAsync<BrokerUnreachableException>(
+            () => sut.ConnectAsync(WithPassword, CancellationToken.None));
+
+        Assert.Equal(BrokerFailureReason.CredentialsRejected, error.Reason);
+    }
+
+    // .NET discards which certificate rule was broken by the time MQTTnet rethrows, so the
+    // manager has to have been watching from inside the validation callback.
+    [Fact]
+    public async Task ConnectAsync_reports_which_certificate_rule_the_broker_broke()
+    {
+        _client.ConnectAsync(Arg.Any<MqttClientOptions>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var options = call.Arg<MqttClientOptions>();
+                var channel = (MqttClientTcpOptions)options!.ChannelOptions!;
+                var tls = channel.TlsOptions!;
+                tls.CertificateValidationHandler!(new MqttClientCertificateValidationEventArgs(
+                    certificate: null!, chain: null!,
+                    SslPolicyErrors.RemoteCertificateNameMismatch, channel));
+
+                return Task.FromException<MqttClientConnectResult>(
+                    new MqttCommunicationException(new AuthenticationException("rejected by the callback")));
+            });
+        var sut = CreateSut();
+
+        var error = await Assert.ThrowsAsync<BrokerUnreachableException>(
+            () => sut.ConnectAsync(_settings with { UseTls = true }, CancellationToken.None));
+
+        Assert.Equal(BrokerFailureReason.TlsCertNameMismatch, error.Reason);
+    }
+
+    // A stale observation from a previous attempt must not describe this one.
+    [Fact]
+    public async Task ConnectAsync_forgets_a_certificate_problem_from_an_earlier_attempt()
+    {
+        var tlsSettings = _settings with { UseTls = true };
+        _client.ConnectAsync(Arg.Any<MqttClientOptions>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var options = call.Arg<MqttClientOptions>();
+                var channel = (MqttClientTcpOptions)options!.ChannelOptions!;
+                var tls = channel.TlsOptions!;
+                tls.CertificateValidationHandler!(new MqttClientCertificateValidationEventArgs(
+                    certificate: null!, chain: null!,
+                    SslPolicyErrors.RemoteCertificateNameMismatch, channel));
+
+                return Task.FromException<MqttClientConnectResult>(
+                    new MqttCommunicationException(new AuthenticationException("rejected by the callback")));
+            });
+        var sut = CreateSut();
+        await Assert.ThrowsAsync<BrokerUnreachableException>(
+            () => sut.ConnectAsync(tlsSettings, CancellationToken.None));
+
+        // Second attempt never reaches a certificate at all
+        _client.ConnectAsync(Arg.Any<MqttClientOptions>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<MqttClientConnectResult>(
+                new MqttCommunicationException(new SocketException((int)SocketError.ConnectionRefused))));
+
+        var error = await Assert.ThrowsAsync<BrokerUnreachableException>(
+            () => sut.ConnectAsync(tlsSettings, CancellationToken.None));
+
+        Assert.Equal(BrokerFailureReason.Refused, error.Reason);
     }
 
     [Fact]
@@ -267,13 +433,15 @@ public class MqttnetConnectionManagerStateTests
 
     // MQTTnet raises this whenever the socket closes, whoever closed it.
     private void RaiseDisconnected(
-        MqttClientDisconnectReason reason = MqttClientDisconnectReason.UnspecifiedError) =>
+        MqttClientDisconnectReason reason = MqttClientDisconnectReason.UnspecifiedError,
+        bool clientWasConnected = true,
+        Exception? exception = null) =>
         _client.DisconnectedAsync += Raise.Event<Func<MqttClientDisconnectedEventArgs, Task>>(
             new MqttClientDisconnectedEventArgs(
-                clientWasConnected: true,
+                clientWasConnected: clientWasConnected,
                 connectResult: null,
                 reason: reason,
                 reasonString: null,
                 userProperties: null,
-                exception: null));
+                exception: exception));
 }

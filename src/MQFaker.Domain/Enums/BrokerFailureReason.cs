@@ -1,20 +1,43 @@
 namespace MQFaker.Domain.Enums;
 
-// Why a connect attempt failed, at the granularity the console can put into a sentence.
-// Causes the user cannot tell apart share a value; Unknown falls back to the raw message.
+// Why a connect attempt or a live link failed, at the granularity the console can put into a
+// sentence. A value earns its place only when it leads to DIFFERENT advice and we can actually
+// tell it apart in code; causes a user could not act on differently share one value.
 public enum BrokerFailureReason
 {
     Unknown,
-    Refused,
+
+    // Never got as far as a broker
     HostNotFound,
+    NameLookupFailed,
     Unreachable,
+    BlockedLocally,
+    Refused,
     Timeout,
+
+    // Something answered, but not a broker we could talk to
+    NoMqttResponse,
+    TlsNotOffered,
+    ProtocolVersionUnsupported,
+
+    // The encrypted channel could not be established
     TlsFailed,
+    TlsCertUntrusted,
+    TlsCertExpired,
+    TlsCertNameMismatch,
+
+    // A broker answered, and said no
+    CredentialsRequired,
     CredentialsRejected,
+    Banned,
     ClientIdRejected,
     BrokerBusy,
+    BrokerRejected,
 
-    // Only a live link can end these two ways
+    // A link that was up, and is not any more
+    ConnectionLost,
     SessionTakenOver,
-    BrokerClosed
+    BrokerClosed,
+    BrokerShuttingDown,
+    Kicked
 }
