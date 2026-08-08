@@ -31,8 +31,11 @@ public class BrokerDropTests : IClassFixture<MosquittoFixture>
         await impostor.ConnectAsync(new MqttClientOptionsBuilder()
             .WithTcpServer(_broker.Host, _broker.Port).WithClientId("drop-victim").Build());
 
+        // Waits on the failure, not the state: State flips the moment the socket does, while the
+        // reason arrives with MQTTnet's disconnect event a moment later. Polling the state lets
+        // the assertions below run in the gap between the two.
         var deadline = DateTime.UtcNow.AddSeconds(5);
-        while (manager.State != ConnectionState.Faulted && DateTime.UtcNow < deadline)
+        while (manager.Failure is null && DateTime.UtcNow < deadline)
             await Task.Delay(50);
 
         Assert.Equal(ConnectionState.Faulted, manager.State);
