@@ -149,6 +149,33 @@ public class BrokerFailureClassifierTests
         Assert.Equal(expected, BrokerFailureClassifier.Classify(code, credentialsSupplied: true));
     }
 
+    // An MQTT 3.1.1 broker answering our MQTT 5 CONNECT. MQTTnet only translates return codes
+    // when the CLIENT speaks 3.1.1; on the v5 path it casts the byte straight through, and
+    // 1-5 are unused in the v5 space, so they arrive as themselves. Measured against a broker
+    // that replies with a v3 CONNACK: all four landed on the generic refusal before this.
+    [Theory]
+    [InlineData(1, BrokerFailureReason.ProtocolVersionUnsupported)]
+    [InlineData(2, BrokerFailureReason.ClientIdRejected)]
+    [InlineData(3, BrokerFailureReason.BrokerBusy)]
+    [InlineData(4, BrokerFailureReason.CredentialsRejected)]
+    [InlineData(5, BrokerFailureReason.CredentialsRejected)]
+    public void Classify_reads_a_311_brokers_return_code(int raw, BrokerFailureReason expected)
+    {
+        Assert.Equal(
+            expected,
+            BrokerFailureClassifier.Classify((MqttClientConnectResultCode)raw, credentialsSupplied: true));
+    }
+
+    [Theory]
+    [InlineData(4)]
+    [InlineData(5)]
+    public void Classify_asks_for_credentials_on_a_311_refusal_too(int raw)
+    {
+        Assert.Equal(
+            BrokerFailureReason.CredentialsRequired,
+            BrokerFailureClassifier.Classify((MqttClientConnectResultCode)raw, credentialsSupplied: false));
+    }
+
     // "Wrong password" and "this broker wants a password at all" are the same code on the wire.
     // What tells them apart is whether the user typed one — which only we know.
     [Theory]
