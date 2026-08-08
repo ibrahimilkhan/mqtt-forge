@@ -9,6 +9,7 @@ import { useConnectionState } from '../../api/useConnectionState';
 import { fieldError } from '../../lib/problemDetails';
 import { useGuardedMutate } from '../../lib/useGuardedMutate';
 import { describeConnectFailure, describeFailureReason } from './connectFailure';
+import { ConnectionSummary } from './ConnectionSummary';
 import { useConnectionActions } from './useConnectionActions';
 
 const DEFAULTS = {
@@ -180,6 +181,8 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
       {saved?.hasPassword && (
         <p className={styles.note}>A password is saved but never sent back. Enter it again to connect.</p>
       )}
+
+      <ConnectionSummary />
     </PanelShell>
   );
 }

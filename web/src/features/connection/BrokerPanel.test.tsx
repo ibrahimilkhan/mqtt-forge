@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
@@ -379,5 +379,38 @@ describe('BrokerPanel', () => {
     fireEvent.click(button);
 
     await waitFor(() => expect(calls).toBe(1));
+  });
+
+  it('shows the live link under the form once connected', async () => {
+    server.use(
+      http.get('/api/connection', () =>
+        HttpResponse.json({
+          state: 'Connected',
+          connection: {
+            host: 'broker.example',
+            port: 8883,
+            clientId: 'console',
+            username: null,
+            useTls: true,
+            connectedAt: '2026-08-08T12:00:00Z',
+            sessionPresent: false,
+            assignedClientId: null,
+            serverKeepAlive: null,
+          },
+        }),
+      ),
+    );
+
+    renderPanel();
+
+    const details = await screen.findByLabelText('Connection details');
+    expect(within(details).getByText('broker.example:8883')).toBeInTheDocument();
+  });
+
+  it('leaves the form alone while nothing is connected', async () => {
+    renderPanel();
+
+    await screen.findByRole('button', { name: 'Connect' });
+    expect(screen.queryByLabelText('Connection details')).not.toBeInTheDocument();
   });
 });
