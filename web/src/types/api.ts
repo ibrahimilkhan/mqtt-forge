@@ -12,9 +12,24 @@ export type BrokerFailure = {
   useTls: boolean;
 };
 
+// Set only alongside Connected: which broker is up, and what it said when it accepted. The
+// mirror of BrokerFailure — the API sends whichever of the two applies, never both.
+export type BrokerLink = {
+  host: string;
+  port: number;
+  clientId: string;
+  username: string | null;
+  useTls: boolean;
+  connectedAt: string;
+  sessionPresent: boolean;
+  assignedClientId: string | null;
+  serverKeepAlive: number | null;
+};
+
 export type ConnectionStateResponse = {
   state: ConnectionState;
   failure?: BrokerFailure | null;
+  connection?: BrokerLink | null;
   alreadyConnected?: boolean;
 };
 

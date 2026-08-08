@@ -11,10 +11,22 @@ import { server } from '../test/server';
 // Store outlives a test; reset so one case's reconnect doesn't leak into the next.
 beforeEach(() => useHubStatusStore.getState().setStatus('live'));
 
-function renderApp(state: string) {
+const LINK = {
+  host: 'broker.example',
+  port: 8883,
+  clientId: 'c',
+  username: null,
+  useTls: true,
+  connectedAt: '2026-08-08T12:00:00Z',
+  sessionPresent: false,
+  assignedClientId: null,
+  serverKeepAlive: null,
+};
+
+function renderApp(state: string, connection: unknown = state === 'Connected' ? LINK : null) {
   const hub = createFakeHub();
   server.use(
-    http.get('/api/connection', () => HttpResponse.json({ state })),
+    http.get('/api/connection', () => HttpResponse.json({ state, connection })),
     http.get('/api/connection/settings', () =>
       HttpResponse.json({
         host: 'broker.example',
@@ -104,5 +116,13 @@ describe('connection gating', () => {
     hub.emit('reconnected');
 
     expect(await screen.findByText('CONNECTED · broker.example:8883')).toBeInTheDocument();
+  });
+
+  // The saved settings record the last connect that WORKED, which is a different question
+  // from what is up right now — and they are written on a best-effort basis at that.
+  it('reads the address off the live link, not the last saved settings', async () => {
+    renderApp('Connected', { ...LINK, host: 'live.example', port: 1884 });
+
+    expect(await screen.findByText('CONNECTED · live.example:1884')).toBeInTheDocument();
   });
 });
