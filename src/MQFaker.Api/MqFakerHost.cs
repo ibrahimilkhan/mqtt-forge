@@ -1,5 +1,7 @@
 using FluentValidation;
 using FluentValidation.AspNetCore;
+using Microsoft.AspNetCore.StaticFiles;
+using Microsoft.Net.Http.Headers;
 using MQFaker.Api.ErrorHandling;
 using MQFaker.Api.Hubs;
 using MQFaker.Api.Validation;
@@ -41,7 +43,7 @@ public static class MqFakerHost
         if (app.Environment.IsDevelopment()) app.UseCors();
 
         app.UseDefaultFiles();
-        app.UseStaticFiles();
+        app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = CacheByFilename });
 
         app.MapControllers();
         app.MapHub<MqttHub>("/hubs/mqtt");
@@ -50,5 +52,17 @@ public static class MqFakerHost
         app.Services.GetRequiredService<IMqttSubscriber>();
 
         return app;
+    }
+
+    // Vite hashes every asset filename, so those are safe to keep forever. index.html is the
+    // one file whose name never changes, and it names the hashed bundles — cache it and the
+    // whole UI stays pinned to whichever build the client saw first.
+    private static void CacheByFilename(StaticFileResponseContext context)
+    {
+        var headers = context.Context.Response.GetTypedHeaders();
+
+        headers.CacheControl = context.Context.Request.Path.StartsWithSegments("/assets")
+            ? new CacheControlHeaderValue { Public = true, MaxAge = TimeSpan.FromDays(365) }
+            : new CacheControlHeaderValue { NoCache = true };
     }
 }
