@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using MQFaker.Domain.Abstractions;
 using MQFaker.Domain.Enums;
+using MQFaker.Domain.Exceptions;
 using MQFaker.Domain.Models;
 
 namespace MQFaker.Application.Services;
@@ -13,6 +14,14 @@ public sealed class ConnectionService
 
     // Tracks live-connection settings to detect a repeat connect
     private BrokerConnectionSettings? _connectedSettings;
+
+    // Serialises the two things that can happen to an in-flight attempt's source — being
+    // cancelled by another request, and being disposed by the attempt itself. Cancelling a
+    // disposed source throws, so the field has to be cleared and disposed as one step.
+    private readonly Lock _attemptLock = new();
+
+    // The attempt currently running, or null when nothing is in flight
+    private CancellationTokenSource? _attempt;
 
     public ConnectionService(IMqttConnectionManager manager, IConnectionSettingsStore store,
         ILogger<ConnectionService> logger)
@@ -35,7 +44,32 @@ public sealed class ConnectionService
             return true;
         }
 
-        await _manager.ConnectAsync(settings, ct);
+        // Ours, not the caller's: an abort has to reach the attempt from a different request,
+        // which has no hold on this one's token.
+        var attempt = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        lock (_attemptLock) _attempt = attempt;
+
+        try
+        {
+            await _manager.ConnectAsync(settings, attempt.Token);
+        }
+        // Our token down but the caller's still up means someone pressed abort. The other way
+        // round the browser simply left, and the failure that actually happened is the honest
+        // thing to report — the manager rethrows it in whatever shape MQTTnet gave it.
+        catch (Exception ex) when (attempt.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            throw new ConnectAttemptAbortedException(
+                $"The attempt to connect to {settings.Host}:{settings.Port} was cancelled.", ex);
+        }
+        finally
+        {
+            lock (_attemptLock)
+            {
+                _attempt = null;
+                attempt.Dispose();
+            }
+        }
+
         _connectedSettings = settings;
 
         try
@@ -48,6 +82,13 @@ public sealed class ConnectionService
         }
 
         return false;
+    }
+
+    // Calls off an attempt still in flight. Nothing in flight is not an error: whoever asked
+    // wanted the attempt stopped, and it already is.
+    public void CancelAttempt()
+    {
+        lock (_attemptLock) _attempt?.Cancel();
     }
 
     public Task DisconnectAsync(CancellationToken ct) => _manager.DisconnectAsync(ct);

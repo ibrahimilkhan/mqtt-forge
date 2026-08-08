@@ -19,6 +19,8 @@ public sealed class MqttExceptionHandler : IExceptionHandler
         var (status, title) = exception switch
         {
             BrokerUnreachableException => (StatusCodes.Status502BadGateway, "Could not connect to broker"),
+            // Not a 502: the broker is not the one that ended this.
+            ConnectAttemptAbortedException => (StatusCodes.Status409Conflict, "Connect aborted"),
             NotConnectedException => (StatusCodes.Status409Conflict, "Not connected"),
             MessageRejectedException => (StatusCodes.Status400BadRequest, "Message rejected"),
             _ => (0, string.Empty)
@@ -36,9 +38,16 @@ public sealed class MqttExceptionHandler : IExceptionHandler
         };
 
         // The console words the sentence the user reads; this says which sentence to word.
-        // Detail stays the fallback for reasons it doesn't recognise.
-        if (exception is BrokerUnreachableException broker)
-            problemDetails.Extensions["reason"] = BrokerFailureDto.Name(broker.Reason);
+        // Detail stays the fallback for reasons it doesn't recognise. 'aborted' is the one
+        // reason that asks for no sentence at all — the user knows, they pressed it.
+        var reason = exception switch
+        {
+            BrokerUnreachableException broker => BrokerFailureDto.Name(broker.Reason),
+            ConnectAttemptAbortedException => "aborted",
+            _ => null
+        };
+
+        if (reason is not null) problemDetails.Extensions["reason"] = reason;
 
         return await _problemDetailsService.TryWriteAsync(new ProblemDetailsContext
         {

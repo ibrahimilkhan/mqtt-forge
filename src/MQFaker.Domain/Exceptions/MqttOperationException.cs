@@ -19,6 +19,14 @@ public sealed class BrokerUnreachableException : MqttOperationException
     public BrokerFailureReason Reason { get; }
 }
 
+// The user called off a connect attempt that was still in flight. Not a broker fault: nothing
+// out there did anything wrong, and there is no reason to report beyond "you stopped it".
+public sealed class ConnectAttemptAbortedException : MqttOperationException
+{
+    public ConnectAttemptAbortedException(string message, Exception? inner = null)
+        : base(message, inner) { }
+}
+
 public sealed class NotConnectedException : MqttOperationException
 {
     public NotConnectedException(string message, Exception? inner = null)

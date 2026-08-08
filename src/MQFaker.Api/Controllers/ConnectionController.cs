@@ -42,6 +42,15 @@ public sealed class ConnectionController : ControllerBase
         return Ok(new { state = _service.CurrentState.ToString(), alreadyConnected });
     }
 
+    // The attempt, not the connection: a panel the user has since navigated away from may have
+    // left one in flight, and the request that started it is nobody's to hang up on but its own.
+    [HttpDelete("attempt")]
+    public IActionResult CancelAttempt()
+    {
+        _service.CancelAttempt();
+        return NoContent();
+    }
+
     [HttpDelete]
     public async Task<IActionResult> Disconnect(CancellationToken ct)
     {
