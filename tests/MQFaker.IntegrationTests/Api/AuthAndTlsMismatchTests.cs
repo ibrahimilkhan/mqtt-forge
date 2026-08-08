@@ -58,5 +58,7 @@ public class TlsMismatchTests : IClassFixture<MqFakerApiFactory>, IClassFixture<
             .WaitAsync(TimeSpan.FromSeconds(15));
 
         Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        // The handshake ends in a bare IOException, so only the TLS setting names this cause
+        Assert.Contains("\"reason\":\"tlsFailed\"", await response.Content.ReadAsStringAsync());
     }
 }

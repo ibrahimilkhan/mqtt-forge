@@ -65,7 +65,7 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
             catch (Exception ex)
             {
                 _offlineState = ConnectionState.Faulted;
-                _failureReason = BrokerFailureClassifier.Classify(ex);
+                _failureReason = BrokerFailureClassifier.Classify(ex, settings.UseTls);
                 await AnnounceAsync();
                 throw new BrokerUnreachableException(
                     _failureReason.Value,
