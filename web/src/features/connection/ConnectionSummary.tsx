@@ -47,6 +47,10 @@ function Row({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
+// A truthiness check, not `??`: MQTT gives zero a meaning of its own, "the broker turned
+// keep-alive off", so a zero is not a keep-alive of no seconds and reads no differently from
+// the broker saying nothing. The API already folds the two together before this ever sees a
+// link, but the check stays here as the reason a zero renders as a dash.
 function keepAlive(link: BrokerLink): string {
   return link.serverKeepAlive ? `${link.serverKeepAlive} sec` : NOTHING;
 }
