@@ -44,3 +44,29 @@
   composes: note;
   color: var(--fault);
 }
+
+/* The live link, under the form that would replace it. A rule sets it apart from the controls
+   above; the mono face and the fixed label column let the values be read as a column. */
+.summary {
+  margin: 16px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
+  font-family: var(--mono);
+  font-size: var(--t-small);
+}
+.summaryRow {
+  display: flex;
+  gap: 10px;
+  padding: 2px 0;
+}
+.summaryRow dt {
+  flex: 0 0 104px;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+.summaryRow dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
