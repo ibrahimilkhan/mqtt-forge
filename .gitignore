@@ -13,3 +13,4 @@ web/certs/
 src/MqttForge.Api/wwwroot/
 dist/
 *.DotSettings.user
+docs/superpowers/
