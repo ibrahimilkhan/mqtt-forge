@@ -51,7 +51,7 @@ public class SubscriptionEndpointTests : IClassFixture<MqFakerApiFactory>, IClas
             .Build();
 
         var received = new TaskCompletionSource<IncomingMessage>();
-        hub.On<IncomingMessage>("messageReceived", m => received.TrySetResult(m));
+        hub.On<IncomingMessage[]>("messagesReceived", batch => received.TrySetResult(batch[0]));
         await hub.StartAsync();
 
         var connect = new ConnectRequestDto(_broker.Host, _broker.Port, "signalr-e2e", null, null, false);

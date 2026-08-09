@@ -5,8 +5,10 @@ import {
   emptyTree,
   flattenTree,
   nodeSummary,
+  pruneTopics,
   type TopicNode,
 } from './topicTree';
+import { matchesFilter } from './topicMatch';
 
 // Walks a slash-separated path and fails loudly if it is missing, so assertions read flat.
 function at(root: TopicNode, path: string): TopicNode {
@@ -37,6 +39,26 @@ describe('applyMessage', () => {
     expect(at(tree, 'sensors').subTopics).toBe(1);
   });
 
+  it('counts messages beneath a node, not just topics', () => {
+    let tree = applyMessage(emptyTree(), 'a/b', '1', 1000);
+    tree = applyMessage(tree, 'a/b', '2', 2000);
+    tree = applyMessage(tree, 'a/c', '3', 3000);
+
+    expect(at(tree, 'a').subMessages).toBe(3);
+    expect(at(tree, 'a').subTopics).toBe(2);
+    expect(at(tree, 'a/b').subMessages).toBe(2);
+  });
+
+  // What the broker row reports: everything the console has taken in, at a glance.
+  it('totals every message and topic at the root', () => {
+    let tree = applyMessage(emptyTree(), 'a/b', '1', 1000);
+    tree = applyMessage(tree, 'x/y/z', '2', 2000);
+    tree = applyMessage(tree, 'a/b', '3', 3000);
+
+    expect(tree.subMessages).toBe(3);
+    expect(tree.subTopics).toBe(2);
+  });
+
   it('rolls sub-counters up to every ancestor', () => {
     let tree = applyMessage(emptyTree(), 'a/b/c', '1', 1000);
     tree = applyMessage(tree, 'a/b/d', '2', 2000);
@@ -52,7 +74,46 @@ describe('applyMessage', () => {
     expect(at(tree, 'a').hits).toBe(1);
     expect(at(tree, 'a').latestPayload).toBe('own');
     expect(at(tree, 'a').subTopics).toBe(2);
-    expect(nodeSummary(at(tree, 'a'))).toBe('2 topics');
+    expect(nodeSummary(at(tree, 'a'))).toBe('2 topics · 2 messages');
+  });
+
+  // Display order lives on `order`, not in the map's own iteration order, and the repeat path
+  // touches neither — so ordering has to hold through repeats, not just first sightings.
+  it('keeps siblings alphabetical through a stream of repeats', () => {
+    let tree = applyMessage(emptyTree(), 'sensors/zeta', '1', 1000);
+    tree = applyMessage(tree, 'sensors/alpha', '1', 1000);
+    tree = applyMessage(tree, 'sensors/mid', '1', 1000);
+
+    for (const name of ['mid', 'zeta', 'alpha', 'mid', 'zeta']) {
+      tree = applyMessage(tree, `sensors/${name}`, '2', 2000);
+    }
+
+    expect(at(tree, 'sensors').order).toEqual(['alpha', 'mid', 'zeta']);
+    expect(at(tree, 'sensors/mid').hits).toBe(3);
+  });
+
+  // What React actually keys on. The child map underneath is an index, not an identity, so the
+  // nodes have to be captured before the message lands rather than walked out of the old tree.
+  it('gives every node on the message path a new object, so memoised rows notice', () => {
+    const first = applyMessage(emptyTree(), 'a/b/c', '1', 1000);
+    const before = { a: at(first, 'a'), b: at(first, 'a/b'), c: at(first, 'a/b/c') };
+
+    const second = applyMessage(first, 'a/b/c', '2', 2000);
+
+    expect(second).not.toBe(first);
+    expect(at(second, 'a')).not.toBe(before.a);
+    expect(at(second, 'a/b')).not.toBe(before.b);
+    expect(at(second, 'a/b/c')).not.toBe(before.c);
+  });
+
+  // The price of updating child maps in place, stated plainly so nobody stores a root and
+  // expects it to keep saying what the tree looked like at the time.
+  it('does not leave the previous root usable as a snapshot', () => {
+    const first = applyMessage(emptyTree(), 'a/b', 'one', 1000);
+
+    applyMessage(first, 'a/b', 'two', 2000);
+
+    expect(at(first, 'a/b').latestPayload).toBe('two');
   });
 
   it('keeps siblings alphabetical whatever order they arrive in', () => {
@@ -60,7 +121,7 @@ describe('applyMessage', () => {
     tree = applyMessage(tree, 'sensors/alpha', '2', 2000);
     tree = applyMessage(tree, 'sensors/mid', '3', 3000);
 
-    expect([...at(tree, 'sensors').children.keys()]).toEqual(['alpha', 'mid', 'zeta']);
+    expect(at(tree, 'sensors').order).toEqual(['alpha', 'mid', 'zeta']);
   });
 
   it('stamps every ancestor with the time of the newest message in its subtree', () => {
@@ -81,9 +142,12 @@ describe('applyMessage', () => {
 
   it('leaves untouched branches identical, so memoised rows can skip re-rendering', () => {
     const first = applyMessage(emptyTree(), 'a/keep', '1', 1000);
+    // Held before the next message, since walking the old root afterwards would find the new node.
+    const untouched = at(first, 'a');
+
     const second = applyMessage(first, 'b/change', '2', 2000);
 
-    expect(at(second, 'a')).toBe(at(first, 'a'));
+    expect(at(second, 'a')).toBe(untouched);
   });
 });
 
@@ -96,12 +160,22 @@ describe('nodeSummary', () => {
     expect(nodeSummary(at(twice, 'a'))).toBe('');
   });
 
-  it('shows a topic count on a branch, pluralised', () => {
+  it('shows the topic and message counts on a branch, pluralised', () => {
     let tree = applyMessage(emptyTree(), 'a/b', '1', 1000);
-    expect(nodeSummary(at(tree, 'a'))).toBe('1 topic');
+    expect(nodeSummary(at(tree, 'a'))).toBe('1 topic · 1 message');
 
     tree = applyMessage(tree, 'a/c', '2', 2000);
-    expect(nodeSummary(at(tree, 'a'))).toBe('2 topics');
+    tree = applyMessage(tree, 'a/c', '3', 3000);
+    expect(nodeSummary(at(tree, 'a'))).toBe('2 topics · 3 messages');
+  });
+
+  // Six figures of traffic is normal on a public broker and unreadable without them.
+  it('groups the thousands so a big count can be read', () => {
+    const many = Array.from({ length: 1500 }, (_, i) => ({ topic: `t${i}`, payload: '1' }));
+
+    expect(nodeSummary(applyMessages(emptyTree(), many, 1000))).toBe(
+      '1,500 topics · 1,500 messages',
+    );
   });
 });
 
@@ -198,5 +272,73 @@ describe('applyMessages', () => {
 
     expect(at(tree, 'a/b').latestPayload).toBe('2');
     expect(at(tree, 'a').subTopics).toBe(2);
+  });
+});
+
+describe('pruneTopics', () => {
+  const build = (...topics: string[]) =>
+    applyMessages(emptyTree(), topics.map((topic) => ({ topic, payload: '1' })), 1000);
+
+  it('removes the topics it is told to, and the branches left empty behind them', () => {
+    const tree = pruneTopics(build('sensors/room/temp', 'devices/a/state'), (topic) =>
+      matchesFilter('sensors/#', topic),
+    );
+
+    expect(tree.children.has('sensors')).toBe(false);
+    expect(at(tree, 'devices/a/state').hits).toBe(1);
+  });
+
+  it('keeps a branch that still has a surviving child under it', () => {
+    const tree = pruneTopics(build('sensors/room/temp', 'sensors/room/humidity'), (topic) =>
+      matchesFilter('sensors/room/temp', topic),
+    );
+
+    expect(at(tree, 'sensors/room').order).toEqual(['humidity']);
+  });
+
+  it('re-counts the topics and messages above what it took out', () => {
+    let tree = build('a/x', 'a/y');
+    tree = applyMessages(tree, [{ topic: 'a/y', payload: '2' }], 2000);
+
+    tree = pruneTopics(tree, (topic) => topic === 'a/y');
+
+    expect(at(tree, 'a').subTopics).toBe(1);
+    expect(at(tree, 'a').subMessages).toBe(1);
+    expect(tree.subMessages).toBe(1);
+  });
+
+  // A branch that lost nothing must come back identical, or every memoised row re-renders.
+  it('hands back untouched branches as the very same node', () => {
+    const tree = build('a/x', 'b/y');
+    const before = at(tree, 'b');
+
+    const pruned = pruneTopics(tree, (topic) => topic === 'a/x');
+
+    expect(at(pruned, 'b')).toBe(before);
+    expect(pruned).not.toBe(tree);
+  });
+
+  it('leaves the tree alone when nothing matches', () => {
+    const tree = build('a/x');
+
+    expect(pruneTopics(tree, () => false)).toBe(tree);
+  });
+
+  // A parent that carries its own message is not a folder — it stays, minus that message.
+  it('empties a node that has children of its own but keeps the branch', () => {
+    const tree = pruneTopics(build('a', 'a/x'), (topic) => topic === 'a');
+
+    expect(at(tree, 'a').hits).toBe(0);
+    expect(at(tree, 'a').latestPayload).toBe(null);
+    expect(at(tree, 'a/x').hits).toBe(1);
+    expect(at(tree, 'a').subTopics).toBe(1);
+  });
+
+  it('survives a topic deep enough to overflow a recursive walk', () => {
+    const deep = Array.from({ length: 20000 }, (_, i) => `s${i}`).join('/');
+    const tree = pruneTopics(build(deep, 'keep/me'), (topic) => topic.startsWith('s0'));
+
+    expect(tree.children.has('s0')).toBe(false);
+    expect(at(tree, 'keep/me').hits).toBe(1);
   });
 });

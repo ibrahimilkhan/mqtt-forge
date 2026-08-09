@@ -83,7 +83,8 @@ export function App({ hub }: { hub: Hub }) {
           panel={Panel ? <Panel onClose={close} /> : undefined}
           tree={
             <section className={styles.treePane}>
-              <TopicTree />
+              {/* The live link, so every topic hangs off the broker it actually came from. */}
+              <TopicTree broker={where} />
             </section>
           }
           log={

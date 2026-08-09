@@ -17,11 +17,30 @@ describe('selectionStore', () => {
     expect(useSelectionStore.getState().selected).toEqual(chip);
   });
 
-  it('clears the selection when the same filter is picked again', () => {
+  // Picking is not a switch. Clicking a topic you are already reading means nothing, and it
+  // certainly does not mean put the log away — the × on the wire log is what does that.
+  it('stays where it is when the same filter is picked again', () => {
     useSelectionStore.getState().select(chip);
     useSelectionStore.getState().select(chip);
 
-    expect(useSelectionStore.getState().selected).toBeNull();
+    expect(useSelectionStore.getState().selected).toEqual(chip);
+  });
+
+  it('does not churn the selection when the same filter is picked again', () => {
+    useSelectionStore.getState().select(chip);
+    const first = useSelectionStore.getState().selected;
+    useSelectionStore.getState().select({ ...chip });
+
+    expect(useSelectionStore.getState().selected).toBe(first);
+  });
+
+  // Same filter, different label: the tree's 'sensors' node and the 'sensors/#' chip both point
+  // the log at the same traffic, and the heading has to name whichever was clicked.
+  it('takes a new label for a filter it is already on', () => {
+    useSelectionStore.getState().select({ label: 'sensors/#', filter: 'sensors/#' });
+    useSelectionStore.getState().select({ label: 'sensors', filter: 'sensors/#' });
+
+    expect(useSelectionStore.getState().selected).toEqual({ label: 'sensors', filter: 'sensors/#' });
   });
 
   it('replaces the selection when a different filter is picked', () => {

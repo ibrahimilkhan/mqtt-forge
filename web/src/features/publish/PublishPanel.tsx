@@ -1,13 +1,13 @@
 import { useMutation } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { publish } from '../../api/publish';
 import { Field } from '../../components/Field';
 import { PanelShell } from '../../components/PanelShell';
 import { QosSelect } from '../../components/QosSelect';
 import styles from '../../styles/panel.module.css';
-import { useLogStore } from '../../stores/logStore';
+import { useComposeStore } from '../../stores/composeStore';
+import { logFault, useLogStore } from '../../stores/logStore';
 import { useConnectionState } from '../../api/useConnectionState';
-import { describeError } from '../../lib/problemDetails';
 import { useGuardedMutate } from '../../lib/useGuardedMutate';
 
 export function PublishPanel() {
@@ -17,15 +17,31 @@ export function PublishPanel() {
   const [retain, setRetain] = useState(false);
   const { isOnline } = useConnectionState();
 
+  // Clicking a topic in the tree, or a message in the wire log, loads it here to be sent back.
+  const draft = useComposeStore((state) => state.draft);
+
+  useEffect(() => {
+    if (!draft) return;
+
+    setTopic(draft.topic);
+    setQos(draft.qos);
+    setRetain(draft.retain);
+    // A branch node carries no payload of its own; leave whatever is in the box alone.
+    if (draft.payload !== undefined) setPayload(draft.payload);
+  }, [draft]);
+
   const publishMutation = useMutation({
     mutationFn: () => publish({ topic, payload, qos, retain }),
     onSuccess: () => {
       const stamps = [`QoS ${qos}`];
       if (retain) stamps.push('RETAINED');
-      useLogStore.getState().push({ kind: 'sent', verb: 'Published', topic, body: payload, stamps });
+      // qos and retain ride along with the stamps: the row loads itself back into this form,
+      // and it has to go out the second time exactly as it went out the first.
+      useLogStore
+        .getState()
+        .push({ kind: 'sent', verb: 'Published', topic, body: payload, stamps, qos, retain });
     },
-    onError: (error) =>
-      useLogStore.getState().push({ kind: 'fault', verb: 'Publish failed', topic, body: describeError(error) }),
+    onError: (error) => logFault('Publish failed', error, topic),
   });
   const guardedPublish = useGuardedMutate(publishMutation);
 

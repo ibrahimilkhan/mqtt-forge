@@ -23,6 +23,18 @@ public sealed class SubscriptionController : ControllerBase
         return Accepted();
     }
 
+    // One packet for the lot, so subscribing in bulk costs one broker round trip, not N.
+    [HttpPost("batch")]
+    public async Task<IActionResult> SubscribeBatch(SubscribeBatchDto dto, CancellationToken ct)
+    {
+        var requests = dto.Filters
+            .Select(f => new SubscriptionRequest(f.TopicFilter, f.Qos))
+            .ToArray();
+
+        await _service.SubscribeAsync(requests, ct);
+        return Accepted();
+    }
+
     // Query value, not a path segment: '#' and '/' aren't path-safe
     [HttpDelete]
     public async Task<IActionResult> Unsubscribe([FromQuery] string topicFilter, CancellationToken ct)

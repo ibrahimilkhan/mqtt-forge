@@ -1,16 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { queryKeys } from '../../api/queryKeys';
-import { getSubscriptions, subscribe, unsubscribe } from '../../api/subscriptions';
+import { getSubscriptions, subscribe, subscribeBatch, unsubscribe } from '../../api/subscriptions';
 import { Field } from '../../components/Field';
 import { PanelShell } from '../../components/PanelShell';
 import { QosSelect } from '../../components/QosSelect';
 import styles from '../../styles/panel.module.css';
-import { useLogStore } from '../../stores/logStore';
+import { logFault, useLogStore } from '../../stores/logStore';
 import { useConnectionState } from '../../api/useConnectionState';
-import { describeError } from '../../lib/problemDetails';
+import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import { useGuardedKeyedMutate, useGuardedMutate } from '../../lib/useGuardedMutate';
 import { FilterChips } from './FilterChips';
+import { chunkFilters, parseFilters } from './parseFilters';
 
 export function SubscribePanel({ onClose }: { onClose: () => void }) {
   const [topicFilter, setTopicFilter] = useState('sensors/#');
@@ -22,30 +23,51 @@ export function SubscribePanel({ onClose }: { onClose: () => void }) {
   const { data: filters } = useQuery({ queryKey: queryKeys.subscriptions, queryFn: getSubscriptions });
   const { isOnline } = useConnectionState();
 
+  const wanted = parseFilters(topicFilter);
+
+  // Subscribing again to a filter that is already up is a no-op at the broker, but it still
+  // costs a round trip and logs a subscription that never changed — so the live ones are
+  // dropped here, and a box holding nothing else leaves the button dead.
+  const active = new Set(filters ?? []);
+  const fresh = wanted.filter((filter) => !active.has(filter));
+  const alreadyUp = wanted.length - fresh.length;
+
   const subscribeMutation = useMutation({
-    mutationFn: () => subscribe({ topicFilter, qos }),
+    mutationFn: async () => {
+      const filters = fresh.map((f) => ({ topicFilter: f, qos }));
+      if (filters.length === 0) return;
+
+      // A lone filter keeps the plain endpoint, so its errors stay about that one filter.
+      if (filters.length === 1) return subscribe(filters[0]);
+
+      // Serial on purpose: the packets share one MQTT connection, and a broker that refuses
+      // one batch should not have several more already in flight behind it.
+      for (const chunk of chunkFilters(filters)) await subscribeBatch(chunk);
+    },
     onSuccess: () => {
-      useLogStore
-        .getState()
-        .push({ kind: 'ok', verb: 'Subscribed', topic: topicFilter, stamps: [`QoS ${qos}`] });
+      useLogStore.getState().push({
+        kind: 'ok',
+        verb: 'Subscribed',
+        topic: fresh.length === 1 ? fresh[0] : `${fresh.length} filters`,
+        stamps: [`QoS ${qos}`],
+      });
       void refreshFilters();
     },
     onError: (error) =>
-      useLogStore
-        .getState()
-        .push({ kind: 'fault', verb: 'Subscribe failed', topic: topicFilter, body: describeError(error) }),
+      logFault('Subscribe failed', error, fresh.length === 1 ? fresh[0] : `${fresh.length} filters`),
   });
 
   const unsubscribeMutation = useMutation({
     mutationFn: unsubscribe,
     onSuccess: (_result, filter) => {
       useLogStore.getState().push({ kind: 'ok', verb: 'Unsubscribed', topic: filter });
+      // Read off the list this panel is showing, minus the chip that just went: the refetch
+      // below has not landed yet, and the tree should not wait a round trip to stop showing
+      // topics nothing is listening to any more.
+      useTopicTreeStore.getState().dropFilter(filter, (filters ?? []).filter((f) => f !== filter));
       void refreshFilters();
     },
-    onError: (error, filter) =>
-      useLogStore
-        .getState()
-        .push({ kind: 'fault', verb: 'Unsubscribe failed', topic: filter, body: describeError(error) }),
+    onError: (error, filter) => logFault('Unsubscribe failed', error, filter),
   });
 
   const guardedSubscribe = useGuardedMutate(subscribeMutation);
@@ -55,9 +77,13 @@ export function SubscribePanel({ onClose }: { onClose: () => void }) {
     <PanelShell title="Subscribe" onClose={onClose}>
       <div className={styles.row}>
         <Field label="Topic filter" htmlFor="filter">
-          <input
+          {/* Takes a list as readily as one: newline or comma separated, sent as batched
+              SUBSCRIBE packets so hundreds cost a couple of round trips rather than hundreds. */}
+          <textarea
             id="filter"
-            type="text"
+            className={styles.filterInput}
+            rows={2}
+            spellCheck={false}
             value={topicFilter}
             onChange={(e) => setTopicFilter(e.target.value)}
           />
@@ -72,11 +98,23 @@ export function SubscribePanel({ onClose }: { onClose: () => void }) {
         <button
           type="button"
           onClick={() => guardedSubscribe()}
-          disabled={!isOnline || subscribeMutation.isPending}
+          disabled={!isOnline || subscribeMutation.isPending || fresh.length === 0}
         >
-          Subscribe
+          {fresh.length > 1 ? `Subscribe to ${fresh.length}` : 'Subscribe'}
         </button>
       </div>
+
+      {/* Says why the button went dead, or why fewer go out than were typed — otherwise the
+          count silently disagreeing with the box reads as a bug. */}
+      {alreadyUp > 0 && (
+        <p className={styles.note}>
+          {fresh.length === 0
+            ? alreadyUp === 1
+              ? 'Already subscribed to that filter.'
+              : 'Already subscribed to all of these.'
+            : `${alreadyUp} already subscribed — only the rest will be sent.`}
+        </p>
+      )}
 
       <FilterChips
         filters={filters ?? []}

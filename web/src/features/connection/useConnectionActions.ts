@@ -3,7 +3,7 @@ import { cancelConnect, connect, disconnect } from '../../api/connection';
 import { queryKeys } from '../../api/queryKeys';
 import { subscribe } from '../../api/subscriptions';
 import { describeError } from '../../lib/problemDetails';
-import { useLogStore } from '../../stores/logStore';
+import { logFault, useLogStore } from '../../stores/logStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import type { ConnectRequest } from '../../types/api';
 import { wasAborted } from './connectFailure';
@@ -62,7 +62,7 @@ export function useConnectionActions() {
     // Refetch anyway: with the hub down, nothing else would clear Connecting off the screen.
     onSettled: () => void queryClient.invalidateQueries({ queryKey: queryKeys.connection }),
     onError: (error) =>
-      useLogStore.getState().push({ kind: 'fault', verb: 'Abort failed', body: describeError(error) }),
+      logFault('Abort failed', error),
   });
 
   const disconnectMutation = useMutation({
@@ -73,7 +73,7 @@ export function useConnectionActions() {
       useLogStore.getState().push({ kind: 'ok', verb: 'Disconnected' });
     },
     onError: (error) =>
-      useLogStore.getState().push({ kind: 'fault', verb: 'Disconnect failed', body: describeError(error) }),
+      logFault('Disconnect failed', error),
   });
 
   return { connectMutation, disconnectMutation, abortMutation };
@@ -85,9 +85,7 @@ async function subscribeToEverything() {
     await subscribe({ topicFilter: '#', qos: 0 });
     useLogStore.getState().push({ kind: 'ok', verb: 'Subscribed', topic: '#', stamps: ['QoS 0'] });
   } catch (error) {
-    useLogStore
-      .getState()
-      .push({ kind: 'fault', verb: 'Subscribe failed', topic: '#', body: describeError(error) });
+    logFault('Subscribe failed', error, '#');
   }
 }
 

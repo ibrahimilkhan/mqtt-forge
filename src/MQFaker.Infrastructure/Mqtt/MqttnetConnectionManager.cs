@@ -12,6 +12,13 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
     // reports back instead of hanging on the OS TCP timeout (~75s on macOS, ~130s on Linux).
     private static readonly TimeSpan DefaultConnectTimeout = TimeSpan.FromSeconds(20);
 
+    // MQTTnet defaults to pinging every 15 seconds and calls the link dead when a PINGRESP is
+    // late. On a loaded public broker — with a '#' subscription filling the read loop — that is
+    // no margin at all, and a working connection drops reporting "didn't respond in time".
+    // A minute still notices a black-holed link quickly enough for a test console, and a socket
+    // that actually breaks is reported immediately either way; this only covers silent stalls.
+    public static readonly TimeSpan KeepAlive = TimeSpan.FromSeconds(60);
+
     private readonly IMqttClient _client;
     private readonly SemaphoreSlim _gate;
     private readonly IConnectionStateNotifier _notifier;
@@ -230,7 +237,8 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
     {
         var builder = new MqttClientOptionsBuilder()
             .WithTcpServer(settings.Host, settings.Port)
-            .WithClientId(settings.ClientId);
+            .WithClientId(settings.ClientId)
+            .WithKeepAlivePeriod(KeepAlive);
 
         if (HasCredentials(settings))
             builder = builder.WithCredentials(settings.Username, settings.Password);

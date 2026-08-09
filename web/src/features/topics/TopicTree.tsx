@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer } from 'react';
 import { treeFilter } from '../../lib/topicMatch';
-import { flattenTree, MAX_TREE_ROWS, type TopicRow } from '../../lib/topicTree';
+import { flattenTree, MAX_TREE_ROWS, type TopicNode, type TopicRow } from '../../lib/topicTree';
+import { useComposeStore } from '../../stores/composeStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { isPathOpen, useTopicTreeStore } from '../../stores/topicTreeStore';
 import styles from './TopicTree.module.css';
@@ -10,21 +11,34 @@ import { TreeNode } from './TreeNode';
 // stops being active, so it holds one colour instead of restarting a fade per message.
 export const ACTIVE_WINDOW_MS = 1200;
 
-export function TopicTree() {
+// Reserved: a topic path can never contain a NUL, so the broker row cannot collide with one.
+const BROKER_PATH = '\u0000broker';
+
+// Everything the broker has sent, which is what picking its row focuses the wire log on.
+const EVERYTHING = '#';
+
+export function TopicTree({ broker }: { broker?: string }) {
   const root = useTopicTreeStore((state) => state.root);
   const openPaths = useTopicTreeStore((state) => state.openPaths);
   const defaultOpen = useTopicTreeStore((state) => state.defaultOpen);
   const toggle = useTopicTreeStore((state) => state.toggle);
+  const toggleBroker = useTopicTreeStore((state) => state.toggleBroker);
   const setAllOpen = useTopicTreeStore((state) => state.setAllOpen);
 
   const selectedFilter = useSelectionStore((state) => state.selected?.filter ?? null);
   const select = useSelectionStore((state) => state.select);
+  const load = useComposeStore((state) => state.load);
+
+  const brokerOpen = useTopicTreeStore((state) => state.brokerOpen);
 
   // The store is read once here rather than once per row, so a message wakes this component
   // alone and only the rows whose node object actually changed re-render.
   const { rows, hidden } = useMemo(
-    () => flattenTree(root, (path) => isPathOpen({ openPaths, defaultOpen }, path), MAX_TREE_ROWS),
-    [root, openPaths, defaultOpen],
+    () =>
+      brokerOpen
+        ? flattenTree(root, (path) => isPathOpen({ openPaths, defaultOpen }, path), MAX_TREE_ROWS)
+        : { rows: [], hidden: 0 },
+    [root, openPaths, defaultOpen, brokerOpen],
   );
 
   // treeFilter only ever appends '/#', so peeling it off compares paths without allocating per row.
@@ -47,40 +61,68 @@ export function TopicTree() {
 
   const activeSince = Date.now() - ACTIVE_WINDOW_MS;
 
+  // One click does two things: focuses the wire log on the subtree, and loads the topic into
+  // the publish form so it can be sent straight back with the settings it arrived under.
   const onSelect = useCallback(
-    (path: string) => select({ label: path, filter: treeFilter(path) }),
-    [select],
+    (path: string, node: TopicNode) => {
+      select({ label: path, filter: treeFilter(path) });
+      load({
+        topic: path,
+        payload: node.latestPayload ?? undefined,
+        qos: node.latestQos,
+        retain: node.latestRetain,
+      });
+    },
+    [select, load],
+  );
+
+  // The broker is not a topic: it focuses the log on everything and has nothing to publish to.
+  const brokerLabel = broker ?? 'Not connected';
+  const pickBroker = useCallback(
+    () => select({ label: brokerLabel, filter: EVERYTHING }),
+    [select, brokerLabel],
   );
 
   return (
     <>
       <div className={styles.paneHead}>
         <h2 className={styles.eyebrow}>Topic tree</h2>
+        {/* Spelled out: as glyphs these were on screen the whole time and still went unfound. */}
         <div className={styles.paneActions}>
-          <button type="button" onClick={() => setAllOpen(true)} aria-label="Expand all" title="Expand all">
-            ⤢
+          <button type="button" onClick={() => setAllOpen(true)} title="Expand every branch">
+            Expand all
           </button>
-          <button
-            type="button"
-            onClick={() => setAllOpen(false)}
-            aria-label="Collapse all"
-            title="Collapse all"
-          >
-            ⤡
+          <button type="button" onClick={() => setAllOpen(false)} title="Collapse every branch">
+            Collapse all
           </button>
         </div>
       </div>
 
-      {rows.length === 0 ? (
+      {root.subTopics === 0 ? (
         <p className="empty">No topics yet. Connect to a broker and its tree builds here.</p>
       ) : (
         <div className={styles.tree}>
+          {/* One root for the whole broker, so the totals are readable without expanding
+              anything — and so collapsing it puts the entire tree away in one click. */}
+          <TreeNode
+            node={root}
+            path={BROKER_PATH}
+            label={brokerLabel}
+            depth={0}
+            isBranch
+            open={brokerOpen}
+            active={false}
+            selected={selectedFilter === EVERYTHING}
+            onToggle={toggleBroker}
+            onSelect={pickBroker}
+          />
+
           {rows.map((row) => (
             <TreeNode
               key={row.path}
               node={row.node}
               path={row.path}
-              depth={row.depth}
+              depth={row.depth + 1}
               isBranch={row.isBranch}
               open={row.open}
               active={lastHitOf(row) > activeSince}

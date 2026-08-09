@@ -30,6 +30,12 @@
   min-width: 0;
 }
 
+/* Before the split is measured: the publish form takes exactly its own height and the log gets
+   the rest, so nothing is clipped on the first paint whatever the window height happens to be. */
+.right[data-fit='content'] {
+  grid-template-rows: minmax(0, 1fr) auto min-content;
+}
+
 /* Panes bring their own background and padding; the cell only has to hold them. */
 .pane {
   display: grid;

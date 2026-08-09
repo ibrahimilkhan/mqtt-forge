@@ -1,7 +1,8 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { useLogStore } from '../../stores/logStore';
+import { useComposeStore } from '../../stores/composeStore';
+import { MAX_LOG_ENTRIES, useLogStore } from '../../stores/logStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { WireLog } from './WireLog';
 
@@ -11,9 +12,19 @@ const chip = { label: 'sensors/#', filter: 'sensors/#' };
 const received = (...topics: string[]) =>
   topics.forEach((topic) => useLogStore.getState().push({ kind: 'recv', verb: 'Received', topic }));
 
+// Goes in through the hub's own door, so the log caps it the way it caps real traffic.
+const msg = (topic: string) => ({
+  topic,
+  payload: '1',
+  qos: 0,
+  retain: false,
+  receivedAt: '2026-07-26T10:00:00Z',
+});
+
 beforeEach(() => {
   useLogStore.getState().clear();
   useSelectionStore.getState().clear();
+  useComposeStore.setState({ draft: null });
 });
 
 describe('WireLog', () => {
@@ -26,6 +37,20 @@ describe('WireLog', () => {
       screen.getByText('Pick a topic — click a subscription chip or a tree node to see its traffic here.'),
     ).toBeInTheDocument();
     expect(screen.queryByTestId('entry')).not.toBeInTheDocument();
+  });
+
+  // The reported symptom: the tree shows a topic carrying traffic, the pane calls it silent.
+  it('still has the traffic of a quiet topic after a chatty one has flooded the log', () => {
+    useLogStore.getState().appendReceived([msg('sensors/attic/temp')]);
+    useLogStore
+      .getState()
+      .appendReceived(Array.from({ length: MAX_LOG_ENTRIES * 2 }, () => msg('sensors/hall/temp')));
+    useSelectionStore.getState().select({ label: 'sensors/attic', filter: 'sensors/attic/#' });
+
+    render(<WireLog />);
+
+    expect(screen.queryByText(/No traffic on/)).not.toBeInTheDocument();
+    expect(screen.getByTestId('topic')).toHaveTextContent('sensors/attic/temp');
   });
 
   it('says the selected topic is quiet when nothing has matched it yet', () => {
@@ -165,5 +190,57 @@ describe('WireLog', () => {
     render(<WireLog />);
 
     expect(screen.getByTestId('entry')).toHaveAttribute('data-kind', 'fault');
+  });
+
+  it('sends a logged message back to publish, settings and all', async () => {
+    useLogStore.getState().push({
+      kind: 'recv',
+      verb: 'Received',
+      topic: 'sensors/temp',
+      body: '21.5',
+      qos: 2,
+      retain: true,
+    });
+    useSelectionStore.getState().select(chip);
+    render(<WireLog />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Load sensors/temp into publish' }));
+
+    expect(useComposeStore.getState().draft).toMatchObject({
+      topic: 'sensors/temp',
+      payload: '21.5',
+      qos: 2,
+      retain: true,
+    });
+  });
+
+  // A command entry's topic is the filter it was aimed at, and its body is an outcome, not a
+  // payload. Neither can be published, so the row is not a target.
+  it('leaves the command entries out of the load-into-publish affordance', () => {
+    useLogStore.getState().push({ kind: 'ok', verb: 'Subscribed', topic: 'sensors/#' });
+    useLogStore
+      .getState()
+      .push({ kind: 'fault', verb: 'Subscribe failed', topic: 'sensors/#', body: 'Not connected.' });
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(screen.queryByRole('button', { name: /into publish/ })).not.toBeInTheDocument();
+  });
+
+  it('holds off loading when the click is the end of a text selection', () => {
+    useLogStore.getState().push({ kind: 'recv', verb: 'Received', topic: 'sensors/temp', body: '21.5' });
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    const body = screen.getByText('21.5');
+    const range = document.createRange();
+    range.selectNodeContents(body);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    fireEvent.click(body);
+
+    expect(useComposeStore.getState().draft).toBeNull();
   });
 });

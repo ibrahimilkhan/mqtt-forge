@@ -14,7 +14,10 @@ public static class DependencyInjection
         services.AddSingleton<MqttnetClientProvider>();
         services.AddSingleton<IMqttConnectionManager, MqttnetConnectionManager>();
         services.AddSingleton<IMqttPublisher, MqttnetPublisher>();
-        services.AddSingleton<IMessageNotifier, SignalRMessageNotifier>();
+        // One instance wearing both hats: the notifier that queues, and the pump that drains it.
+        services.AddSingleton<SignalRMessageNotifier>();
+        services.AddSingleton<IMessageNotifier>(sp => sp.GetRequiredService<SignalRMessageNotifier>());
+        services.AddHostedService(sp => sp.GetRequiredService<SignalRMessageNotifier>());
         services.AddSingleton<IConnectionStateNotifier, SignalRConnectionStateNotifier>();
         services.AddSingleton<IMqttSubscriber, MqttnetSubscriber>();
 
