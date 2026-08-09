@@ -1,4 +1,5 @@
-import { useRef, type KeyboardEvent, type PointerEvent } from 'react';
+import { useEffect, useMemo, useRef, type KeyboardEvent, type PointerEvent } from 'react';
+import { createFrameLatest } from '../../lib/frameLatest';
 import styles from './ResizeHandle.module.css';
 
 // Neither side is useful once it is a sliver, so the drag stops short of both ends.
@@ -24,6 +25,15 @@ export function ResizeHandle({ axis, label, value, min, max, onChange }: Props) 
 
   const clamp = (share: number) => Math.min(max, Math.max(min, share));
 
+  // A pointer reports far more often than the screen redraws, and every report relaid out a pane
+  // that can hold a thousand rows — which is what made the drag stutter on a busy broker. Only
+  // the newest position of each frame is worth anything, so that is the only one applied.
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  const frame = useMemo(() => createFrameLatest<number>((share) => onChangeRef.current(share)), []);
+  useEffect(() => frame.cancel, [frame]);
+
   const dragTo = (event: PointerEvent<HTMLDivElement>) => {
     const box = ref.current?.parentElement?.getBoundingClientRect();
     // An unmeasured layout reports zero size; there is nothing to divide yet.
@@ -31,7 +41,7 @@ export function ResizeHandle({ axis, label, value, min, max, onChange }: Props) 
     const span = axis === 'x' ? box.width : box.height;
     if (span <= 0) return;
     const along = axis === 'x' ? event.clientX - box.left : event.clientY - box.top;
-    onChange(clamp(along / span));
+    frame.offer(clamp(along / span));
   };
 
   const grab = (event: PointerEvent<HTMLDivElement>) => {

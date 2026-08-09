@@ -12,12 +12,14 @@ COPY Directory.Build.props ./
 COPY src/ src/
 COPY --from=web /src/MQFaker.Api/wwwroot src/MQFaker.Api/wwwroot
 RUN dotnet publish src/MQFaker.Api -c Release -p:SkipFrontend=true -o /app
+# The chiseled runtime has no shell, so /data is staged here and copied in ready-made.
+RUN mkdir -p /data
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled
 WORKDIR /app
 COPY --from=build /app ./
 # Owned by APP_UID so a mounted volume stays writable under the non-root user.
-RUN mkdir -p /data && chown $APP_UID /data
+COPY --from=build --chown=$APP_UID:$APP_UID /data /data
 USER $APP_UID
 EXPOSE 5169
 ENTRYPOINT ["./MQFaker.Api"]

@@ -31,7 +31,7 @@ public class MqttnetSubscribeTests : IClassFixture<MosquittoFixture>
         var subscriber = new MqttnetSubscriber(provider, notifier);
 
         await manager.ConnectAsync(Settings("sub-test"), CancellationToken.None);
-        await subscriber.SubscribeAsync(new SubscriptionRequest("sensors/#", 0), CancellationToken.None);
+        await subscriber.SubscribeAsync([new SubscriptionRequest("sensors/#", 0)], CancellationToken.None);
 
         Assert.Contains("sensors/#", subscriber.ActiveFilters);
 
@@ -54,7 +54,7 @@ public class MqttnetSubscribeTests : IClassFixture<MosquittoFixture>
         var subscriber = new MqttnetSubscriber(provider, Substitute.For<IMessageNotifier>());
 
         await manager.ConnectAsync(Settings("unsub-test"), CancellationToken.None);
-        await subscriber.SubscribeAsync(new SubscriptionRequest("a/#", 0), CancellationToken.None);
+        await subscriber.SubscribeAsync([new SubscriptionRequest("a/#", 0)], CancellationToken.None);
 
         await subscriber.UnsubscribeAsync("a/#", CancellationToken.None);
 
@@ -68,7 +68,7 @@ public class MqttnetSubscribeTests : IClassFixture<MosquittoFixture>
         var subscriber = new MqttnetSubscriber(provider, Substitute.For<IMessageNotifier>());
 
         await Assert.ThrowsAsync<NotConnectedException>(
-            () => subscriber.SubscribeAsync(new SubscriptionRequest("a/#", 0), CancellationToken.None));
+            () => subscriber.SubscribeAsync([new SubscriptionRequest("a/#", 0)], CancellationToken.None));
     }
 
     [Fact]
@@ -79,7 +79,7 @@ public class MqttnetSubscribeTests : IClassFixture<MosquittoFixture>
         var subscriber = new MqttnetSubscriber(provider, Substitute.For<IMessageNotifier>());
 
         await manager.ConnectAsync(Settings("clear-test"), CancellationToken.None);
-        await subscriber.SubscribeAsync(new SubscriptionRequest("a/#", 0), CancellationToken.None);
+        await subscriber.SubscribeAsync([new SubscriptionRequest("a/#", 0)], CancellationToken.None);
         Assert.NotEmpty(subscriber.ActiveFilters);
 
         await manager.DisconnectAsync(CancellationToken.None);

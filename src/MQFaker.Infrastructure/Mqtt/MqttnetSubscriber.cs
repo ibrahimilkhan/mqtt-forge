@@ -25,25 +25,34 @@ public sealed class MqttnetSubscriber : IMqttSubscriber
 
     public IReadOnlyCollection<string> ActiveFilters => _filters.Keys.ToArray();
 
-    public async Task SubscribeAsync(SubscriptionRequest request, CancellationToken ct)
+    // One SUBSCRIBE carries the lot. The round trip costs the same whether it holds one filter
+    // or a hundred, and it is the round trip that makes subscribing in bulk slow.
+    public async Task SubscribeAsync(IReadOnlyList<SubscriptionRequest> requests, CancellationToken ct)
     {
         EnsureConnected();
 
+        if (requests.Count == 0) return;
+
+        var options = new MqttClientSubscribeOptionsBuilder();
+        foreach (var request in requests)
+        {
+            options.WithTopicFilter(new MqttTopicFilterBuilder()
+                .WithTopic(request.TopicFilter)
+                .WithQualityOfServiceLevel((MqttQualityOfServiceLevel)request.Qos)
+                .Build());
+        }
+
         try
         {
-            await _client.SubscribeAsync(
-                new MqttTopicFilterBuilder()
-                    .WithTopic(request.TopicFilter)
-                    .WithQualityOfServiceLevel((MqttQualityOfServiceLevel)request.Qos)
-                    .Build(),
-                ct);
+            await _client.SubscribeAsync(options.Build(), ct);
         }
         catch (MqttProtocolViolationException ex)
         {
-            throw new MessageRejectedException($"Could not subscribe to '{request.TopicFilter}': {ex.Message}", ex);
+            var named = string.Join("', '", requests.Select(r => r.TopicFilter));
+            throw new MessageRejectedException($"Could not subscribe to '{named}': {ex.Message}", ex);
         }
 
-        _filters[request.TopicFilter] = 0;
+        foreach (var request in requests) _filters[request.TopicFilter] = 0;
     }
 
     public async Task UnsubscribeAsync(string topicFilter, CancellationToken ct)

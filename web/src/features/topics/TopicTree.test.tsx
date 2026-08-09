@@ -1,7 +1,8 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MAX_TREE_ROWS } from '../../lib/topicTree';
+import { useComposeStore } from '../../stores/composeStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import type { MqttMessage } from '../../types/api';
@@ -19,11 +20,76 @@ beforeEach(() => {
   useTopicTreeStore.setState({ defaultOpen: false });
   useTopicTreeStore.getState().reset();
   useSelectionStore.getState().clear();
+  useComposeStore.setState({ draft: null });
+});
+
+describe('rooted at the broker', () => {
+  const brokerRow = () => screen.getByRole('button', { name: /^test\.mosquitto\.org/ });
+
+  it('puts every topic under one row named after the broker', () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp'), message('lights/hall')]);
+    render(<TopicTree broker="test.mosquitto.org:1883" />);
+
+    // The broker is the only row at the top; the topics sit one level in.
+    const rows = screen.getAllByTestId('tree-row');
+    expect(rows[0]).toHaveAttribute('data-depth', '0');
+    expect(rows[0]).toHaveTextContent('test.mosquitto.org:1883');
+    expect(rows.slice(1).every((row) => row.getAttribute('data-depth') !== '0')).toBe(true);
+  });
+
+  it('reports how many topics and messages sit beneath it', () => {
+    useTopicTreeStore
+      .getState()
+      .apply([message('a/b'), message('a/b'), message('a/c'), message('x/y')]);
+    render(<TopicTree broker="test.mosquitto.org:1883" />);
+
+    expect(screen.getByText('3 topics · 4 messages')).toBeInTheDocument();
+  });
+
+  it('folds the whole tree away when the broker row is collapsed', async () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp')]);
+    render(<TopicTree broker="test.mosquitto.org:1883" />);
+    expect(screen.getByText('sensors')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /^Collapse test\.mosquitto\.org/ }));
+
+    expect(screen.queryByText('sensors')).not.toBeInTheDocument();
+    expect(brokerRow()).toBeInTheDocument();
+  });
+
+  it('points the wire log at everything when the broker row is picked', async () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp')]);
+    render(<TopicTree broker="test.mosquitto.org:1883" />);
+
+    await userEvent.click(brokerRow());
+
+    expect(useSelectionStore.getState().selected).toEqual({
+      label: 'test.mosquitto.org:1883',
+      filter: '#',
+    });
+  });
+
+  // Nothing to publish to: the broker is not a topic.
+  it('leaves the publish form alone when the broker row is picked', async () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp')]);
+    render(<TopicTree broker="test.mosquitto.org:1883" />);
+
+    await userEvent.click(brokerRow());
+
+    expect(useComposeStore.getState().draft).toBeNull();
+  });
+
+  it('says so plainly when no broker is connected', () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp')]);
+    render(<TopicTree />);
+
+    expect(screen.getByText('Not connected')).toBeInTheDocument();
+  });
 });
 
 describe('TopicTree', () => {
   it('explains itself while empty', () => {
-    render(<TopicTree />);
+    render(<TopicTree broker="broker:1883" />);
 
     expect(
       screen.getByText('No topics yet. Connect to a broker and its tree builds here.'),
@@ -34,7 +100,7 @@ describe('TopicTree', () => {
 
   it('keeps a branch closed until it is opened', async () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
-    render(<TopicTree />);
+    render(<TopicTree broker="broker:1883" />);
 
     expect(branchOf('sensors')).toHaveAttribute('data-open', 'false');
     await userEvent.click(screen.getByRole('button', { name: 'Expand sensors' }));
@@ -46,14 +112,14 @@ describe('TopicTree', () => {
   // The whole point of the flattening: a broker with 20k topics must not put 20k rows in the DOM.
   it('leaves the rows beneath a closed branch out of the document', () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
-    render(<TopicTree />);
+    render(<TopicTree broker="broker:1883" />);
 
     expect(screen.queryByText('temp')).not.toBeInTheDocument();
   });
 
   it('drops the rows again when the branch is collapsed', async () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
-    render(<TopicTree />);
+    render(<TopicTree broker="broker:1883" />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Expand sensors' }));
     await userEvent.click(screen.getByRole('button', { name: 'Collapse sensors' }));
@@ -64,16 +130,18 @@ describe('TopicTree', () => {
   it('stops drawing past its row ceiling and says how many it held back', () => {
     const topics = Array.from({ length: MAX_TREE_ROWS + 3 }, (_, i) => message(`t${i}`));
     useTopicTreeStore.getState().apply(topics);
-    render(<TopicTree />);
+    render(<TopicTree broker="broker:1883" />);
 
     expect(screen.getByText('3 more topics not shown')).toBeInTheDocument();
   });
 
   it('summarises a branch and shows the payload on a leaf', async () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '21.5'), message('sensors/humidity', '54')]);
-    render(<TopicTree />);
+    render(<TopicTree broker="broker:1883" />);
 
-    expect(screen.getByText('2 topics')).toBeInTheDocument();
+    // Scoped to the branch: the broker row above it reports the same totals for the whole tree.
+    const sensorsRow = screen.getByText('sensors').closest('[data-testid="tree-row"]')!;
+    expect(within(sensorsRow as HTMLElement).getByText('2 topics · 2 messages')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Expand sensors' }));
     expect(screen.getByText('21.5')).toBeInTheDocument();
@@ -81,7 +149,7 @@ describe('TopicTree', () => {
 
   it('opens every branch at once, including ones that arrive later', async () => {
     useTopicTreeStore.getState().apply([message('a/x')]);
-    render(<TopicTree />);
+    render(<TopicTree broker="broker:1883" />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Expand all' }));
     useTopicTreeStore.getState().apply([message('b/y')]);
@@ -95,14 +163,14 @@ describe('TopicTree', () => {
 
   it('tints a closed branch when a message lands on something beneath it', () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '1')]);
-    render(<TopicTree />);
+    render(<TopicTree broker="broker:1883" />);
 
     expect(rowOf('sensors')).toHaveAttribute('data-active', 'true');
   });
 
   it('leaves an open branch untinted when the message was for a descendant', async () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '1')]);
-    render(<TopicTree />);
+    render(<TopicTree broker="broker:1883" />);
     await userEvent.click(screen.getByRole('button', { name: 'Expand sensors' }));
 
     expect(rowOf('temp')).toHaveAttribute('data-active', 'true');
@@ -111,7 +179,7 @@ describe('TopicTree', () => {
 
   it('tints an open branch when the message was addressed to it', async () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '1'), message('sensors', 'own')]);
-    render(<TopicTree />);
+    render(<TopicTree broker="broker:1883" />);
     await userEvent.click(screen.getByRole('button', { name: 'Expand sensors' }));
 
     expect(rowOf('sensors')).toHaveAttribute('data-active', 'true');
@@ -121,7 +189,7 @@ describe('TopicTree', () => {
   // restarting a fade per message, which was what made a busy broker strobe.
   it('holds the tint through a second message rather than restarting anything', () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '1')]);
-    render(<TopicTree />);
+    render(<TopicTree broker="broker:1883" />);
     const row = rowOf('sensors');
 
     useTopicTreeStore.getState().apply([message('sensors/temp', '2')]);
@@ -134,7 +202,7 @@ describe('TopicTree', () => {
     vi.useFakeTimers();
     try {
       useTopicTreeStore.getState().apply([message('sensors/temp', '1')]);
-      render(<TopicTree />);
+      render(<TopicTree broker="broker:1883" />);
       expect(rowOf('sensors')).toHaveAttribute('data-active', 'true');
 
       await act(async () => {
@@ -149,14 +217,14 @@ describe('TopicTree', () => {
 
   it('has no fade animation left to stack up', () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '1')]);
-    render(<TopicTree />);
+    render(<TopicTree broker="broker:1883" />);
 
     expect(getComputedStyle(rowOf('sensors')!).animationName).toBe('none');
   });
 
   it('focuses the wire log on the clicked node and everything beneath it', async () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
-    render(<TopicTree />);
+    render(<TopicTree broker="broker:1883" />);
 
     await userEvent.click(screen.getByText('sensors'));
 
@@ -165,7 +233,7 @@ describe('TopicTree', () => {
 
   it('focuses a leaf on its own full path', async () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
-    render(<TopicTree />);
+    render(<TopicTree broker="broker:1883" />);
     await userEvent.click(screen.getByRole('button', { name: 'Expand sensors' }));
 
     await userEvent.click(screen.getByText('temp'));
@@ -178,26 +246,136 @@ describe('TopicTree', () => {
 
   it('leaves the branch closed when the row is clicked', async () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
-    render(<TopicTree />);
+    render(<TopicTree broker="broker:1883" />);
 
     await userEvent.click(screen.getByText('sensors'));
 
     expect(branchOf('sensors')).toHaveAttribute('data-open', 'false');
   });
 
-  it('drops the focus when the selected node is clicked again', async () => {
+  // The twisty is a 24px target at the far left of the row. Double-clicking the row itself is
+  // the same instruction, given to the part of the row that is easy to hit.
+  it('opens a branch on a double click, the way the twisty does', async () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
-    render(<TopicTree />);
+    render(<TopicTree broker="broker:1883" />);
+
+    await userEvent.dblClick(screen.getByText('sensors'));
+
+    expect(branchOf('sensors')).toHaveAttribute('data-open', 'true');
+    expect(screen.getByText('temp')).toBeInTheDocument();
+  });
+
+  it('closes an open branch on a second double click', async () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    await userEvent.dblClick(screen.getByText('sensors'));
+    await userEvent.dblClick(screen.getByText('sensors'));
+
+    expect(branchOf('sensors')).toHaveAttribute('data-open', 'false');
+  });
+
+  // With the pointer held still a browser does not start the count over — the second double
+  // click arrives as clicks three and four, and it need not re-announce them as a double click.
+  it('closes the branch on a second double click in the very same spot', () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    fireEvent.click(screen.getByText('sensors'), { detail: 1 });
+    fireEvent.click(screen.getByText('sensors'), { detail: 2 });
+    expect(branchOf('sensors')).toHaveAttribute('data-open', 'true');
+
+    fireEvent.click(screen.getByText('sensors'), { detail: 3 });
+    fireEvent.click(screen.getByText('sensors'), { detail: 4 });
+
+    expect(branchOf('sensors')).toHaveAttribute('data-open', 'false');
+  });
+
+  // Enter on a focused row arrives as a click with no count at all. That is a pick, not a
+  // double click, and counting alone would read the zero as an even number and open the branch.
+  it('picks the row from the keyboard rather than opening it', async () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    screen.getByText('sensors').closest('button')!.focus();
+    await userEvent.keyboard('{Enter}');
+
+    expect(useSelectionStore.getState().selected).toEqual({ label: 'sensors', filter: 'sensors/#' });
+    expect(branchOf('sensors')).toHaveAttribute('data-open', 'false');
+  });
+
+  it('leaves the wire log pointed at the branch it just opened', async () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    await userEvent.dblClick(screen.getByText('sensors'));
+
+    expect(useSelectionStore.getState().selected).toEqual({ label: 'sensors', filter: 'sensors/#' });
+  });
+
+  // The repeat click belongs to the double click, not to the user. Passing it on would load the
+  // topic into publish a second time, overwriting whatever had been typed there since the first.
+  it('loads a double-clicked topic into publish once, not twice', async () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    await userEvent.click(screen.getByText('sensors'));
+    const loaded = useComposeStore.getState().draft!.serial;
+    await userEvent.dblClick(screen.getByText('sensors'));
+
+    expect(useComposeStore.getState().draft!.serial).toBe(loaded + 1);
+  });
+
+  it('folds the whole tree away on a double click of the broker row', async () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    await userEvent.dblClick(screen.getByText('broker:1883'));
+
+    expect(screen.queryByText('sensors')).not.toBeInTheDocument();
+  });
+
+  it('keeps the focus when the selected node is clicked again', async () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
+    render(<TopicTree broker="broker:1883" />);
 
     await userEvent.click(screen.getByText('sensors'));
     await userEvent.click(screen.getByText('sensors'));
 
-    expect(useSelectionStore.getState().selected).toBeNull();
+    expect(useSelectionStore.getState().selected).toEqual({ label: 'sensors', filter: 'sensors/#' });
+  });
+
+  it('loads the clicked topic into publish, settings and all', async () => {
+    const retained: MqttMessage = { ...message('sensors/temp', '21.5'), qos: 2, retain: true };
+    useTopicTreeStore.getState().apply([retained]);
+    render(<TopicTree broker="broker:1883" />);
+    await userEvent.click(screen.getByRole('button', { name: 'Expand sensors' }));
+
+    await userEvent.click(screen.getByText('temp'));
+
+    // The node's own path, not the '/#' filter the wire log focuses on.
+    expect(useComposeStore.getState().draft).toMatchObject({
+      topic: 'sensors/temp',
+      payload: '21.5',
+      qos: 2,
+      retain: true,
+    });
+  });
+
+  // A branch that has never carried a message of its own has no payload to offer.
+  it('sends a branch topic to publish without inventing a payload', async () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    await userEvent.click(screen.getByText('sensors'));
+
+    expect(useComposeStore.getState().draft).toMatchObject({ topic: 'sensors' });
+    expect(useComposeStore.getState().draft?.payload).toBeUndefined();
   });
 
   it('marks the focused row', async () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
-    render(<TopicTree />);
+    render(<TopicTree broker="broker:1883" />);
 
     await userEvent.click(screen.getByText('sensors'));
 
@@ -206,7 +384,7 @@ describe('TopicTree', () => {
 
   it('collapses every branch', async () => {
     useTopicTreeStore.getState().apply([message('a/x')]);
-    render(<TopicTree />);
+    render(<TopicTree broker="broker:1883" />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Expand all' }));
     await userEvent.click(screen.getByRole('button', { name: 'Collapse all' }));
@@ -214,10 +392,35 @@ describe('TopicTree', () => {
     expect(branchOf('a')).toHaveAttribute('data-open', 'false');
   });
 
+  // Collapse has to beat both a per-branch choice and the branches that arrive afterwards,
+  // otherwise a firehose keeps unfolding itself the moment you fold it.
+  it('collapses branches opened one at a time, and keeps later ones folded too', async () => {
+    useTopicTreeStore.getState().apply([message('a/x'), message('b/y')]);
+    render(<TopicTree broker="broker:1883" />);
+    await userEvent.click(screen.getByRole('button', { name: 'Expand a' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Expand b' }));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Collapse all' }));
+    useTopicTreeStore.getState().apply([message('c/z')]);
+
+    await waitFor(() => expect(branchOf('c')).toHaveAttribute('data-open', 'false'));
+    expect(branchOf('a')).toHaveAttribute('data-open', 'false');
+    expect(branchOf('b')).toHaveAttribute('data-open', 'false');
+    expect(screen.queryByText('x')).not.toBeInTheDocument();
+  });
+
+  // Glyph-only buttons were there but nobody found them.
+  it('names the expand and collapse controls in words', () => {
+    render(<TopicTree broker="broker:1883" />);
+
+    expect(screen.getByRole('button', { name: 'Expand all' })).toHaveTextContent(/expand all/i);
+    expect(screen.getByRole('button', { name: 'Collapse all' })).toHaveTextContent(/collapse all/i);
+  });
+
   // Already safe: synchronous store writes, no network call, so no guard needed here.
   it('settles on a consistent state when the twisty is clicked rapidly with no waits', () => {
     useTopicTreeStore.getState().apply([message('sensors/temp')]);
-    render(<TopicTree />);
+    render(<TopicTree broker="broker:1883" />);
     const twisty = screen.getByRole('button', { name: 'Expand sensors' });
 
     fireEvent.click(twisty);
@@ -229,7 +432,7 @@ describe('TopicTree', () => {
 
   it('settles on a consistent state when expand/collapse all are hammered with no waits', () => {
     useTopicTreeStore.getState().apply([message('a/x')]);
-    render(<TopicTree />);
+    render(<TopicTree broker="broker:1883" />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
     fireEvent.click(screen.getByRole('button', { name: 'Collapse all' }));

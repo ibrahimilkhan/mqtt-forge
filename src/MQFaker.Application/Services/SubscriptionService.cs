@@ -12,7 +12,10 @@ public sealed class SubscriptionService
     public IReadOnlyCollection<string> ActiveFilters => _subscriber.ActiveFilters;
 
     public Task SubscribeAsync(SubscriptionRequest request, CancellationToken ct) =>
-        _subscriber.SubscribeAsync(request, ct);
+        _subscriber.SubscribeAsync([request], ct);
+
+    public Task SubscribeAsync(IReadOnlyList<SubscriptionRequest> requests, CancellationToken ct) =>
+        _subscriber.SubscribeAsync(requests, ct);
 
     public Task UnsubscribeAsync(string topicFilter, CancellationToken ct) =>
         _subscriber.UnsubscribeAsync(topicFilter, ct);

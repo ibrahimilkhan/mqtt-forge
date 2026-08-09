@@ -11,9 +11,19 @@
     <ProjectReference Include="..\MQFaker.Domain\MQFaker.Domain.csproj" />
   </ItemGroup>
 
-  <!-- Release-only, so Debug backend iteration doesn't wait on npm; -p:SkipFrontend=true disables it. -->
+  <!-- What the build watches to decide the bundle is stale. node_modules and certs stay out. -->
+  <ItemGroup>
+    <FrontendSource Include="../../web/src/**;../../web/plugins/**;../../web/public/**" />
+    <FrontendSource Include="../../web/index.html;../../web/vite.config.ts;../../web/tsconfig*.json" />
+    <FrontendSource Include="../../web/package.json;../../web/package-lock.json" />
+  </ItemGroup>
+
+  <!-- Runs in every configuration, so a Debug run never serves yesterday's bundle. Inputs/Outputs
+       make it a no-op while web/ is untouched, which is what kept it off Debug before;
+       -p:SkipFrontend=true opts out entirely. -->
   <Target Name="BuildFrontend" BeforeTargets="Build"
-          Condition="'$(Configuration)' == 'Release' AND '$(SkipFrontend)' != 'true'">
+          Condition="'$(SkipFrontend)' != 'true'"
+          Inputs="@(FrontendSource)" Outputs="wwwroot/index.html">
     <Exec Command="npm ci" WorkingDirectory="$(MSBuildProjectDirectory)/../../web"
           Condition="!Exists('$(MSBuildProjectDirectory)/../../web/node_modules')" />
     <Exec Command="npm run build" WorkingDirectory="$(MSBuildProjectDirectory)/../../web" />

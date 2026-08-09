@@ -1,6 +1,5 @@
 {
   "permissions": {
-    "defaultMode": "acceptEdits",
     "allow": [
       "Bash(git add:*)",
       "Bash(git commit:*)",
@@ -13,9 +12,17 @@
       "Bash(ls:*)",
       "Bash(cat:*)",
       "Edit",
-      "Write"
+      "Write",
+      "Bash(ps -p 34902 -o pid,ppid,etime,command)"
     ],
-    "ask": ["Bash(git push:*)"],
-    "deny": ["Bash(rm -rf:*)", "Read(./.env)", "Read(./.env.*)"]
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Read(./.env)",
+      "Read(./.env.*)"
+    ],
+    "ask": [
+      "Bash(git push:*)"
+    ],
+    "defaultMode": "acceptEdits"
   }
 }

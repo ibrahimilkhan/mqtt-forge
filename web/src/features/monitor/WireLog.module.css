@@ -78,6 +78,16 @@
   font-size: var(--t-code);
   animation: arrive 0.24s ease-out;
 }
+/* A row with a topic loads itself into the publish form, so it has to look like it does
+   something. Padding on the right keeps the hover fill off the pane's edge. */
+.entry[role="button"] {
+  cursor: pointer;
+  padding-right: 8px;
+  border-radius: 0 2px 2px 0;
+}
+.entry[role="button"]:hover { background: var(--paper); }
+.entry[role="button"]:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
+
 .entry[data-kind="sent"]  { border-left-color: var(--signal); }
 .entry[data-kind="recv"]  { border-left-color: var(--ink); }
 .entry[data-kind="ok"]    { border-left-color: var(--live); }

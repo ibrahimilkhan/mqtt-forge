@@ -20,7 +20,27 @@ public class SubscriptionServiceTests
 
         await sut.SubscribeAsync(request, CancellationToken.None);
 
-        await _subscriber.Received(1).SubscribeAsync(request, Arg.Any<CancellationToken>());
+        // A lone filter still goes down as a batch, because that is the only shape the wire has.
+        await _subscriber.Received(1).SubscribeAsync(
+            Arg.Is<IReadOnlyList<SubscriptionRequest>>(r => r != null && r.Count == 1 && r[0] == request),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SubscribeAsync_hands_a_whole_batch_to_the_subscriber_in_one_go()
+    {
+        var sut = CreateSut();
+        SubscriptionRequest[] requests =
+        [
+            new("sensors/#", 0),
+            new("lab/+/temp", 1),
+        ];
+
+        await sut.SubscribeAsync(requests, CancellationToken.None);
+
+        await _subscriber.Received(1).SubscribeAsync(
+            Arg.Is<IReadOnlyList<SubscriptionRequest>>(r => r != null && r.Count == 2),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]

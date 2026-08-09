@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { useComposeStore } from '../../stores/composeStore';
 import { useLogStore } from '../../stores/logStore';
 import { server } from '../../test/server';
 import { PublishPanel } from './PublishPanel';
@@ -19,7 +20,10 @@ function renderPanel() {
   return render(<PublishPanel />, { wrapper });
 }
 
-beforeEach(() => useLogStore.getState().clear());
+beforeEach(() => {
+  useLogStore.getState().clear();
+  useComposeStore.setState({ draft: null });
+});
 
 describe('PublishPanel', () => {
   it('sends the topic, payload, QoS and retain flag', async () => {
@@ -58,6 +62,20 @@ describe('PublishPanel', () => {
         body: '23.5',
         stamps: ['QoS 0', 'RETAINED'],
       }),
+    );
+  });
+
+  // The row's stamps say QoS 2 RETAINED; clicking it to re-publish has to send the same again.
+  it('records the QoS and retain flag it sent, so the row re-publishes as it went out', async () => {
+    server.use(http.post('/api/publish', () => new HttpResponse(null, { status: 202 })));
+
+    renderPanel();
+    await userEvent.click(screen.getByRole('radio', { name: 'QoS 2' }));
+    await userEvent.click(screen.getByLabelText('Retain'));
+    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+
+    await waitFor(() =>
+      expect(useLogStore.getState().entries[0]).toMatchObject({ qos: 2, retain: true }),
     );
   });
 
@@ -106,5 +124,49 @@ describe('PublishPanel', () => {
         body: 'Connect to a broker before publishing.',
       }),
     );
+  });
+
+  describe('loaded from a click on a topic or a message', () => {
+    const topic = () => screen.getByLabelText('Topic') as HTMLInputElement;
+    const payload = () => screen.getByLabelText('Payload') as HTMLTextAreaElement;
+
+    it('takes the topic, payload, QoS and retain flag off the draft', async () => {
+      renderPanel();
+
+      act(() =>
+        useComposeStore.getState().load({ topic: 'lab/oven', payload: '180', qos: 2, retain: true }),
+      );
+
+      await waitFor(() => expect(topic().value).toBe('lab/oven'));
+      expect(payload().value).toBe('180');
+      expect(screen.getByRole('radio', { name: 'QoS 2' })).toBeChecked();
+      expect(screen.getByLabelText('Retain')).toBeChecked();
+    });
+
+    // A branch node has a topic but no message of its own; overwriting the payload with nothing
+    // would throw away what the user had typed.
+    it('keeps the typed payload when the draft carries none', async () => {
+      renderPanel();
+      await userEvent.clear(payload());
+      await userEvent.type(payload(), 'mine');
+
+      act(() => useComposeStore.getState().load({ topic: 'lab', qos: 0, retain: false }));
+
+      await waitFor(() => expect(topic().value).toBe('lab'));
+      expect(payload().value).toBe('mine');
+    });
+
+    it('reloads on a second click of the same topic, after the form was edited', async () => {
+      renderPanel();
+      const draft = { topic: 'lab/oven', payload: '180', qos: 0, retain: false };
+      act(() => useComposeStore.getState().load(draft));
+      await waitFor(() => expect(topic().value).toBe('lab/oven'));
+
+      await userEvent.clear(topic());
+      await userEvent.type(topic(), 'something/else');
+      act(() => useComposeStore.getState().load(draft));
+
+      await waitFor(() => expect(topic().value).toBe('lab/oven'));
+    });
   });
 });

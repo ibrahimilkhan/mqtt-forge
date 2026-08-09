@@ -407,6 +407,15 @@ describe('BrokerPanel', () => {
     expect(within(details).getByText('broker.example:8883')).toBeInTheDocument();
   });
 
+  it('refuses a second connect while one is already live', async () => {
+    server.use(http.get('/api/connection', () => HttpResponse.json({ state: 'Connected' })));
+
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Connect' })).toBeDisabled());
+    expect(screen.getByRole('button', { name: 'Disconnect' })).not.toBeDisabled();
+  });
+
   it('leaves the form alone while nothing is connected', async () => {
     renderPanel();
 

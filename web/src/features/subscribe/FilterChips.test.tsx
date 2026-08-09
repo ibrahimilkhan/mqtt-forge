@@ -17,13 +17,13 @@ describe('FilterChips', () => {
     expect(useSelectionStore.getState().selected).toEqual({ label: 'sensors/#', filter: 'sensors/#' });
   });
 
-  it('drops the focus when the selected filter is clicked again', async () => {
+  it('keeps the focus when the selected filter is clicked again', async () => {
     render(<FilterChips filters={filters} onRemove={vi.fn()} />);
 
     await userEvent.click(screen.getByRole('button', { name: 'sensors/#' }));
     await userEvent.click(screen.getByRole('button', { name: 'sensors/#' }));
 
-    expect(useSelectionStore.getState().selected).toBeNull();
+    expect(useSelectionStore.getState().selected).toEqual({ label: 'sensors/#', filter: 'sensors/#' });
   });
 
   it('marks the selected chip as pressed', async () => {

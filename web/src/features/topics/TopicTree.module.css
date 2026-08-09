@@ -21,16 +21,20 @@
   border-bottom: 1px solid var(--rule);
 }
 
-.paneActions { margin-left: auto; display: flex; gap: 2px; }
+.paneActions { margin-left: auto; display: flex; gap: 4px; }
 .paneActions button {
   all: unset;
   display: flex;
   cursor: pointer;
   color: var(--muted);
-  padding: 4px;
+  padding: 5px 8px;
   border-radius: 2px;
   font-family: var(--mono);
-  font-size: var(--t-small);
+  font-size: var(--t-label);
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  white-space: nowrap;
   line-height: 1;
 }
 /* all: unset misses the global button:hover fill; :not(:disabled) matches its specificity so this wins. */
@@ -48,6 +52,11 @@
   padding: 3px 6px 3px calc(var(--depth) * 14px + 6px);
   border-radius: 2px;
   position: relative;
+  /* The pane can hold a thousand rows, and every drag of a boundary relaid out all of them.
+     Rows outside the viewport skip layout and paint entirely; the intrinsic size keeps the
+     scrollbar honest so skipped rows still take up the height they would have. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 22px;
 }
 /* Traffic marker. Deliberately not animated: every row used to run its own 700ms fade out of
    phase with its neighbours, and a busy broker turned that into a screen-wide strobe. A row
@@ -78,7 +87,18 @@
   color: var(--muted);
   font-size: var(--t-micro);
   transition: transform 0.12s ease;
+  position: relative;
 }
+/* The glyph is 10px of arrow and was a miserable thing to hit. This grows the target to roughly
+   24x24 without moving the arrow or the row: it reaches into the row's left padding and into the
+   8px gap before the topic name, so it never covers the name's own button. */
+.twisty::after {
+  content: '';
+  position: absolute;
+  inset: -7px;
+}
+/* Rotating the arrow would rotate its hit area with it, off-centre. */
+.node[data-open="false"] .twisty::after { transform: rotate(90deg); }
 
 .pick {
   display: flex;

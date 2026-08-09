@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { MIN_SHARE, ResizeHandle } from './ResizeHandle';
 import styles from './Workspace.module.css';
 
@@ -12,13 +12,43 @@ type Props = {
 
 type Widths = { panel: number; tree: number; right: number };
 
-const START: Widths = { panel: 1 / 3, tree: 1 / 3, right: 1 / 3 };
-const START_LOG = 0.6;
+// The tree and the log carry long topic names and payloads; the panel column holds a form and
+// reads fine narrower, so it starts as the smallest of the three.
+const START: Widths = { panel: 0.26, tree: 0.36, right: 0.38 };
+
+/**
+ * Where to put the log/publish boundary so the publish form opens at exactly its own height.
+ * Null while the column has no measured height — there is nothing to divide yet.
+ */
+export function fitShare(columnHeight: number, publishHeight: number): number | null {
+  if (columnHeight <= 0) return null;
+
+  const share = 1 - publishHeight / columnHeight;
+  return Math.min(1 - MIN_SHARE, Math.max(MIN_SHARE, share));
+}
 
 export function Workspace({ panel, tree, log, publish }: Props) {
   // Held as the row looks with a panel open, so closing and reopening one puts it back as it was.
   const [widths, setWidths] = useState<Widths>(START);
-  const [logShare, setLogShare] = useState(START_LOG);
+
+  // Null until measured: the column sizes the publish pane to its content, so the form fits on
+  // first paint whatever the window height, instead of being clipped by a guessed fraction.
+  const [logShare, setLogShare] = useState<number | null>(null);
+  const columnRef = useRef<HTMLDivElement>(null);
+  const publishRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (logShare !== null) return;
+
+    const column = columnRef.current;
+    const pane = publishRef.current;
+    if (!column || !pane) return;
+
+    // scrollHeight, not clientHeight: content-sized now, but this still reads the full form
+    // if anything has already clipped it.
+    const measured = fitShare(column.clientHeight, pane.scrollHeight);
+    if (measured !== null) setLogShare(measured);
+  }, [logShare]);
 
   // A closed panel hands half its width to each neighbour, rather than to whichever is wider.
   const spare = panel ? 0 : widths.panel / 2;
@@ -32,8 +62,8 @@ export function Workspace({ panel, tree, log, publish }: Props) {
     '--panel': `${(shown.panel * 100).toFixed(2)}fr`,
     '--tree': `${(shown.tree * 100).toFixed(2)}fr`,
     '--right': `${(shown.right * 100).toFixed(2)}fr`,
-    '--log': `${(logShare * 100).toFixed(2)}fr`,
-    '--publish': `${((1 - logShare) * 100).toFixed(2)}fr`,
+    '--log': `${((logShare ?? 0) * 100).toFixed(2)}fr`,
+    '--publish': `${((1 - (logShare ?? 0)) * 100).toFixed(2)}fr`,
   } as CSSProperties;
 
   // Both side-by-side handles report where their boundary sits across the whole row, which is what
@@ -76,17 +106,24 @@ export function Workspace({ panel, tree, log, publish }: Props) {
         onChange={moveTreeEdge}
       />
 
-      <div className={styles.right}>
+      <div
+        ref={columnRef}
+        className={styles.right}
+        data-testid="right-column"
+        data-fit={logShare === null ? 'content' : 'split'}
+      >
         <div className={styles.pane}>{log}</div>
         <ResizeHandle
           axis="y"
           label="Log and publish boundary"
-          value={logShare}
+          value={logShare ?? 0.6}
           min={MIN_SHARE}
           max={1 - MIN_SHARE}
           onChange={setLogShare}
         />
-        <div className={styles.pane}>{publish}</div>
+        <div ref={publishRef} className={styles.pane}>
+          {publish}
+        </div>
       </div>
     </div>
   );

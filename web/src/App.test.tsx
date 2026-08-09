@@ -70,12 +70,13 @@ describe('App', () => {
     expect(screen.getByRole('region', { name: 'Settings panel' })).toBeInTheDocument();
   });
 
-  it('starts on three even columns', () => {
+  // The tree and the log carry long topic names and payloads; the panel column holds a form.
+  it('starts with the panel column the narrowest of the three', () => {
     renderApp();
 
-    expect(share('panel')).toBe('33.33fr');
-    expect(share('tree')).toBe('33.33fr');
-    expect(share('right')).toBe('33.33fr');
+    expect(share('panel')).toBe('26.00fr');
+    expect(share('tree')).toBe('36.00fr');
+    expect(share('right')).toBe('38.00fr');
   });
 
   it('splits the closed panel column evenly between the other two', async () => {
@@ -85,8 +86,8 @@ describe('App', () => {
 
     expect(screen.getByTestId('layout')).toHaveAttribute('data-panel', 'closed');
     expect(share('panel')).toBe('0.00fr');
-    expect(share('tree')).toBe('50.00fr');
-    expect(share('right')).toBe('50.00fr');
+    expect(share('tree')).toBe('49.00fr');
+    expect(share('right')).toBe('51.00fr');
   });
 
   it('puts the panel column back the width it was when it reopens', async () => {
@@ -95,12 +96,12 @@ describe('App', () => {
     const seam = screen.getByRole('separator', { name: 'Panel and topics boundary' });
     seam.focus();
     await userEvent.keyboard('{ArrowLeft}');
-    expect(share('panel')).toBe('31.33fr');
+    expect(share('panel')).toBe('24.00fr');
 
     await userEvent.click(menu().getByRole('button', { name: 'Broker' }));
     await userEvent.click(menu().getByRole('button', { name: 'Broker' }));
 
-    expect(share('panel')).toBe('31.33fr');
+    expect(share('panel')).toBe('24.00fr');
   });
 
   it('moves the topics boundary with the arrow keys', async () => {
@@ -110,20 +111,22 @@ describe('App', () => {
     seam.focus();
     await userEvent.keyboard('{ArrowRight}');
 
-    expect(share('tree')).toBe('35.33fr');
-    expect(share('right')).toBe('31.33fr');
+    expect(share('tree')).toBe('38.00fr');
+    expect(share('right')).toBe('36.00fr');
   });
 
-  it('splits the right column between the log and publish', async () => {
+  // Unmeasured in jsdom, so the column opens content-sized: publish takes the height its form
+  // needs and the log gets the rest. The first drag is what puts it onto shares.
+  it('opens the right column sized to the publish form, then splits on drag', async () => {
     renderApp();
 
-    expect(share('log')).toBe('60.00fr');
-    expect(share('publish')).toBe('40.00fr');
+    expect(screen.getByTestId('right-column')).toHaveAttribute('data-fit', 'content');
 
     const seam = screen.getByRole('separator', { name: 'Log and publish boundary' });
     seam.focus();
     await userEvent.keyboard('{ArrowUp}');
 
+    expect(screen.getByTestId('right-column')).toHaveAttribute('data-fit', 'split');
     expect(share('log')).toBe('58.00fr');
     expect(share('publish')).toBe('42.00fr');
   });

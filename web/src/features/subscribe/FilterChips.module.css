@@ -5,6 +5,10 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  /* Hundreds of these stack up on a broker you subscribe to in bulk, and every one of them was
+     being relaid out whenever a boundary moved. Offscreen chips skip layout and paint. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 26px;
   font-family: var(--mono);
   font-size: var(--t-small);
   padding: 4px 6px 4px 9px;

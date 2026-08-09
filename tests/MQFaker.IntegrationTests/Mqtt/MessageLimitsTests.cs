@@ -43,7 +43,7 @@ public class MessageLimitsTests : IClassFixture<MosquittoFixture>
         var filter = new string('a', 70_000);
 
         await Assert.ThrowsAsync<MessageRejectedException>(
-            () => subscriber.SubscribeAsync(new SubscriptionRequest(filter, 0), CancellationToken.None));
+            () => subscriber.SubscribeAsync([new SubscriptionRequest(filter, 0)], CancellationToken.None));
     }
 
     [Fact]

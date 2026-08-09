@@ -158,7 +158,9 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
             Abort
           </button>
         ) : (
-          <button type="button" className={styles.steadyWidth} onClick={submit}>
+          // A live link is not something you connect over: the API would either report it
+          // unchanged or tear the session down, so Disconnect is the only way forward.
+          <button type="button" className={styles.steadyWidth} onClick={submit} disabled={isOnline}>
             Connect
           </button>
         )}

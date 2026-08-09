@@ -70,3 +70,7 @@
   color: var(--ink);
   overflow-wrap: anywhere;
 }
+
+/* The filter box takes a whole list, so it is a textarea — but it should still read as a
+   one-line field until someone pastes more into it. */
+.filterInput { min-height: 0; resize: vertical; }

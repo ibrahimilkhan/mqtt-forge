@@ -25,6 +25,22 @@ public class MqttnetConnectionManagerStateTests
 
     private MqttnetConnectionManager CreateSut() => new(new MqttnetClientProvider(_client), _notifier);
 
+    // MQTTnet's own default is a 15-second keep-alive, which gives a loaded public broker no
+    // room: one late PINGRESP and a working link is declared timed out. Measured, not assumed.
+    [Fact]
+    public async Task ConnectAsync_asks_for_a_keep_alive_with_room_to_breathe()
+    {
+        GivenConnectSucceeds();
+        MqttClientOptions? used = null;
+        await _client.ConnectAsync(
+            Arg.Do<MqttClientOptions>(o => used = o), Arg.Any<CancellationToken>());
+
+        await CreateSut().ConnectAsync(_settings, CancellationToken.None);
+
+        Assert.Equal(MqttnetConnectionManager.KeepAlive, used!.KeepAlivePeriod);
+        Assert.True(used.KeepAlivePeriod > TimeSpan.FromSeconds(15));
+    }
+
     [Fact]
     public async Task ConnectAsync_reports_connecting_then_connected()
     {
