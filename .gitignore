@@ -10,5 +10,6 @@ node_modules/
 web/dist/
 web/certs/
 *.bak
-src/MQFaker.Api/wwwroot/
+src/MqttForge.Api/wwwroot/
 dist/
+*.DotSettings.user

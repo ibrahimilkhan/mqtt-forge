@@ -1,0 +1,4 @@
+namespace MqttForge.Domain.Models;
+
+// TopicFilter wildcards: '+' single level, '#' multi-level
+public record SubscriptionRequest(string TopicFilter, int Qos);

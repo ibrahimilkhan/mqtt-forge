@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>MQTTForge</AssemblyName>
+    <RootNamespace>MqttForge.Desktop</RootNamespace>
+  </PropertyGroup>
+
+  <!-- A console-SDK project hosting ASP.NET Core doesn't get this via the project reference, so it's declared explicitly. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Photino.NET" Version="4.0.16" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MqttForge.Api\MqttForge.Api.csproj" />
+  </ItemGroup>
+
+  <!-- This project runs from a different content root than MqttForge.Api, so its built interface has to be copied in explicitly. -->
+  <!-- Api's Release build empties wwwroot and refills it with new hashes, so the glob must be resolved at execution time, not evaluation time. -->
+  <Target Name="CopyFrontendAssets" AfterTargets="Build" Condition="Exists('$(MSBuildProjectDirectory)/../MqttForge.Api/wwwroot')">
+    <ItemGroup>
+      <FrontendAsset Include="$(MSBuildProjectDirectory)/../MqttForge.Api/wwwroot/**" />
+    </ItemGroup>
+    <RemoveDir Directories="$(OutDir)wwwroot" Condition="Exists('$(OutDir)wwwroot')" />
+    <Copy SourceFiles="@(FrontendAsset)" DestinationFolder="$(OutDir)wwwroot/%(RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- Same resolve-at-execution-time reasoning applies to publish, which computes its file list on its own schedule. -->
+  <Target Name="PublishFrontendAssets" AfterTargets="ComputeFilesToPublish" Condition="Exists('$(MSBuildProjectDirectory)/../MqttForge.Api/wwwroot')">
+    <RemoveDir Directories="$(PublishDir)wwwroot" Condition="Exists('$(PublishDir)wwwroot')" />
+    <ItemGroup>
+      <FrontendPublishAsset Include="$(MSBuildProjectDirectory)/../MqttForge.Api/wwwroot/**" />
+      <ResolvedFileToPublish Include="@(FrontendPublishAsset->'%(FullPath)')" Exclude="@(ResolvedFileToPublish)">
+        <RelativePath>wwwroot/%(RecursiveDir)%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+
+</Project>

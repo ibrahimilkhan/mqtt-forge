@@ -1,4 +1,4 @@
-// Mirrors MQFaker.Api.Contracts; ASP.NET serialises camelCase.
+// Mirrors MqttForge.Api.Contracts; ASP.NET serialises camelCase.
 export type ConnectionState = 'Disconnected' | 'Connecting' | 'Connected' | 'Faulted';
 
 // Set only alongside Faulted, and only when the API could work out a cause. It names the

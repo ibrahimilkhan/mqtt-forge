@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ApiError } from '../../lib/problemDetails';
 import { describeConnectFailure, describeFailureReason } from './connectFailure';
 
-const FORM = { host: 'broker.local', port: 1883, clientId: 'mqfaker-console', useTls: false };
+const FORM = { host: 'broker.local', port: 1883, clientId: 'mqttforge-console', useTls: false };
 
 const refusal = (reason?: string, message = 'raw backend detail') =>
   new ApiError(502, message, 'Could not connect to broker', undefined, reason);
@@ -23,7 +23,7 @@ describe('describeConnectFailure', () => {
     ['credentialsRequired', 'This broker needs a username and password.'],
     ['credentialsRejected', 'The broker rejected the username or password.'],
     ['banned', 'The broker has banned this client.'],
-    ['clientIdRejected', "The broker rejected the client ID 'mqfaker-console'."],
+    ['clientIdRejected', "The broker rejected the client ID 'mqttforge-console'."],
     ['brokerBusy', 'The broker is unavailable or too busy right now.'],
     ['brokerRejected', 'The broker refused the connection over something this console sent.'],
   ])('words %s as a sentence', (reason, expected) => {
@@ -77,7 +77,7 @@ describe('describeConnectFailure', () => {
 // A link that was up and is now down; the reason arrives on the connection state, not an error.
 describe('describeFailureReason', () => {
   it.each([
-    ['sessionTakenOver', "Another client connected with the client ID 'mqfaker-console'."],
+    ['sessionTakenOver', "Another client connected with the client ID 'mqttforge-console'."],
     ['brokerClosed', 'The broker closed the connection.'],
     ['brokerShuttingDown', 'The broker is shutting down.'],
     ['kicked', 'An administrator disconnected this client.'],

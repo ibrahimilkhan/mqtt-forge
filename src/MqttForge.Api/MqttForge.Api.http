@@ -1,0 +1,6 @@
+@MqttForge.Api_HostAddress = http://localhost:5169
+
+GET {{MqttForge.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

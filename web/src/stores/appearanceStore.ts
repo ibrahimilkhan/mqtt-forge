@@ -11,7 +11,7 @@ type AppearanceState = AppearanceChoices & {
   reset: () => void;
 };
 
-export const STORAGE_KEY = 'mqfaker.appearance';
+export const STORAGE_KEY = 'mqttforge.appearance';
 
 // Validates stored fields against the catalogue, since localStorage may hold a stale or hand-edited value.
 export function sanitize(raw: unknown): AppearanceChoices {

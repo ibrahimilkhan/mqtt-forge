@@ -54,7 +54,7 @@ export function App({ hub }: { hub: Hub }) {
         </button>
 
         <h1 className={styles.wordmark}>
-          MQ<span>Faker</span>
+          MQTT<span>Forge</span>
         </h1>
 
         <div className={styles.readoutSlot}>

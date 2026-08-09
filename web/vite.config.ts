@@ -28,7 +28,7 @@ export default defineConfig({
   },
   build: {
     // API serves the built site from its own wwwroot.
-    outDir: '../src/MQFaker.Api/wwwroot',
+    outDir: '../src/MqttForge.Api/wwwroot',
     // outDir sits outside the Vite root, so Vite won't auto-clean it; force it or stale hashed assets pile up.
     emptyOutDir: true,
   },

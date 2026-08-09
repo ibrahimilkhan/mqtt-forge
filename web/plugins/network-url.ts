@@ -10,7 +10,7 @@ export function networkUrl(): Plugin {
   let server: ViteDevServer | undefined;
 
   return {
-    name: 'mqfaker:network-url',
+    name: 'mqttforge:network-url',
     configureServer(created) {
       server = created;
     },

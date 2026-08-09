@@ -15,7 +15,7 @@ import { useConnectionActions } from './useConnectionActions';
 const DEFAULTS = {
   host: 'localhost',
   port: 1883,
-  clientId: 'mqfaker-console',
+  clientId: 'mqttforge-console',
   username: '',
   password: '',
   useTls: false,
