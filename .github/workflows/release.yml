@@ -117,6 +117,10 @@ jobs:
         run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
 
       - uses: docker/build-push-action@v6
+        # Off because the build record it would otherwise upload lands in the same
+        # artifact bucket as the packages, and the release job would attach it too.
+        env:
+          DOCKER_BUILD_SUMMARY: false
         with:
           context: .
           push: true
@@ -128,9 +132,14 @@ jobs:
     needs: [macos, windows, linux, docker]
     runs-on: ubuntu-latest
     steps:
+      # Named one by one rather than "download everything": anything else a job
+      # happens to upload would otherwise be attached to the release as a package.
       - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
+        with: { name: macos, path: artifacts }
+      - uses: actions/download-artifact@v4
+        with: { name: windows, path: artifacts }
+      - uses: actions/download-artifact@v4
+        with: { name: linux, path: artifacts }
 
       # The download links in the README point at /releases/latest/download/<name>,
       # which only resolves for a full release — a prerelease would leave them 404.
@@ -142,4 +151,4 @@ jobs:
           gh release create "${{ github.ref_name }}" \
             --title "${{ github.ref_name }}" \
             --generate-notes \
-            artifacts/*/*
+            artifacts/*
