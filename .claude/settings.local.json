@@ -15,7 +15,9 @@
       "Write",
       "Bash(ps -p 34902 -o pid,ppid,etime,command)",
       "Bash(git tag *)",
-      "Bash(gh run *)"
+      "Bash(gh run *)",
+      "Bash(gh release *)",
+      "Bash(git fetch *)"
     ],
     "deny": [
       "Bash(rm -rf:*)",
