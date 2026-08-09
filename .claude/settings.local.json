@@ -13,7 +13,9 @@
       "Bash(cat:*)",
       "Edit",
       "Write",
-      "Bash(ps -p 34902 -o pid,ppid,etime,command)"
+      "Bash(ps -p 34902 -o pid,ppid,etime,command)",
+      "Bash(git tag *)",
+      "Bash(gh run *)"
     ],
     "deny": [
       "Bash(rm -rf:*)",
