@@ -94,7 +94,6 @@ rest of the suite does not.
 | `src/MqttForge.Infrastructure` | MQTTnet client, local settings storage |
 | `src/MqttForge.Api` | Controllers, SignalR hub, composition root |
 | `web` | React + TypeScript interface |
-| `docs/superpowers` | Design specs and implementation plans |
 
 ## Licence
 
