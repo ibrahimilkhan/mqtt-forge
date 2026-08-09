@@ -18,10 +18,22 @@ Every link below always points at the newest release, so they stay valid as vers
 | Linux (x64) | [MQTTForge-linux-x64.tar.gz](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-linux-x64.tar.gz) |
 | Docker | `docker pull ghcr.io/ibrahimilkhan/mqtt-forge:latest` |
 
-The desktop builds are unsigned. macOS needs right-click → Open on the first launch rather than
-a double-click, and Windows SmartScreen needs More info → Run anyway. On Linux the window is
-drawn by WebKitGTK, so install `libwebkit2gtk-4.1-0` (Debian and Ubuntu) if the app starts and
-no window appears.
+The desktop builds carry no paid signing certificate, so each platform asks once before it
+trusts them.
+
+**macOS.** Drag MQTTForge to Applications and eject the disk image — launching it from the
+image itself is refused. The first launch is then blocked as unverified: allow it under System
+Settings → Privacy & Security → Open Anyway, or right-click → Open on older releases. If macOS
+still refuses, clear the download flag by hand:
+
+```
+xattr -dr com.apple.quarantine /Applications/MQTTForge.app
+```
+
+**Windows.** SmartScreen needs More info → Run anyway.
+
+**Linux.** The window is drawn by WebKitGTK, so install `libwebkit2gtk-4.1-0` (Debian and
+Ubuntu) if the app starts and no window appears.
 
 ## Requirements
 
