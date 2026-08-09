@@ -39,6 +39,20 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
+# dotnet ad-hoc signs the executable alone, under the identifier "apphost". Inside a bundle
+# macOS reads that as the BUNDLE's signature, looks for the _CodeSignature directory it
+# implies, finds none, and reports the app as damaged — with no way past it but xattr. Signing
+# the assembled bundle seals the resources and turns that into the ordinary unidentified-
+# developer prompt, which right-click → Open answers. Must run last: any later write reopens
+# the same hole.
+codesign --force --deep --sign - --identifier dev.mqttforge.desktop "$APP"
+codesign --verify --deep --strict "$APP"
+
+# Gatekeeper refuses to launch an unsigned app from the read-only image and says to move it
+# to Applications first. Without somewhere to drop it, that instruction is a dead end — this
+# is the drop target, and it is why every other .dmg on the platform ships one.
+ln -s /Applications "$STAGE/Applications"
+
 hdiutil create -volname MQTTForge -srcfolder "$STAGE" -ov -format UDZO "$DMG"
 rm -rf "$STAGE"
 echo "${DMG#"$ROOT"/}"
