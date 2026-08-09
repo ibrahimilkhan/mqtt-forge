@@ -6,6 +6,23 @@ interface over SignalR.
 
 MQTTForge connects to a broker you already run — it is not a broker itself.
 
+## Download
+
+Every link below always points at the newest release, so they stay valid as versions come and go.
+
+| Platform | |
+| --- | --- |
+| macOS (Apple Silicon) | [MQTTForge-macos-arm64.dmg](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-macos-arm64.dmg) |
+| macOS (Intel) | [MQTTForge-macos-x64.dmg](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-macos-x64.dmg) |
+| Windows (x64) | [MQTTForge-windows-x64.zip](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-windows-x64.zip) |
+| Linux (x64) | [MQTTForge-linux-x64.tar.gz](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-linux-x64.tar.gz) |
+| Docker | `docker pull ghcr.io/ibrahimilkhan/mqtt-forge:latest` |
+
+The desktop builds are unsigned. macOS needs right-click → Open on the first launch rather than
+a double-click, and Windows SmartScreen needs More info → Run anyway. On Linux the window is
+drawn by WebKitGTK, so install `libwebkit2gtk-4.1-0` (Debian and Ubuntu) if the app starts and
+no window appears.
+
 ## Requirements
 
 - .NET 10
@@ -65,7 +82,7 @@ docker run -d -p 5169:5169 \
 ./scripts/package-macos.sh
 ```
 
-Produces `dist/MQTTForge.dmg`. The build is unsigned, so the first launch needs
+Produces `dist/MQTTForge-macos-arm64.dmg`; pass `osx-x64` for the Intel slice. The build is unsigned, so the first launch needs
 right-click → Open rather than a double-click.
 
 Like the Docker image, the desktop app binds `0.0.0.0` — it is reachable from other
