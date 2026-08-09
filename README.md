@@ -16,15 +16,21 @@ Every link below always points at the newest release, so they stay valid as vers
 | macOS (Intel) | [MQTTForge-macos-x64.dmg](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-macos-x64.dmg) |
 | Windows (x64) | [MQTTForge-windows-x64.zip](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-windows-x64.zip) |
 | Linux (x64) | [MQTTForge-linux-x64.tar.gz](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-linux-x64.tar.gz) |
-| Docker | `docker pull ghcr.io/ibrahimilkhan/mqtt-forge:latest` |
+| Docker | `docker run -d -p 5169:5169 ghcr.io/ibrahimilkhan/mqtt-forge` |
 
 The desktop builds carry no paid signing certificate, so each platform asks once before it
-trusts them.
+trusts them. **The Docker image is the way around all of it** — a container carries no
+signature check, so `docker run` starts with nothing to dismiss.
 
-**macOS.** Drag MQTTForge to Applications and eject the disk image — launching it from the
-image itself is refused. The first launch is then blocked as unverified: allow it under System
-Settings → Privacy & Security → Open Anyway, or right-click → Open on older releases. If macOS
-still refuses, clear the download flag by hand:
+**macOS.** Drag MQTTForge to Applications and eject the disk image; launching it from the image
+itself is refused. The first launch is then blocked with *"Apple could not verify MQTTForge.app
+is free of malware"*. That wording sounds alarming but only means the app was never sent to
+Apple for notarisation, which costs a paid developer account — it is not a finding about the
+app. To get past it on macOS 15 and later, open System Settings → Privacy & Security, scroll to
+Security, and use **Open Anyway** next to the blocked-app line, then confirm. On macOS 14 and
+earlier, right-click → Open does the same job. Either way it is asked once, not every launch.
+
+Clearing the download flag by hand skips the prompt entirely:
 
 ```
 xattr -dr com.apple.quarantine /Applications/MQTTForge.app
@@ -66,6 +72,15 @@ it in Release too.
 `src/MqttForge.Api/wwwroot` is generated output and is not tracked.
 
 ## Docker
+
+Every release is published to GHCR for both amd64 and arm64, so this pulls whichever matches
+the machine:
+
+```
+docker run -d -p 5169:5169 --name mqtt-forge ghcr.io/ibrahimilkhan/mqtt-forge
+```
+
+To build the image from this checkout instead:
 
 ```
 docker build -t mqtt-forge .
