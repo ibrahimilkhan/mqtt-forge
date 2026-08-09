@@ -4,7 +4,7 @@
     {
       "name": "api",
       "runtimeExecutable": "dotnet",
-      "runtimeArgs": ["run", "--project", "src/MQFaker.Api", "--launch-profile", "http"],
+      "runtimeArgs": ["run", "--project", "src/MqttForge.Api", "--launch-profile", "http"],
       "port": 5169
     },
     {

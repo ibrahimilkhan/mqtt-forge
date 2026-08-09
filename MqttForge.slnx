@@ -1,0 +1,10 @@
+<Solution>
+  <Project Path="src/MqttForge.Domain/MqttForge.Domain.csproj" />
+  <Project Path="src/MqttForge.Application/MqttForge.Application.csproj" />
+  <Project Path="src/MqttForge.Infrastructure/MqttForge.Infrastructure.csproj" />
+  <Project Path="src/MqttForge.Api/MqttForge.Api.csproj" />
+  <Project Path="src/MqttForge.Desktop/MqttForge.Desktop.csproj" />
+  <Project Path="tests/MqttForge.UnitTests/MqttForge.UnitTests.csproj" />
+  <Project Path="tests/MqttForge.IntegrationTests/MqttForge.IntegrationTests.csproj" />
+  <Project Path="tests/MqttForge.SingleInstanceProbe/MqttForge.SingleInstanceProbe.csproj" />
+</Solution>

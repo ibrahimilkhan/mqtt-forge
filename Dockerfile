@@ -10,8 +10,8 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /source
 COPY Directory.Build.props ./
 COPY src/ src/
-COPY --from=web /src/MQFaker.Api/wwwroot src/MQFaker.Api/wwwroot
-RUN dotnet publish src/MQFaker.Api -c Release -p:SkipFrontend=true -o /app
+COPY --from=web /src/MqttForge.Api/wwwroot src/MqttForge.Api/wwwroot
+RUN dotnet publish src/MqttForge.Api -c Release -p:SkipFrontend=true -o /app
 # The chiseled runtime has no shell, so /data is staged here and copied in ready-made.
 RUN mkdir -p /data
 
@@ -22,4 +22,4 @@ COPY --from=build /app ./
 COPY --from=build --chown=$APP_UID:$APP_UID /data /data
 USER $APP_UID
 EXPOSE 5169
-ENTRYPOINT ["./MQFaker.Api"]
+ENTRYPOINT ["./MqttForge.Api"]

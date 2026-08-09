@@ -1,7 +1,7 @@
 **/bin
 **/obj
 **/node_modules
-src/MQFaker.Api/wwwroot
+src/MqttForge.Api/wwwroot
 docs
 tests
 .git

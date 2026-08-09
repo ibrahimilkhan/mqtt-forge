@@ -24,7 +24,7 @@ fi
 mkdir -p certs
 openssl req -x509 -newkey rsa:2048 -nodes \
   -keyout certs/dev-key.pem -out certs/dev-cert.pem \
-  -days 825 -subj "/CN=MQFaker dev" \
+  -days 825 -subj "/CN=MQTTForge dev" \
   -addext "subjectAltName=$names" \
   -addext "basicConstraints=critical,CA:FALSE" \
   -addext "keyUsage=digitalSignature,keyEncipherment" \

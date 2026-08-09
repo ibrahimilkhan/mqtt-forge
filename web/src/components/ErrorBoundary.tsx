@@ -12,7 +12,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error('MQFaker crashed while rendering', error, info.componentStack);
+    console.error('MQTTForge crashed while rendering', error, info.componentStack);
   }
 
   render() {
