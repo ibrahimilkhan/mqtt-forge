@@ -1,22 +1,30 @@
 # MQTTForge
 
+[![Release](https://img.shields.io/github/v/release/ibrahimilkhan/mqtt-forge?color=1e40af&label=release)](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest)
+[![Image](https://img.shields.io/badge/ghcr.io-mqtt--forge-1e40af?logo=docker&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/pkgs/container/mqtt-forge)
+[![Licence](https://img.shields.io/github/license/ibrahimilkhan/mqtt-forge?color=1e40af)](LICENSE)
+
 An MQTT test console: connect to a broker, watch topics as they arrive, and publish
 messages by hand. A .NET API drives an MQTT client and pushes what it receives to a React
 interface over SignalR.
 
 MQTTForge connects to a broker you already run — it is not a broker itself.
 
+![The console: a broker's topics as a live tree, every frame on the wire, and a publish form](.github/assets/console.png)
+
 ## Download
 
-Every link below always points at the newest release, so they stay valid as versions come and go.
+[![macOS Apple Silicon](https://img.shields.io/badge/macOS-Apple_Silicon-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-macos-arm64.dmg)
+[![macOS Intel](https://img.shields.io/badge/macOS-Intel-555555?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-macos-x64.dmg)
+[![Windows x64](https://img.shields.io/badge/Windows-x64-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-windows-x64.zip)
+[![Linux x64](https://img.shields.io/badge/Linux-x64-1e40af?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-linux-x64.tar.gz)
 
-| Platform | |
-| --- | --- |
-| macOS (Apple Silicon) | [MQTTForge-macos-arm64.dmg](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-macos-arm64.dmg) |
-| macOS (Intel) | [MQTTForge-macos-x64.dmg](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-macos-x64.dmg) |
-| Windows (x64) | [MQTTForge-windows-x64.zip](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-windows-x64.zip) |
-| Linux (x64) | [MQTTForge-linux-x64.tar.gz](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-linux-x64.tar.gz) |
-| Docker | `docker run -d -p 5169:5169 ghcr.io/ibrahimilkhan/mqtt-forge` |
+Each button downloads the newest release, so they stay valid as versions come and go. Or run
+it as a container, which needs nothing installed and asks for no permissions:
+
+```
+docker run -d -p 5169:5169 ghcr.io/ibrahimilkhan/mqtt-forge
+```
 
 The desktop builds carry no paid signing certificate, so each platform asks once before it
 trusts them. **The Docker image is the way around all of it** — a container carries no

@@ -8,3 +8,4 @@ tests
 .claude
 web/certs
 dist
+.github
