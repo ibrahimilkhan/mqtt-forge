@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { publish } from '../../api/publish';
 import { Field } from '../../components/Field';
 import { PanelShell } from '../../components/PanelShell';
@@ -40,7 +40,8 @@ export function PublishPanel() {
   }, [draft]);
 
   // What would go out if Publish were pressed now — and, when it would not go out, why.
-  const encoded = encodePayload(mode, payload);
+  // Memoised so a large hex body is not re-parsed and re-base64'd on renders unrelated to it.
+  const encoded = useMemo(() => encodePayload(mode, payload), [mode, payload]);
 
   const publishMutation = useMutation({
     mutationFn: () => {

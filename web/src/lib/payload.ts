@@ -64,12 +64,16 @@ export function parseHex(text: string): Parsed {
   return { ok: true, bytes };
 }
 
+// Built once, not per byte: this runs on every arriving binary message, and a lookup beats
+// formatting the same 256 possible outputs over and over.
+const HEX_BYTE = Array.from({ length: 256 }, (_, byte) => byte.toString(16).padStart(2, '0').toUpperCase());
+
 /** Upper case and space separated: the form the parser above reads back unchanged. */
 export function hexFromBase64(base64: string): { text: string; size: number } {
   const binary = atob(base64);
   const pairs: string[] = [];
   for (let i = 0; i < binary.length; i++) {
-    pairs.push(binary.charCodeAt(i).toString(16).padStart(2, '0').toUpperCase());
+    pairs.push(HEX_BYTE[binary.charCodeAt(i)]);
   }
 
   return { text: pairs.join(' '), size: binary.length };
