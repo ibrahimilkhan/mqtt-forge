@@ -45,6 +45,27 @@ public class PayloadTextTests
     }
 
     [Fact]
+    public void A_small_valued_register_block_is_valid_utf8_but_still_binary()
+    {
+        // 0x00 0x64 is valid UTF-8 (two ASCII bytes) but is a Modbus register block, not text.
+        var (payload, encoding) = PayloadText.Describe(Sequence([0x00, 0x64]));
+
+        Assert.Equal(PayloadText.Base64, encoding);
+        Assert.Equal(new byte[] { 0x00, 0x64 }, Convert.FromBase64String(payload));
+    }
+
+    [Fact]
+    public void Text_with_a_tab_and_a_newline_is_still_text()
+    {
+        var bytes = "line one\tvalue\nline two"u8.ToArray();
+
+        var (payload, encoding) = PayloadText.Describe(Sequence(bytes));
+
+        Assert.Equal("line one\tvalue\nline two", payload);
+        Assert.Equal(PayloadText.Text, encoding);
+    }
+
+    [Fact]
     public void A_truncated_multi_byte_character_is_binary_not_text()
     {
         // First byte of a two-byte sequence with nothing after it. A UTF-8 decode would
