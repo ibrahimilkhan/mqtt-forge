@@ -102,7 +102,13 @@ export function PublishPanel() {
 
       <div className={styles.row}>
         <Field label="Payload" htmlFor="payload">
-          <textarea id="payload" value={payload} onChange={(e) => setPayload(e.target.value)} />
+          <textarea
+            id="payload"
+            value={payload}
+            onChange={(e) => setPayload(e.target.value)}
+            aria-invalid={!encoded.ok}
+            aria-describedby={encoded.ok ? undefined : 'payload-message'}
+          />
         </Field>
       </div>
 
@@ -111,7 +117,7 @@ export function PublishPanel() {
       {encoded.ok ? (
         <p className={styles.note}>{encoded.size} bytes</p>
       ) : (
-        <p className={styles.fault}>{encoded.error}</p>
+        <p id="payload-message" className={styles.fault}>{encoded.error}</p>
       )}
 
       <div className={styles.checks}>
