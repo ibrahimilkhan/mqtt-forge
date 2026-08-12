@@ -16,8 +16,7 @@ public sealed class PublishController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Publish(PublishRequestDto dto, CancellationToken ct)
     {
-        await _service.PublishAsync(
-            new PublishRequest(dto.Topic, dto.Payload, dto.Qos, dto.Retain), ct);
+        await _service.PublishAsync(dto.ToRequest(), ct);
         return Accepted();
     }
 }

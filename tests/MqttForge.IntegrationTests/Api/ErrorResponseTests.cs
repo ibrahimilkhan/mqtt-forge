@@ -17,7 +17,7 @@ public class ErrorResponseTests : IClassFixture<MqttForgeApiFactory>
     public async Task Publish_without_connection_returns_409_with_readable_detail()
     {
         var client = _factory.CreateClient();
-        var dto = new PublishRequestDto("sensors/temp", "23.5", 0, false);
+        var dto = new PublishRequestDto("sensors/temp", "23.5", null, 0, false);
 
         var response = await client.PostAsJsonAsync("/api/publish", dto);
 

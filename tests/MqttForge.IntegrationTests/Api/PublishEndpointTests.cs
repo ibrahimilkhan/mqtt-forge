@@ -16,7 +16,7 @@ public class PublishEndpointTests : IClassFixture<MqttForgeApiFactory>
     public async Task Publish_with_empty_topic_returns_400()
     {
         var client = _factory.CreateClient();
-        var dto = new PublishRequestDto(Topic: "", Payload: "x", Qos: 0, Retain: false);
+        var dto = new PublishRequestDto(Topic: "", Payload: "x", PayloadEncoding: null, Qos: 0, Retain: false);
 
         var response = await client.PostAsJsonAsync("/api/publish", dto);
 
@@ -27,7 +27,29 @@ public class PublishEndpointTests : IClassFixture<MqttForgeApiFactory>
     public async Task Publish_with_out_of_range_qos_returns_400()
     {
         var client = _factory.CreateClient();
-        var dto = new PublishRequestDto(Topic: "sensors/temp", Payload: "x", Qos: 5, Retain: false);
+        var dto = new PublishRequestDto(Topic: "sensors/temp", Payload: "x", PayloadEncoding: null, Qos: 5, Retain: false);
+
+        var response = await client.PostAsJsonAsync("/api/publish", dto);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Publish_with_invalid_base64_returns_400()
+    {
+        var client = _factory.CreateClient();
+        var dto = new PublishRequestDto("sensors/temp", "not base64!", "base64", 0, false);
+
+        var response = await client.PostAsJsonAsync("/api/publish", dto);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Publish_with_unknown_payload_encoding_returns_400()
+    {
+        var client = _factory.CreateClient();
+        var dto = new PublishRequestDto("sensors/temp", "01 FF", "hex", 0, false);
 
         var response = await client.PostAsJsonAsync("/api/publish", dto);
 
