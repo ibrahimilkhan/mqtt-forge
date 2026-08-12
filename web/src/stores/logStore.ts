@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { describeError } from '../lib/problemDetails';
+import type { BodyMode } from '../lib/payload';
 import type { MqttMessage } from '../types/api';
 
 /**
@@ -30,6 +31,8 @@ export type LogEntry = {
   // Kept apart from the display stamps so re-publishing an entry doesn't mean parsing its labels.
   qos?: number;
   retain?: boolean;
+  /** How `body` is written. Absent means text, which is what every entry was before hex. */
+  mode?: BodyMode;
 };
 
 type NewLogEntry = Omit<LogEntry, 'id' | 'at'>;

@@ -41,7 +41,13 @@ describe('PublishPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
 
     await waitFor(() =>
-      expect(sent).toEqual({ topic: 'sensors/temp', payload: '23.5', qos: 2, retain: true }),
+      expect(sent).toEqual({
+        topic: 'sensors/temp',
+        payload: '23.5',
+        payloadEncoding: 'text',
+        qos: 2,
+        retain: true,
+      }),
     );
     // Waits for the mutation's own onSuccess so it can't fire during a later test.
     await waitFor(() => expect(useLogStore.getState().entries).toHaveLength(1));
@@ -122,6 +128,122 @@ describe('PublishPanel', () => {
         verb: 'Publish failed',
         topic: 'sensors/temp',
         body: 'Connect to a broker before publishing.',
+      }),
+    );
+  });
+
+  it('sends text bodies with the text encoding', async () => {
+    let sent: unknown;
+    server.use(
+      http.post('/api/publish', async ({ request }) => {
+        sent = await request.json();
+        return new HttpResponse(null, { status: 202 });
+      }),
+    );
+
+    renderPanel();
+    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+
+    await waitFor(() =>
+      expect(sent).toEqual({
+        topic: 'sensors/temp',
+        payload: '23.5',
+        payloadEncoding: 'text',
+        qos: 0,
+        retain: false,
+      }),
+    );
+  });
+
+  it('sends what was typed as hex as base64', async () => {
+    let sent: unknown;
+    server.use(
+      http.post('/api/publish', async ({ request }) => {
+        sent = await request.json();
+        return new HttpResponse(null, { status: 202 });
+      }),
+    );
+
+    renderPanel();
+    await userEvent.click(screen.getByRole('radio', { name: 'Hex' }));
+    const box = screen.getByLabelText('Payload');
+    await userEvent.clear(box);
+    await userEvent.type(box, '01 A4 FF');
+    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+
+    await waitFor(() =>
+      expect(sent).toMatchObject({ payload: 'AaT/', payloadEncoding: 'base64' }),
+    );
+  });
+
+  it('will not publish hex it cannot read, and says why', async () => {
+    let called = false;
+    server.use(
+      http.post('/api/publish', () => {
+        called = true;
+        return new HttpResponse(null, { status: 202 });
+      }),
+    );
+
+    renderPanel();
+    await userEvent.click(screen.getByRole('radio', { name: 'Hex' }));
+    const box = screen.getByLabelText('Payload');
+    await userEvent.clear(box);
+    await userEvent.type(box, 'ZZ');
+
+    expect(await screen.findByText(/not a hex digit/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Publish' })).toBeDisabled();
+    expect(called).toBe(false);
+  });
+
+  it('will not publish broken JSON', async () => {
+    renderPanel();
+    await userEvent.click(screen.getByRole('radio', { name: 'JSON' }));
+    const box = screen.getByLabelText('Payload');
+    await userEvent.clear(box);
+    // `{{` is userEvent's escape for a literal `{`; see the note on the next test.
+    await userEvent.type(box, '{{"a":}');
+
+    expect(screen.getByRole('button', { name: 'Publish' })).toBeDisabled();
+  });
+
+  it('formats JSON in place', async () => {
+    renderPanel();
+    await userEvent.click(screen.getByRole('radio', { name: 'JSON' }));
+    const box = screen.getByLabelText('Payload');
+    await userEvent.clear(box);
+    await userEvent.type(box, '{{"a":1}');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Format' }));
+
+    expect(box).toHaveValue('{\n  "a": 1\n}');
+  });
+
+  it('counts the bytes that will go out, not the characters typed', async () => {
+    renderPanel();
+    const box = screen.getByLabelText('Payload');
+    await userEvent.clear(box);
+    await userEvent.type(box, 'ö');
+
+    expect(screen.getByText('2 bytes')).toBeInTheDocument();
+  });
+
+  it('stamps a hex publish as binary in the log', async () => {
+    server.use(http.post('/api/publish', () => new HttpResponse(null, { status: 202 })));
+
+    renderPanel();
+    await userEvent.click(screen.getByRole('radio', { name: 'Hex' }));
+    const box = screen.getByLabelText('Payload');
+    await userEvent.clear(box);
+    await userEvent.type(box, '01 A4 FF');
+    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+
+    await waitFor(() =>
+      expect(useLogStore.getState().entries[0]).toMatchObject({
+        kind: 'sent',
+        body: '01 A4 FF',
+        mode: 'hex',
+        stamps: ['QoS 0', 'BIN'],
       }),
     );
   });
