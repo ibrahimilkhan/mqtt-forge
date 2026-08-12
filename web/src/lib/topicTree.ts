@@ -1,3 +1,5 @@
+import type { BodyMode } from './payload';
+
 export type TopicNode = {
   name: string;
   /** Lookup index, keyed by segment. Its own iteration order means nothing — `order` has that. */
@@ -6,6 +8,7 @@ export type TopicNode = {
    *  array of strings rather than a rebuild of a map of thousands. */
   order: readonly string[];
   latestPayload: string | null;
+  latestMode: BodyMode;  // how latestPayload is written, so a click re-publishes the same bytes
   latestQos: number;     // settings of the last message on this exact topic, for re-publishing it
   latestRetain: boolean;
   hits: number;          // messages delivered directly to this topic
@@ -22,6 +25,7 @@ const leaf = (name: string): TopicNode => ({
   children: new Map(),
   order: [],
   latestPayload: null,
+  latestMode: 'text',
   latestQos: 0,
   latestRetain: false,
   hits: 0,
@@ -32,7 +36,13 @@ const leaf = (name: string): TopicNode => ({
 });
 
 /** What the tree needs off a message. QoS and retain ride along so a click can re-publish it. */
-type TreeMessage = { topic: string; payload: string; qos?: number; retain?: boolean };
+type TreeMessage = {
+  topic: string;
+  payload: string;
+  mode?: BodyMode;
+  qos?: number;
+  retain?: boolean;
+};
 
 export function applyMessage(
   root: TopicNode,
@@ -41,8 +51,9 @@ export function applyMessage(
   at: number,
   qos = 0,
   retain = false,
+  mode: BodyMode = 'text',
 ): TopicNode {
-  return insert(root, topic.split('/'), payload, at, qos, retain).node;
+  return insert(root, topic.split('/'), payload, at, qos, retain, mode).node;
 }
 
 export function applyMessages(
@@ -51,7 +62,7 @@ export function applyMessages(
   at: number,
 ): TopicNode {
   return messages.reduce(
-    (tree, m) => applyMessage(tree, m.topic, m.payload, at, m.qos ?? 0, m.retain ?? false),
+    (tree, m) => applyMessage(tree, m.topic, m.payload, at, m.qos ?? 0, m.retain ?? false, m.mode ?? 'text'),
     root,
   );
 }
@@ -234,6 +245,7 @@ function insert(
   at: number,
   qos: number,
   retain: boolean,
+  mode: BodyMode,
 ): { node: TopicNode; isNewTopic: boolean } {
   const path = [root];
   for (const name of segments) {
@@ -247,6 +259,7 @@ function insert(
     ...target,
     hits: target.hits + 1,
     latestPayload: payload,
+    latestMode: mode,
     latestQos: qos,
     latestRetain: retain,
     lastHitAt: at,

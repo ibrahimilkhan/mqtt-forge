@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { MqttMessage } from '../types/api';
+import type { DecodedMessage } from '../realtime/decodeIncoming';
 import { isPathOpen, useTopicTreeStore } from './topicTreeStore';
 
-const message = (topic: string, payload = '1'): MqttMessage => ({
+const message = (topic: string, payload = '1'): DecodedMessage => ({
   topic,
   payload,
+  mode: 'text',
+  size: payload.length,
   qos: 0,
   retain: false,
   receivedAt: '2026-07-26T10:00:00Z',

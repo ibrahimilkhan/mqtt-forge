@@ -273,6 +273,22 @@ describe('applyMessages', () => {
     expect(at(tree, 'a/b').latestPayload).toBe('2');
     expect(at(tree, 'a').subTopics).toBe(2);
   });
+
+  it('remembers how the last message on a topic was written', () => {
+    const tree = applyMessages(
+      emptyTree(),
+      [{ topic: 'device/cmd', payload: '01 A4 FF', mode: 'hex', qos: 0, retain: false }],
+      0,
+    );
+
+    expect(tree.children.get('device')!.children.get('cmd')!.latestMode).toBe('hex');
+  });
+
+  it('calls a message with no mode text', () => {
+    const tree = applyMessages(emptyTree(), [{ topic: 'sensors/temp', payload: '23.5' }], 0);
+
+    expect(tree.children.get('sensors')!.children.get('temp')!.latestMode).toBe('text');
+  });
 });
 
 describe('pruneTopics', () => {

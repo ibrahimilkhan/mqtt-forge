@@ -5,12 +5,14 @@ import { MAX_TREE_ROWS } from '../../lib/topicTree';
 import { useComposeStore } from '../../stores/composeStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
-import type { MqttMessage } from '../../types/api';
+import type { DecodedMessage } from '../../realtime/decodeIncoming';
 import { ACTIVE_WINDOW_MS, TopicTree } from './TopicTree';
 
-const message = (topic: string, payload = '1'): MqttMessage => ({
+const message = (topic: string, payload = '1'): DecodedMessage => ({
   topic,
   payload,
+  mode: 'text',
+  size: payload.length,
   qos: 0,
   retain: false,
   receivedAt: '2026-07-26T10:00:00Z',
@@ -346,7 +348,7 @@ describe('TopicTree', () => {
   });
 
   it('loads the clicked topic into publish, settings and all', async () => {
-    const retained: MqttMessage = { ...message('sensors/temp', '21.5'), qos: 2, retain: true };
+    const retained: DecodedMessage = { ...message('sensors/temp', '21.5'), qos: 2, retain: true };
     useTopicTreeStore.getState().apply([retained]);
     render(<TopicTree broker="broker:1883" />);
     await userEvent.click(screen.getByRole('button', { name: 'Expand sensors' }));

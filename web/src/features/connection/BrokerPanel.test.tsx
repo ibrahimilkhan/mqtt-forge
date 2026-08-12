@@ -128,7 +128,15 @@ describe('BrokerPanel', () => {
     useTopicTreeStore
       .getState()
       .apply([
-        { topic: 'stale/topic', payload: '1', qos: 0, retain: false, receivedAt: '2026-07-26T10:00:00Z' },
+        {
+          topic: 'stale/topic',
+          payload: '1',
+          mode: 'text',
+          size: 1,
+          qos: 0,
+          retain: false,
+          receivedAt: '2026-07-26T10:00:00Z',
+        },
       ]);
 
     renderPanel();
@@ -145,7 +153,17 @@ describe('BrokerPanel', () => {
     );
     useTopicTreeStore
       .getState()
-      .apply([{ topic: 'stale/topic', payload: '1', qos: 0, retain: false, receivedAt: '2026-07-26T10:00:00Z' }]);
+      .apply([
+        {
+          topic: 'stale/topic',
+          payload: '1',
+          mode: 'text',
+          size: 1,
+          qos: 0,
+          retain: false,
+          receivedAt: '2026-07-26T10:00:00Z',
+        },
+      ]);
 
     renderPanel();
     await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
