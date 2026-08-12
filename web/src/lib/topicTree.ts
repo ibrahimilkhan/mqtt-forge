@@ -162,6 +162,7 @@ function rebuild(
     children: kept,
     order,
     latestPayload: dropped ? null : node.latestPayload,
+    latestMode: dropped ? null : node.latestMode,
     latestQos: dropped ? 0 : node.latestQos,
     latestRetain: dropped ? false : node.latestRetain,
     hits: dropped ? 0 : node.hits,

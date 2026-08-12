@@ -350,6 +350,40 @@ describe('pruneTopics', () => {
     expect(at(tree, 'a').subTopics).toBe(1);
   });
 
+  it('drops the mode along with the payload when a node keeps its branch but loses its own message', () => {
+    const tree = pruneTopics(
+      applyMessages(
+        emptyTree(),
+        [
+          { topic: 'a', payload: '01 A4', mode: 'hex' },
+          { topic: 'a/x', payload: '1' },
+        ],
+        1000,
+      ),
+      (topic) => topic === 'a',
+    );
+
+    expect(at(tree, 'a').latestPayload).toBe(null);
+    expect(at(tree, 'a').latestMode).toBe(null);
+  });
+
+  it('keeps the mode when a node keeps its own message', () => {
+    const tree = pruneTopics(
+      applyMessages(
+        emptyTree(),
+        [
+          { topic: 'a', payload: '01 A4', mode: 'hex' },
+          { topic: 'a/x', payload: '1' },
+        ],
+        1000,
+      ),
+      (topic) => topic === 'a/x',
+    );
+
+    expect(at(tree, 'a').latestPayload).toBe('01 A4');
+    expect(at(tree, 'a').latestMode).toBe('hex');
+  });
+
   it('survives a topic deep enough to overflow a recursive walk', () => {
     const deep = Array.from({ length: 20000 }, (_, i) => `s${i}`).join('/');
     const tree = pruneTopics(build(deep, 'keep/me'), (topic) => topic.startsWith('s0'));
