@@ -1,3 +1,4 @@
+using System.Text;
 using MqttForge.Domain.Abstractions;
 using MqttForge.Domain.Exceptions;
 using MqttForge.Domain.Models;
@@ -32,7 +33,7 @@ public class MessageLimitsTests : IClassFixture<MosquittoFixture>
         var topic = new string('a', 70_000);
 
         await Assert.ThrowsAsync<MessageRejectedException>(
-            () => publisher.PublishAsync(new PublishRequest(topic, "x", 0, false), CancellationToken.None));
+            () => publisher.PublishAsync(new PublishRequest(topic, "x"u8.ToArray(), 0, false), CancellationToken.None));
     }
 
     [Fact]
@@ -54,6 +55,6 @@ public class MessageLimitsTests : IClassFixture<MosquittoFixture>
         var payload = new string('x', 5_000_000);
 
         await Assert.ThrowsAsync<MessageRejectedException>(
-            () => publisher.PublishAsync(new PublishRequest("sensors/big", payload, 0, false), CancellationToken.None));
+            () => publisher.PublishAsync(new PublishRequest("sensors/big", Encoding.UTF8.GetBytes(payload), 0, false), CancellationToken.None));
     }
 }

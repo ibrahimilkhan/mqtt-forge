@@ -38,7 +38,7 @@ public class MqttnetConnectAndPublishTests : IClassFixture<MosquittoFixture>
         await manager.ConnectAsync(settings, CancellationToken.None);
         Assert.Equal(ConnectionState.Connected, manager.State);
 
-        await publisher.PublishAsync(new PublishRequest("sensors/temp", "23.5", 0, false), CancellationToken.None);
+        await publisher.PublishAsync(new PublishRequest("sensors/temp", "23.5"u8.ToArray(), 0, false), CancellationToken.None);
 
         var payload = await received.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal("23.5", payload);

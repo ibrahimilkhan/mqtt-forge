@@ -14,7 +14,7 @@ public class PublishServiceTests
     public async Task PublishAsync_delegates_to_publisher()
     {
         var sut = new PublishService(_publisher);
-        var request = new PublishRequest("sensors/temp", "23.5", 1, false);
+        var request = new PublishRequest("sensors/temp", "23.5"u8.ToArray(), 1, false);
 
         await sut.PublishAsync(request, CancellationToken.None);
 
