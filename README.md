@@ -98,7 +98,7 @@ docker run -d -p 5169:5169 --name mqtt-forge mqtt-forge
 Open http://localhost:5169. Stop it with `docker stop mqtt-forge`.
 
 The container binds `0.0.0.0`, so the panel is reachable from other devices on the same
-network — that is what the Mobile panel's QR code is for. On a shared network anyone who
+network — that is what the QR panel's code is for. On a shared network anyone who
 can reach the port can publish to your broker.
 
 Saved connection settings live inside the container and are lost on `docker rm`. To keep
@@ -121,7 +121,7 @@ Produces `dist/MQTTForge-macos-arm64.dmg`; pass `osx-x64` for the Intel slice. T
 right-click → Open rather than a double-click.
 
 Like the Docker image, the desktop app binds `0.0.0.0` — it is reachable from other
-devices on the same network, which is what the Mobile panel's QR code is for, and equally
+devices on the same network, which is what the QR panel's code is for, and equally
 means anyone on a shared network who can reach it can publish to your broker.
 
 Windows (`.exe`) and Linux (AppImage) packaging is not scripted yet; both need to run on

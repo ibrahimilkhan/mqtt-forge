@@ -196,6 +196,19 @@ describe('PublishPanel', () => {
     expect(called).toBe(false);
   });
 
+  it('marks the payload box invalid and ties it to the error when the hex cannot be read', async () => {
+    renderPanel();
+    await userEvent.click(screen.getByRole('radio', { name: 'Hex' }));
+    const box = screen.getByLabelText('Payload');
+    await userEvent.clear(box);
+    await userEvent.type(box, 'ZZ');
+
+    const message = await screen.findByText(/not a hex digit/i);
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(box).toHaveAttribute('aria-describedby', message.id);
+    expect(message.id).toBeTruthy();
+  });
+
   it('will not publish broken JSON', async () => {
     renderPanel();
     await userEvent.click(screen.getByRole('radio', { name: 'JSON' }));

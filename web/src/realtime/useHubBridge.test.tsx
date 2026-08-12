@@ -58,6 +58,26 @@ describe('useHubBridge', () => {
     expect(useTopicTreeStore.getState().root.children.get('sensors')?.subTopics).toBe(2);
   });
 
+  it('lands a binary arrival in both stores as hex', () => {
+    const hub = createFakeHub();
+    renderBridge(hub);
+
+    // 'AaT/' is 01 A4 FF base64-encoded.
+    hub.emit('messagesReceived', [
+      { ...message('device/binary'), payload: 'AaT/', payloadEncoding: 'base64' },
+    ]);
+    frames[0]();
+
+    expect(useLogStore.getState().entries[0]).toMatchObject({
+      mode: 'hex',
+      body: '01 A4 FF',
+      stamps: expect.arrayContaining(['BIN']),
+    });
+
+    const node = useTopicTreeStore.getState().root.children.get('device')?.children.get('binary');
+    expect(node).toMatchObject({ latestMode: 'hex', latestPayload: '01 A4 FF' });
+  });
+
   it('writes a pushed connection state into the query cache', () => {
     const hub = createFakeHub();
     const { queryClient } = renderBridge(hub);
