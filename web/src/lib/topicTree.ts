@@ -8,7 +8,8 @@ export type TopicNode = {
    *  array of strings rather than a rebuild of a map of thousands. */
   order: readonly string[];
   latestPayload: string | null;
-  latestMode: BodyMode;  // how latestPayload is written, so a click re-publishes the same bytes
+  latestMode: BodyMode | null;  // how latestPayload is written; null means no message of its own,
+                                 // so a click must leave the publish form's mode untouched
   latestQos: number;     // settings of the last message on this exact topic, for re-publishing it
   latestRetain: boolean;
   hits: number;          // messages delivered directly to this topic
@@ -25,7 +26,7 @@ const leaf = (name: string): TopicNode => ({
   children: new Map(),
   order: [],
   latestPayload: null,
-  latestMode: 'text',
+  latestMode: null,
   latestQos: 0,
   latestRetain: false,
   hits: 0,

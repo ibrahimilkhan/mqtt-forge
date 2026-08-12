@@ -375,6 +375,28 @@ describe('TopicTree', () => {
     expect(useComposeStore.getState().draft?.payload).toBeUndefined();
   });
 
+  // Same rule as the payload above: a branch with no message of its own has no mode to offer
+  // either, so the form must stay in whatever mode it was already in rather than jumping to text.
+  it('sends a branch topic to publish without inventing a mode', async () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    await userEvent.click(screen.getByText('sensors'));
+
+    expect(useComposeStore.getState().draft?.mode).toBeUndefined();
+  });
+
+  // A leaf that did receive a message of its own must still pass its real mode through.
+  it('sends a leaf topic to publish with the mode its message arrived in', async () => {
+    useTopicTreeStore.getState().apply([{ ...message('device/cmd', '01a4ff'), mode: 'hex' }]);
+    render(<TopicTree broker="broker:1883" />);
+    await userEvent.click(screen.getByRole('button', { name: 'Expand device' }));
+
+    await userEvent.click(screen.getByText('cmd'));
+
+    expect(useComposeStore.getState().draft?.mode).toBe('hex');
+  });
+
   it('marks the focused row', async () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
     render(<TopicTree broker="broker:1883" />);
