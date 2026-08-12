@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { byteLength } from '../../lib/payload';
+import type { DecodedMessage } from '../../realtime/decodeIncoming';
 import { useComposeStore } from '../../stores/composeStore';
 import { MAX_LOG_ENTRIES, useLogStore } from '../../stores/logStore';
 import { useSelectionStore } from '../../stores/selectionStore';
@@ -12,10 +14,12 @@ const chip = { label: 'sensors/#', filter: 'sensors/#' };
 const received = (...topics: string[]) =>
   topics.forEach((topic) => useLogStore.getState().push({ kind: 'recv', verb: 'Received', topic }));
 
-// Goes in through the hub's own door, so the log caps it the way it caps real traffic.
-const msg = (topic: string) => ({
+// Already decoded, the way the hub bridge hands arrivals to the log — this bypasses the hub.
+const msg = (topic: string): DecodedMessage => ({
   topic,
   payload: '1',
+  mode: 'text',
+  size: byteLength('1'),
   qos: 0,
   retain: false,
   receivedAt: '2026-07-26T10:00:00Z',

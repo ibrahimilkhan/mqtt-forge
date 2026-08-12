@@ -6,6 +6,7 @@ import { useHubStatusStore } from '../stores/hubStatusStore';
 import { useLogStore } from '../stores/logStore';
 import { useTopicTreeStore } from '../stores/topicTreeStore';
 import type { MqttMessage } from '../types/api';
+import { decodeIncoming } from './decodeIncoming';
 import type { Hub } from './hub';
 
 // Where hub events meet application state; mounted once, from App.
@@ -14,8 +15,9 @@ export function useHubBridge(hub: Hub) {
 
   useEffect(() => {
     const buffer = createFrameBuffer<MqttMessage>((batch) => {
-      useLogStore.getState().appendReceived(batch);
-      useTopicTreeStore.getState().apply(batch);
+      const decoded = batch.map(decodeIncoming);
+      useLogStore.getState().appendReceived(decoded);
+      useTopicTreeStore.getState().apply(decoded);
     });
 
     const unsubscribe = hub.subscribe({
