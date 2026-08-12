@@ -71,9 +71,12 @@ public sealed class MqttnetSubscriber : IMqttSubscriber
 
     private Task OnMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs e)
     {
+        var (payload, encoding) = PayloadText.Describe(e.ApplicationMessage.Payload);
+
         var message = new MqttMessage(
             e.ApplicationMessage.Topic,
-            e.ApplicationMessage.ConvertPayloadToString() ?? string.Empty,
+            payload,
+            encoding,
             (int)e.ApplicationMessage.QualityOfServiceLevel,
             e.ApplicationMessage.Retain,
             DateTimeOffset.UtcNow);
