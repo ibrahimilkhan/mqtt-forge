@@ -46,11 +46,11 @@ describe('rapid panel switching', () => {
   it('does not warn about updating an unmounted panel when the menu is clicked rapidly', async () => {
     renderApp();
 
-    fireEvent.click(menu().getByRole('button', { name: 'Subscribe' }));
+    fireEvent.click(menu().getByRole('button', { name: 'Filters' }));
     fireEvent.click(menu().getByRole('button', { name: 'Broker' }));
-    fireEvent.click(menu().getByRole('button', { name: 'Mobile' }));
+    fireEvent.click(menu().getByRole('button', { name: 'QR' }));
     fireEvent.click(menu().getByRole('button', { name: 'Settings' }));
-    fireEvent.click(menu().getByRole('button', { name: 'Subscribe' }));
+    fireEvent.click(menu().getByRole('button', { name: 'Filters' }));
 
     // Let in-flight requests from discarded panels settle.
     await act(async () => {

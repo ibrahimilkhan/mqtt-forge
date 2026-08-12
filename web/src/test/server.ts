@@ -6,7 +6,6 @@ const defaultHandlers = [
   http.get('/api/connection', () => HttpResponse.json({ state: 'Disconnected' })),
   http.get('/api/connection/settings', () => new HttpResponse(null, { status: 204 })),
   http.get('/api/subscriptions', () => HttpResponse.json([])),
-  http.get('/api/health', () => HttpResponse.json({ status: 'ok' })),
 ];
 
 export const server = setupServer(...defaultHandlers);

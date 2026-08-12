@@ -33,8 +33,6 @@ export type ConnectionStateResponse = {
   alreadyConnected?: boolean;
 };
 
-export type HealthResponse = { status: string };
-
 export type SavedConnection = {
   host: string;
   port: number;
