@@ -49,14 +49,16 @@ function renderApp(state: string, connection: unknown = state === 'Connected' ? 
 }
 
 // Menu and panel share button names, so scope each: menu by nav landmark, panel by label.
-// Publish has a fixed place in the workspace; only Subscribe has to be opened first.
+// Publish has a fixed place in the workspace; only Filters has to be opened first — and that
+// panel is named for the filters it holds, while its button is still the verb.
 async function openPanelButton(name: 'Subscribe' | 'Publish') {
+  const panelName = name === 'Subscribe' ? 'Filters' : name;
   if (name === 'Subscribe') {
     const menu = screen.getByRole('navigation', { name: 'Panels' });
-    await userEvent.click(within(menu).getByRole('button', { name }));
+    await userEvent.click(within(menu).getByRole('button', { name: panelName }));
   }
 
-  const panel = screen.getByRole('region', { name: `${name} panel` });
+  const panel = screen.getByRole('region', { name: `${panelName} panel` });
   return within(panel).getByRole('button', { name });
 }
 
@@ -87,13 +89,15 @@ describe('connection gating', () => {
     await waitFor(async () => expect(await openPanelButton('Publish')).toBeEnabled());
   });
 
-  it('shows the broker address in the readout while connected', async () => {
+  // The bar carries the state alone; the address it is connected to lives in the broker panel.
+  it('shows the state, not the address, in the readout while connected', async () => {
     renderApp('Connected');
 
-    expect(await screen.findByText('CONNECTED · broker.example:8883')).toBeInTheDocument();
+    expect(await screen.findByText('CONNECTED')).toBeInTheDocument();
+    expect(screen.queryByText(/CONNECTED ·/)).not.toBeInTheDocument();
   });
 
-  it('leaves the address off when there is no connection', async () => {
+  it('shows the bare state when there is no connection', async () => {
     renderApp('Disconnected');
 
     expect(await screen.findByText('DISCONNECTED')).toBeInTheDocument();
@@ -101,7 +105,7 @@ describe('connection gating', () => {
 
   it('reports a hub reconnect in the readout', async () => {
     const hub = renderApp('Connected');
-    await screen.findByText('CONNECTED · broker.example:8883');
+    await screen.findByText('CONNECTED');
 
     hub.emit('reconnecting');
 
@@ -115,14 +119,16 @@ describe('connection gating', () => {
 
     hub.emit('reconnected');
 
-    expect(await screen.findByText('CONNECTED · broker.example:8883')).toBeInTheDocument();
+    expect(await screen.findByText('CONNECTED')).toBeInTheDocument();
   });
 
   // The saved settings record the last connect that WORKED, which is a different question
   // from what is up right now — and they are written on a best-effort basis at that.
+  // The broker panel is where that address is spelled out, so it is read from there.
   it('reads the address off the live link, not the last saved settings', async () => {
     renderApp('Connected', { ...LINK, host: 'live.example', port: 1884 });
 
-    expect(await screen.findByText('CONNECTED · live.example:1884')).toBeInTheDocument();
+    const details = await screen.findByLabelText('Connection details');
+    expect(within(details).getByText('live.example:1884')).toBeInTheDocument();
   });
 });

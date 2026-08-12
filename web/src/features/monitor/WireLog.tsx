@@ -21,7 +21,7 @@ export function WireLog() {
   return (
     <>
       <div className={styles.paneHead}>
-        <h2 className={styles.eyebrow}>Wire log</h2>
+        <h2 className={styles.eyebrow}>Logs</h2>
 
         {selected && (
           <div className={styles.focus}>

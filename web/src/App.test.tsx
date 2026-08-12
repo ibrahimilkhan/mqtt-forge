@@ -32,8 +32,8 @@ describe('App', () => {
   it('keeps topics, the log and publish on screen whatever the menu is doing', () => {
     renderApp();
 
-    expect(screen.getByRole('heading', { name: 'Topic tree' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Wire log' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Topics' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Logs' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Publish panel' })).toBeInTheDocument();
   });
 
@@ -46,20 +46,23 @@ describe('App', () => {
   it('keeps one panel in the first column at a time', async () => {
     renderApp();
 
-    await userEvent.click(menu().getByRole('button', { name: 'Subscribe' }));
+    await userEvent.click(menu().getByRole('button', { name: 'Filters' }));
 
-    expect(menu().getByRole('button', { name: 'Subscribe' })).toHaveAttribute('aria-expanded', 'true');
+    expect(menu().getByRole('button', { name: 'Filters' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
     expect(menu().getByRole('button', { name: 'Broker' })).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.getByRole('region', { name: 'Subscribe panel' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Filters panel' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Broker panel' })).not.toBeInTheDocument();
   });
 
   it('reaches the mobile panel from the menu', async () => {
     renderApp();
 
-    await userEvent.click(menu().getByRole('button', { name: 'Mobile' }));
+    await userEvent.click(menu().getByRole('button', { name: 'QR' }));
 
-    expect(screen.getByRole('region', { name: 'Mobile panel' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'QR panel' })).toBeInTheDocument();
   });
 
   it('reaches the settings panel from the menu', async () => {

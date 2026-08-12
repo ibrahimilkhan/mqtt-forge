@@ -86,7 +86,7 @@ export function TopicTree({ broker }: { broker?: string }) {
   return (
     <>
       <div className={styles.paneHead}>
-        <h2 className={styles.eyebrow}>Topic tree</h2>
+        <h2 className={styles.eyebrow}>Topics</h2>
         {/* Spelled out: as glyphs these were on screen the whole time and still went unfound. */}
         <div className={styles.paneActions}>
           <button type="button" onClick={() => setAllOpen(true)} title="Expand every branch">

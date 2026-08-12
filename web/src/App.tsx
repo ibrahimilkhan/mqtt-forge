@@ -1,6 +1,5 @@
 import { useState, type ReactNode } from 'react';
 import styles from './App.module.css';
-import { HealthDot } from './components/HealthDot';
 import { StatusReadout } from './components/StatusReadout';
 import { AppearancePanel } from './features/appearance/AppearancePanel';
 import { BrokerPanel } from './features/connection/BrokerPanel';
@@ -58,7 +57,7 @@ export function App({ hub }: { hub: Hub }) {
         </h1>
 
         <div className={styles.readoutSlot}>
-          <StatusReadout state={state} where={where} reconnecting={hubStatus === 'reconnecting'} />
+          <StatusReadout state={state} reconnecting={hubStatus === 'reconnecting'} />
         </div>
       </div>
 
@@ -95,8 +94,6 @@ export function App({ hub }: { hub: Hub }) {
           publish={<PublishPanel />}
         />
       </div>
-
-      <HealthDot />
     </>
   );
 }

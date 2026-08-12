@@ -74,7 +74,7 @@ export function SubscribePanel({ onClose }: { onClose: () => void }) {
   const guardedUnsubscribe = useGuardedKeyedMutate(unsubscribeMutation);
 
   return (
-    <PanelShell title="Subscribe" onClose={onClose}>
+    <PanelShell title="Filters" onClose={onClose}>
       <div className={styles.row}>
         <Field label="Topic filter" htmlFor="filter">
           {/* Takes a list as readily as one: newline or comma separated, sent as batched

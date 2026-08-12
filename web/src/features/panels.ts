@@ -6,7 +6,7 @@ type Panel = { id: PanelId; label: string };
 // they have fixed places in the workspace and are always on screen.
 export const PANELS: ReadonlyArray<Panel> = [
   { id: 'broker', label: 'Broker' },
-  { id: 'subscribe', label: 'Subscribe' },
-  { id: 'mobile', label: 'Mobile' },
+  { id: 'subscribe', label: 'Filters' },
+  { id: 'mobile', label: 'QR' },
   { id: 'settings', label: 'Settings' },
 ];

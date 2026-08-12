@@ -33,10 +33,16 @@ describe('QosSelect', () => {
 });
 
 describe('StatusReadout', () => {
-  it('shows the state in upper case with the broker address when connected', () => {
-    render(<StatusReadout state="Connected" where="localhost:1883" />);
+  it('shows the state in upper case', () => {
+    render(<StatusReadout state="Connected" />);
 
-    expect(screen.getByText('CONNECTED · localhost:1883')).toBeInTheDocument();
+    expect(screen.getByText('CONNECTED')).toBeInTheDocument();
+  });
+
+  it('says it is reconnecting whatever the broker state was', () => {
+    render(<StatusReadout state="Connected" reconnecting />);
+
+    expect(screen.getByText('RECONNECTING')).toBeInTheDocument();
   });
 
   it('shows the bare state when there is no connection', () => {
