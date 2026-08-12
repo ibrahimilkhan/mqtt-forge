@@ -69,6 +69,7 @@ export function TopicTree({ broker }: { broker?: string }) {
       load({
         topic: path,
         payload: node.latestPayload ?? undefined,
+        mode: node.latestMode,
         qos: node.latestQos,
         retain: node.latestRetain,
       });

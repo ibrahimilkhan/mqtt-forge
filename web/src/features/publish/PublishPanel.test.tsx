@@ -290,5 +290,45 @@ describe('PublishPanel', () => {
 
       await waitFor(() => expect(topic().value).toBe('lab/oven'));
     });
+
+    it('reloads a binary row in hex, and sends the same bytes again', async () => {
+      let sent: unknown;
+      server.use(
+        http.post('/api/publish', async ({ request }) => {
+          sent = await request.json();
+          return new HttpResponse(null, { status: 202 });
+        }),
+      );
+
+      renderPanel();
+      act(() =>
+        useComposeStore.getState().load({
+          topic: 'device/cmd',
+          payload: '01 A4 FF',
+          mode: 'hex',
+          qos: 0,
+          retain: false,
+        }),
+      );
+
+      expect(await screen.findByRole('radio', { name: 'Hex' })).toBeChecked();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+
+      await waitFor(() =>
+        expect(sent).toMatchObject({ payload: 'AaT/', payloadEncoding: 'base64' }),
+      );
+    });
+
+    it('leaves the mode alone for a draft that does not carry one', async () => {
+      renderPanel();
+      await userEvent.click(screen.getByRole('radio', { name: 'Hex' }));
+
+      act(() =>
+        useComposeStore.getState().load({ topic: 'sensors/temp', qos: 0, retain: false }),
+      );
+
+      await waitFor(() => expect(screen.getByRole('radio', { name: 'Hex' })).toBeChecked());
+    });
   });
 });

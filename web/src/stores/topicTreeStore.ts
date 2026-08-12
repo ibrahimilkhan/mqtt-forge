@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { matchesFilter } from '../lib/topicMatch';
 import { applyMessages, emptyTree, pruneTopics, type TopicNode } from '../lib/topicTree';
-import type { MqttMessage } from '../types/api';
+import type { DecodedMessage } from '../realtime/decodeIncoming';
 
 type TreeState = {
   root: TopicNode;
@@ -11,7 +11,7 @@ type TreeState = {
   // The broker row that everything hangs off. Its own field rather than a path in openPaths:
   // it defaults the other way (open), and collapse-all must not make the whole tree vanish.
   brokerOpen: boolean;
-  apply: (messages: MqttMessage[]) => void;
+  apply: (messages: DecodedMessage[]) => void;
   dropFilter: (filter: string, stillSubscribed: readonly string[]) => void;
   toggle: (path: string) => void;
   toggleBroker: () => void;

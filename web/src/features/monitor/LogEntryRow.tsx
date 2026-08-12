@@ -17,6 +17,7 @@ export const LogEntryRow = memo(function LogEntryRow({ entry }: { entry: LogEntr
           load({
             topic: entry.topic!,
             payload: entry.body,
+            mode: entry.mode,
             qos: entry.qos ?? 0,
             retain: entry.retain ?? false,
           })

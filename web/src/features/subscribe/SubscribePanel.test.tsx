@@ -75,8 +75,24 @@ describe('SubscribePanel', () => {
       http.delete('/api/subscriptions', () => new HttpResponse(null, { status: 204 })),
     );
     useTopicTreeStore.getState().apply([
-      { topic: 'sensors/temp', payload: '1', qos: 0, retain: false, receivedAt: '2026-08-09T10:00:00Z' },
-      { topic: 'devices/a', payload: '1', qos: 0, retain: false, receivedAt: '2026-08-09T10:00:00Z' },
+      {
+        topic: 'sensors/temp',
+        payload: '1',
+        mode: 'text',
+        size: 1,
+        qos: 0,
+        retain: false,
+        receivedAt: '2026-08-09T10:00:00Z',
+      },
+      {
+        topic: 'devices/a',
+        payload: '1',
+        mode: 'text',
+        size: 1,
+        qos: 0,
+        retain: false,
+        receivedAt: '2026-08-09T10:00:00Z',
+      },
     ]);
 
     renderPanel();
