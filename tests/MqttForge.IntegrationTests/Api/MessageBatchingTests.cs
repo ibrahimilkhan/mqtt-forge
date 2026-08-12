@@ -138,7 +138,7 @@ public class MessageBatchingTests
     }
 
     private static MqttMessage Message(string topic) =>
-        new(topic, "1", 0, false, DateTimeOffset.UnixEpoch);
+        new(topic, "1", "text", 0, false, DateTimeOffset.UnixEpoch);
 
     // Captures what reaches the hub. SendAsync is an extension method, so the substitute has to
     // stand in for the SendCoreAsync underneath it.
