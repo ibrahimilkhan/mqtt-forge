@@ -1,10 +1,13 @@
 import { create } from 'zustand';
+import type { BodyMode } from '../lib/payload';
 
 /** What a click on a topic or a message hands to the publish form. */
 export type Draft = {
   topic: string;
   /** Absent for a branch that has never carried a message of its own; the form keeps what it has. */
   payload?: string;
+  /** How `payload` is written. Absent leaves the form in whatever mode it is already in. */
+  mode?: BodyMode;
   qos: number;
   retain: boolean;
 };
