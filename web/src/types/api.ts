@@ -53,7 +53,13 @@ export type ConnectRequest = {
 
 export type SubscribeRequest = { topicFilter: string; qos: number };
 
-export type PublishRequest = { topic: string; payload: string; qos: number; retain: boolean };
+export type PublishRequest = {
+  topic: string;
+  payload: string;
+  payloadEncoding: 'text' | 'base64';
+  qos: number;
+  retain: boolean;
+};
 
 export type MqttMessage = {
   topic: string;
