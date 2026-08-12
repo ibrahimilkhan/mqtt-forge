@@ -1,10 +1,17 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { MqttMessage } from '../types/api';
+import { byteLength } from '../lib/payload';
+import type { DecodedMessage } from '../realtime/decodeIncoming';
 import { MAX_LOG_ENTRIES, MIN_TOPIC_ENTRIES, useLogStore } from './logStore';
 
-const message = (topic: string, payload: string, extra: Partial<MqttMessage> = {}): MqttMessage => ({
+const message = (
+  topic: string,
+  payload: string,
+  extra: Partial<DecodedMessage> = {},
+): DecodedMessage => ({
   topic,
   payload,
+  mode: 'text',
+  size: byteLength(payload),
   qos: 0,
   retain: false,
   receivedAt: '2026-07-26T10:00:00Z',
@@ -111,6 +118,16 @@ describe('logStore', () => {
     }
     expect([...perTopic.keys()].sort()).toEqual(['t/0', 't/1', 't/2', 't/3']);
     expect(Math.min(...perTopic.values())).toBeGreaterThan(MAX_LOG_ENTRIES / 8);
+  });
+
+  it('stamps a binary arrival with its real byte count, not the hex length', () => {
+    useLogStore.getState().appendReceived([message('a', '01 A4 FF', { mode: 'hex', size: 3 })]);
+
+    const entry = useLogStore.getState().entries[0];
+
+    expect(entry.mode).toBe('hex');
+    expect(entry.stamps).toContain('3 B');
+    expect(entry.stamps).toContain('BIN');
   });
 
   it('gives every entry a distinct id', () => {

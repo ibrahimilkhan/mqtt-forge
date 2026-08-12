@@ -64,6 +64,8 @@ export type PublishRequest = {
 export type MqttMessage = {
   topic: string;
   payload: string;
+  /** Absent means text: the server only sends 'base64' when the bytes are not valid UTF-8. */
+  payloadEncoding?: 'text' | 'base64';
   qos: number;
   retain: boolean;
   receivedAt: string;

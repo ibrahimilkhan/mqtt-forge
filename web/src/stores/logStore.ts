@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { describeError } from '../lib/problemDetails';
 import type { BodyMode } from '../lib/payload';
-import type { MqttMessage } from '../types/api';
+import type { DecodedMessage } from '../realtime/decodeIncoming';
 
 /**
  * What the log holds in total. Sized against the cost of reading it, not memory: the pane
@@ -40,7 +40,7 @@ type NewLogEntry = Omit<LogEntry, 'id' | 'at'>;
 type LogState = {
   entries: LogEntry[];
   push: (entry: NewLogEntry) => void;
-  appendReceived: (messages: MqttMessage[]) => void;
+  appendReceived: (messages: DecodedMessage[]) => void;
   clear: () => void;
 };
 
@@ -65,10 +65,11 @@ export const useLogStore = create<LogState>((set) => ({
 export const logFault = (verb: string, error: unknown, topic?: string) =>
   useLogStore.getState().push({ kind: 'fault', verb, topic, body: describeError(error) });
 
-function toEntry(message: MqttMessage): LogEntry {
+function toEntry(message: DecodedMessage): LogEntry {
   const stamps = [`QoS ${message.qos}`];
   if (message.retain) stamps.push('RETAINED');
-  stamps.push(payloadSize(message.payload));
+  stamps.push(payloadSize(message.size));
+  if (message.mode === 'hex') stamps.push('BIN');
 
   return {
     id: nextId++,
@@ -80,15 +81,13 @@ function toEntry(message: MqttMessage): LogEntry {
     stamps,
     qos: message.qos,
     retain: message.retain,
+    mode: message.mode,
   };
 }
 
-// One encoder for the process; this runs once per message on a broker firehose.
-const encoder = new TextEncoder();
-
-// Byte length, not char length — accented text is longer on the wire.
-function payloadSize(payload: string): string {
-  const bytes = encoder.encode(payload).length;
+// Counted where the bytes were still bytes: a hex body is two characters per byte, so measuring
+// the string here would double every binary arrival.
+function payloadSize(bytes: number): string {
   return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} kB`;
 }
 
