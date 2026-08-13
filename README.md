@@ -49,6 +49,21 @@ xattr -dr com.apple.quarantine /Applications/MQTTForge.app
 **Linux.** The window is drawn by WebKitGTK, so install `libwebkit2gtk-4.1-0` (Debian and
 Ubuntu) if the app starts and no window appears.
 
+## Colouring topics
+
+The **Colours** panel takes a list of MQTT filters and a colour for each — `sensors/+/temp`,
+`alerts/#`, whatever you watch for. Every topic a rule covers is then marked with a dot of that
+colour in the topic tree and in the log, so a branch you care about is findable in a tree of
+hundreds without reading paths.
+
+When two rules cover one topic, the more specific filter wins: read left to right, a named
+segment beats `+`, and `+` beats `#`. So `sensors/#` can colour a whole subtree while
+`sensors/+/temp` picks the temperatures out of it. Editing a rule recolours what is already on
+screen, history included.
+
+The rules are stored by the API rather than in the browser, so a phone opened from the QR panel
+sees the same colours.
+
 ## Requirements
 
 - .NET 10
@@ -110,6 +125,9 @@ docker run -d -p 5169:5169 \
   -v mqtt-forge-data:/data \
   --name mqtt-forge mqtt-forge
 ```
+
+The colour rules follow the settings into that directory, so one mount keeps both.
+`MqttForge__ColourRulesPath` overrides where they land if you want them somewhere else.
 
 ## Desktop app
 
