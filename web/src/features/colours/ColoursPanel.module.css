@@ -13,10 +13,22 @@
 }
 .filter[aria-invalid='true'] { border-color: var(--fault); }
 
+/* Quiet until reached for, like the × on a subscription chip: removing a rule is a small aside,
+   not the thing the row is for. Left as a filled button it read as the row's main action. */
 .remove {
+  all: unset;
   flex: none;
+  cursor: pointer;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: var(--t-code);
   line-height: 1;
+  padding: 4px 6px;
+  border-radius: 2px;
 }
+/* all: unset misses the global button:hover fill; :not(:disabled) matches its specificity so this wins. */
+.remove:hover:not(:disabled) { color: var(--fault); background: var(--surface); }
+.remove:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 /* ---- the colour control ---- */
 
