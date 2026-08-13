@@ -16,6 +16,10 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
     <PackageReference Include="NSubstitute" Version="6.0.0" />
     <PackageReference Include="Testcontainers" Version="4.13.0" />
+    <!-- Testcontainers 4.13.0 still pulls SSH.NET 2025.1.0, which carries GHSA-q939-rpr3-3284;
+         with warnings as errors that advisory fails the restore outright. Pinned forward to the
+         patched release until Testcontainers ships a version that asks for it itself. -->
+    <PackageReference Include="SSH.NET" Version="2026.0.0" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
