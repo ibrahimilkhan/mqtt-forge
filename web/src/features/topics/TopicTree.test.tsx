@@ -546,3 +546,38 @@ describe('colour rules', () => {
     await waitFor(() => expect(dotOf('temp')).toHaveStyle({ background: 'transparent' }));
   });
 });
+
+describe('which rule painted a row', () => {
+  it('names the filter that won, not the topic already on the row', async () => {
+    server.use(
+      http.get('/api/colour-rules', () =>
+        HttpResponse.json({
+          rules: [
+            { filter: 'sensors/#', colour: '#111111' },
+            { filter: 'sensors/+/temp', colour: '#222222' },
+          ],
+        }),
+      ),
+    );
+    useTopicTreeStore.setState({ defaultOpen: true });
+    useTopicTreeStore.getState().apply([message('sensors/a/temp')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    const dot = () =>
+      within(screen.getByText('temp').closest('[data-testid="tree-row"]')!).getByTestId('dot');
+
+    await waitFor(() => expect(dot()).toHaveAttribute('title', 'Coloured by sensors/+/temp'));
+  });
+
+  it('leaves an unmatched row with no tooltip at all', async () => {
+    useTopicTreeStore.setState({ defaultOpen: true });
+    useTopicTreeStore.getState().apply([message('sensors/a/temp')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    const dot = () =>
+      within(screen.getByText('temp').closest('[data-testid="tree-row"]')!).getByTestId('dot');
+
+    await waitFor(() => expect(dot()).toBeInTheDocument());
+    expect(dot()).not.toHaveAttribute('title');
+  });
+});

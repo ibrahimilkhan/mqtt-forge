@@ -9,7 +9,7 @@ import panel from '../../styles/panel.module.css';
 import { ColourPicker } from './ColourPicker';
 import styles from './ColoursPanel.module.css';
 import { nextColour } from './palette';
-import { draftFrom, faultIn, newDraftRule, type DraftRule } from './ruleDraft';
+import { draftFrom, faultIn, MAX_RULES, newDraftRule, type DraftRule } from './ruleDraft';
 
 export function ColoursPanel({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
@@ -43,6 +43,7 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
   const rules = draft ?? [];
   const faults = rules.map((rule) => faultIn(rule, rules));
   const savable = draft !== null && faults.every((fault) => fault === null);
+  const full = rules.length >= MAX_RULES;
 
   const edit = (id: number, change: Partial<DraftRule>) =>
     setDraft((current) => current!.map((rule) => (rule.id === id ? { ...rule, ...change } : rule)));
@@ -93,11 +94,13 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
         ))}
       </div>
 
+      {full && <p className={panel.note}>That is a hundred colour rules, which is all the API keeps.</p>}
+
       <div className={panel.actions}>
         <button
           type="button"
           className="ghost"
-          disabled={draft === null}
+          disabled={draft === null || full}
           onClick={() => setDraft((current) => [...current!, newDraftRule(nextColour(current!.map((r) => r.colour)))])}
         >
           Add rule

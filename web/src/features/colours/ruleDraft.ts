@@ -3,6 +3,9 @@ import type { ColourRule } from '../../lib/topicColour';
 /** A rule while it is being edited. The id exists only to key the row; it is never sent. */
 export type DraftRule = { id: number; filter: string; colour: string };
 
+/** What the API accepts. Held here too so the answer arrives before the round trip, as a sentence. */
+export const MAX_RULES = 100;
+
 let nextId = 0;
 
 export const draftFrom = (rules: readonly ColourRule[]): DraftRule[] =>

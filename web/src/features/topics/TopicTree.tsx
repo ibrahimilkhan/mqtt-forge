@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer } from 'react';
-import { useColourLookup } from '../../lib/useColourLookup';
+import { useRuleLookup } from '../../lib/useRuleLookup';
 import { treeFilter } from '../../lib/topicMatch';
 import { flattenTree, MAX_TREE_ROWS, type TopicNode, type TopicRow } from '../../lib/topicTree';
 import { useComposeStore } from '../../stores/composeStore';
@@ -34,7 +34,7 @@ export function TopicTree({ broker }: { broker?: string }) {
 
   // Rebuilt only when the rules change, so the answers it works out survive the renders that
   // messages cause — and a row asks about its own path, which never changes.
-  const colourOf = useColourLookup();
+  const ruleOf = useRuleLookup();
 
   // The store is read once here rather than once per row, so a message wakes this component
   // alone and only the rows whose node object actually changed re-render.
@@ -133,7 +133,7 @@ export function TopicTree({ broker }: { broker?: string }) {
               open={row.open}
               active={lastHitOf(row) > activeSince}
               selected={row.path === selectedPath}
-              colour={colourOf(row.path)}
+              rule={ruleOf(row.path)}
               onToggle={toggle}
               onSelect={onSelect}
             />
