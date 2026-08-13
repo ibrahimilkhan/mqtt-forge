@@ -288,3 +288,18 @@ describe('the rule ceiling', () => {
     expect(screen.queryByText(/hundred colour rules/i)).not.toBeInTheDocument();
   });
 });
+
+// The save is not idempotent from the user's side: two PUTs mean two log entries and two
+// round trips for one intention.
+it('sends one request when Save is clicked twice in the same tick', async () => {
+  const sent = capturePut();
+  stored({ filter: 'a/#', colour: '#b45309' });
+  renderPanel();
+  await waitFor(() => expect(rows()).toHaveLength(1));
+
+  fireEvent.click(saveButton());
+  fireEvent.click(saveButton());
+
+  await waitFor(() => expect(sent).toHaveLength(1));
+  expect(sent).toHaveLength(1);
+});

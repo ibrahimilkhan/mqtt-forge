@@ -36,6 +36,12 @@ describe('rapid panel switching', () => {
         await delay(30);
         return HttpResponse.json([]);
       }),
+      // The colours panel seeds local state off this the moment it lands, which is the update
+      // that has nowhere to go if the panel has already been switched away from.
+      http.get('/api/colour-rules', async () => {
+        await delay(30);
+        return HttpResponse.json({ rules: [{ filter: 'sensors/#', colour: '#b45309' }] });
+      }),
     );
   });
 
@@ -48,8 +54,10 @@ describe('rapid panel switching', () => {
 
     fireEvent.click(menu().getByRole('button', { name: 'Filters' }));
     fireEvent.click(menu().getByRole('button', { name: 'Broker' }));
+    fireEvent.click(menu().getByRole('button', { name: 'Colours' }));
     fireEvent.click(menu().getByRole('button', { name: 'QR' }));
     fireEvent.click(menu().getByRole('button', { name: 'Settings' }));
+    fireEvent.click(menu().getByRole('button', { name: 'Colours' }));
     fireEvent.click(menu().getByRole('button', { name: 'Filters' }));
 
     // Let in-flight requests from discarded panels settle.

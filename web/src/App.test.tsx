@@ -65,6 +65,14 @@ describe('App', () => {
     expect(screen.getByRole('region', { name: 'QR panel' })).toBeInTheDocument();
   });
 
+  it('reaches the colours panel from the menu', async () => {
+    renderApp();
+
+    await userEvent.click(menu().getByRole('button', { name: 'Colours' }));
+
+    expect(screen.getByRole('region', { name: 'Colours panel' })).toBeInTheDocument();
+  });
+
   it('reaches the settings panel from the menu', async () => {
     renderApp();
 
