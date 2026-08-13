@@ -1,0 +1,98 @@
+.rules { margin-top: 12px; }
+
+.rule { margin-bottom: 8px; }
+.rule:last-child { margin-bottom: 0; }
+
+.ruleRow { display: flex; align-items: center; gap: 8px; }
+
+/* The filter is the part that is read, so it takes whatever the row has left. */
+.filter {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+}
+.filter[aria-invalid='true'] { border-color: var(--fault); }
+
+.remove {
+  flex: none;
+  line-height: 1;
+}
+
+/* ---- the colour control ---- */
+
+/* The popover hangs off this, so it is the positioning context and the click-outside boundary. */
+.picker { position: relative; flex: none; }
+
+.swatchButton {
+  all: unset;
+  display: flex;
+  cursor: pointer;
+  padding: 4px;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+}
+.swatchButton:hover:not(:disabled) { border-color: var(--muted); background: none; }
+.swatchButton:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+.swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  /* Against a pale swatch the edge of the chip would otherwise be guesswork. */
+  box-shadow: inset 0 0 0 1px rgb(19 26 36 / 0.18);
+}
+
+.popover {
+  position: absolute;
+  z-index: 2;
+  top: calc(100% + 4px);
+  left: 0;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  box-shadow: 0 4px 14px rgb(19 26 36 / 0.16);
+}
+
+/* Two rows of four: wide enough to compare the shortlist at a glance, narrow enough to sit
+   over one rule rather than over the panel. */
+.suggestions {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.suggestion {
+  all: unset;
+  width: 20px;
+  height: 20px;
+  border-radius: 2px;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgb(19 26 36 / 0.18);
+}
+.suggestion:hover { box-shadow: inset 0 0 0 1px rgb(19 26 36 / 0.45); }
+.suggestion[aria-pressed='true'] { box-shadow: inset 0 0 0 2px var(--ink); }
+.suggestion:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+.custom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--rule);
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.custom input {
+  width: 28px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  background: none;
+  cursor: pointer;
+}

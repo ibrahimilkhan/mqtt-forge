@@ -1,4 +1,4 @@
-export type PanelId = 'broker' | 'subscribe' | 'mobile' | 'settings';
+export type PanelId = 'broker' | 'subscribe' | 'colours' | 'mobile' | 'settings';
 
 type Panel = { id: PanelId; label: string };
 
@@ -7,6 +7,7 @@ type Panel = { id: PanelId; label: string };
 export const PANELS: ReadonlyArray<Panel> = [
   { id: 'broker', label: 'Broker' },
   { id: 'subscribe', label: 'Filters' },
+  { id: 'colours', label: 'Colours' },
   { id: 'mobile', label: 'QR' },
   { id: 'settings', label: 'Settings' },
 ];
