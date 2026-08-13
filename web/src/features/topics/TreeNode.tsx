@@ -12,6 +12,8 @@ type Props = {
   open: boolean;
   active: boolean;
   selected: boolean;
+  /** From the colour rules. Absent means no rule covers this row. */
+  colour?: string | null;
   onToggle: (path: string) => void;
   onSelect: (path: string, node: TopicNode) => void;
 };
@@ -27,6 +29,7 @@ export const TreeNode = memo(function TreeNode({
   open,
   active,
   selected,
+  colour,
   onToggle,
   onSelect,
 }: Props) {
@@ -82,6 +85,16 @@ export const TreeNode = memo(function TreeNode({
           onToggle(path);
         }}
       >
+        {/* Drawn on every row, transparent when no rule covers it: a dot that came and went
+            would shift the segment beside it as messages arrive. Decorative — the colour says
+            nothing the topic on the row does not already say, so it carries no label. */}
+        <span
+          className={styles.dot}
+          data-testid="dot"
+          style={{ background: colour ?? 'transparent' }}
+          title={colour ? `Colour rule matches ${path}` : undefined}
+          aria-hidden="true"
+        />
         <span className={styles.seg}>{label ?? node.name}</span>
         <span className={styles.val}>{node.latestPayload ?? ''}</span>
         <span className={styles.meta}>{nodeSummary(node)}</span>

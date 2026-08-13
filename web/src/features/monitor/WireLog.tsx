@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useColourLookup } from '../../lib/useColourLookup';
 import { matchesFilter } from '../../lib/topicMatch';
 import { useLogStore, type LogEntry } from '../../stores/logStore';
 import { useSelectionStore } from '../../stores/selectionStore';
@@ -56,6 +57,7 @@ export function WireLog() {
 
 function EntryList({ entries }: { entries: LogEntry[] }) {
   const [expanded, setExpanded] = useState(false);
+  const colourOf = useColourLookup();
 
   const shown = expanded ? entries : entries.slice(0, VISIBLE_ENTRIES);
   const hidden = entries.length - VISIBLE_ENTRIES;
@@ -64,7 +66,7 @@ function EntryList({ entries }: { entries: LogEntry[] }) {
     <>
       <div className={styles.log}>
         {shown.map((entry) => (
-          <LogEntryRow key={entry.id} entry={entry} />
+          <LogEntryRow key={entry.id} entry={entry} colour={colourOfEntry(entry, colourOf)} />
         ))}
       </div>
 
@@ -75,4 +77,17 @@ function EntryList({ entries }: { entries: LogEntry[] }) {
       )}
     </>
   );
+}
+
+/**
+ * Only a message wears a rule's colour.
+ *
+ * A command entry's `topic` is what the command was aimed at — a filter, possibly a wildcard, or
+ * a count like '3 filters'. Handing that to the lookup would colour 'Subscribed to sensors/#'
+ * with the rule for sensors/#, which reads as a message on a topic that does not exist.
+ */
+function colourOfEntry(entry: LogEntry, colourOf: (topic: string) => string | null) {
+  const isMessage = entry.kind === 'recv' || entry.kind === 'sent';
+
+  return isMessage && entry.topic ? colourOf(entry.topic) : null;
 }

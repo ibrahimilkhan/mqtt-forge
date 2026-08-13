@@ -1,6 +1,10 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { http, HttpResponse } from 'msw';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+// The tree reads its colour rules through react-query, so every render here needs a client.
+import { renderWithClient as render } from '../../test/renderWithClient';
+import { server } from '../../test/server';
 import { MAX_TREE_ROWS } from '../../lib/topicTree';
 import { useComposeStore } from '../../stores/composeStore';
 import { useSelectionStore } from '../../stores/selectionStore';
@@ -463,5 +467,82 @@ describe('TopicTree', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
 
     expect(branchOf('a')).toHaveAttribute('data-open', 'true');
+  });
+});
+
+describe('colour rules', () => {
+  const rules = (...rules: Array<{ filter: string; colour: string }>) =>
+    server.use(http.get('/api/colour-rules', () => HttpResponse.json({ rules })));
+
+  const dotOf = (segment: string) =>
+    within(screen.getByText(segment).closest('[data-testid="tree-row"]')!).getByTestId('dot');
+
+  it('marks a row whose topic a rule covers', async () => {
+    rules({ filter: 'sensors/+/temp', colour: '#b45309' });
+    useTopicTreeStore.setState({ defaultOpen: true });
+    useTopicTreeStore.getState().apply([message('sensors/a/temp')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    await waitFor(() => expect(dotOf('temp')).toHaveStyle({ background: '#b45309' }));
+  });
+
+  it('leaves a row no rule covers unmarked, but still drawn', async () => {
+    rules({ filter: 'sensors/+/temp', colour: '#b45309' });
+    useTopicTreeStore.setState({ defaultOpen: true });
+    useTopicTreeStore.getState().apply([message('sensors/a/temp'), message('sensors/a/hum')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    // Drawn either way: a dot that appears and disappears would shift every segment beside it.
+    await waitFor(() => expect(dotOf('temp')).toHaveStyle({ background: '#b45309' }));
+    expect(dotOf('hum')).toHaveStyle({ background: 'transparent' });
+  });
+
+  it('gives a row the colour of the most specific rule that covers it', async () => {
+    rules({ filter: 'sensors/#', colour: '#111111' }, { filter: 'sensors/+/temp', colour: '#222222' });
+    useTopicTreeStore.setState({ defaultOpen: true });
+    useTopicTreeStore.getState().apply([message('sensors/a/temp')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    await waitFor(() => expect(dotOf('temp')).toHaveStyle({ background: '#222222' }));
+  });
+
+  it('colours a branch by its own path, not by what sits under it', async () => {
+    rules({ filter: 'sensors/a', colour: '#333333' });
+    useTopicTreeStore.setState({ defaultOpen: true });
+    useTopicTreeStore.getState().apply([message('sensors/a/temp')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    await waitFor(() => expect(dotOf('a')).toHaveStyle({ background: '#333333' }));
+    expect(dotOf('temp')).toHaveStyle({ background: 'transparent' });
+  });
+
+  it('is unmarked throughout when there are no rules', async () => {
+    useTopicTreeStore.setState({ defaultOpen: true });
+    useTopicTreeStore.getState().apply([message('sensors/a/temp')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    await waitFor(() => expect(screen.getAllByTestId('dot').length).toBeGreaterThan(0));
+    expect(screen.getAllByTestId('dot').every((dot) => dot.style.background === 'transparent')).toBe(true);
+  });
+
+  // A hand-edited file can hold anything; it must not reach a style attribute.
+  it('ignores a rule whose colour is not a hex triple', async () => {
+    rules({ filter: 'sensors/#', colour: 'red; background: url(x)' });
+    useTopicTreeStore.setState({ defaultOpen: true });
+    useTopicTreeStore.getState().apply([message('sensors/a/temp')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    await waitFor(() => expect(dotOf('temp')).toBeInTheDocument());
+    expect(dotOf('temp')).toHaveStyle({ background: 'transparent' });
+  });
+
+  it('carries on drawing the tree when the rules cannot be fetched', async () => {
+    server.use(http.get('/api/colour-rules', () => new HttpResponse(null, { status: 500 })));
+    useTopicTreeStore.setState({ defaultOpen: true });
+    useTopicTreeStore.getState().apply([message('sensors/a/temp')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    expect(screen.getByText('temp')).toBeInTheDocument();
+    await waitFor(() => expect(dotOf('temp')).toHaveStyle({ background: 'transparent' }));
   });
 });

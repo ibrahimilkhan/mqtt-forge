@@ -1,6 +1,10 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { http, HttpResponse } from 'msw';
 import { beforeEach, describe, expect, it } from 'vitest';
+// The log reads its colour rules through react-query, so every render here needs a client.
+import { renderWithClient as render } from '../../test/renderWithClient';
+import { server } from '../../test/server';
 import { byteLength } from '../../lib/payload';
 import type { DecodedMessage } from '../../realtime/decodeIncoming';
 import { useComposeStore } from '../../stores/composeStore';
@@ -246,5 +250,75 @@ describe('WireLog', () => {
     fireEvent.click(body);
 
     expect(useComposeStore.getState().draft).toBeNull();
+  });
+});
+
+describe('colour rules', () => {
+  const rules = (...rules: Array<{ filter: string; colour: string }>) =>
+    server.use(http.get('/api/colour-rules', () => HttpResponse.json({ rules })));
+
+  // The topic is drawn a segment at a time, so it is found by the row's whole text, not a word.
+  const dotOf = (topic: string) => {
+    const entry = screen
+      .getAllByTestId('entry')
+      .find((row) => within(row).getByTestId('topic').textContent === topic);
+
+    return within(entry!).getByTestId('dot');
+  };
+
+  it('marks an entry whose topic a rule covers', async () => {
+    rules({ filter: 'sensors/+/temp', colour: '#b45309' });
+    useSelectionStore.getState().select(chip);
+    received('sensors/a/temp');
+
+    render(<WireLog />);
+
+    await waitFor(() => expect(dotOf('sensors/a/temp')).toHaveStyle({ background: '#b45309' }));
+  });
+
+  it('leaves an entry no rule covers unmarked, but still drawn', async () => {
+    rules({ filter: 'sensors/+/temp', colour: '#b45309' });
+    useSelectionStore.getState().select(chip);
+    received('sensors/a/temp', 'sensors/a/hum');
+
+    render(<WireLog />);
+
+    await waitFor(() => expect(dotOf('sensors/a/temp')).toHaveStyle({ background: '#b45309' }));
+    expect(dotOf('sensors/a/hum')).toHaveStyle({ background: 'transparent' });
+  });
+
+  it('gives an entry the colour of the most specific rule that covers it', async () => {
+    rules({ filter: 'sensors/#', colour: '#111111' }, { filter: 'sensors/+/temp', colour: '#222222' });
+    useSelectionStore.getState().select(chip);
+    received('sensors/a/temp');
+
+    render(<WireLog />);
+
+    await waitFor(() => expect(dotOf('sensors/a/temp')).toHaveStyle({ background: '#222222' }));
+  });
+
+  // Command entries carry a filter, not a topic; a wildcard is not a thing a rule can colour.
+  it('leaves a command entry unmarked', async () => {
+    rules({ filter: 'sensors/#', colour: '#111111' });
+    useSelectionStore.getState().select(chip);
+    useLogStore.getState().push({ kind: 'ok', verb: 'Subscribed', topic: 'sensors/#' });
+
+    render(<WireLog />);
+
+    await waitFor(() => expect(screen.getByTestId('entry')).toBeInTheDocument());
+    expect(within(screen.getByTestId('entry')).getByTestId('dot')).toHaveStyle({
+      background: 'transparent',
+    });
+  });
+
+  it('carries on drawing the log when the rules cannot be fetched', async () => {
+    server.use(http.get('/api/colour-rules', () => new HttpResponse(null, { status: 500 })));
+    useSelectionStore.getState().select(chip);
+    received('sensors/a/temp');
+
+    render(<WireLog />);
+
+    expect(screen.getByTestId('entry')).toBeInTheDocument();
+    await waitFor(() => expect(dotOf('sensors/a/temp')).toHaveStyle({ background: 'transparent' }));
   });
 });
