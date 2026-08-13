@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import styles from './App.module.css';
 import { StatusReadout } from './components/StatusReadout';
 import { AppearancePanel } from './features/appearance/AppearancePanel';
+import { ColoursPanel } from './features/colours/ColoursPanel';
 import { BrokerPanel } from './features/connection/BrokerPanel';
 import { MobilePanel } from './features/mobile/MobilePanel';
 import { useBrokerAddress, useConnectionState } from './api/useConnectionState';
@@ -19,6 +20,7 @@ import { useHubStatusStore } from './stores/hubStatusStore';
 const PANEL_VIEWS: Record<PanelId, (props: { onClose: () => void }) => ReactNode> = {
   broker: BrokerPanel,
   subscribe: SubscribePanel,
+  colours: ColoursPanel,
   mobile: MobilePanel,
   settings: AppearancePanel,
 };
