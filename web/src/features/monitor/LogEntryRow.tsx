@@ -4,7 +4,14 @@ import type { LogEntry } from '../../stores/logStore';
 import styles from './WireLog.module.css';
 
 // Entries are immutable, so memoising means a new arrival re-renders only one row.
-export const LogEntryRow = memo(function LogEntryRow({ entry }: { entry: LogEntry }) {
+export const LogEntryRow = memo(function LogEntryRow({
+  entry,
+  colour,
+}: {
+  entry: LogEntry;
+  /** From the colour rules. Absent means no rule covers this entry's topic. */
+  colour?: string | null;
+}) {
   const load = useComposeStore((state) => state.load);
 
   // Only a message can be sent back. A command entry carries the filter it was aimed at, which
@@ -55,6 +62,16 @@ export const LogEntryRow = memo(function LogEntryRow({ entry }: { entry: LogEntr
 
       {entry.topic && (
         <div className={styles.topic} data-testid="topic">
+          {/* Drawn on every entry, transparent when no rule covers it, so the topics of a
+              scrolling log stay on one vertical line. Decorative: the colour says nothing the
+              topic beside it does not already say. */}
+          <span
+            className={styles.dot}
+            data-testid="dot"
+            style={{ background: colour ?? 'transparent' }}
+            title={colour ? `Colour rule matches ${entry.topic}` : undefined}
+            aria-hidden="true"
+          />
           <Topic topic={entry.topic} />
           {entry.stamps && (
             <span className={styles.stamps}>

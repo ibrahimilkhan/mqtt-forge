@@ -146,3 +146,14 @@
 }
 /* Noise once the branch is open and its children already show the detail. */
 .node[data-open="true"][data-branch="true"] > .pick > .meta { display: none; }
+
+/* Colour-rule marker. A third channel: the row's background already means "traffic just now"
+   and its left stripe means "selected", so the rule needed somewhere neither of them reaches.
+   Always present, transparent when unmatched, so segments stay on one vertical line. */
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  align-self: center;
+}
