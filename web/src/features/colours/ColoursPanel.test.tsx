@@ -6,12 +6,16 @@ import { useLogStore } from '../../stores/logStore';
 import { renderWithClient as render } from '../../test/renderWithClient';
 import { server } from '../../test/server';
 import { ColoursPanel } from './ColoursPanel';
-import { SUGGESTED } from './palette';
+import { PALETTE, SUGGESTED } from './palette';
 
 const stored = (...rules: Array<{ filter: string; colour: string }>) =>
   server.use(http.get('/api/colour-rules', () => HttpResponse.json({ rules })));
 
-/** Captures what the panel sends, so a test can assert on the saved list. */
+/**
+ * Captures what the panel sends, so a test can assert on the saved list — and answers the next
+ * GET with it, the way the API does. Without that the refetch after a save hands back the list
+ * from before it, and the panel is right to say the edits are still unsaved.
+ */
 function capturePut() {
   const sent: Array<Array<{ filter: string; colour: string }>> = [];
 
@@ -19,6 +23,7 @@ function capturePut() {
     http.put('/api/colour-rules', async ({ request }) => {
       const body = (await request.json()) as { rules: Array<{ filter: string; colour: string }> };
       sent.push(body.rules);
+      server.use(http.get('/api/colour-rules', () => HttpResponse.json({ rules: body.rules })));
       return new HttpResponse(null, { status: 204 });
     }),
   );
@@ -83,7 +88,7 @@ describe('ColoursPanel', () => {
     await userEvent.type(filterBox(rows()[0]), 'alerts/#');
 
     await userEvent.click(within(rows()[0]).getByRole('button', { name: /Choose a colour/ }));
-    await userEvent.click(screen.getByRole('button', { name: SUGGESTED[3] }));
+    await userEvent.click(screen.getByRole('button', { name: PALETTE[3].name }));
     await userEvent.click(saveButton());
 
     await waitFor(() => expect(sent).toHaveLength(1));
@@ -258,8 +263,8 @@ describe('the colour popover', () => {
 
     await userEvent.click(within(rows()[0]).getByRole('button', { name: /Choose a colour/ }));
 
-    expect(screen.getByRole('button', { name: SUGGESTED[2] })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: SUGGESTED[0] })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: PALETTE[2].name })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: PALETTE[0].name })).toHaveAttribute('aria-pressed', 'false');
   });
 });
 
@@ -302,4 +307,109 @@ it('sends one request when Save is clicked twice in the same tick', async () => 
 
   await waitFor(() => expect(sent).toHaveLength(1));
   expect(sent).toHaveLength(1);
+});
+
+// The file can be hand-edited past the API's validation, and what it then holds must not reach
+// an inline style or a colour input. The tree already refuses such a rule; the panel is where
+// it can be repaired.
+describe('a stored colour the panel cannot use', () => {
+  it('shows a usable colour instead of the nonsense in the file', async () => {
+    stored({ filter: 'a/#', colour: 'red; background: url(x)' });
+    renderPanel();
+
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(within(rows()[0]).getByTestId('swatch')).toHaveStyle({ background: SUGGESTED[0] });
+  });
+
+  it('keeps the filter, which is the part worth keeping', async () => {
+    stored({ filter: 'a/#', colour: 'nonsense' });
+    renderPanel();
+
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(filterBox(rows()[0])).toHaveValue('a/#');
+  });
+
+  it('saves the repaired colour rather than writing the nonsense back', async () => {
+    const sent = capturePut();
+    stored({ filter: 'a/#', colour: 'nonsense' });
+    renderPanel();
+    await waitFor(() => expect(rows()).toHaveLength(1));
+
+    await userEvent.click(saveButton());
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toEqual([{ filter: 'a/#', colour: SUGGESTED[0] }]);
+  });
+
+  it('gives two broken rules different colours rather than the same one', async () => {
+    stored({ filter: 'a/#', colour: 'nonsense' }, { filter: 'b/#', colour: 'also nonsense' });
+    renderPanel();
+
+    await waitFor(() => expect(rows()).toHaveLength(2));
+    expect(within(rows()[0]).getByTestId('swatch')).toHaveStyle({ background: SUGGESTED[0] });
+    expect(within(rows()[1]).getByTestId('swatch')).toHaveStyle({ background: SUGGESTED[1] });
+  });
+
+  it('normalises a colour written in capitals', async () => {
+    stored({ filter: 'a/#', colour: '#B45309' });
+    renderPanel();
+
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(within(rows()[0]).getByTestId('swatch')).toHaveStyle({ background: '#b45309' });
+  });
+});
+
+// Closing the panel throws the draft away — the edits live in component state, not the cache.
+// Saying so is what makes that honest.
+describe('unsaved edits', () => {
+  it('says nothing while the rows match what is stored', async () => {
+    stored({ filter: 'a/#', colour: '#b45309' });
+    renderPanel();
+
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(screen.queryByText(/not saved/i)).not.toBeInTheDocument();
+  });
+
+  it('says so once a filter has been typed into', async () => {
+    stored({ filter: 'a/#', colour: '#b45309' });
+    renderPanel();
+    await waitFor(() => expect(rows()).toHaveLength(1));
+
+    await userEvent.type(filterBox(rows()[0]), 'b');
+
+    expect(screen.getByText(/not saved/i)).toBeInTheDocument();
+  });
+
+  it('says so once a rule has been removed', async () => {
+    stored({ filter: 'a/#', colour: '#b45309' });
+    renderPanel();
+    await waitFor(() => expect(rows()).toHaveLength(1));
+
+    await userEvent.click(within(rows()[0]).getByRole('button', { name: /Remove/ }));
+
+    expect(screen.getByText(/not saved/i)).toBeInTheDocument();
+  });
+
+  it('stops saying so once the save lands', async () => {
+    capturePut();
+    // A filter that is still a filter after the edit; appending to 'a/#' would only prove that
+    // Save stays disabled for a malformed one.
+    stored({ filter: 'sensors/a', colour: '#b45309' });
+    renderPanel();
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    await userEvent.type(filterBox(rows()[0]), 'b');
+
+    await userEvent.click(saveButton());
+
+    await waitFor(() => expect(screen.queryByText(/not saved/i)).not.toBeInTheDocument());
+  });
+
+  // A file edited by hand arrives already needing a save; the repaired colour is a real change.
+  it('says so straight away when a stored colour had to be repaired', async () => {
+    stored({ filter: 'a/#', colour: 'nonsense' });
+    renderPanel();
+
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(screen.getByText(/not saved/i)).toBeInTheDocument();
+  });
 });

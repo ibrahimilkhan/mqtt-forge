@@ -1,4 +1,5 @@
-import type { ColourRule } from '../../lib/topicColour';
+import { isColour, type ColourRule } from '../../lib/topicColour';
+import { nextColour } from './palette';
 
 /** A rule while it is being edited. The id exists only to key the row; it is never sent. */
 export type DraftRule = { id: number; filter: string; colour: string };
@@ -8,8 +9,28 @@ export const MAX_RULES = 100;
 
 let nextId = 0;
 
-export const draftFrom = (rules: readonly ColourRule[]): DraftRule[] =>
-  rules.map((rule) => ({ id: nextId++, filter: rule.filter, colour: rule.colour }));
+/**
+ * The stored rules, as rows that can be edited.
+ *
+ * A colour that is not a hex triple is replaced rather than carried: the file can be edited by
+ * hand past the API's validation, and what it then holds would go into an inline style and into
+ * a colour input, neither of which can do anything with it. The filter is the part worth
+ * keeping, so the row survives wearing a colour it can actually show — and saying so by wearing
+ * an obviously different one.
+ */
+export function draftFrom(rules: readonly ColourRule[]): DraftRule[] {
+  const usable: DraftRule[] = [];
+
+  for (const rule of rules) {
+    const colour = isColour(rule.colour)
+      ? rule.colour.toLowerCase()
+      : nextColour(usable.map((row) => row.colour));
+
+    usable.push({ id: nextId++, filter: rule.filter, colour });
+  }
+
+  return usable;
+}
 
 export const newDraftRule = (colour: string): DraftRule => ({ id: nextId++, filter: '', colour });
 
