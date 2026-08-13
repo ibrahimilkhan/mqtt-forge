@@ -1,4 +1,5 @@
 import { memo, type CSSProperties } from 'react';
+import type { ColourRule } from '../../lib/topicColour';
 import { nodeSummary, type TopicNode } from '../../lib/topicTree';
 import styles from './TopicTree.module.css';
 
@@ -12,8 +13,8 @@ type Props = {
   open: boolean;
   active: boolean;
   selected: boolean;
-  /** From the colour rules. Absent means no rule covers this row. */
-  colour?: string | null;
+  /** The colour rule covering this row's topic, or null when none does. */
+  rule?: ColourRule | null;
   onToggle: (path: string) => void;
   onSelect: (path: string, node: TopicNode) => void;
 };
@@ -29,7 +30,7 @@ export const TreeNode = memo(function TreeNode({
   open,
   active,
   selected,
-  colour,
+  rule,
   onToggle,
   onSelect,
 }: Props) {
@@ -91,8 +92,10 @@ export const TreeNode = memo(function TreeNode({
         <span
           className={styles.dot}
           data-testid="dot"
-          style={{ background: colour ?? 'transparent' }}
-          title={colour ? `Colour rule matches ${path}` : undefined}
+          style={{ background: rule?.colour ?? 'transparent' }}
+          // Names the filter, not the topic: the topic is already on the row, and with rules
+          // overlapping, which one won is the question the colour raises.
+          title={rule ? `Coloured by ${rule.filter}` : undefined}
           aria-hidden="true"
         />
         <span className={styles.seg}>{label ?? node.name}</span>

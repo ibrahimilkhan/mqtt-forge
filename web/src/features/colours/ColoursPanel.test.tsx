@@ -222,3 +222,69 @@ describe('ColoursPanel', () => {
     expect(saveButton()).toBeEnabled();
   });
 });
+
+describe('the colour popover', () => {
+  const openPicker = async () => {
+    await userEvent.click(addButton());
+    await userEvent.click(within(rows()[0]).getByRole('button', { name: /Choose a colour/ }));
+  };
+
+  it('closes on Escape, leaving the colour as it was', async () => {
+    renderPanel();
+    await waitFor(() => expect(addButton()).toBeEnabled());
+    await openPicker();
+    expect(screen.getByLabelText('Custom colour')).toBeInTheDocument();
+
+    await userEvent.keyboard('{Escape}');
+
+    expect(screen.queryByLabelText('Custom colour')).not.toBeInTheDocument();
+    expect(within(rows()[0]).getByTestId('swatch')).toHaveStyle({ background: SUGGESTED[0] });
+  });
+
+  it('closes when the click lands somewhere else', async () => {
+    renderPanel();
+    await waitFor(() => expect(addButton()).toBeEnabled());
+    await openPicker();
+
+    await userEvent.click(filterBox(rows()[0]));
+
+    expect(screen.queryByLabelText('Custom colour')).not.toBeInTheDocument();
+  });
+
+  it('marks the colour the rule is already wearing', async () => {
+    stored({ filter: 'a/#', colour: SUGGESTED[2] });
+    renderPanel();
+    await waitFor(() => expect(rows()).toHaveLength(1));
+
+    await userEvent.click(within(rows()[0]).getByRole('button', { name: /Choose a colour/ }));
+
+    expect(screen.getByRole('button', { name: SUGGESTED[2] })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: SUGGESTED[0] })).toHaveAttribute('aria-pressed', 'false');
+  });
+});
+
+describe('the rule ceiling', () => {
+  const hundred = Array.from({ length: 100 }, (_, i) => ({ filter: `topic/${i}`, colour: '#1e40af' }));
+
+  // The API refuses the 101st. Saying so here means the answer arrives before the round trip,
+  // and as a sentence rather than as a 400.
+  it('stops at a hundred rules and says why', async () => {
+    stored(...hundred);
+    renderPanel();
+    await waitFor(() => expect(rows()).toHaveLength(100));
+
+    expect(addButton()).toBeDisabled();
+    expect(screen.getByText(/hundred colour rules/i)).toBeInTheDocument();
+  });
+
+  it('lets one be added again once a rule is removed', async () => {
+    stored(...hundred);
+    renderPanel();
+    await waitFor(() => expect(rows()).toHaveLength(100));
+
+    await userEvent.click(within(rows()[0]).getByRole('button', { name: /Remove/ }));
+
+    expect(addButton()).toBeEnabled();
+    expect(screen.queryByText(/hundred colour rules/i)).not.toBeInTheDocument();
+  });
+});

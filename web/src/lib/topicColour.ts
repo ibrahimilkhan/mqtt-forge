@@ -77,24 +77,27 @@ export function sortRules(rules: readonly ColourRule[]): ColourRule[] {
 }
 
 /**
- * A topic's colour, or null when no rule covers it.
+ * The rule covering a topic, or null when none does.
+ *
+ * The rule rather than just its colour, because the row wants to be able to say which filter
+ * painted it — with several rules overlapping, that is the question a colour raises.
  *
  * The rules are snapshotted and sorted once, and each answer is remembered: the tree asks for the
- * same topics on every render, and a busy broker puts a thousand rows on screen. A changed rule
- * list means a new lookup, which is what throws the remembered answers away.
+ * same topics on every render, and a busy broker puts a thousand rows on screen. Remembering the
+ * rule object also keeps its identity stable, so a memoised row sees an unchanged prop. A changed
+ * rule list means a new lookup, which is what throws the remembered answers away.
  */
-export function createColourLookup(rules: readonly ColourRule[]): (topic: string) => string | null {
+export function createRuleLookup(rules: readonly ColourRule[]): (topic: string) => ColourRule | null {
   const sorted = sortRules(rules);
-  const known = new Map<string, string | null>();
+  const known = new Map<string, ColourRule | null>();
 
   return (topic: string) => {
     const remembered = known.get(topic);
     if (remembered !== undefined) return remembered;
 
-    const match = sorted.find((rule) => matchesFilter(rule.filter, topic));
-    const colour = match?.colour ?? null;
+    const match = sorted.find((rule) => matchesFilter(rule.filter, topic)) ?? null;
 
-    known.set(topic, colour);
-    return colour;
+    known.set(topic, match);
+    return match;
   };
 }

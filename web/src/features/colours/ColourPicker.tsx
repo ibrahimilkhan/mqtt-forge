@@ -14,15 +14,25 @@ export function ColourPicker({ colour, filter, onChange }: Props) {
   const container = useRef<HTMLDivElement>(null);
 
   // A popover that only closed on its own button would be left hanging over the next row.
+  // Escape as well as a click away: the popover covers the row below it, and someone who
+  // opened it from the keyboard has no click to dismiss it with.
   useEffect(() => {
     if (!open) return;
 
-    const dismiss = (event: MouseEvent) => {
+    const dismissOnClick = (event: MouseEvent) => {
       if (!container.current?.contains(event.target as Node)) setOpen(false);
     };
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
 
-    document.addEventListener('mousedown', dismiss);
-    return () => document.removeEventListener('mousedown', dismiss);
+    document.addEventListener('mousedown', dismissOnClick);
+    document.addEventListener('keydown', dismissOnEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', dismissOnClick);
+      document.removeEventListener('keydown', dismissOnEscape);
+    };
   }, [open]);
 
   const label = filter === '' ? 'this rule' : filter;
