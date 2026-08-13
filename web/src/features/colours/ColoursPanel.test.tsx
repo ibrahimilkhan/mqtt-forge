@@ -413,3 +413,40 @@ describe('unsaved edits', () => {
     expect(screen.getByText(/not saved/i)).toBeInTheDocument();
   });
 });
+
+// Without the stored list there is nothing to edit and nothing safe to send: a save from an
+// empty panel would replace rules it never managed to read.
+describe('when the rules cannot be read', () => {
+  const unreadable = () =>
+    server.use(http.get('/api/colour-rules', () => new HttpResponse(null, { status: 500 })));
+
+  it('says so rather than showing an empty list', async () => {
+    unreadable();
+    renderPanel();
+
+    expect(await screen.findByText(/could not be read/i)).toBeInTheDocument();
+    expect(screen.queryByText(/No colour rules yet/)).not.toBeInTheDocument();
+  });
+
+  it('offers neither adding nor saving', async () => {
+    unreadable();
+    renderPanel();
+
+    await screen.findByText(/could not be read/i);
+    expect(addButton()).toBeDisabled();
+    expect(saveButton()).toBeDisabled();
+  });
+
+  it('recovers once the request succeeds', async () => {
+    unreadable();
+    const { unmount } = renderPanel();
+    await screen.findByText(/could not be read/i);
+    unmount();
+
+    stored({ filter: 'a/#', colour: '#b45309' });
+    renderPanel();
+
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(screen.queryByText(/could not be read/i)).not.toBeInTheDocument();
+  });
+});
