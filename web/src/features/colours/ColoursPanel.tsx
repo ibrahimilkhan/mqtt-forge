@@ -14,7 +14,7 @@ import { draftFrom, faultIn, MAX_RULES, newDraftRule, type DraftRule } from './r
 
 export function ColoursPanel({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
-  const { data } = useQuery({ queryKey: queryKeys.colourRules, queryFn: getColourRules });
+  const { data, isError } = useQuery({ queryKey: queryKeys.colourRules, queryFn: getColourRules });
 
   // The edits live here, not in the query cache. A half-typed filter is not a rule, and writing
   // one into the cache would recolour the tree behind the panel on every keystroke.
@@ -56,6 +56,14 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
         A topic wears the colour of the most specific filter that covers it, in the tree and in
         the log.
       </p>
+
+      {/* Not an empty list: a save from a panel that never read the rules would replace them
+          with whatever happened to be on screen. So it offers nothing until it has them. */}
+      {isError && draft === null && (
+        <p className={panel.fault}>
+          The colour rules could not be read. The tree and the log carry on uncoloured.
+        </p>
+      )}
 
       {draft !== null && rules.length === 0 && (
         <p className="empty">No colour rules yet. Add one and pick a colour for it.</p>
