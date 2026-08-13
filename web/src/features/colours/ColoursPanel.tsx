@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { getColourRules, putColourRules } from '../../api/colourRules';
 import { queryKeys } from '../../api/queryKeys';
 import { PanelShell } from '../../components/PanelShell';
+import type { ColourRule } from '../../lib/topicColour';
 import { useGuardedMutate } from '../../lib/useGuardedMutate';
 import { logFault, useLogStore } from '../../stores/logStore';
 import panel from '../../styles/panel.module.css';
@@ -44,6 +45,7 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
   const faults = rules.map((rule) => faultIn(rule, rules));
   const savable = draft !== null && faults.every((fault) => fault === null);
   const full = rules.length >= MAX_RULES;
+  const unsaved = draft !== null && differs(rules, data ?? []);
 
   const edit = (id: number, change: Partial<DraftRule>) =>
     setDraft((current) => current!.map((rule) => (rule.id === id ? { ...rule, ...change } : rule)));
@@ -96,6 +98,8 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
 
       {full && <p className={panel.note}>That is a hundred colour rules, which is all the API keeps.</p>}
 
+      {unsaved && <p className={panel.note}>Not saved yet — closing this panel loses these edits.</p>}
+
       <div className={panel.actions}>
         <button
           type="button"
@@ -115,5 +119,20 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
         </button>
       </div>
     </PanelShell>
+  );
+}
+
+/**
+ * Whether the rows on screen still say what the server holds.
+ *
+ * A repaired colour counts as a difference, and should: a rules file edited by hand into
+ * something the panel had to fix arrives already needing a save.
+ */
+function differs(rows: readonly DraftRule[], stored: readonly ColourRule[]): boolean {
+  if (rows.length !== stored.length) return true;
+
+  return rows.some(
+    (row, index) =>
+      row.filter !== stored[index].filter || row.colour !== stored[index].colour.toLowerCase(),
   );
 }
