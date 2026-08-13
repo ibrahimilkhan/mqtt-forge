@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { useColourLookup } from '../../lib/useColourLookup';
+import type { ColourRule } from '../../lib/topicColour';
+import { useRuleLookup } from '../../lib/useRuleLookup';
 import { matchesFilter } from '../../lib/topicMatch';
 import { useLogStore, type LogEntry } from '../../stores/logStore';
 import { useSelectionStore } from '../../stores/selectionStore';
@@ -57,7 +58,7 @@ export function WireLog() {
 
 function EntryList({ entries }: { entries: LogEntry[] }) {
   const [expanded, setExpanded] = useState(false);
-  const colourOf = useColourLookup();
+  const ruleOf = useRuleLookup();
 
   const shown = expanded ? entries : entries.slice(0, VISIBLE_ENTRIES);
   const hidden = entries.length - VISIBLE_ENTRIES;
@@ -66,7 +67,7 @@ function EntryList({ entries }: { entries: LogEntry[] }) {
     <>
       <div className={styles.log}>
         {shown.map((entry) => (
-          <LogEntryRow key={entry.id} entry={entry} colour={colourOfEntry(entry, colourOf)} />
+          <LogEntryRow key={entry.id} entry={entry} rule={ruleForEntry(entry, ruleOf)} />
         ))}
       </div>
 
@@ -86,8 +87,8 @@ function EntryList({ entries }: { entries: LogEntry[] }) {
  * a count like '3 filters'. Handing that to the lookup would colour 'Subscribed to sensors/#'
  * with the rule for sensors/#, which reads as a message on a topic that does not exist.
  */
-function colourOfEntry(entry: LogEntry, colourOf: (topic: string) => string | null) {
+function ruleForEntry(entry: LogEntry, ruleOf: (topic: string) => ColourRule | null) {
   const isMessage = entry.kind === 'recv' || entry.kind === 'sent';
 
-  return isMessage && entry.topic ? colourOf(entry.topic) : null;
+  return isMessage && entry.topic ? ruleOf(entry.topic) : null;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createColourLookup, isColour, sortRules, type ColourRule } from './topicColour';
+import { createRuleLookup, isColour, sortRules, type ColourRule } from './topicColour';
 
 const rule = (filter: string, colour = '#b45309'): ColourRule => ({ filter, colour });
 
@@ -57,7 +57,7 @@ describe('sortRules', () => {
   });
 });
 
-describe('colour lookup precedence', () => {
+describe("rule lookup precedence", () => {
   // Every pair: both filters match the topic, and the first is the one that should win.
   const contests: ReadonlyArray<[topic: string, winner: string, loser: string]> = [
     // A concrete segment beats a '+' in the same place.
@@ -81,42 +81,50 @@ describe('colour lookup precedence', () => {
 
   it.each(contests)('on %s, %s beats %s', (topic, winner, loser) => {
     // Both orderings, so the answer comes from the comparison and not from where they sat.
-    const forwards = createColourLookup([rule(winner, '#111111'), rule(loser, '#222222')]);
-    const backwards = createColourLookup([rule(loser, '#222222'), rule(winner, '#111111')]);
+    const forwards = createRuleLookup([rule(winner, '#111111'), rule(loser, '#222222')]);
+    const backwards = createRuleLookup([rule(loser, '#222222'), rule(winner, '#111111')]);
 
-    expect(forwards(topic)).toBe('#111111');
-    expect(backwards(topic)).toBe('#111111');
+    expect(forwards(topic)?.filter).toBe(winner);
+    expect(backwards(topic)?.filter).toBe(winner);
   });
 });
 
-describe('createColourLookup', () => {
+describe('createRuleLookup', () => {
   it('returns null for a topic no rule covers', () => {
-    const lookup = createColourLookup([rule('sensors/#')]);
+    const lookup = createRuleLookup([rule('sensors/#')]);
 
     expect(lookup('actuators/valve')).toBeNull();
   });
 
   it('returns null when there are no rules at all', () => {
-    expect(createColourLookup([])('sensors/a/temp')).toBeNull();
+    expect(createRuleLookup([])('sensors/a/temp')).toBeNull();
+  });
+
+  // The filter, not just the colour: with rules overlapping, which one painted the row is
+  // exactly what the row has to be able to say.
+  it('names the rule that matched, not only its colour', () => {
+    const lookup = createRuleLookup([rule('sensors/#', '#111111'), rule('sensors/+/temp', '#222222')]);
+
+    expect(lookup('sensors/a/temp')).toEqual({ filter: 'sensors/+/temp', colour: '#222222' });
   });
 
   it('normalises the colour it hands back to lower case', () => {
-    const lookup = createColourLookup([rule('sensors/#', '#B45309')]);
+    const lookup = createRuleLookup([rule('sensors/#', '#B45309')]);
 
-    expect(lookup('sensors/a')).toBe('#b45309');
+    expect(lookup('sensors/a')?.colour).toBe('#b45309');
   });
 
   it('covers the level a # hangs off, as MQTT does', () => {
-    const lookup = createColourLookup([rule('sensors/#')]);
+    const lookup = createRuleLookup([rule('sensors/#')]);
 
-    expect(lookup('sensors')).toBe('#b45309');
+    expect(lookup('sensors')?.colour).toBe('#b45309');
   });
 
-  it('gives the same answer however many times it is asked', () => {
-    const lookup = createColourLookup([rule('sensors/+/temp')]);
+  // A memoised row is handed this object as a prop; a fresh one per render would defeat the memo.
+  it('hands back the same object every time, so a memoised row sees an unchanged prop', () => {
+    const lookup = createRuleLookup([rule('sensors/+/temp')]);
 
-    expect(lookup('sensors/a/temp')).toBe('#b45309');
-    expect(lookup('sensors/a/temp')).toBe('#b45309');
+    expect(lookup('sensors/a/temp')).toBe(lookup('sensors/a/temp'));
     expect(lookup('sensors/a/hum')).toBeNull();
     expect(lookup('sensors/a/hum')).toBeNull();
   });
@@ -124,18 +132,36 @@ describe('createColourLookup', () => {
   // The memo would otherwise hand back answers from a rule list that no longer exists.
   it('snapshots the rules it was given, so later edits to the array do not leak in', () => {
     const rules = [rule('sensors/#', '#b45309')];
-    const lookup = createColourLookup(rules);
+    const lookup = createRuleLookup(rules);
 
     rules[0] = rule('sensors/#', '#111111');
     rules.push(rule('other/#', '#222222'));
 
-    expect(lookup('sensors/a')).toBe('#b45309');
+    expect(lookup('sensors/a')?.colour).toBe('#b45309');
     expect(lookup('other/x')).toBeNull();
   });
 
   it('handles an empty topic without matching a rooted filter', () => {
-    const lookup = createColourLookup([rule('sensors/#')]);
+    const lookup = createRuleLookup([rule('sensors/#')]);
 
     expect(lookup('')).toBeNull();
+  });
+
+  // A '#' subscription on a busy broker asks this once per row, on every render that carries
+  // traffic. The answer has to come off the memo rather than out of a rescan.
+  it('answers a topic it has already seen without walking the rules again', () => {
+    const many = Array.from({ length: 100 }, (_, i) => rule(`branch${i}/#`, '#b45309'));
+    const lookup = createRuleLookup(many);
+    const topics = Array.from({ length: 1500 }, (_, i) => `branch${i % 100}/device${i}/state`);
+
+    topics.forEach(lookup);
+
+    const start = performance.now();
+    topics.forEach(lookup);
+    const secondPass = performance.now() - start;
+
+    // Generous by design: this is a rescan/no-rescan gap of two orders of magnitude, not a
+    // benchmark, so a slow machine cannot make it flap.
+    expect(secondPass).toBeLessThan(20);
   });
 });

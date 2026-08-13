@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import type { ColourRule } from '../../lib/topicColour';
 import { useComposeStore } from '../../stores/composeStore';
 import type { LogEntry } from '../../stores/logStore';
 import styles from './WireLog.module.css';
@@ -6,11 +7,11 @@ import styles from './WireLog.module.css';
 // Entries are immutable, so memoising means a new arrival re-renders only one row.
 export const LogEntryRow = memo(function LogEntryRow({
   entry,
-  colour,
+  rule,
 }: {
   entry: LogEntry;
-  /** From the colour rules. Absent means no rule covers this entry's topic. */
-  colour?: string | null;
+  /** The colour rule covering this entry's topic, or null when none does. */
+  rule?: ColourRule | null;
 }) {
   const load = useComposeStore((state) => state.load);
 
@@ -68,8 +69,8 @@ export const LogEntryRow = memo(function LogEntryRow({
           <span
             className={styles.dot}
             data-testid="dot"
-            style={{ background: colour ?? 'transparent' }}
-            title={colour ? `Colour rule matches ${entry.topic}` : undefined}
+            style={{ background: rule?.colour ?? 'transparent' }}
+            title={rule ? `Coloured by ${rule.filter}` : undefined}
             aria-hidden="true"
           />
           <Topic topic={entry.topic} />
