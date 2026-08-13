@@ -23,14 +23,13 @@ public static class DependencyInjection
 
         // Read at resolve time, not registration, so late-configuring hosts (tests) still work
         services.AddSingleton<IConnectionSettingsStore>(sp =>
-        {
-            var config = sp.GetRequiredService<IConfiguration>();
-            var path = config["MqttForge:SettingsPath"]
-                ?? Path.Combine(AppContext.BaseDirectory, "connection-settings.json");
-            return new JsonConnectionSettingsStore(path);
-        });
+            new JsonConnectionSettingsStore(StorePaths.ConnectionSettings(sp.GetRequiredService<IConfiguration>())));
+
+        services.AddSingleton<IColourRuleStore>(sp =>
+            new JsonColourRuleStore(StorePaths.ColourRules(sp.GetRequiredService<IConfiguration>())));
 
         services.AddSingleton<ConnectionService>();
+        services.AddSingleton<ColourRuleService>();
         services.AddSingleton<PublishService>();
         services.AddSingleton<SubscriptionService>();
         return services;
