@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import styles from './ColoursPanel.module.css';
-import { SUGGESTED } from './palette';
+import { PALETTE } from './palette';
 
 type Props = { colour: string; filter: string; onChange: (colour: string) => void };
 
@@ -52,16 +52,16 @@ export function ColourPicker({ colour, filter, onChange }: Props) {
       {open && (
         <div className={styles.popover}>
           <div className={styles.suggestions}>
-            {SUGGESTED.map((suggestion) => (
+            {PALETTE.map((suggestion) => (
               <button
-                key={suggestion}
+                key={suggestion.value}
                 type="button"
                 className={styles.suggestion}
-                aria-label={suggestion}
-                aria-pressed={suggestion === colour.toLowerCase()}
-                style={{ background: suggestion }}
+                aria-label={suggestion.name}
+                aria-pressed={suggestion.value === colour.toLowerCase()}
+                style={{ background: suggestion.value }}
                 onClick={() => {
-                  onChange(suggestion);
+                  onChange(suggestion.value);
                   setOpen(false);
                 }}
               />
