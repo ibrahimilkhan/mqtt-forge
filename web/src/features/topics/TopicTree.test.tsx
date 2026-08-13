@@ -581,3 +581,20 @@ describe('which rule painted a row', () => {
     expect(dot()).not.toHaveAttribute('title');
   });
 });
+
+// '#' covers every topic, but the broker row is not one — it is the connection.
+it('leaves the broker row unpainted even under a rule that covers everything', async () => {
+  server.use(
+    http.get('/api/colour-rules', () => HttpResponse.json({ rules: [{ filter: '#', colour: '#b45309' }] })),
+  );
+  useTopicTreeStore.setState({ defaultOpen: true });
+  useTopicTreeStore.getState().apply([message('sensors/a/temp')]);
+  render(<TopicTree broker="broker:1883" />);
+
+  const brokerRow = screen.getAllByTestId('tree-row')[0];
+  const leafDot = () =>
+    within(screen.getByText('temp').closest('[data-testid="tree-row"]')!).getByTestId('dot');
+
+  await waitFor(() => expect(leafDot()).toHaveStyle({ background: '#b45309' }));
+  expect(within(brokerRow).getByTestId('dot')).toHaveStyle({ background: 'transparent' });
+});
