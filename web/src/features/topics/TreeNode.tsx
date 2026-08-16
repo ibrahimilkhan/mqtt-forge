@@ -43,7 +43,7 @@ export const TreeNode = memo(function TreeNode({
       data-active={active}
       data-selected={selected}
       data-depth={depth}
-      style={{ '--depth': depth } as CSSProperties}
+      style={rowStyle(depth, rule)}
     >
       {/* Sibling buttons: twisty toggles the branch, the rest selects it for the wire log. */}
       {isBranch ? (
@@ -105,3 +105,14 @@ export const TreeNode = memo(function TreeNode({
     </div>
   );
 });
+
+/**
+ * The row's indent, and the rule's colour when one covers it.
+ *
+ * `--rule-colour` is left unset rather than set to something neutral, so the stripe the selected
+ * row draws can name its own fallback: a custom property that is absent takes the fallback in
+ * `var()`, one set to an empty value does not.
+ */
+function rowStyle(depth: number, rule?: ColourRule | null): CSSProperties {
+  return { '--depth': depth, ...(rule && { '--rule-colour': rule.colour }) } as CSSProperties;
+}
