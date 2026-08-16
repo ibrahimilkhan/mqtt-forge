@@ -81,13 +81,13 @@ describe('App', () => {
     expect(screen.getByRole('region', { name: 'Settings panel' })).toBeInTheDocument();
   });
 
-  // The tree and the log carry long topic names and payloads; the panel column holds a form.
-  it('starts with the panel column the narrowest of the three', () => {
+  // A deep tree indents every level, so topics start widest; the panel column holds a form.
+  it('starts with the topics column the widest of the three', () => {
     renderApp();
 
-    expect(share('panel')).toBe('26.00fr');
-    expect(share('tree')).toBe('36.00fr');
-    expect(share('right')).toBe('38.00fr');
+    expect(share('panel')).toBe('24.00fr');
+    expect(share('tree')).toBe('44.00fr');
+    expect(share('right')).toBe('32.00fr');
   });
 
   it('splits the closed panel column evenly between the other two', async () => {
@@ -97,8 +97,8 @@ describe('App', () => {
 
     expect(screen.getByTestId('layout')).toHaveAttribute('data-panel', 'closed');
     expect(share('panel')).toBe('0.00fr');
-    expect(share('tree')).toBe('49.00fr');
-    expect(share('right')).toBe('51.00fr');
+    expect(share('tree')).toBe('56.00fr');
+    expect(share('right')).toBe('44.00fr');
   });
 
   it('puts the panel column back the width it was when it reopens', async () => {
@@ -107,12 +107,12 @@ describe('App', () => {
     const seam = screen.getByRole('separator', { name: 'Panel and topics boundary' });
     seam.focus();
     await userEvent.keyboard('{ArrowLeft}');
-    expect(share('panel')).toBe('24.00fr');
+    expect(share('panel')).toBe('22.00fr');
 
     await userEvent.click(menu().getByRole('button', { name: 'Broker' }));
     await userEvent.click(menu().getByRole('button', { name: 'Broker' }));
 
-    expect(share('panel')).toBe('24.00fr');
+    expect(share('panel')).toBe('22.00fr');
   });
 
   it('moves the topics boundary with the arrow keys', async () => {
@@ -122,8 +122,8 @@ describe('App', () => {
     seam.focus();
     await userEvent.keyboard('{ArrowRight}');
 
-    expect(share('tree')).toBe('38.00fr');
-    expect(share('right')).toBe('36.00fr');
+    expect(share('tree')).toBe('46.00fr');
+    expect(share('right')).toBe('30.00fr');
   });
 
   // Unmeasured in jsdom, so the column opens content-sized: publish takes the height its form
