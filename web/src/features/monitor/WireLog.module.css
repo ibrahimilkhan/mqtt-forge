@@ -104,20 +104,23 @@
   from { opacity: 0; transform: translateY(-3px); }
 }
 
+/* The time, the verb and the stamps are the entry's furniture — what arrived, when, at what QoS
+   and size. One faint black voice for all of them: black so they belong to the same page as the
+   topic, faint so they never compete with it for the eye. The topic is what carries colour now,
+   and a second coloured thing in the row only made the first harder to find. */
+.entry { --faint: color-mix(in srgb, var(--ink) 55%, transparent); }
+
 .entryHead {
   display: flex;
   gap: 10px;
   align-items: baseline;
-  color: var(--muted);
+  color: var(--faint);
   font-size: var(--t-label);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-.entry[data-kind="sent"]  .verb { color: var(--signal); }
-.entry[data-kind="recv"]  .verb { color: var(--ink); }
-.entry[data-kind="ok"]    .verb { color: var(--live); }
-.entry[data-kind="fault"] .verb { color: var(--fault); }
-.verb { font-weight: 600; }
+/* A failure is the one thing here that has to be loud. */
+.entry[data-kind="fault"] .verb { color: var(--fault); font-weight: 600; }
 
 .topic { margin-top: 3px; font-size: var(--t-code); word-break: break-all; }
 .topic .sep { color: var(--rule); margin: 0 1px; }
@@ -132,11 +135,6 @@
   padding: 1px 5px;
   border: 1px solid var(--rule);
   border-radius: 2px;
-  color: var(--muted);
-}
-/* Marks a retained (replayed) message apart from live traffic, at a glance. */
-.stamp[data-stamp="RETAINED"] {
-  color: var(--signal);
-  border-color: color-mix(in srgb, var(--signal) 45%, transparent);
+  color: var(--faint);
 }
 
