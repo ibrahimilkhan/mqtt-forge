@@ -59,7 +59,13 @@ export const LogEntryRow = memo(function LogEntryRow({
     >
       <div className={styles.entryHead}>
         <span>{entry.at.toLocaleTimeString('en-GB', { hour12: false })}</span>
-        <span className={styles.verb} data-testid="verb">
+        {/* Inline rather than through the shared property: the kind rules below set `color`
+            directly, and a var() fallback cannot outrank a declaration that names a colour. */}
+        <span
+          className={styles.verb}
+          data-testid="verb"
+          style={rule ? { color: rule.colour } : undefined}
+        >
           {entry.verb}
         </span>
       </div>
