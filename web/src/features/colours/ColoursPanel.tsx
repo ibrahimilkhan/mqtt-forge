@@ -11,7 +11,7 @@ import panel from '../../styles/panel.module.css';
 import { ColourPicker } from './ColourPicker';
 import styles from './ColoursPanel.module.css';
 import { nextColour } from './palette';
-import { draftFrom, faultIn, MAX_RULES, newDraftRule, type DraftRule } from './ruleDraft';
+import { allSaved, draftFrom, faultIn, MAX_RULES, newDraftRule, type DraftRule } from './ruleDraft';
 
 export function ColoursPanel({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
@@ -29,8 +29,10 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
   }, [data, draft]);
 
   /**
-   * A row with an empty filter is a slot waiting to be told what it covers, so picking a topic
-   * fills it — the same help as adding a rule while a topic is already picked, in the other order.
+   * A row that has not been saved is still being decided on, so it follows the topic picked in
+   * the tree — however many times the pick changes, and whatever the row says meanwhile. Saving
+   * is what settles it: from then on the row is a rule someone meant, and clicking around the
+   * tree leaves it alone.
    *
    * Keyed on the selection alone. Were the draft in here too, clearing a box to retype it would
    * be answered by the topic reappearing, and the box could not be cleared at all.
@@ -42,11 +44,11 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
       if (current === null) return current;
 
       // The newest, since that is the one just added and being worked on.
-      const waiting = current.findLastIndex((rule) => rule.filter === '');
-      if (waiting === -1) return current;
+      const following = current.findLastIndex((rule) => !rule.saved);
+      if (following === -1) return current;
 
       return current.map((rule, index) =>
-        index === waiting ? { ...rule, filter: selectedTopic } : rule,
+        index === following ? { ...rule, filter: selectedTopic } : rule,
       );
     });
   }, [selectedTopic]);
@@ -59,6 +61,8 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
         verb: 'Colours saved',
         topic: rules.length === 1 ? rules[0].filter : `${rules.length} rules`,
       });
+      // Settles every row: what the server took is no longer a draft that follows the tree.
+      setDraft((current) => (current === null ? current : allSaved(current)));
       void queryClient.invalidateQueries({ queryKey: queryKeys.colourRules });
     },
     // The draft is left as it was: what was typed is the only copy of it.
@@ -141,8 +145,8 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
           disabled={draft === null || full}
           title={
             selectedTopic
-              ? `Add a rule for ${selectedTopic}, the topic selected in the tree`
-              : 'Add a rule. Selecting a topic first fills it in.'
+              ? `Add a rule for ${selectedTopic}. Until it is saved it follows the tree.`
+              : 'Add a rule. Until it is saved it follows the topic you pick in the tree.'
           }
           onClick={() =>
             setDraft((current) => [

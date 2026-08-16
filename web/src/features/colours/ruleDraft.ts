@@ -1,8 +1,13 @@
 import { isColour, type ColourRule } from '../../lib/topicColour';
 import { nextColour } from './palette';
 
-/** A rule while it is being edited. The id exists only to key the row; it is never sent. */
-export type DraftRule = { id: number; filter: string; colour: string };
+/**
+ * A rule while it is being edited. The id exists only to key the row; it is never sent.
+ *
+ * `saved` is what separates a rule someone settled on from one still being decided: an unsaved
+ * row goes on following the topic picked in the tree, a saved one is left where it is.
+ */
+export type DraftRule = { id: number; filter: string; colour: string; saved: boolean };
 
 /** What the API accepts. Held here too so the answer arrives before the round trip, as a sentence. */
 export const MAX_RULES = 100;
@@ -26,13 +31,22 @@ export function draftFrom(rules: readonly ColourRule[]): DraftRule[] {
       ? rule.colour.toLowerCase()
       : nextColour(usable.map((row) => row.colour));
 
-    usable.push({ id: nextId++, filter: rule.filter, colour });
+    usable.push({ id: nextId++, filter: rule.filter, colour, saved: true });
   }
 
   return usable;
 }
 
-export const newDraftRule = (colour: string): DraftRule => ({ id: nextId++, filter: '', colour });
+export const newDraftRule = (colour: string): DraftRule => ({
+  id: nextId++,
+  filter: '',
+  colour,
+  saved: false,
+});
+
+/** After a save the server took: every row on screen is now a rule someone settled on. */
+export const allSaved = (rules: readonly DraftRule[]): DraftRule[] =>
+  rules.map((rule) => ({ ...rule, saved: true }));
 
 /**
  * Why this row cannot be saved, in the words of the person who typed it — or null when it can.

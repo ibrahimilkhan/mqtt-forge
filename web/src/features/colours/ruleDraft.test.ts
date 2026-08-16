@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { isFilter } from '../../lib/topicColour';
-import { draftFrom, faultIn, newDraftRule, type DraftRule } from './ruleDraft';
+import { allSaved, draftFrom, faultIn, newDraftRule, type DraftRule } from './ruleDraft';
 import { nextColour, SUGGESTED } from './palette';
 
-const row = (filter: string, colour = '#b45309'): DraftRule => ({ id: 0, filter, colour });
+const row = (filter: string, colour = '#b45309'): DraftRule => ({
+  id: 0,
+  filter,
+  colour,
+  saved: true,
+});
 
 describe('faultIn', () => {
   const faultOf = (filter: string) => faultIn(row(filter), [row(filter)]);
@@ -125,5 +130,27 @@ describe('nextColour', () => {
   // palette it just keeps offering something rather than refusing.
   it('carries on once every suggestion is taken', () => {
     expect(SUGGESTED).toContain(nextColour([...SUGGESTED]));
+  });
+});
+
+describe('what counts as settled', () => {
+  it('marks a rule read back from the server as saved', () => {
+    expect(draftFrom([{ filter: 'a/#', colour: '#b45309' }])[0].saved).toBe(true);
+  });
+
+  it('leaves a freshly added rule unsaved, so it follows the tree', () => {
+    expect(newDraftRule('#b45309').saved).toBe(false);
+  });
+
+  it('settles every row once a save has been taken', () => {
+    const rows = [newDraftRule('#b45309'), newDraftRule('#ab3520')];
+
+    expect(allSaved(rows).every((rule) => rule.saved)).toBe(true);
+  });
+
+  it('changes nothing else about the rows it settles', () => {
+    const rows = [{ ...newDraftRule('#b45309'), filter: 'a/#' }];
+
+    expect(allSaved(rows)[0]).toEqual({ ...rows[0], saved: true });
   });
 });
