@@ -80,15 +80,27 @@ describe('WireLog', () => {
     expect(topics).toEqual(['sensors/hall/temp', 'sensors/room/temp']);
   });
 
-  it('shows the command entries for the topic alongside its messages', () => {
+  it('shows the messages on the topic and leaves the command entries out', () => {
     useLogStore.getState().push({ kind: 'ok', verb: 'Subscribed', topic: 'sensors/#' });
+    useLogStore.getState().push({ kind: 'fault', verb: 'Subscribe failed', topic: 'sensors/#' });
     received('sensors/room/temp');
+    useLogStore.getState().push({ kind: 'sent', verb: 'Published', topic: 'sensors/room/set' });
     useSelectionStore.getState().select(chip);
 
     render(<WireLog />);
 
     const verbs = screen.getAllByTestId('entry').map((entry) => within(entry).getByTestId('verb').textContent);
-    expect(verbs).toEqual(['Received', 'Subscribed']);
+    expect(verbs).toEqual(['Published', 'Received']);
+  });
+
+  // A command's filter is not a topic, so a selection matching it says nothing about traffic.
+  it('calls the topic quiet when only commands have named it', () => {
+    useLogStore.getState().push({ kind: 'ok', verb: 'Subscribed', topic: 'sensors/#' });
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(screen.getByText('No traffic on sensors/# yet.')).toBeInTheDocument();
   });
 
   it('stops at five entries and offers the rest', () => {
@@ -192,12 +204,12 @@ describe('WireLog', () => {
   });
 
   it('marks each entry with its kind, which drives the colour', () => {
-    useLogStore.getState().push({ kind: 'fault', verb: 'Publish failed', topic: 'sensors/room/temp' });
+    useLogStore.getState().push({ kind: 'sent', verb: 'Published', topic: 'sensors/room/temp' });
     useSelectionStore.getState().select(chip);
 
     render(<WireLog />);
 
-    expect(screen.getByTestId('entry')).toHaveAttribute('data-kind', 'fault');
+    expect(screen.getByTestId('entry')).toHaveAttribute('data-kind', 'sent');
   });
 
   it('sends a logged message back to publish, settings and all', async () => {
@@ -220,20 +232,6 @@ describe('WireLog', () => {
       qos: 2,
       retain: true,
     });
-  });
-
-  // A command entry's topic is the filter it was aimed at, and its body is an outcome, not a
-  // payload. Neither can be published, so the row is not a target.
-  it('leaves the command entries out of the load-into-publish affordance', () => {
-    useLogStore.getState().push({ kind: 'ok', verb: 'Subscribed', topic: 'sensors/#' });
-    useLogStore
-      .getState()
-      .push({ kind: 'fault', verb: 'Subscribe failed', topic: 'sensors/#', body: 'Not connected.' });
-    useSelectionStore.getState().select(chip);
-
-    render(<WireLog />);
-
-    expect(screen.queryByRole('button', { name: /into publish/ })).not.toBeInTheDocument();
   });
 
   it('holds off loading when the click is the end of a text selection', () => {
@@ -297,20 +295,6 @@ describe('colour rules', () => {
     await waitFor(() => expect(dotOf('sensors/a/temp')).toHaveStyle({ background: '#222222' }));
   });
 
-  // Command entries carry a filter, not a topic; a wildcard is not a thing a rule can colour.
-  it('leaves a command entry unmarked', async () => {
-    rules({ filter: 'sensors/#', colour: '#111111' });
-    useSelectionStore.getState().select(chip);
-    useLogStore.getState().push({ kind: 'ok', verb: 'Subscribed', topic: 'sensors/#' });
-
-    render(<WireLog />);
-
-    await waitFor(() => expect(screen.getByTestId('entry')).toBeInTheDocument());
-    expect(within(screen.getByTestId('entry')).getByTestId('dot')).toHaveStyle({
-      background: 'transparent',
-    });
-  });
-
   it('carries on drawing the log when the rules cannot be fetched', async () => {
     server.use(http.get('/api/colour-rules', () => new HttpResponse(null, { status: 500 })));
     useSelectionStore.getState().select(chip);
@@ -357,16 +341,40 @@ describe('the entry wears its rule on the left edge', () => {
     await waitFor(() => expect(edgeOf('sensors/a/temp')).toBe('#b45309'));
     expect(edgeOf('sensors/a/hum')).toBe('');
   });
+});
 
-  // A command's outcome is what its edge reports; a rule must not paint over a fault.
-  it('leaves a command entry on its own kind colour', async () => {
-    rules({ filter: 'sensors/#', colour: '#b45309' });
+// The verb was the last coloured thing in an entry still reading by kind. With the dot and the
+// edge on the rule, it was the one that made a coloured row look like it had missed the setting.
+describe('the verb wears the rule too', () => {
+  const rules = (...rules: Array<{ filter: string; colour: string }>) =>
+    server.use(http.get('/api/colour-rules', () => HttpResponse.json({ rules })));
+
+  const verbOf = (topic: string) => {
+    const entry = screen
+      .getAllByTestId('entry')
+      .find((row) => within(row).getByTestId('topic').textContent === topic);
+
+    return within(entry!).getByTestId('verb');
+  };
+
+  it('gives the verb the same colour as the dot beside it', async () => {
+    rules({ filter: 'sensors/+/temp', colour: '#b45309' });
     useSelectionStore.getState().select(chip);
-    useLogStore.getState().push({ kind: 'fault', verb: 'Publish failed', topic: 'sensors/a/temp' });
+    received('sensors/a/temp');
+
+    render(<WireLog />);
+
+    await waitFor(() => expect(verbOf('sensors/a/temp')).toHaveStyle({ color: '#b45309' }));
+  });
+
+  it('leaves the verb on its kind colour when no rule covers the topic', async () => {
+    rules({ filter: 'sensors/+/temp', colour: '#b45309' });
+    useSelectionStore.getState().select(chip);
+    received('sensors/a/hum');
 
     render(<WireLog />);
 
     await waitFor(() => expect(screen.getByTestId('entry')).toBeInTheDocument());
-    expect(screen.getByTestId('entry').style.getPropertyValue('--rule-colour')).toBe('');
+    expect(verbOf('sensors/a/hum').style.color).toBe('');
   });
 });
