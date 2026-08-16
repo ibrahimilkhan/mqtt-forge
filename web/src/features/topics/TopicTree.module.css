@@ -123,11 +123,11 @@
 
 /* Sits right beside the topic name, so the eye reads them as one.
    Ink rather than signal: the payload is the thing being read, and a colour on it competed with
-   the dot the colour rules put at the head of the row. A step down in weight from the segment
-   (600) without going as far as the meta (400) keeps the name reading first regardless. */
+   the dot the colour rules put at the head of the row. Regular weight against the segment's 600
+   is what keeps the name reading first once the colour no longer does it. */
 .val {
   color: var(--ink);
-  font-weight: 500;
+  font-weight: 400;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
