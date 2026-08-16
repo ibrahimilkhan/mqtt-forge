@@ -52,8 +52,16 @@ export const useTopicTreeStore = create<TreeState>((set, get) => ({
   toggleBroker: () => set((state) => ({ brokerOpen: !state.brokerOpen })),
 
   // Also sets the default for branches that arrive later, so per-path choices are dropped.
-  // Leaves the broker row alone: collapsing every branch should not empty the pane.
-  setAllOpen: (open) => set({ openPaths: new Map(), defaultOpen: open }),
+  //
+  // Asymmetric about the broker row on purpose. Expanding has to reach it — everything hangs off
+  // that row, so with it folded 'expand all' opened every branch behind a closed door and looked
+  // like it had done nothing. Collapsing still leaves it alone, or the pane would go empty.
+  setAllOpen: (open) =>
+    set((state) => ({
+      openPaths: new Map(),
+      defaultOpen: open,
+      brokerOpen: open || state.brokerOpen,
+    })),
 
   reset: () =>
     set({ root: emptyTree(), openPaths: new Map(), defaultOpen: get().defaultOpen, brokerOpen: true }),
