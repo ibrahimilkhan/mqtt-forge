@@ -124,3 +124,40 @@ describe('dropFilter', () => {
     expect(useTopicTreeStore.getState().root).toBe(before);
   });
 });
+
+// The broker row is what everything hangs off, so a folded one hides the whole tree. Expand all
+// has to reach it; collapse all still must not, or the pane would go empty.
+describe('setAllOpen and the broker row', () => {
+  it('opens the broker row, so expanding everything shows something', () => {
+    useTopicTreeStore.setState({ brokerOpen: false });
+
+    useTopicTreeStore.getState().setAllOpen(true);
+
+    expect(useTopicTreeStore.getState().brokerOpen).toBe(true);
+  });
+
+  it('leaves an already open broker row open', () => {
+    useTopicTreeStore.setState({ brokerOpen: true });
+
+    useTopicTreeStore.getState().setAllOpen(true);
+
+    expect(useTopicTreeStore.getState().brokerOpen).toBe(true);
+  });
+
+  it('does not fold the broker row away when everything else collapses', () => {
+    useTopicTreeStore.setState({ brokerOpen: true });
+
+    useTopicTreeStore.getState().setAllOpen(false);
+
+    expect(useTopicTreeStore.getState().brokerOpen).toBe(true);
+  });
+
+  // Collapsing does not reach the row, so one the user folded by hand stays folded.
+  it('leaves a folded broker row folded when everything else collapses', () => {
+    useTopicTreeStore.setState({ brokerOpen: false });
+
+    useTopicTreeStore.getState().setAllOpen(false);
+
+    expect(useTopicTreeStore.getState().brokerOpen).toBe(false);
+  });
+});
