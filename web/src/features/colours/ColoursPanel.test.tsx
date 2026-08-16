@@ -616,3 +616,82 @@ describe('picking a topic after the row is there', () => {
     expect(filterBox(rows()[0])).toHaveValue('alerts/water');
   });
 });
+
+// A row that has not been saved is still being decided on, so it keeps following the tree. Once
+// saved it is a rule someone meant, and clicking around the tree must not rewrite it.
+describe('an unsaved row follows the selection', () => {
+  beforeEach(() => useSelectionStore.getState().clear());
+
+  const selectTopic = (topic: string) =>
+    act(() => useSelectionStore.getState().select({ label: topic, filter: topic, topic }));
+
+  it('replaces what a new row says when the topic changes', async () => {
+    renderPanel();
+    await waitFor(() => expect(addButton()).toBeEnabled());
+    await userEvent.click(addButton());
+
+    selectTopic('sensors/attic/temp');
+    expect(filterBox(rows()[0])).toHaveValue('sensors/attic/temp');
+
+    selectTopic('alerts/water');
+
+    expect(filterBox(rows()[0])).toHaveValue('alerts/water');
+  });
+
+  it('replaces a filter typed by hand into a row that was never saved', async () => {
+    renderPanel();
+    await waitFor(() => expect(addButton()).toBeEnabled());
+    await userEvent.click(addButton());
+    await userEvent.type(filterBox(rows()[0]), 'typed/by/hand');
+
+    selectTopic('sensors/attic/temp');
+
+    expect(filterBox(rows()[0])).toHaveValue('sensors/attic/temp');
+  });
+
+  it('leaves the row alone once it has been saved', async () => {
+    capturePut();
+    renderPanel();
+    await waitFor(() => expect(addButton()).toBeEnabled());
+    await userEvent.click(addButton());
+    selectTopic('sensors/attic/temp');
+
+    await userEvent.click(saveButton());
+    await waitFor(() => expect(useLogStore.getState().entries).toHaveLength(1));
+    selectTopic('alerts/water');
+
+    expect(filterBox(rows()[0])).toHaveValue('sensors/attic/temp');
+  });
+
+  it('leaves a stored rule alone and follows only the row added beside it', async () => {
+    stored({ filter: 'alerts/#', colour: '#b45309' });
+    renderPanel();
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    await userEvent.click(addButton());
+
+    selectTopic('sensors/attic/temp');
+    selectTopic('sensors/hall/temp');
+
+    expect(filterBox(rows()[0])).toHaveValue('alerts/#');
+    expect(filterBox(rows()[1])).toHaveValue('sensors/hall/temp');
+  });
+
+  // A save the server refused leaves the row unsaved, so it goes on following.
+  it('goes on following after a save the server refused', async () => {
+    server.use(
+      http.put('/api/colour-rules', () =>
+        HttpResponse.json({ title: 'Bad Request', detail: 'nope' }, { status: 400 }),
+      ),
+    );
+    renderPanel();
+    await waitFor(() => expect(addButton()).toBeEnabled());
+    await userEvent.click(addButton());
+    selectTopic('sensors/attic/temp');
+
+    await userEvent.click(saveButton());
+    await waitFor(() => expect(useLogStore.getState().entries).toHaveLength(1));
+    selectTopic('alerts/water');
+
+    expect(filterBox(rows()[0])).toHaveValue('alerts/water');
+  });
+});
