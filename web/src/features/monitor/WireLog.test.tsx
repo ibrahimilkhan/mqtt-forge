@@ -256,13 +256,9 @@ describe('colour rules', () => {
     server.use(http.get('/api/colour-rules', () => HttpResponse.json({ rules })));
 
   // The topic is drawn a segment at a time, so it is found by the row's whole text, not a word.
-  const dotOf = (topic: string) => {
-    const entry = screen
-      .getAllByTestId('entry')
-      .find((row) => within(row).getByTestId('topic').textContent === topic);
-
-    return within(entry!).getByTestId('dot');
-  };
+  // The topic line itself is what a rule paints now, so it is both the handle and the subject.
+  const topicOf = (topic: string) =>
+    screen.getAllByTestId('topic').find((row) => row.textContent === topic)!;
 
   it('marks an entry whose topic a rule covers', async () => {
     rules({ filter: 'sensors/+/temp', colour: '#b45309' });
@@ -271,7 +267,7 @@ describe('colour rules', () => {
 
     render(<WireLog />);
 
-    await waitFor(() => expect(dotOf('sensors/a/temp')).toHaveStyle({ background: '#b45309' }));
+    await waitFor(() => expect(topicOf('sensors/a/temp')).toHaveStyle({ color: '#b45309' }));
   });
 
   it('leaves an entry no rule covers unmarked, but still drawn', async () => {
@@ -281,8 +277,8 @@ describe('colour rules', () => {
 
     render(<WireLog />);
 
-    await waitFor(() => expect(dotOf('sensors/a/temp')).toHaveStyle({ background: '#b45309' }));
-    expect(dotOf('sensors/a/hum')).toHaveStyle({ background: 'transparent' });
+    await waitFor(() => expect(topicOf('sensors/a/temp')).toHaveStyle({ color: '#b45309' }));
+    expect(topicOf('sensors/a/hum').style.color).toBe('');
   });
 
   it('gives an entry the colour of the most specific rule that covers it', async () => {
@@ -292,7 +288,7 @@ describe('colour rules', () => {
 
     render(<WireLog />);
 
-    await waitFor(() => expect(dotOf('sensors/a/temp')).toHaveStyle({ background: '#222222' }));
+    await waitFor(() => expect(topicOf('sensors/a/temp')).toHaveStyle({ color: '#222222' }));
   });
 
   it('carries on drawing the log when the rules cannot be fetched', async () => {
@@ -303,7 +299,7 @@ describe('colour rules', () => {
     render(<WireLog />);
 
     expect(screen.getByTestId('entry')).toBeInTheDocument();
-    await waitFor(() => expect(dotOf('sensors/a/temp')).toHaveStyle({ background: 'transparent' }));
+    await waitFor(() => expect(topicOf('sensors/a/temp').style.color).toBe(''));
   });
 });
 
@@ -343,7 +339,7 @@ describe('the entry wears its rule on the left edge', () => {
   });
 });
 
-// The verb was the last coloured thing in an entry still reading by kind. With the dot and the
+// The verb was the last coloured thing in an entry still reading by kind. With the topic and the
 // edge on the rule, it was the one that made a coloured row look like it had missed the setting.
 describe('the verb wears the rule too', () => {
   const rules = (...rules: Array<{ filter: string; colour: string }>) =>
@@ -357,7 +353,7 @@ describe('the verb wears the rule too', () => {
     return within(entry!).getByTestId('verb');
   };
 
-  it('gives the verb the same colour as the dot beside it', async () => {
+  it('gives the verb the same colour as the topic beneath it', async () => {
     rules({ filter: 'sensors/+/temp', colour: '#b45309' });
     useSelectionStore.getState().select(chip);
     received('sensors/a/temp');

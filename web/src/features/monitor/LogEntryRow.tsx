@@ -71,17 +71,15 @@ export const LogEntryRow = memo(function LogEntryRow({
       </div>
 
       {entry.topic && (
-        <div className={styles.topic} data-testid="topic">
-          {/* Drawn on every entry, transparent when no rule covers it, so the topics of a
-              scrolling log stay on one vertical line. Decorative: the colour says nothing the
-              topic beside it does not already say. */}
-          <span
-            className={styles.dot}
-            data-testid="dot"
-            style={{ background: rule?.colour ?? 'transparent' }}
-            title={rule ? `Coloured by ${rule.filter}` : undefined}
-            aria-hidden="true"
-          />
+        /* The rule paints the topic itself rather than a mark beside it, so a scrolling log
+           reads by colour without a column of marks down its edge. The title names the filter:
+           with rules overlapping, which one won is what the colour leaves open. */
+        <div
+          className={styles.topic}
+          data-testid="topic"
+          style={rule ? { color: rule.colour } : undefined}
+          title={rule ? `Coloured by ${rule.filter}` : undefined}
+        >
           <Topic topic={entry.topic} />
           {entry.stamps && (
             <span className={styles.stamps}>
