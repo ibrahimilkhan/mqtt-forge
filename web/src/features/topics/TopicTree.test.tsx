@@ -234,7 +234,7 @@ describe('TopicTree', () => {
 
     await userEvent.click(screen.getByText('sensors'));
 
-    expect(useSelectionStore.getState().selected).toEqual({ label: 'sensors', filter: 'sensors/#' });
+    expect(useSelectionStore.getState().selected).toEqual({ label: 'sensors', filter: 'sensors/#', topic: 'sensors/#' });
   });
 
   it('focuses a leaf on its own full path', async () => {
@@ -247,6 +247,7 @@ describe('TopicTree', () => {
     expect(useSelectionStore.getState().selected).toEqual({
       label: 'sensors/temp',
       filter: 'sensors/temp/#',
+      topic: 'sensors/temp',
     });
   });
 
@@ -306,7 +307,7 @@ describe('TopicTree', () => {
     screen.getByText('sensors').closest('button')!.focus();
     await userEvent.keyboard('{Enter}');
 
-    expect(useSelectionStore.getState().selected).toEqual({ label: 'sensors', filter: 'sensors/#' });
+    expect(useSelectionStore.getState().selected).toEqual({ label: 'sensors', filter: 'sensors/#', topic: 'sensors/#' });
     expect(branchOf('sensors')).toHaveAttribute('data-open', 'false');
   });
 
@@ -316,7 +317,7 @@ describe('TopicTree', () => {
 
     await userEvent.dblClick(screen.getByText('sensors'));
 
-    expect(useSelectionStore.getState().selected).toEqual({ label: 'sensors', filter: 'sensors/#' });
+    expect(useSelectionStore.getState().selected).toEqual({ label: 'sensors', filter: 'sensors/#', topic: 'sensors/#' });
   });
 
   // The repeat click belongs to the double click, not to the user. Passing it on would load the
@@ -348,7 +349,7 @@ describe('TopicTree', () => {
     await userEvent.click(screen.getByText('sensors'));
     await userEvent.click(screen.getByText('sensors'));
 
-    expect(useSelectionStore.getState().selected).toEqual({ label: 'sensors', filter: 'sensors/#' });
+    expect(useSelectionStore.getState().selected).toEqual({ label: 'sensors', filter: 'sensors/#', topic: 'sensors/#' });
   });
 
   it('loads the clicked topic into publish, settings and all', async () => {
@@ -597,4 +598,39 @@ it('leaves the broker row unpainted even under a rule that covers everything', a
 
   await waitFor(() => expect(leafDot()).toHaveStyle({ background: '#b45309' }));
   expect(within(brokerRow).getByTestId('dot')).toHaveStyle({ background: 'transparent' });
+});
+
+// What a colour rule about the selection should cover. A leaf means itself; a branch means the
+// subtree, which is what clicking a branch says.
+describe('the selection as something to colour', () => {
+  it('records a leaf as its own topic', async () => {
+    useTopicTreeStore.setState({ defaultOpen: true });
+    useTopicTreeStore.getState().apply([message('sensors/attic/temp')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    await userEvent.click(screen.getByText('temp'));
+
+    expect(useSelectionStore.getState().selected?.topic).toBe('sensors/attic/temp');
+  });
+
+  it('records a branch as the subtree beneath it', async () => {
+    useTopicTreeStore.setState({ defaultOpen: true });
+    useTopicTreeStore.getState().apply([message('sensors/attic/temp')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    await userEvent.click(screen.getByText('attic'));
+
+    expect(useSelectionStore.getState().selected?.topic).toBe('sensors/attic/#');
+  });
+
+  // The broker row is a connection. '#' would be a rule that colours the whole tree, which is
+  // not what picking the broker asked for.
+  it('records nothing for the broker row', async () => {
+    useTopicTreeStore.getState().apply([message('sensors/attic/temp')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    await userEvent.click(screen.getByRole('button', { name: /^broker:1883/ }));
+
+    expect(useSelectionStore.getState().selected?.topic).toBeUndefined();
+  });
 });

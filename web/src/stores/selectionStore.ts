@@ -1,7 +1,13 @@
 import { create } from 'zustand';
 
-// filter is the identity; label differs only for tree nodes ('sensors/room' vs 'sensors/room/#').
-type Selection = { label: string; filter: string };
+/**
+ * filter is the identity; label differs only for tree nodes ('sensors/room' vs 'sensors/room/#').
+ *
+ * topic is what a colour rule about this selection should cover, which is not always the filter
+ * the log is focused on: a leaf wants its own path, a branch wants its subtree. It is absent when
+ * the selection is not a topic at all — the broker row is a connection, not something to colour.
+ */
+type Selection = { label: string; filter: string; topic?: string };
 
 type SelectionState = {
   selected: Selection | null;
