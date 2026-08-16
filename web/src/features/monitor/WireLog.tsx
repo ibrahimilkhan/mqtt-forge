@@ -15,8 +15,7 @@ export function WireLog() {
   const clear = useSelectionStore((state) => state.clear);
 
   const matching = useMemo(
-    () =>
-      selected ? entries.filter((entry) => entry.topic && matchesFilter(selected.filter, entry.topic)) : [],
+    () => (selected ? entries.filter((entry) => carriesTraffic(entry, selected.filter)) : []),
     [entries, selected],
   );
 
@@ -81,14 +80,20 @@ function EntryList({ entries }: { entries: LogEntry[] }) {
 }
 
 /**
- * Only a message wears a rule's colour.
+ * The pane answers one question — what has moved on this topic — so only messages belong in it.
  *
- * A command entry's `topic` is what the command was aimed at — a filter, possibly a wildcard, or
- * a count like '3 filters'. Handing that to the lookup would colour 'Subscribed to sensors/#'
- * with the rule for sensors/#, which reads as a message on a topic that does not exist.
+ * A command entry's `topic` is what the command was aimed at: a filter, possibly a wildcard, or
+ * a count like '3 filters'. Matching that against the selection reads as traffic that never
+ * happened — 'Subscribed to sensors/#' would sit under a selected sensors/# looking like an
+ * arrival on a topic no broker ever published to.
  */
-function ruleForEntry(entry: LogEntry, ruleOf: (topic: string) => ColourRule | null) {
+function carriesTraffic(entry: LogEntry, filter: string): boolean {
   const isMessage = entry.kind === 'recv' || entry.kind === 'sent';
 
-  return isMessage && entry.topic ? ruleOf(entry.topic) : null;
+  return isMessage && !!entry.topic && matchesFilter(filter, entry.topic);
+}
+
+/** A rule colours the topic a message landed on; a command entry never reaches the rows. */
+function ruleForEntry(entry: LogEntry, ruleOf: (topic: string) => ColourRule | null) {
+  return entry.topic ? ruleOf(entry.topic) : null;
 }
