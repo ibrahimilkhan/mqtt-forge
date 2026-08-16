@@ -322,3 +322,51 @@ describe('colour rules', () => {
     await waitFor(() => expect(dotOf('sensors/a/temp')).toHaveStyle({ background: 'transparent' }));
   });
 });
+
+// The entry's left edge is its kind — ink for a message, signal for a sent one. A rule that
+// covers the topic takes that edge over, so a run of entries reads by rule at a glance.
+describe('the entry wears its rule on the left edge', () => {
+  const rules = (...rules: Array<{ filter: string; colour: string }>) =>
+    server.use(http.get('/api/colour-rules', () => HttpResponse.json({ rules })));
+
+  const edgeOf = (topic: string) => {
+    const entry = screen
+      .getAllByTestId('entry')
+      .find((row) => within(row).getByTestId('topic').textContent === topic);
+
+    return (entry as HTMLElement).style.getPropertyValue('--rule-colour');
+  };
+
+  it('hands the rule colour to the entry it covers', async () => {
+    rules({ filter: 'sensors/+/temp', colour: '#b45309' });
+    useSelectionStore.getState().select(chip);
+    received('sensors/a/temp');
+
+    render(<WireLog />);
+
+    await waitFor(() => expect(edgeOf('sensors/a/temp')).toBe('#b45309'));
+  });
+
+  it('leaves an entry no rule covers on its own kind colour', async () => {
+    rules({ filter: 'sensors/+/temp', colour: '#b45309' });
+    useSelectionStore.getState().select(chip);
+    received('sensors/a/temp', 'sensors/a/hum');
+
+    render(<WireLog />);
+
+    await waitFor(() => expect(edgeOf('sensors/a/temp')).toBe('#b45309'));
+    expect(edgeOf('sensors/a/hum')).toBe('');
+  });
+
+  // A command's outcome is what its edge reports; a rule must not paint over a fault.
+  it('leaves a command entry on its own kind colour', async () => {
+    rules({ filter: 'sensors/#', colour: '#b45309' });
+    useSelectionStore.getState().select(chip);
+    useLogStore.getState().push({ kind: 'fault', verb: 'Publish failed', topic: 'sensors/a/temp' });
+
+    render(<WireLog />);
+
+    await waitFor(() => expect(screen.getByTestId('entry')).toBeInTheDocument());
+    expect(screen.getByTestId('entry').style.getPropertyValue('--rule-colour')).toBe('');
+  });
+});
