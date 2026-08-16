@@ -475,8 +475,8 @@ describe('colour rules', () => {
   const rules = (...rules: Array<{ filter: string; colour: string }>) =>
     server.use(http.get('/api/colour-rules', () => HttpResponse.json({ rules })));
 
-  const dotOf = (segment: string) =>
-    within(screen.getByText(segment).closest('[data-testid="tree-row"]')!).getByTestId('dot');
+  // The segment span itself is what a rule paints now, so the text is the handle.
+  const segOf = (segment: string) => screen.getByText(segment);
 
   it('marks a row whose topic a rule covers', async () => {
     rules({ filter: 'sensors/+/temp', colour: '#b45309' });
@@ -484,7 +484,7 @@ describe('colour rules', () => {
     useTopicTreeStore.getState().apply([message('sensors/a/temp')]);
     render(<TopicTree broker="broker:1883" />);
 
-    await waitFor(() => expect(dotOf('temp')).toHaveStyle({ background: '#b45309' }));
+    await waitFor(() => expect(segOf('temp')).toHaveStyle({ color: '#b45309' }));
   });
 
   it('leaves a row no rule covers unmarked, but still drawn', async () => {
@@ -493,9 +493,8 @@ describe('colour rules', () => {
     useTopicTreeStore.getState().apply([message('sensors/a/temp'), message('sensors/a/hum')]);
     render(<TopicTree broker="broker:1883" />);
 
-    // Drawn either way: a dot that appears and disappears would shift every segment beside it.
-    await waitFor(() => expect(dotOf('temp')).toHaveStyle({ background: '#b45309' }));
-    expect(dotOf('hum')).toHaveStyle({ background: 'transparent' });
+    await waitFor(() => expect(segOf('temp')).toHaveStyle({ color: '#b45309' }));
+    expect(segOf('hum').style.color).toBe('');
   });
 
   it('gives a row the colour of the most specific rule that covers it', async () => {
@@ -504,7 +503,7 @@ describe('colour rules', () => {
     useTopicTreeStore.getState().apply([message('sensors/a/temp')]);
     render(<TopicTree broker="broker:1883" />);
 
-    await waitFor(() => expect(dotOf('temp')).toHaveStyle({ background: '#222222' }));
+    await waitFor(() => expect(segOf('temp')).toHaveStyle({ color: '#222222' }));
   });
 
   it('colours a branch by its own path, not by what sits under it', async () => {
@@ -513,8 +512,8 @@ describe('colour rules', () => {
     useTopicTreeStore.getState().apply([message('sensors/a/temp')]);
     render(<TopicTree broker="broker:1883" />);
 
-    await waitFor(() => expect(dotOf('a')).toHaveStyle({ background: '#333333' }));
-    expect(dotOf('temp')).toHaveStyle({ background: 'transparent' });
+    await waitFor(() => expect(segOf('a')).toHaveStyle({ color: '#333333' }));
+    expect(segOf('temp').style.color).toBe('');
   });
 
   it('is unmarked throughout when there are no rules', async () => {
@@ -522,8 +521,9 @@ describe('colour rules', () => {
     useTopicTreeStore.getState().apply([message('sensors/a/temp')]);
     render(<TopicTree broker="broker:1883" />);
 
-    await waitFor(() => expect(screen.getAllByTestId('dot').length).toBeGreaterThan(0));
-    expect(screen.getAllByTestId('dot').every((dot) => dot.style.background === 'transparent')).toBe(true);
+    await waitFor(() => expect(segOf('temp')).toBeInTheDocument());
+    const segments = screen.getAllByTestId('tree-row').map((row) => within(row).getByTestId('segment'));
+    expect(segments.every((segment) => segment.style.color === '')).toBe(true);
   });
 
   // A hand-edited file can hold anything; it must not reach a style attribute.
@@ -533,8 +533,8 @@ describe('colour rules', () => {
     useTopicTreeStore.getState().apply([message('sensors/a/temp')]);
     render(<TopicTree broker="broker:1883" />);
 
-    await waitFor(() => expect(dotOf('temp')).toBeInTheDocument());
-    expect(dotOf('temp')).toHaveStyle({ background: 'transparent' });
+    await waitFor(() => expect(segOf('temp')).toBeInTheDocument());
+    expect(segOf('temp').style.color).toBe('');
   });
 
   it('carries on drawing the tree when the rules cannot be fetched', async () => {
@@ -544,7 +544,7 @@ describe('colour rules', () => {
     render(<TopicTree broker="broker:1883" />);
 
     expect(screen.getByText('temp')).toBeInTheDocument();
-    await waitFor(() => expect(dotOf('temp')).toHaveStyle({ background: 'transparent' }));
+    await waitFor(() => expect(segOf('temp').style.color).toBe(''));
   });
 });
 
@@ -564,10 +564,9 @@ describe('which rule painted a row', () => {
     useTopicTreeStore.getState().apply([message('sensors/a/temp')]);
     render(<TopicTree broker="broker:1883" />);
 
-    const dot = () =>
-      within(screen.getByText('temp').closest('[data-testid="tree-row"]')!).getByTestId('dot');
-
-    await waitFor(() => expect(dot()).toHaveAttribute('title', 'Coloured by sensors/+/temp'));
+    await waitFor(() =>
+      expect(screen.getByText('temp')).toHaveAttribute('title', 'Coloured by sensors/+/temp'),
+    );
   });
 
   it('leaves an unmatched row with no tooltip at all', async () => {
@@ -575,11 +574,8 @@ describe('which rule painted a row', () => {
     useTopicTreeStore.getState().apply([message('sensors/a/temp')]);
     render(<TopicTree broker="broker:1883" />);
 
-    const dot = () =>
-      within(screen.getByText('temp').closest('[data-testid="tree-row"]')!).getByTestId('dot');
-
-    await waitFor(() => expect(dot()).toBeInTheDocument());
-    expect(dot()).not.toHaveAttribute('title');
+    await waitFor(() => expect(screen.getByText('temp')).toBeInTheDocument());
+    expect(screen.getByText('temp')).not.toHaveAttribute('title');
   });
 });
 
@@ -593,11 +589,9 @@ it('leaves the broker row unpainted even under a rule that covers everything', a
   render(<TopicTree broker="broker:1883" />);
 
   const brokerRow = screen.getAllByTestId('tree-row')[0];
-  const leafDot = () =>
-    within(screen.getByText('temp').closest('[data-testid="tree-row"]')!).getByTestId('dot');
 
-  await waitFor(() => expect(leafDot()).toHaveStyle({ background: '#b45309' }));
-  expect(within(brokerRow).getByTestId('dot')).toHaveStyle({ background: 'transparent' });
+  await waitFor(() => expect(screen.getByText('temp')).toHaveStyle({ color: '#b45309' }));
+  expect(within(brokerRow).getByTestId('segment').style.color).toBe('');
 });
 
 // What a colour rule about the selection should cover. A leaf means itself; a branch means the
@@ -635,7 +629,8 @@ describe('the selection as something to colour', () => {
   });
 });
 
-// The dot says which rows a rule covers; the stripe says which row is selected. When both are
+// The segment's colour says which rows a rule covers; the stripe says which row is selected.
+// When both are
 // true of one row, the stripe takes the rule's colour rather than staying neutral.
 describe('the selected row wears its rule on the stripe', () => {
   const rules = (...rules: Array<{ filter: string; colour: string }>) =>
@@ -664,7 +659,7 @@ describe('the selected row wears its rule on the stripe', () => {
     expect(stripeOf('hum')).toBe('');
   });
 
-  it('takes the most specific rule, the same one the dot shows', async () => {
+  it('takes the most specific rule, the same one the segment wears', async () => {
     rules({ filter: 'sensors/#', colour: '#111111' }, { filter: 'sensors/+/temp', colour: '#222222' });
     useTopicTreeStore.setState({ defaultOpen: true });
     useTopicTreeStore.getState().apply([message('sensors/a/temp')]);

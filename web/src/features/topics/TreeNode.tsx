@@ -86,19 +86,18 @@ export const TreeNode = memo(function TreeNode({
           onToggle(path);
         }}
       >
-        {/* Drawn on every row, transparent when no rule covers it: a dot that came and went
-            would shift the segment beside it as messages arrive. Decorative — the colour says
-            nothing the topic on the row does not already say, so it carries no label. */}
+        {/* The rule paints the segment itself rather than a mark beside it: nothing is added to
+            the row, so no width shifts as rules come and go, and what the colour is about — this
+            topic — is the thing wearing it. The title names the filter, not the topic: the topic
+            is already on the row, and with rules overlapping, which one won is the open question. */}
         <span
-          className={styles.dot}
-          data-testid="dot"
-          style={{ background: rule?.colour ?? 'transparent' }}
-          // Names the filter, not the topic: the topic is already on the row, and with rules
-          // overlapping, which one won is the question the colour raises.
+          className={styles.seg}
+          data-testid="segment"
+          style={rule ? { color: rule.colour } : undefined}
           title={rule ? `Coloured by ${rule.filter}` : undefined}
-          aria-hidden="true"
-        />
-        <span className={styles.seg}>{label ?? node.name}</span>
+        >
+          {label ?? node.name}
+        </span>
         <span className={styles.val}>{node.latestPayload ?? ''}</span>
         <span className={styles.meta}>{nodeSummary(node)}</span>
       </button>
