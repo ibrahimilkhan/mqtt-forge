@@ -339,38 +339,39 @@ describe('the entry wears its rule on the left edge', () => {
   });
 });
 
-// The verb was the last coloured thing in an entry still reading by kind. With the topic and the
-// edge on the rule, it was the one that made a coloured row look like it had missed the setting.
-describe('the verb wears the rule too', () => {
+// The head and the stamps are the entry's quiet furniture: what arrived, when, at what QoS and
+// size. They read as one faint black voice, and a colour rule does not reach them — the topic
+// beneath them is what wears the colour.
+describe('the head and the stamps stay quiet', () => {
   const rules = (...rules: Array<{ filter: string; colour: string }>) =>
     server.use(http.get('/api/colour-rules', () => HttpResponse.json({ rules })));
 
-  const verbOf = (topic: string) => {
-    const entry = screen
-      .getAllByTestId('entry')
-      .find((row) => within(row).getByTestId('topic').textContent === topic);
-
-    return within(entry!).getByTestId('verb');
-  };
-
-  it('gives the verb the same colour as the topic beneath it', async () => {
+  it('leaves the verb alone when a rule covers the topic', async () => {
     rules({ filter: 'sensors/+/temp', colour: '#b45309' });
     useSelectionStore.getState().select(chip);
     received('sensors/a/temp');
 
     render(<WireLog />);
 
-    await waitFor(() => expect(verbOf('sensors/a/temp')).toHaveStyle({ color: '#b45309' }));
+    await waitFor(() => expect(screen.getByTestId('topic')).toHaveStyle({ color: '#b45309' }));
+    expect(screen.getByTestId('verb').style.color).toBe('');
   });
 
-  it('leaves the verb on its kind colour when no rule covers the topic', async () => {
-    rules({ filter: 'sensors/+/temp', colour: '#b45309' });
+  it('gives a retained message no colour of its own', () => {
+    useLogStore.getState().push({
+      kind: 'recv',
+      verb: 'Received',
+      topic: 'sensors/a/temp',
+      stamps: ['QoS 1', 'RETAINED', '4 B'],
+    });
     useSelectionStore.getState().select(chip);
-    received('sensors/a/hum');
 
     render(<WireLog />);
 
-    await waitFor(() => expect(screen.getByTestId('entry')).toBeInTheDocument());
-    expect(verbOf('sensors/a/hum').style.color).toBe('');
+    // Same treatment as the QoS and size beside it; only the word tells them apart.
+    const colourOf = (text: string) => getComputedStyle(screen.getByText(text)).color;
+
+    expect(colourOf('RETAINED')).toBe(colourOf('QoS 1'));
+    expect(colourOf('RETAINED')).toBe(colourOf('4 B'));
   });
 });
