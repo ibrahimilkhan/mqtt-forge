@@ -67,8 +67,7 @@
 .tree > .node[data-depth="0"]:first-child { margin-top: 0; }
 /* Lift on hover rather than tint, so no colour reads into the row. */
 .node:hover { box-shadow: 0 1px 4px rgb(19 26 36 / 0.14); }
-/* The only row that fills, with a neutral stripe instead of --signal. */
-/* The stripe takes the row's colour rule when one covers it, and the neutral grey otherwise.
+/* The only row that fills. The stripe takes the row's colour rule when one covers it, and the neutral grey otherwise.
    --rule-colour is set inline only on a row a rule matches, so an unset property is what picks
    the fallback here — the two states never both apply. */
 .node[data-selected="true"] {
@@ -130,9 +129,8 @@
 .seg { flex: none; color: var(--ink); }
 
 /* Sits right beside the topic name, so the eye reads them as one.
-   Ink rather than signal: the payload is the thing being read, and a colour on it competed with
-   the dot the colour rules put at the head of the row. Regular weight against the segment's 600
-   is what keeps the name reading first once the colour no longer does it. */
+   Ink rather than signal, at regular weight against the segment's 600: the segment is what a
+   colour rule paints, and a payload with a colour of its own competed with it. */
 .val {
   color: var(--ink);
   font-weight: 400;
@@ -159,13 +157,3 @@
 /* Noise once the branch is open and its children already show the detail. */
 .node[data-open="true"][data-branch="true"] > .pick > .meta { display: none; }
 
-/* Colour-rule marker. A third channel: the row's background already means "traffic just now"
-   and its left stripe means "selected", so the rule needed somewhere neither of them reaches.
-   Always present, transparent when unmatched, so segments stay on one vertical line. */
-.dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex: none;
-  align-self: center;
-}
