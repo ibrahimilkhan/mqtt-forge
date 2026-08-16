@@ -22,19 +22,20 @@
 }
 
 .paneActions { margin-left: auto; display: flex; gap: 4px; }
+/* Square targets around a single glyph: the label is carried by aria-label and the tooltip, so
+   nothing here has to make room for a word. Sized well past the glyph so they stay easy to hit. */
 .paneActions button {
   all: unset;
   display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   color: var(--muted);
-  padding: 5px 8px;
+  width: 24px;
+  height: 24px;
   border-radius: 2px;
   font-family: var(--mono);
-  font-size: var(--t-label);
-  font-weight: 600;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  white-space: nowrap;
+  font-size: var(--t-lead);
   line-height: 1;
 }
 /* all: unset misses the global button:hover fill; :not(:disabled) matches its specificity so this wins. */
@@ -88,9 +89,16 @@
 .twisty:focus-visible,
 .pick:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
+/* The glyph is centred in its own box rather than left to sit where the font puts it, because
+   the closed state rotates this box about its centre: an off-centre arrow swings off-centre too,
+   and the column of chevrons down a deep tree stops lining up. */
 .twisty {
   flex: none;
+  display: inline-block;
   width: 10px;
+  text-align: center;
+  line-height: 1;
+  transform-origin: 50% 50%;
   color: var(--muted);
   font-size: var(--t-micro);
   transition: transform 0.12s ease;

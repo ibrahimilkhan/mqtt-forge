@@ -12,9 +12,10 @@ type Props = {
 
 type Widths = { panel: number; tree: number; right: number };
 
-// The tree and the log carry long topic names and payloads; the panel column holds a form and
-// reads fine narrower, so it starts as the smallest of the three.
-const START: Widths = { panel: 0.26, tree: 0.36, right: 0.38 };
+// The topics column is the one that has to hold a shape rather than a line of text: a deep tree
+// indents every level, so it starts as the widest of the three. The panel column holds a form
+// and reads fine narrow; the log wraps a long topic onto a second line and carries on.
+const START: Widths = { panel: 0.24, tree: 0.44, right: 0.32 };
 
 /**
  * Where to put the log/publish boundary so the publish form opens at exactly its own height.

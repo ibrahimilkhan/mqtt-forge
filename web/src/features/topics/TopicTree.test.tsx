@@ -438,12 +438,18 @@ describe('TopicTree', () => {
     expect(screen.queryByText('x')).not.toBeInTheDocument();
   });
 
-  // Glyph-only buttons were there but nobody found them.
-  it('names the expand and collapse controls in words', () => {
+  // Glyphs on screen, words everywhere a name is asked for: the accessible name and the tooltip
+  // both spell them out, so neither a screen reader nor a hovering pointer is left guessing.
+  it('names the expand and collapse controls in words even though it draws glyphs', () => {
     render(<TopicTree broker="broker:1883" />);
 
-    expect(screen.getByRole('button', { name: 'Expand all' })).toHaveTextContent(/expand all/i);
-    expect(screen.getByRole('button', { name: 'Collapse all' })).toHaveTextContent(/collapse all/i);
+    const expand = screen.getByRole('button', { name: 'Expand all' });
+    const collapse = screen.getByRole('button', { name: 'Collapse all' });
+
+    expect(expand).toHaveAttribute('title', 'Expand every branch');
+    expect(collapse).toHaveAttribute('title', 'Collapse every branch');
+    expect(expand).not.toHaveTextContent(/expand/i);
+    expect(collapse).not.toHaveTextContent(/collapse/i);
   });
 
   // Already safe: synchronous store writes, no network call, so no guard needed here.

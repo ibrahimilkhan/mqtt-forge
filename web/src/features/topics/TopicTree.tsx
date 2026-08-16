@@ -97,13 +97,25 @@ export function TopicTree({ broker }: { broker?: string }) {
     <>
       <div className={styles.paneHead}>
         <h2 className={styles.eyebrow}>Topics</h2>
-        {/* Spelled out: as glyphs these were on screen the whole time and still went unfound. */}
+        {/* Glyphs, with the words kept as the accessible name and the tooltip. The box pair is
+            deliberately not the row's own chevron: these act on the whole tree, and a control
+            that looks like the one beside a branch reads as belonging to that branch. */}
         <div className={styles.paneActions}>
-          <button type="button" onClick={() => setAllOpen(true)} title="Expand every branch">
-            Expand all
+          <button
+            type="button"
+            onClick={() => setAllOpen(true)}
+            aria-label="Expand all"
+            title="Expand every branch"
+          >
+            ⊞
           </button>
-          <button type="button" onClick={() => setAllOpen(false)} title="Collapse every branch">
-            Collapse all
+          <button
+            type="button"
+            onClick={() => setAllOpen(false)}
+            aria-label="Collapse all"
+            title="Collapse every branch"
+          >
+            ⊟
           </button>
         </div>
       </div>

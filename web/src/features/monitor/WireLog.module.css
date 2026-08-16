@@ -29,10 +29,12 @@
   margin-left: auto;
   min-width: 0;
 }
+/* Ink, not signal: a topic here may be wearing a colour rule's colour a line below, and a
+   standing blue on the heading made that read as a third colour with a meaning of its own. */
 .focusTopic {
   font-family: var(--mono);
   font-size: var(--t-small);
-  color: var(--signal);
+  color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
