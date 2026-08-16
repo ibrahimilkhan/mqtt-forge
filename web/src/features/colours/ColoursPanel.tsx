@@ -6,6 +6,7 @@ import { PanelShell } from '../../components/PanelShell';
 import type { ColourRule } from '../../lib/topicColour';
 import { useGuardedMutate } from '../../lib/useGuardedMutate';
 import { logFault, useLogStore } from '../../stores/logStore';
+import { useSelectionStore } from '../../stores/selectionStore';
 import panel from '../../styles/panel.module.css';
 import { ColourPicker } from './ColourPicker';
 import styles from './ColoursPanel.module.css';
@@ -14,6 +15,8 @@ import { draftFrom, faultIn, MAX_RULES, newDraftRule, type DraftRule } from './r
 
 export function ColoursPanel({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
+  // Absent when nothing is picked, and when what is picked is not a topic — the broker row.
+  const selectedTopic = useSelectionStore((state) => state.selected?.topic);
   const { data, isError } = useQuery({ queryKey: queryKeys.colourRules, queryFn: getColourRules });
 
   // The edits live here, not in the query cache. A half-typed filter is not a rule, and writing
@@ -24,6 +27,29 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (draft === null && data) setDraft(draftFrom(data));
   }, [data, draft]);
+
+  /**
+   * A row with an empty filter is a slot waiting to be told what it covers, so picking a topic
+   * fills it — the same help as adding a rule while a topic is already picked, in the other order.
+   *
+   * Keyed on the selection alone. Were the draft in here too, clearing a box to retype it would
+   * be answered by the topic reappearing, and the box could not be cleared at all.
+   */
+  useEffect(() => {
+    if (!selectedTopic) return;
+
+    setDraft((current) => {
+      if (current === null) return current;
+
+      // The newest, since that is the one just added and being worked on.
+      const waiting = current.findLastIndex((rule) => rule.filter === '');
+      if (waiting === -1) return current;
+
+      return current.map((rule, index) =>
+        index === waiting ? { ...rule, filter: selectedTopic } : rule,
+      );
+    });
+  }, [selectedTopic]);
 
   const save = useMutation({
     mutationFn: putColourRules,
@@ -113,7 +139,23 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
           type="button"
           className="ghost"
           disabled={draft === null || full}
-          onClick={() => setDraft((current) => [...current!, newDraftRule(nextColour(current!.map((r) => r.colour)))])}
+          title={
+            selectedTopic
+              ? `Add a rule for ${selectedTopic}, the topic selected in the tree`
+              : 'Add a rule. Selecting a topic first fills it in.'
+          }
+          onClick={() =>
+            setDraft((current) => [
+              ...current!,
+              {
+                ...newDraftRule(nextColour(current!.map((rule) => rule.colour))),
+                // The tree sits beside this panel, so the topic on screen is the one a new rule
+                // is usually for. Only the new row: an edit in progress above it is not the
+                // selection's business.
+                filter: selectedTopic ?? '',
+              },
+            ])
+          }
         >
           Add rule
         </button>

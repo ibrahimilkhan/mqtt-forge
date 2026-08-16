@@ -70,7 +70,11 @@ export function TopicTree({ broker }: { broker?: string }) {
   // the publish form so it can be sent straight back with the settings it arrived under.
   const onSelect = useCallback(
     (path: string, node: TopicNode) => {
-      select({ label: path, filter: treeFilter(path) });
+      // A leaf is one topic and a colour rule for it should say so; a branch stands for
+      // everything under it, which is what clicking a branch means.
+      const topic = node.children.size > 0 ? treeFilter(path) : path;
+
+      select({ label: path, filter: treeFilter(path), topic });
       load({
         topic: path,
         payload: node.latestPayload ?? undefined,
