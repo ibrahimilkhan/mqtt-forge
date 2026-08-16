@@ -115,9 +115,11 @@
   gap: 10px;
   align-items: baseline;
   color: var(--faint);
-  font-size: var(--t-label);
+  font-size: var(--t-micro);
   letter-spacing: 0.08em;
-  text-transform: uppercase;
+  /* Lower case, not upper: these are labels on the traffic, not headings over it, and small
+     caps at this size read as shouting in a pane whose whole job is to be scanned. */
+  text-transform: lowercase;
 }
 /* A failure is the one thing here that has to be loud. */
 .entry[data-kind="fault"] .verb { color: var(--fault); font-weight: 600; }
@@ -130,8 +132,11 @@
 
 .stamps { display: inline-flex; gap: 5px; margin-left: 8px; vertical-align: 1px; }
 .stamp {
-  font-size: var(--t-micro);
+  /* A shade under the head above it. Derived from the token rather than written as a size of
+     its own, so the appearance panel's base size still carries it. */
+  font-size: calc(var(--t-micro) * 0.92);
   letter-spacing: 0.06em;
+  text-transform: lowercase;
   padding: 1px 5px;
   border: 1px solid var(--rule);
   border-radius: 2px;
