@@ -14,7 +14,7 @@ describe('FilterChips', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'sensors/#' }));
 
-    expect(useSelectionStore.getState().selected).toEqual({ label: 'sensors/#', filter: 'sensors/#' });
+    expect(useSelectionStore.getState().selected).toEqual({ label: 'sensors/#', filter: 'sensors/#', topic: 'sensors/#' });
   });
 
   it('keeps the focus when the selected filter is clicked again', async () => {
@@ -23,7 +23,7 @@ describe('FilterChips', () => {
     await userEvent.click(screen.getByRole('button', { name: 'sensors/#' }));
     await userEvent.click(screen.getByRole('button', { name: 'sensors/#' }));
 
-    expect(useSelectionStore.getState().selected).toEqual({ label: 'sensors/#', filter: 'sensors/#' });
+    expect(useSelectionStore.getState().selected).toEqual({ label: 'sensors/#', filter: 'sensors/#', topic: 'sensors/#' });
   });
 
   it('marks the selected chip as pressed', async () => {
@@ -44,4 +44,13 @@ describe('FilterChips', () => {
     expect(onRemove).toHaveBeenCalledWith('sensors/#');
     expect(useSelectionStore.getState().selected).toBeNull();
   });
+});
+
+// A chip is already a filter, so it is its own answer.
+it('records the chip as the topic a colour rule would cover', async () => {
+  render(<FilterChips filters={['sensors/#']} onRemove={vi.fn()} />);
+
+  await userEvent.click(screen.getByRole('button', { name: 'sensors/#' }));
+
+  expect(useSelectionStore.getState().selected?.topic).toBe('sensors/#');
 });

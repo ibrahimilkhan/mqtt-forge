@@ -1,8 +1,9 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useLogStore } from '../../stores/logStore';
+import { useSelectionStore } from '../../stores/selectionStore';
 import { renderWithClient as render } from '../../test/renderWithClient';
 import { server } from '../../test/server';
 import { ColoursPanel } from './ColoursPanel';
@@ -448,5 +449,170 @@ describe('when the rules cannot be read', () => {
 
     await waitFor(() => expect(rows()).toHaveLength(1));
     expect(screen.queryByText(/could not be read/i)).not.toBeInTheDocument();
+  });
+});
+
+// The tree sits beside this panel, so the topic you are looking at is the one you want a rule
+// for. Typing it back out by hand is the step worth removing.
+describe('adding a rule for what is selected', () => {
+  beforeEach(() => useSelectionStore.getState().clear());
+
+  const selectTopic = (topic: string) =>
+    act(() => useSelectionStore.getState().select({ label: topic, filter: topic, topic }));
+
+  it('fills the new row with the selected topic', async () => {
+    renderPanel();
+    await waitFor(() => expect(addButton()).toBeEnabled());
+    selectTopic('sensors/attic/temp');
+
+    await userEvent.click(addButton());
+
+    expect(filterBox(rows()[0])).toHaveValue('sensors/attic/temp');
+  });
+
+  it('saves it without anything else being typed', async () => {
+    const sent = capturePut();
+    renderPanel();
+    await waitFor(() => expect(addButton()).toBeEnabled());
+    selectTopic('sensors/#');
+
+    await userEvent.click(addButton());
+    await userEvent.click(saveButton());
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toEqual([{ filter: 'sensors/#', colour: SUGGESTED[0] }]);
+  });
+
+  it('leaves the row empty when nothing is selected', async () => {
+    renderPanel();
+    await waitFor(() => expect(addButton()).toBeEnabled());
+
+    await userEvent.click(addButton());
+
+    expect(filterBox(rows()[0])).toHaveValue('');
+  });
+
+  // The broker row is a connection, not a topic; it records no topic to colour.
+  it('leaves the row empty when the selection is not a topic', async () => {
+    renderPanel();
+    await waitFor(() => expect(addButton()).toBeEnabled());
+    act(() => useSelectionStore.getState().select({ label: 'broker:1883', filter: '#' }));
+
+    await userEvent.click(addButton());
+
+    expect(filterBox(rows()[0])).toHaveValue('');
+  });
+
+  // Only the new row: an edit in progress somewhere above it is not the selection's business.
+  it('leaves the rows already there alone', async () => {
+    stored({ filter: 'alerts/#', colour: '#b45309' });
+    renderPanel();
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    selectTopic('sensors/attic/temp');
+
+    await userEvent.click(addButton());
+
+    expect(filterBox(rows()[0])).toHaveValue('alerts/#');
+    expect(filterBox(rows()[1])).toHaveValue('sensors/attic/temp');
+  });
+
+  // Prefilled all the same: the duplicate message is the useful answer — that topic is
+  // already coloured, and here is the rule doing it.
+  it('says so when the selected topic already has a rule', async () => {
+    stored({ filter: 'sensors/#', colour: '#b45309' });
+    renderPanel();
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    selectTopic('sensors/#');
+
+    await userEvent.click(addButton());
+
+    expect(within(rows()[1]).getByText(/already has a colour/i)).toBeInTheDocument();
+    expect(saveButton()).toBeDisabled();
+  });
+});
+
+// The other order: the row is added first, and the topic picked afterwards. An empty filter is
+// a slot waiting to be told what it covers, so a selection fills it.
+describe('picking a topic after the row is there', () => {
+  beforeEach(() => useSelectionStore.getState().clear());
+
+  const selectTopic = (topic: string) =>
+    act(() => useSelectionStore.getState().select({ label: topic, filter: topic, topic }));
+
+  const addEmptyRow = async () => {
+    await waitFor(() => expect(addButton()).toBeEnabled());
+    await userEvent.click(addButton());
+  };
+
+  it('fills the row that was waiting', async () => {
+    renderPanel();
+    await addEmptyRow();
+
+    selectTopic('sensors/attic/temp');
+
+    expect(filterBox(rows()[0])).toHaveValue('sensors/attic/temp');
+  });
+
+  it('fills the newest empty row when more than one is waiting', async () => {
+    renderPanel();
+    await addEmptyRow();
+    await userEvent.click(addButton());
+
+    selectTopic('sensors/attic/temp');
+
+    expect(filterBox(rows()[0])).toHaveValue('');
+    expect(filterBox(rows()[1])).toHaveValue('sensors/attic/temp');
+  });
+
+  it('leaves a row that already says something alone', async () => {
+    stored({ filter: 'alerts/#', colour: '#b45309' });
+    renderPanel();
+    await waitFor(() => expect(rows()).toHaveLength(1));
+
+    selectTopic('sensors/attic/temp');
+
+    expect(rows()).toHaveLength(1);
+    expect(filterBox(rows()[0])).toHaveValue('alerts/#');
+  });
+
+  it('adds nothing when no row is waiting', async () => {
+    stored({ filter: 'alerts/#', colour: '#b45309' });
+    renderPanel();
+    await waitFor(() => expect(rows()).toHaveLength(1));
+
+    selectTopic('sensors/attic/temp');
+
+    expect(rows()).toHaveLength(1);
+  });
+
+  it('ignores a selection that is not a topic', async () => {
+    renderPanel();
+    await addEmptyRow();
+
+    act(() => useSelectionStore.getState().select({ label: 'broker:1883', filter: '#' }));
+
+    expect(filterBox(rows()[0])).toHaveValue('');
+  });
+
+  // Clearing a box is an edit, not a request for the selection to be put back.
+  it('does not put the topic back once the box has been cleared', async () => {
+    renderPanel();
+    await addEmptyRow();
+    selectTopic('sensors/attic/temp');
+
+    await userEvent.clear(filterBox(rows()[0]));
+
+    expect(filterBox(rows()[0])).toHaveValue('');
+  });
+
+  it('fills the waiting row again on the next pick', async () => {
+    renderPanel();
+    await addEmptyRow();
+    selectTopic('sensors/attic/temp');
+    await userEvent.clear(filterBox(rows()[0]));
+
+    selectTopic('alerts/water');
+
+    expect(filterBox(rows()[0])).toHaveValue('alerts/water');
   });
 });

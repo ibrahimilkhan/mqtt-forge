@@ -10,7 +10,11 @@ export function FilterChips({ filters, onRemove, pendingFilter }: Props) {
 
   // Stable, so a refetch after every subscribe re-renders only the chips that actually changed
   // rather than all several hundred of them.
-  const pick = useCallback((filter: string) => select({ label: filter, filter }), [select]);
+  // A chip is already a topic filter, so it is its own answer for colouring too.
+  const pick = useCallback(
+    (filter: string) => select({ label: filter, filter, topic: filter }),
+    [select],
+  );
 
   return (
     <div className={styles.filters}>
