@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, type CSSProperties } from 'react';
 import type { ColourRule } from '../../lib/topicColour';
 import { useComposeStore } from '../../stores/composeStore';
 import type { LogEntry } from '../../stores/logStore';
@@ -36,6 +36,9 @@ export const LogEntryRow = memo(function LogEntryRow({
       className={styles.entry}
       data-kind={entry.kind}
       data-testid="entry"
+      // The left edge reads this. Unset when no rule covers the topic, so the edge falls back
+      // to the colour of the entry's kind rather than to an empty one.
+      style={rule ? ({ '--rule-colour': rule.colour } as CSSProperties) : undefined}
       {...(reload && {
         role: 'button',
         tabIndex: 0,

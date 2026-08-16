@@ -68,9 +68,17 @@
 /* Lift on hover rather than tint, so no colour reads into the row. */
 .node:hover { box-shadow: 0 1px 4px rgb(19 26 36 / 0.14); }
 /* The only row that fills, with a neutral stripe instead of --signal. */
-.node[data-selected="true"] { background: var(--rule); box-shadow: inset 2px 0 0 var(--muted); }
+/* The stripe takes the row's colour rule when one covers it, and the neutral grey otherwise.
+   --rule-colour is set inline only on a row a rule matches, so an unset property is what picks
+   the fallback here — the two states never both apply. */
+.node[data-selected="true"] {
+  background: var(--rule);
+  box-shadow: inset 2px 0 0 var(--rule-colour, var(--muted));
+}
 /* box-shadow does not merge across rules; restate the stripe alongside the lift. */
-.node[data-selected="true"]:hover { box-shadow: inset 2px 0 0 var(--muted), 0 1px 4px rgb(19 26 36 / 0.14); }
+.node[data-selected="true"]:hover {
+  box-shadow: inset 2px 0 0 var(--rule-colour, var(--muted)), 0 1px 4px rgb(19 26 36 / 0.14);
+}
 /* Two buttons, both need the app's reset: twisty opens the branch, the rest picks it. */
 .twisty,
 .pick { all: unset; cursor: pointer; }

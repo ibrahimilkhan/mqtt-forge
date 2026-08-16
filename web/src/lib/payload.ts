@@ -79,7 +79,7 @@ export function hexFromBase64(base64: string): { text: string; size: number } {
   return { text: pairs.join(' '), size: binary.length };
 }
 
-/** Null when the text is a JSON document; otherwise why it is not. */
+/** Null when the text is a JSON document; otherwise where it stops being one, and why. */
 export function checkJson(text: string): string | null {
   if (text.trim() === '') return 'A JSON body cannot be empty.';
 
@@ -87,8 +87,226 @@ export function checkJson(text: string): string | null {
     JSON.parse(text);
     return null;
   } catch (error) {
+    // JSON.parse stays the judge of valid and invalid; the scan below only explains its verdict,
+    // because the engines word that verdict differently and none of them word it for a person.
+    const fault = findFault(text);
+    if (fault) {
+      const { line, column } = lineColumn(text, fault.at);
+      return `Line ${line}, column ${column}: ${fault.why}`;
+    }
+
     return error instanceof Error ? error.message : 'This is not valid JSON.';
   }
+}
+
+type Fault = { at: number; why: string };
+
+class Stop extends Error {
+  readonly fault: Fault;
+
+  constructor(fault: Fault) {
+    super(fault.why);
+    this.fault = fault;
+  }
+}
+
+/**
+ * The first place the text stops being JSON, in the words someone typing it would use.
+ *
+ * Only ever runs on text JSON.parse has already rejected, so it does not have to be fast, and
+ * it may return null: an unexplained fault falls back to the engine's own message.
+ */
+function findFault(text: string): Fault | null {
+  let i = 0;
+
+  const stop = (why: string, at = i): never => {
+    throw new Stop({ at, why });
+  };
+  const here = (): string | undefined => text[i];
+  const skipSpace = () => {
+    while (i < text.length && (text[i] === ' ' || text[i] === '\t' || text[i] === '\n' || text[i] === '\r')) i++;
+  };
+
+  function value(): void {
+    skipSpace();
+    if (i >= text.length) stop('the body ends where a value should be.');
+
+    const c = text[i];
+    if (c === '{') return object();
+    if (c === '[') return array();
+    if (c === '"') return string();
+    if (c === "'") stop('JSON strings go in double quotes, not single.');
+    if (c === '-' || (c >= '0' && c <= '9')) return number();
+    return word();
+  }
+
+  function object(): void {
+    const open = i;
+    i++;
+    skipSpace();
+    if (here() === '}') {
+      i++;
+      return;
+    }
+
+    for (;;) {
+      skipSpace();
+      if (i >= text.length) stop('this object is never closed.', open);
+      // A doubled brace here is almost always a {{placeholder}} pasted from a template, so say
+      // that rather than complaining about a property name that was never meant to be one.
+      if (here() === '{') stop('a {{...}} placeholder is not JSON; send it as Text.', i);
+      if (here() === "'") stop('property names go in double quotes, not single.');
+      if (here() !== '"') stop('property names go in double quotes.');
+      string();
+
+      skipSpace();
+      if (i >= text.length) stop('this object is never closed.', open);
+      if (here() !== ':') stop("a ':' should come after the property name.");
+      i++;
+      value();
+
+      skipSpace();
+      if (i >= text.length) stop('this object is never closed.', open);
+      if (here() === '}') {
+        i++;
+        return;
+      }
+      if (here() !== ',') stop("a ',' is missing between entries.");
+
+      const comma = i;
+      i++;
+      skipSpace();
+      if (here() === '}') stop('there is a comma after the last entry.', comma);
+    }
+  }
+
+  function array(): void {
+    const open = i;
+    i++;
+    skipSpace();
+    if (here() === ']') {
+      i++;
+      return;
+    }
+
+    for (;;) {
+      value();
+
+      skipSpace();
+      if (i >= text.length) stop('this array is never closed.', open);
+      if (here() === ']') {
+        i++;
+        return;
+      }
+      if (here() !== ',') stop("a ',' is missing between items.");
+
+      const comma = i;
+      i++;
+      skipSpace();
+      if (here() === ']') stop('there is a comma after the last item.', comma);
+    }
+  }
+
+  function string(): void {
+    const open = i;
+    i++;
+
+    for (;;) {
+      if (i >= text.length) stop('this string is never closed.', open);
+
+      const c = text[i];
+      if (c === '"') {
+        i++;
+        return;
+      }
+
+      if (c === '\\') {
+        const escape = text[i + 1];
+        if (escape === undefined) stop('this string is never closed.', open);
+        if (escape === 'u') {
+          const digits = text.slice(i + 2, i + 6);
+          if (!/^[0-9a-fA-F]{4}$/.test(digits)) stop("a '\\u' escape takes four hex digits.", i);
+          i += 6;
+          continue;
+        }
+        if (!'"\\/bfnrt'.includes(escape)) stop(`'\\${escape}' is not a JSON escape.`, i);
+        i += 2;
+        continue;
+      }
+
+      // A line break inside quotes is the usual one: JSON has no multi-line string literal.
+      if (c < ' ') stop('a string cannot hold a raw line break or control character.');
+      i++;
+    }
+  }
+
+  const digit = (): boolean => {
+    const c = here();
+    return c !== undefined && c >= '0' && c <= '9';
+  };
+
+  function number(): void {
+    const start = i;
+    if (here() === '-') i++;
+
+    if (here() === '0') {
+      i++;
+    } else {
+      if (!digit()) stop('a number needs a digit here.', start);
+      while (digit()) i++;
+    }
+    if (digit()) stop('a number cannot start with 0.', start);
+
+    if (here() === '.') {
+      i++;
+      if (!digit()) stop('a number needs a digit after the decimal point.', start);
+      while (digit()) i++;
+    }
+
+    if (here() === 'e' || here() === 'E') {
+      i++;
+      if (here() === '+' || here() === '-') i++;
+      if (!digit()) stop('an exponent needs a digit.', start);
+      while (digit()) i++;
+    }
+  }
+
+  /** true, false and null — or whatever was written where one of them belongs. */
+  function word(): void {
+    const start = i;
+    while (i < text.length && /[A-Za-z]/.test(text[i])) i++;
+
+    const written = text.slice(start, i);
+    if (written === 'true' || written === 'false' || written === 'null') return;
+    if (written === '') stop(`'${text[start]}' is not where a value can start.`, start);
+    stop(`'${written}' is not a JSON value.`, start);
+  }
+
+  try {
+    value();
+    skipSpace();
+    if (i < text.length) stop('there is more text after the end of the document.');
+    return null;
+  } catch (error) {
+    // Nesting deep enough to exhaust the stack is the one throw that is not ours; the engine's
+    // own message stands in for it.
+    return error instanceof Stop ? error.fault : null;
+  }
+}
+
+/** Both one-based, the way an editor counts them. */
+function lineColumn(text: string, at: number): { line: number; column: number } {
+  let line = 1;
+  let lineStart = 0;
+
+  for (let i = 0; i < at; i++) {
+    if (text[i] === '\n') {
+      line++;
+      lineStart = i + 1;
+    }
+  }
+
+  return { line, column: at - lineStart + 1 };
 }
 
 export const formatJson = (text: string): string => JSON.stringify(JSON.parse(text), null, 2);

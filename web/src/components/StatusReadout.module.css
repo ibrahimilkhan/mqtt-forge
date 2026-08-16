@@ -20,16 +20,20 @@
   background: var(--muted);
   flex: none;
 }
+/* Connected is the state you are in nearly all the time, and nothing about it needs answering,
+   so it holds its volume down: the tint and the halo pull back until the text colour carries it
+   on its own, and the lamp breathes rather than blinks. Faulted and Reconnecting keep the louder
+   treatment below — those are the two worth taking your eye off the messages for. */
 .readout[data-state="Connected"] {
   color: var(--live);
-  border-color: color-mix(in srgb, var(--live) 40%, transparent);
-  background: color-mix(in srgb, var(--live) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--live) 22%, transparent);
+  background: color-mix(in srgb, var(--live) 5%, var(--surface));
 }
 .readout[data-state="Connected"] .lamp {
   background: var(--live);
   /* Halo rather than a bigger dot, so the chip's height stays put as states change. */
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--live) 22%, transparent);
-  animation: pulse 2.4s ease-in-out infinite;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--live) 14%, transparent);
+  animation: breathe 4s ease-in-out infinite;
 }
 .readout[data-state="Faulted"] {
   color: var(--fault);
@@ -54,6 +58,8 @@
 }
 
 @keyframes pulse { 50% { opacity: 0.35; } }
+/* The same idea at a fraction of the swing: alive, but not flashing at you. */
+@keyframes breathe { 50% { opacity: 0.62; } }
 
 /* Motion is decoration here; the colour already carries the state. */
 @media (prefers-reduced-motion: reduce) {

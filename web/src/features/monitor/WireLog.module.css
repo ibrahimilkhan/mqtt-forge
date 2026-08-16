@@ -88,10 +88,17 @@
 .entry[role="button"]:hover { background: var(--paper); }
 .entry[role="button"]:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
 
-.entry[data-kind="sent"]  { border-left-color: var(--signal); }
-.entry[data-kind="recv"]  { border-left-color: var(--ink); }
-.entry[data-kind="ok"]    { border-left-color: var(--live); }
-.entry[data-kind="fault"] { border-left-color: var(--fault); }
+/* What the kind says the edge should be, held in a property so the rule below can offer to
+   stand in for it without having to restate all four. */
+.entry[data-kind="sent"]  { --edge: var(--signal); }
+.entry[data-kind="recv"]  { --edge: var(--ink); }
+.entry[data-kind="ok"]    { --edge: var(--live); }
+.entry[data-kind="fault"] { --edge: var(--fault); }
+
+/* A colour rule takes the edge over, so a run of entries reads by rule at a glance. Only on a
+   message: --rule-colour is never set on a command entry, whose edge is reporting an outcome
+   that a rule must not paint over. */
+.entry { border-left-color: var(--rule-colour, var(--edge, var(--rule))); }
 
 @keyframes arrive {
   from { opacity: 0; transform: translateY(-3px); }

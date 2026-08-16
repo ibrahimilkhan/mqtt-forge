@@ -634,3 +634,42 @@ describe('the selection as something to colour', () => {
     expect(useSelectionStore.getState().selected?.topic).toBeUndefined();
   });
 });
+
+// The dot says which rows a rule covers; the stripe says which row is selected. When both are
+// true of one row, the stripe takes the rule's colour rather than staying neutral.
+describe('the selected row wears its rule on the stripe', () => {
+  const rules = (...rules: Array<{ filter: string; colour: string }>) =>
+    server.use(http.get('/api/colour-rules', () => HttpResponse.json({ rules })));
+
+  const rowOf = (segment: string) => screen.getByText(segment).closest('[data-testid="tree-row"]')!;
+  const stripeOf = (segment: string) =>
+    (rowOf(segment) as HTMLElement).style.getPropertyValue('--rule-colour');
+
+  it('hands the rule colour to the row it covers', async () => {
+    rules({ filter: 'sensors/+/temp', colour: '#b45309' });
+    useTopicTreeStore.setState({ defaultOpen: true });
+    useTopicTreeStore.getState().apply([message('sensors/a/temp')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    await waitFor(() => expect(stripeOf('temp')).toBe('#b45309'));
+  });
+
+  it('leaves the row no rule covers without one, so the stripe keeps its neutral colour', async () => {
+    rules({ filter: 'sensors/+/temp', colour: '#b45309' });
+    useTopicTreeStore.setState({ defaultOpen: true });
+    useTopicTreeStore.getState().apply([message('sensors/a/temp'), message('sensors/a/hum')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    await waitFor(() => expect(stripeOf('temp')).toBe('#b45309'));
+    expect(stripeOf('hum')).toBe('');
+  });
+
+  it('takes the most specific rule, the same one the dot shows', async () => {
+    rules({ filter: 'sensors/#', colour: '#111111' }, { filter: 'sensors/+/temp', colour: '#222222' });
+    useTopicTreeStore.setState({ defaultOpen: true });
+    useTopicTreeStore.getState().apply([message('sensors/a/temp')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    await waitFor(() => expect(stripeOf('temp')).toBe('#222222'));
+  });
+});
