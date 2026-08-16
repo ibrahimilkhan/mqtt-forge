@@ -674,3 +674,32 @@ describe('the selected row wears its rule on the stripe', () => {
     await waitFor(() => expect(stripeOf('temp')).toBe('#222222'));
   });
 });
+
+// The reported symptom: with the broker row folded, 'Expand all' opened every branch behind a
+// closed door and looked like it had done nothing at all.
+describe('expand all reaches the broker row', () => {
+  it('unfolds a collapsed broker row and shows the tree again', async () => {
+    useTopicTreeStore.getState().apply([message('sensors/attic/temp')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    await userEvent.click(screen.getByRole('button', { name: /^Collapse broker:1883/ }));
+    expect(screen.queryByText('sensors')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+
+    expect(screen.getByText('sensors')).toBeInTheDocument();
+    expect(screen.getByText('attic')).toBeInTheDocument();
+    expect(screen.getByText('temp')).toBeInTheDocument();
+  });
+
+  it('leaves the broker row on screen after collapsing everything', async () => {
+    useTopicTreeStore.getState().apply([message('sensors/attic/temp')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Collapse all' }));
+
+    expect(screen.getByRole('button', { name: /^broker:1883/ })).toBeInTheDocument();
+    expect(screen.getByText('sensors')).toBeInTheDocument();
+    expect(screen.queryByText('attic')).not.toBeInTheDocument();
+  });
+});
