@@ -8,6 +8,8 @@ ARCH="${1:-osx-arm64}"
 # the same reason on Apple's side — CFBundleShortVersionString has to be numeric.
 VERSION="${APP_VERSION:-1.0}"
 VERSION="${VERSION#v}"
+# A workflow_dispatch run passes a branch name, which MSBuild rejects outright.
+[[ "$VERSION" =~ ^[0-9]+(\.[0-9]+)*$ ]] || VERSION="0.0.0"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # Named after the arch so building both slices in a row doesn't overwrite the first one.
 LABEL="${ARCH#osx-}"
@@ -18,8 +20,11 @@ DMG="$ROOT/dist/MQTTForge-macos-$LABEL.dmg"
 rm -rf "$STAGE"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
+# -p: rather than the environment, for the reason above: passed as a property it is read as a
+# version, so the executable stops reporting 1.0.0 while the plist beside it says something else.
 dotnet publish "$ROOT/src/MqttForge.Desktop" \
   -c Release -r "$ARCH" --self-contained true \
+  -p:Version="$VERSION" \
   -o "$APP/Contents/MacOS"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
