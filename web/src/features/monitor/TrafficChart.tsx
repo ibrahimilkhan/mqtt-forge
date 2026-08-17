@@ -1,117 +1,130 @@
-import { useState, type PointerEvent } from 'react';
-import type { ColourRule } from '../../lib/topicColour';
-import type { Series } from '../../lib/series';
-import styles from './WireLog.module.css';
+import { useMemo, useState } from 'react';
+import { fitDistribution } from '../../lib/distribution';
+import { numericFields, numericSeries, type Series } from '../../lib/series';
+import { cadence, summarise } from '../../lib/stats';
+import { useRuleLookup } from '../../lib/useRuleLookup';
+import type { LogEntry } from '../../stores/logStore';
+import { ChartNote } from './ChartNote';
+import { TrafficHistogram } from './TrafficHistogram';
+import { TrafficLine } from './TrafficLine';
+import styles from './TrafficChart.module.css';
 
-/** The plot is drawn in a unit square and stretched to the pane; see `preserveAspectRatio`. */
-const SIDE = 100;
-
-/** Keeps the readout over the plot at either end of the run, rather than hanging off it. */
-const shift = (index: number, count: number) =>
-  index === 0 ? 'none' : index === count - 1 ? 'translateX(-100%)' : 'translateX(-50%)';
+type View = 'time' | 'distribution';
 
 /**
- * What a run of readings did, in the space the rows cannot use.
+ * The chart over the entries, and what to do with it.
  *
- * The newest value says where a sensor is; a topic under traffic is usually asked where it has
- * been going, and that is a shape rather than a number. The chart carries the whole history the
- * pane holds, so it also shows what the single row on screen is standing in front of.
+ * Everything here is a question about the same run of readings: which field of the message to
+ * follow, whether to read it in order or as a distribution, and how to get it out of the console
+ * and into whatever the reader actually analyses in.
  */
-export function TrafficChart({ series, rule }: { series: Series; rule?: ColourRule | null }) {
-  const [hovered, setHovered] = useState<number | null>(null);
-  const { readings, low, high } = series;
+export function TrafficChart({ entries }: { entries: LogEntry[] }) {
+  // undefined means 'whichever field the run is mostly about'; a string picks one; null is the
+  // body itself. Reset by the remount the pane does when the selection changes.
+  const [field, setField] = useState<string | null | undefined>(undefined);
+  const [view, setView] = useState<View>('time');
+  const [copied, setCopied] = useState(false);
+  const ruleOf = useRuleLookup();
 
-  // A flat run has no range to scale against: down the middle, rather than a division by zero.
-  // A straight line is exactly what a topic repeating one value should show.
-  const span = high - low;
-  const y = (value: number) => (span === 0 ? SIDE / 2 : SIDE - ((value - low) / span) * SIDE);
+  const fields = useMemo(() => numericFields(entries), [entries]);
+  const series = useMemo(() => numericSeries(entries, field), [entries, field]);
 
-  // One step per reading, not one per second. The log drops a topic's oldest entries as it
-  // fills, so the gaps between what it still holds are the trimming's, not the broker's —
-  // spacing by arrival time would draw those as silences the sensor never had.
-  const x = (index: number) => (index / (readings.length - 1)) * SIDE;
+  // Held against the readings rather than the render: a pointer moving across the plot must not
+  // re-run a goodness-of-fit test on five thousand values for every pixel it crosses.
+  const stats = useMemo(() => {
+    if (!series) return null;
+    const values = series.readings.map((reading) => reading.value);
 
-  const line = readings.map((reading, index) => `${x(index)},${y(reading.value)}`).join(' ');
-  const latest = readings[readings.length - 1];
+    return {
+      summary: summarise(values)!,
+      fit: fitDistribution(values),
+      pace: cadence(series.readings.map((reading) => reading.at)),
+    };
+  }, [series]);
 
-  const follow = (event: PointerEvent<HTMLDivElement>) => {
-    const { left, width } = event.currentTarget.getBoundingClientRect();
-    if (!width) return;
+  if (!series || !stats) return null;
 
-    const step = Math.round(((event.clientX - left) / width) * (readings.length - 1));
-    setHovered(Math.min(Math.max(step, 0), readings.length - 1));
+  const rule = ruleOf(series.topic);
+  const copy = async () => {
+    await navigator.clipboard.writeText(csv(series));
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2000);
   };
 
   return (
-    // The shape is the whole point, so the words standing in for it carry the same facts: how
-    // many readings, over what range, and where they ended up. Everything inside is presentation.
-    <figure
-      className={styles.chart}
-      data-testid="chart"
-      role="img"
-      aria-label={`${readings.length} readings on ${series.topic}, ${low} to ${high}, latest ${latest.value}`}
-      style={rule ? { color: rule.colour } : undefined}
-    >
-      {/* The line says the shape and the labels say the size of it, which is the one thing a
-          sparkline cannot carry on its own. Muted, like the stamps: this is furniture. A run
-          that never moved has one number to give, not the same one twice. */}
-      <div className={styles.scale} aria-hidden="true">
-        <span>{high}</span>
-        {span !== 0 && <span>{low}</span>}
-      </div>
-
-      <div
-        className={styles.plotArea}
-        data-testid="plotArea"
-        onPointerMove={follow}
-        onPointerLeave={() => setHovered(null)}
-      >
-        <svg
-          className={styles.plotSvg}
-          viewBox={`0 0 ${SIDE} ${SIDE}`}
-          preserveAspectRatio="none"
-          aria-hidden="true"
-        >
-          {/* Where a reading can go either way, which side of nothing it is on is the first thing
-              read off the shape — and the line alone cannot say where nothing is. */}
-          {low < 0 && high > 0 && (
-            <line className={styles.zero} data-testid="zero" x1={0} y1={y(0)} x2={SIDE} y2={y(0)} />
-          )}
-
-          {hovered !== null && (
-            <line className={styles.crosshair} x1={x(hovered)} y1={0} x2={x(hovered)} y2={SIDE} />
-          )}
-          {/* Stretched by the viewBox, so the stroke is pinned to device pixels rather than
-              scaled with it — otherwise a wide pane draws a thick line and a narrow one a hair. */}
-          <polyline
-            data-testid="plot"
-            className={styles.plotLine}
-            points={line}
-            fill="none"
-            stroke={rule?.colour ?? 'currentColor'}
-          />
-        </svg>
-
-        {/* Round dots and real type, in HTML: both would be stretched out of shape inside the
-            viewBox above. The dot marks where the run ends, which is the row above it. */}
-        <span
-          className={styles.head}
-          style={{ left: `${x(readings.length - 1)}%`, top: `${y(latest.value)}%` }}
-        />
-
-        {hovered !== null && (
-          <span
-            className={styles.reading}
-            data-testid="reading"
-            // Centred on the reading, except at the ends, where a centred label would hang off
-            // the pane: there it sits inside the run it belongs to.
-            style={{ left: `${x(hovered)}%`, transform: shift(hovered, readings.length) }}
-            title={readings[hovered].at.toLocaleTimeString('en-GB', { hour12: false })}
-          >
-            {readings[hovered].value}
-          </span>
+    <figure className={styles.chart} data-testid="chart" style={rule ? { color: rule.colour } : undefined}>
+      <div className={styles.controls}>
+        {/* One topic can carry a whole environment. Which of its fields is wanted is the
+            reader's business, so all of them are on offer and the best covered one leads. */}
+        {fields.length > 1 && (
+          <div className={styles.fields} role="group" aria-label="Field to chart">
+            {fields.map((name) => (
+              <button
+                key={name}
+                type="button"
+                className={styles.chip}
+                aria-label={`Chart ${name}`}
+                aria-pressed={series.field === name}
+                onClick={() => setField(name)}
+              >
+                {name}
+              </button>
+            ))}
+          </div>
         )}
+
+        <div className={styles.views}>
+          <button
+            type="button"
+            className={styles.chip}
+            aria-label="Over time"
+            title="Over time"
+            aria-pressed={view === 'time'}
+            onClick={() => setView('time')}
+          >
+            time
+          </button>
+          <button
+            type="button"
+            className={styles.chip}
+            aria-label="Distribution"
+            title="Distribution"
+            aria-pressed={view === 'distribution'}
+            onClick={() => setView('distribution')}
+          >
+            dist
+          </button>
+          <button
+            type="button"
+            className={styles.chip}
+            aria-label={copied ? 'Copied' : 'Copy as CSV'}
+            title={copied ? 'Copied' : 'Copy as CSV'}
+            onClick={copy}
+          >
+            {copied ? 'copied' : 'csv'}
+          </button>
+        </div>
       </div>
+
+      {view === 'time' ? (
+        <TrafficLine series={series} summary={stats.summary} colour={rule?.colour} />
+      ) : (
+        <TrafficHistogram series={series} summary={stats.summary} colour={rule?.colour} />
+      )}
+
+      <ChartNote
+        summary={stats.summary}
+        fit={stats.fit}
+        pace={stats.pace}
+        skipped={series.skipped}
+      />
     </figure>
   );
+}
+
+/** Timestamps in full, so a run pasted into anything else sorts and plots without being fixed. */
+function csv(series: Series): string {
+  const rows = series.readings.map((reading) => `${reading.at.toISOString()},${reading.value}`);
+
+  return [`time,${series.field ?? series.topic}`, ...rows].join('\n');
 }

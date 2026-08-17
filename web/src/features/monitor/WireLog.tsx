@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import type { ColourRule } from '../../lib/topicColour';
-import { numericSeries } from '../../lib/series';
 import { useRuleLookup } from '../../lib/useRuleLookup';
 import { matchesFilter } from '../../lib/topicMatch';
 import { useLogStore, type LogEntry } from '../../stores/logStore';
@@ -52,10 +51,6 @@ function EntryList({ entries }: { entries: LogEntry[] }) {
   // and how far back it goes. Not the whole log: the pane only ever answers for the selection.
   const history = `${entries.length} in history`;
 
-  // Null unless the entries in view are one topic's numbers, which is the only run of traffic a
-  // single line can honestly draw.
-  const series = useMemo(() => numericSeries(entries), [entries]);
-
   return (
     <>
       <div className={styles.log}>
@@ -65,8 +60,9 @@ function EntryList({ entries }: { entries: LogEntry[] }) {
       </div>
 
       {/* Under the newest reading and over the count: the value now, the shape behind it, and
-          then how much of that shape the log still holds. */}
-      {series && <TrafficChart series={series} rule={ruleOf(series.topic)} />}
+          then how much of that shape the log still holds. Draws nothing unless the entries in
+          view are one topic's numbers, which is the only run a single line can honestly draw. */}
+      <TrafficChart entries={entries} />
 
       {/* A lone entry is already all of them, so the count states itself rather than offering to
           open onto nothing. */}
