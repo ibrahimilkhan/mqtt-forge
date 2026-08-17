@@ -6,6 +6,7 @@ import {
   flattenTree,
   nodeSummary,
   pruneTopics,
+  TREE_READINGS,
   type TopicNode,
 } from './topicTree';
 import { matchesFilter } from './topicMatch';
@@ -58,7 +59,7 @@ describe('the run a topic keeps for its sparkline', () => {
     for (let i = 0; i < 40; i++) tree = applyMessage(tree, 'sensors/temp', String(i), 1000);
 
     const readings = run(tree, 'sensors/temp');
-    expect(readings.length).toBeLessThanOrEqual(24);
+    expect(readings).toHaveLength(TREE_READINGS);
     expect(readings[readings.length - 1]).toBe(39);
   });
 
