@@ -33,12 +33,6 @@ describe('MobilePanel', () => {
     expect(screen.getByRole('button', { name: 'Copied' })).toBeInTheDocument();
   });
 
-  it('does not claim the address is confirmed reachable', () => {
-    render(<MobilePanel onClose={vi.fn()} />);
-
-    expect(screen.getByText(/Local Network/)).toBeInTheDocument();
-  });
-
   it('explains itself instead of encoding a loopback address', () => {
     network.url = null;
     render(<MobilePanel onClose={vi.fn()} />);

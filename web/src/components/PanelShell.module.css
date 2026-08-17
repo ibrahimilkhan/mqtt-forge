@@ -11,14 +11,13 @@
   .panel { overflow-y: visible; }
 }
 
+/* Holds the close button alone now that the title is off screen. No rule under it: with nothing
+   but the × on the row, a line only drew a box around the empty space beside it. */
 .panelHead {
   display: flex;
   align-items: center;
   gap: 10px;
-  /* Holds the close button alone now that the title is off screen. */
   margin-bottom: 7px;
-  padding-bottom: 3px;
-  border-bottom: 1px solid var(--rule);
 }
 .panelHead h2 {
   margin: 0;
@@ -35,6 +34,9 @@
 .close {
   all: unset;
   margin-left: auto;
+  /* Reaches into the pane's 20px gutter so the × sits closer to the corner it closes than to
+     the fields under it. Its own 5px of padding keeps the glyph clear of the edge. */
+  margin-right: -12px;
   cursor: pointer;
   color: var(--muted);
   font-family: var(--mono);

@@ -82,11 +82,6 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <PanelShell title="Colours" onClose={onClose}>
-      <p className={panel.note}>
-        A topic wears the colour of the most specific filter that covers it, in the tree and in
-        the log.
-      </p>
-
       {/* Not an empty list: a save from a panel that never read the rules would replace them
           with whatever happened to be on screen. So it offers nothing until it has them. */}
       {isError && draft === null && (

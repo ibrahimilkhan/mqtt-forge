@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { queryKeys } from '../../api/queryKeys';
 import { getSubscriptions, subscribe, subscribeBatch, unsubscribe } from '../../api/subscriptions';
-import { Field } from '../../components/Field';
 import { PanelShell } from '../../components/PanelShell';
 import { QosSelect } from '../../components/QosSelect';
 import styles from '../../styles/panel.module.css';
@@ -76,18 +75,19 @@ export function SubscribePanel({ onClose }: { onClose: () => void }) {
   return (
     <PanelShell title="Filters" onClose={onClose}>
       <div className={styles.row}>
-        <Field label="Topic filter" htmlFor="filter">
-          {/* Takes a list as readily as one: newline or comma separated, sent as batched
-              SUBSCRIBE packets so hundreds cost a couple of round trips rather than hundreds. */}
-          <textarea
-            id="filter"
-            className={styles.filterInput}
-            rows={2}
-            spellCheck={false}
-            value={topicFilter}
-            onChange={(e) => setTopicFilter(e.target.value)}
-          />
-        </Field>
+        {/* The panel is about nothing else, so the box goes unlabelled on screen and carries
+            its name for screen readers only.
+            Takes a list as readily as one: newline or comma separated, sent as batched
+            SUBSCRIBE packets so hundreds cost a couple of round trips rather than hundreds. */}
+        <textarea
+          id="filter"
+          className={styles.filterInput}
+          aria-label="Topic filter"
+          rows={2}
+          spellCheck={false}
+          value={topicFilter}
+          onChange={(e) => setTopicFilter(e.target.value)}
+        />
       </div>
 
       <div className={styles.checks}>
