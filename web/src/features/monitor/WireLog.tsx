@@ -21,10 +21,12 @@ export function WireLog() {
 
   return (
     <>
-      <div className={styles.paneHead}>
-        <h2 className={styles.eyebrow}>Logs</h2>
+      {/* The title is off screen, so the head is drawn only when there is a selection to name.
+          With neither, an empty bordered row would leave a rule with nothing above it. */}
+      <h2 className="srOnly">Logs</h2>
 
-        {selected && (
+      {selected && (
+        <div className={styles.paneHead}>
           <div className={styles.focus}>
             <span className={styles.focusTopic} data-testid="focus">
               {selected.label}
@@ -38,8 +40,8 @@ export function WireLog() {
               ×
             </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {!selected && (
         <p className="empty">

@@ -15,7 +15,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  /* Same reasoning as a pane head: the label is small, and the room under it was not. */
+  /* Holds the close button alone now that the title is off screen. */
   margin-bottom: 7px;
   padding-bottom: 3px;
   border-bottom: 1px solid var(--rule);

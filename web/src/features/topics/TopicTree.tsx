@@ -96,7 +96,7 @@ export function TopicTree({ broker }: { broker?: string }) {
   return (
     <>
       <div className={styles.paneHead}>
-        <h2 className={styles.eyebrow}>Topics</h2>
+        <h2 className="srOnly">Topics</h2>
         {/* Glyphs, with the words kept as the accessible name and the tooltip. Three rules for
             the fuller tree, two for the folded one — and not the ☰ that would say it best, since
             that is already the panel menu in the bar above and would read as a second one. */}
