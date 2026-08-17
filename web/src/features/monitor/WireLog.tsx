@@ -38,9 +38,18 @@ export function WireLog() {
   );
 }
 
-function EntryList({ entries }: { entries: LogEntry[] }) {
+function EntryList({ entries: live }: { entries: LogEntry[] }) {
   const [expanded, setExpanded] = useState(false);
+  const [held, setHeld] = useState<LogEntry[] | null>(null);
   const ruleOf = useRuleLookup();
+
+  // Held, the pane keeps drawing the run it was drawing; the log behind it carries on filling.
+  // Reading a value while the row it is in is being replaced is the oldest complaint about
+  // consoles, and stopping the log to fix it throws away the traffic you were there for.
+  const entries = held ?? live;
+
+  // Ids only go up, so what has arrived since is what is newer than the newest one held.
+  const arrived = held ? live.filter((entry) => entry.id > held[0].id).length : 0;
 
   // The newest alone, until asked. A topic under traffic overwrites its own value rather than
   // adding to it, so what a run of rows mostly shows is the same reading several times over —
@@ -64,20 +73,33 @@ function EntryList({ entries }: { entries: LogEntry[] }) {
           view are one topic's numbers, which is the only run a single line can honestly draw. */}
       <TrafficChart entries={entries} />
 
-      {/* A lone entry is already all of them, so the count states itself rather than offering to
-          open onto nothing. */}
-      {entries.length > 1 ? (
+      <div className={styles.foot}>
+        {/* A lone entry is already all of them, so the count states itself rather than offering
+            to open onto nothing. */}
+        {entries.length > 1 ? (
+          <button
+            type="button"
+            className={styles.history}
+            aria-expanded={expanded}
+            onClick={() => setExpanded(!expanded)}
+          >
+            {expanded ? 'Show fewer' : history}
+          </button>
+        ) : (
+          <p className={styles.history}>{history}</p>
+        )}
+
         <button
           type="button"
-          className={styles.history}
-          aria-expanded={expanded}
-          onClick={() => setExpanded(!expanded)}
+          className={styles.hold}
+          aria-pressed={held !== null}
+          aria-label={held ? `Let the pane go, ${arrived} arrived while held` : 'Hold the pane'}
+          title={held ? `${arrived} arrived while held` : 'Hold the pane still'}
+          onClick={() => setHeld(held ? null : live)}
         >
-          {expanded ? 'Show fewer' : history}
+          {held ? `held · ${arrived}` : 'hold'}
         </button>
-      ) : (
-        <p className={styles.history}>{history}</p>
-      )}
+      </div>
     </>
   );
 }

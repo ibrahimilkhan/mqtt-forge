@@ -1,6 +1,10 @@
 /* ---- signature element: the wire log ---- */
 .log { display: flex; flex-direction: column; gap: 2px; }
 
+/* How much is behind the row, and the control that stops it moving: one line, the count at the
+   reading edge and the control at the other. */
+.foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+
 /* The list shows the newest arrival; this says how much history sits behind it. */
 .history {
   all: unset;
@@ -19,6 +23,29 @@ button.history { cursor: pointer; }
 /* all: unset misses the global button:hover fill; :not(:disabled) matches its specificity so this wins. */
 button.history:hover:not(:disabled) { color: var(--ink); background: none; }
 button.history:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+/* Quiet while the pane is live, and marked while it is not: a frozen pane that looks like a
+   live one is worse than no hold at all. */
+.hold {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin-top: 10px;
+  min-height: 24px;
+  min-width: 24px;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.hold:hover:not(:disabled) { color: var(--ink); border-color: var(--rule); background: none; }
+.hold:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+.hold[aria-pressed="true"] { color: var(--ink); border-color: var(--ink); }
 
 .entry {
   border-left: 2px solid var(--rule);

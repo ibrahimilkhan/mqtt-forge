@@ -304,6 +304,60 @@ describe('WireLog', () => {
   });
 });
 
+// Under a flood, the row and the chart move under the reader while they are reading them. Every
+// console has this problem; none of them has a way to stop it that does not also stop the log.
+describe('holding the pane still', () => {
+  const readings = (topic: string, ...bodies: string[]) =>
+    bodies.forEach((body) => useLogStore.getState().push({ kind: 'recv', topic, body }));
+
+  it('keeps showing what it was showing while the traffic carries on', async () => {
+    readings('sensors/temp', '21', '22');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+    await userEvent.click(screen.getByRole('button', { name: 'Hold the pane' }));
+    act(() => readings('sensors/temp', '99'));
+
+    expect(screen.getByTestId('body')).toHaveTextContent('22');
+    expect(screen.getByRole('button', { name: /2 in history/ })).toBeInTheDocument();
+  });
+
+  it('says how many arrived while it was held', async () => {
+    readings('sensors/temp', '21', '22');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+    await userEvent.click(screen.getByRole('button', { name: 'Hold the pane' }));
+    act(() => readings('sensors/temp', '23', '24', '25'));
+
+    expect(screen.getByRole('button', { name: 'Let the pane go, 3 arrived while held' })).toBeInTheDocument();
+  });
+
+  it('catches up when it is let go', async () => {
+    readings('sensors/temp', '21', '22');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+    await userEvent.click(screen.getByRole('button', { name: 'Hold the pane' }));
+    act(() => readings('sensors/temp', '99'));
+    await userEvent.click(screen.getByRole('button', { name: /Let the pane go/ }));
+
+    expect(screen.getByTestId('body')).toHaveTextContent('99');
+  });
+
+  it('lets go by itself when the selection changes', async () => {
+    readings('sensors/temp', '21', '22');
+    readings('sensors/hall', '31', '32');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+    await userEvent.click(screen.getByRole('button', { name: 'Hold the pane' }));
+    act(() => useSelectionStore.getState().select({ label: 'sensors/hall', filter: 'sensors/hall' }));
+
+    expect(screen.getByRole('button', { name: 'Hold the pane' })).toBeInTheDocument();
+  });
+});
+
 // A topic that sends numbers is sending a measurement, and a run of measurements has a shape the
 // rows cannot show: the newest value says where a sensor is, not where it has been going.
 describe('the chart over the entries', () => {
@@ -570,6 +624,69 @@ describe('what the chart says about the readings', () => {
     render(<WireLog />);
 
     expect(note()).toContain('every 1 s');
+  });
+
+  // A sensor with a rhythm is a sensor whose silence means something. No other console knows the
+  // rhythm, so none of them can tell you the silence has started.
+  const arrivals = (count: number, spacing: number, endedAgo: number) =>
+    useLogStore.getState().appendReceived(
+      Array.from({ length: count }, (_, i) => ({
+        topic: 'sensors/temp',
+        payload: `${20 + (i % 3)}`,
+        mode: 'text' as const,
+        size: 2,
+        qos: 0,
+        retain: false,
+        receivedAt: new Date(Date.now() - endedAgo - (count - 1 - i) * spacing).toISOString(),
+      })),
+    );
+
+  it('says when a topic that had a rhythm has gone quiet', () => {
+    arrivals(8, 1000, 60_000);
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(note()).toContain('silent');
+  });
+
+  it('says nothing about silence while the readings are still coming', () => {
+    arrivals(8, 1000, 0);
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(note()).not.toContain('silent');
+  });
+
+  // Without a rhythm there is no such thing as late: a topic nobody promised to publish on
+  // cannot be overdue, and calling it silent would put a warning on every retained value.
+  it('calls no topic silent when it never had a rhythm', () => {
+    useLogStore.getState().appendReceived([
+      {
+        topic: 'sensors/temp',
+        payload: '21',
+        mode: 'text' as const,
+        size: 2,
+        qos: 0,
+        retain: false,
+        receivedAt: new Date(Date.now() - 600_000).toISOString(),
+      },
+      {
+        topic: 'sensors/temp',
+        payload: '22',
+        mode: 'text' as const,
+        size: 2,
+        qos: 0,
+        retain: false,
+        receivedAt: new Date(Date.now() - 600_000).toISOString(),
+      },
+    ]);
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(note()).not.toContain('silent');
   });
 
   it('says which way a drifting run is going', () => {
