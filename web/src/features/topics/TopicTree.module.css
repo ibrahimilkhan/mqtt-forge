@@ -1,18 +1,16 @@
-/* The row that holds what a pane offers — its actions, or what the log is pointed at. The title
-   that used to sit here is off screen now, so this is a strip of controls with a rule under it. */
-.paneHead {
+/* The tree's own controls, parked at the right end of the broker row. The pick button beside
+   them takes the slack, so they need no margin of their own to be pushed over. Centred rather
+   than on the row's baseline: a glyph in an 18px box has none worth aligning to. */
+.rowActions {
   display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 5px;
-  padding-bottom: 3px;
-  border-bottom: 1px solid var(--rule);
+  gap: 4px;
+  flex: none;
+  align-self: center;
 }
-.paneActions { margin-left: auto; display: flex; gap: 4px; }
 /* Square targets around a single glyph: the label is carried by aria-label and the tooltip, so
-   nothing here has to make room for a word. Held to the height of the heading beside them, so
-   the buttons stop deciding how tall the head is. */
-.paneActions button {
+   nothing here has to make room for a word. The negative block margin keeps an 18px target from
+   setting the height of a row whose text is smaller than that. */
+.rowActions button {
   all: unset;
   display: flex;
   align-items: center;
@@ -21,8 +19,6 @@
   color: var(--muted);
   width: 18px;
   height: 18px;
-  /* Overhangs the line rather than growing it: an 18px target beside an 11px label would set
-     the head's height and push the label down away from the rule above it. */
   margin-block: -3px;
   border-radius: 2px;
   font-family: var(--mono);
@@ -30,8 +26,8 @@
   line-height: 1;
 }
 /* all: unset misses the global button:hover fill; :not(:disabled) matches its specificity so this wins. */
-.paneActions button:hover:not(:disabled) { color: var(--ink); background: var(--paper); }
-.paneActions button:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+.rowActions button:hover:not(:disabled) { color: var(--ink); background: var(--paper); }
+.rowActions button:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 /* ---- topic tree: the broker's live topology ---- */
 .tree { font-family: var(--mono); font-size: var(--t-code); font-weight: 600; }
