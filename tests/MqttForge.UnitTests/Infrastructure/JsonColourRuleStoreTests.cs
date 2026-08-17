@@ -1,3 +1,4 @@
+using MqttForge.Domain.Exceptions;
 using MqttForge.Domain.Models;
 using MqttForge.Infrastructure.Persistence;
 using Xunit;
@@ -86,6 +87,29 @@ public class JsonColourRuleStoreTests : IDisposable
         await store.SaveAsync([new TopicColourRule("a/#", "#1e40af")], CancellationToken.None);
 
         Assert.False(File.Exists(_path + ".tmp"));
+    }
+
+    // A mount the container cannot write to is the real case. Load answers an unreadable file
+    // with no rules, so a save was the one path that reached the browser as a bare 500.
+    [Fact]
+    public async Task Save_onto_something_unwritable_says_so()
+    {
+        // A directory where the file should be: every write against it fails, on every platform.
+        var directory = Path.Combine(Path.GetTempPath(), $"mqttforge-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var store = new JsonColourRuleStore(directory);
+
+        try
+        {
+            var thrown = await Assert.ThrowsAsync<RulesNotSavedException>(() =>
+                store.SaveAsync([new TopicColourRule("a/#", "#1e40af")], CancellationToken.None));
+
+            Assert.Contains(directory, thrown.Message);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     public void Dispose()
