@@ -5,7 +5,9 @@
 [![Licence](https://img.shields.io/github/license/ibrahimilkhan/mqtt-forge?color=1e40af)](LICENSE)
 
 An open-source MQTT test console: connect to a broker, watch topics as they arrive, and publish.
-A .NET API drives an MQTT client and pushes what it receives to a React interface over SignalR.
+The broker connection is held by the server rather than by the browser, so every device you point
+at it — your desktop, or a phone from the QR panel — is working one connection, one set of
+subscriptions and one set of colour rules.
 
 MQTTForge connects to a broker you already run — it is not a broker itself.
 
@@ -15,16 +17,19 @@ row, and the publish form below it](.github/assets/console.png)
 
 ## What it does
 
-- **Topic tree** — the broker's topology as it builds, with the latest payload on every branch.
-- **Wire log** — every frame in and out, each row carrying its time, direction, QoS and size.
+- **Topic tree** — the broker's topology as it builds, each topic showing its own latest payload.
+- **Wire log** — the messages on whatever you pick, one branch or the whole broker, each row
+  stamped with its time, direction and QoS.
 - **Publish** — text, JSON or hex, with QoS and the retained flag; any logged message reloads
   into the form for a resend.
-- **Filters** — subscribe to one or a list at a time, batched into a couple of round trips.
+- **Filters** — connecting subscribes to `#` unless you clear the box, so the tree fills on its
+  own; narrow it to one filter or a list when a busy broker makes that too much.
 - **Colour rules** — MQTT filters you pick colours for, so a branch stands out in a tree of
   hundreds.
 - **QR panel** — opens the same console on a phone on your network.
 
-It speaks MQTT 5.0 over TCP or TLS, with a username and password if the broker wants them.
+It speaks MQTT 5.0 only, over TCP or TLS, with a username and password if the broker wants them.
+A broker that speaks just 3.1.1 refuses the connection.
 
 ## Download
 
@@ -121,8 +126,9 @@ opened from the QR panel sees the same colours.
 
 ## Keeping your settings
 
-The container starts empty and forgets on `docker rm`. Mount a volume to keep the broker
-settings — the colour rules follow them into that directory, so one mount holds both:
+The container starts empty and forgets on `docker rm`. `MqttForge__SettingsPath` is what moves
+the settings out of it, and it names a **file**, not a directory. The colour rules land beside
+that file, so one mounted volume holds both:
 
 ```
 docker run -d -p 5169:5169 \
@@ -131,7 +137,18 @@ docker run -d -p 5169:5169 \
   --name mqtt-forge ghcr.io/ibrahimilkhan/mqtt-forge
 ```
 
-The desktop app keeps them beside itself and needs nothing set.
+Both ways of getting this wrong are quiet: mount the volume without the variable and it keeps
+nothing, and point the variable at a directory and every save fails with only a line in
+`docker logs`. Swapping the named volume for a host directory needs one more step on Linux,
+where Docker creates it owned by root while the app runs as uid 1654 — `chown 1654:1654 ./data`
+before starting, or it saves nothing.
+
+The desktop app needs none of this. It keeps both files in the per-user data directory —
+`~/Library/Application Support/MQTTForge` on macOS, `~/.config/MQTTForge` on Linux,
+`%APPDATA%\MQTTForge` on Windows — because a mounted disk image is read-only.
+
+> **The broker password is stored as typed**, in plain text in that settings file. Nothing in it
+> is encrypted, so it deserves the care any file holding a credential does.
 
 ## Roadmap
 

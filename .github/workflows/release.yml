@@ -158,6 +158,9 @@ jobs:
   # one the puller is on instead of failing outright on Apple Silicon and ARM hosts.
   manifest:
     needs: docker
+    # Only a tag names a version. Run by hand from a branch this would push an image
+    # called ":main" and move ":latest" onto it, so a manual run stops at building.
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: docker/setup-buildx-action@v3
@@ -186,8 +189,17 @@ jobs:
 
   release:
     needs: [macos, windows, linux, manifest]
+    # Same reason as the manifest job: a release has to be named after a tag, and one
+    # published from a branch is public the moment it exists and awkward to withdraw.
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
+      # First, and before anything is downloaded: checking out into a workspace that
+      # is not already a repository deletes what it finds there, which would take the
+      # artefacts with it.
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
       # Named one by one rather than "download everything": anything else a job
       # happens to upload would otherwise be attached to the release as a package.
       - uses: actions/download-artifact@v4
@@ -196,11 +208,6 @@ jobs:
         with: { name: windows, path: artifacts }
       - uses: actions/download-artifact@v4
         with: { name: linux, path: artifacts }
-
-      # For the tag's own message. Without the tags, the annotated object the
-      # message lives on is not in the checkout and there is nothing to read.
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
 
       # The download links in the README point at /releases/latest/download/<name>,
       # which only resolves for a full release — a prerelease would leave them 404.
@@ -214,6 +221,11 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
+          # Checking out a tag can leave the ref pointing at the commit rather than
+          # at the annotated object, and the message lives on the object. Fetching it
+          # back by name is what guarantees there is a message here to read.
+          git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+
           git tag -l --format='%(contents:subject)' "$TAG" > title.txt
           git tag -l --format='%(contents:body)' "$TAG" > notes.md
 
