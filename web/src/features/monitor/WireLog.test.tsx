@@ -429,6 +429,249 @@ describe('the chart over the entries', () => {
   });
 });
 
+// Other consoles chart the values and stop there, leaving the reader to do the arithmetic by
+// eye — which is the arithmetic an eye is worst at. What the run adds up to is written under it.
+describe('what the chart says about the readings', () => {
+  const readings = (topic: string, ...bodies: string[]) =>
+    bodies.forEach((body) => useLogStore.getState().push({ kind: 'recv', topic, body }));
+
+  const note = () => screen.getByTestId('note').textContent ?? '';
+
+  it('notes how many readings there are, where their middle is and how far they stray', () => {
+    readings('sensors/temp', '20', '21', '22', '23', '24');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(note()).toContain('n 5');
+    expect(note()).toContain('x̄ 22');
+    expect(note()).toContain('M 22');
+    expect(note()).toContain('σ 1.41');
+    expect(note()).toContain('20–24');
+  });
+
+  // An even ramp is the uniform distribution exactly, so this is a shape the fit has to find.
+  it('names the shape the readings fall into', () => {
+    readings('sensors/temp', ...Array.from({ length: 40 }, (_, i) => `${i + 1}`));
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(note()).toContain('uniform');
+  });
+
+  it('names no shape for a run too short to have one', () => {
+    readings('sensors/temp', '20', '21', '22', '23', '24');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(note()).not.toMatch(/uniform|normal|exponential/);
+  });
+
+  // The tolerance has to be visible: a chart quietly leaving messages out is a chart that lies
+  // about how much of the topic it is showing.
+  it('says how many messages it stepped over', () => {
+    readings('sensors/temp', '21.5', 'sensor warming up', '22', '22.5');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(note()).toContain('1 skipped');
+  });
+
+  it('says nothing about skipping when it read everything', () => {
+    readings('sensors/temp', '21.5', '22', '22.5');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(note()).not.toContain('skipped');
+  });
+
+  it('marks the readings that fall outside the fences', () => {
+    readings('sensors/temp', '10', '11', '12', '11', '10', '12', '11', '90');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(screen.getAllByTestId('outlier')).toHaveLength(1);
+    expect(note()).toContain('1 outlier');
+  });
+
+  it('leaves a well behaved run unmarked', () => {
+    readings('sensors/temp', '10', '11', '12', '11', '10', '12');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(screen.queryByTestId('outlier')).not.toBeInTheDocument();
+  });
+
+  // A sensor with a period is a sensor whose silence means something, and the period is the only
+  // thing that says how long a silence has to be before it does.
+  it('says how often the readings arrive', () => {
+    useLogStore.getState().appendReceived(
+      Array.from({ length: 6 }, (_, i) => ({
+        topic: 'sensors/temp',
+        payload: `${20 + i}`,
+        mode: 'text' as const,
+        size: 2,
+        qos: 0,
+        retain: false,
+        receivedAt: new Date(2026, 0, 1, 12, 0, i).toISOString(),
+      })),
+    );
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(note()).toContain('every 1 s');
+  });
+
+  it('says which way a drifting run is going', () => {
+    readings('sensors/temp', ...Array.from({ length: 12 }, (_, i) => `${20 + i}`));
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(note()).toContain('rising');
+  });
+
+  it('calls no direction on a run that only wobbles', () => {
+    readings('sensors/temp', '21', '22', '21', '22', '21', '22');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(note()).not.toMatch(/rising|falling/);
+  });
+
+  it('says a run that never moved is unchanged', () => {
+    readings('sensors/temp', '21.5', '21.5', '21.5', '21.5');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(note()).toContain('unchanged');
+  });
+});
+
+// A device that reports a whole environment in one message is one topic with several charts in
+// it, and which one is wanted is the reader's business rather than ours.
+describe('choosing what the chart draws', () => {
+  const sends = (topic: string, ...bodies: object[]) =>
+    bodies.forEach((body) =>
+      useLogStore.getState().push({ kind: 'recv', topic, body: JSON.stringify(body) }),
+    );
+
+  const readings = (topic: string, ...bodies: string[]) =>
+    bodies.forEach((body) => useLogStore.getState().push({ kind: 'recv', topic, body }));
+
+  it('offers the numeric fields a JSON topic carries', () => {
+    sends('sensors/env', { temp: 21.5, hum: 54 }, { temp: 22, hum: 55 });
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(screen.getByRole('button', { name: 'Chart hum' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Chart temp' })).toBeInTheDocument();
+  });
+
+  it('charts the field that is picked', async () => {
+    sends('sensors/env', { temp: 21.5, hum: 54 }, { temp: 22, hum: 55 });
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+    await userEvent.click(screen.getByRole('button', { name: 'Chart temp' }));
+
+    expect(screen.getByTestId('plotArea')).toHaveAccessibleName(/readings of temp/);
+  });
+
+  // Fields that every message carries are tied on coverage, and the tie breaks by name — an
+  // order that does not shuffle itself as the traffic comes in.
+  it('starts on the best covered field and says which one that is', async () => {
+    sends('sensors/env', { temp: 21.5, hum: 54 }, { temp: 22, hum: 55 });
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(screen.getByRole('button', { name: 'Chart hum' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Chart temp' })).toHaveAttribute('aria-pressed', 'false');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Chart temp' }));
+
+    expect(screen.getByRole('button', { name: 'Chart temp' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Chart hum' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  // The field a device reports in most of its messages is both the likeliest one wanted and the
+  // one whose chart will have the fewest gaps in it.
+  it('starts on the field most of the messages carry', () => {
+    sends('sensors/env', { hum: 54 }, { temp: 22, hum: 55 }, { temp: 23 }, { temp: 24 });
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(screen.getByRole('button', { name: 'Chart temp' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('offers no fields for a topic whose bodies are the numbers', () => {
+    readings('sensors/temp', '21.5', '22');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(screen.queryByRole('button', { name: /^Chart / })).not.toBeInTheDocument();
+  });
+
+  // The line answers 'what has it been doing'; the histogram answers 'what does it usually do',
+  // which is the question the distribution in the note is an answer to.
+  it('turns the run into a distribution and back', async () => {
+    readings('sensors/temp', ...Array.from({ length: 20 }, (_, i) => `${20 + (i % 5)}`));
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+    await userEvent.click(screen.getByRole('button', { name: 'Distribution' }));
+
+    expect(screen.getByTestId('histogram')).toBeInTheDocument();
+    expect(screen.queryByTestId('plot')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Over time' }));
+
+    expect(screen.getByTestId('plot')).toBeInTheDocument();
+  });
+
+  // Every console can show a number. Getting the run out of the console and into whatever the
+  // reader actually analyses in is the part they all leave undone.
+  it('copies the readings out as CSV', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    readings('sensors/temp', '21.5', '22');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+    await userEvent.click(screen.getByRole('button', { name: 'Copy as CSV' }));
+
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('time,sensors/temp'));
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('21.5'));
+  });
+
+  it('says when the readings have been copied', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+      configurable: true,
+    });
+    readings('sensors/temp', '21.5', '22');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+    await userEvent.click(screen.getByRole('button', { name: 'Copy as CSV' }));
+
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument();
+  });
+});
+
 describe('colour rules', () => {
   const rules = (...rules: Array<{ filter: string; colour: string }>) =>
     server.use(http.get('/api/colour-rules', () => HttpResponse.json({ rules })));
