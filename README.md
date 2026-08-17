@@ -164,6 +164,9 @@ such a topic and the pane draws its run, and writes what the run adds up to unde
 - **What shape it is** — a Kolmogorov–Smirnov test at five per cent against a normal, uniform or
   exponential distribution, with the parameters estimated from the readings themselves. Under
   twelve readings it says nothing, because every shape fits anything.
+- **Whether it repeats itself** — a thermostat, a pump or a compressor cycles, and a cycling
+  sensor has an ordinary mean, an ordinary spread and no trend at all, so nothing else would say
+  so. The period comes from the run's autocorrelation, with the trend taken out first.
 - **How often it arrives, and when it stops** — the middle gap between arrivals and how far the
   gaps stray from it. A topic that had a rhythm and has fallen three periods behind it is
   marked **silent**, which is the one thing here worth interrupting for.

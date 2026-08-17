@@ -746,6 +746,29 @@ describe('what the chart says about the readings', () => {
     expect(screen.queryByTestId('step')).not.toBeInTheDocument();
   });
 
+  // A thermostat, a pump, a compressor. A cycling sensor has an ordinary mean, an ordinary
+  // spread and no trend at all, so nothing else in the note would say it was cycling.
+  it('says how long a run takes to repeat itself', () => {
+    readings(
+      'sensors/temp',
+      ...Array.from({ length: 72 }, (_, i) => `${(21 + Math.sin((2 * Math.PI * i) / 12) * 2).toFixed(2)}`),
+    );
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(note()).toContain('cycles every 12 readings');
+  });
+
+  it('calls no cycle on a run that does not repeat', () => {
+    readings('sensors/temp', ...Array.from({ length: 40 }, (_, i) => `${20 + i}`));
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(note()).not.toContain('cycles');
+  });
+
   it('says which way a drifting run is going', () => {
     readings('sensors/temp', ...Array.from({ length: 12 }, (_, i) => `${20 + i}`));
     useSelectionStore.getState().select(chip);
