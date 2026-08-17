@@ -7,14 +7,17 @@ type Props = { title: string; onClose?: () => void; children: ReactNode };
 export function PanelShell({ title, onClose, children }: Props) {
   return (
     <section className={styles.panel} aria-label={`${title} panel`}>
-      <div className={styles.panelHead}>
-        <h2>{title}</h2>
-        {onClose && (
+      {/* The title is off screen, so the head row is drawn only when the close button needs a
+          place to sit. A pane with a fixed place has neither, and an empty bordered row would
+          leave a rule with nothing above it. */}
+      <h2 className="srOnly">{title}</h2>
+      {onClose && (
+        <div className={styles.panelHead}>
           <button type="button" className={styles.close} onClick={onClose} aria-label={`Close ${title} panel`}>
             ×
           </button>
-        )}
-      </div>
+        </div>
+      )}
       <div className={styles.block}>{children}</div>
     </section>
   );

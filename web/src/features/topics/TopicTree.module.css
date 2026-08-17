@@ -1,6 +1,5 @@
-/* Heading plus its actions; the rule runs beneath both. Tight on purpose: an eleven-pixel label
-   had forty-four pixels of column to itself, and on a pane whose job is to show as many rows as
-   fit, that is space taken from the rows. */
+/* The row that holds what a pane offers — its actions, or what the log is pointed at. The title
+   that used to sit here is off screen now, so this is a strip of controls with a rule under it. */
 .paneHead {
   display: flex;
   align-items: center;
@@ -9,23 +8,6 @@
   padding-bottom: 3px;
   border-bottom: 1px solid var(--rule);
 }
-.paneHead .eyebrow { margin: 0; padding: 0; border: none; }
-
-.eyebrow {
-  font-family: var(--mono);
-  font-size: var(--t-label);
-  font-weight: 600;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
-  color: var(--muted);
-  /* No leading: a single line of uppercase mono gets none of the room normal line-height
-     reserves for descenders it does not have. */
-  line-height: 1;
-  margin: 0 0 5px;
-  padding-bottom: 3px;
-  border-bottom: 1px solid var(--rule);
-}
-
 .paneActions { margin-left: auto; display: flex; gap: 4px; }
 /* Square targets around a single glyph: the label is carried by aria-label and the tooltip, so
    nothing here has to make room for a word. Held to the height of the heading beside them, so
