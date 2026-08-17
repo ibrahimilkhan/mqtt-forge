@@ -197,14 +197,28 @@ jobs:
       - uses: actions/download-artifact@v4
         with: { name: linux, path: artifacts }
 
+      # For the tag's own message. Without the tags, the annotated object the
+      # message lives on is not in the checkout and there is nothing to read.
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
       # The download links in the README point at /releases/latest/download/<name>,
       # which only resolves for a full release — a prerelease would leave them 404.
+      #
+      # An annotated tag's message becomes the notes, so a release is described in
+      # the words chosen when it was cut. A tag written without one falls back to
+      # the generated commit list, which is a changelog rather than a summary.
       - name: Publish the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
         run: |
-          gh release create "${{ github.ref_name }}" \
-            --title "${{ github.ref_name }}" \
-            --generate-notes \
-            artifacts/*
+          git tag -l --format='%(contents:subject)' "$TAG" > title.txt
+          git tag -l --format='%(contents:body)' "$TAG" > notes.md
+
+          if [ -s notes.md ]; then
+            gh release create "$TAG" --title "$(cat title.txt)" --notes-file notes.md artifacts/*
+          else
+            gh release create "$TAG" --title "$TAG" --generate-notes artifacts/*
+          fi
