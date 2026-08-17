@@ -411,12 +411,15 @@ describe('TopicTree', () => {
     expect(screen.getByText('sensors').closest('[data-branch]')).toHaveAttribute('data-selected', 'true');
   });
 
+  // Collapse folds the broker row too, so the branches are read back after reopening it —
+  // what is being checked here is that they were folded, not that they were forgotten.
   it('collapses every branch', async () => {
     useTopicTreeStore.getState().apply([message('a/x')]);
     render(<TopicTree broker="broker:1883" />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Expand all' }));
     await userEvent.click(screen.getByRole('button', { name: 'Collapse all' }));
+    await userEvent.click(screen.getByRole('button', { name: /^Expand broker:1883/ }));
 
     expect(branchOf('a')).toHaveAttribute('data-open', 'false');
   });
@@ -430,6 +433,7 @@ describe('TopicTree', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Expand b' }));
 
     await userEvent.click(screen.getByRole('button', { name: 'Collapse all' }));
+    await userEvent.click(screen.getByRole('button', { name: /^Expand broker:1883/ }));
     useTopicTreeStore.getState().apply([message('c/z')]);
 
     await waitFor(() => expect(branchOf('c')).toHaveAttribute('data-open', 'false'));
@@ -692,14 +696,27 @@ describe('expand all reaches the broker row', () => {
     expect(screen.getByText('temp')).toBeInTheDocument();
   });
 
-  it('leaves the broker row on screen after collapsing everything', async () => {
+  // Collapsing reaches the broker row too, so the tree folds all the way to its root. The root
+  // row is drawn whatever its state, so the pane still says which broker this is.
+  it('folds the tree to the broker row, which stays on screen', async () => {
     useTopicTreeStore.getState().apply([message('sensors/attic/temp')]);
     render(<TopicTree broker="broker:1883" />);
+    expect(screen.getByText('sensors')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Collapse all' }));
 
     expect(screen.getByRole('button', { name: /^broker:1883/ })).toBeInTheDocument();
+    expect(screen.queryByText('sensors')).not.toBeInTheDocument();
+  });
+
+  it('opens it all again from that one row', async () => {
+    useTopicTreeStore.getState().apply([message('sensors/attic/temp')]);
+    render(<TopicTree broker="broker:1883" />);
+    await userEvent.click(screen.getByRole('button', { name: 'Collapse all' }));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+
     expect(screen.getByText('sensors')).toBeInTheDocument();
-    expect(screen.queryByText('attic')).not.toBeInTheDocument();
+    expect(screen.getByText('temp')).toBeInTheDocument();
   });
 });

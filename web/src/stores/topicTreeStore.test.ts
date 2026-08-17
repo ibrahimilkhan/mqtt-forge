@@ -80,13 +80,6 @@ describe('topicTreeStore', () => {
     expect(useTopicTreeStore.getState().brokerOpen).toBe(true);
   });
 
-  // Collapsing every branch should fold the tree, not empty the pane.
-  it('leaves the broker row open when everything is collapsed', () => {
-    useTopicTreeStore.getState().setAllOpen(false);
-
-    expect(useTopicTreeStore.getState().brokerOpen).toBe(true);
-  });
-
   it('reopens the broker row on reset, which a fresh connect triggers', () => {
     useTopicTreeStore.getState().toggleBroker();
     useTopicTreeStore.getState().reset();
@@ -125,8 +118,10 @@ describe('dropFilter', () => {
   });
 });
 
-// The broker row is what everything hangs off, so a folded one hides the whole tree. Expand all
-// has to reach it; collapse all still must not, or the pane would go empty.
+// The broker row is what everything hangs off, so both controls have to reach it: with it left
+// out, expanding opened every branch behind a closed door and collapsing left the top level
+// standing. The row itself is always drawn, so folding it puts the tree away without emptying
+// the pane.
 describe('setAllOpen and the broker row', () => {
   it('opens the broker row, so expanding everything shows something', () => {
     useTopicTreeStore.setState({ brokerOpen: false });
@@ -144,16 +139,15 @@ describe('setAllOpen and the broker row', () => {
     expect(useTopicTreeStore.getState().brokerOpen).toBe(true);
   });
 
-  it('does not fold the broker row away when everything else collapses', () => {
+  it('folds the broker row when everything collapses', () => {
     useTopicTreeStore.setState({ brokerOpen: true });
 
     useTopicTreeStore.getState().setAllOpen(false);
 
-    expect(useTopicTreeStore.getState().brokerOpen).toBe(true);
+    expect(useTopicTreeStore.getState().brokerOpen).toBe(false);
   });
 
-  // Collapsing does not reach the row, so one the user folded by hand stays folded.
-  it('leaves a folded broker row folded when everything else collapses', () => {
+  it('leaves an already folded broker row folded', () => {
     useTopicTreeStore.setState({ brokerOpen: false });
 
     useTopicTreeStore.getState().setAllOpen(false);
