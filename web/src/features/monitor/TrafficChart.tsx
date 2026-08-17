@@ -24,7 +24,14 @@ const SILENT_AFTER = 3;
  * follow, whether to read it in order or as a distribution, and how to get it out of the console
  * and into whatever the reader actually analyses in.
  */
-export function TrafficChart({ entries }: { entries: LogEntry[] }) {
+export function TrafficChart({
+  entries,
+  frozen = false,
+}: {
+  entries: LogEntry[];
+  /** The pane is being held still, so the run on show is not the run arriving. */
+  frozen?: boolean;
+}) {
   // undefined means 'whichever field the run is mostly about'; a string picks one; null is the
   // body itself. Reset by the remount the pane does when the selection changes.
   const [field, setField] = useState<string | null | undefined>(undefined);
@@ -53,14 +60,15 @@ export function TrafficChart({ entries }: { entries: LogEntry[] }) {
   // silence has to be before it does is the period itself. Checked on a beat, since nothing
   // arriving is exactly the case where nothing prompts a redraw. No faster than a second, and no
   // slower than half a minute: this is a warning, not a stopwatch.
-  const beat = stats?.pace ? Math.min(Math.max(stats.pace.every, 1000), 30_000) : null;
+  // Not while held: the newest reading on show then gets older by the second while the topic may
+  // be publishing perfectly well behind the hold, and an alarm would be about the reader's hand.
+  const beat = stats?.pace && !frozen ? Math.min(Math.max(stats.pace.every, 1000), 30_000) : null;
   const now = useNow(beat);
 
   if (!series || !stats) return null;
 
-  const quiet = stats.pace
-    ? now - series.readings[series.readings.length - 1].at.getTime()
-    : 0;
+  const quiet =
+    stats.pace && !frozen ? now - series.readings[series.readings.length - 1].at.getTime() : 0;
   const silence = stats.pace && quiet > stats.pace.every * SILENT_AFTER ? quiet : null;
 
   const rule = ruleOf(series.topic);

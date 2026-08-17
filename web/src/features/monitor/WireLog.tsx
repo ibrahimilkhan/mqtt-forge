@@ -71,7 +71,7 @@ function EntryList({ entries: live }: { entries: LogEntry[] }) {
       {/* Under the newest reading and over the count: the value now, the shape behind it, and
           then how much of that shape the log still holds. Draws nothing unless the entries in
           view are one topic's numbers, which is the only run a single line can honestly draw. */}
-      <TrafficChart entries={entries} />
+      <TrafficChart entries={entries} frozen={held !== null} />
 
       <div className={styles.foot}>
         {/* A lone entry is already all of them, so the count states itself rather than offering
