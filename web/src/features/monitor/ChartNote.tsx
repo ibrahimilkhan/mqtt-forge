@@ -1,6 +1,6 @@
 import type { Fit } from '../../lib/distribution';
 import { duration, short } from '../../lib/format';
-import type { Cadence, Summary } from '../../lib/stats';
+import type { Cadence, Change, Summary } from '../../lib/stats';
 import styles from './TrafficChart.module.css';
 
 type Item = { text: string; title: string; verdict?: boolean; drifting?: boolean; alarm?: boolean };
@@ -18,6 +18,8 @@ export function ChartNote({
   fit,
   pace,
   skipped,
+  step = null,
+  stepAt = null,
   of = null,
   silence = null,
   quartiles = false,
@@ -26,6 +28,10 @@ export function ChartNote({
   fit: Fit | null;
   pace: Cadence | null;
   skipped: number;
+  /** Where the run moved from one level to another, when it did. */
+  step?: Change | null;
+  /** When that happened, which is what makes it something to go and look at. */
+  stepAt?: Date | null;
   /** How long the run really is, when the chart is drawing a window of it. */
   of?: number | null;
   /** How long the topic has been quiet, when that is longer than its own rhythm allows. */
@@ -66,8 +72,9 @@ export function ChartNote({
 
   // A run that is going somewhere is described by where it is going, not by the shape its
   // readings make on the way: a draining battery is a perfect uniform distribution, and saying
-  // so is true and useless. The direction is the reading that means something.
-  if (fit && !drift?.drifting) {
+  // so is true and useless. A run with a step in it is two shapes and neither of them is one
+  // the fit has a name for. The direction, or the step, is the reading that means something.
+  if (fit && !drift?.drifting && !step) {
     items.push({
       // '≈', because the test returns 'not enough evidence to reject' rather than 'is' — at
       // these sample sizes the difference between those two is the whole claim.
@@ -79,7 +86,18 @@ export function ChartNote({
     });
   }
 
-  if (drift) items.push(drift);
+  // Where there is a step, the step is the description: a slope drawn through a stair fits
+  // neither of the levels it joins, and the mean of the two is a reading that never happened.
+  if (step) {
+    const when = stepAt ? ` at ${stepAt.toLocaleTimeString('en-GB', { hour12: false })}` : '';
+    items.push({
+      text: `stepped ${step.shift > 0 ? '+' : '−'}${short(Math.abs(step.shift))}${when}`,
+      title: `the run holds two levels — ${short(step.before)} before, ${short(step.after)} after — and the split between them clears the scatter about both`,
+      verdict: true,
+    });
+  }
+
+  if (drift && !step) items.push(drift);
 
   if (pace) {
     const jitter = pace.jitter > 0 ? ` ±${duration(pace.jitter)}` : '';

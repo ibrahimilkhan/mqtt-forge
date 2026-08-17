@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { fitDistribution } from '../../lib/distribution';
 import { numericFields, numericSeries, type Series } from '../../lib/series';
-import { cadence, summarise } from '../../lib/stats';
+import { cadence, changePoint, summarise } from '../../lib/stats';
 import { useNow } from '../../lib/useNow';
 import { useRuleLookup } from '../../lib/useRuleLookup';
 import { CHART_DETAIL } from '../appearance/chart';
@@ -53,6 +53,7 @@ export function TrafficChart({
       summary: summarise(values)!,
       fit: fitDistribution(values),
       pace: cadence(series.readings.map((reading) => reading.at)),
+      step: changePoint(values),
     };
   }, [series]);
 
@@ -154,6 +155,7 @@ export function TrafficChart({
         <TrafficLine
           series={series}
           summary={stats.summary}
+          step={detail.marks ? stats.step : null}
           colour={rule?.colour}
           marks={detail.marks}
         />
@@ -168,6 +170,8 @@ export function TrafficChart({
           summary={stats.summary}
           fit={stats.fit}
           pace={stats.pace}
+          step={stats.step}
+          stepAt={stats.step ? series.readings[stats.step.at].at : null}
           skipped={series.skipped}
           of={series.of}
           silence={silence}

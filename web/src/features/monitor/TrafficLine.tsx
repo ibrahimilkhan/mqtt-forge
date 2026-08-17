@@ -1,6 +1,6 @@
 import { useState, type KeyboardEvent, type PointerEvent } from 'react';
 import type { Series } from '../../lib/series';
-import type { Summary } from '../../lib/stats';
+import type { Change, Summary } from '../../lib/stats';
 import styles from './TrafficChart.module.css';
 
 /** The plot is drawn in a unit square and stretched to the pane; see `preserveAspectRatio`. */
@@ -22,11 +22,14 @@ const shift = (index: number, count: number) =>
 export function TrafficLine({
   series,
   summary,
+  step = null,
   colour,
   marks = true,
 }: {
   series: Series;
   summary: Summary;
+  /** Where the run moved from one level to another, when it did. */
+  step?: Change | null;
   colour?: string;
   /** The band, the mean and the outlier rings — everything drawn that is not a reading. */
   marks?: boolean;
@@ -138,6 +141,21 @@ export function TrafficLine({
             {low < 0 && high > 0 && (
               <line className={styles.zero} data-testid="zero" x1={0} y1={y(0)} x2={SIDE} y2={y(0)}>
                 <title>zero</title>
+              </line>
+            )}
+
+            {/* Where the run moved from one level to another. The note says how far and when;
+                this says where to look on the line for it. */}
+            {step && (
+              <line
+                className={styles.step}
+                data-testid="step"
+                x1={x(step.at)}
+                y1={0}
+                x2={x(step.at)}
+                y2={SIDE}
+              >
+                <title>stepped here</title>
               </line>
             )}
 
