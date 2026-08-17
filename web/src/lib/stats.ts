@@ -59,6 +59,95 @@ export function summarise(values: number[]): Summary | null {
   };
 }
 
+export type Change = {
+  /** The index the second level starts at. */
+  at: number;
+  before: number;
+  after: number;
+  /** How far it moved, and which way. */
+  shift: number;
+};
+
+/** Below this a run has no two sides to compare, and either side needs readings of its own. */
+const ENOUGH_TO_SPLIT = 20;
+const ENOUGH_EITHER_SIDE = 8;
+
+/**
+ * Where a run moved from one level to another.
+ *
+ * A step is the most actionable thing a sensor can say — a valve opened, a heater came on, a
+ * scale was reloaded — and it is the one thing neither the mean nor the trend reports: both
+ * describe the run as though it were all one thing, and a step makes the mean a number that
+ * never happened.
+ *
+ * The split is the one that best divides the run, by the between-groups sum of squares — the
+ * standard single change-point test. Noise always has a best split, so it is only reported when
+ * the two levels are three deviations apart, measured on the readings' own scatter about them.
+ */
+export function changePoint(values: number[]): Change | null {
+  if (values.length < ENOUGH_TO_SPLIT) return null;
+
+  const n = values.length;
+  const total = values.reduce((sum, value) => sum + value, 0);
+
+  let best: { at: number; strength: number } | null = null;
+  let left = 0;
+
+  for (let k = 1; k < n; k++) {
+    left += values[k - 1];
+    if (k < ENOUGH_EITHER_SIDE || n - k < ENOUGH_EITHER_SIDE) continue;
+
+    const before = left / k;
+    const after = (total - left) / (n - k);
+    // Weighted by how much run is on each side, so a split with real weight behind it wins over
+    // a lopsided one that happens to divide two readings well.
+    const strength = ((k * (n - k)) / n) * (before - after) ** 2;
+
+    if (!best || strength > best.strength) best = { at: k, strength };
+  }
+
+  if (!best) return null;
+
+  const before = mean(values.slice(0, best.at));
+  const after = mean(values.slice(best.at));
+  const scatter = Math.sqrt(
+    (spreadAbout(values.slice(0, best.at), before) + spreadAbout(values.slice(best.at), after)) / n,
+  );
+
+  // A step has to clear the readings' own scatter about the two levels it separates, or every
+  // sensor in the building has an event on it.
+  if (Math.abs(after - before) <= 3 * scatter) return null;
+
+  // A run that climbs steadily also has a best split — the middle of the slope — and calling
+  // that a step would be describing a ramp as a stair. So the two readings of the run are put
+  // against each other: how much is left over after fitting two levels, against how much is left
+  // over after fitting one straight line. A step is only the answer when it is the better one.
+  const twoLevels =
+    spreadAbout(values.slice(0, best.at), before) + spreadAbout(values.slice(best.at), after);
+  const oneLine = aboutTheLine(values);
+
+  return twoLevels < oneLine * 0.7
+    ? { at: best.at, before, after, shift: after - before }
+    : null;
+}
+
+/** What the readings leave over after the straight line through them is taken out. */
+function aboutTheLine(values: number[]): number {
+  const middle = (values.length - 1) / 2;
+  const level = mean(values);
+  const slope = slopeOf(values);
+
+  return values.reduce(
+    (sum, value, index) => sum + (value - (level + slope * (index - middle))) ** 2,
+    0,
+  );
+}
+
+const mean = (values: number[]) => values.reduce((sum, value) => sum + value, 0) / values.length;
+
+const spreadAbout = (values: number[], middle: number) =>
+  values.reduce((sum, value) => sum + (value - middle) ** 2, 0);
+
 export type Cadence = {
   /** The middle gap between arrivals, in milliseconds. */
   every: number;

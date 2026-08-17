@@ -108,6 +108,14 @@
 
 .crosshair { stroke: var(--rule); stroke-width: 1; vector-effect: non-scaling-stroke; }
 
+/* Solid where the mean and the zero line are dashed: those are levels the run is read against,
+   and this is a moment in it. */
+.step {
+  stroke: color-mix(in srgb, var(--signal) 45%, transparent);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
 /* Recessive on purpose: it is there to be read against, not read. */
 .zero {
   stroke: var(--rule);

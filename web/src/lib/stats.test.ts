@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cadence, summarise } from './stats';
+import { cadence, changePoint, summarise } from './stats';
 
 const at = (...seconds: number[]) => seconds.map((second) => new Date(2026, 0, 1, 12, 0, second));
 
@@ -63,6 +63,68 @@ describe('summarise', () => {
 
   it('has nothing to say about an empty run', () => {
     expect(summarise([])).toBeNull();
+  });
+});
+
+describe('changePoint', () => {
+  // A step is the most actionable thing a sensor can say, and it is the one thing neither the
+  // mean nor the trend reports: both of them describe the run as though it were all one thing.
+  it('finds where a run moved from one level to another', () => {
+    const stepped = [...Array(20).fill(21), ...Array(20).fill(26)];
+
+    expect(changePoint(stepped)).toMatchObject({ at: 20, before: 21, after: 26 });
+  });
+
+  it('reports how far it stepped, and which way', () => {
+    expect(changePoint([...Array(20).fill(26), ...Array(20).fill(21)])?.shift).toBe(-5);
+  });
+
+  it('finds the step through noise on either side of it', () => {
+    const wobble = (base: number, i: number) => base + (i % 2 === 0 ? 0.1 : -0.1);
+    const stepped = [
+      ...Array.from({ length: 20 }, (_, i) => wobble(21, i)),
+      ...Array.from({ length: 20 }, (_, i) => wobble(26, i)),
+    ];
+
+    expect(changePoint(stepped)?.at).toBe(20);
+  });
+
+  // Noise always has a best split; what it does not have is a step. Reporting the best split of
+  // a run that never moved would put an event on every sensor in the building.
+  it('finds nothing in a run that only wobbles', () => {
+    const wobble = Array.from({ length: 40 }, (_, i) => 21 + Math.sin(i * 2.3) * 0.5);
+
+    expect(changePoint(wobble)).toBeNull();
+  });
+
+  // A climb has a best split too — the middle of the slope — and calling that a step would be
+  // describing a ramp as a stair.
+  it('finds nothing in a run that simply climbs', () => {
+    expect(changePoint(Array.from({ length: 40 }, (_, i) => 20 + i))).toBeNull();
+  });
+
+  // The rise is real, but it happens at one moment rather than over the run: two levels explain
+  // the readings and a slope through them does not.
+  it('still finds a step in a run that climbs a little on both sides of it', () => {
+    const stepped = Array.from({ length: 40 }, (_, i) => (i < 20 ? 21 : 26) + i * 0.01);
+
+    expect(changePoint(stepped)?.at).toBe(20);
+  });
+
+  it('finds nothing in a run too short to have two sides', () => {
+    expect(changePoint([21, 21, 26, 26])).toBeNull();
+  });
+
+  it('finds nothing in a run that never moved', () => {
+    expect(changePoint(Array(40).fill(21))).toBeNull();
+  });
+
+  // The ends are not a step: one reading against thirty-nine is an outlier, and there is a fence
+  // for those.
+  it('keeps its distance from the ends of the run', () => {
+    const spike = [...Array(39).fill(21), 90];
+
+    expect(changePoint(spike)).toBeNull();
   });
 });
 

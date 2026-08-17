@@ -711,6 +711,41 @@ describe('what the chart says about the readings', () => {
     expect(note()).not.toContain('silent');
   });
 
+  // A valve opened, a heater came on, a scale was reloaded. The mean of a run with a step in it
+  // is a number that never happened, and the trend calls the step a gentle slope.
+  it('says where a run stepped from one level to another, and marks it', () => {
+    readings('sensors/temp', ...Array(20).fill('21'), ...Array(20).fill('26'));
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(note()).toContain('stepped +5');
+    expect(screen.getByTestId('step')).toBeInTheDocument();
+  });
+
+  it('calls no step on a run that is simply going somewhere', () => {
+    readings('sensors/temp', ...Array.from({ length: 40 }, (_, i) => `${20 + i}`));
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(note()).toContain('rising');
+    expect(note()).not.toContain('stepped');
+  });
+
+  it('calls no step on a run that only wobbles', () => {
+    readings(
+      'sensors/temp',
+      ...Array.from({ length: 40 }, (_, i) => `${(21 + Math.sin(i * 2.3) * 0.5).toFixed(3)}`),
+    );
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(note()).not.toContain('stepped');
+    expect(screen.queryByTestId('step')).not.toBeInTheDocument();
+  });
+
   it('says which way a drifting run is going', () => {
     readings('sensors/temp', ...Array.from({ length: 12 }, (_, i) => `${20 + i}`));
     useSelectionStore.getState().select(chip);
