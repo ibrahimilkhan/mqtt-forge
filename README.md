@@ -78,20 +78,6 @@ segment beats `+`, and `+` beats `#`. So `sensors/#` can colour a whole subtree 
 screen, history included, and the rules live with the API rather than in the browser, so a phone
 opened from the QR panel sees the same colours.
 
-## Roadmap
-
-Planned, in rough order:
-
-- **Automation** — scripted sequences of publishes and expected replies, so a scenario can be
-  replayed instead of clicked through.
-- **Recording** — capture a session's traffic to a file and play it back.
-- **Load testing** — many clients and sustained publish rates, to see how a broker holds up.
-- **MQTT 3.1.1** — a broker that only speaks 3.1.1 currently refuses the connection.
-
-Ideas and gaps are always welcome — [open an
-issue](https://github.com/ibrahimilkhan/mqtt-forge/issues) for anything missing, broken or worth
-doing differently, and see [CONTRIBUTING.md](CONTRIBUTING.md) if you want to send a change.
-
 ## Keeping your settings
 
 The container starts empty and forgets on `docker rm`. Mount a volume to keep the broker
@@ -106,6 +92,16 @@ docker run -d -p 5169:5169 \
 
 The desktop app keeps them beside itself and needs nothing set.
 
+## Roadmap
+
+Planned, in rough order:
+
+- **Automation** — scripted sequences of publishes and expected replies, so a scenario can be
+  replayed instead of clicked through.
+- **Recording** — capture a session's traffic to a file and play it back.
+- **Load testing** — many clients and sustained publish rates, to see how a broker holds up.
+- **MQTT 3.1.1** — a broker that only speaks 3.1.1 currently refuses the connection.
+
 ## From source
 
 Needs .NET 10 and Node 22+.
@@ -118,6 +114,13 @@ npm --prefix web run dev                  # http://localhost:5173
 Open http://localhost:5173 — Vite proxies `/api` and `/hubs` through to the API. `dotnet publish
 -c Release` builds the interface into the API and serves everything from one process on one port.
 [CONTRIBUTING.md](CONTRIBUTING.md) has the rest: tests, packaging, and where each layer lives.
+
+## Ideas are welcome
+
+Anything missing, broken, or worth doing differently — [open an
+issue](https://github.com/ibrahimilkhan/mqtt-forge/issues). A sentence is enough, and a gap you
+hit is worth reporting even if you would not fix it yourself.
+[CONTRIBUTING.md](CONTRIBUTING.md) covers sending a change.
 
 ## Licence
 
