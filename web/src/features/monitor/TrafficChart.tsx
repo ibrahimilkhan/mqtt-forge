@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { fitDistribution } from '../../lib/distribution';
 import { numericFields, numericSeries, type Series } from '../../lib/series';
-import { cadence, changePoint, summarise } from '../../lib/stats';
+import { cadence, changePoint, cycle, summarise } from '../../lib/stats';
 import { useNow } from '../../lib/useNow';
 import { useRuleLookup } from '../../lib/useRuleLookup';
 import { CHART_DETAIL } from '../appearance/chart';
@@ -54,6 +54,7 @@ export function TrafficChart({
       fit: fitDistribution(values),
       pace: cadence(series.readings.map((reading) => reading.at)),
       step: changePoint(values),
+      period: cycle(values),
     };
   }, [series]);
 
@@ -172,6 +173,7 @@ export function TrafficChart({
           pace={stats.pace}
           step={stats.step}
           stepAt={stats.step ? series.readings[stats.step.at].at : null}
+          period={stats.period}
           skipped={series.skipped}
           of={series.of}
           silence={silence}

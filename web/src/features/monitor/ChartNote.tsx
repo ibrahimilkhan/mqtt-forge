@@ -20,6 +20,7 @@ export function ChartNote({
   skipped,
   step = null,
   stepAt = null,
+  period = null,
   of = null,
   silence = null,
   quartiles = false,
@@ -32,6 +33,8 @@ export function ChartNote({
   step?: Change | null;
   /** When that happened, which is what makes it something to go and look at. */
   stepAt?: Date | null;
+  /** How many readings the run takes to repeat itself, when it repeats itself. */
+  period?: number | null;
   /** How long the run really is, when the chart is drawing a window of it. */
   of?: number | null;
   /** How long the topic has been quiet, when that is longer than its own rhythm allows. */
@@ -98,6 +101,16 @@ export function ChartNote({
   }
 
   if (drift && !step) items.push(drift);
+
+  // A machine that repeats itself. Nothing else here would say so: a cycling sensor has an
+  // ordinary mean, an ordinary spread, and a trend of nothing.
+  if (period !== null) {
+    items.push({
+      text: `cycles every ${period} readings${pace ? ` · ${duration(period * pace.every)}` : ''}`,
+      title: 'the run resembles itself most strongly at this many readings apart',
+      verdict: true,
+    });
+  }
 
   if (pace) {
     const jitter = pace.jitter > 0 ? ` ±${duration(pace.jitter)}` : '';

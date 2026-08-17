@@ -148,6 +148,52 @@ const mean = (values: number[]) => values.reduce((sum, value) => sum + value, 0)
 const spreadAbout = (values: number[], middle: number) =>
   values.reduce((sum, value) => sum + (value - middle) ** 2, 0);
 
+/** Three turns of a period is the least that shows it is a period rather than a bump. */
+const TURNS = 3;
+
+/** Below this an autocorrelation is reading a coincidence. */
+const REPEATS_ABOVE = 0.5;
+
+/**
+ * The period a run repeats itself on, in readings, or null when it does not.
+ *
+ * A thermostat, a pump, a compressor: a sensor that repeats itself is describing a machine that
+ * repeats itself, and the period is the machine's own. Nothing else in the note would say so —
+ * a cycling sensor has an ordinary mean, an ordinary spread and no trend at all.
+ *
+ * The straight line comes out first. Left in, a run that climbs would look like a run repeating
+ * itself: every reading resembles the one before it, at every lag, and the strongest lag would
+ * be whichever the run is longest at.
+ */
+export function cycle(values: number[]): number | null {
+  const n = values.length;
+  const longest = Math.floor(n / TURNS);
+  if (longest < 2) return null;
+
+  const level = mean(values);
+  const slope = slopeOf(values);
+  const middle = (n - 1) / 2;
+  const left = values.map((value, index) => value - (level + slope * (index - middle)));
+
+  const power = left.reduce((sum, value) => sum + value * value, 0);
+  if (power === 0) return null;
+
+  const at = (lag: number) =>
+    left.slice(0, n - lag).reduce((sum, value, index) => sum + value * left[index + lag], 0) / power;
+
+  let best: { lag: number; strength: number } | null = null;
+  for (let lag = 2; lag <= longest; lag++) {
+    const strength = at(lag);
+    if (!best || strength > best.strength) best = { lag, strength };
+  }
+
+  if (!best || best.strength < REPEATS_ABOVE) return null;
+
+  // A peak rather than a shoulder: a lag that only beats its neighbours by being further along a
+  // slow rise is not a period, it is the run being slow.
+  return at(best.lag) > at(best.lag - 1) || best.lag === 2 ? best.lag : null;
+}
+
 export type Cadence = {
   /** The middle gap between arrivals, in milliseconds. */
   every: number;

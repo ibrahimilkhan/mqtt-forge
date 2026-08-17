@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cadence, changePoint, summarise } from './stats';
+import { cadence, changePoint, cycle, summarise } from './stats';
 
 const at = (...seconds: number[]) => seconds.map((second) => new Date(2026, 0, 1, 12, 0, second));
 
@@ -125,6 +125,50 @@ describe('changePoint', () => {
     const spike = [...Array(39).fill(21), 90];
 
     expect(changePoint(spike)).toBeNull();
+  });
+});
+
+describe('cycle', () => {
+  const sine = (period: number, count: number) =>
+    Array.from({ length: count }, (_, i) => 21 + Math.sin((2 * Math.PI * i) / period) * 2);
+
+  // A thermostat, a pump, a compressor: a sensor that repeats itself is describing a machine
+  // that repeats itself, and the period is the machine's own.
+  it('finds the period a run repeats on', () => {
+    expect(cycle(sine(12, 72))).toBe(12);
+  });
+
+  it('finds a longer period in a longer run', () => {
+    expect(cycle(sine(20, 120))).toBe(20);
+  });
+
+  // Detrended first, or a run that climbs would look like a run repeating itself: every reading
+  // resembles the one before it, at every lag.
+  it('finds no period in a run that simply climbs', () => {
+    expect(cycle(Array.from({ length: 72 }, (_, i) => 20 + i * 0.5))).toBeNull();
+  });
+
+  // Seeded rather than random, and a generator rather than a sine with an awkward frequency:
+  // sin(i · 12.9898) looks like noise and is a period of about fifteen wearing a disguise, which
+  // this found and the first draft of this test called a bug.
+  it('finds no period in noise', () => {
+    let state = 7;
+    const noise = Array.from({ length: 72 }, () => {
+      state = (state * 1664525 + 1013904223) % 4294967296;
+      return 21 + (state / 4294967296) * 2;
+    });
+
+    expect(cycle(noise)).toBeNull();
+  });
+
+  it('finds no period in a run that never moved', () => {
+    expect(cycle(Array(72).fill(21))).toBeNull();
+  });
+
+  // Fewer than three turns is not a rhythm, it is a bump: the run has to show the period
+  // repeating before the period is worth reporting.
+  it('says nothing about a run too short to repeat itself three times', () => {
+    expect(cycle(sine(12, 20))).toBeNull();
   });
 });
 
