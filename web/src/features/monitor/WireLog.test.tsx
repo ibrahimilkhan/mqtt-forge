@@ -16,7 +16,7 @@ const chip = { label: 'sensors/#', filter: 'sensors/#' };
 
 // Oldest first, so the newest lands at the head of the store.
 const received = (...topics: string[]) =>
-  topics.forEach((topic) => useLogStore.getState().push({ kind: 'recv', verb: 'Received', topic }));
+  topics.forEach((topic) => useLogStore.getState().push({ kind: 'recv', verb: '↓', topic }));
 
 // Already decoded, the way the hub bridge hands arrivals to the log — this bypasses the hub.
 const msg = (topic: string): DecodedMessage => ({
@@ -84,13 +84,13 @@ describe('WireLog', () => {
     useLogStore.getState().push({ kind: 'ok', verb: 'Subscribed', topic: 'sensors/#' });
     useLogStore.getState().push({ kind: 'fault', verb: 'Subscribe failed', topic: 'sensors/#' });
     received('sensors/room/temp');
-    useLogStore.getState().push({ kind: 'sent', verb: 'Published', topic: 'sensors/room/set' });
+    useLogStore.getState().push({ kind: 'sent', verb: '↑', topic: 'sensors/room/set' });
     useSelectionStore.getState().select(chip);
 
     render(<WireLog />);
 
     const verbs = screen.getAllByTestId('entry').map((entry) => within(entry).getByTestId('verb').textContent);
-    expect(verbs).toEqual(['Published', 'Received']);
+    expect(verbs).toEqual(['↑', '↓']);
   });
 
   // A command's filter is not a topic, so a selection matching it says nothing about traffic.
@@ -148,16 +148,16 @@ describe('WireLog', () => {
     expect(screen.getAllByTestId('entry')).toHaveLength(5);
   });
 
-  it('names the selected topic and can drop it', async () => {
+  // The entries start at the pane's edge. What they are about is on every row already, so a
+  // strip naming the selection again was a line of furniture over a list that reads without it.
+  it('draws no head row above the entries', () => {
     received('sensors/room/temp');
     useSelectionStore.getState().select(chip);
 
     render(<WireLog />);
-    expect(screen.getByTestId('focus')).toHaveTextContent('sensors/#');
 
-    await userEvent.click(screen.getByRole('button', { name: 'Clear topic selection' }));
-
-    expect(useSelectionStore.getState().selected).toBeNull();
+    expect(screen.queryByTestId('focus')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Clear topic selection' })).not.toBeInTheDocument();
   });
 
   it('splits the topic on slashes so the separators can be dimmed', () => {
@@ -174,10 +174,10 @@ describe('WireLog', () => {
   it('shows the stamps and the body', () => {
     useLogStore.getState().push({
       kind: 'recv',
-      verb: 'Received',
+      verb: '↓',
       topic: 'sensors/room/temp',
       body: '21.5',
-      stamps: ['QoS 1', 'RETAINED', '4 B'],
+      stamps: ['QoS 1', 'RETAINED', '4B'],
     });
     useSelectionStore.getState().select(chip);
 
@@ -185,14 +185,32 @@ describe('WireLog', () => {
 
     expect(screen.getByText('QoS 1')).toBeInTheDocument();
     expect(screen.getByText('RETAINED')).toBeInTheDocument();
-    expect(screen.getByText('4 B')).toBeInTheDocument();
+    expect(screen.getByText('4B')).toBeInTheDocument();
     expect(screen.getByText('21.5')).toBeInTheDocument();
+  });
+
+  // One line of furniture over the topic, read left to right, rather than the stamps trailing
+  // the topic on the line below.
+  it('runs the time, the verb and the stamps along a single line', () => {
+    useLogStore.getState().push({
+      kind: 'recv',
+      verb: '↓',
+      topic: 'sensors/room/temp',
+      stamps: ['QoS 1', 'RETAINED', '4B'],
+    });
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    const head = screen.getByTestId('head');
+    expect(head).toHaveTextContent(/^\d\d:\d\d:\d\d↓QoS 1RETAINED4B$/);
+    expect(within(screen.getByTestId('topic')).queryByText('4B')).not.toBeInTheDocument();
   });
 
   it('names each stamp so retained messages can be coloured apart', () => {
     useLogStore.getState().push({
       kind: 'recv',
-      verb: 'Received',
+      verb: '↓',
       topic: 'sensors/room/temp',
       stamps: ['QoS 1', 'RETAINED'],
     });
@@ -204,7 +222,7 @@ describe('WireLog', () => {
   });
 
   it('marks each entry with its kind, which drives the colour', () => {
-    useLogStore.getState().push({ kind: 'sent', verb: 'Published', topic: 'sensors/room/temp' });
+    useLogStore.getState().push({ kind: 'sent', verb: '↑', topic: 'sensors/room/temp' });
     useSelectionStore.getState().select(chip);
 
     render(<WireLog />);
@@ -215,7 +233,7 @@ describe('WireLog', () => {
   it('sends a logged message back to publish, settings and all', async () => {
     useLogStore.getState().push({
       kind: 'recv',
-      verb: 'Received',
+      verb: '↓',
       topic: 'sensors/temp',
       body: '21.5',
       qos: 2,
@@ -235,7 +253,7 @@ describe('WireLog', () => {
   });
 
   it('holds off loading when the click is the end of a text selection', () => {
-    useLogStore.getState().push({ kind: 'recv', verb: 'Received', topic: 'sensors/temp', body: '21.5' });
+    useLogStore.getState().push({ kind: 'recv', verb: '↓', topic: 'sensors/temp', body: '21.5' });
     useSelectionStore.getState().select(chip);
 
     render(<WireLog />);
@@ -360,9 +378,9 @@ describe('the head and the stamps stay quiet', () => {
   it('gives a retained message no colour of its own', () => {
     useLogStore.getState().push({
       kind: 'recv',
-      verb: 'Received',
+      verb: '↓',
       topic: 'sensors/a/temp',
-      stamps: ['QoS 1', 'RETAINED', '4 B'],
+      stamps: ['QoS 1', 'RETAINED', '4B'],
     });
     useSelectionStore.getState().select(chip);
 
@@ -372,6 +390,42 @@ describe('the head and the stamps stay quiet', () => {
     const colourOf = (text: string) => getComputedStyle(screen.getByText(text)).color;
 
     expect(colourOf('RETAINED')).toBe(colourOf('QoS 1'));
-    expect(colourOf('RETAINED')).toBe(colourOf('4 B'));
+    expect(colourOf('RETAINED')).toBe(colourOf('4B'));
+  });
+
+  // The arrow is a fact about the message like 'qos 1' is, so it wears the same box: a bare
+  // glyph among framed labels read as the odd one out.
+  it('boxes the verb the way it boxes a stamp', () => {
+    useLogStore.getState().push({
+      kind: 'recv',
+      verb: '↓',
+      topic: 'sensors/a/temp',
+      stamps: ['QoS 1'],
+    });
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    const boxOf = (element: HTMLElement) => {
+      const style = getComputedStyle(element);
+      return [style.border, style.borderRadius, style.padding].join(' ');
+    };
+
+    expect(boxOf(screen.getByTestId('verb'))).toBe(boxOf(screen.getByText('QoS 1')));
+    expect(getComputedStyle(screen.getByTestId('verb')).border).not.toBe('');
+  });
+
+  // The arrow is the whole word on a message row, so the word has to survive somewhere: on
+  // hover, and as what a screen reader announces in place of a glyph it cannot name.
+  it('says in words which way the arrow points', () => {
+    useLogStore.getState().push({ kind: 'sent', verb: '↑', topic: 'sensors/a/temp' });
+    received('sensors/a/temp');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(screen.getByRole('img', { name: 'Received' })).toHaveTextContent('↓');
+    expect(screen.getByRole('img', { name: 'Published' })).toHaveTextContent('↑');
+    expect(screen.getByRole('img', { name: 'Received' })).toHaveAttribute('title', 'Received');
   });
 });
