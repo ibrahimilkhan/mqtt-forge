@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { sanitize, STORAGE_KEY, useAppearanceStore } from './appearanceStore';
 
-const DEFAULTS = { sans: 'inter', mono: 'jetbrains', size: 15 };
+const DEFAULTS = { sans: 'inter', mono: 'jetbrains', size: 15, chart: 'full' };
 
 beforeEach(() => {
   // reset() persists defaults via `persist`, so it must run before clearing below.
@@ -12,6 +12,16 @@ beforeEach(() => {
 describe('sanitize', () => {
   it('falls back to the defaults when an id is not in the catalogue', () => {
     expect(sanitize({ sans: 'comic', mono: 'nope', size: 15 })).toEqual(DEFAULTS);
+  });
+
+  // A hand-edited or stale stored value can name a version that no longer exists.
+  it('falls back to the default chart version when the id is not one of them', () => {
+    expect(sanitize({ ...DEFAULTS, chart: 'lavish' }).chart).toBe('full');
+    expect(sanitize({ ...DEFAULTS, chart: 7 }).chart).toBe('full');
+  });
+
+  it('keeps a chart version that is one of them', () => {
+    expect(sanitize({ ...DEFAULTS, chart: 'deep' }).chart).toBe('deep');
   });
 
   it('clamps a size that sits outside the allowed range', () => {
@@ -36,12 +46,11 @@ describe('sanitize', () => {
 });
 
 describe('persistence', () => {
-  it('writes only the three choices under the storage key', () => {
+  it('writes only the stored choices under the storage key', () => {
     useAppearanceStore.getState().setSize(17);
 
     expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).state).toEqual({
-      sans: 'inter',
-      mono: 'jetbrains',
+      ...DEFAULTS,
       size: 17,
     });
   });
@@ -56,11 +65,7 @@ describe('persistence', () => {
 
       const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!).state;
       expect('tempDebugField' in stored).toBe(false);
-      expect(stored).toEqual({
-        sans: 'inter',
-        mono: 'jetbrains',
-        size: 17,
-      });
+      expect(stored).toEqual({ ...DEFAULTS, size: 17 });
     } finally {
       useAppearanceStore.getState().reset();
     }
@@ -87,8 +92,8 @@ describe('persistence', () => {
 
     await useAppearanceStore.persist.rehydrate();
 
-    const { sans, mono, size } = useAppearanceStore.getState();
-    expect({ sans, mono, size }).toEqual(DEFAULTS);
+    const { sans, mono, size, chart } = useAppearanceStore.getState();
+    expect({ sans, mono, size, chart }).toEqual(DEFAULTS);
   });
 
   it('does not throw when the storage write fails, and the choice still applies to this tab', () => {
@@ -125,7 +130,7 @@ describe('persistence', () => {
 
     await useAppearanceStore.persist.rehydrate();
 
-    const { sans, mono, size } = useAppearanceStore.getState();
-    expect({ sans, mono, size }).toEqual(DEFAULTS);
+    const { sans, mono, size, chart } = useAppearanceStore.getState();
+    expect({ sans, mono, size, chart }).toEqual(DEFAULTS);
   });
 });

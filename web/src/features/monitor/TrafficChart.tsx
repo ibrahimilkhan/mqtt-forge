@@ -3,6 +3,8 @@ import { fitDistribution } from '../../lib/distribution';
 import { numericFields, numericSeries, type Series } from '../../lib/series';
 import { cadence, summarise } from '../../lib/stats';
 import { useRuleLookup } from '../../lib/useRuleLookup';
+import { CHART_DETAIL } from '../appearance/chart';
+import { useAppearanceStore } from '../../stores/appearanceStore';
 import type { LogEntry } from '../../stores/logStore';
 import { ChartNote } from './ChartNote';
 import { TrafficHistogram } from './TrafficHistogram';
@@ -25,6 +27,7 @@ export function TrafficChart({ entries }: { entries: LogEntry[] }) {
   const [view, setView] = useState<View>('time');
   const [copy, setCopy] = useState<'idle' | 'done' | 'refused'>('idle');
   const ruleOf = useRuleLookup();
+  const detail = CHART_DETAIL[useAppearanceStore((state) => state.chart)];
 
   const fields = useMemo(() => numericFields(entries), [entries]);
   const series = useMemo(() => numericSeries(entries, field), [entries, field]);
@@ -62,6 +65,7 @@ export function TrafficChart({ entries }: { entries: LogEntry[] }) {
 
   return (
     <figure className={styles.chart} data-testid="chart" style={rule ? { color: rule.colour } : undefined}>
+      {detail.controls && (
       <div className={styles.controls}>
         {/* One topic can carry a whole environment. Which of its fields is wanted is the
             reader's business, so all of them are on offer and the best covered one leads. */}
@@ -83,26 +87,31 @@ export function TrafficChart({ entries }: { entries: LogEntry[] }) {
         )}
 
         <div className={styles.views}>
-          <button
-            type="button"
-            className={styles.chip}
-            aria-label="Over time"
-            title="Over time"
-            aria-pressed={view === 'time'}
-            onClick={() => setView('time')}
-          >
-            time
-          </button>
-          <button
-            type="button"
-            className={styles.chip}
-            aria-label="Distribution"
-            title="Distribution"
-            aria-pressed={view === 'distribution'}
-            onClick={() => setView('distribution')}
-          >
-            dist
-          </button>
+          {/* Deep draws both, so there is nothing here to choose between. */}
+          {!detail.histogram && (
+            <>
+              <button
+                type="button"
+                className={styles.chip}
+                aria-label="Over time"
+                title="Over time"
+                aria-pressed={view === 'time'}
+                onClick={() => setView('time')}
+              >
+                time
+              </button>
+              <button
+                type="button"
+                className={styles.chip}
+                aria-label="Distribution"
+                title="Distribution"
+                aria-pressed={view === 'distribution'}
+                onClick={() => setView('distribution')}
+              >
+                dist
+              </button>
+            </>
+          )}
           <button
             type="button"
             className={styles.chip}
@@ -115,19 +124,30 @@ export function TrafficChart({ entries }: { entries: LogEntry[] }) {
           </button>
         </div>
       </div>
+      )}
 
-      {view === 'time' ? (
-        <TrafficLine series={series} summary={stats.summary} colour={rule?.colour} />
-      ) : (
+      {(detail.histogram || view === 'time') && (
+        <TrafficLine
+          series={series}
+          summary={stats.summary}
+          colour={rule?.colour}
+          marks={detail.marks}
+        />
+      )}
+
+      {(detail.histogram || view === 'distribution') && (
         <TrafficHistogram series={series} summary={stats.summary} colour={rule?.colour} />
       )}
 
-      <ChartNote
-        summary={stats.summary}
-        fit={stats.fit}
-        pace={stats.pace}
-        skipped={series.skipped}
-      />
+      {detail.note && (
+        <ChartNote
+          summary={stats.summary}
+          fit={stats.fit}
+          pace={stats.pace}
+          skipped={series.skipped}
+          quartiles={detail.histogram}
+        />
+      )}
     </figure>
   );
 }

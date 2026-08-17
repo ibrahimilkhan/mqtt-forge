@@ -23,10 +23,13 @@ export function TrafficLine({
   series,
   summary,
   colour,
+  marks = true,
 }: {
   series: Series;
   summary: Summary;
   colour?: string;
+  /** The band, the mean and the outlier rings — everything drawn that is not a reading. */
+  marks?: boolean;
 }) {
   const [hovered, setHovered] = useState<number | null>(null);
   const { readings, low, high } = series;
@@ -44,7 +47,7 @@ export function TrafficLine({
 
   const line = readings.map((reading, index) => `${x(index)},${y(reading.value)}`).join(' ');
   const latest = readings[readings.length - 1];
-  const banded = summary.n >= ENOUGH_FOR_A_BAND && summary.sd > 0;
+  const banded = marks && summary.n >= ENOUGH_FOR_A_BAND && summary.sd > 0;
 
   const last = readings.length - 1;
   const settle = (step: number) => setHovered(Math.min(Math.max(step, 0), last));
@@ -162,7 +165,7 @@ export function TrafficLine({
 
           {/* A reading past the fences is either the event the sensor was put there to catch or
               a fault in it, and either way it is the one to look at first. */}
-          {summary.outliers.map((index) => (
+          {marks && summary.outliers.map((index) => (
             <span
               key={index}
               className={styles.outlier}
