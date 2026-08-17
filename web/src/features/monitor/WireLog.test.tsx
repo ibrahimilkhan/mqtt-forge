@@ -587,6 +587,18 @@ describe('what the chart says about the readings', () => {
     expect(note()).toContain('1 skipped');
   });
 
+  // The chart's own window is not the log's: a note that said 'n 500' beside a history of five
+  // thousand, without saying which five hundred, would be the chart quietly cropping the topic.
+  it('says when it is charting a window of a longer run', () => {
+    readings('sensors/temp', ...Array.from({ length: 620 }, (_, i) => `${20 + (i % 5)}`));
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(note()).toContain('n 500');
+    expect(note()).toContain('newest 500 of 620');
+  });
+
   it('says nothing about skipping when it read everything', () => {
     readings('sensors/temp', '21.5', '22', '22.5');
     useSelectionStore.getState().select(chip);

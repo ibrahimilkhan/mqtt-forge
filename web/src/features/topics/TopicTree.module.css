@@ -141,6 +141,22 @@
   margin-right: 5px;
 }
 
+/* The topic's recent run, drawn small enough to be furniture and fixed enough that a column of
+   them compares down the tree. Faint, and never wider than its own forty pixels: the row is a
+   name and a value first, and this is what the row has been doing. */
+.spark {
+  flex: none;
+  align-self: center;
+  color: color-mix(in srgb, var(--ink) 45%, transparent);
+  overflow: visible;
+}
+.spark polyline {
+  stroke-width: 1;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
 /* Lighter weight (not smaller size — 8.5px was unreadable) so the name reads first. */
 .meta {
   flex: none;

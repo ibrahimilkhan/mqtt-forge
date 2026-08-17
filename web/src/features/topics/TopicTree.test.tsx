@@ -29,6 +29,51 @@ beforeEach(() => {
   useComposeStore.setState({ draft: null });
 });
 
+// Scanning a broker for what is moving means opening every numeric topic in turn, in every other
+// console there is. The rows carry the shape themselves here.
+describe('the shape on a row', () => {
+  const send = (topic: string, ...payloads: string[]) =>
+    useTopicTreeStore.getState().apply(payloads.map((payload) => message(topic, payload)));
+
+  it('draws the run of a topic that sends numbers', () => {
+    send('sensors/temp', '21.5', '22', '20.5', '23');
+    useTopicTreeStore.setState({ defaultOpen: true });
+
+    render(<TopicTree broker="test.mosquitto.org:1883" />);
+
+    expect(screen.getByTestId('spark')).toBeInTheDocument();
+  });
+
+  it('draws nothing for a topic whose payloads are words', () => {
+    send('sensors/state', 'ON', 'OFF', 'ON', 'OFF');
+    useTopicTreeStore.setState({ defaultOpen: true });
+
+    render(<TopicTree broker="test.mosquitto.org:1883" />);
+
+    expect(screen.queryByTestId('spark')).not.toBeInTheDocument();
+  });
+
+  // Two points make a line, but a line drawn from two readings says 'up' or 'down' about a topic
+  // that has barely spoken. Three is where a shape starts being one.
+  it('waits for a third reading before drawing a shape', () => {
+    send('sensors/temp', '21.5', '22');
+    useTopicTreeStore.setState({ defaultOpen: true });
+
+    render(<TopicTree broker="test.mosquitto.org:1883" />);
+
+    expect(screen.queryByTestId('spark')).not.toBeInTheDocument();
+  });
+
+  it('says in words what the shape is of', () => {
+    send('sensors/temp', '21.5', '22', '20.5', '23');
+    useTopicTreeStore.setState({ defaultOpen: true });
+
+    render(<TopicTree broker="test.mosquitto.org:1883" />);
+
+    expect(screen.getByTestId('spark')).toHaveAccessibleName('4 readings, 20.5 to 23');
+  });
+});
+
 describe('rooted at the broker', () => {
   const brokerRow = () => screen.getByRole('button', { name: /^test\.mosquitto\.org/ });
 

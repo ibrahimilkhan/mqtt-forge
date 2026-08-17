@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { LogEntry } from '../stores/logStore';
-import { numericFields, numericSeries } from './series';
+import { MAX_PLOT, numericFields, numericSeries } from './series';
 
 let nextId = 0;
 
@@ -86,6 +86,22 @@ describe('numericSeries', () => {
 
   it('draws nothing from an empty log', () => {
     expect(numericSeries([])).toBeNull();
+  });
+
+  // Two hundred and fifty pixels of pane cannot draw five thousand readings — twenty of them
+  // would share a pixel — and the arithmetic under the chart would be redone over all of them on
+  // every arrival. The newest are the ones a console is for.
+  it('charts the newest of a very long run and says how long the run was', () => {
+    const long = entries('sensors/temp', ...Array.from({ length: MAX_PLOT + 500 }, (_, i) => `${i}`));
+    const series = numericSeries(long)!;
+
+    expect(series.readings).toHaveLength(MAX_PLOT);
+    expect(series.readings[series.readings.length - 1].value).toBe(MAX_PLOT + 499);
+    expect(series.of).toBe(MAX_PLOT + 500);
+  });
+
+  it('says nothing about a window when it charted everything', () => {
+    expect(numericSeries(entries('sensors/temp', '1', '2', '3'))!.of).toBeNull();
   });
 });
 

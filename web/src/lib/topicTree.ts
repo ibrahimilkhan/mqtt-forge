@@ -1,3 +1,4 @@
+import { asReading } from './number';
 import type { BodyMode } from './payload';
 
 export type TopicNode = {
@@ -17,7 +18,18 @@ export type TopicNode = {
   subMessages: number;   // messages delivered at or beneath it
   lastHitAt: number;     // last message on this exact topic
   lastSubHitAt: number;  // last message at or beneath it; drives the flash
+  /** The last few numbers this exact topic sent, oldest first, for the row's own sparkline. */
+  readings: readonly number[];
 };
+
+/**
+ * How long a run each row keeps.
+ *
+ * A tree row is a thumbnail, not a chart — the pane below it holds the history. Twenty-four is
+ * about as much as forty pixels of line can say, and a broker with ten thousand topics keeping
+ * that many numbers each is still a rounding error beside the log itself.
+ */
+export const TREE_READINGS = 24;
 
 export const emptyTree = (): TopicNode => leaf('');
 
@@ -34,6 +46,7 @@ const leaf = (name: string): TopicNode => ({
   subMessages: 0,
   lastHitAt: 0,
   lastSubHitAt: 0,
+  readings: [],
 });
 
 /** What the tree needs off a message. QoS and retain ride along so a click can re-publish it. */
@@ -257,8 +270,18 @@ function insert(
 
   const target = path[path.length - 1];
   const isNewTopic = target.hits === 0;
+
+  // Binary is not a reading even where its hex parses: '10' as hex is the byte 0x10, and a row
+  // drawing it as ten would be drawing a number that never crossed the wire.
+  const reading = mode === 'hex' ? null : asReading(payload);
+  const readings =
+    reading === null
+      ? target.readings
+      : [...target.readings, reading].slice(-TREE_READINGS);
+
   let node: TopicNode = {
     ...target,
+    readings,
     hits: target.hits + 1,
     latestPayload: payload,
     latestMode: mode,

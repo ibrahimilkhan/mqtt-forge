@@ -1,6 +1,7 @@
 import { memo, type CSSProperties, type ReactNode } from 'react';
 import type { ColourRule } from '../../lib/topicColour';
 import { nodeSummary, type TopicNode } from '../../lib/topicTree';
+import { Sparkline } from './Sparkline';
 import styles from './TopicTree.module.css';
 
 type Props = {
@@ -102,6 +103,9 @@ export const TreeNode = memo(function TreeNode({
           {label ?? node.name}
         </span>
         <span className={styles.val}>{node.latestPayload ?? ''}</span>
+        {/* Between the value and the counts: what the topic has been doing, for a reader
+            scanning the tree rather than reading one row of it. */}
+        <Sparkline readings={node.readings} colour={rule?.colour} />
         <span className={styles.meta}>{nodeSummary(node)}</span>
       </button>
 
