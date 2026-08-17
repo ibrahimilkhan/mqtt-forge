@@ -157,6 +157,10 @@ such a topic and the pane draws its run, and writes what the run adds up to unde
   in the note.
 - **Where it is going** — a least-squares trend, but only when the drift is larger than the
   readings' own spread; anything smaller is a line through a cloud.
+- **Where it stepped** — a valve opening or a heater coming on moves a run from one level to
+  another, and the mean of such a run is a number that never happened. The split that best
+  divides the run is reported when the two levels clear the scatter about them *and* explain the
+  readings better than one straight line does, with a mark on the line at the moment it happened.
 - **What shape it is** — a Kolmogorov–Smirnov test at five per cent against a normal, uniform or
   exponential distribution, with the parameters estimated from the readings themselves. Under
   twelve readings it says nothing, because every shape fits anything.
