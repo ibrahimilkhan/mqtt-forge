@@ -1,7 +1,8 @@
 /* Scrolls on its own rather than growing the row, so switching panels keeps layout height fixed. */
 .panel {
   background: var(--paper);
-  padding: 22px 20px 24px;
+  /* In step with the tree and log panes beside it. */
+  padding: 11px 20px 24px;
   min-height: 0;
   overflow-y: auto;
 }
@@ -40,6 +41,9 @@
   font-size: var(--t-body);
   line-height: 1;
   padding: 1px 5px;
+  /* Overhangs the line rather than growing it, so the title sits as close to the pane's edge
+     as the headings in the panes beside it. */
+  margin-block: -3px;
   border-radius: 2px;
 }
 /* all: unset misses the global button:hover fill; :not(:disabled) matches its specificity so this wins. */
