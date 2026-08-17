@@ -177,7 +177,7 @@ docker rm -f mqtt-forge
 Then start it again with the run command above. A named volume outlives `docker rm`, so settings
 and colour rules come back with it; without one, the new container starts empty. To stay on a
 build instead, every release tags its version alongside `latest` —
-`ghcr.io/ibrahimilkhan/mqtt-forge:v0.2.0` holds still.
+`ghcr.io/ibrahimilkhan/mqtt-forge:v0.3.0` holds still.
 
 ## Roadmap
 
