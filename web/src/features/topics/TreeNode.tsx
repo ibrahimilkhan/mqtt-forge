@@ -1,4 +1,4 @@
-import { memo, type CSSProperties } from 'react';
+import { memo, type CSSProperties, type ReactNode } from 'react';
 import type { ColourRule } from '../../lib/topicColour';
 import { nodeSummary, type TopicNode } from '../../lib/topicTree';
 import styles from './TopicTree.module.css';
@@ -15,6 +15,8 @@ type Props = {
   selected: boolean;
   /** The colour rule covering this row's topic, or null when none does. */
   rule?: ColourRule | null;
+  /** Controls parked at the row's right end. Siblings of the pick button, never inside it. */
+  actions?: ReactNode;
   onToggle: (path: string) => void;
   onSelect: (path: string, node: TopicNode) => void;
 };
@@ -31,6 +33,7 @@ export const TreeNode = memo(function TreeNode({
   active,
   selected,
   rule,
+  actions,
   onToggle,
   onSelect,
 }: Props) {
@@ -101,6 +104,8 @@ export const TreeNode = memo(function TreeNode({
         <span className={styles.val}>{node.latestPayload ?? ''}</span>
         <span className={styles.meta}>{nodeSummary(node)}</span>
       </button>
+
+      {actions}
     </div>
   );
 });

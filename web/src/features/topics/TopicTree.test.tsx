@@ -442,9 +442,33 @@ describe('TopicTree', () => {
     expect(screen.queryByText('x')).not.toBeInTheDocument();
   });
 
+  // They open and close the tree under the broker, so they sit on the broker's own row rather
+  // than in a strip above it — no head row, and nothing between the pane's edge and the tree.
+  it('puts the expand and collapse controls at the right of the broker row', () => {
+    useTopicTreeStore.getState().apply([message('a/x')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    const broker = screen.getAllByTestId('tree-row')[0];
+
+    expect(within(broker).getByRole('button', { name: 'Expand all' })).toBeInTheDocument();
+    expect(within(broker).getByRole('button', { name: 'Collapse all' })).toBeInTheDocument();
+    // Last in the row, after the button carrying the broker's name.
+    expect(broker.lastElementChild).toContainElement(
+      within(broker).getByRole('button', { name: 'Collapse all' }),
+    );
+  });
+
+  it('leaves the controls off the topic rows', () => {
+    useTopicTreeStore.getState().apply([message('a/x')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    expect(screen.getAllByRole('button', { name: 'Expand all' })).toHaveLength(1);
+  });
+
   // Glyphs on screen, words everywhere a name is asked for: the accessible name and the tooltip
   // both spell them out, so neither a screen reader nor a hovering pointer is left guessing.
   it('names the expand and collapse controls in words even though it draws glyphs', () => {
+    useTopicTreeStore.getState().apply([message('a/x')]);
     render(<TopicTree broker="broker:1883" />);
 
     const expand = screen.getByRole('button', { name: 'Expand all' });

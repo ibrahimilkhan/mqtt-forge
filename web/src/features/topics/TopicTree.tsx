@@ -93,32 +93,42 @@ export function TopicTree({ broker }: { broker?: string }) {
     [select, brokerLabel],
   );
 
+  /*
+   * Glyphs, with the words kept as the accessible name and the tooltip. Three rules for the
+   * fuller tree, two for the folded one — and not the ☰ that would say it best, since that is
+   * already the panel menu in the bar above and would read as a second one.
+   *
+   * They ride on the broker's row, at its right end. What they open and close is the tree that
+   * hangs off that row, and a strip of its own above the pane put a line and a band of empty
+   * space between the pane's edge and the first topic to say so.
+   */
+  const treeActions = useMemo(
+    () => (
+      <div className={styles.rowActions}>
+        <button
+          type="button"
+          onClick={() => setAllOpen(true)}
+          aria-label="Expand all"
+          title="Expand every branch"
+        >
+          ≡
+        </button>
+        <button
+          type="button"
+          onClick={() => setAllOpen(false)}
+          aria-label="Collapse all"
+          title="Collapse every branch"
+        >
+          =
+        </button>
+      </div>
+    ),
+    [setAllOpen],
+  );
+
   return (
     <>
-      <div className={styles.paneHead}>
-        <h2 className="srOnly">Topics</h2>
-        {/* Glyphs, with the words kept as the accessible name and the tooltip. Three rules for
-            the fuller tree, two for the folded one — and not the ☰ that would say it best, since
-            that is already the panel menu in the bar above and would read as a second one. */}
-        <div className={styles.paneActions}>
-          <button
-            type="button"
-            onClick={() => setAllOpen(true)}
-            aria-label="Expand all"
-            title="Expand every branch"
-          >
-            ≡
-          </button>
-          <button
-            type="button"
-            onClick={() => setAllOpen(false)}
-            aria-label="Collapse all"
-            title="Collapse every branch"
-          >
-            =
-          </button>
-        </div>
-      </div>
+      <h2 className="srOnly">Topics</h2>
 
       {root.subTopics === 0 ? (
         <p className="empty">No topics yet. Connect to a broker and its tree builds here.</p>
@@ -135,6 +145,7 @@ export function TopicTree({ broker }: { broker?: string }) {
             open={brokerOpen}
             active={false}
             selected={selectedFilter === EVERYTHING}
+            actions={treeActions}
             onToggle={toggleBroker}
             onSelect={pickBroker}
           />
