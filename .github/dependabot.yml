@@ -1,0 +1,13 @@
+version: 2
+
+# Actions only. The npm and NuGet ecosystems are left off deliberately: weekly dependency pull
+# requests are a review burden one maintainer absorbs by rubber-stamping them, and a broken build
+# there is visible the moment CI runs. A retired action major is different — it breaks the release
+# workflow, which only runs when you are already trying to ship.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: 'ci'
