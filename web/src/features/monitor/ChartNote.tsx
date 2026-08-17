@@ -18,6 +18,7 @@ export function ChartNote({
   fit,
   pace,
   skipped,
+  of = null,
   silence = null,
   quartiles = false,
 }: {
@@ -25,6 +26,8 @@ export function ChartNote({
   fit: Fit | null;
   pace: Cadence | null;
   skipped: number;
+  /** How long the run really is, when the chart is drawing a window of it. */
+  of?: number | null;
   /** How long the topic has been quiet, when that is longer than its own rhythm allows. */
   silence?: number | null;
   /** The middle half and the fences around it, for a reader who came for the numbers. */
@@ -103,6 +106,16 @@ export function ChartNote({
     items.push({
       text: `${summary.outliers.length} outlier${summary.outliers.length > 1 ? 's' : ''}`,
       title: `outside ${short(summary.fences.low)} to ${short(summary.fences.high)}, one and a half box-widths past the quartiles`,
+      verdict: true,
+    });
+  }
+
+  // A window is not the whole run, and a note that said 'n 500' beside a history of five
+  // thousand without saying which five hundred would be the chart cropping the topic quietly.
+  if (of !== null) {
+    items.push({
+      text: `newest ${summary.n} of ${of}`,
+      title: 'the log holds the rest; a chart this size cannot draw them and the note would be redone over all of them on every arrival',
       verdict: true,
     });
   }

@@ -1,3 +1,4 @@
+import { asReading } from './number';
 import type { LogEntry } from '../stores/logStore';
 
 export type Reading = { value: number; at: Date };
@@ -10,18 +11,11 @@ export type Series = {
   readings: Reading[];
   /** Messages in view that carried no reading for this field, and were stepped over. */
   skipped: number;
+  /** How long the run really is, when it was longer than one chart can hold; null otherwise. */
+  of: number | null;
   low: number;
   high: number;
 };
-
-/**
- * A body that is a number and nothing else.
- *
- * Number() is not the test: it takes '0x10' as sixteen, an empty body as zero and 'Infinity' as
- * a value no chart can place. A topic sending readings sends them written out, so the pattern
- * says so — sign, digits, a decimal point, an exponent, and nothing around them.
- */
-const READING = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 
 /** Deep enough for the payloads people write, shallow enough that a hostile one cannot spin. */
 const MAX_DEPTH = 6;
@@ -37,6 +31,15 @@ const MAX_FIELDS = 40;
  * is a JSON parse of the whole log on every arrival.
  */
 const SAMPLE = 200;
+
+/**
+ * The longest run a chart draws.
+ *
+ * Two hundred and fifty pixels of pane cannot show five thousand readings — twenty of them would
+ * share a pixel — and every arrival would redo the whole summary over all of them. The newest
+ * are what a console is for; the rest are still in the log, and the note says they are there.
+ */
+export const MAX_PLOT = 500;
 
 /**
  * The readings behind a run of log entries, or null when there is no chart to draw.
@@ -55,24 +58,35 @@ export function numericSeries(entries: LogEntry[], field?: string | null): Serie
 
   const path = field === undefined ? pick(entries) : field;
 
+  // The newest first in the log, so the window is taken off the front.
+  const window = entries.length > MAX_PLOT ? entries.slice(0, MAX_PLOT) : entries;
+
   const readings: Reading[] = [];
   let low = Infinity;
   let high = -Infinity;
 
-  // Newest first in the log; a chart is read left to right, oldest to newest.
-  for (let i = entries.length - 1; i >= 0; i--) {
-    const value = readingOf(entries[i], path);
+  // A chart is read left to right, oldest to newest.
+  for (let i = window.length - 1; i >= 0; i--) {
+    const value = readingOf(window[i], path);
     if (value === null) continue;
 
-    readings.push({ value, at: entries[i].at });
+    readings.push({ value, at: window[i].at });
     low = Math.min(low, value);
     high = Math.max(high, value);
   }
 
   // A chart of one point is a dot, and the row above it already shows that value in full.
-  if (readings.length < 2 || readings.length * 2 < entries.length) return null;
+  if (readings.length < 2 || readings.length * 2 < window.length) return null;
 
-  return { topic, field: path, readings, skipped: entries.length - readings.length, low, high };
+  return {
+    topic,
+    field: path,
+    readings,
+    skipped: window.length - readings.length,
+    of: entries.length > MAX_PLOT ? entries.length : null,
+    low,
+    high,
+  };
 }
 
 /**
@@ -152,7 +166,7 @@ function readingOf(entry: LogEntry, path: string | null): number | null {
   // plotting it as ten would put a number on the chart that never crossed the wire.
   if (!entry.body || entry.mode === 'hex') return null;
 
-  if (path === null) return READING.test(entry.body.trim()) ? Number(entry.body) : null;
+  if (path === null) return asReading(entry.body);
 
   const value = walk(parse(entry), path);
 

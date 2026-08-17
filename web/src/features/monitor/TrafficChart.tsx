@@ -161,6 +161,7 @@ export function TrafficChart({ entries }: { entries: LogEntry[] }) {
           fit={stats.fit}
           pace={stats.pace}
           skipped={series.skipped}
+          of={series.of}
           silence={silence}
           quartiles={detail.histogram}
         />

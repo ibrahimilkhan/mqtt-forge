@@ -21,6 +21,62 @@ function at(root: TopicNode, path: string): TopicNode {
   return node;
 }
 
+// A whole broker can be scanned for what is moving only if the rows carry the movement. The
+// tree keeps a short run per topic for that, which is not the log — it is bounded, and it holds
+// numbers rather than messages.
+describe('the run a topic keeps for its sparkline', () => {
+  const run = (tree: TopicNode, path: string) => at(tree, path).readings;
+
+  it('keeps the numbers a topic has sent, oldest first', () => {
+    let tree = emptyTree();
+    for (const value of ['21.5', '22', '20.75']) {
+      tree = applyMessage(tree, 'sensors/temp', value, 1000);
+    }
+
+    expect(run(tree, 'sensors/temp')).toEqual([21.5, 22, 20.75]);
+  });
+
+  it('keeps nothing for a topic whose payloads are not numbers', () => {
+    const tree = applyMessage(applyMessage(emptyTree(), 'sensors/state', 'ON', 1), 'sensors/state', 'OFF', 2);
+
+    expect(run(tree, 'sensors/state')).toEqual([]);
+  });
+
+  it('steps over a message it cannot read without losing the run', () => {
+    let tree = emptyTree();
+    for (const value of ['21.5', 'warming up', '22']) {
+      tree = applyMessage(tree, 'sensors/temp', value, 1000);
+    }
+
+    expect(run(tree, 'sensors/temp')).toEqual([21.5, 22]);
+  });
+
+  // A tree row is a thumbnail, not a chart: the pane below holds the history, and a tree of
+  // thousands of topics each keeping thousands of readings is a tree that eats the browser.
+  it('holds a short run and drops the oldest past it', () => {
+    let tree = emptyTree();
+    for (let i = 0; i < 40; i++) tree = applyMessage(tree, 'sensors/temp', String(i), 1000);
+
+    const readings = run(tree, 'sensors/temp');
+    expect(readings.length).toBeLessThanOrEqual(24);
+    expect(readings[readings.length - 1]).toBe(39);
+  });
+
+  it('gives a binary payload no reading, whatever its hex would parse as', () => {
+    const tree = applyMessage(emptyTree(), 'sensors/raw', '10', 1000, 0, false, 'hex');
+
+    expect(run(tree, 'sensors/raw')).toEqual([]);
+  });
+
+  // A branch's own row shows what is beneath it, and its children's readings are not its own.
+  it('keeps a run only on the topic the message landed on', () => {
+    const tree = applyMessage(emptyTree(), 'sensors/room/temp', '21.5', 1000);
+
+    expect(run(tree, 'sensors')).toEqual([]);
+    expect(run(tree, 'sensors/room/temp')).toEqual([21.5]);
+  });
+});
+
 describe('applyMessage', () => {
   it('creates a node per topic segment and records the payload on the leaf', () => {
     const tree = applyMessage(emptyTree(), 'sensors/room/temp', '21.5', 1000);
