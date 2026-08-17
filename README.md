@@ -4,13 +4,14 @@
 [![Image](https://img.shields.io/badge/ghcr.io-mqtt--forge-1e40af?logo=docker&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/pkgs/container/mqtt-forge)
 [![Licence](https://img.shields.io/github/license/ibrahimilkhan/mqtt-forge?color=1e40af)](LICENSE)
 
-An open-source MQTT test console: connect to a broker, watch topics as they arrive, and publish
-messages by hand. A .NET API drives an MQTT client and pushes what it receives to a React
-interface over SignalR.
+An open-source MQTT test console: connect to a broker, watch topics as they arrive, and publish.
+A .NET API drives an MQTT client and pushes what it receives to a React interface over SignalR.
 
 MQTTForge connects to a broker you already run — it is not a broker itself.
 
-![The console: a broker's topics as a live tree, every frame on the wire, and a publish form](.github/assets/console.png)
+![The console connected to a broker: the topic tree in the middle with alert and device branches
+in their rule colours, the wire log on the right showing time, direction, QoS and size on every
+row, and the publish form below it](.github/assets/console.png)
 
 ## What it does
 
@@ -66,11 +67,51 @@ if the app starts and no window appears.
 > makes the QR panel work, and it equally means anyone who can reach the port can publish to your
 > broker.
 
+## Running it with Docker
+
+**1. Start it.** One image covers amd64 and arm64, so this is the same line on an Intel box and
+on Apple Silicon:
+
+```
+docker run -d -p 5169:5169 --name mqtt-forge ghcr.io/ibrahimilkhan/mqtt-forge
+```
+
+**2. Open http://localhost:5169.** The console loads with the Broker panel already open.
+
+**3. Point it at your broker** — fill in the host and port, then **Connect**. Which host depends
+on where the broker runs:
+
+| Your broker runs | Host to enter |
+|---|---|
+| On another machine | Its hostname or IP |
+| In another container | That container's name, with both on one `--network` |
+| On this machine, outside Docker | `host.docker.internal` — **not** `localhost` |
+
+`localhost` inside a container means the container itself, which is why the last row needs the
+special name. On Docker Desktop it works as-is; on Linux add
+`--add-host=host.docker.internal:host-gateway` to the run command above.
+
+**4. Watch it fill.** Leave *Subscribe to every topic on connect* ticked and the topic tree
+builds as messages arrive. To be choosier, use the **Filters** panel — it takes one filter per
+line, so a whole list subscribes at once.
+
+**5. Read one branch.** Click a node in the tree and the log beside it narrows to that subtree.
+
+**6. Send one.** The publish form takes a topic, a payload as text, JSON or hex, a QoS and the
+retained flag. Clicking any logged message loads it back into the form to send again.
+
+**7. Stop and start.** `docker stop mqtt-forge` and `docker start mqtt-forge` keep everything;
+`docker rm` throws the settings away, which the next section is about.
+
 ## Colouring topics
 
 The **Colours** panel takes a list of MQTT filters and a colour for each — `sensors/+/temp`,
 `alerts/#`, whatever you watch for. Every topic a rule covers is then drawn in that colour, in
 the tree and in the log, with the row's left edge carrying it too.
+
+![The Colours panel holding three rules beside the tree they paint: sensors/+/temp in purple
+picks the temperatures out of the sensor branches, alerts/# colours that whole subtree red, and
+devices/# colours its own in teal](.github/assets/colours.png)
 
 When two rules cover one topic the more specific filter wins: read left to right, a named
 segment beats `+`, and `+` beats `#`. So `sensors/#` can colour a whole subtree while
