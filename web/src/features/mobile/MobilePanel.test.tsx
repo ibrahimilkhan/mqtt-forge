@@ -33,6 +33,32 @@ describe('MobilePanel', () => {
     expect(screen.getByRole('button', { name: 'Copied' })).toBeInTheDocument();
   });
 
+  // The panel only ever shows itself on a LAN address, which over plain http is not a secure
+  // context — so navigator.clipboard is undefined exactly where the button is on screen.
+  it('still copies where there is no clipboard API', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(navigator, 'clipboard', 'get').mockReturnValue(undefined as unknown as Clipboard);
+    const exec = vi.fn().mockReturnValue(true);
+    document.execCommand = exec;
+
+    render(<MobilePanel onClose={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Copy address' }));
+
+    expect(exec).toHaveBeenCalledWith('copy');
+    expect(screen.getByRole('button', { name: 'Copied' })).toBeInTheDocument();
+  });
+
+  it('admits it when the copy did not happen', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(navigator, 'clipboard', 'get').mockReturnValue(undefined as unknown as Clipboard);
+    document.execCommand = vi.fn().mockReturnValue(false);
+
+    render(<MobilePanel onClose={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Copy address' }));
+
+    expect(screen.getByRole('button', { name: 'Copy failed' })).toBeInTheDocument();
+  });
+
   it('explains itself instead of encoding a loopback address', () => {
     network.url = null;
     render(<MobilePanel onClose={vi.fn()} />);

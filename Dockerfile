@@ -21,5 +21,8 @@ COPY --from=build /app ./
 # Owned by APP_UID so a mounted volume stays writable under the non-root user.
 COPY --from=build --chown=$APP_UID:$APP_UID /data /data
 USER $APP_UID
+# The runtime image sets this to 8080; naming the port the image exposes keeps the two in step
+# and leaves ASPNETCORE_URLS free to override at `docker run -e`.
+ENV ASPNETCORE_HTTP_PORTS=5169
 EXPOSE 5169
 ENTRYPOINT ["./MqttForge.Api"]

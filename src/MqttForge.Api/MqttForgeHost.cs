@@ -13,9 +13,21 @@ namespace MqttForge.Api;
 // Shared by Program and the desktop shell; urls overrides config since desktop picks its port at runtime
 public static class MqttForgeHost
 {
+    /// <summary>Where it listens when nothing else says. See the note in <see cref="Build"/>.</summary>
+    public const string DefaultUrls = "http://0.0.0.0:5169";
+
     public static WebApplication Build(string[] args, string? urls = null)
     {
         var builder = WebApplication.CreateBuilder(args);
+
+        // A published app carries no launchSettings.json, so without a default Kestrel falls back
+        // to port 5000 — which on macOS AirPlay already answers on. This used to be pinned in
+        // appsettings.json, where it silently beat ASPNETCORE_URLS and ASPNETCORE_HTTP_PORTS:
+        // the prefixed environment provider sits below the JSON file, so the two variables any
+        // .NET user would reach for did nothing, and the container warned about it at every
+        // start. Filling the gap only when the environment named no binding leaves both working.
+        if (builder.Configuration["Urls"] is null && builder.Configuration["HTTP_PORTS"] is null)
+            builder.WebHost.UseUrls(DefaultUrls);
 
         if (urls is not null) builder.WebHost.UseUrls(urls);
 

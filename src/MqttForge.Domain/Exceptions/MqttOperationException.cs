@@ -39,3 +39,13 @@ public sealed class MessageRejectedException : MqttOperationException
     public MessageRejectedException(string message, Exception? inner = null)
         : base(message, inner) { }
 }
+
+// The colour rules could not be written down. Unlike the connection settings, which are saved
+// as a convenience beside an action that succeeded, saving is the whole of what the Colours
+// panel was asked to do — so this is reported rather than logged and swallowed. In practice it
+// is a mount the container cannot write to.
+public sealed class RulesNotSavedException : MqttOperationException
+{
+    public RulesNotSavedException(string message, Exception? inner = null)
+        : base(message, inner) { }
+}
