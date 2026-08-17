@@ -83,6 +83,20 @@
     padding-left: 12px;
   }
 
+  /* Taken off the screen but left in the document: the pane titles are gone from view, and a
+     screen reader still has a name for each region and a heading to jump between them by. */
+  .srOnly {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
   /* Pane heads become drag handles once the workspace hands them its props, and every pane head
      styles itself in its own module — so the affordance is declared once, here. */
   [draggable="true"] { cursor: grab; }
