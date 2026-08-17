@@ -100,6 +100,20 @@ describe('numericSeries over JSON bodies', () => {
     expect(series?.readings.map((reading) => reading.value)).toEqual([21.5, 22, 20]);
   });
 
+  // A battery falling four thousandths of a volt and a humidity swinging ten per cent are both
+  // 'changing'; only one of them is a chart worth opening on.
+  it('opens on the field that moves the most against its own size', () => {
+    const series = numericSeries(
+      json(
+        { battery: 3.9, hum: 50, temp: 21 },
+        { battery: 3.899, hum: 55, temp: 21.1 },
+        { battery: 3.898, hum: 45, temp: 20.9 },
+      ),
+    );
+
+    expect(series?.field).toBe('hum');
+  });
+
   it('charts the field it is given rather than the one it would have picked', () => {
     const series = numericSeries(json({ temp: 21.5, hum: 54 }, { temp: 22, hum: 55 }), 'hum');
 

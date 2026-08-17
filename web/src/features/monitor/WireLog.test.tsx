@@ -343,7 +343,9 @@ describe('the chart over the entries', () => {
 
     render(<WireLog />);
 
-    expect(screen.getByRole('img', { name: '3 readings on sensors/temp, 19 to 24, latest 19' })).toBeInTheDocument();
+    expect(screen.getByTestId('plotArea')).toHaveAccessibleName(
+      /^3 readings on sensors\/temp, 19 to 24, latest 19/,
+    );
   });
 
   // High and low are the same number, and printing it twice reads as two facts where there is one.
@@ -437,6 +439,10 @@ describe('what the chart says about the readings', () => {
 
   const note = () => screen.getByTestId('note').textContent ?? '';
 
+  // 1, 40, 2, 39 … — every value once, so the spread is even, and the run ends where it started.
+  const evenSpread = () =>
+    Array.from({ length: 20 }, (_, i) => [`${i + 1}`, `${40 - i}`]).flat();
+
   it('notes how many readings there are, where their middle is and how far they stray', () => {
     readings('sensors/temp', '20', '21', '22', '23', '24');
     useSelectionStore.getState().select(chip);
@@ -450,14 +456,48 @@ describe('what the chart says about the readings', () => {
     expect(note()).toContain('20–24');
   });
 
-  // An even ramp is the uniform distribution exactly, so this is a shape the fit has to find.
+  // Every value from one to forty, once each, in an order that goes nowhere: the uniform
+  // distribution exactly, and with no trend on top of it for the note to prefer.
   it('names the shape the readings fall into', () => {
-    readings('sensors/temp', ...Array.from({ length: 40 }, (_, i) => `${i + 1}`));
+    readings('sensors/temp', ...evenSpread());
     useSelectionStore.getState().select(chip);
 
     render(<WireLog />);
 
     expect(note()).toContain('uniform');
+  });
+
+  // A ramp is uniform, and saying so of a draining battery is true and useless: the shape is the
+  // trend, not a property of the readings around it. The direction is the reading that means
+  // something, so it is the one that stays.
+  it('names no shape for a run that is going somewhere', () => {
+    readings('sensors/battery', ...Array.from({ length: 40 }, (_, i) => `${(3.9 - i * 0.004).toFixed(3)}`));
+    useSelectionStore.getState().select({ label: 'sensors/battery', filter: 'sensors/battery' });
+
+    render(<WireLog />);
+
+    expect(note()).toContain('falling');
+    expect(note()).not.toContain('uniform');
+  });
+
+  // 'Not enough evidence to reject' is what the test returns, and 'normal' flat out is more than
+  // that — at these sample sizes the difference is the whole claim.
+  it('hedges the shape it names', () => {
+    readings('sensors/temp', ...evenSpread());
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(note()).toContain('≈ uniform');
+  });
+
+  it('writes a range that crosses zero in words rather than dashes', () => {
+    readings('sensors/drift', '-2.5', '-1', '0', '1.75', '-0.5', '2');
+    useSelectionStore.getState().select({ label: 'sensors/drift', filter: 'sensors/drift' });
+
+    render(<WireLog />);
+
+    expect(note()).toContain('-2.5 to 2');
   });
 
   it('names no shape for a run too short to have one', () => {
@@ -568,6 +608,14 @@ describe('choosing what the chart draws', () => {
   const readings = (topic: string, ...bodies: string[]) =>
     bodies.forEach((body) => useLogStore.getState().push({ kind: 'recv', topic, body }));
 
+  // Tabbing rather than focusing: that the plot is *reachable* from the keyboard is half of what
+  // is being checked, and counting tabs would tie the test to everything else in the pane.
+  const reachPlot = async () => {
+    const plot = screen.getByTestId('plotArea');
+    for (let step = 0; step < 12 && document.activeElement !== plot; step++) await userEvent.tab();
+    return plot;
+  };
+
   it('offers the numeric fields a JSON topic carries', () => {
     sends('sensors/env', { temp: 21.5, hum: 54 }, { temp: 22, hum: 55 });
     useSelectionStore.getState().select(chip);
@@ -588,21 +636,21 @@ describe('choosing what the chart draws', () => {
     expect(screen.getByTestId('plotArea')).toHaveAccessibleName(/readings of temp/);
   });
 
-  // Fields that every message carries are tied on coverage, and the tie breaks by name — an
-  // order that does not shuffle itself as the traffic comes in.
-  it('starts on the best covered field and says which one that is', async () => {
+  // Fields every message carries are tied on coverage, and the tie goes to the one doing
+  // something: half a degree on twenty-one is a bigger move than a point of humidity on fifty.
+  it('starts on the field that moves the most and says which one that is', async () => {
     sends('sensors/env', { temp: 21.5, hum: 54 }, { temp: 22, hum: 55 });
     useSelectionStore.getState().select(chip);
 
     render(<WireLog />);
 
-    expect(screen.getByRole('button', { name: 'Chart hum' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'Chart temp' })).toHaveAttribute('aria-pressed', 'false');
-
-    await userEvent.click(screen.getByRole('button', { name: 'Chart temp' }));
-
     expect(screen.getByRole('button', { name: 'Chart temp' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'Chart hum' })).toHaveAttribute('aria-pressed', 'false');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Chart hum' }));
+
+    expect(screen.getByRole('button', { name: 'Chart hum' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Chart temp' })).toHaveAttribute('aria-pressed', 'false');
   });
 
   // The field a device reports in most of its messages is both the likeliest one wanted and the
@@ -642,6 +690,57 @@ describe('choosing what the chart draws', () => {
     expect(screen.getByTestId('plot')).toBeInTheDocument();
   });
 
+  // A chart whose values can only be read by holding a mouse over them is a chart half the
+  // readers cannot read at all.
+  it('walks the readings from the keyboard', async () => {
+    readings('sensors/temp', '10', '20', '30', '40', '50');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+    await reachPlot();
+
+    // Landing on the plot starts at the newest reading, which is the one the row above shows.
+    expect(screen.getByTestId('plotArea')).toHaveFocus();
+    expect(screen.getByTestId('reading')).toHaveTextContent('50');
+
+    await userEvent.keyboard('{ArrowLeft}{ArrowLeft}');
+    expect(screen.getByTestId('reading')).toHaveTextContent('30');
+
+    await userEvent.keyboard('{ArrowRight}');
+    expect(screen.getByTestId('reading')).toHaveTextContent('40');
+
+    await userEvent.keyboard('{Home}');
+    expect(screen.getByTestId('reading')).toHaveTextContent('10');
+
+    await userEvent.keyboard('{End}');
+    expect(screen.getByTestId('reading')).toHaveTextContent('50');
+  });
+
+  it('says out loud which reading it landed on', async () => {
+    readings('sensors/temp', '10', '20', '30');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+    await reachPlot();
+    await userEvent.keyboard('{ArrowLeft}');
+
+    const spoken = screen.getByTestId('spoken');
+    expect(spoken).toHaveAttribute('aria-live', 'polite');
+    expect(spoken).toHaveTextContent('20');
+  });
+
+  it('drops the readout when the plot loses focus', async () => {
+    readings('sensors/temp', '10', '20', '30');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+    await reachPlot();
+    expect(screen.getByTestId('reading')).toBeInTheDocument();
+
+    await userEvent.tab();
+    expect(screen.queryByTestId('reading')).not.toBeInTheDocument();
+  });
+
   // Every console can show a number. Getting the run out of the console and into whatever the
   // reader actually analyses in is the part they all leave undone.
   it('copies the readings out as CSV', async () => {
@@ -655,6 +754,22 @@ describe('choosing what the chart draws', () => {
 
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining('time,sensors/temp'));
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining('21.5'));
+  });
+
+  // Clipboard access is refused often enough — an insecure origin, a locked-down browser — that
+  // a button which silently does nothing is a real outcome rather than a theoretical one.
+  it('says so when the clipboard refuses', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
+      configurable: true,
+    });
+    readings('sensors/temp', '21.5', '22');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+    await userEvent.click(screen.getByRole('button', { name: 'Copy as CSV' }));
+
+    expect(await screen.findByRole('button', { name: 'Copy failed' })).toBeInTheDocument();
   });
 
   it('says when the readings have been copied', async () => {

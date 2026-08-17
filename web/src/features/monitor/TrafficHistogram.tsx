@@ -7,8 +7,8 @@ import styles from './TrafficChart.module.css';
 const SIDE = 100;
 
 /** Enough bars to show a shape, few enough that each still has readings in it. */
-const FEWEST_BINS = 4;
-const MOST_BINS = 20;
+const FEWEST_BINS = 5;
+const MOST_BINS = 24;
 
 /**
  * How often each value came up, which is the question the distribution in the note answers.
@@ -99,8 +99,11 @@ type Bin = { from: number; to: number; count: number };
 
 /**
  * Bin width by Freedman–Diaconis, which takes the middle half of the readings rather than their
- * ends: one outlier should not decide how coarse the whole picture is. Sturges' rule stands in
- * where the middle half is a single value and that width would be zero.
+ * ends: one outlier should not decide how coarse the whole picture is.
+ *
+ * Whichever of it and Sturges' rule asks for more bars wins. Freedman–Diaconis is built around a
+ * run with one hump in it, and under-bins a run with two — a sensor swinging between a high and
+ * a low is exactly that, and four fat bars would hide the very thing worth seeing.
  */
 function binsFor(values: number[], summary: Summary): Bin[] {
   const span = summary.high - summary.low;
@@ -110,7 +113,11 @@ function binsFor(values: number[], summary: Summary): Bin[] {
   const width = iqr > 0 ? (2 * iqr) / Math.cbrt(summary.n) : 0;
   const count = Math.min(
     MOST_BINS,
-    Math.max(FEWEST_BINS, width > 0 ? Math.ceil(span / width) : Math.ceil(Math.log2(summary.n) + 1)),
+    Math.max(
+      FEWEST_BINS,
+      width > 0 ? Math.ceil(span / width) : 0,
+      Math.ceil(Math.log2(summary.n) + 1),
+    ),
   );
 
   const bins: Bin[] = Array.from({ length: count }, (_, index) => ({

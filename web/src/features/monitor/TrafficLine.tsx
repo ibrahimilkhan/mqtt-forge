@@ -1,4 +1,4 @@
-import { useState, type PointerEvent } from 'react';
+import { useState, type KeyboardEvent, type PointerEvent } from 'react';
 import type { Series } from '../../lib/series';
 import type { Summary } from '../../lib/stats';
 import styles from './TrafficChart.module.css';
@@ -46,12 +46,31 @@ export function TrafficLine({
   const latest = readings[readings.length - 1];
   const banded = summary.n >= ENOUGH_FOR_A_BAND && summary.sd > 0;
 
+  const last = readings.length - 1;
+  const settle = (step: number) => setHovered(Math.min(Math.max(step, 0), last));
+
   const follow = (event: PointerEvent<HTMLDivElement>) => {
     const { left, width } = event.currentTarget.getBoundingClientRect();
     if (!width) return;
 
-    const step = Math.round(((event.clientX - left) / width) * (readings.length - 1));
-    setHovered(Math.min(Math.max(step, 0), readings.length - 1));
+    settle(Math.round(((event.clientX - left) / width) * last));
+  };
+
+  /**
+   * The same walk, without a pointer.
+   *
+   * A chart whose values can only be read by holding a mouse over them is a chart half the
+   * readers cannot read at all — and on a run of a thousand, arrow keys are the only way to land
+   * on one reading exactly rather than near it.
+   */
+  const walk = (event: KeyboardEvent<HTMLDivElement>) => {
+    const at = hovered ?? last;
+    const steps: Record<string, number> = { ArrowLeft: at - 1, ArrowRight: at + 1, Home: 0, End: last };
+    const next = steps[event.key];
+    if (next === undefined) return;
+
+    event.preventDefault();
+    settle(next);
   };
 
   return (
@@ -59,7 +78,12 @@ export function TrafficLine({
       {/* The line says the shape and the labels say the size of it, which is the one thing a
           sparkline cannot carry on its own. Muted, like the stamps: this is furniture. A run
           that never moved has one number to give, not the same one twice. */}
-      <div className={styles.scale} aria-hidden="true">
+      <div
+        className={styles.scale}
+        // With one label and a line down the middle, the label belongs beside the line.
+        data-flat={span === 0 ? '' : undefined}
+        aria-hidden="true"
+      >
         <span>{high}</span>
         {span !== 0 && <span>{low}</span>}
       </div>
@@ -71,9 +95,15 @@ export function TrafficLine({
           className={styles.plot}
           data-testid="plotArea"
           role="img"
-          aria-label={`${readings.length} readings${series.field ? ` of ${series.field}` : ''} on ${series.topic}, ${low} to ${high}, latest ${latest.value}`}
+          aria-label={`${readings.length} readings${series.field ? ` of ${series.field}` : ''} on ${series.topic}, ${low} to ${high}, latest ${latest.value}. Arrow keys walk the readings.`}
+          // Focusable so the readings can be walked without a pointer. Landing on it starts at
+          // the newest reading, which is the one the row above is showing.
+          tabIndex={0}
           onPointerMove={follow}
           onPointerLeave={() => setHovered(null)}
+          onFocus={() => setHovered((at) => at ?? last)}
+          onBlur={() => setHovered(null)}
+          onKeyDown={walk}
         >
           <svg
             className={styles.plotSvg}
@@ -90,7 +120,11 @@ export function TrafficLine({
                 y={y(summary.mean + summary.sd)}
                 width={SIDE}
                 height={Math.max(y(summary.mean - summary.sd) - y(summary.mean + summary.sd), 0)}
-              />
+              >
+                {/* A line drawn across a chart with nothing to say what it is is a mystery the
+                    reader has to solve before they can read anything else. */}
+                <title>mean, and one deviation either side of it</title>
+              </rect>
             )}
             {banded && (
               <line className={styles.mean} x1={0} y1={y(summary.mean)} x2={SIDE} y2={y(summary.mean)} />
@@ -99,7 +133,9 @@ export function TrafficLine({
             {/* Where a reading can go either way, which side of nothing it is on is the first
                 thing read off the shape — and the line alone cannot say where nothing is. */}
             {low < 0 && high > 0 && (
-              <line className={styles.zero} data-testid="zero" x1={0} y1={y(0)} x2={SIDE} y2={y(0)} />
+              <line className={styles.zero} data-testid="zero" x1={0} y1={y(0)} x2={SIDE} y2={y(0)}>
+                <title>zero</title>
+              </line>
             )}
 
             {hovered !== null && (
@@ -139,6 +175,7 @@ export function TrafficLine({
             <span
               className={styles.reading}
               data-testid="reading"
+              aria-hidden="true"
               // Centred on the reading, except at the ends, where a centred label would hang off
               // the pane: there it sits inside the run it belongs to.
               style={{ left: `${x(hovered)}%`, transform: shift(hovered, readings.length) }}
@@ -148,6 +185,14 @@ export function TrafficLine({
             </span>
           )}
         </div>
+
+        {/* Outside the plot on purpose: role="img" makes everything inside it presentational, so
+            a live region in there would announce nothing. This is the same readout in words. */}
+        <span className="srOnly" data-testid="spoken" aria-live="polite">
+          {hovered === null
+            ? ''
+            : `${readings[hovered].value} at ${readings[hovered].at.toLocaleTimeString('en-GB', { hour12: false })}, reading ${hovered + 1} of ${readings.length}`}
+        </span>
       </div>
     </div>
   );
