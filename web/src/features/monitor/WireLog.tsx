@@ -89,15 +89,23 @@ function EntryList({ entries: live }: { entries: LogEntry[] }) {
           <p className={styles.history}>{history}</p>
         )}
 
+        {/* A count of nothing is not news: while nothing has arrived behind the hold, the
+            control says only that it is holding. */}
         <button
           type="button"
           className={styles.hold}
           aria-pressed={held !== null}
-          aria-label={held ? `Let the pane go, ${arrived} arrived while held` : 'Hold the pane'}
+          aria-label={
+            held
+              ? arrived > 0
+                ? `Let the pane go, ${arrived} arrived while held`
+                : 'Let the pane go'
+              : 'Hold the pane'
+          }
           title={held ? `${arrived} arrived while held` : 'Hold the pane still'}
           onClick={() => setHeld(held ? null : live)}
         >
-          {held ? `held · ${arrived}` : 'hold'}
+          {held ? (arrived > 0 ? `held · ${arrived}` : 'held') : 'hold'}
         </button>
       </div>
     </>

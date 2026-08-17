@@ -333,6 +333,16 @@ describe('holding the pane still', () => {
     expect(screen.getByRole('button', { name: 'Let the pane go, 3 arrived while held' })).toBeInTheDocument();
   });
 
+  it('counts nothing while nothing has arrived behind it', async () => {
+    readings('sensors/temp', '21', '22');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+    await userEvent.click(screen.getByRole('button', { name: 'Hold the pane' }));
+
+    expect(screen.getByRole('button', { name: 'Let the pane go' })).toHaveTextContent('held');
+  });
+
   it('catches up when it is let go', async () => {
     readings('sensors/temp', '21', '22');
     useSelectionStore.getState().select(chip);
