@@ -1,7 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 // The log reads its colour rules through react-query, so every render here needs a client.
 import { renderWithClient as render } from '../../test/renderWithClient';
 import { server } from '../../test/server';
@@ -16,7 +16,7 @@ const chip = { label: 'sensors/#', filter: 'sensors/#' };
 
 // Oldest first, so the newest lands at the head of the store.
 const received = (...topics: string[]) =>
-  topics.forEach((topic) => useLogStore.getState().push({ kind: 'recv', verb: '↓', topic }));
+  topics.forEach((topic) => useLogStore.getState().push({ kind: 'recv', topic }));
 
 // Already decoded, the way the hub bridge hands arrivals to the log — this bypasses the hub.
 const msg = (topic: string): DecodedMessage => ({
@@ -70,11 +70,12 @@ describe('WireLog', () => {
     expect(screen.getByText('No traffic on sensors/# yet.')).toBeInTheDocument();
   });
 
-  it('keeps only the entries matching the selected filter', () => {
+  it('keeps only the entries matching the selected filter', async () => {
     received('sensors/room/temp', 'actuators/valve', 'sensors/hall/temp');
     useSelectionStore.getState().select(chip);
 
     render(<WireLog />);
+    await userEvent.click(screen.getByRole('button', { name: '2 in history' }));
 
     const topics = screen.getAllByTestId('topic').map((topic) => topic.textContent);
     expect(topics).toEqual(['sensors/hall/temp', 'sensors/room/temp']);
@@ -84,13 +85,12 @@ describe('WireLog', () => {
     useLogStore.getState().push({ kind: 'ok', verb: 'Subscribed', topic: 'sensors/#' });
     useLogStore.getState().push({ kind: 'fault', verb: 'Subscribe failed', topic: 'sensors/#' });
     received('sensors/room/temp');
-    useLogStore.getState().push({ kind: 'sent', verb: '↑', topic: 'sensors/room/set' });
     useSelectionStore.getState().select(chip);
 
     render(<WireLog />);
 
-    const verbs = screen.getAllByTestId('entry').map((entry) => within(entry).getByTestId('verb').textContent);
-    expect(verbs).toEqual(['↑', '↓']);
+    const topics = screen.getAllByTestId('topic').map((topic) => topic.textContent);
+    expect(topics).toEqual(['sensors/room/temp']);
   });
 
   // A command's filter is not a topic, so a selection matching it says nothing about traffic.
@@ -103,14 +103,26 @@ describe('WireLog', () => {
     expect(screen.getByText('No traffic on sensors/# yet.')).toBeInTheDocument();
   });
 
-  it('stops at five entries and offers the rest', () => {
+  it('shows the newest arrival alone, over the count the log holds', () => {
     received(...Array.from({ length: 8 }, (_, i) => `sensors/${i}`));
     useSelectionStore.getState().select(chip);
 
     render(<WireLog />);
 
-    expect(screen.getAllByTestId('entry')).toHaveLength(5);
-    expect(screen.getByRole('button', { name: 'Show 3 more' })).toBeInTheDocument();
+    expect(screen.getAllByTestId('entry')).toHaveLength(1);
+    expect(screen.getByTestId('topic')).toHaveTextContent('sensors/7');
+    expect(screen.getByRole('button', { name: '8 in history' })).toBeInTheDocument();
+  });
+
+  // The count answers 'how much history is there on this topic', so what the log holds for other
+  // topics is not part of it.
+  it('counts what the selection holds rather than the whole log', () => {
+    received('sensors/a', 'actuators/valve', 'sensors/b');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(screen.getByRole('button', { name: '2 in history' })).toBeInTheDocument();
   });
 
   it('reveals the rest on demand and folds them back', async () => {
@@ -118,22 +130,46 @@ describe('WireLog', () => {
     useSelectionStore.getState().select(chip);
 
     render(<WireLog />);
-    await userEvent.click(screen.getByRole('button', { name: 'Show 3 more' }));
+    await userEvent.click(screen.getByRole('button', { name: '8 in history' }));
 
     expect(screen.getAllByTestId('entry')).toHaveLength(8);
 
     await userEvent.click(screen.getByRole('button', { name: 'Show fewer' }));
 
-    expect(screen.getAllByTestId('entry')).toHaveLength(5);
+    expect(screen.getAllByTestId('entry')).toHaveLength(1);
   });
 
-  it('leaves the button off when five entries cover everything', () => {
-    received('sensors/a', 'sensors/b');
+  // Still counted, since 'how much is here' is worth an answer either way — but there is nothing
+  // behind it to reveal, so it is a readout rather than a handle.
+  it('states the count without offering to expand a lone entry', () => {
+    received('sensors/a');
     useSelectionStore.getState().select(chip);
 
     render(<WireLog />);
 
-    expect(screen.queryByRole('button', { name: /Show/ })).not.toBeInTheDocument();
+    expect(screen.getByText('1 in history')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '1 in history' })).not.toBeInTheDocument();
+  });
+
+  // Which element carries the count depends on whether there is history behind it, and that is a
+  // fact about what it does, not about how it reads: one line of type either way.
+  it('sets the count in the same type whether or not it opens onto anything', () => {
+    const look = (element: HTMLElement) => {
+      const style = getComputedStyle(element);
+      return [style.fontFamily, style.fontSize, style.letterSpacing, style.textTransform, style.color]
+        .join(' ');
+    };
+
+    received('sensors/a');
+    useSelectionStore.getState().select(chip);
+    const lone = render(<WireLog />);
+    const readout = look(screen.getByText('1 in history'));
+    lone.unmount();
+
+    received('sensors/b');
+    render(<WireLog />);
+
+    expect(look(screen.getByRole('button', { name: '2 in history' }))).toBe(readout);
   });
 
   it('folds the list back up when the selection changes', async () => {
@@ -142,10 +178,10 @@ describe('WireLog', () => {
     useSelectionStore.getState().select(chip);
 
     render(<WireLog />);
-    await userEvent.click(screen.getByRole('button', { name: 'Show 3 more' }));
+    await userEvent.click(screen.getByRole('button', { name: '8 in history' }));
     act(() => useSelectionStore.getState().select({ label: 'actuators', filter: 'actuators/#' }));
 
-    expect(screen.getAllByTestId('entry')).toHaveLength(5);
+    expect(screen.getAllByTestId('entry')).toHaveLength(1);
   });
 
   // The entries start at the pane's edge. What they are about is on every row already, so a
@@ -174,7 +210,6 @@ describe('WireLog', () => {
   it('shows the stamps and the body', () => {
     useLogStore.getState().push({
       kind: 'recv',
-      verb: '↓',
       topic: 'sensors/room/temp',
       body: '21.5',
       stamps: ['QoS 1', 'RETAINED', '4B'],
@@ -191,10 +226,9 @@ describe('WireLog', () => {
 
   // One line of furniture over the topic, read left to right, rather than the stamps trailing
   // the topic on the line below.
-  it('runs the time, the verb and the stamps along a single line', () => {
+  it('runs the time and the stamps along a single line', () => {
     useLogStore.getState().push({
       kind: 'recv',
-      verb: '↓',
       topic: 'sensors/room/temp',
       stamps: ['QoS 1', 'RETAINED', '4B'],
     });
@@ -203,14 +237,13 @@ describe('WireLog', () => {
     render(<WireLog />);
 
     const head = screen.getByTestId('head');
-    expect(head).toHaveTextContent(/^\d\d:\d\d:\d\d↓QoS 1RETAINED4B$/);
+    expect(head).toHaveTextContent(/^\d\d:\d\d:\d\dQoS 1RETAINED4B$/);
     expect(within(screen.getByTestId('topic')).queryByText('4B')).not.toBeInTheDocument();
   });
 
   it('names each stamp so retained messages can be coloured apart', () => {
     useLogStore.getState().push({
       kind: 'recv',
-      verb: '↓',
       topic: 'sensors/room/temp',
       stamps: ['QoS 1', 'RETAINED'],
     });
@@ -222,18 +255,17 @@ describe('WireLog', () => {
   });
 
   it('marks each entry with its kind, which drives the colour', () => {
-    useLogStore.getState().push({ kind: 'sent', verb: '↑', topic: 'sensors/room/temp' });
+    received('sensors/room/temp');
     useSelectionStore.getState().select(chip);
 
     render(<WireLog />);
 
-    expect(screen.getByTestId('entry')).toHaveAttribute('data-kind', 'sent');
+    expect(screen.getByTestId('entry')).toHaveAttribute('data-kind', 'recv');
   });
 
   it('sends a logged message back to publish, settings and all', async () => {
     useLogStore.getState().push({
       kind: 'recv',
-      verb: '↓',
       topic: 'sensors/temp',
       body: '21.5',
       qos: 2,
@@ -253,7 +285,7 @@ describe('WireLog', () => {
   });
 
   it('holds off loading when the click is the end of a text selection', () => {
-    useLogStore.getState().push({ kind: 'recv', verb: '↓', topic: 'sensors/temp', body: '21.5' });
+    useLogStore.getState().push({ kind: 'recv', topic: 'sensors/temp', body: '21.5' });
     useSelectionStore.getState().select(chip);
 
     render(<WireLog />);
@@ -266,6 +298,134 @@ describe('WireLog', () => {
     fireEvent.click(body);
 
     expect(useComposeStore.getState().draft).toBeNull();
+  });
+});
+
+// A topic that sends numbers is sending a measurement, and a run of measurements has a shape the
+// rows cannot show: the newest value says where a sensor is, not where it has been going.
+describe('the chart over the entries', () => {
+  const readings = (topic: string, ...bodies: string[]) =>
+    bodies.forEach((body) => useLogStore.getState().push({ kind: 'recv', topic, body }));
+
+  it('charts a topic that reads as numbers', () => {
+    readings('sensors/temp', '21.5', '22.5', '20');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(screen.getByTestId('chart')).toBeInTheDocument();
+  });
+
+  it('plots every reading the log holds, not just the row on show', () => {
+    readings('sensors/temp', ...Array.from({ length: 8 }, (_, i) => `${i}`));
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(screen.getByTestId('plot').getAttribute('points')?.trim().split(/\s+/)).toHaveLength(8);
+  });
+
+  it('labels the high and the low, which is what the line alone cannot say', () => {
+    readings('sensors/temp', '21.5', '24.25', '19');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(within(screen.getByTestId('chart')).getByText('24.25')).toBeInTheDocument();
+    expect(within(screen.getByTestId('chart')).getByText('19')).toBeInTheDocument();
+  });
+
+  // The shape is the whole point of a chart, so what stands in for it has to carry the same
+  // facts: how many readings, over what range, and where they ended up.
+  it('says in words what the shape shows', () => {
+    readings('sensors/temp', '21.5', '24', '19');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(screen.getByRole('img', { name: '3 readings on sensors/temp, 19 to 24, latest 19' })).toBeInTheDocument();
+  });
+
+  // High and low are the same number, and printing it twice reads as two facts where there is one.
+  it('gives a topic repeating one value a single label', () => {
+    readings('sensors/temp', '21.5', '21.5', '21.5');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(within(screen.getByTestId('chart')).getAllByText('21.5')).toHaveLength(1);
+  });
+
+  // Where a reading can go either way, which side of nothing it is on is the first thing read
+  // off the shape — and a line alone cannot say where nothing is.
+  it('marks where zero is when the readings cross it', () => {
+    readings('sensors/drift', '-2.5', '1.75', '-0.5');
+    useSelectionStore.getState().select({ label: 'sensors/drift', filter: 'sensors/drift' });
+
+    render(<WireLog />);
+
+    expect(screen.getByTestId('zero')).toBeInTheDocument();
+  });
+
+  it('leaves zero unmarked when every reading is on one side of it', () => {
+    readings('sensors/temp', '21.5', '22', '20');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(screen.queryByTestId('zero')).not.toBeInTheDocument();
+  });
+
+  it('leaves the chart out when the bodies are not readings', () => {
+    readings('sensors/state', 'ON', 'OFF', 'ON');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(screen.queryByTestId('chart')).not.toBeInTheDocument();
+  });
+
+  it('leaves the chart out when the selection mixes topics', () => {
+    readings('sensors/temp', '21.5', '22');
+    readings('sensors/hum', '54');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(screen.queryByTestId('chart')).not.toBeInTheDocument();
+  });
+
+  it('takes the colour a rule gives the topic, the way the entries do', async () => {
+    server.use(
+      http.get('/api/colour-rules', () =>
+        HttpResponse.json({ rules: [{ filter: 'sensors/temp', colour: '#b45309' }] }),
+      ),
+    );
+    readings('sensors/temp', '21.5', '22');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    await waitFor(() => expect(screen.getByTestId('plot')).toHaveAttribute('stroke', '#b45309'));
+  });
+
+  // The rows hold every value as text, but only five words of them at a time; the chart is where
+  // an older reading is still on screen, so it has to be readable there too.
+  it('reads out the value under the pointer', () => {
+    readings('sensors/temp', '10', '20', '30', '40', '50');
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    const plot = screen.getByTestId('plotArea');
+    vi.spyOn(plot, 'getBoundingClientRect').mockReturnValue({ left: 0, width: 100 } as DOMRect);
+    fireEvent.pointerMove(plot, { clientX: 50 });
+
+    expect(screen.getByTestId('reading')).toHaveTextContent('30');
+
+    fireEvent.pointerLeave(plot);
+
+    expect(screen.queryByTestId('reading')).not.toBeInTheDocument();
   });
 });
 
@@ -294,6 +454,7 @@ describe('colour rules', () => {
     received('sensors/a/temp', 'sensors/a/hum');
 
     render(<WireLog />);
+    await userEvent.click(screen.getByRole('button', { name: '2 in history' }));
 
     await waitFor(() => expect(topicOf('sensors/a/temp')).toHaveStyle({ color: '#b45309' }));
     expect(topicOf('sensors/a/hum').style.color).toBe('');
@@ -321,8 +482,8 @@ describe('colour rules', () => {
   });
 });
 
-// The entry's left edge is its kind — ink for a message, signal for a sent one. A rule that
-// covers the topic takes that edge over, so a run of entries reads by rule at a glance.
+// The entry's left edge is its kind — ink for a message that arrived. A rule that covers the
+// topic takes that edge over, so a run of entries reads by rule at a glance.
 describe('the entry wears its rule on the left edge', () => {
   const rules = (...rules: Array<{ filter: string; colour: string }>) =>
     server.use(http.get('/api/colour-rules', () => HttpResponse.json({ rules })));
@@ -351,6 +512,7 @@ describe('the entry wears its rule on the left edge', () => {
     received('sensors/a/temp', 'sensors/a/hum');
 
     render(<WireLog />);
+    await userEvent.click(screen.getByRole('button', { name: '2 in history' }));
 
     await waitFor(() => expect(edgeOf('sensors/a/temp')).toBe('#b45309'));
     expect(edgeOf('sensors/a/hum')).toBe('');
@@ -364,21 +526,20 @@ describe('the head and the stamps stay quiet', () => {
   const rules = (...rules: Array<{ filter: string; colour: string }>) =>
     server.use(http.get('/api/colour-rules', () => HttpResponse.json({ rules })));
 
-  it('leaves the verb alone when a rule covers the topic', async () => {
+  it('leaves the head alone when a rule covers the topic', async () => {
     rules({ filter: 'sensors/+/temp', colour: '#b45309' });
     useSelectionStore.getState().select(chip);
-    received('sensors/a/temp');
+    useLogStore.getState().push({ kind: 'recv', topic: 'sensors/a/temp', stamps: ['QoS 1'] });
 
     render(<WireLog />);
 
     await waitFor(() => expect(screen.getByTestId('topic')).toHaveStyle({ color: '#b45309' }));
-    expect(screen.getByTestId('verb').style.color).toBe('');
+    expect(screen.getByText('QoS 1').style.color).toBe('');
   });
 
   it('gives a retained message no colour of its own', () => {
     useLogStore.getState().push({
       kind: 'recv',
-      verb: '↓',
       topic: 'sensors/a/temp',
       stamps: ['QoS 1', 'RETAINED', '4B'],
     });
@@ -393,39 +554,15 @@ describe('the head and the stamps stay quiet', () => {
     expect(colourOf('RETAINED')).toBe(colourOf('4B'));
   });
 
-  // The arrow is a fact about the message like 'qos 1' is, so it wears the same box: a bare
-  // glyph among framed labels read as the odd one out.
-  it('boxes the verb the way it boxes a stamp', () => {
-    useLogStore.getState().push({
-      kind: 'recv',
-      verb: '↓',
-      topic: 'sensors/a/temp',
-      stamps: ['QoS 1'],
-    });
-    useSelectionStore.getState().select(chip);
-
-    render(<WireLog />);
-
-    const boxOf = (element: HTMLElement) => {
-      const style = getComputedStyle(element);
-      return [style.border, style.borderRadius, style.padding].join(' ');
-    };
-
-    expect(boxOf(screen.getByTestId('verb'))).toBe(boxOf(screen.getByText('QoS 1')));
-    expect(getComputedStyle(screen.getByTestId('verb')).border).not.toBe('');
-  });
-
-  // The arrow is the whole word on a message row, so the word has to survive somewhere: on
-  // hover, and as what a screen reader announces in place of a glyph it cannot name.
-  it('says in words which way the arrow points', () => {
-    useLogStore.getState().push({ kind: 'sent', verb: '↑', topic: 'sensors/a/temp' });
+  // Every row in the pane arrived, so a mark saying so on each of them marked nothing. What the
+  // head carries now is the time and the stamps, and no direction at all.
+  it('draws no direction mark on an arrival', () => {
     received('sensors/a/temp');
     useSelectionStore.getState().select(chip);
 
     render(<WireLog />);
 
-    expect(screen.getByRole('img', { name: 'Received' })).toHaveTextContent('↓');
-    expect(screen.getByRole('img', { name: 'Published' })).toHaveTextContent('↑');
-    expect(screen.getByRole('img', { name: 'Received' })).toHaveAttribute('title', 'Received');
+    expect(screen.queryByTestId('verb')).not.toBeInTheDocument();
+    expect(screen.getByTestId('head')).not.toHaveTextContent('↓');
   });
 });

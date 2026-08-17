@@ -17,14 +17,17 @@ export const MAX_LOG_ENTRIES = 5000;
  */
 export const MIN_TOPIC_ENTRIES = 25;
 
-type LogKind = 'recv' | 'sent' | 'ok' | 'fault';
+type LogKind = 'recv' | 'ok' | 'fault';
 
-// 'recv' comes from the hub; the rest come from command results.
+// 'recv' comes from the hub; the rest come from command results. A publish writes nothing here:
+// the log is the record of what the broker sent, and a message this client sent comes back down
+// the subscription as an arrival like any other, or was never traffic at all.
 export type LogEntry = {
   id: number;
   kind: LogKind;
   at: Date;
-  verb: string;
+  /** What a command did, in words. An arrival has none: the pane holds nothing else. */
+  verb?: string;
   topic?: string;
   body?: string;
   stamps?: string[];
@@ -75,13 +78,10 @@ function toEntry(message: DecodedMessage): LogEntry {
     id: nextId++,
     kind: 'recv',
     at: new Date(message.receivedAt),
-    // An arrow rather than 'Received': this is the only verb on every inbound row, and a log is
-    // read by scanning the topics down it, so the mark saying which way a message went should
-    // take the least room it can and still say it — a glyph reads at a glance where even a word
-    // of two letters has to be read. Down is from the broker, up is to it; the row hands the
-    // long word to a title. The commands keep their words: they arrive one at a time, are read
-    // rather than scanned, and 'Connect failed' has no arrow in it.
-    verb: '↓',
+    // No verb, and no arrow standing in for one. The pane holds arrivals and nothing else now,
+    // so a mark on every row saying 'this one arrived' distinguished it from nothing — it was
+    // read once and then became a column of identical glyphs to look past. The commands keep
+    // their words: they say what was attempted, which is not something the row shows otherwise.
     topic: message.topic,
     body: message.payload,
     stamps,

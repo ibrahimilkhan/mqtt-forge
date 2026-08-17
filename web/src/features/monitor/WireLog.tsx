@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react';
 import type { ColourRule } from '../../lib/topicColour';
+import { numericSeries } from '../../lib/series';
 import { useRuleLookup } from '../../lib/useRuleLookup';
 import { matchesFilter } from '../../lib/topicMatch';
 import { useLogStore, type LogEntry } from '../../stores/logStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { LogEntryRow } from './LogEntryRow';
+import { TrafficChart } from './TrafficChart';
 import styles from './WireLog.module.css';
-
-const VISIBLE_ENTRIES = 5;
 
 export function WireLog() {
   const entries = useLogStore((state) => state.entries);
@@ -33,7 +33,7 @@ export function WireLog() {
 
       {selected && matching.length === 0 && <p className="empty">No traffic on {selected.label} yet.</p>}
 
-      {/* Keying on the filter remounts the list on focus change, folding it back to five. */}
+      {/* Keying on the filter remounts the list on focus change, folding it back to the newest. */}
       {selected && matching.length > 0 && <EntryList key={selected.filter} entries={matching} />}
     </>
   );
@@ -43,8 +43,18 @@ function EntryList({ entries }: { entries: LogEntry[] }) {
   const [expanded, setExpanded] = useState(false);
   const ruleOf = useRuleLookup();
 
-  const shown = expanded ? entries : entries.slice(0, VISIBLE_ENTRIES);
-  const hidden = entries.length - VISIBLE_ENTRIES;
+  // The newest alone, until asked. A topic under traffic overwrites its own value rather than
+  // adding to it, so what a run of rows mostly shows is the same reading several times over —
+  // the one that is current is what the pane is for, and the history behind it is a click away.
+  const shown = expanded ? entries : entries.slice(0, 1);
+
+  // What the log still holds on this topic, which is what says whether there is history to open
+  // and how far back it goes. Not the whole log: the pane only ever answers for the selection.
+  const history = `${entries.length} in history`;
+
+  // Null unless the entries in view are one topic's numbers, which is the only run of traffic a
+  // single line can honestly draw.
+  const series = useMemo(() => numericSeries(entries), [entries]);
 
   return (
     <>
@@ -54,17 +64,30 @@ function EntryList({ entries }: { entries: LogEntry[] }) {
         ))}
       </div>
 
-      {hidden > 0 && (
-        <button type="button" className={styles.more} onClick={() => setExpanded(!expanded)}>
-          {expanded ? 'Show fewer' : `Show ${hidden} more`}
+      {/* Under the newest reading and over the count: the value now, the shape behind it, and
+          then how much of that shape the log still holds. */}
+      {series && <TrafficChart series={series} rule={ruleOf(series.topic)} />}
+
+      {/* A lone entry is already all of them, so the count states itself rather than offering to
+          open onto nothing. */}
+      {entries.length > 1 ? (
+        <button
+          type="button"
+          className={styles.history}
+          aria-expanded={expanded}
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? 'Show fewer' : history}
         </button>
+      ) : (
+        <p className={styles.history}>{history}</p>
       )}
     </>
   );
 }
 
 /**
- * The pane answers one question — what has moved on this topic — so only messages belong in it.
+ * The pane answers one question — what has arrived on this topic — so only arrivals belong in it.
  *
  * A command entry's `topic` is what the command was aimed at: a filter, possibly a wildcard, or
  * a count like '3 filters'. Matching that against the selection reads as traffic that never
@@ -72,9 +95,7 @@ function EntryList({ entries }: { entries: LogEntry[] }) {
  * arrival on a topic no broker ever published to.
  */
 function carriesTraffic(entry: LogEntry, filter: string): boolean {
-  const isMessage = entry.kind === 'recv' || entry.kind === 'sent';
-
-  return isMessage && !!entry.topic && matchesFilter(filter, entry.topic);
+  return entry.kind === 'recv' && !!entry.topic && matchesFilter(filter, entry.topic);
 }
 
 /** A rule colours the topic a message landed on; a command entry never reaches the rows. */
