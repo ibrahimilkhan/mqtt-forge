@@ -64,7 +64,9 @@ export function PublishPanel() {
       // there for the same reason — hex reloaded as text would send different bytes.
       useLogStore.getState().push({
         kind: 'sent',
-        verb: 'Published',
+        // Up to the broker, pairing with the down arrow logStore puts on every arrival. The row
+        // supplies the word behind it; the reasoning is with that one.
+        verb: '↑',
         topic,
         body: payload,
         stamps,

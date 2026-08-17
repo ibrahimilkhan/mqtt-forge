@@ -12,7 +12,6 @@ const VISIBLE_ENTRIES = 5;
 export function WireLog() {
   const entries = useLogStore((state) => state.entries);
   const selected = useSelectionStore((state) => state.selected);
-  const clear = useSelectionStore((state) => state.clear);
 
   const matching = useMemo(
     () => (selected ? entries.filter((entry) => carriesTraffic(entry, selected.filter)) : []),
@@ -21,27 +20,10 @@ export function WireLog() {
 
   return (
     <>
-      {/* The title is off screen, so the head is drawn only when there is a selection to name.
-          With neither, an empty bordered row would leave a rule with nothing above it. */}
+      {/* The only heading the pane has, and it is off screen: the entries start at the pane's
+          edge. Every row names its own topic, so a strip naming the selection above them was
+          furniture over a list that already says what it is about. */}
       <h2 className="srOnly">Logs</h2>
-
-      {selected && (
-        <div className={styles.paneHead}>
-          <div className={styles.focus}>
-            <span className={styles.focusTopic} data-testid="focus">
-              {selected.label}
-            </span>
-            <button
-              type="button"
-              onClick={clear}
-              aria-label="Clear topic selection"
-              title="Clear topic selection"
-            >
-              ×
-            </button>
-          </div>
-        </div>
-      )}
 
       {!selected && (
         <p className="empty">
