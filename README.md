@@ -12,6 +12,19 @@ MQTTForge connects to a broker you already run — it is not a broker itself.
 
 ![The console: a broker's topics as a live tree, every frame on the wire, and a publish form](.github/assets/console.png)
 
+## What it does
+
+- **Topic tree** — the broker's topology as it builds, with the latest payload on every branch.
+- **Wire log** — every frame in and out, each row carrying its time, direction, QoS and size.
+- **Publish** — text, JSON or hex, with QoS and the retained flag; any logged message reloads
+  into the form for a resend.
+- **Filters** — subscribe to one or a list at a time, batched into a couple of round trips.
+- **Colour rules** — MQTT filters you pick colours for, so a branch stands out in a tree of
+  hundreds.
+- **QR panel** — opens the same console on a phone on your network.
+
+It speaks MQTT 5.0 over TCP or TLS, with a username and password if the broker wants them.
+
 ## Download
 
 [![macOS Apple Silicon](https://img.shields.io/badge/macOS-Apple_Silicon-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-macos-arm64.dmg)
@@ -49,17 +62,6 @@ xattr -dr com.apple.quarantine /Applications/MQTTForge.app
 if the app starts and no window appears.
 </details>
 
-## What it does
-
-- **Topic tree** — the broker's topology as it builds, with the latest payload on every branch.
-- **Wire log** — every frame in and out, each row carrying its time, direction, QoS and size.
-- **Publish** — text, JSON or hex, with QoS and the retained flag; any logged message reloads
-  into the form for a resend.
-- **Filters** — subscribe to one or a list at a time, batched into a couple of round trips.
-- **Colour rules** — MQTT filters you pick colours for, so a branch stands out in a tree of
-  hundreds.
-- **QR panel** — opens the same console on a phone on your network.
-
 ## Colouring topics
 
 The **Colours** panel takes a list of MQTT filters and a colour for each — `sensors/+/temp`,
@@ -82,10 +84,11 @@ Planned, in rough order:
   replayed instead of clicked through.
 - **Recording** — capture a session's traffic to a file and play it back.
 - **Load testing** — many clients and sustained publish rates, to see how a broker holds up.
+- **MQTT 3.1.1** — a broker that only speaks 3.1.1 currently refuses the connection.
 
 Ideas and gaps are always welcome — [open an
 issue](https://github.com/ibrahimilkhan/mqtt-forge/issues) for anything missing, broken or worth
-doing differently. Pull requests are welcome too.
+doing differently, and see [CONTRIBUTING.md](CONTRIBUTING.md) if you want to send a change.
 
 ## Development
 
