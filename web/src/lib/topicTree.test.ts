@@ -384,11 +384,14 @@ describe('pruneTopics', () => {
     expect(at(tree, 'a').latestMode).toBe('hex');
   });
 
+  // Twenty thousand segments is the point of it, and building that tree costs over a second
+  // here and several on a CI runner — past vitest's five-second default. A regression here
+  // overflows the stack rather than running slowly, so the budget can be generous.
   it('survives a topic deep enough to overflow a recursive walk', () => {
     const deep = Array.from({ length: 20000 }, (_, i) => `s${i}`).join('/');
     const tree = pruneTopics(build(deep, 'keep/me'), (topic) => topic.startsWith('s0'));
 
     expect(tree.children.has('s0')).toBe(false);
     expect(at(tree, 'keep/me').hits).toBe(1);
-  });
+  }, 30_000);
 });
