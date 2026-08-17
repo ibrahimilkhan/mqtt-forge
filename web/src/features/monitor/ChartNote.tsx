@@ -3,7 +3,7 @@ import { duration, short } from '../../lib/format';
 import type { Cadence, Summary } from '../../lib/stats';
 import styles from './TrafficChart.module.css';
 
-type Item = { text: string; title: string; verdict?: boolean };
+type Item = { text: string; title: string; verdict?: boolean; drifting?: boolean };
 
 /**
  * What the run adds up to, in the corner of the chart that draws it.
@@ -33,22 +33,32 @@ export function ChartNote({
   if (summary.sd > 0) {
     items.push({ text: `σ ${short(summary.sd)}`, title: 'standard deviation, over all readings held' });
     items.push({
-      text: `${short(summary.low)}–${short(summary.high)}`,
+      // A dash between a negative low and its high reads as arithmetic; the word does not.
+      text:
+        summary.low < 0 || summary.high < 0
+          ? `${short(summary.low)} to ${short(summary.high)}`
+          : `${short(summary.low)}–${short(summary.high)}`,
       title: `lowest to highest · quartiles ${short(summary.q1)} and ${short(summary.q3)}`,
     });
   }
 
-  if (fit) {
+  const drift = trend(summary, pace);
+
+  // A run that is going somewhere is described by where it is going, not by the shape its
+  // readings make on the way: a draining battery is a perfect uniform distribution, and saying
+  // so is true and useless. The direction is the reading that means something.
+  if (fit && !drift?.drifting) {
     items.push({
-      text: fit.name,
+      // '≈', because the test returns 'not enough evidence to reject' rather than 'is' — at
+      // these sample sizes the difference between those two is the whole claim.
+      text: `≈ ${fit.name}`,
       // The claim is a test result, so the test is on the label rather than in a footnote
       // nobody would find: what was measured, and what it had to beat.
-      title: `fits a ${fit.name} distribution — Kolmogorov–Smirnov at 5%, D ${short(fit.d)} under ${short(fit.critical)}`,
+      title: `consistent with a ${fit.name} distribution over ${summary.n} readings — Kolmogorov–Smirnov at 5%, D ${short(fit.d)} under ${short(fit.critical)}`,
       verdict: true,
     });
   }
 
-  const drift = trend(summary, pace);
   if (drift) items.push(drift);
 
   if (pace) {
@@ -114,5 +124,6 @@ function trend(summary: Summary, pace: Cadence | null): Item | null {
     text: `${summary.slope > 0 ? 'rising' : 'falling'} ${rate.replace('-', '')}`,
     title: `least-squares trend — ${short(Math.abs(drift))} across the run, against a spread of ${short(summary.sd)}`,
     verdict: true,
+    drifting: true,
   };
 }

@@ -23,7 +23,7 @@ export function TrafficChart({ entries }: { entries: LogEntry[] }) {
   // body itself. Reset by the remount the pane does when the selection changes.
   const [field, setField] = useState<string | null | undefined>(undefined);
   const [view, setView] = useState<View>('time');
-  const [copied, setCopied] = useState(false);
+  const [copy, setCopy] = useState<'idle' | 'done' | 'refused'>('idle');
   const ruleOf = useRuleLookup();
 
   const fields = useMemo(() => numericFields(entries), [entries]);
@@ -45,11 +45,20 @@ export function TrafficChart({ entries }: { entries: LogEntry[] }) {
   if (!series || !stats) return null;
 
   const rule = ruleOf(series.topic);
-  const copy = async () => {
-    await navigator.clipboard.writeText(csv(series));
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 2000);
+
+  // Clipboard access is refused often enough — an insecure origin, a locked-down browser — that
+  // a button which silently does nothing is a real outcome rather than a theoretical one.
+  const take = async () => {
+    try {
+      await navigator.clipboard.writeText(csv(series));
+      setCopy('done');
+    } catch {
+      setCopy('refused');
+    }
+    window.setTimeout(() => setCopy('idle'), 2000);
   };
+
+  const copyLabel = { idle: 'Copy as CSV', done: 'Copied', refused: 'Copy failed' }[copy];
 
   return (
     <figure className={styles.chart} data-testid="chart" style={rule ? { color: rule.colour } : undefined}>
@@ -97,11 +106,12 @@ export function TrafficChart({ entries }: { entries: LogEntry[] }) {
           <button
             type="button"
             className={styles.chip}
-            aria-label={copied ? 'Copied' : 'Copy as CSV'}
-            title={copied ? 'Copied' : 'Copy as CSV'}
-            onClick={copy}
+            aria-label={copyLabel}
+            title={copyLabel}
+            data-state={copy}
+            onClick={take}
           >
-            {copied ? 'copied' : 'csv'}
+            {{ idle: 'csv', done: 'copied', refused: 'failed' }[copy]}
           </button>
         </div>
       </div>

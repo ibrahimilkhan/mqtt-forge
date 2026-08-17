@@ -30,6 +30,15 @@ const MAX_DEPTH = 6;
 const MAX_FIELDS = 40;
 
 /**
+ * How many of the newest messages are read to work out what a topic sends.
+ *
+ * Which fields a device reports does not change every second, so the answer is the same whether
+ * it is drawn from the last two hundred messages or the last five thousand — and the difference
+ * is a JSON parse of the whole log on every arrival.
+ */
+const SAMPLE = 200;
+
+/**
  * The readings behind a run of log entries, or null when there is no chart to draw.
  *
  * One line means one topic: a wildcard selection mixes topics, and °C and % share no axis. What
@@ -77,7 +86,7 @@ export function numericSeries(entries: LogEntry[], field?: string | null): Serie
 export function numericFields(entries: LogEntry[]): string[] {
   const seen = new Map<string, number>();
 
-  for (const entry of entries) {
+  for (const entry of entries.slice(0, SAMPLE)) {
     const body = parse(entry);
     if (body === null) continue;
 
@@ -92,12 +101,50 @@ export function numericFields(entries: LogEntry[]): string[] {
     .map(([name]) => name);
 }
 
-/** Plain numbers when most of the run is plain numbers; otherwise the best covered field. */
+/**
+ * What to chart when nobody has said.
+ *
+ * Plain numbers when most of the run is plain numbers. Otherwise the best covered field, and
+ * among fields every message carries — which is the usual case, since a device reports the same
+ * shape every time — the one that moves the most relative to its own size. An environment sensor
+ * reporting temperature, humidity and a battery voltage should open on something that is doing
+ * something, not on whichever of them comes first in the alphabet.
+ */
 function pick(entries: LogEntry[]): string | null {
-  const plain = entries.filter((entry) => readingOf(entry, null) !== null).length;
-  if (plain * 2 >= entries.length) return null;
+  const sample = entries.slice(0, SAMPLE);
+  const plain = sample.filter((entry) => readingOf(entry, null) !== null).length;
+  if (plain * 2 >= sample.length) return null;
 
-  return numericFields(entries)[0] ?? null;
+  const fields = numericFields(entries);
+  if (fields.length < 2) return fields[0] ?? null;
+
+  const coverage = (field: string) =>
+    sample.filter((entry) => readingOf(entry, field) !== null).length;
+
+  const best = coverage(fields[0]);
+  const tied = fields.filter((field) => coverage(field) === best);
+
+  return tied.reduce((leader, field) => (movement(sample, field) > movement(sample, leader) ? field : leader));
+}
+
+/**
+ * How much a field moves, against how big it is.
+ *
+ * A battery falling four thousandths of a volt an hour and a humidity swinging ten per cent are
+ * both 'changing'; only one of them is a chart worth opening on. Dividing by the middle puts
+ * them on the same footing, and a field sitting at zero falls back to its plain spread.
+ */
+function movement(entries: LogEntry[], field: string): number {
+  const values = entries
+    .map((entry) => readingOf(entry, field))
+    .filter((value): value is number => value !== null);
+
+  if (values.length < 2) return 0;
+
+  const mean = values.reduce((total, value) => total + value, 0) / values.length;
+  const spread = Math.max(...values) - Math.min(...values);
+
+  return Math.abs(mean) > 1e-9 ? spread / Math.abs(mean) : spread;
 }
 
 function readingOf(entry: LogEntry, path: string | null): number | null {
