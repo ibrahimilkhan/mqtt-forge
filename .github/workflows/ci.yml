@@ -1,0 +1,38 @@
+name: CI
+
+# CONTRIBUTING asks that both suites pass before a pull request is opened; this is what
+# checks. Releases stay tag-driven and separate — nothing here publishes anything.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install the interface's dependencies
+        run: npm ci --prefix web
+
+      # tsc -b as well as the bundle: `vite build` alone would not fail on a type error.
+      - name: Build the interface
+        run: npm run build --prefix web
+
+      - name: Test the interface
+        run: npm test --prefix web
+
+      # Ubuntu runners ship a running Docker, which the integration tests need: several of
+      # them start a Mosquitto container to talk to a real broker.
+      - name: Test the API
+        run: dotnet test --logger 'console;verbosity=normal'
