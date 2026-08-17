@@ -1,12 +1,11 @@
 /* ---- signature element: the wire log ---- */
 .log { display: flex; flex-direction: column; gap: 2px; }
 
-/* List stops at five for readability; this reveals the rest. */
-.more {
+/* The list shows the newest arrival; this says how much history sits behind it. */
+.history {
   all: unset;
   display: block;
   margin-top: 10px;
-  cursor: pointer;
   font-family: var(--mono);
   font-size: var(--t-label);
   letter-spacing: 0.08em;
@@ -14,9 +13,81 @@
   color: var(--muted);
   padding: 5px 0;
 }
+/* With history behind it the count is also the handle onto it; with one entry it is a readout,
+   and the element itself is what says which — a button, or the paragraph that opens nothing. */
+button.history { cursor: pointer; }
 /* all: unset misses the global button:hover fill; :not(:disabled) matches its specificity so this wins. */
-.more:hover:not(:disabled) { color: var(--ink); background: none; }
-.more:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+button.history:hover:not(:disabled) { color: var(--ink); background: none; }
+button.history:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+/* ---- the chart over the entries ---- */
+/* Sits between the newest reading and the count, and reads as part of the same column: the same
+   left edge as the rows, and no frame of its own — the line is the only ink it needs. */
+.chart { display: flex; gap: 8px; margin: 12px 0 0; padding-left: 14px; color: var(--ink); }
+
+/* The range, at the height it belongs to: high at the top of the plot, low at the bottom. Muted
+   micro type, the same faint voice the stamps use — the line is what the eye should land on. */
+.scale {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+/* Room on the right for the dot that marks the end of the run: it is centred on the last point,
+   which sits on the plot's right edge, so half of it hangs past. */
+.plotArea { position: relative; flex: 1; height: 46px; margin-right: 4px; }
+
+/* The line runs to all four edges, and a 2px stroke centred on an edge puts half of itself
+   outside — clipped, the highest reading would read as a flat top it never had. */
+.plotSvg { display: block; width: 100%; height: 100%; overflow: visible; }
+
+/* Pinned to device pixels: the viewBox is stretched to the pane, and without this a wide pane
+   would draw a thick line and a narrow one a hair. */
+.plotLine {
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.crosshair { stroke: var(--rule); stroke-width: 1; vector-effect: non-scaling-stroke; }
+
+/* Recessive on purpose: it is there to be read against, not read. */
+.zero {
+  stroke: var(--rule);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Where the run ends, which is the reading on the row above. */
+.head {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  transform: translate(-50%, -50%);
+}
+
+/* The value under the pointer, set over the plot rather than beside it: a line this small has
+   nowhere to put a tooltip that would not cover the shape being read. */
+.reading {
+  position: absolute;
+  top: -2px;
+  transform: translateX(-50%);
+  padding: 0 3px;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  color: var(--ink);
+  white-space: nowrap;
+  pointer-events: none;
+}
 
 .entry {
   border-left: 2px solid var(--rule);
@@ -37,7 +108,6 @@
 
 /* What the kind says the edge should be, held in a property so the rule below can offer to
    stand in for it without having to restate all four. */
-.entry[data-kind="sent"]  { --edge: var(--signal); }
 .entry[data-kind="recv"]  { --edge: var(--ink); }
 .entry[data-kind="ok"]    { --edge: var(--live); }
 .entry[data-kind="fault"] { --edge: var(--fault); }
@@ -77,12 +147,6 @@
    sitting in a grey outline reads as half-marked. */
 .entry[data-kind="fault"] .verb { color: var(--fault); border-color: var(--fault); font-weight: 600; }
 
-/* The message rows carry an arrow rather than a word. Letter-spacing pads the right of the last
-   character, which on a one-glyph box means an arrow sitting left of centre in its own frame —
-   so the message kinds drop it. The command kinds keep it: their verbs are words. */
-.entry[data-kind="recv"] .verb,
-.entry[data-kind="sent"] .verb { letter-spacing: 0; }
-
 .topic { margin-top: 3px; font-size: var(--t-code); word-break: break-all; }
 .topic .sep { color: var(--rule); margin: 0 1px; }
 
@@ -93,12 +157,11 @@
    spacing between stamps as the head puts between the boxes on either side of them. */
 .stamps { display: inline-flex; gap: 6px; }
 
-/* The verb is boxed with the stamps: the direction arrow is the same kind of label as 'qos 1'
-   and 'retained' — a fact about the message, not a sentence about it — so the row reads as one
-   run of boxes with the time in front of them, rather than a bare mark among framed ones. The
-   box is also what gives a lone arrow something to sit in; unframed it read as a stray glyph.
-   The time stays unframed: it is the row's own, and a box round it would make four of a kind
-   out of three labels and a clock. */
+/* A command's verb is boxed with the stamps: what it did is the same kind of label as 'qos 1'
+   and 'retained' — a fact about the entry, not a sentence about it — so the row reads as one run
+   of boxes with the time in front of them, rather than a bare word among framed ones. The time
+   stays unframed: it is the row's own, and a box round it would make four of a kind out of three
+   labels and a clock. */
 .verb,
 .stamp {
   /* The head's own size, not a shade under it: these sit on the same line as the time, and a

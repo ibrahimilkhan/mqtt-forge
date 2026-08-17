@@ -49,40 +49,26 @@ describe('PublishPanel', () => {
         retain: true,
       }),
     );
-    // Waits for the mutation's own onSuccess so it can't fire during a later test.
-    await waitFor(() => expect(useLogStore.getState().entries).toHaveLength(1));
   });
 
-  it('logs what it sent, stamped with QoS and RETAINED', async () => {
-    server.use(http.post('/api/publish', () => new HttpResponse(null, { status: 202 })));
-
-    renderPanel();
-    await userEvent.click(screen.getByLabelText('Retain'));
-    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
-
-    await waitFor(() =>
-      expect(useLogStore.getState().entries[0]).toMatchObject({
-        kind: 'sent',
-        verb: '↑',
-        topic: 'sensors/temp',
-        body: '23.5',
-        stamps: ['QoS 0', 'RETAINED'],
+  // The log is the record of what the broker said, not of what this form asked it to do. A sent
+  // message that the broker accepted comes back down the subscription like any other arrival, and
+  // one that it dropped never existed — a row written here would claim traffic either way.
+  it('writes nothing to the log when the publish is accepted', async () => {
+    let accepted = false;
+    server.use(
+      http.post('/api/publish', () => {
+        accepted = true;
+        return new HttpResponse(null, { status: 202 });
       }),
     );
-  });
-
-  // The row's stamps say QoS 2 RETAINED; clicking it to re-publish has to send the same again.
-  it('records the QoS and retain flag it sent, so the row re-publishes as it went out', async () => {
-    server.use(http.post('/api/publish', () => new HttpResponse(null, { status: 202 })));
 
     renderPanel();
-    await userEvent.click(screen.getByRole('radio', { name: 'QoS 2' }));
     await userEvent.click(screen.getByLabelText('Retain'));
     await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
 
-    await waitFor(() =>
-      expect(useLogStore.getState().entries[0]).toMatchObject({ qos: 2, retain: true }),
-    );
+    await waitFor(() => expect(accepted).toBe(true));
+    expect(useLogStore.getState().entries).toEqual([]);
   });
 
   it('ignores extra clicks fired while a publish is already in flight', async () => {
@@ -105,8 +91,6 @@ describe('PublishPanel', () => {
 
     await waitFor(() => expect(button).not.toBeDisabled());
     expect(calls).toBe(1);
-    // Let the settled mutation's own log entry land before the test ends.
-    await waitFor(() => expect(useLogStore.getState().entries).toHaveLength(1));
   });
 
   it('logs a fault when publishing is refused', async () => {
@@ -239,26 +223,6 @@ describe('PublishPanel', () => {
     await userEvent.type(box, 'ö');
 
     expect(screen.getByText('2 bytes')).toBeInTheDocument();
-  });
-
-  it('stamps a hex publish as binary in the log', async () => {
-    server.use(http.post('/api/publish', () => new HttpResponse(null, { status: 202 })));
-
-    renderPanel();
-    await userEvent.click(screen.getByRole('radio', { name: 'Hex' }));
-    const box = screen.getByLabelText('Payload');
-    await userEvent.clear(box);
-    await userEvent.type(box, '01 A4 FF');
-    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
-
-    await waitFor(() =>
-      expect(useLogStore.getState().entries[0]).toMatchObject({
-        kind: 'sent',
-        body: '01 A4 FF',
-        mode: 'hex',
-        stamps: ['QoS 0', 'BIN'],
-      }),
-    );
   });
 
   describe('loaded from a click on a topic or a message', () => {

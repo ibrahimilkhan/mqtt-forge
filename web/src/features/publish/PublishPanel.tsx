@@ -7,7 +7,7 @@ import { QosSelect } from '../../components/QosSelect';
 import { encodePayload, formatJson, type PayloadMode } from '../../lib/payload';
 import styles from '../../styles/panel.module.css';
 import { useComposeStore } from '../../stores/composeStore';
-import { logFault, useLogStore } from '../../stores/logStore';
+import { logFault } from '../../stores/logStore';
 import { useConnectionState } from '../../api/useConnectionState';
 import { useGuardedMutate } from '../../lib/useGuardedMutate';
 
@@ -55,26 +55,10 @@ export function PublishPanel() {
         retain,
       });
     },
-    onSuccess: () => {
-      const stamps = [`QoS ${qos}`];
-      if (retain) stamps.push('RETAINED');
-      if (mode === 'hex') stamps.push('BIN');
-      // qos and retain ride along with the stamps: the row loads itself back into this form,
-      // and it has to go out the second time exactly as it went out the first. The mode is
-      // there for the same reason — hex reloaded as text would send different bytes.
-      useLogStore.getState().push({
-        kind: 'sent',
-        // Up to the broker, pairing with the down arrow logStore puts on every arrival. The row
-        // supplies the word behind it; the reasoning is with that one.
-        verb: '↑',
-        topic,
-        body: payload,
-        stamps,
-        qos,
-        retain,
-        mode: mode === 'hex' ? 'hex' : 'text',
-      });
-    },
+    // Nothing is logged on success. The log is the record of what came down from the broker, and
+    // a row written from this side would say a message landed somewhere on the strength of the
+    // request having been accepted. Where the client is subscribed to what it just sent, the
+    // broker's own copy arrives and is logged then — as traffic, which is what it is.
     onError: (error) => logFault('Publish failed', error, topic),
   });
   const guardedPublish = useGuardedMutate(publishMutation);

@@ -39,11 +39,18 @@ describe('logStore', () => {
 
     expect(useLogStore.getState().entries[0]).toMatchObject({
       kind: 'recv',
-      verb: '↓',
       topic: 'a',
       body: '1',
       stamps: ['QoS 2', 'RETAINED', '1B'],
     });
+  });
+
+  // Only commands carry a verb now. Everything that reaches the pane arrived, so a word — or an
+  // arrow — saying so on each of them told nobody anything they could not see from the pane.
+  it('gives an arrival no verb of its own', () => {
+    useLogStore.getState().appendReceived([message('a', '1')]);
+
+    expect(useLogStore.getState().entries[0].verb).toBeUndefined();
   });
 
   it('leaves the retained stamp off when the message is not retained', () => {

@@ -4,18 +4,6 @@ import { useComposeStore } from '../../stores/composeStore';
 import type { LogEntry } from '../../stores/logStore';
 import styles from './WireLog.module.css';
 
-/**
- * The word behind a message row's arrow.
- *
- * The arrow is what the row shows, so the word has to live somewhere: on hover for anyone who
- * has not met it yet, and as the accessible name, since '↓' alone is what a screen reader would
- * otherwise be left announcing. A command entry needs no entry here — its verb is already words.
- */
-const DIRECTION: Partial<Record<LogEntry['kind'], string>> = {
-  recv: 'Received',
-  sent: 'Published',
-};
-
 // Entries are immutable, so memoising means a new arrival re-renders only one row.
 export const LogEntryRow = memo(function LogEntryRow({
   entry,
@@ -26,14 +14,13 @@ export const LogEntryRow = memo(function LogEntryRow({
   rule?: ColourRule | null;
 }) {
   const load = useComposeStore((state) => state.load);
-  const direction = DIRECTION[entry.kind];
 
-  // Only a message can be sent back. A command entry carries the filter it was aimed at, which
+  // Only an arrival can be sent back. A command entry carries the filter it was aimed at, which
   // may be a wildcard, and an outcome rather than a payload — neither is publishable. The whole
   // row is the target rather than a small icon, since re-sending what just arrived is the
   // common move in a fake console.
   const reload =
-    entry.topic && (entry.kind === 'recv' || entry.kind === 'sent')
+    entry.topic && entry.kind === 'recv'
       ? () =>
           load({
             topic: entry.topic!,
@@ -70,19 +57,16 @@ export const LogEntryRow = memo(function LogEntryRow({
         },
       })}
     >
-      {/* Time, verb, QoS, retained, size: one line of furniture, read left to right, before the
-          topic and the payload that are what the row is actually about. */}
+      {/* Time, QoS, retained, size: one line of furniture, read left to right, before the topic
+          and the payload that are what the row is actually about. An arrival adds no verb to it —
+          the pane holds nothing but arrivals, so there is nothing for one to tell apart. */}
       <div className={styles.entryHead} data-testid="head">
         <span>{entry.at.toLocaleTimeString('en-GB', { hour12: false })}</span>
-        <span
-          className={styles.verb}
-          data-testid="verb"
-          // role="img" is what makes the label stick: a bare span's aria-label goes unread by
-          // half the screen readers out there, and this span's whole content is one glyph.
-          {...(direction && { title: direction, role: 'img', 'aria-label': direction })}
-        >
-          {entry.verb}
-        </span>
+        {entry.verb && (
+          <span className={styles.verb} data-testid="verb">
+            {entry.verb}
+          </span>
+        )}
         {entry.stamps && (
           <span className={styles.stamps}>
             {entry.stamps.map((stamp) => (
