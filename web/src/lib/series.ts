@@ -132,13 +132,19 @@ function pick(entries: LogEntry[]): string | null {
   const fields = numericFields(entries);
   if (fields.length < 2) return fields[0] ?? null;
 
-  const coverage = (field: string) =>
-    sample.filter((entry) => readingOf(entry, field) !== null).length;
+  // Parsed once and read many times. A device reporting forty fields would otherwise have every
+  // body parsed forty times over to answer a question about which of them to open on.
+  const bodies = sample.map(parse);
+  const readings = (field: string) =>
+    bodies.map((body) => numberAt(body, field)).filter((value): value is number => value !== null);
 
-  const best = coverage(fields[0]);
-  const tied = fields.filter((field) => coverage(field) === best);
+  const runs = new Map(fields.map((field) => [field, readings(field)]));
+  const best = Math.max(...fields.map((field) => runs.get(field)!.length));
+  const tied = fields.filter((field) => runs.get(field)!.length === best);
 
-  return tied.reduce((leader, field) => (movement(sample, field) > movement(sample, leader) ? field : leader));
+  return tied.reduce((leader, field) =>
+    movement(runs.get(field)!) > movement(runs.get(leader)!) ? field : leader,
+  );
 }
 
 /**
@@ -148,11 +154,7 @@ function pick(entries: LogEntry[]): string | null {
  * both 'changing'; only one of them is a chart worth opening on. Dividing by the middle puts
  * them on the same footing, and a field sitting at zero falls back to its plain spread.
  */
-function movement(entries: LogEntry[], field: string): number {
-  const values = entries
-    .map((entry) => readingOf(entry, field))
-    .filter((value): value is number => value !== null);
-
+function movement(values: number[]): number {
   if (values.length < 2) return 0;
 
   const mean = values.reduce((total, value) => total + value, 0) / values.length;
@@ -168,7 +170,12 @@ function readingOf(entry: LogEntry, path: string | null): number | null {
 
   if (path === null) return asReading(entry.body);
 
-  const value = walk(parse(entry), path);
+  return numberAt(parse(entry), path);
+}
+
+/** The number at a path inside an already-parsed body, or null where there is not one. */
+function numberAt(body: unknown, path: string): number | null {
+  const value = walk(body, path);
 
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
