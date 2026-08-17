@@ -41,7 +41,7 @@ jobs:
           ./scripts/package-macos.sh osx-arm64
           ./scripts/package-macos.sh osx-x64
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: macos
           path: dist/*.dmg
@@ -75,7 +75,7 @@ jobs:
       - name: Zip it
         run: Compress-Archive -Path publish/MQTTForge -DestinationPath MQTTForge-windows-x64.zip
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows
           path: MQTTForge-windows-x64.zip
@@ -111,7 +111,7 @@ jobs:
       - name: Tar it
         run: tar -czf MQTTForge-linux-x64.tar.gz -C publish MQTTForge
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux
           path: MQTTForge-linux-x64.tar.gz
@@ -164,7 +164,7 @@ jobs:
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: digest-${{ matrix.arch }}
           path: /tmp/digests/*
