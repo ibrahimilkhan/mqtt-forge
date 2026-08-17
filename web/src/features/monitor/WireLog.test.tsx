@@ -7,6 +7,7 @@ import { renderWithClient as render } from '../../test/renderWithClient';
 import { server } from '../../test/server';
 import { byteLength } from '../../lib/payload';
 import type { DecodedMessage } from '../../realtime/decodeIncoming';
+import { useAppearanceStore } from '../../stores/appearanceStore';
 import { useComposeStore } from '../../stores/composeStore';
 import { MAX_LOG_ENTRIES, useLogStore } from '../../stores/logStore';
 import { useSelectionStore } from '../../stores/selectionStore';
@@ -33,6 +34,8 @@ beforeEach(() => {
   useLogStore.getState().clear();
   useSelectionStore.getState().clear();
   useComposeStore.setState({ draft: null });
+  // The chart's detail is a stored preference, so a test that changes it would leak into the next.
+  useAppearanceStore.getState().reset();
 });
 
 describe('WireLog', () => {
@@ -784,6 +787,69 @@ describe('choosing what the chart draws', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Copy as CSV' }));
 
     expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument();
+  });
+});
+
+// The same readings answer different questions for different readers, and which of those a
+// console should answer is not ours to decide — it is a setting, next to the fonts.
+describe('the three versions of the chart', () => {
+  const readings = (topic: string, ...bodies: string[]) =>
+    bodies.forEach((body) => useLogStore.getState().push({ kind: 'recv', topic, body }));
+
+  const wave = () => Array.from({ length: 20 }, (_, i) => `${(21 + Math.sin(i) * 2).toFixed(2)}`);
+
+  it('draws the line alone on plain', () => {
+    useAppearanceStore.getState().setChart('plain');
+    readings('sensors/temp', ...wave());
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(screen.getByTestId('plotArea')).toBeInTheDocument();
+    expect(screen.queryByTestId('note')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Copy as CSV' })).not.toBeInTheDocument();
+  });
+
+  it('draws the line, its marks and the note on full', () => {
+    useAppearanceStore.getState().setChart('full');
+    readings('sensors/temp', ...wave());
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(screen.getByTestId('note')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy as CSV' })).toBeInTheDocument();
+    expect(screen.queryByTestId('histogram')).not.toBeInTheDocument();
+  });
+
+  it('draws both views at once on deep, with the quartiles under them', () => {
+    useAppearanceStore.getState().setChart('deep');
+    readings('sensors/temp', ...wave());
+    useSelectionStore.getState().select(chip);
+
+    render(<WireLog />);
+
+    expect(screen.getByTestId('plot')).toBeInTheDocument();
+    expect(screen.getByTestId('histogram')).toBeInTheDocument();
+    expect(screen.getByTestId('note').textContent).toMatch(/Q .*fences/);
+    // Nothing to choose between when both are drawn.
+    expect(screen.queryByRole('button', { name: 'Distribution' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the readings reachable from the keyboard on every version', async () => {
+    for (const version of ['plain', 'full', 'deep'] as const) {
+      useAppearanceStore.getState().setChart(version);
+      useLogStore.getState().clear();
+      readings('sensors/temp', ...wave());
+      useSelectionStore.getState().select(chip);
+
+      const view = render(<WireLog />);
+      const plot = screen.getByTestId('plotArea');
+      for (let step = 0; step < 12 && document.activeElement !== plot; step++) await userEvent.tab();
+
+      expect(plot, `on ${version}`).toHaveFocus();
+      view.unmount();
+    }
   });
 });
 

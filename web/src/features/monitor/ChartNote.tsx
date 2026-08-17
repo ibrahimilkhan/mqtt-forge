@@ -18,11 +18,14 @@ export function ChartNote({
   fit,
   pace,
   skipped,
+  quartiles = false,
 }: {
   summary: Summary;
   fit: Fit | null;
   pace: Cadence | null;
   skipped: number;
+  /** The middle half and the fences around it, for a reader who came for the numbers. */
+  quartiles?: boolean;
 }) {
   const items: Item[] = [
     { text: `n ${summary.n}`, title: `${summary.n} readings charted` },
@@ -39,6 +42,17 @@ export function ChartNote({
           ? `${short(summary.low)} to ${short(summary.high)}`
           : `${short(summary.low)}–${short(summary.high)}`,
       title: `lowest to highest · quartiles ${short(summary.q1)} and ${short(summary.q3)}`,
+    });
+  }
+
+  if (quartiles && summary.sd > 0) {
+    items.push({
+      text: `Q ${short(summary.q1)}–${short(summary.q3)}`,
+      title: 'the middle half of the readings',
+    });
+    items.push({
+      text: `fences ${short(summary.fences.low)}–${short(summary.fences.high)}`,
+      title: 'a reading outside these is marked an outlier',
     });
   }
 

@@ -1,17 +1,23 @@
 /* ---- the chart over the entries ---- */
 /* Sits between the newest reading and the count, and reads as part of the same column: the same
    left edge as the rows, and no frame of its own — the line is the only ink it needs. */
+/* One column for the numbers on the axis and the rest for the picture — and the column is the
+   chart's rather than each plot's, so that with two plots stacked they start at the same edge
+   however wide their own labels are. */
 .chart {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
   margin: 12px 0 0;
   padding-left: 14px;
   color: var(--ink);
 }
 
-/* The scale and the plot: one column for the numbers on the axis, the rest for the picture. */
-.frame { display: grid; grid-template-columns: auto 1fr; gap: 8px; }
+/* Hands the scale and the plot up to the grid above, so both plots share its columns. */
+.frame { display: contents; }
+
+.controls,
+.note { grid-column: 1 / -1; }
 
 /* What to chart and how to read it, over the picture rather than under it: these change what
    the picture *is*, so they are read first. Fields left, views right; both wrap on a narrow

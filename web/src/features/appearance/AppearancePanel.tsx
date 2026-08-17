@@ -3,11 +3,12 @@ import { PanelShell } from '../../components/PanelShell';
 import panel from '../../styles/panel.module.css';
 import { useAppearanceStore } from '../../stores/appearanceStore';
 import styles from './AppearancePanel.module.css';
+import { CHART_DETAIL, type ChartDetailId } from './chart';
 import { MONO, SANS, SIZE, type MonoId, type SansId } from './fonts';
 
-// No selector: the panel shows all three values, so it must re-render on any change.
+// No selector: the panel shows every value, so it must re-render on any change.
 export function AppearancePanel({ onClose }: { onClose: () => void }) {
-  const { sans, mono, size, setSans, setMono, setSize, reset } = useAppearanceStore();
+  const { sans, mono, size, chart, setSans, setMono, setSize, setChart, reset } = useAppearanceStore();
 
   return (
     <PanelShell title="Settings" onClose={onClose}>
@@ -61,6 +62,23 @@ export function AppearancePanel({ onClose }: { onClose: () => void }) {
             />
             <span className={styles.reading}>{size}px</span>
           </div>
+        </Field>
+      </div>
+
+      <div className={panel.row}>
+        <Field label="Chart detail" htmlFor="chart-detail">
+          <select
+            id="chart-detail"
+            className={styles.select}
+            value={chart}
+            onChange={(event) => setChart(event.target.value as ChartDetailId)}
+          >
+            {Object.entries(CHART_DETAIL).map(([id, detail]) => (
+              <option key={id} value={id}>
+                {detail.label}
+              </option>
+            ))}
+          </select>
         </Field>
       </div>
 

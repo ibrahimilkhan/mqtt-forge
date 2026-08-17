@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { useAppearanceStore } from '../../stores/appearanceStore';
 import { AppearancePanel } from './AppearancePanel';
 import { startApplyingAppearance } from './applyAppearance';
+import { CHART_DETAIL } from './chart';
 import { MONO, SANS, SIZE } from './fonts';
 
 const root = () => document.documentElement;
@@ -22,6 +23,25 @@ function renderPanel() {
 }
 
 describe('AppearancePanel', () => {
+  // How much of the chart to draw is a matter of who is at the keyboard, so it sits with the
+  // other choices about how the console looks rather than being decided for them.
+  it('keeps the chosen chart version', async () => {
+    const { stop } = renderPanel();
+
+    await userEvent.selectOptions(screen.getByLabelText('Chart detail'), 'deep');
+
+    expect(useAppearanceStore.getState().chart).toBe('deep');
+    stop();
+  });
+
+  it('offers every chart version by name', () => {
+    const { stop } = renderPanel();
+
+    const labels = [...screen.getByLabelText('Chart detail').children].map((o) => o.textContent);
+    expect(labels).toEqual(Object.values(CHART_DETAIL).map((detail) => detail.label));
+    stop();
+  });
+
   it('re-fonts the document when the sans choice changes', async () => {
     const { stop } = renderPanel();
 
