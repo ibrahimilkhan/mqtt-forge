@@ -47,14 +47,33 @@ public class MessageLimitsTests : IClassFixture<MosquittoFixture>
             () => subscriber.SubscribeAsync([new SubscriptionRequest(filter, 0)], CancellationToken.None));
     }
 
+}
+
+// Against a broker that declares a small maximum, so the refusal is the broker's answer rather
+// than a race with it: see SmallPacketMosquittoFixture.
+public class OversizedMessageTests : IClassFixture<SmallPacketMosquittoFixture>
+{
+    private readonly SmallPacketMosquittoFixture _broker;
+    public OversizedMessageTests(SmallPacketMosquittoFixture broker) => _broker = broker;
+
     [Fact]
     public async Task Publish_with_a_payload_the_broker_refuses_as_too_large_is_rejected_not_a_500()
     {
-        using var provider = await ConnectedProviderAsync("large-payload-publish");
-        var publisher = new MqttnetPublisher(provider);
-        var payload = new string('x', 5_000_000);
+        using var provider = new MqttnetClientProvider();
+        var manager = new MqttnetConnectionManager(provider, Substitute.For<IConnectionStateNotifier>());
+        await manager.ConnectAsync(
+            new BrokerConnectionSettings(_broker.Host, _broker.Port, "large-payload-publish", null, null, false),
+            CancellationToken.None);
 
+        var publisher = new MqttnetPublisher(provider);
+        var payload = new string('x', SmallPacketMosquittoFixture.MaxPacketBytes * 4);
+
+        // QoS 1, not 0: at most once is fire-and-forget, so the call returns before the broker
+        // has said anything and the refusal lands after the test is over. At least once waits
+        // for an acknowledgement, and what comes back instead is the refusal.
         await Assert.ThrowsAsync<MessageRejectedException>(
-            () => publisher.PublishAsync(new PublishRequest("sensors/big", Encoding.UTF8.GetBytes(payload), 0, false), CancellationToken.None));
+            () => publisher.PublishAsync(
+                new PublishRequest("sensors/big", Encoding.UTF8.GetBytes(payload), 1, false),
+                CancellationToken.None));
     }
 }
