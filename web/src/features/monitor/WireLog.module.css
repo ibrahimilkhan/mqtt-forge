@@ -1,10 +1,12 @@
-/* Heading plus its actions; the rule runs beneath both. */
+/* Heading plus its actions; the rule runs beneath both. Tight on purpose: an eleven-pixel label
+   had forty-four pixels of column to itself, and on a pane whose job is to show as many rows as
+   fit, that is space taken from the rows. */
 .paneHead {
   display: flex;
   align-items: center;
   gap: 14px;
-  margin-bottom: 12px;
-  padding-bottom: 7px;
+  margin-bottom: 7px;
+  padding-bottom: 5px;
   border-bottom: 1px solid var(--rule);
 }
 .paneHead .eyebrow { margin: 0; padding: 0; border: none; }
@@ -16,8 +18,8 @@
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--muted);
-  margin: 0 0 12px;
-  padding-bottom: 8px;
+  margin: 0 0 7px;
+  padding-bottom: 5px;
   border-bottom: 1px solid var(--rule);
 }
 

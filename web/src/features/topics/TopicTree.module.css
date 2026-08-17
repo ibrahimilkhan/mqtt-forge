@@ -1,10 +1,12 @@
-/* Heading plus its actions; the rule runs beneath both. */
+/* Heading plus its actions; the rule runs beneath both. Tight on purpose: an eleven-pixel label
+   had forty-four pixels of column to itself, and on a pane whose job is to show as many rows as
+   fit, that is space taken from the rows. */
 .paneHead {
   display: flex;
   align-items: center;
   gap: 14px;
-  margin-bottom: 12px;
-  padding-bottom: 7px;
+  margin-bottom: 7px;
+  padding-bottom: 5px;
   border-bottom: 1px solid var(--rule);
 }
 .paneHead .eyebrow { margin: 0; padding: 0; border: none; }
@@ -16,14 +18,15 @@
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--muted);
-  margin: 0 0 12px;
-  padding-bottom: 8px;
+  margin: 0 0 7px;
+  padding-bottom: 5px;
   border-bottom: 1px solid var(--rule);
 }
 
 .paneActions { margin-left: auto; display: flex; gap: 4px; }
 /* Square targets around a single glyph: the label is carried by aria-label and the tooltip, so
-   nothing here has to make room for a word. Sized well past the glyph so they stay easy to hit. */
+   nothing here has to make room for a word. Held to the height of the heading beside them, so
+   the buttons stop deciding how tall the head is. */
 .paneActions button {
   all: unset;
   display: flex;
@@ -31,11 +34,11 @@
   justify-content: center;
   cursor: pointer;
   color: var(--muted);
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border-radius: 2px;
   font-family: var(--mono);
-  font-size: var(--t-lead);
+  font-size: var(--t-body);
   line-height: 1;
 }
 /* all: unset misses the global button:hover fill; :not(:disabled) matches its specificity so this wins. */
