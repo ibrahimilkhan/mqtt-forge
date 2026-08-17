@@ -39,29 +39,29 @@ describe('logStore', () => {
 
     expect(useLogStore.getState().entries[0]).toMatchObject({
       kind: 'recv',
-      verb: 'Received',
+      verb: '↓',
       topic: 'a',
       body: '1',
-      stamps: ['QoS 2', 'RETAINED', '1 B'],
+      stamps: ['QoS 2', 'RETAINED', '1B'],
     });
   });
 
   it('leaves the retained stamp off when the message is not retained', () => {
     useLogStore.getState().appendReceived([message('a', '1', { qos: 1 })]);
 
-    expect(useLogStore.getState().entries[0].stamps).toEqual(['QoS 1', '1 B']);
+    expect(useLogStore.getState().entries[0].stamps).toEqual(['QoS 1', '1B']);
   });
 
   it('sizes the payload in bytes, not characters', () => {
     useLogStore.getState().appendReceived([message('a', 'ölçüm')]);
 
-    expect(useLogStore.getState().entries[0].stamps).toContain('8 B');
+    expect(useLogStore.getState().entries[0].stamps).toContain('8B');
   });
 
   it('switches to kB once the payload passes a kilobyte', () => {
     useLogStore.getState().appendReceived([message('a', 'x'.repeat(2048))]);
 
-    expect(useLogStore.getState().entries[0].stamps).toContain('2.0 kB');
+    expect(useLogStore.getState().entries[0].stamps).toContain('2.0kB');
   });
 
   it('drops the oldest entries past the cap', () => {
@@ -126,7 +126,7 @@ describe('logStore', () => {
     const entry = useLogStore.getState().entries[0];
 
     expect(entry.mode).toBe('hex');
-    expect(entry.stamps).toContain('3 B');
+    expect(entry.stamps).toContain('3B');
     expect(entry.stamps).toContain('BIN');
   });
 

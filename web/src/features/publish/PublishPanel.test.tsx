@@ -63,7 +63,7 @@ describe('PublishPanel', () => {
     await waitFor(() =>
       expect(useLogStore.getState().entries[0]).toMatchObject({
         kind: 'sent',
-        verb: 'Published',
+        verb: '↑',
         topic: 'sensors/temp',
         body: '23.5',
         stamps: ['QoS 0', 'RETAINED'],

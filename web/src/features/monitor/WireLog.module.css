@@ -1,45 +1,3 @@
-/* The row that holds what a pane offers — its actions, or what the log is pointed at. The title
-   that used to sit here is off screen now, so this is a strip of controls with a rule under it. */
-.paneHead {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 5px;
-  padding-bottom: 3px;
-  border-bottom: 1px solid var(--rule);
-}
-/* ---- what the log is pointed at ---- */
-.focus {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-left: auto;
-  min-width: 0;
-}
-/* Ink, not signal: a topic here may be wearing a colour rule's colour a line below, and a
-   standing blue on the heading made that read as a third colour with a meaning of its own. */
-.focusTopic {
-  font-family: var(--mono);
-  font-size: var(--t-small);
-  color: var(--ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.focus button {
-  all: unset;
-  flex: none;
-  cursor: pointer;
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: var(--t-code);
-  line-height: 1;
-  padding: 0 2px;
-}
-/* all: unset misses the global button:hover fill; :not(:disabled) matches its specificity so this wins. */
-.focus button:hover:not(:disabled) { color: var(--fault); background: none; }
-.focus button:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
-
 /* ---- signature element: the wire log ---- */
 .log { display: flex; flex-direction: column; gap: 2px; }
 
@@ -101,7 +59,12 @@
 
 .entryHead {
   display: flex;
-  gap: 10px;
+  /* Wraps rather than squeezing: on a narrow pane the stamps drop under the verb instead of
+     pushing the line out past the pane's edge. */
+  flex-wrap: wrap;
+  /* One spacing for the whole run of boxes, matched by .stamps below, so the head reads as an
+     even row rather than as a verb and then a group. */
+  gap: 4px 6px;
   align-items: baseline;
   color: var(--faint);
   font-size: var(--t-micro);
@@ -110,8 +73,15 @@
      caps at this size read as shouting in a pane whose whole job is to be scanned. */
   text-transform: lowercase;
 }
-/* A failure is the one thing here that has to be loud. */
-.entry[data-kind="fault"] .verb { color: var(--fault); font-weight: 600; }
+/* A failure is the one thing here that has to be loud — the box goes with it, or a red word
+   sitting in a grey outline reads as half-marked. */
+.entry[data-kind="fault"] .verb { color: var(--fault); border-color: var(--fault); font-weight: 600; }
+
+/* The message rows carry an arrow rather than a word. Letter-spacing pads the right of the last
+   character, which on a one-glyph box means an arrow sitting left of centre in its own frame —
+   so the message kinds drop it. The command kinds keep it: their verbs are words. */
+.entry[data-kind="recv"] .verb,
+.entry[data-kind="sent"] .verb { letter-spacing: 0; }
 
 .topic { margin-top: 3px; font-size: var(--t-code); word-break: break-all; }
 .topic .sep { color: var(--rule); margin: 0 1px; }
@@ -119,11 +89,21 @@
 .body { margin-top: 2px; color: var(--ink); word-break: break-word; }
 .entry[data-kind="fault"] .body { color: var(--fault); }
 
-.stamps { display: inline-flex; gap: 5px; margin-left: 8px; vertical-align: 1px; }
+/* Sits in the head line now, so the row's gap places it: no offset of its own, and the same
+   spacing between stamps as the head puts between the boxes on either side of them. */
+.stamps { display: inline-flex; gap: 6px; }
+
+/* The verb is boxed with the stamps: the direction arrow is the same kind of label as 'qos 1'
+   and 'retained' — a fact about the message, not a sentence about it — so the row reads as one
+   run of boxes with the time in front of them, rather than a bare mark among framed ones. The
+   box is also what gives a lone arrow something to sit in; unframed it read as a stray glyph.
+   The time stays unframed: it is the row's own, and a box round it would make four of a kind
+   out of three labels and a clock. */
+.verb,
 .stamp {
-  /* A shade under the head above it. Derived from the token rather than written as a size of
-     its own, so the appearance panel's base size still carries it. */
-  font-size: calc(var(--t-micro) * 0.92);
+  /* The head's own size, not a shade under it: these sit on the same line as the time, and a
+     size that nearly matches reads as a mistake where a match reads as one line. */
+  font-size: var(--t-micro);
   letter-spacing: 0.06em;
   text-transform: lowercase;
   padding: 1px 5px;

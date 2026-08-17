@@ -75,7 +75,13 @@ function toEntry(message: DecodedMessage): LogEntry {
     id: nextId++,
     kind: 'recv',
     at: new Date(message.receivedAt),
-    verb: 'Received',
+    // An arrow rather than 'Received': this is the only verb on every inbound row, and a log is
+    // read by scanning the topics down it, so the mark saying which way a message went should
+    // take the least room it can and still say it — a glyph reads at a glance where even a word
+    // of two letters has to be read. Down is from the broker, up is to it; the row hands the
+    // long word to a title. The commands keep their words: they arrive one at a time, are read
+    // rather than scanned, and 'Connect failed' has no arrow in it.
+    verb: '↓',
     topic: message.topic,
     body: message.payload,
     stamps,
@@ -86,9 +92,10 @@ function toEntry(message: DecodedMessage): LogEntry {
 }
 
 // Counted where the bytes were still bytes: a hex body is two characters per byte, so measuring
-// the string here would double every binary arrival.
+// the string here would double every binary arrival. No space before the unit: the stamp sits in
+// a line of them now, and '8 b' read as two things where '8b' reads as one.
 function payloadSize(bytes: number): string {
-  return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} kB`;
+  return bytes < 1024 ? `${bytes}B` : `${(bytes / 1024).toFixed(1)}kB`;
 }
 
 // Bounds growth from a '#' subscription on a busy broker.
