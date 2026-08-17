@@ -92,7 +92,11 @@ export const LogEntryRow = memo(function LogEntryRow({
         </div>
       )}
 
-      {entry.body && <div className={styles.body}>{entry.body}</div>}
+      {entry.body && (
+        <div className={styles.body} data-testid="body">
+          {entry.body}
+        </div>
+      )}
     </div>
   );
 });

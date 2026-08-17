@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { fitDistribution } from '../../lib/distribution';
 import { numericFields, numericSeries, type Series } from '../../lib/series';
 import { cadence, summarise } from '../../lib/stats';
+import { useNow } from '../../lib/useNow';
 import { useRuleLookup } from '../../lib/useRuleLookup';
 import { CHART_DETAIL } from '../appearance/chart';
 import { useAppearanceStore } from '../../stores/appearanceStore';
@@ -12,6 +13,9 @@ import { TrafficLine } from './TrafficLine';
 import styles from './TrafficChart.module.css';
 
 type View = 'time' | 'distribution';
+
+/** Periods of silence before a topic with a rhythm counts as having stopped. */
+const SILENT_AFTER = 3;
 
 /**
  * The chart over the entries, and what to do with it.
@@ -45,7 +49,19 @@ export function TrafficChart({ entries }: { entries: LogEntry[] }) {
     };
   }, [series]);
 
+  // A topic that publishes on a period is a topic whose silence means something, and how long a
+  // silence has to be before it does is the period itself. Checked on a beat, since nothing
+  // arriving is exactly the case where nothing prompts a redraw. No faster than a second, and no
+  // slower than half a minute: this is a warning, not a stopwatch.
+  const beat = stats?.pace ? Math.min(Math.max(stats.pace.every, 1000), 30_000) : null;
+  const now = useNow(beat);
+
   if (!series || !stats) return null;
+
+  const quiet = stats.pace
+    ? now - series.readings[series.readings.length - 1].at.getTime()
+    : 0;
+  const silence = stats.pace && quiet > stats.pace.every * SILENT_AFTER ? quiet : null;
 
   const rule = ruleOf(series.topic);
 
@@ -145,6 +161,7 @@ export function TrafficChart({ entries }: { entries: LogEntry[] }) {
           fit={stats.fit}
           pace={stats.pace}
           skipped={series.skipped}
+          silence={silence}
           quartiles={detail.histogram}
         />
       )}

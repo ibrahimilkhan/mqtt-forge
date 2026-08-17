@@ -195,6 +195,11 @@
 .stat { white-space: nowrap; }
 .verdict { white-space: nowrap; color: var(--ink); }
 
+/* The one item about the topic rather than the readings, and the only one worth interrupting
+   for. It wears the pane's fault colour, which is the colour a failed command wears — the same
+   thing has happened: something that was supposed to work is not working. */
+.alarm { white-space: nowrap; color: var(--fault); font-weight: 600; }
+
 /* A separator that belongs to the row rather than to either item beside it. */
 .stat + .stat::before,
 .stat + .verdict::before,

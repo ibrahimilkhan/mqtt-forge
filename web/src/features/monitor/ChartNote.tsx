@@ -3,7 +3,7 @@ import { duration, short } from '../../lib/format';
 import type { Cadence, Summary } from '../../lib/stats';
 import styles from './TrafficChart.module.css';
 
-type Item = { text: string; title: string; verdict?: boolean; drifting?: boolean };
+type Item = { text: string; title: string; verdict?: boolean; drifting?: boolean; alarm?: boolean };
 
 /**
  * What the run adds up to, in the corner of the chart that draws it.
@@ -18,12 +18,15 @@ export function ChartNote({
   fit,
   pace,
   skipped,
+  silence = null,
   quartiles = false,
 }: {
   summary: Summary;
   fit: Fit | null;
   pace: Cadence | null;
   skipped: number;
+  /** How long the topic has been quiet, when that is longer than its own rhythm allows. */
+  silence?: number | null;
   /** The middle half and the fences around it, for a reader who came for the numbers. */
   quartiles?: boolean;
 }) {
@@ -84,6 +87,18 @@ export function ChartNote({
     });
   }
 
+  // The one item here that is about the topic rather than the readings, and the only one worth
+  // interrupting for: a sensor that published every second and has not published for a minute
+  // is either dead or unreachable, and nothing else in the pane would say so.
+  if (silence !== null && pace) {
+    items.push({
+      text: `silent ${duration(silence)}`,
+      title: `no reading for ${duration(silence)}, on a topic that had been publishing every ${duration(pace.every)}`,
+      verdict: true,
+      alarm: true,
+    });
+  }
+
   if (summary.outliers.length > 0) {
     items.push({
       text: `${summary.outliers.length} outlier${summary.outliers.length > 1 ? 's' : ''}`,
@@ -107,7 +122,7 @@ export function ChartNote({
       {items.map((item) => (
         <span
           key={item.text}
-          className={item.verdict ? styles.verdict : styles.stat}
+          className={item.alarm ? styles.alarm : item.verdict ? styles.verdict : styles.stat}
           title={item.title}
         >
           {item.text}
