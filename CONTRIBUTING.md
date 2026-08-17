@@ -23,18 +23,22 @@ dotnet test                    # unit and integration
 npm --prefix web test          # interface
 ```
 
-The MQTT integration tests start a Mosquitto container, so they need Docker running. The rest of
-the suite does not.
+The integration tests that talk to a broker start a Mosquitto container, so they need Docker
+running — that is several of the API tests, not only the ones under `Mqtt/`, and they fail rather
+than skip without it. `dotnet test tests/MqttForge.UnitTests` is the part that runs without
+Docker. CI runs both suites on every push and pull request.
 
 ## Building
 
 `dotnet publish -c Release` compiles the interface into `src/MqttForge.Api/wwwroot` — generated
 output, not tracked — so the published application serves everything from one process on one
-port. `dotnet build -c Debug` skips the npm step to keep backend iteration fast, and
-`-p:SkipFrontend=true` skips it in Release too.
+port. The npm step runs in every configuration, so a Debug run never serves yesterday's bundle;
+it is skipped while `web/` is unchanged, which costs nothing after the first build.
+`-p:SkipFrontend=true` opts out of it entirely.
 
 `./scripts/package-macos.sh` produces `dist/MQTTForge-macos-arm64.dmg`; pass `osx-x64` for the
-Intel slice. Windows and Linux packaging is not scripted yet — both need to run on their own
+Intel slice. Windows and Linux are published by the release workflow rather than by a script
+here, though `dotnet publish -r win-x64 --self-contained` produces a complete tree from any
 platform. `docker build -t mqtt-forge .` builds the container image from a checkout.
 
 Releases are cut by pushing a `v*` tag. The workflow builds every platform and takes the release

@@ -61,11 +61,19 @@ jobs:
       - name: Build the interface
         run: dotnet build src/MqttForge.Api -c Release
 
+      # A branch name reaches this as $GITHUB_REF_NAME on a manual run, and MSBuild rejects
+      # anything that is not a version outright — so anything unversioned becomes 0.0.0.
       - name: Publish the desktop shell
-        run: dotnet publish src/MqttForge.Desktop -c Release -r win-x64 --self-contained true -o publish
+        run: |
+          $v = $env:GITHUB_REF_NAME -replace '^v',''
+          if ($v -notmatch '^\d+(\.\d+)*$') { $v = '0.0.0' }
+          dotnet publish src/MqttForge.Desktop -c Release -r win-x64 --self-contained true `
+            -p:Version=$v -o publish/MQTTForge
 
+      # Into a folder of its own: the publish tree is hundreds of files, and an archive that
+      # unpacks them loose leaves whoever opened it in their downloads folder to clear it up.
       - name: Zip it
-        run: Compress-Archive -Path publish/* -DestinationPath MQTTForge-windows-x64.zip
+        run: Compress-Archive -Path publish/MQTTForge -DestinationPath MQTTForge-windows-x64.zip
 
       - uses: actions/upload-artifact@v4
         with:
@@ -87,13 +95,21 @@ jobs:
       - name: Build the interface
         run: dotnet build src/MqttForge.Api -c Release
 
+      # A branch name reaches this as $GITHUB_REF_NAME on a manual run, and MSBuild rejects
+      # anything that is not a version outright — so anything unversioned becomes 0.0.0.
       - name: Publish the desktop shell
-        run: dotnet publish src/MqttForge.Desktop -c Release -r linux-x64 --self-contained true -o publish
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+)*$ ]] || VERSION="0.0.0"
+          dotnet publish src/MqttForge.Desktop -c Release -r linux-x64 --self-contained true \
+            -p:Version="$VERSION" -o publish/MQTTForge
 
       # tar rather than zip: it is what keeps the executable bit, which a Linux
-      # user would otherwise have to restore by hand before the app will start.
+      # user would otherwise have to restore by hand before the app will start. Into a folder
+      # of its own too — the publish tree is hundreds of files, and unpacking them loose leaves
+      # whoever opened it in their downloads folder to clear it up.
       - name: Tar it
-        run: tar -czf MQTTForge-linux-x64.tar.gz -C publish .
+        run: tar -czf MQTTForge-linux-x64.tar.gz -C publish MQTTForge
 
       - uses: actions/upload-artifact@v4
         with:

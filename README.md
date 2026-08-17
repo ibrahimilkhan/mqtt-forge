@@ -70,7 +70,8 @@ if the app starts and no window appears.
 
 > **On a shared network.** The container and the desktop app both bind `0.0.0.0` — that is what
 > makes the QR panel work, and it equally means anyone who can reach the port can publish to your
-> broker.
+> broker. Publishing the container's port as `-p 127.0.0.1:5169:5169` keeps it to this machine,
+> and gives up the QR panel along with it.
 
 ## Running it with Docker
 
@@ -95,6 +96,19 @@ on where the broker runs:
 `localhost` inside a container means the container itself, which is why the last row needs the
 special name. On Docker Desktop it works as-is; on Linux add
 `--add-host=host.docker.internal:host-gateway` to the run command above.
+
+<details>
+<summary>No broker to hand? Start one alongside it</summary>
+
+```
+docker network create mqtt-forge
+docker run -d --name broker --network mqtt-forge eclipse-mosquitto:2
+```
+
+Add `--network mqtt-forge` to the run command in step 1, then connect to host `broker`, port
+1883. The two containers reach each other by name, so the broker needs no published port of its
+own — which is the point, as it would otherwise be an anonymous broker on every interface.
+</details>
 
 **4. Watch it fill.** Leave *Subscribe to every topic on connect* ticked and the topic tree
 builds as messages arrive. To be choosier, use the **Filters** panel — it takes one filter per
@@ -149,6 +163,21 @@ The desktop app needs none of this. It keeps both files in the per-user data dir
 
 > **The broker password is stored as typed**, in plain text in that settings file. Nothing in it
 > is encrypted, so it deserves the care any file holding a credential does.
+
+## Updating
+
+`docker run` reuses the image already on the machine, so pulling changes nothing until the
+container is replaced:
+
+```
+docker pull ghcr.io/ibrahimilkhan/mqtt-forge
+docker rm -f mqtt-forge
+```
+
+Then start it again with the run command above. A named volume outlives `docker rm`, so settings
+and colour rules come back with it; without one, the new container starts empty. To stay on a
+build instead, every release tags its version alongside `latest` —
+`ghcr.io/ibrahimilkhan/mqtt-forge:v0.2.0` holds still.
 
 ## Roadmap
 
