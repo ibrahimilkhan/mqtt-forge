@@ -39,6 +39,9 @@
   color: var(--muted);
   width: 18px;
   height: 18px;
+  /* Overhangs the line rather than growing it: an 18px target beside an 11px label would set
+     the head's height and push the label down away from the rule above it. */
+  margin-block: -3px;
   border-radius: 2px;
   font-family: var(--mono);
   font-size: var(--t-body);

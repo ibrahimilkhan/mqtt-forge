@@ -102,9 +102,10 @@
 .treePane,
 .wire {
   background: var(--surface);
-  /* Bottom padding is scroll-end breathing room, not layout; kept modest so a laptop screen
-     spends its height on rows rather than on empty space. */
-  padding: 22px 20px 24px;
+  /* Top padding is the gap between the pane's edge and its heading; kept short so the heading
+     sits just under the rule rather than floating below it. Bottom padding is scroll-end
+     breathing room, not layout, so it stays the larger of the two. */
+  padding: 11px 20px 24px;
   min-height: 0;
   overflow-y: auto;
 }
