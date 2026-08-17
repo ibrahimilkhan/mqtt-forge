@@ -4,7 +4,7 @@
 [![Image](https://img.shields.io/badge/ghcr.io-mqtt--forge-1e40af?logo=docker&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/pkgs/container/mqtt-forge)
 [![Licence](https://img.shields.io/github/license/ibrahimilkhan/mqtt-forge?color=1e40af)](LICENSE)
 
-An MQTT test console: connect to a broker, watch topics as they arrive, and publish
+An open-source MQTT test console: connect to a broker, watch topics as they arrive, and publish
 messages by hand. A .NET API drives an MQTT client and pushes what it receives to a React
 interface over SignalR.
 
@@ -19,26 +19,25 @@ MQTTForge connects to a broker you already run — it is not a broker itself.
 [![Windows x64](https://img.shields.io/badge/Windows-x64-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-windows-x64.zip)
 [![Linux x64](https://img.shields.io/badge/Linux-x64-1e40af?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-linux-x64.tar.gz)
 
-Each button downloads the newest release, so they stay valid as versions come and go. Or run
-it as a container, which needs nothing installed and asks for no permissions:
+Each button downloads the newest release, so they stay valid as versions come and go. Or run it
+as a container, which installs nothing and asks for no permissions:
 
 ```
 docker run -d -p 5169:5169 ghcr.io/ibrahimilkhan/mqtt-forge
 ```
 
-The desktop builds carry no paid signing certificate, so each platform asks once before it
-trusts them. **The Docker image is the way around all of it** — a container carries no
-signature check, so `docker run` starts with nothing to dismiss.
+<details>
+<summary>The desktop builds are unsigned, so each platform asks once</summary>
+
+Signing needs a paid certificate this project does not carry. **The Docker image is the way
+around all of it** — a container has no signature to check.
 
 **macOS.** Drag MQTTForge to Applications and eject the disk image; launching it from the image
-itself is refused. The first launch is then blocked with *"Apple could not verify MQTTForge.app
-is free of malware"*. That wording sounds alarming but only means the app was never sent to
-Apple for notarisation, which costs a paid developer account — it is not a finding about the
-app. To get past it on macOS 15 and later, open System Settings → Privacy & Security, scroll to
-Security, and use **Open Anyway** next to the blocked-app line, then confirm. On macOS 14 and
-earlier, right-click → Open does the same job. Either way it is asked once, not every launch.
-
-Clearing the download flag by hand skips the prompt entirely:
+is refused. The first launch is then blocked with *"Apple could not verify MQTTForge.app is free
+of malware"* — that only means the app was never sent to Apple for notarisation, not that
+anything was found in it. On macOS 15 and later, System Settings → Privacy & Security → **Open
+Anyway**. On macOS 14 and earlier, right-click → Open. Either way it is asked once. Clearing the
+download flag skips the prompt entirely:
 
 ```
 xattr -dr com.apple.quarantine /Applications/MQTTForge.app
@@ -46,40 +45,69 @@ xattr -dr com.apple.quarantine /Applications/MQTTForge.app
 
 **Windows.** SmartScreen needs More info → Run anyway.
 
-**Linux.** The window is drawn by WebKitGTK, so install `libwebkit2gtk-4.1-0` (Debian and
-Ubuntu) if the app starts and no window appears.
+**Linux.** The window is drawn by WebKitGTK, so install `libwebkit2gtk-4.1-0` (Debian and Ubuntu)
+if the app starts and no window appears.
+</details>
+
+## What it does
+
+- **Topic tree** — the broker's topology as it builds, with the latest payload on every branch.
+- **Wire log** — every frame in and out, each row carrying its time, direction, QoS and size.
+- **Publish** — text, JSON or hex, with QoS and the retained flag; any logged message reloads
+  into the form for a resend.
+- **Filters** — subscribe to one or a list at a time, batched into a couple of round trips.
+- **Colour rules** — MQTT filters you pick colours for, so a branch stands out in a tree of
+  hundreds.
+- **QR panel** — opens the same console on a phone on your network.
 
 ## Colouring topics
 
 The **Colours** panel takes a list of MQTT filters and a colour for each — `sensors/+/temp`,
-`alerts/#`, whatever you watch for. Every topic a rule covers is then marked with a dot of that
-colour in the topic tree and in the log, so a branch you care about is findable in a tree of
-hundreds without reading paths.
+`alerts/#`, whatever you watch for. Every topic a rule covers is then drawn in that colour, in
+the tree and in the log, with the row's left edge carrying it too.
 
-When two rules cover one topic, the more specific filter wins: read left to right, a named
+When two rules cover one topic the more specific filter wins: read left to right, a named
 segment beats `+`, and `+` beats `#`. So `sensors/#` can colour a whole subtree while
 `sensors/+/temp` picks the temperatures out of it. Editing a rule recolours what is already on
 screen, history included.
 
-The rules are stored by the API rather than in the browser, so a phone opened from the QR panel
-sees the same colours.
+The rules live with the API rather than in the browser, so a phone opened from the QR panel sees
+the same colours.
 
-## Requirements
+## Roadmap
 
-- .NET 10
-- Node 22+ (only to build the interface)
+Planned, in rough order:
+
+- **Automation** — scripted sequences of publishes and expected replies, so a scenario can be
+  replayed instead of clicked through.
+- **Recording** — capture a session's traffic to a file and play it back.
+- **Load testing** — many clients and sustained publish rates, to see how a broker holds up.
+
+Ideas and gaps are always welcome — [open an
+issue](https://github.com/ibrahimilkhan/mqtt-forge/issues) for anything missing, broken or worth
+doing differently. Pull requests are welcome too.
 
 ## Development
 
-The API and the interface run as two processes:
+Needs .NET 10 and Node 22+. The API and the interface run as two processes:
 
 ```
-dotnet run --project src/MqttForge.Api      # http://localhost:5169
+dotnet run --project src/MqttForge.Api    # http://localhost:5169
 npm --prefix web run dev                  # http://localhost:5173
 ```
 
-Open http://localhost:5173. Vite proxies `/api` and `/hubs` through to the API, so the
-browser stays on one origin and CORS never enters the picture.
+Open http://localhost:5173. Vite proxies `/api` and `/hubs` through to the API, so the browser
+stays on one origin and CORS never enters the picture.
+
+Tests:
+
+```
+dotnet test                    # unit and integration
+npm --prefix web test          # interface
+```
+
+The MQTT integration tests start a Mosquitto container, so they need Docker running. The rest of
+the suite does not.
 
 ## Building
 
@@ -87,73 +115,39 @@ browser stays on one origin and CORS never enters the picture.
 dotnet publish -c Release
 ```
 
-A Release build compiles the interface into `src/MqttForge.Api/wwwroot`, so the published
-application serves everything from a single process on a single port. `dotnet build -c Debug`
-skips the npm step, which keeps backend iteration fast; pass `-p:SkipFrontend=true` to skip
-it in Release too.
+A Release build compiles the interface into `src/MqttForge.Api/wwwroot` — generated output, not
+tracked — so the published application serves everything from one process on one port.
+`dotnet build -c Debug` skips the npm step to keep backend iteration fast; `-p:SkipFrontend=true`
+skips it in Release too.
 
-`src/MqttForge.Api/wwwroot` is generated output and is not tracked.
+For the macOS desktop app, `./scripts/package-macos.sh` produces
+`dist/MQTTForge-macos-arm64.dmg`; pass `osx-x64` for the Intel slice. Windows and Linux packaging
+is not scripted yet — both need to run on their own platform.
 
 ## Docker
 
-Every release is published to GHCR for both amd64 and arm64, so this pulls whichever matches
-the machine:
+Every release is published to GHCR for amd64 and arm64, so this pulls whichever matches:
 
 ```
 docker run -d -p 5169:5169 --name mqtt-forge ghcr.io/ibrahimilkhan/mqtt-forge
 ```
 
-To build the image from this checkout instead:
+To build from this checkout instead: `docker build -t mqtt-forge .`. Either way the console is at
+http://localhost:5169, and `docker stop mqtt-forge` ends it.
 
-```
-docker build -t mqtt-forge .
-docker run -d -p 5169:5169 --name mqtt-forge mqtt-forge
-```
-
-Open http://localhost:5169. Stop it with `docker stop mqtt-forge`.
-
-The container binds `0.0.0.0`, so the panel is reachable from other devices on the same
-network — that is what the QR panel's code is for. On a shared network anyone who
-can reach the port can publish to your broker.
-
-Saved connection settings live inside the container and are lost on `docker rm`. To keep
-them, point the app at a mounted volume instead:
+Settings live inside the container and are lost on `docker rm`. To keep them, mount a volume —
+the colour rules follow the settings into that directory, so one mount holds both:
 
 ```
 docker run -d -p 5169:5169 \
   -e MqttForge__SettingsPath=/data/connection-settings.json \
   -v mqtt-forge-data:/data \
-  --name mqtt-forge mqtt-forge
+  --name mqtt-forge ghcr.io/ibrahimilkhan/mqtt-forge
 ```
 
-The colour rules follow the settings into that directory, so one mount keeps both.
-`MqttForge__ColourRulesPath` overrides where they land if you want them somewhere else.
-
-## Desktop app
-
-```
-./scripts/package-macos.sh
-```
-
-Produces `dist/MQTTForge-macos-arm64.dmg`; pass `osx-x64` for the Intel slice. The build is unsigned, so the first launch needs
-right-click → Open rather than a double-click.
-
-Like the Docker image, the desktop app binds `0.0.0.0` — it is reachable from other
-devices on the same network, which is what the QR panel's code is for, and equally
-means anyone on a shared network who can reach it can publish to your broker.
-
-Windows (`.exe`) and Linux (AppImage) packaging is not scripted yet; both need to run on
-their own platform.
-
-## Tests
-
-```
-dotnet test                    # unit and integration
-npm --prefix web test          # interface
-```
-
-The MQTT integration tests start a Mosquitto container, so they need Docker running. The
-rest of the suite does not.
+> **On a shared network.** The container and the desktop app both bind `0.0.0.0` — that is what
+> makes the QR panel work, and it equally means anyone who can reach the port can publish to your
+> broker.
 
 ## Layout
 
@@ -167,4 +161,4 @@ rest of the suite does not.
 
 ## Licence
 
-AGPL-3.0.
+[AGPL-3.0](LICENSE).
