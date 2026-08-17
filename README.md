@@ -18,8 +18,12 @@ row, and the publish form below it](.github/assets/console.png)
 ## What it does
 
 - **Topic tree** — the broker's topology as it builds, each topic showing its own latest payload.
-- **Wire log** — the messages on whatever you pick, one branch or the whole broker, each row
-  stamped with its time, direction and QoS.
+- **Wire log** — the newest message on whatever you pick, one branch or the whole broker,
+  stamped with its time, QoS and size, with the history behind it a click away.
+- **Readings, not just messages** — a topic sending numbers gets a chart of its run, and under
+  it what that run adds up to: mean, median, spread, range, the readings that fall outside the
+  fences, which way it is drifting, how often it arrives, and whether the whole thing has a
+  shape with a name. A JSON body's fields are each chartable by name.
 - **Publish** — text, JSON or hex, with QoS and the retained flag; any logged message reloads
   into the form for a resend.
 - **Filters** — connecting subscribes to `#` unless you clear the box, so the tree fills on its
@@ -115,6 +119,9 @@ builds as messages arrive. To be choosier, use the **Filters** panel — it take
 line, so a whole list subscribes at once.
 
 **5. Read one branch.** Click a node in the tree and the log beside it narrows to that subtree.
+If the topic sends numbers, the chart under the newest reading draws the run and the note under
+that says what it adds up to. **hold** freezes the pane while you read it, without stopping the
+log behind it; **csv** takes the readings away with you.
 
 **6. Send one.** The publish form takes a topic, a payload as text, JSON or hex, a QoS and the
 retained flag. Clicking any logged message loads it back into the form to send again.
@@ -137,6 +144,35 @@ segment beats `+`, and `+` beats `#`. So `sensors/#` can colour a whole subtree 
 `sensors/+/temp` picks the temperatures out of it. Editing a rule recolours what is already on
 screen, history included, and the rules live with the API rather than in the browser, so a phone
 opened from the QR panel sees the same colours.
+
+## Reading a sensor
+
+A topic whose messages are numbers is a measurement, and a console that only shows you the
+latest one leaves the arithmetic to your eye — which is the arithmetic an eye is worst at. Pick
+such a topic and the pane draws its run, and writes what the run adds up to underneath:
+
+- **How many, and where the middle is** — count, mean, median, standard deviation and range,
+  with the quartiles a hover away.
+- **What does not belong** — readings outside Tukey's fences are ringed on the line and counted
+  in the note.
+- **Where it is going** — a least-squares trend, but only when the drift is larger than the
+  readings' own spread; anything smaller is a line through a cloud.
+- **What shape it is** — a Kolmogorov–Smirnov test at five per cent against a normal, uniform or
+  exponential distribution, with the parameters estimated from the readings themselves. Under
+  twelve readings it says nothing, because every shape fits anything.
+- **How often it arrives, and when it stops** — the middle gap between arrivals and how far the
+  gaps stray from it. A topic that had a rhythm and has fallen three periods behind it is
+  marked **silent**, which is the one thing here worth interrupting for.
+
+One message can carry a whole environment, so a JSON body's numeric fields are offered by name —
+`temp`, `env.hum`, `cells.0` — and the pane opens on whichever of them is doing the most,
+measured against its own size. A message that carries no reading is stepped over rather than
+abandoning the chart, and the note counts what it stepped over; past half of them it gives up,
+since that is no longer a sensor with gaps in it.
+
+**time** and **dist** read the same run in order or as a distribution. **csv** copies it out with
+full timestamps. **Settings → Chart detail** picks how much of all this to draw: *plain* is the
+line alone, *full* adds the marks and the note, *deep* draws both views at once.
 
 ## Keeping your settings
 
