@@ -1,3 +1,4 @@
+using System.Security.Cryptography.X509Certificates;
 using MqttForge.Domain.Abstractions;
 using MqttForge.Domain.Enums;
 using MqttForge.Domain.Exceptions;
@@ -246,6 +247,15 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
         if (settings.UseTls)
             builder = builder.WithTlsOptions(o => o
                 .UseTls()
+                // MQTTnet asks for Online revocation, which is stricter than SslStream and
+                // HttpClient both default to and stricter than a browser, which soft-fails. A
+                // broker behind a private CA publishes no CRL and no OCSP responder, so the
+                // chain comes back RevocationStatusUnknown and is refused however carefully the
+                // CA was installed — which is to say every self-signed broker, the commonest
+                // thing anyone points this at. Untrusted, expired and misnamed certificates are
+                // still refused below; only "I could not ask whether it was revoked" stops
+                // being fatal.
+                .WithRevocationMode(X509RevocationMode.NoCheck)
                 // Returns the same verdict MQTTnet's own default gives — it is here to see the
                 // reason, which is gone by the time the exception surfaces, not to change it.
                 .WithCertificateValidationHandler(e =>

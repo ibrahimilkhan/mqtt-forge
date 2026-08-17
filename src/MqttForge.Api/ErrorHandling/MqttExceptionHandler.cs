@@ -23,6 +23,8 @@ public sealed class MqttExceptionHandler : IExceptionHandler
             ConnectAttemptAbortedException => (StatusCodes.Status409Conflict, "Connect aborted"),
             NotConnectedException => (StatusCodes.Status409Conflict, "Not connected"),
             MessageRejectedException => (StatusCodes.Status400BadRequest, "Message rejected"),
+            // Nothing the request did wrong: the rules were valid and where they go is unwritable.
+            RulesNotSavedException => (StatusCodes.Status500InternalServerError, "Could not save the colour rules"),
             _ => (0, string.Empty)
         };
 
@@ -44,6 +46,7 @@ public sealed class MqttExceptionHandler : IExceptionHandler
         {
             BrokerUnreachableException broker => BrokerFailureDto.Name(broker.Reason),
             ConnectAttemptAbortedException => "aborted",
+            RulesNotSavedException => "rulesNotSaved",
             _ => null
         };
 
