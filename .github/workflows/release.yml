@@ -147,7 +147,7 @@ jobs:
       # Pushed by digest and left untagged: a tag here would be a race between the
       # two architectures, each overwriting the other. The manifest job names them.
       - id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         # Off because the build record it would otherwise upload lands in the same
         # artifact bucket as the packages, and the release job would attach it too.
         env:
