@@ -13,10 +13,15 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render } from '@testing-library/react';
 import { it } from 'vitest';
 import './styles/global.css';
+import { App } from './App';
 import { MARKS } from './features/brand/marks';
 import { TrafficChart } from './features/monitor/TrafficChart';
+import { queryKeys } from './api/queryKeys';
+import { createFakeHub } from './realtime/fakeHub';
 import { useAppearanceStore } from './stores/appearanceStore';
 import { useLogStore } from './stores/logStore';
+import { useSelectionStore } from './stores/selectionStore';
+import { useTopicTreeStore } from './stores/topicTreeStore';
 
 const OUT = '/Users/ilkhan/RiderProjects/MqttForge/src/MqttForge.Api/wwwroot';
 
@@ -236,4 +241,83 @@ ${inner}
   drawn.forEach((inner, i) =>
     writeFileSync(`${OUT}/gallery-${i + 1}.html`, page(`charts ${i + 1}`, `<h2>The chart</h2>${inner}`)),
   );
+
+  writeFileSync(`${OUT}/console.html`, console_(client));
 });
+
+/**
+ * The whole console with traffic in it, as one static page.
+ *
+ * The screenshots in the README were taken against a live broker, and there is not one here. The
+ * console does not need one to be looked at: the log, the tree and the selection are stores, and
+ * a fake hub satisfies the bridge. What this writes is the real layout with real components in
+ * it, at whatever size the window opens — which is what a screenshot of the console is.
+ */
+function console_(client) {
+  // Primed rather than fetched. Rendering here is one synchronous pass, so a query that has to
+  // go and ask would still be pending when the HTML is taken — and the page would show a console
+  // that had not connected to anything.
+  client.setQueryData(queryKeys.connection, {
+    state: 'Connected',
+    connection: {
+      host: 'localhost',
+      port: 1883,
+      clientId: 'mqttforge',
+      tls: false,
+      connectedAt: '2026-08-19T04:16:08.000Z',
+      subscriptions: 1,
+      sessionPresent: false,
+    },
+  });
+  client.setQueryData(queryKeys.colourRules, [
+    { filter: 'sensors/+/temp', colour: '#6d28d9' },
+    { filter: 'alerts/#', colour: '#b91c1c' },
+  ]);
+
+  useLogStore.getState().clear();
+  useTopicTreeStore.getState().reset();
+  const traffic = [
+    ['sensors/livingroom/temp', wobble(60, 21.6, 1.4)],
+    ['sensors/garage/temp', wobble(60, 12.6, 0.8)],
+    ['sensors/kitchen/humidity', wobble(60, 52, 4)],
+    ['sensors/loft/temp', wobble(60, 19.4, 0.6)],
+    ['devices/thermostat/battery', wobble(20, 92, 1)],
+    ['alerts/door/front', repeat(12, '0', '0', '0', '1', '1')],
+    ['alerts/smoke/kitchen', repeat(8, 'clear')],
+  ];
+  for (const [topic, bodies] of traffic) {
+    for (const body of bodies) useLogStore.getState().push({ kind: 'recv', topic, body, qos: 0, stamps: ['qos 0'] });
+
+    // The tree is built from arrivals the same way the live one is, so what it shows is a real
+    // topology rather than a hand-written shape.
+    useTopicTreeStore.getState().apply(
+      bodies.map((payload) => ({
+        topic,
+        payload,
+        mode: 'text',
+        size: payload.length,
+        qos: 0,
+        retain: false,
+        receivedAt: '2026-08-19T04:16:08Z',
+      })),
+    );
+  }
+  useTopicTreeStore.getState().setAllOpen(true);
+  useSelectionStore.getState().select({
+    label: 'sensors/livingroom/temp',
+    filter: 'sensors/livingroom/temp',
+    topic: 'sensors/livingroom/temp',
+  });
+
+  const { container } = render(
+    <QueryClientProvider client={client}>
+      <App hub={createFakeHub()} />
+    </QueryClientProvider>,
+  );
+
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MQTTForge — the console</title>
+${document.head.innerHTML}
+</head><body>${container.innerHTML}</body></html>`;
+}

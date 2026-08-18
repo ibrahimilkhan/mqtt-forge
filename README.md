@@ -20,10 +20,16 @@ row, and the publish form below it](.github/assets/console.png)
 - **Topic tree** — the broker's topology as it builds, each topic showing its own latest payload.
 - **Wire log** — the newest message on whatever you pick, one branch or the whole broker,
   stamped with its time, QoS and size, with the history behind it a click away.
-- **Readings, not just messages** — a topic sending numbers gets a chart of its run, and under
-  it what that run adds up to: mean, median, spread, range, the readings that fall outside the
-  fences, which way it is drifting, how often it arrives, and whether the whole thing has a
-  shape with a name. A JSON body's fields are each chartable by name.
+- **Readings, not just messages** — a topic sending numbers gets a chart of its run, in a
+  region of its own, and under it what that run adds up to. What it says depends on what the run
+  *is*: a quantity gets a mean, a spread, a trend and its outliers; a switch or a pulse train
+  gets counted and timed instead, because the average of a door is a number the door has never
+  been; a running total gets the rate it is climbing at. A branch of the tree draws one plot per
+  topic. A JSON body's fields are each chartable by name.
+- **A range you can read** — a sensor that reads 1, 2, 3 all day and once reads 4000 is drawn,
+  on its extremes, as a flat line with one hair going to the top. Pick the middle of the run
+  instead and the readings get the height, with the strays pinned to the edge and counted — never
+  dropped.
 - **Publish** — text, JSON or hex, with QoS and the retained flag; any logged message reloads
   into the form for a resend.
 - **Filters** — connecting subscribes to `#` unless you clear the box, so the tree fills on its
@@ -31,6 +37,8 @@ row, and the publish form below it](.github/assets/console.png)
 - **Colour rules** — MQTT filters you pick colours for, so a branch stands out in a tree of
   hundreds.
 - **QR panel** — opens the same console on a phone on your network.
+- **Settings** — the fonts and their size, how much of the chart to draw, which range it opens
+  on, and which of six marks the console wears.
 
 It speaks MQTT 5.0 only, over TCP or TLS, with a username and password if the broker wants them.
 A broker that speaks just 3.1.1 refuses the connection.
@@ -118,10 +126,15 @@ own — which is the point, as it would otherwise be an anonymous broker on ever
 builds as messages arrive. To be choosier, use the **Filters** panel — it takes one filter per
 line, so a whole list subscribes at once.
 
-**5. Read one branch.** Click a node in the tree and the log beside it narrows to that subtree.
-If the topic sends numbers, the chart under the newest reading draws the run and the note under
-that says what it adds up to. **hold** freezes the pane while you read it, without stopping the
-log behind it; **csv** takes the readings away with you.
+**5. Read one branch.** Click a node in the tree and the right column narrows to that subtree.
+It has three fixed places, top to bottom: the newest message with its history a click away, the
+chart of the run behind it, and the publish form. If the topic sends numbers, the chart draws
+the run and the note under it says what that adds up to — every reading in a slot of its own, so
+the numbers change without shifting each other about. A branch covering several topics draws one
+plot each, and clicking a row narrows the pane to that topic. **hold** freezes the column while
+you read it, without stopping the log behind it; **csv** takes the readings away with you. Drag
+either seam to give a region more room, or fold a region to its own strip and give the whole
+column to one of the other two.
 
 **6. Send one.** The publish form takes a topic, a payload as text, JSON or hex, a QoS and the
 retained flag. Clicking any logged message loads it back into the form to send again.
@@ -152,7 +165,8 @@ latest one leaves the arithmetic to your eye — which is the arithmetic an eye 
 such a topic and the pane draws its run, and writes what the run adds up to underneath:
 
 - **How many, and where the middle is** — count, mean, median, standard deviation and range,
-  with the quartiles a hover away.
+  with the quartiles a hover away. On a run that is not a quantity these are replaced rather
+  than printed: see *what kind of thing it is* below.
 - **What does not belong** — readings outside Tukey's fences are ringed on the line and counted
   in the note.
 - **Where it is going** — a least-squares trend, but only when the drift is larger than the
@@ -171,11 +185,41 @@ such a topic and the pane draws its run, and writes what the run adds up to unde
   gaps stray from it. A topic that had a rhythm and has fallen three periods behind it is
   marked **silent**, which is the one thing here worth interrupting for.
 
+- **What kind of thing it is** — a mean is a fact about a temperature and a fiction about a door
+  sensor, so the run is classified before anything is said about it. A **switch** — a handful of
+  levels the run really moves between — is drawn as the steps it actually is, and read as events,
+  duty cycle, how long each excursion lasts and how often one comes, with the line they were
+  counted against drawn on the plot. A **pulse train** — a rest with events on it — is read the
+  same way. A **counter** is read as the rate it climbs at, since its value only says when the
+  device last restarted; a total that climbs by exactly the same amount every time is a ramp
+  rather than a counter, and keeps its trend.
+
 One message can carry a whole environment, so a JSON body's numeric fields are offered by name —
 `temp`, `env.hum`, `cells.0` — and the pane opens on whichever of them is doing the most,
 measured against its own size. A message that carries no reading is stepped over rather than
-abandoning the chart, and the note counts what it stepped over; past half of them it gives up,
-since that is no longer a sensor with gaps in it.
+abandoning the chart, and the note counts what it stepped over — in the fault colour when more of
+the run was stepped over than was drawn.
+
+A selection covering several topics — which is what clicking a branch of the tree gives you —
+draws one small plot per topic, each on its own scale, since °C and % share no axis but do share
+a moment. Clicking a row narrows the pane to that topic, where the note and the field chips are.
+And when there is nothing to draw at all the pane says which of the reasons it is — the run is
+one message old, the bodies are not numbers, the field you picked is not in them — with the
+topic's own newest message underneath as evidence.
+
+### The range
+
+Four chips over the plot decide how much of its height goes on the run's range:
+
+- **auto** lets the readings decide. A quantity takes whatever **Settings → Chart range** says; a
+  switch, a pulse or a counter always takes its extremes, because clipping a pulse shaves off the
+  signal.
+- **ends** spends the height on the whole run, from its lowest reading to its highest.
+- **mid** spends it on where the readings mostly are — Tukey's fences, the same line the note
+  draws between spread and an outlier. Readings past the edge are drawn *on* it, marked, and
+  counted both on the axis and in the note's **off scale** slot. Nothing is ever quietly dropped.
+- **log** gives each decade the same height. Positive runs only; a run that reaches zero falls
+  back to its extremes rather than pretending.
 
 **time** and **dist** read the same run in order or as a distribution. **csv** copies it out with
 full timestamps. **Settings → Chart detail** picks how much of all this to draw: *plain* is the

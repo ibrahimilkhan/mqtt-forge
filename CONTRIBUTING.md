@@ -28,6 +28,25 @@ running — that is several of the API tests, not only the ones under `Mqtt/`, a
 than skip without it. `dotnet test tests/MqttForge.UnitTests` is the part that runs without
 Docker. CI runs both suites on every push and pull request.
 
+## Looking at the interface
+
+`web/src/gallery.render.test.tsx` is a renderer rather than a test. It builds the states a
+browser cannot easily be driven to — a pulse train, a counter that wraps, a branch of six topics,
+a payload that is not a number, the whole console with traffic in it — renders them through the
+real components, and writes them as static pages into `src/MqttForge.Api/wwwroot`:
+
+```
+npm --prefix web run build      # empties wwwroot, so this comes first
+npm --prefix web test           # writes gallery.html, gallery-1..3.html and console.html
+```
+
+Then `dotnet run --project src/MqttForge.Api` and open `/gallery.html` for the marks, `/console.html`
+for the console. The CSS modules are compiled in the test environment, so what it writes is what
+the tool draws. It skips itself when `wwwroot` is not there, which is every checkout that has not
+been built yet.
+
+`console.html` is also where the README's screenshots come from — it needs no broker.
+
 ## Building
 
 `dotnet publish -c Release` compiles the interface into `src/MqttForge.Api/wwwroot` — generated
