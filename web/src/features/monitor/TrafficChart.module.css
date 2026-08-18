@@ -332,7 +332,10 @@
   all: unset;
   display: grid;
   grid-template-columns: minmax(0, 9ch) minmax(0, 1fr) auto;
-  align-items: center;
+  /* Stretch, not centre. Centred, the plot's cell is sized by its content — and an SVG with no
+     definite height falls back to its own square ratio, which at this width is a plot nine
+     times the height of the row it is in. */
+  align-items: stretch;
   gap: 8px;
   cursor: pointer;
   min-height: 0;
@@ -340,9 +343,17 @@
   border-radius: 2px;
 }
 .small:hover { background: var(--paper); }
+/* Nothing reaches into the row above or below: the rows are shorter than a plot's own floor. */
+.small { overflow: hidden; }
 .small:focus-visible { outline: 2px solid var(--signal); outline-offset: -1px; }
 
-.smallName { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
+.smallName {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  line-height: 1.15;
+}
 .smallTopic {
   font-family: var(--mono);
   font-size: var(--t-micro);
@@ -363,19 +374,24 @@
   white-space: nowrap;
 }
 
-/* Hands the scale and the plot back to a grid of its own: the row is not the chart's grid, so
-   `display: contents` on the frame inside would land the scale in the row's own columns. */
+/* One column, since a stacked plot draws no scale: the row is not the chart's grid, so the
+   frame's `display: contents` would otherwise land its parts in the row's own columns. */
 .smallPlot {
   display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 6px;
+  grid-template-columns: minmax(0, 1fr);
   align-items: stretch;
   min-width: 0;
   min-height: 0;
+  /* The plot's own floor is the height a line needs to be read at on its own. Six of them
+     dividing one region are below it by design, and without this each would draw past its row
+     and into the one under it. */
+  --plot-floor: 0;
 }
+.smallPlot .plot { min-height: 0; }
 
 /* The newest reading, which is the number someone scanning six rows is actually after. */
 .smallValue {
+  align-self: center;
   font-family: var(--mono);
   font-size: var(--t-micro);
   font-variant-numeric: tabular-nums;

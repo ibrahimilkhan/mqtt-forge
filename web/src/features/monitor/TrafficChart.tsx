@@ -73,6 +73,8 @@ export function TrafficChart({
       range={range}
       onRange={setRange}
       offerViews={!detail.histogram && drawn.kind === 'one'}
+      // Nothing drawn, nothing to scale: four chips offering to change the range of a sentence.
+      offerRanges={drawn.kind !== 'none'}
       series={drawn.kind === 'one' ? drawn.series : null}
       // The way back out of a topic the reader clicked into, in the place the way in was.
       branch={focus}
@@ -247,6 +249,7 @@ function Controls({
   range,
   onRange,
   offerViews,
+  offerRanges,
   series,
   branch,
   onBranch,
@@ -259,6 +262,7 @@ function Controls({
   range: ScaleId | null;
   onRange: (range: ScaleId | null) => void;
   offerViews: boolean;
+  offerRanges: boolean;
   series: Series | null;
   branch: string | null;
   onBranch: () => void;
@@ -314,8 +318,9 @@ function Controls({
         </div>
       )}
 
-      {/* How much of the plot's height goes on the range. 'run' lets the reading decide: the
+      {/* How much of the plot's height goes on the range. 'auto' lets the reading decide: the
           setting for measurements, the extremes for anything whose peaks are the signal. */}
+      {offerRanges && (
       <div className={styles.ranges} role="group" aria-label="Range to draw">
         <button
           type="button"
@@ -341,6 +346,7 @@ function Controls({
           </button>
         ))}
       </div>
+      )}
 
       <div className={styles.views}>
         {/* Deep draws both, so there is nothing here to choose between. */}
