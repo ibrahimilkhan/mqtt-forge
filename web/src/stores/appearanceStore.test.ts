@@ -1,7 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { sanitize, STORAGE_KEY, useAppearanceStore } from './appearanceStore';
 
-const DEFAULTS = { sans: 'inter', mono: 'jetbrains', size: 15, chart: 'full', scale: 'typical' };
+const DEFAULTS = {
+  sans: 'inter',
+  mono: 'jetbrains',
+  size: 15,
+  chart: 'full',
+  scale: 'typical',
+  logo: 'anvil',
+};
 
 beforeEach(() => {
   // reset() persists defaults via `persist`, so it must run before clearing below.
@@ -92,8 +99,8 @@ describe('persistence', () => {
 
     await useAppearanceStore.persist.rehydrate();
 
-    const { sans, mono, size, chart, scale } = useAppearanceStore.getState();
-    expect({ sans, mono, size, chart, scale }).toEqual(DEFAULTS);
+    const { sans, mono, size, chart, scale, logo } = useAppearanceStore.getState();
+    expect({ sans, mono, size, chart, scale, logo }).toEqual(DEFAULTS);
   });
 
   it('does not throw when the storage write fails, and the choice still applies to this tab', () => {
@@ -130,7 +137,7 @@ describe('persistence', () => {
 
     await useAppearanceStore.persist.rehydrate();
 
-    const { sans, mono, size, chart, scale } = useAppearanceStore.getState();
-    expect({ sans, mono, size, chart, scale }).toEqual(DEFAULTS);
+    const { sans, mono, size, chart, scale, logo } = useAppearanceStore.getState();
+    expect({ sans, mono, size, chart, scale, logo }).toEqual(DEFAULTS);
   });
 });

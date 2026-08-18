@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { CHART_DETAIL, CHART_DETAIL_DEFAULT, type ChartDetailId } from '../features/appearance/chart';
 import { SCALE_DEFAULT, SCALES, type ScaleId } from '../lib/scale';
+import { MARK_DEFAULT, MARKS, type MarkId } from '../features/brand/marks';
 import { DEFAULTS as FONTS, MONO, SANS, SIZE, type MonoId, type SansId } from '../features/appearance/fonts';
 
 export type AppearanceChoices = {
@@ -11,6 +12,8 @@ export type AppearanceChoices = {
   chart: ChartDetailId;
   /** Which range a chart opens on, for the runs whose peaks are not the whole point. */
   scale: ScaleId;
+  /** The mark at the top of the rail. Six were drawn and none of them is obviously the one. */
+  logo: MarkId;
 };
 
 type AppearanceState = AppearanceChoices & {
@@ -19,19 +22,25 @@ type AppearanceState = AppearanceChoices & {
   setSize: (px: number) => void;
   setChart: (id: ChartDetailId) => void;
   setScale: (id: ScaleId) => void;
+  setLogo: (id: MarkId) => void;
   reset: () => void;
 };
 
 export const STORAGE_KEY = 'mqttforge.appearance';
 
 // The fonts' own defaults plus the chart's, which is where the two halves of 'appearance' meet.
-export const DEFAULTS: AppearanceChoices = { ...FONTS, chart: CHART_DETAIL_DEFAULT, scale: SCALE_DEFAULT };
+export const DEFAULTS: AppearanceChoices = {
+  ...FONTS,
+  chart: CHART_DETAIL_DEFAULT,
+  scale: SCALE_DEFAULT,
+  logo: MARK_DEFAULT,
+};
 
 // Validates stored fields against the catalogue, since localStorage may hold a stale or hand-edited value.
 export function sanitize(raw: unknown): AppearanceChoices {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { ...DEFAULTS };
 
-  const { sans, mono, size, chart, scale } = raw as Record<string, unknown>;
+  const { sans, mono, size, chart, scale, logo } = raw as Record<string, unknown>;
 
   return {
     sans: typeof sans === 'string' && sans in SANS ? (sans as SansId) : DEFAULTS.sans,
@@ -43,6 +52,7 @@ export function sanitize(raw: unknown): AppearanceChoices {
     chart:
       typeof chart === 'string' && chart in CHART_DETAIL ? (chart as ChartDetailId) : DEFAULTS.chart,
     scale: typeof scale === 'string' && scale in SCALES ? (scale as ScaleId) : DEFAULTS.scale,
+    logo: typeof logo === 'string' && logo in MARKS ? (logo as MarkId) : DEFAULTS.logo,
   };
 }
 
@@ -57,12 +67,20 @@ export const useAppearanceStore = create<AppearanceState>()(
       setSize: (size) => set({ size }),
       setChart: (chart) => set({ chart }),
       setScale: (scale) => set({ scale }),
+      setLogo: (logo) => set({ logo }),
       reset: () => set({ ...DEFAULTS }),
     }),
     {
       name: STORAGE_KEY,
-      version: 2,
-      partialize: ({ sans, mono, size, chart, scale }) => ({ sans, mono, size, chart, scale }),
+      version: 3,
+      partialize: ({ sans, mono, size, chart, scale, logo }) => ({
+        sans,
+        mono,
+        size,
+        chart,
+        scale,
+        logo,
+      }),
       merge: (persisted, current) => ({ ...current, ...sanitize(persisted) }),
       // Migrates rather than discarding on version bump; sanitize handles any shape.
       migrate: (state) => sanitize(state),

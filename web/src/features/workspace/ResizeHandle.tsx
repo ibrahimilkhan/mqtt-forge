@@ -16,11 +16,13 @@ type Props = {
   min: number;
   max: number;
   onChange: (value: number) => void;
+  /** A region either side of it is shut, so there is no boundary here to move. */
+  off?: boolean;
 };
 
 // Measures the element it divides rather than taking a ref, so the panes either side stay unaware
 // they are being resized.
-export function ResizeHandle({ axis, label, value, min, max, onChange }: Props) {
+export function ResizeHandle({ axis, label, value, min, max, onChange, off = false }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   const clamp = (share: number) => Math.min(max, Math.max(min, share));
@@ -73,9 +75,14 @@ export function ResizeHandle({ axis, label, value, min, max, onChange }: Props) 
       aria-valuemax={Math.round(max * 100)}
       // Otherwise a screen reader reads the bare number with no idea what it measures.
       aria-valuetext={`${label}: ${percent} percent`}
-      tabIndex={0}
+      // Out of the tab order and out of the tree when there is nothing either side of it to
+      // divide: a seam between a shut region and its neighbour is a control that would move
+      // something the reader cannot see.
+      tabIndex={off ? -1 : 0}
+      aria-hidden={off || undefined}
       className={styles.handle}
       data-axis={axis}
+      data-off={off ? '' : undefined}
       onPointerDown={grab}
       onPointerMove={(event) => {
         if (event.currentTarget.hasPointerCapture(event.pointerId)) dragTo(event);

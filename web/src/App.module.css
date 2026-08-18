@@ -1,48 +1,106 @@
-/* ---- top bar: reads like an instrument panel ---- */
-.bar {
+/* ---- the rail down the left ---- */
+/* Everything that is not the workspace lives here: the mark, the link's state, and the way into
+   each panel. It replaced a bar across the top, which cost sixty pixels of height for two facts
+   that never changed — and height is the scarce dimension in a console whose every pane is a
+   list, a form or a plot.
+
+   Two widths, not two states of existence: shut, it is a strip wide enough for the mark, the
+   lamp and the control that opens it again. A rail that disappeared would take the way back to
+   itself with it, now that there is no bar to keep one in. */
+.rail {
+  display: flex;
+  flex-direction: column;
+  width: 46px;
+  flex: none;
+  background: var(--surface);
+  border-right: 1px solid var(--rule);
+  overflow: hidden auto;
+}
+.rail[data-open] { width: 170px; }
+
+/* Mark, name and the control that changes the width. Shut, the three stack instead. */
+.railHead {
   display: flex;
   align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-  padding: 14px 20px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--rule);
-  position: sticky;
-  top: 0;
-  z-index: 5;
+  gap: 8px;
+  padding: 11px 10px 9px;
 }
+.rail:not([data-open]) .railHead { flex-direction: column; gap: 6px; padding-inline: 0; }
+
+/* The mark is drawn at 1em, so its size is set here — in a token, so it scales with the base
+   size the reader chose rather than standing still while the name beside it grows. */
+.mark {
+  display: flex;
+  font-size: calc(var(--t-title) * 1.15);
+  line-height: 0;
+  color: var(--ink);
+  flex: none;
+}
+
 .wordmark {
   font-family: var(--mono);
-  font-size: var(--t-title);
+  font-size: var(--t-lead);
   font-weight: 600;
   letter-spacing: -0.03em;
+  line-height: 1;
   margin: 0;
+  /* The name is not worth a second line at any width the rail can be. */
+  white-space: nowrap;
+  overflow: hidden;
 }
 .wordmark span { color: var(--signal); }
 
-/* Pushes the readout to the far end. */
-.readoutSlot { margin-left: auto; }
+.railToggle {
+  all: unset;
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: var(--t-lead);
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+  /* The 24px a finger needs, which one chevron does not reach on its own. */
+  min-width: 24px;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+}
+.rail:not([data-open]) .railToggle { margin-left: 0; }
+.railToggle:hover { color: var(--ink); background: var(--paper); }
+.railToggle:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
-/* ---- the row under the bar: menu rail, then the workspace ---- */
-.body {
+/* The link's state, and what it is a link to. */
+.railState {
   display: flex;
-  flex: 1;
-  /* Stops a tall pane from pushing the row past the viewport. */
-  min-height: 0;
+  flex-direction: column;
+  gap: 5px;
+  padding: 0 10px 12px;
+  border-bottom: 1px solid var(--rule);
+}
+.rail:not([data-open]) .railState { align-items: center; padding-inline: 0; }
+
+/* Where the traffic is coming from. One line, tail first: the port and the host are what tell
+   two brokers apart, and the scheme in front of them never does. */
+.where {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  color: var(--muted);
+  direction: rtl;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* ---- panel menu, down the left ---- */
-/* Collapses to nothing rather than to a strip of initials: the toggle in the bar is the way back. */
+/* ---- panel menu, under the state ---- */
 .menu {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  width: 152px;
-  flex: none;
-  padding: 14px 10px;
-  background: var(--surface);
-  border-right: 1px solid var(--rule);
-  overflow-y: auto;
+  padding: 10px 8px;
+  min-height: 0;
 }
 .menuBtn {
   font-family: var(--mono);
@@ -72,23 +130,19 @@
 }
 .menuBtn:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
-.menuToggle {
-  all: unset;
-  font-family: var(--mono);
-  font-size: var(--t-lead);
-  line-height: 1;
-  color: var(--muted);
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 2px;
+/* ---- the row: rail, then the workspace ---- */
+.body {
+  display: flex;
+  flex: 1;
+  /* Stops a tall pane from pushing the row past the viewport. */
+  min-height: 0;
 }
-.menuToggle:hover { color: var(--ink); background: var(--paper); }
-.menuToggle:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
-/* The rail would eat a narrow screen, so it lies over the workspace instead of beside it. */
+/* Open, the rail would eat a narrow screen, so it lies over the workspace instead of beside it.
+   Shut it still sits in the row: 46px is cheaper than the gesture needed to get it back. */
 @media (max-width: 800px) {
   .body { position: relative; }
-  .menu {
+  .rail[data-open] {
     position: absolute;
     inset-block: 0;
     left: 0;

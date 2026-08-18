@@ -1,4 +1,11 @@
-import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { MIN_SHARE, ResizeHandle } from './ResizeHandle';
 import styles from './Workspace.module.css';
 
@@ -15,6 +22,15 @@ type Widths = { panel: number; tree: number; right: number };
 
 /** The right column's three rows, top to bottom, as fractions of its height. */
 export type Rows = { log: number; chart: number; publish: number };
+
+export type RegionId = keyof Rows;
+
+/** Top to bottom, which is the order they are drawn and the order they are named in. */
+const REGIONS: ReadonlyArray<{ id: RegionId; label: string }> = [
+  { id: 'log', label: 'Log' },
+  { id: 'chart', label: 'Chart' },
+  { id: 'publish', label: 'Publish' },
+];
 
 // The topics column is the one that has to hold a shape rather than a line of text: a deep tree
 // indents every level, so it starts as the widest of the three. The panel column holds a form
@@ -50,6 +66,13 @@ export function Workspace({ panel, tree, log, chart, publish }: Props) {
   // fit on first paint whatever the window height, instead of being clipped by a guessed
   // fraction.
   const [rows, setRows] = useState<Rows | null>(null);
+
+  // Which of the three the reader has folded away. A region shut gives its height to the two
+  // above and below it, which is how the chart gets a whole column on a laptop: the newest
+  // reading is already at the top of the log's own pane, and the publish form is not being
+  // filled in while a run is being read.
+  const [shut, setShut] = useState<ReadonlyArray<RegionId>>([]);
+
   const columnRef = useRef<HTMLDivElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const publishRef = useRef<HTMLDivElement>(null);
@@ -80,6 +103,12 @@ export function Workspace({ panel, tree, log, chart, publish }: Props) {
   // for the handles' own arithmetic.
   const split = rows ?? { log: 0.3, chart: 0.4, publish: 0.3 };
 
+  const open = (id: RegionId) => !shut.includes(id);
+  // A shut region takes no share, and the two either side of it divide what it gave up in the
+  // proportion they already stood in.
+  const weight = (id: RegionId) => (open(id) ? split[id] : 0);
+  const spread = weight('log') + weight('chart') + weight('publish');
+
   const tracks = {
     '--panel': `${(shown.panel * 100).toFixed(2)}fr`,
     '--tree': `${(shown.tree * 100).toFixed(2)}fr`,
@@ -87,6 +116,11 @@ export function Workspace({ panel, tree, log, chart, publish }: Props) {
     '--log': `${(split.log * 100).toFixed(2)}fr`,
     '--chart': `${(split.chart * 100).toFixed(2)}fr`,
     '--publish': `${(split.publish * 100).toFixed(2)}fr`,
+    // Written out rather than composed from the three vars above: a shut region is not a small
+    // share of the height, it is a header and nothing else, and no fraction expresses that.
+    ...(rows !== null || shut.length > 0
+      ? { gridTemplateRows: REGIONS.map(({ id }) => track(open(id), weight(id) / spread)).join(' auto ') }
+      : {}),
   } as CSSProperties;
 
   // Both side-by-side handles report where their boundary sits across the whole row, which is what
@@ -104,6 +138,13 @@ export function Workspace({ panel, tree, log, chart, publish }: Props) {
 
   const moveChartEdge = (edge: number) =>
     setRows({ ...split, chart: edge - split.log, publish: 1 - edge });
+
+  // The last one standing cannot be folded: a column of three shut headers is a column with
+  // nothing in it, and nothing in the workspace would say what to do about that.
+  const alone = shut.length === REGIONS.length - 1;
+
+  const fold = (id: RegionId) =>
+    setShut((closed) => (closed.includes(id) ? closed.filter((one) => one !== id) : [...closed, id]));
 
   return (
     <div
@@ -138,16 +179,17 @@ export function Workspace({ panel, tree, log, chart, publish }: Props) {
       />
 
       {/* Three fixed places, top to bottom: what arrived last, the shape of the run behind it,
-          and the form that answers back. Only the boundaries move. */}
+          and the form that answers back. Only the boundaries move — and each region folds to its
+          own header when a reader wants the column spent on one of the other two. */}
       <div
         ref={columnRef}
         className={styles.right}
         data-testid="right-column"
         data-fit={rows === null ? 'content' : 'split'}
       >
-        <div ref={logRef} className={styles.pane}>
+        <Region id="log" label="Log" open={open('log')} alone={alone} onFold={fold} innerRef={logRef}>
           {log}
-        </div>
+        </Region>
         <ResizeHandle
           axis="y"
           label="Log and chart boundary"
@@ -155,8 +197,11 @@ export function Workspace({ panel, tree, log, chart, publish }: Props) {
           min={MIN_SHARE}
           max={split.log + split.chart - MIN_SHARE}
           onChange={moveLogEdge}
+          off={!open('log') || !open('chart')}
         />
-        <div className={styles.pane}>{chart}</div>
+        <Region id="chart" label="Chart" open={open('chart')} alone={alone} onFold={fold}>
+          {chart}
+        </Region>
         <ResizeHandle
           axis="y"
           label="Chart and publish boundary"
@@ -164,11 +209,84 @@ export function Workspace({ panel, tree, log, chart, publish }: Props) {
           min={split.log + MIN_SHARE}
           max={1 - MIN_SHARE}
           onChange={moveChartEdge}
+          off={!open('chart') || !open('publish')}
         />
-        <div ref={publishRef} className={styles.pane}>
+        <Region
+          id="publish"
+          label="Publish"
+          open={open('publish')}
+          alone={alone}
+          onFold={fold}
+          innerRef={publishRef}
+        >
           {publish}
-        </div>
+        </Region>
       </div>
+    </div>
+  );
+}
+
+/** A region's track: its share of what the open ones are dividing, or just its own header. */
+const track = (open: boolean, share: number) =>
+  open ? `minmax(0, ${(share * 100).toFixed(2)}fr)` : 'min-content';
+
+/**
+ * One of the right column's three places, with the strip that folds it away.
+ *
+ * The strip is the price: three of them cost about as much height as the bar that used to run
+ * across the top of the console. What it buys is that any one of the three can have nearly the
+ * whole column — which on a laptop is the difference between a chart four readings tall and one
+ * a run can actually be read off.
+ */
+function Region({
+  id,
+  label,
+  open,
+  alone,
+  onFold,
+  innerRef,
+  children,
+}: {
+  id: RegionId;
+  label: string;
+  open: boolean;
+  /** Folding this one would leave the column empty, so the control says so rather than doing it. */
+  alone: boolean;
+  onFold: (id: RegionId) => void;
+  innerRef?: RefObject<HTMLDivElement | null>;
+  children: ReactNode;
+}) {
+  const locked = open && alone;
+
+  return (
+    <div ref={innerRef} className={styles.region} data-region={id} data-open={open ? '' : undefined}>
+      <button
+        type="button"
+        className={styles.regionHead}
+        aria-expanded={open}
+        aria-controls={`region-${id}`}
+        disabled={locked}
+        // Named for what it does rather than for what it says: the strip reads 'Chart', and a
+        // control called 'Chart' tells a listener nothing about which way it is about to go.
+        aria-label={
+          locked ? `${label} — the last region open` : `${open ? 'Fold' : 'Open'} ${label}`
+        }
+        title={locked ? 'The last region open — fold another one first' : `${open ? 'Fold' : 'Open'} ${label}`}
+        onClick={() => onFold(id)}
+      >
+        <span className={styles.regionChevron} aria-hidden="true">
+          {open ? '▾' : '▸'}
+        </span>
+        <span className={styles.regionLabel}>{label}</span>
+      </button>
+
+      {/* Unmounted rather than hidden: a folded log is a list of a thousand rows that no longer
+          has to be laid out on every arrival. */}
+      {open && (
+        <div id={`region-${id}`} className={styles.pane}>
+          {children}
+        </div>
+      )}
     </div>
   );
 }
