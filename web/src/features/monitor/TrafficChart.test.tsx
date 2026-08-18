@@ -25,7 +25,7 @@ describe('TrafficChart', () => {
   it('marks a topic with a rhythm as silent once it falls behind it', () => {
     render(<TrafficChart entries={run(60_000)} />);
 
-    expect(screen.getByTestId('note').textContent).toContain('silent');
+    expect(screen.getByTestId('reading-silence').textContent).not.toBe('—');
   });
 
   // Held, the newest reading on show gets older by the second while the topic may be publishing
@@ -33,7 +33,7 @@ describe('TrafficChart', () => {
   it('raises no alarm about silence while the pane is being held still', () => {
     render(<TrafficChart entries={run(60_000)} frozen />);
 
-    expect(screen.getByTestId('note').textContent).not.toContain('silent');
+    expect(screen.getByTestId('reading-silence').textContent).toBe('—');
   });
 
   it('still charts the run it was given while held', () => {

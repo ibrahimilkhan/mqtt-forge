@@ -29,11 +29,12 @@ describe('App', () => {
     expect(await menu().findByRole('button', { name: 'Broker' })).toHaveAttribute('aria-expanded', 'true');
   });
 
-  it('keeps topics, the log and publish on screen whatever the menu is doing', () => {
+  it('keeps topics, the log, the chart and publish on screen whatever the menu is doing', () => {
     renderApp();
 
     expect(screen.getByRole('heading', { name: 'Topics' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Logs' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Chart' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Publish panel' })).toBeInTheDocument();
   });
 
@@ -126,20 +127,36 @@ describe('App', () => {
     expect(share('right')).toBe('30.00fr');
   });
 
-  // Unmeasured in jsdom, so the column opens content-sized: publish takes the height its form
-  // needs and the log gets the rest. The first drag is what puts it onto shares.
-  it('opens the right column sized to the publish form, then splits on drag', async () => {
+  // Unmeasured in jsdom, so the column opens content-sized: the entries and the publish form
+  // take the heights they need and the chart gets the rest. The first drag is what puts it onto
+  // shares.
+  it('opens the right column sized to its two ends, then splits on drag', async () => {
     renderApp();
 
     expect(screen.getByTestId('right-column')).toHaveAttribute('data-fit', 'content');
 
-    const seam = screen.getByRole('separator', { name: 'Log and publish boundary' });
+    const seam = screen.getByRole('separator', { name: 'Log and chart boundary' });
     seam.focus();
     await userEvent.keyboard('{ArrowUp}');
 
     expect(screen.getByTestId('right-column')).toHaveAttribute('data-fit', 'split');
-    expect(share('log')).toBe('58.00fr');
-    expect(share('publish')).toBe('42.00fr');
+    expect(share('log')).toBe('28.00fr');
+    expect(share('chart')).toBe('42.00fr');
+    expect(share('publish')).toBe('30.00fr');
+  });
+
+  // Two boundaries, and each one moves only the two regions it divides — dragging the chart off
+  // the publish form must not also move the entries above it.
+  it('leaves the entries where they were when the lower seam moves', async () => {
+    renderApp();
+
+    const seam = screen.getByRole('separator', { name: 'Chart and publish boundary' });
+    seam.focus();
+    await userEvent.keyboard('{ArrowUp}');
+
+    expect(share('log')).toBe('30.00fr');
+    expect(share('chart')).toBe('38.00fr');
+    expect(share('publish')).toBe('32.00fr');
   });
 
   it('folds the menu away and brings it back from the bar', async () => {
