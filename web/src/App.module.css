@@ -139,8 +139,10 @@
 }
 
 /* Open, the rail would eat a narrow screen, so it lies over the workspace instead of beside it.
-   Shut it still sits in the row: 46px is cheaper than the gesture needed to get it back. */
-@media (max-width: 800px) {
+   Shut it still sits in the row: 46px is cheaper than the gesture needed to get it back.
+   The same width at which the workspace stops being columns, so there is one story about what
+   this console does when the window gets small rather than two that disagree. */
+@media (max-width: 760px) {
   .body { position: relative; }
   .rail[data-open] {
     position: absolute;
@@ -178,7 +180,7 @@
 .chartPane > p { align-self: start; }
 
 /* Once the columns stack, the page scrolls instead of each pane pinning its own row. */
-@media (max-width: 1180px) {
+@media (max-width: 760px) {
   .treePane,
   .wire,
   .chartPane { overflow-y: visible; }

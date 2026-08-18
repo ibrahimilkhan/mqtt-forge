@@ -20,6 +20,9 @@ import { useAppearanceStore } from './stores/appearanceStore';
 import { useHubBridge } from './realtime/useHubBridge';
 import { useHubStatusStore } from './stores/hubStatusStore';
 
+/** The width the workspace stops being columns at, and the rail starts lying over it. */
+const NARROW = '(max-width: 760px)';
+
 const PANEL_VIEWS: Record<PanelId, (props: { onClose: () => void }) => ReactNode> = {
   broker: BrokerPanel,
   subscribe: SubscribePanel,
@@ -43,7 +46,10 @@ export function App({ hub }: { hub: Hub }) {
 
   // Connecting comes first; reopen from the menu once closed.
   const [openPanel, setOpenPanel] = useState<PanelId | null>('broker');
-  const [menuOpen, setMenuOpen] = useState(true);
+  // Shut on a narrow screen, where the rail lies over the workspace rather than beside it: two
+  // things covering the traffic before the reader has done anything is not an opening state.
+  // Read once, on the first render — a reader who opens it should keep it open through a resize.
+  const [menuOpen, setMenuOpen] = useState(() => !window.matchMedia?.(NARROW).matches);
 
   const { state } = useConnectionState();
   const where = useBrokerAddress();

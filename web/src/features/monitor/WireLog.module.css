@@ -111,6 +111,33 @@ button.history:focus-visible { outline: 2px solid var(--signal); outline-offset:
 .body { margin-top: 2px; color: var(--ink); word-break: break-word; }
 .entry[data-kind="fault"] .body { color: var(--fault); }
 
+/* A payload too big for the pane, cut to a readable block with the rest one click away. Fading
+   the last line rather than ending it flat: a hard edge at a line break reads as the end of the
+   message, and this is the one thing the row must not be able to say by accident. */
+.body[data-clipped] {
+  max-height: 7.5em;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent);
+  mask-image: linear-gradient(to bottom, #000 70%, transparent);
+}
+
+/* Quiet, and only ever on a row that has something hidden. */
+.more {
+  all: unset;
+  display: inline-block;
+  cursor: pointer;
+  margin-top: 4px;
+  padding: 2px 5px;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.more:hover:not(:disabled) { color: var(--ink); border-color: var(--muted); background: none; }
+.more:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
 /* Sits in the head line now, so the row's gap places it: no offset of its own, and the same
    spacing between stamps as the head puts between the boxes on either side of them. */
 .stamps { display: inline-flex; gap: 6px; }

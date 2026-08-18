@@ -321,6 +321,49 @@ describe('WireLog', () => {
 
 // Under a flood, the row and the chart move under the reader while they are reading them. Every
 // console has this problem; none of them has a way to stop it that does not also stop the log.
+describe('a payload too big for the pane', () => {
+  const readings = (topic: string, ...bodies: string[]) =>
+    bodies.forEach((body) => useLogStore.getState().push({ kind: 'recv', topic, body }));
+
+  // A console has to hold both ends of the range: four characters for a temperature, and forty
+  // thousand for a device reporting its whole configuration on connect. Unclamped, one of the
+  // second kind takes the region and pushes every other arrival off the pane.
+  it('cuts a long body down and offers the rest', async () => {
+    readings('sensors/config', 'x'.repeat(900));
+    useSelectionStore.getState().select(chip);
+
+    render(<Monitor />);
+
+    expect(screen.getByTestId('body')).toHaveAttribute('data-clipped');
+
+    await userEvent.click(screen.getByRole('button', { name: /Show all 900 characters/ }));
+
+    expect(screen.getByTestId('body')).not.toHaveAttribute('data-clipped');
+  });
+
+  it('leaves an ordinary body alone, and offers nothing about it', () => {
+    readings('sensors/temp', '{"temp":21.5,"hum":54}');
+    useSelectionStore.getState().select(chip);
+
+    render(<Monitor />);
+
+    expect(screen.getByTestId('body')).not.toHaveAttribute('data-clipped');
+    expect(screen.queryByRole('button', { name: /characters/ })).not.toBeInTheDocument();
+  });
+
+  // The whole row loads itself into the publish form. Asking to read a payload is not asking to
+  // send it back.
+  it('does not load the row into publish when the rest is asked for', async () => {
+    readings('sensors/config', 'y'.repeat(900));
+    useSelectionStore.getState().select(chip);
+
+    render(<Monitor />);
+    await userEvent.click(screen.getByRole('button', { name: /Show all 900 characters/ }));
+
+    expect(useComposeStore.getState().draft).toBeNull();
+  });
+});
+
 describe('holding the pane still', () => {
   const readings = (topic: string, ...bodies: string[]) =>
     bodies.forEach((body) => useLogStore.getState().push({ kind: 'recv', topic, body }));

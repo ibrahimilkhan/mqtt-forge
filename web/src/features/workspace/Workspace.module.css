@@ -94,11 +94,42 @@
 .regionChevron { font-size: var(--t-micro); line-height: 1; }
 .regionLabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-@media (max-width: 1180px) {
-  /* No room for columns, so everything stacks in the order it sat in and the page scrolls.
-     The important is doing real work: the column writes its own row template inline once the
-     reader has dragged a seam or folded a region, and at this width there are no rows to
-     divide — a fraction of a height that no longer exists would clip every pane at once. */
+/* ---- narrower than three columns ---- */
+
+/* Two columns, and the panel lies over them.
+   This used to be where everything stacked, which was exactly backwards: a laptop at this width
+   has plenty of room for the tree beside the traffic, and stacking spent all of it on one column
+   and a scrollbar. What it does not have room for is a third column holding a form — and a form
+   is the one thing here that is opened, used and closed, so it is the one that overlays. */
+@media (max-width: 1180px) and (min-width: 761px) {
+  .grid,
+  .grid[data-panel='closed'] {
+    grid-template-columns: minmax(0, var(--tree)) auto minmax(0, var(--right));
+  }
+
+  /* Out of the flow, so the three tracks above land on the tree, its seam and the right column.
+     The fr values need no adjusting: they are shares of each other, not of the row. */
+  .grid[data-panel='open'] { position: relative; }
+  .grid[data-panel='open'] > .pane:first-child {
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+    width: min(380px, 62%);
+    z-index: 4;
+    /* Its own edge, since the seam that used to draw one is not in the row any more, and the
+       scrim behind it: without both, a form lying over a tree reads as part of the tree. */
+    border-right: 1px solid var(--rule);
+    box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--ink) 12%, transparent);
+  }
+  /* Its seam divides a column that is no longer in the row. */
+  .grid[data-panel='open'] > .pane:first-child + [role='separator'] { display: none; }
+}
+
+@media (max-width: 760px) {
+  /* No room for columns at all, so everything stacks in the order it sat in and the page
+     scrolls. The important is doing real work: the column writes its own row template inline
+     once the reader has dragged a seam or folded a region, and at this width there are no rows
+     to divide — a fraction of a height that no longer exists would clip every pane at once. */
   .grid,
   .grid[data-panel='closed'] { grid-template-columns: 1fr; min-height: auto; }
   .right,

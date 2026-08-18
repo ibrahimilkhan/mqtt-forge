@@ -1,8 +1,21 @@
-import { memo, type CSSProperties } from 'react';
+import { memo, useState, type CSSProperties } from 'react';
 import type { ColourRule } from '../../lib/topicColour';
 import { useComposeStore } from '../../stores/composeStore';
 import type { LogEntry } from '../../stores/logStore';
 import styles from './WireLog.module.css';
+
+/**
+ * How much of a payload a row shows before it has to be asked.
+ *
+ * A console has to hold both ends of the range: a temperature is four characters, and a device
+ * that reports its whole configuration on connect is forty thousand. Unclamped, one of the second
+ * kind fills the region and pushes every other arrival off the pane — and the reader who wanted
+ * it was going to copy it out anyway rather than read it here.
+ *
+ * Long enough that an ordinary JSON body is never cut, short enough that a big one cannot take
+ * the pane.
+ */
+const SHOW = 480;
 
 // Entries are immutable, so memoising means a new arrival re-renders only one row.
 export const LogEntryRow = memo(function LogEntryRow({
@@ -14,6 +27,9 @@ export const LogEntryRow = memo(function LogEntryRow({
   rule?: ColourRule | null;
 }) {
   const load = useComposeStore((state) => state.load);
+  const [whole, setWhole] = useState(false);
+
+  const long = !!entry.body && entry.body.length > SHOW;
 
   // Only an arrival can be sent back. A command entry carries the filter it was aimed at, which
   // may be a wildcard, and an outcome rather than a payload — neither is publishable. The whole
@@ -93,9 +109,35 @@ export const LogEntryRow = memo(function LogEntryRow({
       )}
 
       {entry.body && (
-        <div className={styles.body} data-testid="body">
+        <div
+          className={styles.body}
+          data-testid="body"
+          data-clipped={long && !whole ? '' : undefined}
+        >
           {entry.body}
         </div>
+      )}
+
+      {/* Only on the rows that need it, and never in the way of the ones that do not. The stop
+          is doing real work: the whole row loads itself into the publish form, and asking to
+          read a payload is not asking to send it. */}
+      {long && (
+        <button
+          type="button"
+          className={styles.more}
+          aria-expanded={whole}
+          aria-label={
+            whole
+              ? 'Show less of this payload'
+              : `Show all ${entry.body!.length} characters of this payload`
+          }
+          onClick={(event) => {
+            event.stopPropagation();
+            setWhole((open) => !open);
+          }}
+        >
+          {whole ? 'show less' : `${entry.body!.length - SHOW} more characters`}
+        </button>
       )}
     </div>
   );
