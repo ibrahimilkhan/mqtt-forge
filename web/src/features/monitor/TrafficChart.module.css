@@ -1,16 +1,36 @@
-/* ---- the chart over the entries ---- */
-/* Sits between the newest reading and the count, and reads as part of the same column: the same
-   left edge as the rows, and no frame of its own — the line is the only ink it needs. */
-/* One column for the numbers on the axis and the rest for the picture — and the column is the
+/* ---- the chart, in the middle of the right column ---- */
+/* A region of its own between the newest reading and the publish form, so it neither moves when
+   the row above it grows a line nor disappears from under the reader when a topic stops sending
+   numbers. No frame of its own — the line is the only ink it needs.
+   One column for the numbers on the axis and the rest for the picture — and the column is the
    chart's rather than each plot's, so that with two plots stacked they start at the same edge
    however wide their own labels are. */
 .chart {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 8px;
-  margin: 12px 0 0;
-  padding-left: 14px;
+  margin: 0;
+  /* Stretched into the region it was given by the pane around it, so the plot takes whatever
+     the controls and the note leave rather than standing at a fixed height in a tall column. */
+  min-height: 0;
   color: var(--ink);
+}
+
+/* What rows the chart has depends on how much of it the reader asked to be drawn, and the rows
+   have to be named for the plot to be the one that stretches. The floor is the height the plot
+   had when it lived inside the entries — below that a line is a smudge. */
+.chart[data-detail='plain'] { grid-template-rows: minmax(46px, 1fr); }
+.chart[data-detail='full'] { grid-template-rows: auto minmax(46px, 1fr) auto; }
+.chart[data-detail='deep'] {
+  grid-template-rows: auto minmax(46px, 1fr) minmax(46px, 1fr) auto;
+}
+/* A branch of the tree: the controls, then as many small plots as the region has room for. */
+.chart[data-detail='many'] { grid-template-rows: auto minmax(46px, 1fr); }
+/* Nothing to draw. The reason sits under the controls at its own height rather than being
+   stretched down a region — a sentence centred in a tall empty box reads as a failure screen. */
+.chart[data-detail='void'] {
+  grid-template-rows: auto auto;
+  align-content: start;
 }
 
 /* Hands the scale and the plot up to the grid above, so both plots share its columns. */
@@ -31,6 +51,17 @@
 /* The fields wrap as far as they need to; the three view controls stay together on one line —
    a 'csv' that has wrapped away from 'time' and 'dist' reads as a fourth thing. */
 .fields { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+/* The four range chips are one control with four positions, so they never break across lines:
+   'log' on its own on the next row reads as a fifth thing rather than as one of four. */
+.ranges {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  /* A rule down the left rather than a label: at micro size the word 'range' would cost more
+     width than the three chips it names. The title on each chip carries the meaning. */
+  padding-left: 8px;
+  border-left: 1px solid var(--rule);
+}
 /* Left, under the value they belong to, rather than floated to the far side: with no fields to
    sit beside, a right-aligned group of three reads as furniture that lost its label. */
 .views { display: flex; flex-wrap: nowrap; gap: 4px; }
@@ -77,9 +108,16 @@
 .scale[data-flat] { justify-content: center; }
 
 /* Room on the right for the dot that marks the end of the run: it is centred on the last point,
-   which sits on the plot's right edge, so half of it hangs past. */
-.plotArea { position: relative; margin-right: 4px; }
-.plot { position: relative; height: 46px; }
+   which sits on the plot's right edge, so half of it hangs past. A column, so the plot takes the
+   height of the row and the distribution's value axis keeps its line under it. */
+.plotArea {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin-right: 4px;
+}
+.plot { position: relative; flex: 1; min-height: 46px; }
 /* The plot takes focus so the readings can be walked with the arrow keys; the ring says so. */
 .plot:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; }
 
@@ -160,9 +198,6 @@
   pointer-events: none;
 }
 
-/* What the run adds up to, under the plot it belongs to and aligned with its right edge — the
-   end of the line, which is where the eye already is. Wraps on a narrow pane rather than
-   pushing the pane out. */
 /* Bars carry a surface-coloured stroke rather than a gap: the viewBox is stretched to the pane,
    so a gap in its own units would be wide on a wide pane and invisible on a narrow one. */
 .bin {
@@ -186,34 +221,198 @@
   color: var(--muted);
 }
 
+/* What the run adds up to, under the plot it belongs to.
+
+   A fixed grid, not a row of items that come and go: every reading the note can make has a cell
+   whether or not the run has anything to put in it, so a new outlier never pushes the pace onto
+   another line and a value going from 9.9 to 10.1 never nudges its neighbours along. The label
+   is the constant and the value beside it is what changes. */
 .note {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 2px 8px;
+  display: grid;
+  /* Columns fall out of the pane's width rather than the values' — the same count until the
+     reader drags the seam, which is the only time anything here is allowed to move. */
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 6px 10px;
+  align-content: start;
+  margin-top: 10px;
   font-family: var(--mono);
   font-size: var(--t-micro);
-  letter-spacing: 0.04em;
-  color: var(--muted);
+  /* No tracking here, unlike the stamps: the cells are narrow, and every fraction of a
+     character of width is a word that stays on the line it belongs on.
+     Every digit the same width, so a reading that gains one does not resize its own cell. */
+  font-variant-numeric: tabular-nums;
 }
+
+/* Two lines, always — filled or not.
+
+   The column is fixed, so a long reading wraps inside its own cell instead of widening it and
+   pushing every other reading along. Reserving both lines whatever the value is means the wrap
+   moves nothing either: a step that grows a timestamp fills a line that was already there.
+   Past two lines it is clipped, and the cell carries the whole of it on hover. */
+.slot {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  min-width: 0;
+  line-height: 1.25;
+  height: 2.5em;
+}
+
+/* The half that never changes, so the eye can go straight to the cell it wants rather than
+   hunting for the symbol that names the number in it. */
+.slotLabel { color: var(--muted); text-transform: lowercase; margin-right: 4px; }
+
+.slotValue { color: var(--ink); }
 
 /* The measurements read as one quiet row; the readings *of* them — a distribution, a direction,
    a count of what was left out — carry the page's ink, since they are the part that says
    something rather than counts something. */
-.stat { white-space: nowrap; }
-.verdict { white-space: nowrap; color: var(--ink); }
+.slot[data-tone='stat'] .slotValue { color: var(--muted); }
 
 /* The one item about the topic rather than the readings, and the only one worth interrupting
    for. It wears the pane's fault colour, which is the colour a failed command wears — the same
    thing has happened: something that was supposed to work is not working. */
-.alarm { white-space: nowrap; color: var(--fault); font-weight: 600; }
+.slot[data-tone='alarm'] .slotValue { color: var(--fault); font-weight: 600; }
 
-/* A separator that belongs to the row rather than to either item beside it. */
-.stat + .stat::before,
-.stat + .verdict::before,
-.verdict + .verdict::before,
-.verdict + .stat::before {
-  content: "·";
-  color: var(--rule);
-  margin-right: 8px;
+/* Nothing to say here yet. Faint enough that a note full of dashes reads as a quiet instrument
+   rather than as a list of failures. */
+.slot[data-empty] .slotValue { color: var(--rule); }
+
+/* ---- what the plot could not fit ---- */
+
+/* The count of readings past an edge, sitting on the scale label for that edge. Small and in the
+   fault colour: it is not decoration, it is the plot admitting that its own edge is not the run's,
+   and a reader who misses it will read the pinned line as the highest reading. */
+.pinCount {
+  margin-left: 3px;
+  font-weight: 600;
+  color: var(--fault);
+}
+
+/* A reading drawn on the edge it went past. A wedge rather than a ring: a ring says 'here is the
+   value' and this mark says 'the value is further that way'. */
+.pin {
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  transform: translate(-50%, -50%);
+}
+.pin[data-side='high'] { border-bottom: 6px solid var(--fault); }
+.pin[data-side='low'] { border-top: 6px solid var(--fault); }
+
+/* The line the note's event count was taken against. Dashed like the mean and the zero line —
+   all three are levels the run is read against rather than anything the run did. */
+.threshold {
+  stroke: color-mix(in srgb, var(--signal) 55%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+}
+
+/* ---- a branch of the tree, one plot per topic ---- */
+
+/* Equal rows, so six topics divide the region evenly rather than the first taking what it likes.
+   Scrolls inside itself once the rows are shorter than a line can be read at. */
+.multiples {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-auto-rows: minmax(34px, 1fr);
+  gap: 1px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* A row is a way in: clicking it narrows the pane to that topic, where the note, the fields and
+   the readout under the pointer are all waiting. */
+.small {
+  all: unset;
+  display: grid;
+  grid-template-columns: minmax(0, 9ch) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  min-height: 0;
+  padding: 2px 4px;
+  border-radius: 2px;
+}
+.small:hover { background: var(--paper); }
+.small:focus-visible { outline: 2px solid var(--signal); outline-offset: -1px; }
+
+.smallName { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
+.smallTopic {
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  color: var(--ink);
+  /* The tail is the part that tells two rows apart, so the head is what goes. */
+  direction: rtl;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.smallField {
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Hands the scale and the plot back to a grid of its own: the row is not the chart's grid, so
+   `display: contents` on the frame inside would land the scale in the row's own columns. */
+.smallPlot {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px;
+  align-items: stretch;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The newest reading, which is the number someone scanning six rows is actually after. */
+.smallValue {
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.moreTopics {
+  margin: 4px 0 0;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  color: var(--muted);
+}
+
+/* ---- nothing to draw ---- */
+
+/* The way out of a field that found nothing, beside the sentence saying it found nothing. */
+.voidFields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0 0;
+}
+
+/* The topic's own newest message, as evidence for the sentence above it. Wraps rather than
+   scrolls: a reader is checking whether they recognise it, not reading all of it. */
+.voidSample {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  background: var(--paper);
+  border-left: 2px solid var(--rule);
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 5.5em;
+  overflow: hidden;
 }

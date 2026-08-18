@@ -60,6 +60,12 @@ const A_SWITCH = 2;
  */
 const HOLDS_ITS_SHARE = 0.5;
 
+/** A level the run visited once is somewhere it went, not somewhere it lives. */
+const VISITS_AGAIN = 2;
+
+/** Below this the run crossed between its levels once, which is a step rather than a switch. */
+const LEAVES_AND_RETURNS = 2;
+
 /** Past this share of the run, an excursion is not an event on a rest — it is the run. */
 const MOST_OF_A_DUTY = 0.35;
 
@@ -82,9 +88,12 @@ export function shapeOf(readings: Reading[], summary: Summary): Shape {
   // A handful of levels, each of them somewhere the run actually lives: a switch, a mode, a
   // state machine. Checked before the pulse test, since a switch also rests and leaves — the
   // difference is that its rest is one exact value rather than a band the readings wander in.
-  const evenly = rarest(levels, values.length) >= HOLDS_ITS_SHARE / levels.size;
-  if (levels.size <= MOST_LEVELS && (levels.size <= A_SWITCH || evenly)) {
-    return { id: 'state', levels: levels.size, pulses: pulsesOf(readings, midpoint(values), summary) };
+  if (levels.size <= MOST_LEVELS && lived(levels, values.length)) {
+    const pulses = pulsesOf(readings, midpoint(values), summary);
+
+    // A run that crossed between its levels once did not switch — it stepped, and the note has a
+    // better reading of that: how far it moved and when. A switch goes back and forth.
+    if (pulses.count >= LEAVES_AND_RETURNS) return { id: 'state', levels: levels.size, pulses };
   }
 
   const events = spiking(readings, summary);
@@ -111,12 +120,14 @@ function climbing(readings: Reading[], levels: number): Shape | null {
 
   let rise = 0;
   let wraps = 0;
+  const steps = new Set<number>();
 
   for (let i = 1; i < readings.length; i++) {
     const step = readings[i].value - readings[i - 1].value;
 
     if (step >= 0) {
       rise += step;
+      steps.add(step);
       continue;
     }
 
@@ -129,6 +140,12 @@ function climbing(readings: Reading[], levels: number): Shape | null {
   // Every wrap is a reading the rate cannot be taken across, and a run that is mostly wraps is
   // not a counter being read, it is a device being restarted.
   if (rise <= 0 || wraps * 4 > readings.length) return null;
+
+  // A total that climbs by exactly the same amount every single time is not a total — nothing
+  // that gets counted arrives that evenly. It is a ramp: a sweep, a setpoint, a simulator, a
+  // temperature climbing steadily. Those have a value that means something and a trend worth
+  // printing, and reading them as counters would throw both away.
+  if (steps.size < 2) return null;
 
   const span = readings[readings.length - 1].at.getTime() - readings[0].at.getTime();
 
@@ -181,8 +198,19 @@ function tally(values: number[]): Map<number, number> {
   return seen;
 }
 
-/** The share of the run held by the level the run visits least. */
-const rarest = (levels: Map<number, number>, n: number) => Math.min(...levels.values()) / n;
+/**
+ * Whether every level is somewhere the run lives rather than somewhere it went once.
+ *
+ * Two of them is a switch however lopsided the split, since there is nothing else two levels
+ * could be. Past two, each has to be visited more than once and hold something like its share —
+ * otherwise a quantity with one wild reading in it has an extra 'level' and reads as a machine.
+ */
+function lived(levels: Map<number, number>, n: number): boolean {
+  const least = Math.min(...levels.values());
+  if (least < VISITS_AGAIN) return false;
+
+  return levels.size <= A_SWITCH || least / n >= HOLDS_ITS_SHARE / levels.size;
+}
 
 /**
  * The excursions past a threshold, counted and timed.

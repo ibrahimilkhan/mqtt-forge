@@ -11,9 +11,23 @@ import { useAppearanceStore } from '../../stores/appearanceStore';
 import { useComposeStore } from '../../stores/composeStore';
 import { MAX_LOG_ENTRIES, useLogStore } from '../../stores/logStore';
 import { useSelectionStore } from '../../stores/selectionStore';
+import { TrafficPane } from './TrafficPane';
+import { useHoldStore } from './useTraffic';
 import { WireLog } from './WireLog';
 
 const chip = { label: 'sensors/#', filter: 'sensors/#' };
+
+// The entries and the chart are two regions of the right column now, reading the same run. The
+// workspace stacks them; here they are rendered together for the same reason.
+const Monitor = () => (
+  <>
+    <WireLog />
+    <TrafficPane />
+  </>
+);
+
+/** What the note is showing in one of its fixed slots — a dash when it has nothing to say. */
+const reading = (slot: string) => screen.getByTestId(`reading-${slot}`).textContent;
 
 // Oldest first, so the newest lands at the head of the store.
 const received = (...topics: string[]) =>
@@ -34,6 +48,7 @@ beforeEach(() => {
   useLogStore.getState().clear();
   useSelectionStore.getState().clear();
   useComposeStore.setState({ draft: null });
+  useHoldStore.getState().release();
   // The chart's detail is a stored preference, so a test that changes it would leak into the next.
   useAppearanceStore.getState().reset();
 });
@@ -42,7 +57,7 @@ describe('WireLog', () => {
   it('asks for a topic while nothing is selected', () => {
     received('sensors/room/temp');
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(
       screen.getByText('Pick a topic — click a subscription chip or a tree node to see its traffic here.'),
@@ -58,7 +73,7 @@ describe('WireLog', () => {
       .appendReceived(Array.from({ length: MAX_LOG_ENTRIES * 2 }, () => msg('sensors/hall/temp')));
     useSelectionStore.getState().select({ label: 'sensors/attic', filter: 'sensors/attic/#' });
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(screen.queryByText(/No traffic on/)).not.toBeInTheDocument();
     expect(screen.getByTestId('topic')).toHaveTextContent('sensors/attic/temp');
@@ -68,7 +83,7 @@ describe('WireLog', () => {
     received('actuators/valve');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(screen.getByText('No traffic on sensors/# yet.')).toBeInTheDocument();
   });
@@ -77,7 +92,7 @@ describe('WireLog', () => {
     received('sensors/room/temp', 'actuators/valve', 'sensors/hall/temp');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
     await userEvent.click(screen.getByRole('button', { name: '2 in history' }));
 
     const topics = screen.getAllByTestId('topic').map((topic) => topic.textContent);
@@ -90,7 +105,7 @@ describe('WireLog', () => {
     received('sensors/room/temp');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     const topics = screen.getAllByTestId('topic').map((topic) => topic.textContent);
     expect(topics).toEqual(['sensors/room/temp']);
@@ -101,7 +116,7 @@ describe('WireLog', () => {
     useLogStore.getState().push({ kind: 'ok', verb: 'Subscribed', topic: 'sensors/#' });
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(screen.getByText('No traffic on sensors/# yet.')).toBeInTheDocument();
   });
@@ -110,7 +125,7 @@ describe('WireLog', () => {
     received(...Array.from({ length: 8 }, (_, i) => `sensors/${i}`));
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(screen.getAllByTestId('entry')).toHaveLength(1);
     expect(screen.getByTestId('topic')).toHaveTextContent('sensors/7');
@@ -123,7 +138,7 @@ describe('WireLog', () => {
     received('sensors/a', 'actuators/valve', 'sensors/b');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(screen.getByRole('button', { name: '2 in history' })).toBeInTheDocument();
   });
@@ -132,7 +147,7 @@ describe('WireLog', () => {
     received(...Array.from({ length: 8 }, (_, i) => `sensors/${i}`));
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
     await userEvent.click(screen.getByRole('button', { name: '8 in history' }));
 
     expect(screen.getAllByTestId('entry')).toHaveLength(8);
@@ -148,7 +163,7 @@ describe('WireLog', () => {
     received('sensors/a');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(screen.getByText('1 in history')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '1 in history' })).not.toBeInTheDocument();
@@ -165,12 +180,12 @@ describe('WireLog', () => {
 
     received('sensors/a');
     useSelectionStore.getState().select(chip);
-    const lone = render(<WireLog />);
+    const lone = render(<Monitor />);
     const readout = look(screen.getByText('1 in history'));
     lone.unmount();
 
     received('sensors/b');
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(look(screen.getByRole('button', { name: '2 in history' }))).toBe(readout);
   });
@@ -180,7 +195,7 @@ describe('WireLog', () => {
     received(...Array.from({ length: 8 }, (_, i) => `actuators/${i}`));
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
     await userEvent.click(screen.getByRole('button', { name: '8 in history' }));
     act(() => useSelectionStore.getState().select({ label: 'actuators', filter: 'actuators/#' }));
 
@@ -193,7 +208,7 @@ describe('WireLog', () => {
     received('sensors/room/temp');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(screen.queryByTestId('focus')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Clear topic selection' })).not.toBeInTheDocument();
@@ -203,7 +218,7 @@ describe('WireLog', () => {
     received('sensors/room/temp');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     const topic = screen.getByTestId('topic');
     expect(topic).toHaveTextContent('sensors/room/temp');
@@ -219,7 +234,7 @@ describe('WireLog', () => {
     });
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(screen.getByText('QoS 1')).toBeInTheDocument();
     expect(screen.getByText('RETAINED')).toBeInTheDocument();
@@ -237,7 +252,7 @@ describe('WireLog', () => {
     });
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     const head = screen.getByTestId('head');
     expect(head).toHaveTextContent(/^\d\d:\d\d:\d\dQoS 1RETAINED4B$/);
@@ -252,7 +267,7 @@ describe('WireLog', () => {
     });
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(screen.getByText('RETAINED')).toHaveAttribute('data-stamp', 'RETAINED');
   });
@@ -261,7 +276,7 @@ describe('WireLog', () => {
     received('sensors/room/temp');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(screen.getByTestId('entry')).toHaveAttribute('data-kind', 'recv');
   });
@@ -275,7 +290,7 @@ describe('WireLog', () => {
       retain: true,
     });
     useSelectionStore.getState().select(chip);
-    render(<WireLog />);
+    render(<Monitor />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Load sensors/temp into publish' }));
 
@@ -291,7 +306,7 @@ describe('WireLog', () => {
     useLogStore.getState().push({ kind: 'recv', topic: 'sensors/temp', body: '21.5' });
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     const body = screen.getByText('21.5');
     const range = document.createRange();
@@ -314,7 +329,7 @@ describe('holding the pane still', () => {
     readings('sensors/temp', '21', '22');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
     await userEvent.click(screen.getByRole('button', { name: 'Hold the pane' }));
     act(() => readings('sensors/temp', '99'));
 
@@ -326,7 +341,7 @@ describe('holding the pane still', () => {
     readings('sensors/temp', '21', '22');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
     await userEvent.click(screen.getByRole('button', { name: 'Hold the pane' }));
     act(() => readings('sensors/temp', '23', '24', '25'));
 
@@ -337,7 +352,7 @@ describe('holding the pane still', () => {
     readings('sensors/temp', '21', '22');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
     await userEvent.click(screen.getByRole('button', { name: 'Hold the pane' }));
 
     expect(screen.getByRole('button', { name: 'Let the pane go' })).toHaveTextContent('held');
@@ -347,7 +362,7 @@ describe('holding the pane still', () => {
     readings('sensors/temp', '21', '22');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
     await userEvent.click(screen.getByRole('button', { name: 'Hold the pane' }));
     act(() => readings('sensors/temp', '99'));
     await userEvent.click(screen.getByRole('button', { name: /Let the pane go/ }));
@@ -360,7 +375,7 @@ describe('holding the pane still', () => {
     readings('sensors/hall', '31', '32');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
     await userEvent.click(screen.getByRole('button', { name: 'Hold the pane' }));
     act(() => useSelectionStore.getState().select({ label: 'sensors/hall', filter: 'sensors/hall' }));
 
@@ -378,7 +393,7 @@ describe('the chart over the entries', () => {
     readings('sensors/temp', '21.5', '22.5', '20');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(screen.getByTestId('chart')).toBeInTheDocument();
   });
@@ -387,7 +402,7 @@ describe('the chart over the entries', () => {
     readings('sensors/temp', ...Array.from({ length: 8 }, (_, i) => `${i}`));
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(screen.getByTestId('plot').getAttribute('points')?.trim().split(/\s+/)).toHaveLength(8);
   });
@@ -396,7 +411,7 @@ describe('the chart over the entries', () => {
     readings('sensors/temp', '21.5', '24.25', '19');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(within(screen.getByTestId('chart')).getByText('24.25')).toBeInTheDocument();
     expect(within(screen.getByTestId('chart')).getByText('19')).toBeInTheDocument();
@@ -408,10 +423,10 @@ describe('the chart over the entries', () => {
     readings('sensors/temp', '21.5', '24', '19');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(screen.getByTestId('plotArea')).toHaveAccessibleName(
-      /^3 readings on sensors\/temp, 19 to 24, latest 19/,
+      /^3 readings on sensors\/temp, drawn from 19 to 24, latest 19/,
     );
   });
 
@@ -420,9 +435,9 @@ describe('the chart over the entries', () => {
     readings('sensors/temp', '21.5', '21.5', '21.5');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
-    expect(within(screen.getByTestId('chart')).getAllByText('21.5')).toHaveLength(1);
+    expect(within(screen.getByTestId('scale')).getAllByText('21.5')).toHaveLength(1);
   });
 
   // Where a reading can go either way, which side of nothing it is on is the first thing read
@@ -431,7 +446,7 @@ describe('the chart over the entries', () => {
     readings('sensors/drift', '-2.5', '1.75', '-0.5');
     useSelectionStore.getState().select({ label: 'sensors/drift', filter: 'sensors/drift' });
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(screen.getByTestId('zero')).toBeInTheDocument();
   });
@@ -440,28 +455,44 @@ describe('the chart over the entries', () => {
     readings('sensors/temp', '21.5', '22', '20');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(screen.queryByTestId('zero')).not.toBeInTheDocument();
   });
 
-  it('leaves the chart out when the bodies are not readings', () => {
+  // It used to draw nothing here and say 'a line needs one topic sending numbers', which named
+  // neither this topic nor the reason. The reason is that the bodies are words, and the evidence
+  // for that is the topic's own newest message.
+  it('says the topic is not sending numbers, and shows what it is sending', () => {
     readings('sensors/state', 'ON', 'OFF', 'ON');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
-    expect(screen.queryByTestId('chart')).not.toBeInTheDocument();
+    expect(screen.getByTestId('unchartable')).toHaveAttribute('data-reason', 'no-numbers');
+    expect(screen.getByTestId('void-sample')).toHaveTextContent('ON');
   });
 
-  it('leaves the chart out when the selection mixes topics', () => {
-    readings('sensors/temp', '21.5', '22');
-    readings('sensors/hum', '54');
+  it('says a run one message long is one message long, rather than unchartable', () => {
+    readings('sensors/temp', '21.5');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
-    expect(screen.queryByTestId('chart')).not.toBeInTheDocument();
+    expect(screen.getByTestId('unchartable')).toHaveAttribute('data-reason', 'too-few');
+  });
+
+  // A branch of the tree is several topics, and refusing it was the commonest way to end up with
+  // no chart at all. °C and % sharing no axis is an argument for two scales, not for no chart.
+  it('draws a plot per topic when the selection covers several', () => {
+    readings('sensors/temp', '21.5', '22');
+    readings('sensors/hum', '54', '55');
+    useSelectionStore.getState().select(chip);
+
+    render(<Monitor />);
+
+    expect(screen.getByTestId('multiples')).toBeInTheDocument();
+    expect(screen.getAllByTestId('plotArea')).toHaveLength(2);
   });
 
   it('takes the colour a rule gives the topic, the way the entries do', async () => {
@@ -473,7 +504,7 @@ describe('the chart over the entries', () => {
     readings('sensors/temp', '21.5', '22');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     await waitFor(() => expect(screen.getByTestId('plot')).toHaveAttribute('stroke', '#b45309'));
   });
@@ -484,7 +515,7 @@ describe('the chart over the entries', () => {
     readings('sensors/temp', '10', '20', '30', '40', '50');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     const plot = screen.getByTestId('plotArea');
     vi.spyOn(plot, 'getBoundingClientRect').mockReturnValue({ left: 0, width: 100 } as DOMRect);
@@ -504,8 +535,6 @@ describe('what the chart says about the readings', () => {
   const readings = (topic: string, ...bodies: string[]) =>
     bodies.forEach((body) => useLogStore.getState().push({ kind: 'recv', topic, body }));
 
-  const note = () => screen.getByTestId('note').textContent ?? '';
-
   // 1, 40, 2, 39 … — every value once, so the spread is even, and the run ends where it started.
   const evenSpread = () =>
     Array.from({ length: 20 }, (_, i) => [`${i + 1}`, `${40 - i}`]).flat();
@@ -514,13 +543,13 @@ describe('what the chart says about the readings', () => {
     readings('sensors/temp', '20', '21', '22', '23', '24');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
-    expect(note()).toContain('n 5');
-    expect(note()).toContain('x̄ 22');
-    expect(note()).toContain('M 22');
-    expect(note()).toContain('σ 1.41');
-    expect(note()).toContain('20–24');
+    expect(reading('n')).toBe('5');
+    expect(reading('mean')).toBe('22');
+    expect(reading('median')).toBe('22');
+    expect(reading('spread')).toBe('1.41');
+    expect(reading('range')).toBe('20–24');
   });
 
   // Every value from one to forty, once each, in an order that goes nowhere: the uniform
@@ -529,9 +558,9 @@ describe('what the chart says about the readings', () => {
     readings('sensors/temp', ...evenSpread());
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
-    expect(note()).toContain('uniform');
+    expect(reading('shape')).toContain('uniform');
   });
 
   // A ramp is uniform, and saying so of a draining battery is true and useless: the shape is the
@@ -541,10 +570,10 @@ describe('what the chart says about the readings', () => {
     readings('sensors/battery', ...Array.from({ length: 40 }, (_, i) => `${(3.9 - i * 0.004).toFixed(3)}`));
     useSelectionStore.getState().select({ label: 'sensors/battery', filter: 'sensors/battery' });
 
-    render(<WireLog />);
+    render(<Monitor />);
 
-    expect(note()).toContain('falling');
-    expect(note()).not.toContain('uniform');
+    expect(reading('trend')).toContain('falling');
+    expect(reading('shape')).toBe('—');
   });
 
   // 'Not enough evidence to reject' is what the test returns, and 'normal' flat out is more than
@@ -553,27 +582,27 @@ describe('what the chart says about the readings', () => {
     readings('sensors/temp', ...evenSpread());
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
-    expect(note()).toContain('≈ uniform');
+    expect(reading('shape')).toBe('≈ uniform');
   });
 
   it('writes a range that crosses zero in words rather than dashes', () => {
     readings('sensors/drift', '-2.5', '-1', '0', '1.75', '-0.5', '2');
     useSelectionStore.getState().select({ label: 'sensors/drift', filter: 'sensors/drift' });
 
-    render(<WireLog />);
+    render(<Monitor />);
 
-    expect(note()).toContain('-2.5 to 2');
+    expect(reading('range')).toBe('-2.5 to 2');
   });
 
   it('names no shape for a run too short to have one', () => {
     readings('sensors/temp', '20', '21', '22', '23', '24');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
-    expect(note()).not.toMatch(/uniform|normal|exponential/);
+    expect(reading('shape')).toBe('—');
   });
 
   // The tolerance has to be visible: a chart quietly leaving messages out is a chart that lies
@@ -582,9 +611,9 @@ describe('what the chart says about the readings', () => {
     readings('sensors/temp', '21.5', 'sensor warming up', '22', '22.5');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
-    expect(note()).toContain('1 skipped');
+    expect(reading('skipped')).toBe('1');
   });
 
   // The chart's own window is not the log's: a note that said 'n 500' beside a history of five
@@ -593,36 +622,36 @@ describe('what the chart says about the readings', () => {
     readings('sensors/temp', ...Array.from({ length: 620 }, (_, i) => `${20 + (i % 5)}`));
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
-    expect(note()).toContain('n 500');
-    expect(note()).toContain('newest 500 of 620');
+    expect(reading('n')).toBe('500');
+    expect(reading('window')).toBe('500 of 620');
   });
 
-  it('says nothing about skipping when it read everything', () => {
+  it('counts nothing skipped when it read everything', () => {
     readings('sensors/temp', '21.5', '22', '22.5');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
-    expect(note()).not.toContain('skipped');
+    expect(reading('skipped')).toBe('0');
   });
 
   it('marks the readings that fall outside the fences', () => {
     readings('sensors/temp', '10', '11', '12', '11', '10', '12', '11', '90');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(screen.getAllByTestId('outlier')).toHaveLength(1);
-    expect(note()).toContain('1 outlier');
+    expect(reading('outliers')).toBe('1');
   });
 
   it('leaves a well behaved run unmarked', () => {
     readings('sensors/temp', '10', '11', '12', '11', '10', '12');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(screen.queryByTestId('outlier')).not.toBeInTheDocument();
   });
@@ -643,9 +672,9 @@ describe('what the chart says about the readings', () => {
     );
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
-    expect(note()).toContain('every 1 s');
+    expect(reading('every')).toBe('1 s');
   });
 
   // A sensor with a rhythm is a sensor whose silence means something. No other console knows the
@@ -667,18 +696,18 @@ describe('what the chart says about the readings', () => {
     arrivals(8, 1000, 60_000);
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
-    expect(note()).toContain('silent');
+    expect(reading('silence')).not.toBe('—');
   });
 
   it('says nothing about silence while the readings are still coming', () => {
     arrivals(8, 1000, 0);
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
-    expect(note()).not.toContain('silent');
+    expect(reading('silence')).toBe('—');
   });
 
   // Without a rhythm there is no such thing as late: a topic nobody promised to publish on
@@ -706,9 +735,9 @@ describe('what the chart says about the readings', () => {
     ]);
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
-    expect(note()).not.toContain('silent');
+    expect(reading('silence')).toBe('—');
   });
 
   // A valve opened, a heater came on, a scale was reloaded. The mean of a run with a step in it
@@ -717,9 +746,9 @@ describe('what the chart says about the readings', () => {
     readings('sensors/temp', ...Array(20).fill('21'), ...Array(20).fill('26'));
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
-    expect(note()).toContain('stepped +5');
+    expect(reading('step')).toContain('+5');
     expect(screen.getByTestId('step')).toBeInTheDocument();
   });
 
@@ -727,10 +756,10 @@ describe('what the chart says about the readings', () => {
     readings('sensors/temp', ...Array.from({ length: 40 }, (_, i) => `${20 + i}`));
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
-    expect(note()).toContain('rising');
-    expect(note()).not.toContain('stepped');
+    expect(reading('trend')).toContain('rising');
+    expect(reading('step')).toBe('—');
   });
 
   it('calls no step on a run that only wobbles', () => {
@@ -740,9 +769,9 @@ describe('what the chart says about the readings', () => {
     );
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
-    expect(note()).not.toContain('stepped');
+    expect(reading('step')).toBe('—');
     expect(screen.queryByTestId('step')).not.toBeInTheDocument();
   });
 
@@ -755,45 +784,46 @@ describe('what the chart says about the readings', () => {
     );
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
-    expect(note()).toContain('cycles every 12 readings');
+    // These arrive in one instant, so there is no pace to turn the count into a time.
+    expect(reading('cycle')).toBe('12 readings');
   });
 
   it('calls no cycle on a run that does not repeat', () => {
     readings('sensors/temp', ...Array.from({ length: 40 }, (_, i) => `${20 + i}`));
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
-    expect(note()).not.toContain('cycles');
+    expect(reading('cycle')).toBe('—');
   });
 
   it('says which way a drifting run is going', () => {
     readings('sensors/temp', ...Array.from({ length: 12 }, (_, i) => `${20 + i}`));
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
-    expect(note()).toContain('rising');
+    expect(reading('trend')).toContain('rising');
   });
 
   it('calls no direction on a run that only wobbles', () => {
     readings('sensors/temp', '21', '22', '21', '22', '21', '22');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
-    expect(note()).not.toMatch(/rising|falling/);
+    expect(reading('trend')).not.toMatch(/rising|falling/);
   });
 
   it('says a run that never moved is unchanged', () => {
     readings('sensors/temp', '21.5', '21.5', '21.5', '21.5');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
-    expect(note()).toContain('unchanged');
+    expect(reading('trend')).toBe('unchanged');
   });
 });
 
@@ -820,7 +850,7 @@ describe('choosing what the chart draws', () => {
     sends('sensors/env', { temp: 21.5, hum: 54 }, { temp: 22, hum: 55 });
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(screen.getByRole('button', { name: 'Chart hum' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Chart temp' })).toBeInTheDocument();
@@ -830,7 +860,7 @@ describe('choosing what the chart draws', () => {
     sends('sensors/env', { temp: 21.5, hum: 54 }, { temp: 22, hum: 55 });
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
     await userEvent.click(screen.getByRole('button', { name: 'Chart temp' }));
 
     expect(screen.getByTestId('plotArea')).toHaveAccessibleName(/readings of temp/);
@@ -842,7 +872,7 @@ describe('choosing what the chart draws', () => {
     sends('sensors/env', { temp: 21.5, hum: 54 }, { temp: 22, hum: 55 });
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(screen.getByRole('button', { name: 'Chart temp' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'Chart hum' })).toHaveAttribute('aria-pressed', 'false');
@@ -859,7 +889,7 @@ describe('choosing what the chart draws', () => {
     sends('sensors/env', { hum: 54 }, { temp: 22, hum: 55 }, { temp: 23 }, { temp: 24 });
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(screen.getByRole('button', { name: 'Chart temp' })).toHaveAttribute('aria-pressed', 'true');
   });
@@ -868,7 +898,7 @@ describe('choosing what the chart draws', () => {
     readings('sensors/temp', '21.5', '22');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(screen.queryByRole('button', { name: /^Chart / })).not.toBeInTheDocument();
   });
@@ -879,7 +909,7 @@ describe('choosing what the chart draws', () => {
     readings('sensors/temp', ...Array.from({ length: 20 }, (_, i) => `${20 + (i % 5)}`));
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
     await userEvent.click(screen.getByRole('button', { name: 'Distribution' }));
 
     expect(screen.getByTestId('histogram')).toBeInTheDocument();
@@ -896,7 +926,7 @@ describe('choosing what the chart draws', () => {
     readings('sensors/temp', '10', '20', '30', '40', '50');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
     await reachPlot();
 
     // Landing on the plot starts at the newest reading, which is the one the row above shows.
@@ -920,7 +950,7 @@ describe('choosing what the chart draws', () => {
     readings('sensors/temp', '10', '20', '30');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
     await reachPlot();
     await userEvent.keyboard('{ArrowLeft}');
 
@@ -933,7 +963,7 @@ describe('choosing what the chart draws', () => {
     readings('sensors/temp', '10', '20', '30');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
     await reachPlot();
     expect(screen.getByTestId('reading')).toBeInTheDocument();
 
@@ -949,7 +979,7 @@ describe('choosing what the chart draws', () => {
     readings('sensors/temp', '21.5', '22');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
     await userEvent.click(screen.getByRole('button', { name: 'Copy as CSV' }));
 
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining('time,sensors/temp'));
@@ -966,7 +996,7 @@ describe('choosing what the chart draws', () => {
     readings('sensors/temp', '21.5', '22');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
     await userEvent.click(screen.getByRole('button', { name: 'Copy as CSV' }));
 
     expect(await screen.findByRole('button', { name: 'Copy failed' })).toBeInTheDocument();
@@ -980,7 +1010,7 @@ describe('choosing what the chart draws', () => {
     readings('sensors/temp', '21.5', '22');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
     await userEvent.click(screen.getByRole('button', { name: 'Copy as CSV' }));
 
     expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument();
@@ -1000,7 +1030,7 @@ describe('the three versions of the chart', () => {
     readings('sensors/temp', ...wave());
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(screen.getByTestId('plotArea')).toBeInTheDocument();
     expect(screen.queryByTestId('note')).not.toBeInTheDocument();
@@ -1012,7 +1042,7 @@ describe('the three versions of the chart', () => {
     readings('sensors/temp', ...wave());
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(screen.getByTestId('note')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Copy as CSV' })).toBeInTheDocument();
@@ -1024,11 +1054,12 @@ describe('the three versions of the chart', () => {
     readings('sensors/temp', ...wave());
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(screen.getByTestId('plot')).toBeInTheDocument();
     expect(screen.getByTestId('histogram')).toBeInTheDocument();
-    expect(screen.getByTestId('note').textContent).toMatch(/Q .*fences/);
+    expect(reading('quartiles')).not.toBe('—');
+    expect(reading('fences')).not.toBe('—');
     // Nothing to choose between when both are drawn.
     expect(screen.queryByRole('button', { name: 'Distribution' })).not.toBeInTheDocument();
   });
@@ -1040,7 +1071,7 @@ describe('the three versions of the chart', () => {
       readings('sensors/temp', ...wave());
       useSelectionStore.getState().select(chip);
 
-      const view = render(<WireLog />);
+      const view = render(<Monitor />);
       const plot = screen.getByTestId('plotArea');
       for (let step = 0; step < 12 && document.activeElement !== plot; step++) await userEvent.tab();
 
@@ -1064,7 +1095,7 @@ describe('colour rules', () => {
     useSelectionStore.getState().select(chip);
     received('sensors/a/temp');
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     await waitFor(() => expect(topicOf('sensors/a/temp')).toHaveStyle({ color: '#b45309' }));
   });
@@ -1074,7 +1105,7 @@ describe('colour rules', () => {
     useSelectionStore.getState().select(chip);
     received('sensors/a/temp', 'sensors/a/hum');
 
-    render(<WireLog />);
+    render(<Monitor />);
     await userEvent.click(screen.getByRole('button', { name: '2 in history' }));
 
     await waitFor(() => expect(topicOf('sensors/a/temp')).toHaveStyle({ color: '#b45309' }));
@@ -1086,7 +1117,7 @@ describe('colour rules', () => {
     useSelectionStore.getState().select(chip);
     received('sensors/a/temp');
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     await waitFor(() => expect(topicOf('sensors/a/temp')).toHaveStyle({ color: '#222222' }));
   });
@@ -1096,7 +1127,7 @@ describe('colour rules', () => {
     useSelectionStore.getState().select(chip);
     received('sensors/a/temp');
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(screen.getByTestId('entry')).toBeInTheDocument();
     await waitFor(() => expect(topicOf('sensors/a/temp').style.color).toBe(''));
@@ -1122,7 +1153,7 @@ describe('the entry wears its rule on the left edge', () => {
     useSelectionStore.getState().select(chip);
     received('sensors/a/temp');
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     await waitFor(() => expect(edgeOf('sensors/a/temp')).toBe('#b45309'));
   });
@@ -1132,7 +1163,7 @@ describe('the entry wears its rule on the left edge', () => {
     useSelectionStore.getState().select(chip);
     received('sensors/a/temp', 'sensors/a/hum');
 
-    render(<WireLog />);
+    render(<Monitor />);
     await userEvent.click(screen.getByRole('button', { name: '2 in history' }));
 
     await waitFor(() => expect(edgeOf('sensors/a/temp')).toBe('#b45309'));
@@ -1152,7 +1183,7 @@ describe('the head and the stamps stay quiet', () => {
     useSelectionStore.getState().select(chip);
     useLogStore.getState().push({ kind: 'recv', topic: 'sensors/a/temp', stamps: ['QoS 1'] });
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     await waitFor(() => expect(screen.getByTestId('topic')).toHaveStyle({ color: '#b45309' }));
     expect(screen.getByText('QoS 1').style.color).toBe('');
@@ -1166,7 +1197,7 @@ describe('the head and the stamps stay quiet', () => {
     });
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     // Same treatment as the QoS and size beside it; only the word tells them apart.
     const colourOf = (text: string) => getComputedStyle(screen.getByText(text)).color;
@@ -1181,7 +1212,7 @@ describe('the head and the stamps stay quiet', () => {
     received('sensors/a/temp');
     useSelectionStore.getState().select(chip);
 
-    render(<WireLog />);
+    render(<Monitor />);
 
     expect(screen.queryByTestId('verb')).not.toBeInTheDocument();
     expect(screen.getByTestId('head')).not.toHaveTextContent('↓');

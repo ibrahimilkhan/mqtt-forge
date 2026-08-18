@@ -1,5 +1,6 @@
 /* Fixed places: the panel column (when one is open), topics in the middle, and a right column
-   split into log over publish. Nothing moves between them — only the boundaries do.
+   split into the newest message, the chart under it and the publish form under that. Nothing
+   moves between them — only the boundaries do.
    The fr values are whole tokens because fr is not allowed inside calc(), and minmax(0, …) keeps
    the shares honest: a bare fr track never shrinks below its content, so one pane full of long
    topic names would quietly take the others' width. */
@@ -23,17 +24,22 @@
 
 .right {
   display: grid;
-  grid-template-rows: minmax(0, var(--log)) auto minmax(0, var(--publish));
+  grid-template-rows:
+    minmax(0, var(--log)) auto
+    minmax(0, var(--chart)) auto
+    minmax(0, var(--publish));
   gap: 1px;
   background: var(--rule);
   min-height: 0;
   min-width: 0;
 }
 
-/* Before the split is measured: the publish form takes exactly its own height and the log gets
-   the rest, so nothing is clipped on the first paint whatever the window height happens to be. */
+/* Before the split is measured: the entries and the publish form take exactly their own heights
+   and the chart gets the rest, so nothing is clipped on the first paint whatever the window
+   height happens to be. The chart is the one that stretches — the other two have a height their
+   content asks for, and a line does not. */
 .right[data-fit='content'] {
-  grid-template-rows: minmax(0, 1fr) auto min-content;
+  grid-template-rows: min-content auto minmax(0, 1fr) auto min-content;
 }
 
 /* Panes bring their own background and padding; the cell only has to hold them. */
@@ -49,5 +55,6 @@
   /* No room for columns, so everything stacks in the order it sat in and the page scrolls. */
   .grid,
   .grid[data-panel='closed'] { grid-template-columns: 1fr; min-height: auto; }
-  .right { grid-template-rows: auto auto auto; }
+  .right,
+  .right[data-fit='content'] { grid-template-rows: auto auto auto auto auto; }
 }

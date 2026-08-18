@@ -1,6 +1,7 @@
 import { Field } from '../../components/Field';
 import { PanelShell } from '../../components/PanelShell';
 import panel from '../../styles/panel.module.css';
+import { SCALES, type ScaleId } from '../../lib/scale';
 import { useAppearanceStore } from '../../stores/appearanceStore';
 import styles from './AppearancePanel.module.css';
 import { CHART_DETAIL, type ChartDetailId } from './chart';
@@ -8,7 +9,8 @@ import { MONO, SANS, SIZE, type MonoId, type SansId } from './fonts';
 
 // No selector: the panel shows every value, so it must re-render on any change.
 export function AppearancePanel({ onClose }: { onClose: () => void }) {
-  const { sans, mono, size, chart, setSans, setMono, setSize, setChart, reset } = useAppearanceStore();
+  const { sans, mono, size, chart, scale, setSans, setMono, setSize, setChart, setScale, reset } =
+    useAppearanceStore();
 
   return (
     <PanelShell title="Settings" onClose={onClose}>
@@ -80,6 +82,28 @@ export function AppearancePanel({ onClose }: { onClose: () => void }) {
             ))}
           </select>
         </Field>
+      </div>
+
+      <div className={panel.row}>
+        <Field label="Chart range" htmlFor="chart-range">
+          <select
+            id="chart-range"
+            className={styles.select}
+            value={scale}
+            onChange={(event) => setScale(event.target.value as ScaleId)}
+          >
+            {Object.entries(SCALES).map(([id, range]) => (
+              <option key={id} value={id}>
+                {range.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {/* The setting is for readings of a quantity. A pulse train keeps its extremes whatever
+            is chosen here, since a pulse clipped to its typical range is the signal shaved off. */}
+        <p className={panel.note}>
+          Runs whose peaks are the signal — pulses, switches — are always drawn on their extremes.
+        </p>
       </div>
 
       <p className={panel.note}>Stored in this browser only.</p>

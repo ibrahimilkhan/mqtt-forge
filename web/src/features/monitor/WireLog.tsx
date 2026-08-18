@@ -1,21 +1,20 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import type { ColourRule } from '../../lib/topicColour';
 import { useRuleLookup } from '../../lib/useRuleLookup';
-import { matchesFilter } from '../../lib/topicMatch';
-import { useLogStore, type LogEntry } from '../../stores/logStore';
-import { useSelectionStore } from '../../stores/selectionStore';
+import type { LogEntry } from '../../stores/logStore';
 import { LogEntryRow } from './LogEntryRow';
-import { TrafficChart } from './TrafficChart';
+import { useHoldStore, useTraffic } from './useTraffic';
 import styles from './WireLog.module.css';
 
+/**
+ * The top of the right column: what arrived last, and the rest of it on request.
+ *
+ * The chart that reads this run sits under it in its own region, and the publish form under
+ * that. Three fixed places, so the newest reading is always at the top of the column whatever
+ * the run behind it is doing.
+ */
 export function WireLog() {
-  const entries = useLogStore((state) => state.entries);
-  const selected = useSelectionStore((state) => state.selected);
-
-  const matching = useMemo(
-    () => (selected ? entries.filter((entry) => carriesTraffic(entry, selected.filter)) : []),
-    [entries, selected],
-  );
+  const { selected, entries } = useTraffic();
 
   return (
     <>
@@ -30,26 +29,20 @@ export function WireLog() {
         </p>
       )}
 
-      {selected && matching.length === 0 && <p className="empty">No traffic on {selected.label} yet.</p>}
+      {selected && entries.length === 0 && <p className="empty">No traffic on {selected.label} yet.</p>}
 
       {/* Keying on the filter remounts the list on focus change, folding it back to the newest. */}
-      {selected && matching.length > 0 && <EntryList key={selected.filter} entries={matching} />}
+      {selected && entries.length > 0 && <EntryList key={selected.filter} />}
     </>
   );
 }
 
-function EntryList({ entries: live }: { entries: LogEntry[] }) {
+function EntryList() {
   const [expanded, setExpanded] = useState(false);
-  const [held, setHeld] = useState<LogEntry[] | null>(null);
+  const { selected, live, entries, held, arrived } = useTraffic();
+  const hold = useHoldStore((state) => state.hold);
+  const release = useHoldStore((state) => state.release);
   const ruleOf = useRuleLookup();
-
-  // Held, the pane keeps drawing the run it was drawing; the log behind it carries on filling.
-  // Reading a value while the row it is in is being replaced is the oldest complaint about
-  // consoles, and stopping the log to fix it throws away the traffic you were there for.
-  const entries = held ?? live;
-
-  // Ids only go up, so what has arrived since is what is newer than the newest one held.
-  const arrived = held ? live.filter((entry) => entry.id > held[0].id).length : 0;
 
   // The newest alone, until asked. A topic under traffic overwrites its own value rather than
   // adding to it, so what a run of rows mostly shows is the same reading several times over —
@@ -67,11 +60,6 @@ function EntryList({ entries: live }: { entries: LogEntry[] }) {
           <LogEntryRow key={entry.id} entry={entry} rule={ruleForEntry(entry, ruleOf)} />
         ))}
       </div>
-
-      {/* Under the newest reading and over the count: the value now, the shape behind it, and
-          then how much of that shape the log still holds. Draws nothing unless the entries in
-          view are one topic's numbers, which is the only run a single line can honestly draw. */}
-      <TrafficChart entries={entries} frozen={held !== null} />
 
       <div className={styles.foot}>
         {/* A lone entry is already all of them, so the count states itself rather than offering
@@ -94,7 +82,7 @@ function EntryList({ entries: live }: { entries: LogEntry[] }) {
         <button
           type="button"
           className={styles.hold}
-          aria-pressed={held !== null}
+          aria-pressed={held}
           aria-label={
             held
               ? arrived > 0
@@ -103,25 +91,13 @@ function EntryList({ entries: live }: { entries: LogEntry[] }) {
               : 'Hold the pane'
           }
           title={held ? `${arrived} arrived while held` : 'Hold the pane still'}
-          onClick={() => setHeld(held ? null : live)}
+          onClick={() => (held ? release() : hold(selected!.filter, live))}
         >
           {held ? (arrived > 0 ? `held · ${arrived}` : 'held') : 'hold'}
         </button>
       </div>
     </>
   );
-}
-
-/**
- * The pane answers one question — what has arrived on this topic — so only arrivals belong in it.
- *
- * A command entry's `topic` is what the command was aimed at: a filter, possibly a wildcard, or
- * a count like '3 filters'. Matching that against the selection reads as traffic that never
- * happened — 'Subscribed to sensors/#' would sit under a selected sensors/# looking like an
- * arrival on a topic no broker ever published to.
- */
-function carriesTraffic(entry: LogEntry, filter: string): boolean {
-  return entry.kind === 'recv' && !!entry.topic && matchesFilter(filter, entry.topic);
 }
 
 /** A rule colours the topic a message landed on; a command entry never reaches the rows. */

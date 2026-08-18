@@ -6,6 +6,7 @@ import { ColoursPanel } from './features/colours/ColoursPanel';
 import { BrokerPanel } from './features/connection/BrokerPanel';
 import { MobilePanel } from './features/mobile/MobilePanel';
 import { useBrokerAddress, useConnectionState } from './api/useConnectionState';
+import { TrafficPane } from './features/monitor/TrafficPane';
 import { WireLog } from './features/monitor/WireLog';
 import { TopicTree } from './features/topics/TopicTree';
 import { PANELS, type PanelId } from './features/panels';
@@ -91,6 +92,11 @@ export function App({ hub }: { hub: Hub }) {
           log={
             <section className={styles.wire}>
               <WireLog />
+            </section>
+          }
+          chart={
+            <section className={styles.chartPane}>
+              <TrafficPane />
             </section>
           }
           publish={<PublishPanel />}

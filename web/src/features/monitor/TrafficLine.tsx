@@ -1,5 +1,8 @@
 import { useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { short } from '../../lib/format';
+import { pinned, positionIn, type Domain } from '../../lib/scale';
 import type { Series } from '../../lib/series';
+import type { Shape } from '../../lib/shape';
 import type { Change, Summary } from '../../lib/stats';
 import styles from './TrafficChart.module.css';
 
@@ -18,39 +21,64 @@ const shift = (index: number, count: number) =>
  *
  * The newest value says where a sensor is; a topic under traffic is usually asked where it has
  * been going, and that is a shape rather than a number.
+ *
+ * Two things about the run decide how it is drawn. The domain says how much of the range the
+ * height is spent on — a reading outside it is pinned to the edge and marked, never dropped. The
+ * shape says whether the readings are a quantity, which is drawn as a line between them, or
+ * levels, which are drawn as the steps they actually are: a switch does not pass through the
+ * values between off and on, and sloping from one to the other says it does.
  */
 export function TrafficLine({
   series,
   summary,
+  domain,
+  shape,
   step = null,
   colour,
   marks = true,
+  compact = false,
 }: {
   series: Series;
   summary: Summary;
+  /** The band of values the height covers, and what fell outside it. */
+  domain: Domain;
+  shape: Shape;
   /** Where the run moved from one level to another, when it did. */
   step?: Change | null;
   colour?: string;
   /** The band, the mean and the outlier rings — everything drawn that is not a reading. */
   marks?: boolean;
+  /** One of several stacked plots: no readout, no focus ring, no furniture. */
+  compact?: boolean;
 }) {
   const [hovered, setHovered] = useState<number | null>(null);
-  const { readings, low, high } = series;
+  const { readings } = series;
 
-  // A flat run has no range to scale against: down the middle, rather than a division by zero.
-  // A straight line is exactly what a topic repeating one value should show.
-  const span = high - low;
-  const y = (value: number) =>
-    span === 0 ? SIDE / 2 : Math.min(Math.max(SIDE - ((value - low) / span) * SIDE, 0), SIDE);
+  const y = (value: number) => SIDE - positionIn(domain, value) * SIDE;
 
   // One step per reading, not one per second. The log drops a topic's oldest entries as it
   // fills, so the gaps between what it still holds are the trimming's, not the broker's —
   // spacing by arrival time would draw those as silences the sensor never had.
   const x = (index: number) => (index / (readings.length - 1)) * SIDE;
 
-  const line = readings.map((reading, index) => `${x(index)},${y(reading.value)}`).join(' ');
+  // A switch holds its level until it changes, so the corner is square. Drawn as a slope, a door
+  // that opened between two readings a minute apart would read as a door that spent that minute
+  // ajar — which is exactly the reading someone chasing a fault would act on.
+  const held = shape.id === 'state' || shape.id === 'pulse';
+
+  const line = readings
+    .flatMap((reading, index) =>
+      held && index > 0
+        ? [`${x(index)},${y(readings[index - 1].value)}`, `${x(index)},${y(reading.value)}`]
+        : [`${x(index)},${y(reading.value)}`],
+    )
+    .join(' ');
+
   const latest = readings[readings.length - 1];
-  const banded = marks && summary.n >= ENOUGH_FOR_A_BAND && summary.sd > 0;
+  // Only a run of measurements has a mean worth drawing. On a switch the mean sits in the gap
+  // between the two levels, where the signal has never once been.
+  const banded =
+    marks && shape.id === 'continuous' && summary.n >= ENOUGH_FOR_A_BAND && summary.sd > 0;
 
   const last = readings.length - 1;
   const settle = (step: number) => setHovered(Math.min(Math.max(step, 0), last));
@@ -79,6 +107,20 @@ export function TrafficLine({
     settle(next);
   };
 
+  // Readings the domain could not fit, drawn on the edge they went past. Not silently clamped:
+  // a run flattened against the top of the plot with nothing to say why would be the chart
+  // lying about its own range.
+  const outside = readings.reduce<Array<{ index: number; side: 'high' | 'low' }>>(
+    (found, reading, index) => {
+      if (pinned(domain, reading.value)) {
+        found.push({ index, side: reading.value > domain.high ? 'high' : 'low' });
+      }
+
+      return found;
+    },
+    [],
+  );
+
   return (
     <div className={styles.frame}>
       {/* The line says the shape and the labels say the size of it, which is the one thing a
@@ -86,12 +128,23 @@ export function TrafficLine({
           that never moved has one number to give, not the same one twice. */}
       <div
         className={styles.scale}
+        data-testid="scale"
         // With one label and a line down the middle, the label belongs beside the line.
-        data-flat={span === 0 ? '' : undefined}
+        data-flat={domain.high === domain.low ? '' : undefined}
         aria-hidden="true"
       >
-        <span>{high}</span>
-        {span !== 0 && <span>{low}</span>}
+        <span>
+          {short(domain.high)}
+          {/* An arrow, not a footnote: the reader has to know at a glance that the plot's edge
+              is not the run's, or they will read the pinned line as the highest reading. */}
+          {domain.over > 0 && <b className={styles.pinCount}>↑{domain.over}</b>}
+        </span>
+        {domain.high !== domain.low && (
+          <span>
+            {short(domain.low)}
+            {domain.under > 0 && <b className={styles.pinCount}>↓{domain.under}</b>}
+          </span>
+        )}
       </div>
 
       <div className={styles.plotArea}>
@@ -100,11 +153,12 @@ export function TrafficLine({
         <div
           className={styles.plot}
           data-testid="plotArea"
+          data-shape={shape.id}
           role="img"
-          aria-label={`${readings.length} readings${series.field ? ` of ${series.field}` : ''} on ${series.topic}, ${low} to ${high}, latest ${latest.value}. Arrow keys walk the readings.`}
+          aria-label={spoken(series, domain, shape, latest.value)}
           // Focusable so the readings can be walked without a pointer. Landing on it starts at
           // the newest reading, which is the one the row above is showing.
-          tabIndex={0}
+          tabIndex={compact ? -1 : 0}
           onPointerMove={follow}
           onPointerLeave={() => setHovered(null)}
           onFocus={() => setHovered((at) => at ?? last)}
@@ -136,9 +190,24 @@ export function TrafficLine({
               <line className={styles.mean} x1={0} y1={y(summary.mean)} x2={SIDE} y2={y(summary.mean)} />
             )}
 
+            {/* The line the events under the plot were counted against. Without it the note's
+                count of pulses is a number the reader has no way to check against the picture. */}
+            {marks && held && shape.pulses.threshold > domain.low && shape.pulses.threshold < domain.high && (
+              <line
+                className={styles.threshold}
+                data-testid="threshold"
+                x1={0}
+                y1={y(shape.pulses.threshold)}
+                x2={SIDE}
+                y2={y(shape.pulses.threshold)}
+              >
+                <title>the line an excursion is counted against</title>
+              </line>
+            )}
+
             {/* Where a reading can go either way, which side of nothing it is on is the first
                 thing read off the shape — and the line alone cannot say where nothing is. */}
-            {low < 0 && high > 0 && (
+            {domain.low < 0 && domain.high > 0 && (
               <line className={styles.zero} data-testid="zero" x1={0} y1={y(0)} x2={SIDE} y2={y(0)}>
                 <title>zero</title>
               </line>
@@ -181,9 +250,22 @@ export function TrafficLine({
             style={{ left: `${x(readings.length - 1)}%`, top: `${y(latest.value)}%` }}
           />
 
+          {/* A reading the plot's range could not hold, sitting on the edge it went past. */}
+          {outside.map(({ index, side }) => (
+            <span
+              key={index}
+              className={styles.pin}
+              data-testid="pinned"
+              data-side={side}
+              title={`${short(readings[index].value)} — past the plot's range`}
+              style={{ left: `${x(index)}%`, top: side === 'high' ? '0%' : '100%' }}
+            />
+          ))}
+
           {/* A reading past the fences is either the event the sensor was put there to catch or
-              a fault in it, and either way it is the one to look at first. */}
-          {marks && summary.outliers.map((index) => (
+              a fault in it, and either way it is the one to look at first. Not on a switch: on
+              two levels every reading is one level or the other, and both are ordinary. */}
+          {marks && shape.id === 'continuous' && summary.outliers.map((index) => (
             <span
               key={index}
               className={styles.outlier}
@@ -192,7 +274,7 @@ export function TrafficLine({
             />
           ))}
 
-          {hovered !== null && (
+          {hovered !== null && !compact && (
             <span
               className={styles.reading}
               data-testid="reading"
@@ -209,12 +291,32 @@ export function TrafficLine({
 
         {/* Outside the plot on purpose: role="img" makes everything inside it presentational, so
             a live region in there would announce nothing. This is the same readout in words. */}
-        <span className="srOnly" data-testid="spoken" aria-live="polite">
-          {hovered === null
-            ? ''
-            : `${readings[hovered].value} at ${readings[hovered].at.toLocaleTimeString('en-GB', { hour12: false })}, reading ${hovered + 1} of ${readings.length}`}
-        </span>
+        {!compact && (
+          <span className="srOnly" data-testid="spoken" aria-live="polite">
+            {hovered === null
+              ? ''
+              : `${readings[hovered].value} at ${readings[hovered].at.toLocaleTimeString('en-GB', { hour12: false })}, reading ${hovered + 1} of ${readings.length}`}
+          </span>
+        )}
       </div>
     </div>
   );
+}
+
+/**
+ * The plot in words, for a reader who cannot see it.
+ *
+ * It carries what the picture carries and nothing the picture does not: how many readings, of
+ * what, drawn over what range — and, when the range is not the run's own, that some of them are
+ * sitting on the edge rather than at the value they hold.
+ */
+function spoken(series: Series, domain: Domain, shape: Shape, latest: number): string {
+  const what = series.field ? ` of ${series.field}` : '';
+  const kind = shape.id === 'continuous' ? '' : `, read as ${shape.id === 'counter' ? 'a counter' : shape.id === 'state' ? `${shape.levels} levels` : 'a pulse train'}`;
+  const clipped =
+    domain.over + domain.under > 0
+      ? `, ${domain.over + domain.under} outside the plot's range and drawn on its edge`
+      : '';
+
+  return `${series.readings.length} readings${what} on ${series.topic}${kind}, drawn from ${short(domain.low)} to ${short(domain.high)}${clipped}, latest ${latest}. Arrow keys walk the readings.`;
 }

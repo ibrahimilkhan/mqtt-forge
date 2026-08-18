@@ -104,7 +104,13 @@ describe('shapeOf, on a pulse train', () => {
 });
 
 describe('shapeOf, on a counter', () => {
-  const packets = Array.from({ length: 20 }, (_, i) => 1000 + i * 7);
+  // Bursty, the way anything that gets counted actually arrives: a total that climbed by exactly
+  // the same amount every second would be a ramp, and is read as one.
+  const bursts = [0, 5, 9, 2, 12, 0, 8, 3, 15, 6, 1, 9, 4, 11, 7, 2, 10, 5, 8];
+  const packets = bursts.reduce<number[]>(
+    (total, burst) => [...total, total[total.length - 1] + burst],
+    [1000],
+  );
 
   it('reads a number that only ever goes up as a counter', () => {
     expect(shape(...packets)).toMatchObject({ id: 'counter' });
@@ -112,11 +118,21 @@ describe('shapeOf, on a counter', () => {
 
   // The value is an accident of when the device last restarted; the slope is the reading.
   it('gives the rate it is climbing at, per second', () => {
-    expect(shape(...packets)).toMatchObject({ rate: 7 });
+    const climbed = packets[packets.length - 1] - packets[0];
+
+    expect(shape(...packets)).toMatchObject({ rate: climbed / (packets.length - 1) });
+  });
+
+  // Nothing that gets counted arrives at exactly the same rate every second. A run that does is
+  // a sweep or a setpoint, and it has a value and a trend that both mean something.
+  it('reads a perfectly even climb as a quantity rising, not as a total', () => {
+    expect(shape(...Array.from({ length: 40 }, (_, i) => 20 + i))).toMatchObject({
+      id: 'continuous',
+    });
   });
 
   it('allows for a counter starting again, and counts it', () => {
-    const wrapped = [...packets, 3, 10, 17, 24, 31, 38, 45, 52];
+    const wrapped = [...packets, 3, 10, 18, 24, 33, 38, 46, 52];
 
     expect(shape(...wrapped)).toMatchObject({ id: 'counter', wraps: 1 });
   });

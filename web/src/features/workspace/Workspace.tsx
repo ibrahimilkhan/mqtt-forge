@@ -7,10 +7,14 @@ type Props = {
   panel?: ReactNode;
   tree: ReactNode;
   log: ReactNode;
+  chart: ReactNode;
   publish: ReactNode;
 };
 
 type Widths = { panel: number; tree: number; right: number };
+
+/** The right column's three rows, top to bottom, as fractions of its height. */
+export type Rows = { log: number; chart: number; publish: number };
 
 // The topics column is the one that has to hold a shape rather than a line of text: a deep tree
 // indents every level, so it starts as the widest of the three. The panel column holds a form
@@ -18,38 +22,51 @@ type Widths = { panel: number; tree: number; right: number };
 const START: Widths = { panel: 0.24, tree: 0.44, right: 0.32 };
 
 /**
- * Where to put the log/publish boundary so the publish form opens at exactly its own height.
- * Null while the column has no measured height — there is nothing to divide yet.
+ * Where to put the two boundaries in the right column so the log and the publish form each open
+ * at exactly their own height, and the chart takes what is left between them.
+ *
+ * Null while the column has no measured height — there is nothing to divide yet. The chart is
+ * the one that stretches on purpose: the entries above it are one row until asked for more, and
+ * the form below it is the size the form is, but a line has no natural height at all.
  */
-export function fitShare(columnHeight: number, publishHeight: number): number | null {
+export function fitRows(columnHeight: number, logHeight: number, publishHeight: number): Rows | null {
   if (columnHeight <= 0) return null;
 
-  const share = 1 - publishHeight / columnHeight;
-  return Math.min(1 - MIN_SHARE, Math.max(MIN_SHARE, share));
+  // Neither end may take so much that the other two are slivers, and the chart keeps its own
+  // floor out of whatever the ends leave.
+  const log = clamp(logHeight / columnHeight, MIN_SHARE, 1 - 2 * MIN_SHARE);
+  const publish = clamp(publishHeight / columnHeight, MIN_SHARE, 1 - MIN_SHARE - log);
+
+  return { log, chart: 1 - log - publish, publish };
 }
 
-export function Workspace({ panel, tree, log, publish }: Props) {
+const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
+
+export function Workspace({ panel, tree, log, chart, publish }: Props) {
   // Held as the row looks with a panel open, so closing and reopening one puts it back as it was.
   const [widths, setWidths] = useState<Widths>(START);
 
-  // Null until measured: the column sizes the publish pane to its content, so the form fits on
-  // first paint whatever the window height, instead of being clipped by a guessed fraction.
-  const [logShare, setLogShare] = useState<number | null>(null);
+  // Null until measured: the column sizes the log and the publish pane to their content, so both
+  // fit on first paint whatever the window height, instead of being clipped by a guessed
+  // fraction.
+  const [rows, setRows] = useState<Rows | null>(null);
   const columnRef = useRef<HTMLDivElement>(null);
+  const logRef = useRef<HTMLDivElement>(null);
   const publishRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
-    if (logShare !== null) return;
+    if (rows !== null) return;
 
     const column = columnRef.current;
+    const top = logRef.current;
     const pane = publishRef.current;
-    if (!column || !pane) return;
+    if (!column || !top || !pane) return;
 
     // scrollHeight, not clientHeight: content-sized now, but this still reads the full form
     // if anything has already clipped it.
-    const measured = fitShare(column.clientHeight, pane.scrollHeight);
-    if (measured !== null) setLogShare(measured);
-  }, [logShare]);
+    const measured = fitRows(column.clientHeight, top.scrollHeight, pane.scrollHeight);
+    if (measured !== null) setRows(measured);
+  }, [rows]);
 
   // A closed panel hands half its width to each neighbour, rather than to whichever is wider.
   const spare = panel ? 0 : widths.panel / 2;
@@ -59,12 +76,17 @@ export function Workspace({ panel, tree, log, publish }: Props) {
     right: widths.right + spare,
   };
 
-  const columns = {
+  // Before the measurement the CSS sizes the rows itself, so the fractions here stand in only
+  // for the handles' own arithmetic.
+  const split = rows ?? { log: 0.3, chart: 0.4, publish: 0.3 };
+
+  const tracks = {
     '--panel': `${(shown.panel * 100).toFixed(2)}fr`,
     '--tree': `${(shown.tree * 100).toFixed(2)}fr`,
     '--right': `${(shown.right * 100).toFixed(2)}fr`,
-    '--log': `${((logShare ?? 0) * 100).toFixed(2)}fr`,
-    '--publish': `${((1 - (logShare ?? 0)) * 100).toFixed(2)}fr`,
+    '--log': `${(split.log * 100).toFixed(2)}fr`,
+    '--chart': `${(split.chart * 100).toFixed(2)}fr`,
+    '--publish': `${(split.publish * 100).toFixed(2)}fr`,
   } as CSSProperties;
 
   // Both side-by-side handles report where their boundary sits across the whole row, which is what
@@ -75,12 +97,20 @@ export function Workspace({ panel, tree, log, publish }: Props) {
   const moveTreeEdge = (edge: number) =>
     setWidths({ ...widths, tree: edge - shown.panel - spare, right: 1 - edge - spare });
 
+  // The same arithmetic down the column: a boundary is measured against the whole of it, and the
+  // two regions it divides take what falls either side. The third is untouched.
+  const moveLogEdge = (edge: number) =>
+    setRows({ ...split, log: edge, chart: split.log + split.chart - edge });
+
+  const moveChartEdge = (edge: number) =>
+    setRows({ ...split, chart: edge - split.log, publish: 1 - edge });
+
   return (
     <div
       className={styles.grid}
       data-testid="layout"
       data-panel={panel ? 'open' : 'closed'}
-      style={columns}
+      style={tracks}
     >
       {panel && (
         <>
@@ -107,20 +137,33 @@ export function Workspace({ panel, tree, log, publish }: Props) {
         onChange={moveTreeEdge}
       />
 
+      {/* Three fixed places, top to bottom: what arrived last, the shape of the run behind it,
+          and the form that answers back. Only the boundaries move. */}
       <div
         ref={columnRef}
         className={styles.right}
         data-testid="right-column"
-        data-fit={logShare === null ? 'content' : 'split'}
+        data-fit={rows === null ? 'content' : 'split'}
       >
-        <div className={styles.pane}>{log}</div>
+        <div ref={logRef} className={styles.pane}>
+          {log}
+        </div>
         <ResizeHandle
           axis="y"
-          label="Log and publish boundary"
-          value={logShare ?? 0.6}
+          label="Log and chart boundary"
+          value={split.log}
           min={MIN_SHARE}
+          max={split.log + split.chart - MIN_SHARE}
+          onChange={moveLogEdge}
+        />
+        <div className={styles.pane}>{chart}</div>
+        <ResizeHandle
+          axis="y"
+          label="Chart and publish boundary"
+          value={split.log + split.chart}
+          min={split.log + MIN_SHARE}
           max={1 - MIN_SHARE}
-          onChange={setLogShare}
+          onChange={moveChartEdge}
         />
         <div ref={publishRef} className={styles.pane}>
           {publish}
