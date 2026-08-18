@@ -51,10 +51,56 @@
 }
 .pane > * { min-height: 0; }
 
+/* ---- a region of the right column, and the strip that folds it ---- */
+
+/* Header over body. The body is the grid cell that stretches; the header is the height it is. */
+.region {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  min-width: 0;
+  background: var(--surface);
+}
+/* Folded, there is no body to leave room for. */
+.region:not([data-open]) { grid-template-rows: auto; }
+
+/* The whole strip is the control, so the target is the width of the column rather than a
+   chevron. Quiet: it names a region that is already obvious from what is under it, and its job
+   is to be findable, not to be read. */
+.regionHead {
+  all: unset;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 4px 20px 4px 12px;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid transparent;
+}
+.regionHead:hover { color: var(--ink); background: var(--paper); }
+.regionHead:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
+/* The last region open. Still readable, but plainly not a control any more. */
+.regionHead:disabled { cursor: default; opacity: 0.55; }
+.regionHead:disabled:hover { color: var(--muted); background: none; }
+/* Folded, the strip is the only thing in the region, so it carries the rule that the body
+   would otherwise have drawn under it. */
+.region:not([data-open]) .regionHead { border-bottom-color: var(--rule); }
+
+.regionChevron { font-size: var(--t-micro); line-height: 1; }
+.regionLabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 @media (max-width: 1180px) {
-  /* No room for columns, so everything stacks in the order it sat in and the page scrolls. */
+  /* No room for columns, so everything stacks in the order it sat in and the page scrolls.
+     The important is doing real work: the column writes its own row template inline once the
+     reader has dragged a seam or folded a region, and at this width there are no rows to
+     divide — a fraction of a height that no longer exists would clip every pane at once. */
   .grid,
   .grid[data-panel='closed'] { grid-template-columns: 1fr; min-height: auto; }
   .right,
-  .right[data-fit='content'] { grid-template-rows: auto auto auto auto auto; }
+  .right[data-fit='content'] { grid-template-rows: auto auto auto auto auto !important; }
 }

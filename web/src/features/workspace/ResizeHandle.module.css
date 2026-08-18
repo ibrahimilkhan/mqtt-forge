@@ -35,3 +35,12 @@
 @media (max-width: 1180px) {
   .handle { display: none; }
 }
+
+/* Nothing either side of it to divide. Kept in the grid rather than removed, so the column's
+   five tracks still line up with its five children — but with no height and no reach. */
+.handle[data-off] {
+  visibility: hidden;
+  height: 0;
+  min-height: 0;
+  pointer-events: none;
+}

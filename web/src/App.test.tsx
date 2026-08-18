@@ -159,7 +159,9 @@ describe('App', () => {
     expect(share('publish')).toBe('32.00fr');
   });
 
-  it('folds the menu away and brings it back from the bar', async () => {
+  // The control that narrows the rail lives in the rail, since there is no bar above it any more
+  // and a rail that took its own way back with it would be a one-way door.
+  it('narrows the rail and opens it again from inside the rail', async () => {
     renderApp();
 
     await userEvent.click(screen.getByRole('button', { name: 'Panel menu' }));
@@ -175,5 +177,26 @@ describe('App', () => {
     renderApp();
 
     expect(await screen.findByText('DISCONNECTED')).toBeInTheDocument();
+  });
+
+  // The bar carried the state across the top; the rail carries it now, and narrowed it keeps it
+  // as a lamp with the word on the element rather than dropping the state altogether.
+  it('keeps the connection state readable with the rail narrowed', async () => {
+    renderApp();
+    await screen.findByText('DISCONNECTED');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Panel menu' }));
+
+    expect(screen.queryByText('DISCONNECTED')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('DISCONNECTED')).toBeInTheDocument();
+  });
+
+  it('wears the mark the settings choose', async () => {
+    renderApp();
+
+    await userEvent.click(menu().getByRole('button', { name: 'Settings' }));
+    await userEvent.click(screen.getByRole('button', { name: /^Wave —/ }));
+
+    expect(screen.getByRole('button', { name: /^Wave —/ })).toHaveAttribute('aria-pressed', 'true');
   });
 });

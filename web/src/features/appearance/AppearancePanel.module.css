@@ -22,3 +22,58 @@
   font-size: var(--t-small);
   color: var(--muted);
 }
+
+/* ---- the mark ---- */
+
+/* A label without a control to point `for` at: the group under it is six buttons, not a field. */
+.markLabel {
+  display: block;
+  font-family: var(--mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+
+/* Wraps rather than scrolls: the panel column can be dragged narrow, and a row of marks that
+   ran off the edge would hide the very options this exists to compare. */
+.marks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* Each mark over its own name. The name is what makes the row choosable by keyboard and by
+   anyone who reads the six pictures as six scribbles. */
+.markBtn {
+  all: unset;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  padding: 7px 6px 5px;
+  min-width: 52px;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: var(--t-lead);
+  line-height: 0;
+}
+.markBtn:hover { color: var(--ink); border-color: var(--muted); }
+.markBtn:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+/* The one in force wears the ink, the way a pressed chip on the chart does. */
+.markBtn[aria-pressed='true'] {
+  color: var(--ink);
+  border-color: var(--ink);
+  background: var(--paper);
+}
+
+.markName {
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+}

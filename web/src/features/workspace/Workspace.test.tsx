@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { fitRows, Workspace } from './Workspace';
 import { MIN_SHARE } from './ResizeHandle';
@@ -74,14 +75,52 @@ describe('Workspace', () => {
     }
   });
 
-  // Three fixed places down the right column, in the order they are read.
+  // Three fixed places down the right column, in the order they are read. Each wears the strip
+  // that folds it, so the region's text is its own name and then its pane.
   it('stacks the log, the chart and publish in that order', () => {
     render(<Workspace {...parts} />);
 
     const column = screen.getByTestId('right-column');
-    const panes = [...column.children].map((child) => child.textContent);
+    const panes = [...column.children].map((child) => child.getAttribute('data-region') ?? '');
 
-    expect(panes).toEqual(['log pane', '', 'chart pane', '', 'publish pane']);
+    expect(panes).toEqual(['log', '', 'chart', '', 'publish']);
+  });
+
+  it('folds a region away to its own strip, and brings it back', async () => {
+    render(<Workspace {...parts} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Fold Chart' }));
+
+    expect(screen.queryByText('chart pane')).not.toBeInTheDocument();
+    expect(screen.getByText('log pane')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open Chart' }));
+
+    expect(screen.getByText('chart pane')).toBeInTheDocument();
+  });
+
+  // A column of three shut strips is a column with nothing in it, and nothing else in the
+  // workspace would say what to do about that.
+  it('will not fold the last region left open', async () => {
+    render(<Workspace {...parts} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Fold Chart' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Fold Publish' }));
+
+    expect(screen.getByRole('button', { name: 'Log — the last region open' })).toBeDisabled();
+    expect(screen.getByText('log pane')).toBeInTheDocument();
+  });
+
+  // A seam between a shut region and its neighbour would move something the reader cannot see.
+  it('takes the seams beside a folded region out of reach', async () => {
+    render(<Workspace {...parts} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Fold Chart' }));
+
+    expect(screen.getByLabelText('Log and chart boundary', { selector: '[role=separator]' })).toHaveAttribute(
+      'tabindex',
+      '-1',
+    );
   });
 
   it('gives each boundary in the column a handle of its own', () => {
