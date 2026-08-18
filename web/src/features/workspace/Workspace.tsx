@@ -116,12 +116,16 @@ export function Workspace({ panel, tree, log, chart, publish }: Props) {
     '--log': `${(split.log * 100).toFixed(2)}fr`,
     '--chart': `${(split.chart * 100).toFixed(2)}fr`,
     '--publish': `${(split.publish * 100).toFixed(2)}fr`,
-    // Written out rather than composed from the three vars above: a shut region is not a small
-    // share of the height, it is a header and nothing else, and no fraction expresses that.
-    ...(rows !== null || shut.length > 0
-      ? { gridTemplateRows: REGIONS.map(({ id }) => track(open(id), weight(id) / spread)).join(' auto ') }
-      : {}),
   } as CSSProperties;
+
+  // The column's own template, written out rather than composed from the three vars above: a
+  // shut region is not a small share of the height, it is a header and nothing else, and no
+  // fraction expresses that. Left to the stylesheet until the column has been measured, so the
+  // first paint still sizes the log and the form to their contents.
+  const column: CSSProperties | undefined =
+    rows !== null || shut.length > 0
+      ? { gridTemplateRows: REGIONS.map(({ id }) => track(open(id), weight(id) / spread)).join(' auto ') }
+      : undefined;
 
   // Both side-by-side handles report where their boundary sits across the whole row, which is what
   // the pointer can measure; the widths either side follow from it.
@@ -186,6 +190,7 @@ export function Workspace({ panel, tree, log, chart, publish }: Props) {
         className={styles.right}
         data-testid="right-column"
         data-fit={rows === null ? 'content' : 'split'}
+        style={column}
       >
         <Region id="log" label="Log" open={open('log')} alone={alone} onFold={fold} innerRef={logRef}>
           {log}

@@ -51,14 +51,18 @@ export const MARKS: Record<MarkId, Mark> = {
     draw: () =>
       frame(
         <>
+          {/* Face, waist and foot as one shape. An anvil is read off three widths — a long top,
+              a narrow middle and a foot as wide as the top — so all three are drawn generously
+              and nothing else is drawn at all. */}
           <path
-            d="M3.5 6.5h11l5.5 2.6-5.5 2.6h-1.6l1 5.3h2.1v2.5H8v-2.5h2.1l1-5.3H6.5a3 3 0 0 1-3-3Z"
+            d="M2.6 6.2h12.2v4H13l-.6 3.4h1.7v1.9h-3.9v-1.9h1.7L11.3 10H5.6a3 3 0 0 1-3-3Z"
             fill="currentColor"
             stroke="none"
           />
-          {/* The horn, in the signal colour: the working end, and the only part of an anvil
+          <path d="M4.9 16.4h14.2v3.4H4.9Z" fill="currentColor" stroke="none" />
+          {/* The horn, in the signal colour: the working end, and the one part of an anvil
               anyone can name. */}
-          <path d="M14.5 6.5 20 9.1l-5.5 2.6Z" fill="var(--signal)" stroke="none" />
+          <path d="M14.8 6.2 21.4 8.2l-6.6 2Z" fill="var(--signal)" stroke="none" />
         </>,
       ),
   },
@@ -103,11 +107,13 @@ export const MARKS: Record<MarkId, Mark> = {
     draw: () =>
       frame(
         <>
-          <path d="M6.5 3.5v13a3 3 0 0 0 3 3h4" />
-          <path d="M6.5 9.5h4a3 3 0 0 1 3 3v0" />
-          <circle cx="6.5" cy="3.5" r="1.9" fill="currentColor" stroke="none" />
-          <circle cx="16.5" cy="12.5" r="1.9" fill="var(--signal)" stroke="none" />
-          <circle cx="16.5" cy="19.5" r="1.9" fill="currentColor" stroke="none" />
+          {/* A trunk with two things hanging off it, which is what a topic path looks like
+              written down: the root at the top, and a node at the end of every branch. */}
+          <path d="M5.5 5.5v11.5h7.5" />
+          <path d="M5.5 11h7.5" />
+          <circle cx="5.5" cy="4" r="2" fill="currentColor" stroke="none" />
+          <circle cx="15.4" cy="11" r="2" fill="var(--signal)" stroke="none" />
+          <circle cx="15.4" cy="17" r="2" fill="currentColor" stroke="none" />
         </>,
       ),
   },

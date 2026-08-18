@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { short } from '../../lib/format';
 import { domainFor, type ScaleId } from '../../lib/scale';
 import type { Series } from '../../lib/series';
 import { shapeOf } from '../../lib/shape';
@@ -76,8 +77,9 @@ function Small({
       type="button"
       className={styles.small}
       // The leaf, not the whole path: the branch the reader picked is the part every row here
-      // has in common, and repeating it on all six of them costs the width the tail needs.
-      title={`${series.topic} — chart this topic on its own`}
+      // has in common, and repeating it on all six of them costs the width the tail needs. The
+      // range comes with it, since the row itself has no height to spare for an axis.
+      title={`${series.topic} — ${short(read.domain.low)} to ${short(read.domain.high)}, ${series.readings.length} readings. Chart this topic on its own.`}
       onClick={() => onFocus(series.topic)}
       style={colour ? { color: colour } : undefined}
     >

@@ -48,7 +48,7 @@ export function TrafficLine({
   colour?: string;
   /** The band, the mean and the outlier rings — everything drawn that is not a reading. */
   marks?: boolean;
-  /** One of several stacked plots: no readout, no focus ring, no furniture. */
+  /** One of several stacked plots: no readout, no scale, no focus ring, no furniture. */
   compact?: boolean;
 }) {
   const [hovered, setHovered] = useState<number | null>(null);
@@ -125,7 +125,12 @@ export function TrafficLine({
     <div className={styles.frame}>
       {/* The line says the shape and the labels say the size of it, which is the one thing a
           sparkline cannot carry on its own. Muted, like the stamps: this is furniture. A run
-          that never moved has one number to give, not the same one twice. */}
+          that never moved has one number to give, not the same one twice.
+
+          Not on a stacked plot: a row thirty pixels tall cannot hold two numbers and a line, and
+          what small multiples are for is comparing shapes over a shared moment. The row carries
+          the newest reading beside it and its range in the title. */}
+      {!compact && (
       <div
         className={styles.scale}
         data-testid="scale"
@@ -146,6 +151,7 @@ export function TrafficLine({
           </span>
         )}
       </div>
+      )}
 
       <div className={styles.plotArea}>
         {/* The shape is the whole point, so the words standing in for it carry the same facts:
