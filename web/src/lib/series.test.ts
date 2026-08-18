@@ -61,10 +61,21 @@ describe('numericSeries', () => {
     });
   });
 
-  // Past half, the topic is not a topic sending readings with the odd gap in them; it is a topic
-  // sending something else that occasionally looks like a number.
-  it('gives up when it cannot read half of what the topic sent', () => {
-    expect(numericSeries(entries('sensors/state', '1', 'ON', 'OFF', 'ON'))).toBeNull();
+  // It used to give up here, and the reader got a refusal that named no topic and no reason.
+  // Two readings are a line; what the chart owes the reader is the fact that most of what the
+  // topic sent is not on it.
+  it('draws what it can of a topic that mostly sends something else, and says so', () => {
+    expect(numericSeries(entries('sensors/state', '1', 'ON', 'OFF', '2', 'ON'))).toMatchObject({
+      readings: [{ value: 1 }, { value: 2 }],
+      skipped: 3,
+      sparse: true,
+    });
+  });
+
+  it('does not call a run with the odd gap in it sparse', () => {
+    expect(numericSeries(entries('sensors/temp', '21.5', 'warming up', '22'))).toMatchObject({
+      sparse: false,
+    });
   });
 
   // Number() would take these, and each would be a lie: '0x10' is not sixteen on a wire that

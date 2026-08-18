@@ -11,6 +11,8 @@ export type Series = {
   readings: Reading[];
   /** Messages in view that carried no reading for this field, and were stepped over. */
   skipped: number;
+  /** More was stepped over than was read, so the line is a scattering rather than a run. */
+  sparse: boolean;
   /** How long the run really is, when it was longer than one chart can hold; null otherwise. */
   of: number | null;
   low: number;
@@ -44,11 +46,15 @@ export const MAX_PLOT = 500;
 /**
  * The readings behind a run of log entries, or null when there is no chart to draw.
  *
- * One line means one topic: a wildcard selection mixes topics, and °C and % share no axis. What
- * it does *not* insist on is a clean run — a sensor that says 'warming up' once between a
- * thousand readings is still a sensor, so unreadable messages are stepped over and counted. Past
- * half of them, though, the topic is not one sending readings with gaps: it is sending something
- * else that occasionally looks like a number, and a chart of it would be a chart of coincidences.
+ * One line means one topic, since °C and % share no axis; a selection covering several is split
+ * into one of these each by `chartable`, rather than refused.
+ *
+ * A clean run is not insisted on. A sensor that says 'warming up' once between a thousand
+ * readings is still a sensor, so unreadable messages are stepped over and counted. Nor is a
+ * topic that is mostly *not* readings refused any more: it used to be, on the grounds that a
+ * chart of it would be a chart of coincidences, and the reader got a flat refusal that named no
+ * topic and no reason. Two readings are a line, and the chart says out loud how much of the run
+ * it had to step over to draw them.
  */
 export function numericSeries(entries: LogEntry[], field?: string | null): Series | null {
   if (entries.length < 2) return null;
@@ -76,13 +82,14 @@ export function numericSeries(entries: LogEntry[], field?: string | null): Serie
   }
 
   // A chart of one point is a dot, and the row above it already shows that value in full.
-  if (readings.length < 2 || readings.length * 2 < window.length) return null;
+  if (readings.length < 2) return null;
 
   return {
     topic,
     field: path,
     readings,
     skipped: window.length - readings.length,
+    sparse: readings.length * 2 < window.length,
     of: entries.length > MAX_PLOT ? entries.length : null,
     low,
     high,
@@ -213,4 +220,33 @@ function paths(body: unknown, prefix: string, depth: number): string[] {
 
     return paths(value, path, depth + 1);
   });
+}
+
+/**
+ * The same run split into one series per topic, fullest first.
+ *
+ * A tree branch selects `sensors/room/#`, which is several topics at once — the ordinary way to
+ * use the tree, and until now the ordinary way to end up with no chart at all. Each topic gets a
+ * line of its own on its own scale, because a room's temperature and its humidity have no shared
+ * axis to be drawn against; they have a shared moment, which is what putting them one above the
+ * other shows.
+ */
+export function seriesByTopic(entries: LogEntry[], field?: string | null): Series[] {
+  const byTopic = new Map<string, LogEntry[]>();
+
+  for (const entry of entries) {
+    if (!entry.topic) continue;
+
+    const run = byTopic.get(entry.topic);
+    if (run) run.push(entry);
+    else byTopic.set(entry.topic, [entry]);
+  }
+
+  return [...byTopic.values()]
+    // The busiest topic is the one the selection is mostly about, so it leads. Ties go
+    // alphabetically rather than by whichever arrived first, so the order does not shuffle
+    // under a reader as traffic comes in.
+    .sort((a, b) => b.length - a.length || a[0].topic!.localeCompare(b[0].topic!))
+    .map((run) => numericSeries(run, field))
+    .filter((series): series is Series => series !== null);
 }
