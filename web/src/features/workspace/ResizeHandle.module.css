@@ -31,8 +31,11 @@
 .handle:focus-visible { background: var(--ink); }
 .handle:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
-/* The columns stack below this width, so a side-by-side seam has nothing left to divide. */
-@media (max-width: 1180px) {
+/* Below this the panes stack end to end and no seam has anything left to divide. It used to be
+   1180, which was the width the columns stacked at — and moving that down to 760 left this rule
+   hiding every seam across a whole band of widths where the columns were still columns. The
+   column that lost its seam then also lost its track, and the right column spread across it. */
+@media (max-width: 760px) {
   .handle { display: none; }
 }
 

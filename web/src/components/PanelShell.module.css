@@ -7,7 +7,7 @@
   overflow-y: auto;
 }
 
-@media (max-width: 1180px) {
+@media (max-width: 760px) {
   .panel { overflow-y: visible; }
 }
 
