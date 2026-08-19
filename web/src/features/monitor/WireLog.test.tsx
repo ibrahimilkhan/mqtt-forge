@@ -1206,6 +1206,24 @@ describe('choosing what the chart draws', () => {
     expect(await screen.findByRole('button', { name: 'Copy failed' })).toBeInTheDocument();
   });
 
+  // The runtime the desktop build renders in has no clipboard API at all, so this button
+  // reported 'failed' every time it was pressed there — which is a fair description of a control
+  // that never worked. The deprecated path is what still works, and the app already had a helper
+  // for it; the chart simply was not using it.
+  it('still copies where there is no clipboard API', async () => {
+    const exec = vi.fn().mockReturnValue(true);
+    vi.spyOn(navigator, 'clipboard', 'get').mockReturnValue(undefined as unknown as Clipboard);
+    document.execCommand = exec;
+    readings('sensors/temp', '21.5', '22');
+    useSelectionStore.getState().select(chip);
+
+    render(<Monitor />);
+    await userEvent.click(screen.getByRole('button', { name: 'Copy as CSV' }));
+
+    expect(exec).toHaveBeenCalledWith('copy');
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument();
+  });
+
   it('says when the readings have been copied', async () => {
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText: vi.fn().mockResolvedValue(undefined) },
