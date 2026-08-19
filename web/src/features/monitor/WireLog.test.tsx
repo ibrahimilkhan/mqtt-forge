@@ -1175,6 +1175,50 @@ describe('choosing what the chart draws', () => {
     expect(screen.queryByTestId('reading')).not.toBeInTheDocument();
   });
 
+  // Every console can show a number. Getting the run out of the console and into whatever the
+  // reader actually analyses in is the part they all leave undone.
+  it('copies the readings out as CSV', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    readings('sensors/temp', '21.5', '22');
+    useSelectionStore.getState().select(chip);
+
+    render(<Monitor />);
+    await userEvent.click(screen.getByRole('button', { name: 'Copy as CSV' }));
+
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('time,sensors/temp'));
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('21.5'));
+  });
+
+  // Clipboard access is refused often enough — an insecure origin, a locked-down browser — that
+  // a button which silently does nothing is a real outcome rather than a theoretical one.
+  it('says so when the clipboard refuses', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
+      configurable: true,
+    });
+    readings('sensors/temp', '21.5', '22');
+    useSelectionStore.getState().select(chip);
+
+    render(<Monitor />);
+    await userEvent.click(screen.getByRole('button', { name: 'Copy as CSV' }));
+
+    expect(await screen.findByRole('button', { name: 'Copy failed' })).toBeInTheDocument();
+  });
+
+  it('says when the readings have been copied', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+      configurable: true,
+    });
+    readings('sensors/temp', '21.5', '22');
+    useSelectionStore.getState().select(chip);
+
+    render(<Monitor />);
+    await userEvent.click(screen.getByRole('button', { name: 'Copy as CSV' }));
+
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument();
+  });
 });
 
 // The same readings answer different questions for different readers, and which of those a
@@ -1194,7 +1238,7 @@ describe('the three versions of the chart', () => {
 
     expect(screen.getByTestId('plotArea')).toBeInTheDocument();
     expect(screen.queryByTestId('note')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Over time' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Copy as CSV' })).not.toBeInTheDocument();
   });
 
   it('draws the line, its marks and the note on full', () => {
@@ -1205,7 +1249,7 @@ describe('the three versions of the chart', () => {
     render(<Monitor />);
 
     expect(screen.getByTestId('note')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Over time' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy as CSV' })).toBeInTheDocument();
     expect(screen.queryByTestId('histogram')).not.toBeInTheDocument();
   });
 
