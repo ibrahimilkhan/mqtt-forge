@@ -9,6 +9,7 @@ import { BrokerPanel } from './features/connection/BrokerPanel';
 import { MobilePanel } from './features/mobile/MobilePanel';
 import { useBrokerAddress, useConnectionState } from './api/useConnectionState';
 import { TrafficPane } from './features/monitor/TrafficPane';
+import { useZoomStore } from './features/monitor/useZoom';
 import { WireLog } from './features/monitor/WireLog';
 import { TopicTree } from './features/topics/TopicTree';
 import { PANELS, type PanelId } from './features/panels';
@@ -57,6 +58,7 @@ export function App({ hub }: { hub: Hub }) {
   const where = useBrokerAddress();
   const hubStatus = useHubStatusStore((s) => s.status);
   const logo = useAppearanceStore((s) => s.logo);
+  const zoomed = useZoomStore((s) => s.zoomed);
 
   const close = () => setOpenPanel(null);
   const Panel = openPanel && PANEL_VIEWS[openPanel];
@@ -134,7 +136,9 @@ export function App({ hub }: { hub: Hub }) {
           </section>
         }
         chart={
-          <section className={styles.chartPane}>
+          // Thrown open, the region leaves the column and takes the window. The strip that folds
+          // it stays where it was, so the column does not rearrange itself underneath.
+          <section className={styles.chartPane} data-zoomed={zoomed ? '' : undefined}>
             <TrafficPane />
           </section>
         }

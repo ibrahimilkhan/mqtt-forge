@@ -23,6 +23,7 @@ import { useAppearanceStore } from './stores/appearanceStore';
 import { useLogStore } from './stores/logStore';
 import { useSelectionStore } from './stores/selectionStore';
 import { useTopicTreeStore } from './stores/topicTreeStore';
+import { useZoomStore } from './features/monitor/useZoom';
 
 const OUT = '/Users/ilkhan/RiderProjects/MqttForge/src/MqttForge.Api/wwwroot';
 
@@ -253,7 +254,13 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
   .gMark figcaption span { color: var(--muted); font-size:12.5px; line-height:1.45; }
 </style>`;
 
-  const nav = ['gallery.html', ...pages.map((_, i) => `gallery-${i + 1}.html`), 'gallery-panel.html', 'console.html']
+  const nav = [
+    'gallery.html',
+    ...pages.map((_, i) => `gallery-${i + 1}.html`),
+    'gallery-panel.html',
+    'console.html',
+    'console-zoomed.html',
+  ]
     .map((href, i) => {
       const name =
         href === 'gallery.html'
@@ -262,7 +269,9 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
             ? 'Chart panel'
             : href === 'console.html'
               ? 'The console'
-              : `Charts ${i}`;
+              : href === 'console-zoomed.html'
+                ? 'Chart opened'
+                : `Charts ${i}`;
 
       return `<a href="${href}">${name}</a>`;
     })
@@ -292,6 +301,9 @@ ${inner}
   );
 
   writeFileSync(`${OUT}/console.html`, console_(client));
+  // The same console with the chart thrown open, which is the state a static page can show and
+  // a click cannot be recorded in.
+  writeFileSync(`${OUT}/console-zoomed.html`, console_(client, true));
 
   // Back to the defaults: the runs above set the range on the store to draw themselves both
   // ways, and a panel showing the last of those would be showing the renderer's state rather
@@ -321,7 +333,7 @@ ${inner}
  * a fake hub satisfies the bridge. What this writes is the real layout with real components in
  * it, at whatever size the window opens — which is what a screenshot of the console is.
  */
-function console_(client) {
+function console_(client, zoomed = false) {
   // Primed rather than fetched. Rendering here is one synchronous pass, so a query that has to
   // go and ask would still be pending when the HTML is taken — and the page would show a console
   // that had not connected to anything.
@@ -344,6 +356,7 @@ function console_(client) {
 
   useLogStore.getState().clear();
   useTopicTreeStore.getState().reset();
+  useZoomStore.setState({ zoomed });
   const traffic = [
     ['sensors/livingroom/temp', wobble(60, 21.6, 1.4)],
     ['sensors/garage/temp', wobble(60, 12.6, 0.8)],

@@ -191,6 +191,21 @@ describe('App', () => {
     expect(screen.getByLabelText('DISCONNECTED')).toBeInTheDocument();
   });
 
+  // The chart's region is a third of a column that is itself a third of the window. Thrown open
+  // it leaves the column entirely, which no share of a grid track can express.
+  it('takes the window when the chart is thrown open', async () => {
+    renderApp();
+
+    const pane = () => screen.getByRole('heading', { name: 'Chart' }).closest('section')!;
+    expect(pane()).not.toHaveAttribute('data-zoomed');
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Open the chart over the console' }),
+    );
+
+    expect(pane()).toHaveAttribute('data-zoomed');
+  });
+
   it('wears the mark the settings choose', async () => {
     renderApp();
 

@@ -8,6 +8,7 @@ import { useSelectionStore } from '../../stores/selectionStore';
 import { READING_IDS, READINGS } from '../appearance/readings';
 import { TrafficPane } from './TrafficPane';
 import { useHoldStore } from './useTraffic';
+import { useZoomStore } from './useZoom';
 
 const chip = { label: 'sensors/#', filter: 'sensors/#' };
 
@@ -30,6 +31,7 @@ beforeEach(() => {
   useLogStore.getState().clear();
   useSelectionStore.getState().clear();
   useHoldStore.getState().release();
+  useZoomStore.getState().close();
   useAppearanceStore.getState().reset();
 });
 
@@ -76,6 +78,51 @@ describe('the range the plot is drawn in', () => {
     show();
 
     expect(screen.queryByTestId('pinned')).not.toBeInTheDocument();
+  });
+});
+
+describe('throwing the chart open', () => {
+  const run = () => readings('sensors/temp', ...wobble(30, 21.5, 1.5));
+
+  it('opens over the console and goes back again', async () => {
+    run();
+    show();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open the chart over the console' }));
+    expect(useZoomStore.getState().zoomed).toBe(true);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Put the chart back' }));
+    expect(useZoomStore.getState().zoomed).toBe(false);
+  });
+
+  // Anything covering the whole window has to close on Escape, or a reader who did it by
+  // accident is hunting for the control that undoes it.
+  it('goes back on Escape', async () => {
+    run();
+    show();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open the chart over the console' }));
+    await userEvent.keyboard('{Escape}');
+
+    expect(useZoomStore.getState().zoomed).toBe(false);
+  });
+
+  // The plainest detail level draws no controls at all, and a bare line is the drawing that most
+  // often wants more room — so this control is not one of them.
+  it('is there at every detail level', () => {
+    useAppearanceStore.getState().setChart('plain');
+    run();
+    show();
+
+    expect(screen.getByTestId('zoom')).toBeInTheDocument();
+    expect(screen.queryByTestId('note')).not.toBeInTheDocument();
+  });
+
+  it('is there when there is nothing to draw, since that is a pane too', () => {
+    readings('sensors/temp', '21');
+    show();
+
+    expect(screen.getByTestId('zoom')).toBeInTheDocument();
   });
 });
 
