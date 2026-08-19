@@ -126,6 +126,91 @@ describe('throwing the chart open', () => {
   });
 });
 
+describe('opening one reading', () => {
+  const run = () => readings('sensors/temp', ...wobble(30, 21.5, 1.5));
+
+  /** jsdom lays nothing out, so the plot has to be told how wide it is to find a reading. */
+  const plot = () => {
+    const area = screen.getByTestId('plotArea');
+    area.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 300, height: 100, right: 300, bottom: 100, x: 0, y: 0 }) as DOMRect;
+
+    return area;
+  };
+
+  it('opens the reading that was clicked', async () => {
+    run();
+    show();
+
+    await userEvent.click(plot());
+
+    expect(screen.getByTestId('detail')).toBeInTheDocument();
+  });
+
+  // The line says what the run has been doing and the note says what it adds up to. Neither
+  // answers 'what is that one, and when' — which is the question a shape on the line prompts.
+  it('says where the reading stands, not just what it is', async () => {
+    run();
+    show();
+
+    await userEvent.click(plot());
+    const detail = within(screen.getByTestId('detail'));
+
+    expect(detail.getByText('at')).toBeInTheDocument();
+    expect(detail.getByText(/reading/)).toBeInTheDocument();
+    expect(detail.getByText('change')).toBeInTheDocument();
+    expect(detail.getByText('against')).toBeInTheDocument();
+  });
+
+  it('closes on the same click, on the button, and on Escape', async () => {
+    run();
+    show();
+
+    await userEvent.click(plot());
+    await userEvent.click(screen.getByRole('button', { name: 'Close this reading' }));
+    expect(screen.queryByTestId('detail')).not.toBeInTheDocument();
+
+    await userEvent.click(plot());
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByTestId('detail')).not.toBeInTheDocument();
+  });
+
+  // A detail only a mouse can reach is the readout's oldest failing.
+  it('opens from the keyboard on the reading the arrows are on', async () => {
+    run();
+    show();
+
+    screen.getByTestId('plotArea').focus();
+    await userEvent.keyboard('{Home}{ArrowRight}{Enter}');
+
+    expect(within(screen.getByTestId('detail')).getByText('2 of 30')).toBeInTheDocument();
+  });
+
+  // Both marks are already drawn on the plot; the card is where they are put into words.
+  it('names the marks a reading is wearing', async () => {
+    // A run with a spread to measure a fence against, and one reading well past it.
+    readings('sensors/temp', '10', '11', '12', '11', '10', '12', '11', '90');
+    show();
+
+    screen.getByTestId('plotArea').focus();
+    await userEvent.keyboard('{End}{Enter}');
+
+    expect(screen.getByTestId('detail-flags')).toHaveTextContent('outside the fences');
+  });
+
+  // A switch has no mean worth standing a reading against; which side of the threshold it is on
+  // is the reading.
+  it('tells a switch which side of the threshold it is on', async () => {
+    readings('sensors/door', ...repeat(6, '0', '0', '0', '1', '1'));
+    show();
+
+    screen.getByTestId('plotArea').focus();
+    await userEvent.keyboard('{End}{Enter}');
+
+    expect(within(screen.getByTestId('detail')).getByText('level')).toBeInTheDocument();
+  });
+});
+
 describe('the ground the plot is drawn on', () => {
   const run = () => readings('sensors/temp', ...wobble(30, 21.5, 1.5));
 

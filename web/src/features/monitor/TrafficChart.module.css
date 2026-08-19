@@ -233,6 +233,103 @@
   transform: translate(-50%, -50%);
 }
 
+/* ---- one reading, opened ---- */
+
+/* The hairline that stays on an opened reading once the pointer has moved off it, so the card
+   and the point it is about remain tied together. Firmer than the crosshair, which is only ever
+   under the pointer and goes with it. */
+.opened {
+  stroke: color-mix(in srgb, var(--ink) 45%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 3 2;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Put in the corner furthest from the reading it describes, so it never covers what was clicked.
+   Absolute rather than in the flow: the plot is drawn to the height it was given, and a card in
+   the flow would take that height away from the line it is about. */
+.detailSlot {
+  position: absolute;
+  z-index: 3;
+  max-width: min(62%, 260px);
+}
+.detailSlot[data-side='right'] { right: 6px; }
+.detailSlot[data-side='left'] { left: 6px; }
+.detailSlot[data-half='high'] { bottom: 8px; }
+.detailSlot[data-half='low'] { top: 8px; }
+
+.detail {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--ink) 14%, transparent);
+  padding: 8px 10px 9px;
+  font-family: var(--mono);
+}
+
+.detailHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+/* The number that was clicked for, at the size that says so. Proportional figures, not tabular:
+   this is one standalone value rather than a column of them, and tabular digits set a lone
+   number loose at this size. */
+.detailValue {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--t-lead);
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.detailClose {
+  all: unset;
+  flex: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  min-height: 22px;
+  margin: -4px -4px 0 0;
+  border-radius: 2px;
+  font-size: var(--t-body);
+  line-height: 1;
+  color: var(--muted);
+}
+.detailClose:hover { color: var(--fault); background: var(--paper); }
+.detailClose:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+/* Label left, value right, one pair a line: this is a column of pairs, so it aligns as one —
+   unlike the note under the plot, which is a row that wraps. */
+.detailRows { margin: 0; display: grid; gap: 2px; }
+.detailRow {
+  display: grid;
+  grid-template-columns: 7ch minmax(0, 1fr);
+  gap: 8px;
+  font-size: var(--t-micro);
+  line-height: 1.35;
+}
+.detailRow dt { color: var(--muted); letter-spacing: 0.05em; }
+.detailRow dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+
+/* What the marks on the plot mean, in words. Both are reasons to look twice, so both carry the
+   fault colour the rings and the wedges are drawn in. */
+.detailFlags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 6px;
+  margin: 6px 0 0;
+  font-size: var(--t-micro);
+  color: var(--fault);
+}
+.detailFlags span { border: 1px solid color-mix(in srgb, var(--fault) 35%, transparent); border-radius: 2px; padding: 0 4px; }
+
 /* The value under the pointer, set over the plot rather than beside it: a line this small has
    nowhere to put a tooltip that would not cover the shape being read. */
 .reading {
@@ -287,7 +384,9 @@
   align-content: start;
   /* Wide between, close under: the gap is what separates two readings on a line, and with no
      rules between them it has to be plainly bigger than the space inside one. */
-  gap: 5px 18px;
+  /* Wider between readings than the size step inside one, so the eye groups a label with its
+     own number rather than with the label after it. */
+  gap: 4px 20px;
   margin-top: 10px;
   font-family: var(--mono);
   font-size: var(--t-micro);
@@ -306,33 +405,46 @@
 .slot {
   display: flex;
   align-items: baseline;
-  gap: 4px;
+  gap: 5px;
   min-width: 9ch;
   max-width: 100%;
   white-space: nowrap;
   line-height: 1.4;
 }
 
-/* The half that never changes, so the eye can go straight to the cell it wants rather than
-   hunting for the symbol that names the number in it. */
-.slotLabel { color: var(--muted); text-transform: lowercase; flex: none; }
+/* The name of the reading, not the reading. Small, quiet, and set apart from the number beside
+   it by size as much as by colour — at one size and one colour the pair read as a single grey
+   string, and a row of them read as one long one. */
+.slotLabel {
+  flex: none;
+  font-size: var(--t-micro);
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  text-transform: lowercase;
+}
 
-/* Shrinks and is cut rather than widening the row past the pane; the title carries the whole. */
-.slotValue { color: var(--ink); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-
-/* The measurements read as one quiet row; the readings *of* them — a distribution, a direction,
-   a count of what was left out — carry the page's ink, since they are the part that says
-   something rather than counts something. */
-.slot[data-tone='stat'] .slotValue { color: var(--muted); }
+/* The number leads.
+   Every value used to be dimmed unless it was an alarm, which put the whole of the arithmetic —
+   the mean, the median, the spread, the range — in the same grey as the labels naming it. The
+   value is the thing a reader came to the note for, so it carries the page's ink, a step more
+   size than its label, and the weight to hold that against a chart above it. */
+.slotValue {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--t-small);
+  font-weight: 600;
+  color: var(--ink);
+}
 
 /* The one item about the topic rather than the readings, and the only one worth interrupting
    for. It wears the pane's fault colour, which is the colour a failed command wears — the same
    thing has happened: something that was supposed to work is not working. */
-.slot[data-tone='alarm'] .slotValue { color: var(--fault); font-weight: 600; }
+.slot[data-tone='alarm'] .slotValue { color: var(--fault); }
 
-/* Nothing to say here yet. Faint enough that a note full of dashes reads as a quiet instrument
-   rather than as a list of failures. */
-.slot[data-empty] .slotValue { color: var(--rule); }
+/* Nothing to say here yet. Faint, and back to the label's own weight: a note full of bold
+   dashes reads as a list of failures rather than as a quiet instrument. */
+.slot[data-empty] .slotValue { color: var(--rule); font-weight: 400; }
 
 /* ---- what the plot could not fit ---- */
 

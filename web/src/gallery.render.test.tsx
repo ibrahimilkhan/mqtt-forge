@@ -13,8 +13,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render } from '@testing-library/react';
 import { it } from 'vitest';
 import './styles/global.css';
+import chartStyles from './features/monitor/TrafficChart.module.css';
 import { App } from './App';
 import { ChartPanel } from './features/chart/ChartPanel';
+import { ReadingDetail } from './features/monitor/ReadingDetail';
+import { domainFor } from './lib/scale';
+import { numericSeries } from './lib/series';
+import { shapeOf } from './lib/shape';
+import { summarise } from './lib/stats';
 import { MARKS } from './features/brand/marks';
 import { TrafficChart } from './features/monitor/TrafficChart';
 import { queryKeys } from './api/queryKeys';
@@ -258,6 +264,7 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
     'gallery.html',
     ...pages.map((_, i) => `gallery-${i + 1}.html`),
     'gallery-panel.html',
+    'gallery-detail.html',
     'console.html',
     'console-zoomed.html',
   ]
@@ -267,11 +274,13 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
           ? 'Marks'
           : href === 'gallery-panel.html'
             ? 'Chart panel'
-            : href === 'console.html'
-              ? 'The console'
-              : href === 'console-zoomed.html'
-                ? 'Chart opened'
-                : `Charts ${i}`;
+            : href === 'gallery-detail.html'
+              ? 'A reading'
+              : href === 'console.html'
+                ? 'The console'
+                : href === 'console-zoomed.html'
+                  ? 'Chart opened'
+                  : `Charts ${i}`;
 
       return `<a href="${href}">${name}</a>`;
     })
@@ -323,7 +332,75 @@ ${inner}
     `${OUT}/gallery-panel.html`,
     page('the chart panel', `<h2>The chart panel</h2>${stamp(chartPanel).innerHTML}`),
   );
+
+  writeFileSync(
+    `${OUT}/gallery-detail.html`,
+    page('one reading, opened', `<h2>One reading, opened</h2>${detail()}`),
+  );
 });
+
+/**
+ * The card that opens on a reading, in each of the four corners it can take.
+ *
+ * It is placed away from the reading it describes — furthest corner from the point — so it never
+ * covers what was clicked. Which corner that is comes off two data attributes, so the four cases
+ * can be drawn side by side without a pointer.
+ */
+function detail() {
+  const run = entries('sensors/room/temp', wobble(60, 21.5, 2.4));
+  const series = numericSeries(run)!;
+  const values = series.readings.map((reading) => reading.value);
+  const summary = summarise(values)!;
+  const shape = shapeOf(series.readings, summary);
+  const domain = domainFor(values, summary, 'typical');
+
+  const corners = [
+    { side: 'right', half: 'high', about: 'reading in the left half, high on the plot' },
+    { side: 'left', half: 'high', about: 'reading in the right half, high on the plot' },
+    { side: 'right', half: 'low', about: 'reading in the left half, low on the plot' },
+    { side: 'left', half: 'low', about: 'reading in the right half, low on the plot' },
+  ];
+
+  // A reading wearing both marks the plot can put on one: past the fences, and past the range
+  // the plot was drawn in. The card is where those marks are put into words.
+  const spiked = numericSeries(entries('sensors/room/temp', [...repeat(20, '1', '2', '3'), '4000']))!;
+  const spikedValues = spiked.readings.map((reading) => reading.value);
+  const spikedSummary = summarise(spikedValues)!;
+  corners.push({ side: 'left', half: 'low', about: 'a reading wearing both marks' });
+
+  return `<div class="gRow">${corners
+    .map(({ side, half, about }, index) => {
+      const marked = index === corners.length - 1;
+      const { container } = render(
+        <div
+          style={{
+            position: 'relative',
+            width: 460,
+            height: 250,
+            background: 'var(--surface)',
+            border: '1px solid var(--rule)',
+            borderRadius: 3,
+          }}
+        >
+          <div className={chartStyles.detailSlot} data-side={side} data-half={half}>
+            <ReadingDetail
+              series={marked ? spiked : series}
+              summary={marked ? spikedSummary : summary}
+              shape={marked ? shapeOf(spiked.readings, spikedSummary) : shape}
+              domain={
+                marked ? domainFor(spikedValues, spikedSummary, 'typical') : domain
+              }
+              at={marked ? spiked.readings.length - 1 : index === 3 ? 0 : 20 + index * 7}
+              onClose={() => {}}
+            />
+          </div>
+        </div>,
+      );
+
+      return `<div class="gCell"><span class="gTag">${about}</span>${container.innerHTML}</div>`;
+    })
+    .join('')}</div>`;
+}
 
 /**
  * The whole console with traffic in it, as one static page.
