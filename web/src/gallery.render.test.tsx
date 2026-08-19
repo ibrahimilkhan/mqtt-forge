@@ -404,9 +404,9 @@ function dotSizes(client) {
   const was = plotDown;
 
   const drawn = [
-    { down: 90, about: 'a folded-down region — the dot at its floor, so it never disappears' },
+    { down: 90, about: 'a folded-down region — the dot at its floor' },
     { down: 220, about: 'an ordinary chart region' },
-    { down: 460, about: 'the chart thrown open over the console' },
+    { down: 460, about: 'the chart thrown open over the console — the dot at its ceiling' },
   ]
     .map(({ down, about }) => {
       plotDown = down;

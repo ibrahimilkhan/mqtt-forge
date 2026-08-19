@@ -302,12 +302,14 @@ describe('marking the readings themselves', () => {
     expect(big).toBeGreaterThan(small);
   });
 
+  // The floor and the ceiling are two pixels apart: the mark stays the same mark and only
+  // settles into the room it has. A wider range was lost in a region and loud once opened.
   it('will not let a dot outgrow the plot it is in', () => {
     widen(600, 4000);
     readings('sensors/temp', ...wobble(20, 21.5, 1.5));
     show();
 
-    expect(Number(screen.getByTestId('dots').getAttribute('stroke-width'))).toBeLessThanOrEqual(8);
+    expect(Number(screen.getByTestId('dots').getAttribute('stroke-width'))).toBeLessThanOrEqual(6);
   });
 
   // Five hundred readings across two hundred pixels is not five hundred marks, it is a thicker
