@@ -274,6 +274,9 @@ describe('marking the readings themselves', () => {
     );
   };
 
+  /** The dots are circles in a layer of their own, so their size is a radius. */
+  const radius = () => Number(screen.getByTestId('dots').querySelector('circle')!.getAttribute('r'));
+
   // A line alone cannot tell a run sampled ten times from one sampled a thousand, and between
   // two readings it is an interpolation nobody measured.
   it('marks every reading with a dot of its own', () => {
@@ -281,7 +284,21 @@ describe('marking the readings themselves', () => {
     readings('sensors/temp', ...wobble(20, 21.5, 1.5));
     show();
 
-    expect(screen.getByTestId('dots')).toBeInTheDocument();
+    expect(screen.getByTestId('dots').querySelectorAll('circle')).toHaveLength(20);
+  });
+
+  // The plot's own SVG is stretched to the pane, and nothing round survives a non-uniform
+  // transform in every engine — WebKit, which the desktop build renders in, drew ellipses. This
+  // layer has no viewBox, so its user space is CSS pixels; and the positions are percentages, so
+  // a stale measurement cannot put a dot off its reading.
+  it('draws them in a layer of plain pixels, placed by proportion', () => {
+    widen(600, 160);
+    readings('sensors/temp', ...wobble(20, 21.5, 1.5));
+    show();
+
+    const layer = screen.getByTestId('dots');
+    expect(layer).not.toHaveAttribute('viewBox');
+    expect(layer.querySelector('circle')).toHaveAttribute('cx', '0%');
   });
 
   // A mark that is right in a region forty pixels tall is a speck in a chart thrown open over
@@ -290,14 +307,14 @@ describe('marking the readings themselves', () => {
     widen(600, 500);
     readings('sensors/temp', ...wobble(20, 21.5, 1.5));
     show();
-    const big = Number(screen.getByTestId('dots').getAttribute('stroke-width'));
+    const big = radius();
 
     cleanup();
     useLogStore.getState().clear();
     widen(600, 60);
     readings('sensors/temp', ...wobble(20, 21.5, 1.5));
     show();
-    const small = Number(screen.getByTestId('dots').getAttribute('stroke-width'));
+    const small = radius();
 
     expect(big).toBeGreaterThan(small);
   });
@@ -309,7 +326,7 @@ describe('marking the readings themselves', () => {
     readings('sensors/temp', ...wobble(20, 21.5, 1.5));
     show();
 
-    expect(Number(screen.getByTestId('dots').getAttribute('stroke-width'))).toBeLessThanOrEqual(6);
+    expect(radius() * 2).toBeLessThanOrEqual(5);
   });
 
   // Five hundred readings across two hundred pixels is not five hundred marks, it is a thicker
