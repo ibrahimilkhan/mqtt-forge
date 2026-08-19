@@ -83,3 +83,33 @@
 }
 
 .readingWhat { font-size: var(--t-small); line-height: 1.4; color: var(--muted); }
+
+/* ---- what the chips over the plot do ---- */
+
+/* The chip's own text beside the sentence explaining it, laid out like a reading so the two
+   sections of this panel read as one thing. */
+.control {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  gap: 2px 8px;
+  align-items: start;
+  margin: 0 0 8px;
+}
+
+/* Set exactly as the chart sets it — same face, same size — so a reader can match the word here
+   to the control there without having to work out which is which. */
+.chip {
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+.what { font-size: var(--t-small); line-height: 1.4; color: var(--muted); }
+
+/* When a control is not always there. A reader who has never seen one should not go looking. */
+.when { color: var(--faint, var(--muted)); font-style: italic; }

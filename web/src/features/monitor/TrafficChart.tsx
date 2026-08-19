@@ -8,6 +8,7 @@ import { cadence, changePoint, cycle, summarise } from '../../lib/stats';
 import { useNow } from '../../lib/useNow';
 import { useRuleLookup } from '../../lib/useRuleLookup';
 import { CHART_DETAIL } from '../appearance/chart';
+import { CHIP, CONTROLS } from '../appearance/controls';
 import type { GridId } from '../appearance/grid';
 import type { ReadingId } from '../appearance/readings';
 import { useAppearanceStore } from '../../stores/appearanceStore';
@@ -304,10 +305,10 @@ function Controls({
           type="button"
           className={styles.chip}
           aria-label="Back to every topic under the branch"
-          title="Back to every topic under the branch"
+          title={CONTROLS.branch.what}
           onClick={onBranch}
         >
-          ← all
+          {CONTROLS.branch.label}
         </button>
       )}
 
@@ -338,11 +339,11 @@ function Controls({
           type="button"
           className={styles.chip}
           aria-label="Range to suit the run"
-          title="Let the readings decide: the setting's range for measurements, the extremes for pulses"
+          title={CONTROLS.auto.what}
           aria-pressed={range === null}
           onClick={() => onRange(null)}
         >
-          auto
+          {CONTROLS.auto.label}
         </button>
         {(Object.keys(SCALES) as ScaleId[]).map((id) => (
           <button
@@ -354,7 +355,7 @@ function Controls({
             aria-pressed={range === id}
             onClick={() => onRange(id)}
           >
-            {{ extremes: 'ends', typical: 'mid', log: 'log' }[id]}
+            {CHIP[id]}
           </button>
         ))}
       </div>
@@ -368,21 +369,21 @@ function Controls({
               type="button"
               className={styles.chip}
               aria-label="Over time"
-              title="Over time"
+              title={CONTROLS.time.what}
               aria-pressed={view === 'time'}
               onClick={() => onView('time')}
             >
-              time
+              {CONTROLS.time.label}
             </button>
             <button
               type="button"
               className={styles.chip}
               aria-label="Distribution"
-              title="Distribution"
+              title={CONTROLS.dist.what}
               aria-pressed={view === 'distribution'}
               onClick={() => onView('distribution')}
             >
-              dist
+              {CONTROLS.dist.label}
             </button>
           </>
         )}
@@ -391,11 +392,11 @@ function Controls({
             type="button"
             className={styles.chip}
             aria-label={copyLabel}
-            title={copyLabel}
+            title={CONTROLS.csv.what}
             data-state={copy}
             onClick={take}
           >
-            {{ idle: 'csv', done: 'copied', refused: 'failed' }[copy]}
+            {{ idle: CONTROLS.csv.label, done: 'copied', refused: 'failed' }[copy]}
           </button>
         )}
       </div>
