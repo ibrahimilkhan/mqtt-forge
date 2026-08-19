@@ -1,10 +1,11 @@
-import { screen, within } from '@testing-library/react';
+import { act, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderWithClient as render } from '../../test/renderWithClient';
 import { useAppearanceStore } from '../../stores/appearanceStore';
 import { useLogStore } from '../../stores/logStore';
 import { useSelectionStore } from '../../stores/selectionStore';
+import { READING_IDS, READINGS } from '../appearance/readings';
 import { TrafficPane } from './TrafficPane';
 import { useHoldStore } from './useTraffic';
 
@@ -18,6 +19,12 @@ const reading = (slot: string) => screen.getByTestId(`reading-${slot}`).textCont
 
 const repeat = (times: number, ...pattern: string[]) =>
   Array.from({ length: times * pattern.length }, (_, i) => pattern[i % pattern.length]);
+
+/** A run with a swing and a little noise on it — an ordinary quantity. */
+const wobble = (n: number, base: number, swing: number) =>
+  Array.from({ length: n }, (_, i) =>
+    (base + Math.sin(i / 4) * swing + ((i * 37) % 11) / 40).toFixed(2),
+  );
 
 beforeEach(() => {
   useLogStore.getState().clear();
@@ -69,6 +76,74 @@ describe('the range the plot is drawn in', () => {
     show();
 
     expect(screen.queryByTestId('pinned')).not.toBeInTheDocument();
+  });
+});
+
+describe('the ground the plot is drawn on', () => {
+  const run = () => readings('sensors/temp', ...wobble(30, 21.5, 1.5));
+
+  // Without an edge, a line lying along the top of the plot cannot be told from a line near the
+  // top — which is exactly what the pinned-reading marks depend on being legible.
+  it('draws the plot its own edge', () => {
+    run();
+    show();
+
+    expect(screen.getByTestId('plot-frame')).toBeInTheDocument();
+    expect(screen.queryByTestId('gridline')).not.toBeInTheDocument();
+  });
+
+  it('marks the quarters when asked', () => {
+    useAppearanceStore.getState().setGrid('lines');
+    run();
+    show();
+
+    expect(screen.getAllByTestId('gridline').length).toBeGreaterThan(0);
+  });
+
+  it('draws neither when the reader wants the line alone', () => {
+    useAppearanceStore.getState().setGrid('none');
+    run();
+    show();
+
+    expect(screen.queryByTestId('plot-frame')).not.toBeInTheDocument();
+  });
+});
+
+describe('choosing which readings the note makes', () => {
+  const run = () => readings('sensors/temp', ...wobble(30, 21.5, 1.5));
+
+  it('puts away a reading the reader has switched off', () => {
+    run();
+    show();
+    expect(screen.getByTestId('reading-mean')).toBeInTheDocument();
+
+    act(() => useAppearanceStore.getState().toggleReading('mean', false));
+
+    expect(screen.queryByTestId('reading-mean')).not.toBeInTheDocument();
+    expect(screen.getByTestId('reading-median')).toBeInTheDocument();
+  });
+
+  // A note with nothing left in it is not a note, and an empty rule under the plot is furniture.
+  it('drops the note entirely once nothing is left in it', () => {
+    run();
+    show();
+
+    act(() => READING_IDS.forEach((id) => useAppearanceStore.getState().toggleReading(id, false)));
+
+    expect(screen.queryByTestId('note')).not.toBeInTheDocument();
+    expect(screen.getByTestId('plotArea')).toBeInTheDocument();
+  });
+
+  // The note's labels are three or four characters long. Hovering one gives the same sentence the
+  // Chart panel prints, so the two cannot drift apart.
+  it("carries the panel's own words on the cell", () => {
+    run();
+    show();
+
+    expect(screen.getByTestId('note').querySelector('[data-slot="spread"]')).toHaveAttribute(
+      'title',
+      expect.stringContaining(READINGS.spread.what),
+    );
   });
 });
 

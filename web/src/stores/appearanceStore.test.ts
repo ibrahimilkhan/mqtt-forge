@@ -8,6 +8,8 @@ const DEFAULTS = {
   chart: 'full',
   scale: 'typical',
   logo: 'anvil',
+  grid: 'frame',
+  readings: {},
 };
 
 beforeEach(() => {
@@ -99,8 +101,8 @@ describe('persistence', () => {
 
     await useAppearanceStore.persist.rehydrate();
 
-    const { sans, mono, size, chart, scale, logo } = useAppearanceStore.getState();
-    expect({ sans, mono, size, chart, scale, logo }).toEqual(DEFAULTS);
+    const { sans, mono, size, chart, scale, logo, grid, readings } = useAppearanceStore.getState();
+    expect({ sans, mono, size, chart, scale, logo, grid, readings }).toEqual(DEFAULTS);
   });
 
   it('does not throw when the storage write fails, and the choice still applies to this tab', () => {
@@ -137,7 +139,7 @@ describe('persistence', () => {
 
     await useAppearanceStore.persist.rehydrate();
 
-    const { sans, mono, size, chart, scale, logo } = useAppearanceStore.getState();
-    expect({ sans, mono, size, chart, scale, logo }).toEqual(DEFAULTS);
+    const { sans, mono, size, chart, scale, logo, grid, readings } = useAppearanceStore.getState();
+    expect({ sans, mono, size, chart, scale, logo, grid, readings }).toEqual(DEFAULTS);
   });
 });

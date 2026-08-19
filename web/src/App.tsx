@@ -3,6 +3,7 @@ import styles from './App.module.css';
 import { StatusReadout } from './components/StatusReadout';
 import { AppearancePanel } from './features/appearance/AppearancePanel';
 import { MARKS, Wordmark } from './features/brand/marks';
+import { ChartPanel } from './features/chart/ChartPanel';
 import { ColoursPanel } from './features/colours/ColoursPanel';
 import { BrokerPanel } from './features/connection/BrokerPanel';
 import { MobilePanel } from './features/mobile/MobilePanel';
@@ -27,6 +28,7 @@ const PANEL_VIEWS: Record<PanelId, (props: { onClose: () => void }) => ReactNode
   broker: BrokerPanel,
   subscribe: SubscribePanel,
   colours: ColoursPanel,
+  chart: ChartPanel,
   mobile: MobilePanel,
   settings: AppearancePanel,
 };

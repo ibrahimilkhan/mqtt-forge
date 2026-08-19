@@ -14,6 +14,7 @@ import { render } from '@testing-library/react';
 import { it } from 'vitest';
 import './styles/global.css';
 import { App } from './App';
+import { ChartPanel } from './features/chart/ChartPanel';
 import { MARKS } from './features/brand/marks';
 import { TrafficChart } from './features/monitor/TrafficChart';
 import { queryKeys } from './api/queryKeys';
@@ -29,17 +30,29 @@ const OUT = '/Users/ilkhan/RiderProjects/MqttForge/src/MqttForge.Api/wwwroot';
 const PER_PAGE = 3;
 
 let id = 0;
-const entries = (topic: string, bodies: string[], everyMs = 1000) =>
-  bodies
+
+/**
+ * A run ending about now.
+ *
+ * Anchored to the clock rather than to a fixed date, because the note reads the newest arrival
+ * against the present: a run stamped last Tuesday is a topic that stopped publishing days ago,
+ * and every chart on the page would carry a silence alarm that is about the fixture rather than
+ * about anything the chart does.
+ */
+const entries = (topic: string, bodies: string[], everyMs = 1000) => {
+  const ends = Date.now() - everyMs;
+
+  return bodies
     .map((body, index) => ({
       id: id++,
       kind: 'recv' as const,
-      at: new Date(Date.UTC(2026, 7, 19, 9, 0, 0) + index * everyMs),
+      at: new Date(ends - (bodies.length - 1 - index) * everyMs),
       topic,
       body,
       mode: 'text' as const,
     }))
     .reverse();
+};
 
 const repeat = (times: number, ...pattern: string[]) =>
   Array.from({ length: times * pattern.length }, (_, i) => pattern[i % pattern.length]);
@@ -59,6 +72,12 @@ const RUNS = [
   {
     name: 'A quantity behaving itself',
     note: 'A run with a swing and noise on it. The band is one deviation either side of the mean, and the fences ring what falls outside them.',
+    log: entries('sensors/room/temp', wobble(90, 21.5, 2.4)),
+  },
+  {
+    name: 'The same run, with the quarters marked',
+    note: 'Settings → Chart → Grid. The plot always carries its own edge unless that is turned off too — without one, a line lying along the top of the plot cannot be told from a line near the top.',
+    grid: 'lines',
     log: entries('sensors/room/temp', wobble(90, 21.5, 2.4)),
   },
   {
@@ -117,6 +136,25 @@ function Framed({ children }) {
   return <div className="gPane">{children}</div>;
 }
 
+/**
+ * What React set as a property, written down as an attribute.
+ *
+ * A `<select value=…>` is a DOM property, not an attribute, so serialising the tree loses which
+ * option was chosen and the page opens showing the first one. Nothing is wrong with the console;
+ * it is the snapshot that lies — which is worse than an honest bug, since it looks like a
+ * setting that does not stick.
+ */
+function stamp(root: HTMLElement): HTMLElement {
+  for (const select of root.querySelectorAll('select')) {
+    for (const option of select.options) {
+      if (option.value === select.value) option.setAttribute('selected', '');
+      else option.removeAttribute('selected');
+    }
+  }
+
+  return root;
+}
+
 // Written into the API's static root, which is where a browser can reach it. Absent before the
 // web app has been built at least once, and there is nothing to serve it from then either.
 it.skipIf(!existsSync(OUT))('writes the gallery', () => {
@@ -155,7 +193,7 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
         useLogStore.getState().clear();
 
         const draw = (scale) => {
-          useAppearanceStore.setState({ scale });
+          useAppearanceStore.setState({ scale, grid: run.grid ?? 'frame' });
           const { container, unmount } = render(
             <QueryClientProvider client={client}>
               <Framed>
@@ -215,8 +253,19 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
   .gMark figcaption span { color: var(--muted); font-size:12.5px; line-height:1.45; }
 </style>`;
 
-  const nav = ['gallery.html', ...pages.map((_, i) => `gallery-${i + 1}.html`)]
-    .map((href, i) => `<a href="${href}">${i === 0 ? 'Marks' : `Charts ${i}`}</a>`)
+  const nav = ['gallery.html', ...pages.map((_, i) => `gallery-${i + 1}.html`), 'gallery-panel.html', 'console.html']
+    .map((href, i) => {
+      const name =
+        href === 'gallery.html'
+          ? 'Marks'
+          : href === 'gallery-panel.html'
+            ? 'Chart panel'
+            : href === 'console.html'
+              ? 'The console'
+              : `Charts ${i}`;
+
+      return `<a href="${href}">${name}</a>`;
+    })
     .join('');
 
   const page = (title, inner) =>
@@ -243,6 +292,25 @@ ${inner}
   );
 
   writeFileSync(`${OUT}/console.html`, console_(client));
+
+  // Back to the defaults: the runs above set the range on the store to draw themselves both
+  // ways, and a panel showing the last of those would be showing the renderer's state rather
+  // than the console's.
+  useAppearanceStore.getState().reset();
+
+  // The panel is a column in the console, so it is shown at a column's width rather than at the
+  // page's — a list of switches read across seven hundred pixels is not the thing being checked.
+  const { container: chartPanel } = render(
+    <QueryClientProvider client={client}>
+      <div style={{ width: 320, border: '1px solid var(--rule)', borderRadius: 3 }}>
+        <ChartPanel onClose={() => {}} />
+      </div>
+    </QueryClientProvider>,
+  );
+  writeFileSync(
+    `${OUT}/gallery-panel.html`,
+    page('the chart panel', `<h2>The chart panel</h2>${stamp(chartPanel).innerHTML}`),
+  );
 });
 
 /**
@@ -319,5 +387,5 @@ function console_(client) {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>MQTTForge — the console</title>
 ${document.head.innerHTML}
-</head><body>${container.innerHTML}</body></html>`;
+</head><body>${stamp(container).innerHTML}</body></html>`;
 }

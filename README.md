@@ -37,8 +37,10 @@ row, and the publish form below it](.github/assets/console.png)
 - **Colour rules** — MQTT filters you pick colours for, so a branch stands out in a tree of
   hundreds.
 - **QR panel** — opens the same console on a phone on your network.
-- **Settings** — the fonts and their size, how much of the chart to draw, which range it opens
-  on, and which of six marks the console wears.
+- **Chart panel** — how much of the chart to draw, what range it opens on, what is drawn round
+  it, and a switch for every reading the note can make, each with a line saying what it means.
+  `spread` and `duty` are three-letter labels; this is where they are spelled out.
+- **Settings** — the fonts and their size, and which of six marks the console wears.
 
 It speaks MQTT 5.0 only, over TCP or TLS, with a username and password if the broker wants them.
 A broker that speaks just 3.1.1 refuses the connection.
@@ -165,7 +167,7 @@ latest one leaves the arithmetic to your eye — which is the arithmetic an eye 
 such a topic and the pane draws its run, and writes what the run adds up to underneath:
 
 - **How many, and where the middle is** — count, mean, median, standard deviation and range,
-  with the quartiles a hover away. On a run that is not a quantity these are replaced rather
+  with the quartiles a switch away. On a run that is not a quantity these are replaced rather
   than printed: see *what kind of thing it is* below.
 - **What does not belong** — readings outside Tukey's fences are ringed on the line and counted
   in the note.
@@ -211,9 +213,8 @@ topic's own newest message underneath as evidence.
 
 Four chips over the plot decide how much of its height goes on the run's range:
 
-- **auto** lets the readings decide. A quantity takes whatever **Settings → Chart range** says; a
-  switch, a pulse or a counter always takes its extremes, because clipping a pulse shaves off the
-  signal.
+- **auto** lets the readings decide. A quantity takes whatever **Chart → Range** says; a switch,
+  a pulse or a counter always takes its extremes, because clipping a pulse shaves off the signal.
 - **ends** spends the height on the whole run, from its lowest reading to its highest.
 - **mid** spends it on where the readings mostly are — Tukey's fences, the same line the note
   draws between spread and an outlier. Readings past the edge are drawn *on* it, marked, and
@@ -222,8 +223,34 @@ Four chips over the plot decide how much of its height goes on the run's range:
   back to its extremes rather than pretending.
 
 **time** and **dist** read the same run in order or as a distribution. **csv** copies it out with
-full timestamps. **Settings → Chart detail** picks how much of all this to draw: *plain* is the
-line alone, *full* adds the marks and the note, *deep* draws both views at once.
+full timestamps.
+
+### The chart panel
+
+Everything else about the chart is here. **Detail** picks how much of it to draw: *plain* is the
+line alone, *full* adds the marks and the note, *deep* draws both views at once. **Grid** picks
+what is drawn round it — nothing, the plot's own edge, or the edge with the quarters marked. An
+edge is the default: without one, a line lying along the top of the plot cannot be told from a
+line near the top, which is exactly the reading the pinned marks depend on.
+
+And then every reading the note can make, grouped by the kind of run it applies to, each with a
+switch and a line saying what it is:
+
+| | |
+|---|---|
+| `n` | how many readings are on the chart |
+| `mean` | the average — one wild reading drags it |
+| `median` | the middle reading; a wild reading barely moves it |
+| `spread` | how far a reading usually sits from the mean (σ) |
+| `range` | the lowest reading and the highest |
+| `quartiles` `fences` | the middle half, and the line past which a reading is an outlier |
+| `shape` `trend` `step` `cycle` `outliers` | what the run is doing, and what does not belong to it |
+| `levels` `events` `duty` `width` `period` | a switch or a pulse, counted and timed |
+| `rate` `counted` `at` `restarts` | a running total, read as its slope |
+| `every` `off scale` `window` `skipped` `silence` | true of any run: its rhythm, what the plot could not hold, and what was left out |
+
+A reading switched off leaves the note; switch them all off and the note goes with them. Hovering
+a cell in the note gives the same sentence the panel prints, so the two cannot drift apart.
 
 ## Keeping your settings
 

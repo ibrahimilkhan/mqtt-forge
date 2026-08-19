@@ -154,6 +154,26 @@
   vector-effect: non-scaling-stroke;
 }
 
+/* ---- the ground the plot is drawn on ---- */
+
+/* The plot's own edge. Faint enough to read as ground and firm enough to be an edge: without one,
+   a line lying along the top of the plot cannot be told from a line near the top, which is
+   exactly the reading the pinned-reading marks depend on being legible. */
+.frameRule {
+  stroke: var(--rule);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+/* The quarters, for reading a height off the plot rather than off the two labels beside it.
+   Fainter than the frame — the frame is a boundary and these are a convenience. */
+.gridLine {
+  stroke: color-mix(in srgb, var(--rule) 55%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 1 4;
+  vector-effect: non-scaling-stroke;
+}
+
 /* Recessive on purpose: it is there to be read against, not read. */
 .zero {
   stroke: var(--rule);

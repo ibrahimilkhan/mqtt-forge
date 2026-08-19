@@ -1,5 +1,7 @@
 import { useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { GRIDS, type GridId } from '../appearance/grid';
 import { short } from '../../lib/format';
+import { PlotGrid } from './PlotGrid';
 import { pinned, positionIn, type Domain } from '../../lib/scale';
 import type { Series } from '../../lib/series';
 import type { Shape } from '../../lib/shape';
@@ -37,6 +39,7 @@ export function TrafficLine({
   colour,
   marks = true,
   compact = false,
+  grid = 'frame',
 }: {
   series: Series;
   summary: Summary;
@@ -50,6 +53,8 @@ export function TrafficLine({
   marks?: boolean;
   /** One of several stacked plots: no readout, no scale, no focus ring, no furniture. */
   compact?: boolean;
+  /** What is drawn round and behind the line. */
+  grid?: GridId;
 }) {
   const [hovered, setHovered] = useState<number | null>(null);
   const { readings } = series;
@@ -177,6 +182,10 @@ export function TrafficLine({
             preserveAspectRatio="none"
             aria-hidden="true"
           >
+            {/* The plot's own edge, and the quarters of it. First, so everything the run does is
+                drawn over the ground rather than under it. */}
+            <PlotGrid grid={compact && GRIDS[grid].frame ? 'frame' : grid} side={SIDE} />
+
             {/* One deviation either side of the mean, which is where the readings mostly are.
                 The line crossing out of it is the part worth looking at. */}
             {banded && (

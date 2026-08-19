@@ -8,6 +8,8 @@ import { cadence, changePoint, cycle, summarise } from '../../lib/stats';
 import { useNow } from '../../lib/useNow';
 import { useRuleLookup } from '../../lib/useRuleLookup';
 import { CHART_DETAIL } from '../appearance/chart';
+import type { GridId } from '../appearance/grid';
+import type { ReadingId } from '../appearance/readings';
 import { useAppearanceStore } from '../../stores/appearanceStore';
 import type { LogEntry } from '../../stores/logStore';
 import { ChartNote } from './ChartNote';
@@ -50,6 +52,8 @@ export function TrafficChart({
   const ruleOf = useRuleLookup();
   const detailId = useAppearanceStore((state) => state.chart);
   const preferred = useAppearanceStore((state) => state.scale);
+  const grid = useAppearanceStore((state) => state.grid);
+  const readings = useAppearanceStore((state) => state.readings);
   const detail = CHART_DETAIL[detailId];
 
   const narrowed = useMemo(
@@ -117,6 +121,8 @@ export function TrafficChart({
       frozen={frozen}
       colour={ruleOf(drawn.series.topic)?.colour}
       controls={controls}
+      grid={grid}
+      readings={readings}
     />
   );
 }
@@ -131,6 +137,8 @@ function Single({
   frozen,
   colour,
   controls,
+  grid,
+  readings,
 }: {
   series: Series;
   detailId: string;
@@ -141,6 +149,8 @@ function Single({
   frozen: boolean;
   colour?: string;
   controls: React.ReactNode;
+  grid: GridId;
+  readings: Partial<Record<ReadingId, boolean>>;
 }) {
   // Held against the readings rather than the render: a pointer moving across the plot must not
   // re-run a goodness-of-fit test on five thousand values for every pixel it crosses.
@@ -205,11 +215,12 @@ function Single({
           step={detail.marks ? stats.step : null}
           colour={colour}
           marks={detail.marks}
+          grid={grid}
         />
       )}
 
       {(detail.histogram || view === 'distribution') && (
-        <TrafficHistogram series={series} summary={stats.summary} colour={colour} />
+        <TrafficHistogram series={series} summary={stats.summary} colour={colour} grid={grid} />
       )}
 
       {detail.note && (
@@ -226,7 +237,8 @@ function Single({
           sparse={series.sparse}
           of={series.of}
           silence={silence}
-          quartiles={detail.histogram}
+          deep={detail.histogram}
+          chosen={readings}
         />
       )}
     </figure>

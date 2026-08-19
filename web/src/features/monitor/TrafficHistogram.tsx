@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import type { GridId } from '../appearance/grid';
 import { short } from '../../lib/format';
+import { PlotGrid } from './PlotGrid';
 import type { Series } from '../../lib/series';
 import type { Summary } from '../../lib/stats';
 import styles from './TrafficChart.module.css';
@@ -22,10 +24,13 @@ export function TrafficHistogram({
   series,
   summary,
   colour,
+  grid = 'frame',
 }: {
   series: Series;
   summary: Summary;
   colour?: string;
+  /** What is drawn round and behind the bars. */
+  grid?: GridId;
 }) {
   const [hovered, setHovered] = useState<number | null>(null);
   const bins = binsFor(series.readings.map((reading) => reading.value), summary);
@@ -53,6 +58,9 @@ export function TrafficHistogram({
             preserveAspectRatio="none"
             aria-hidden="true"
           >
+            {/* The same ground the line is drawn on, so two plots stacked read as one chart. */}
+            <PlotGrid grid={grid} side={SIDE} />
+
             {bins.map((bin, index) => (
               <rect
                 key={index}
