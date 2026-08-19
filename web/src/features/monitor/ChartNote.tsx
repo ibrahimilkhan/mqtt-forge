@@ -27,12 +27,12 @@ const named = (id: ReadingId) => READINGS[id];
 /**
  * What the run adds up to, under the chart that draws it.
  *
- * Every reading has a fixed place. The note used to be a row of items that came and went with
- * the traffic — a run that grew an outlier pushed the pace along the line, a step appearing
- * shunted everything after it onto the next line, and a value going from 9.9 to 10.1 nudged its
- * neighbours sideways. Nothing about those movements was information, and all of them landed on
- * a reader who was trying to read one number. So the slots are fixed: the labels never move, the
- * digits are one width, and only the values under them change.
+ * Every reading keeps its place whether or not the run has anything to put in it. The note used
+ * to be a row of items that came and went with the traffic — a run that grew an outlier pushed
+ * the pace along the line, and a step appearing shunted everything after it onto the next line.
+ * Nothing about those movements was information, and all of them landed on a reader trying to
+ * read one number. So an empty reading shows a dash and holds its place, and the digits are one
+ * width so a value gaining one moves nothing but its own tail.
  *
  * Which slots those are follows the shape of the run. A mean, a deviation and a trend describe a
  * temperature; under a door sensor they describe nothing that ever happened — the door was never

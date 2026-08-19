@@ -272,48 +272,53 @@
 
 /* What the run adds up to, under the plot it belongs to.
 
-   A fixed grid, not a row of items that come and go: every reading the note can make has a cell
-   whether or not the run has anything to put in it, so a new outlier never pushes the pace onto
-   another line and a value going from 9.9 to 10.1 never nudges its neighbours along. The label
-   is the constant and the value beside it is what changes. */
+   Every reading the note can make keeps a cell whether or not the run has anything to put in it,
+   so a new outlier never pushes the pace onto another line and an empty reading reads as a dash
+   rather than as an absence. The label is the constant and the value beside it is what changes.
+
+   The cells used to be equal columns off a fixed grid, and that was the wrong trade: a column
+   wide enough for 'n 60' is half of what 'range 19.7–23.32' needs, so the long readings wrapped
+   inside their own cells while the row they were in had space left over. A reading is one line —
+   a label and a number — and it is read as one. So the cells take the width they need and the
+   row wraps between them instead of inside them. */
 .note {
-  display: grid;
-  /* Columns fall out of the pane's width rather than the values' — the same count until the
-     reader drags the seam, which is the only time anything here is allowed to move. */
-  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
-  gap: 6px 10px;
+  display: flex;
+  flex-wrap: wrap;
   align-content: start;
+  /* Wide between, close under: the gap is what separates two readings on a line, and with no
+     rules between them it has to be plainly bigger than the space inside one. */
+  gap: 5px 18px;
   margin-top: 10px;
   font-family: var(--mono);
   font-size: var(--t-micro);
-  /* No tracking here, unlike the stamps: the cells are narrow, and every fraction of a
-     character of width is a word that stays on the line it belongs on.
-     Every digit the same width, so a reading that gains one does not resize its own cell. */
+  /* No tracking here, unlike the stamps: every fraction of a character of width is a word that
+     stays on the line it belongs on.
+     Every digit the same width, so a reading that gains one moves nothing but its own tail. */
   font-variant-numeric: tabular-nums;
 }
 
-/* Two lines, always — filled or not.
+/* One line, at the width that line needs.
 
-   The column is fixed, so a long reading wraps inside its own cell instead of widening it and
-   pushing every other reading along. Reserving both lines whatever the value is means the wrap
-   moves nothing either: a step that grows a timestamp fills a line that was already there.
-   Past two lines it is clipped, and the cell carries the whole of it on hover. */
+   The floor is what keeps a run of short readings looking like a row rather than a huddle, and
+   it absorbs the ordinary case of a value gaining a digit without anything after it moving.
+   The ceiling is the note itself: a reading longer than the pane is cut with the whole of it on
+   the cell, rather than pushing the pane wider than the column it lives in. */
 .slot {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  overflow: hidden;
-  min-width: 0;
-  line-height: 1.25;
-  height: 2.5em;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 9ch;
+  max-width: 100%;
+  white-space: nowrap;
+  line-height: 1.4;
 }
 
 /* The half that never changes, so the eye can go straight to the cell it wants rather than
    hunting for the symbol that names the number in it. */
-.slotLabel { color: var(--muted); text-transform: lowercase; margin-right: 4px; }
+.slotLabel { color: var(--muted); text-transform: lowercase; flex: none; }
 
-.slotValue { color: var(--ink); }
+/* Shrinks and is cut rather than widening the row past the pane; the title carries the whole. */
+.slotValue { color: var(--ink); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 /* The measurements read as one quiet row; the readings *of* them — a distribution, a direction,
    a count of what was left out — carry the page's ink, since they are the part that says
