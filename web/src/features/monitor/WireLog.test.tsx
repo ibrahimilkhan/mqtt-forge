@@ -255,7 +255,7 @@ describe('WireLog', () => {
     render(<Monitor />);
 
     const head = screen.getByTestId('head');
-    // The action the row offers sits at the far end of the same line.
+    // The action the row offers is at the end of the same line, out of sight until focused.
     expect(head).toHaveTextContent(/^\d\d:\d\d:\d\dQoS 1RETAINED4Bload$/);
     expect(within(screen.getByTestId('topic')).queryByText('4B')).not.toBeInTheDocument();
   });
@@ -379,6 +379,9 @@ describe('reaching a row without a mouse', () => {
   // The row used to be one control named 'Load … into publish' — and `button` is a role whose
   // children are presentational, so the time, the stamps, the topic and the payload were all
   // dropped from the accessibility tree. The pane's whole content was unreadable.
+  // Out of sight, not out of reach: the row answers a mouse click, and this is the only thing a
+  // keyboard can land on — the row cannot take the action back onto itself without making its
+  // own contents presentational again.
   it('leaves the row a row, and puts the action on a button of its own', () => {
     readings('sensors/temp', '21.5');
     useSelectionStore.getState().select(chip);
