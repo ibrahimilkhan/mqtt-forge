@@ -29,14 +29,17 @@ const ENOUGH_FOR_A_BAND = 5;
  *
  * A dot per arrival says where the readings actually are — a line alone cannot tell a run sampled
  * ten times from one sampled a thousand, and between two dots the line is an interpolation nobody
- * measured. But a mark that is right in a pane region forty pixels tall is a speck in a chart
- * thrown open over the window, and a mark that is right there is a blot in the pane. So the dot
- * is a fraction of the plot's own height, floored so it never disappears and capped so it never
- * becomes the subject.
+ * measured.
+ *
+ * It follows the plot's own height, but only a little. The first attempt ran from three pixels to
+ * eight across the range this chart spans, and both ends were wrong in use: the dots were lost in
+ * an ordinary region and were the loudest thing on the plot once it was thrown open. The floor
+ * and the ceiling are two pixels apart now, so the mark stays the same mark and only settles a
+ * little into the room it has — four pixels in a region, six with the console behind it.
  */
-const DOT_OF_HEIGHT = 0.016;
-const DOT_SMALLEST = 3;
-const DOT_LARGEST = 8;
+const DOT_OF_HEIGHT = 0.014;
+const DOT_SMALLEST = 4;
+const DOT_LARGEST = 6;
 
 /**
  * The clear space a dot keeps from the next one along.
