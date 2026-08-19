@@ -3,7 +3,7 @@ import { SCALES, type ScaleId } from '../../lib/scale';
 /**
  * The controls over a chart, and what each of them does.
  *
- * The chip row reads `auto ends mid log | time dist csv`. Every one of those is three or four
+ * The chip row reads `auto ends mid log | time dist`. Every one of those is three or four
  * characters, which is right for a row that has to fit a pane two hundred pixels wide and wrong
  * for a reader meeting it the first time — and the only explanation each had was a `title`, which
  * is a thing you have to already suspect is there before you can find it. That is the same
@@ -13,7 +13,7 @@ import { SCALES, type ScaleId } from '../../lib/scale';
  * already work. Both read this catalogue, so the label on a chip and the label beside its
  * explanation cannot drift apart.
  */
-export type ControlId = 'field' | 'auto' | 'time' | 'dist' | 'csv' | 'open' | 'branch';
+export type ControlId = 'field' | 'auto' | 'time' | 'dist' | 'open' | 'branch';
 
 type Control = {
   /** Exactly what the control shows, so the panel and the chart cannot disagree. */
@@ -33,7 +33,7 @@ export const CONTROL_GROUP_TITLES: Record<ControlGroup, { title: string; about: 
     title: 'The range',
     about: 'How much of the plot’s height goes on the run’s range. Each of these is a whole chip row of its own.',
   },
-  view: { title: 'The view, and taking it away', about: 'How the same run is drawn, and how to get it out of the console.' },
+  view: { title: 'The view', about: 'How the same run is drawn.' },
 };
 
 export const CONTROLS: Record<ControlId, Control & { group: ControlGroup }> = {
@@ -68,11 +68,6 @@ export const CONTROLS: Record<ControlId, Control & { group: ControlGroup }> = {
     label: 'dist',
     group: 'view',
     what: 'The same readings as a distribution — how often each value came up, which is what the run usually does rather than what it did.',
-  },
-  csv: {
-    label: 'csv',
-    group: 'view',
-    what: 'Copies the readings on the chart to the clipboard as CSV — a header, then one row per reading with its time in full. It copies rather than downloads, so it can go straight into a spreadsheet or a notebook.',
   },
 };
 
