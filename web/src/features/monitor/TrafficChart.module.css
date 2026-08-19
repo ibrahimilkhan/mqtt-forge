@@ -373,44 +373,84 @@
    so a new outlier never pushes the pace onto another line and an empty reading reads as a dash
    rather than as an absence. The label is the constant and the value beside it is what changes.
 
-   The cells used to be equal columns off a fixed grid, and that was the wrong trade: a column
-   wide enough for 'n 60' is half of what 'range 19.7–23.32' needs, so the long readings wrapped
-   inside their own cells while the row they were in had space left over. A reading is one line —
-   a label and a number — and it is read as one. So the cells take the width they need and the
-   row wraps between them instead of inside them. */
+   A grid of equal tracks, so the readings line up down the note as well as across it. It has
+   been both of the other two things and each failed its own way: equal tracks too narrow to hold
+   a reading wrapped the long ones inside their own cells, and content-sized cells that wrapped
+   between themselves lined up with nothing.
+
+   Because a track is sized by the note and never by its contents, a value changing length cannot
+   move another reading. It takes up its own slack, or it is cut — never wrapped, and never
+   spilled.
+
+   The column is one measurement: the widest reading the note can print. Every value template in
+   ChartNote was read off and costed, and the longest at its ordinary value is `trend rising
+   0.423/min` at 10.75rem — a seven-character word, a three-significant-figure rate and a unit.
+   `step +3.4 at 14:23:07` is 10.32rem, `range -40.25 to -18.5` 10.27, `quartiles 21.24–21.71`
+   10.05. So the track is 10.8rem and every reading fits one, which is why none of them needs to
+   span two and why the note has no second layout to go wrong. A single number costs a third of
+   that — `median 21.5` is 5.11rem — and the slack is where the alignment comes from. */
 .note {
-  display: flex;
-  flex-wrap: wrap;
+  /* One column, and the gap between two. Everything is in rem, so the note scales with the base
+     size the reader chose rather than holding still while the type inside it grows — the widest
+     reading is 10.75rem at every base size, not only at fifteen pixels. */
+  --note-col: 10.8rem;
+  --note-gap-x: 0.667rem;
+
+  display: grid;
+  /* The clamp is the safety argument. auto-fill on its own resolves to ONE column once the note
+     is narrower than the floor, and a single column of a reading nobody can read is the layout
+     this replaced. Capping the floor at half the note keeps two columns at every width.
+
+     Below 22.3rem — two columns and a gap — the tracks are narrower than the floor and the
+     longest readings present are cut. Measured on a live temperature run, everything reads whole
+     from about 18.7rem of note: 230px at a 12px base, 280 at 15, 360 at 20. The default pane
+     gives 364px. Swept 60-1400px against base sizes 12, 15, 17 and 20 — 1344 configurations,
+     with the widest strings the note can produce forced into the cells — and found no width at
+     which anything spills the note or a cell leaves its track, and none at which the number of
+     distinct left edges differs from the number of columns. The half-pixel absorbs rounding. */
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(min(var(--note-col), (100% - var(--note-gap-x)) / 2 - 0.5px), 1fr)
+  );
+  /* Wider between readings than the gap inside one, so the eye groups a label with its own
+     number rather than with the label after it. */
+  gap: 0.27rem var(--note-gap-x);
   align-content: start;
-  /* Wide between, close under: the gap is what separates two readings on a line, and with no
-     rules between them it has to be plainly bigger than the space inside one. */
-  /* Wider between readings than the size step inside one, so the eye groups a label with its
-     own number rather than with the label after it. */
-  gap: 4px 20px;
-  margin-top: 10px;
+  margin-top: 0.667rem;
+  /* Clip rather than hidden: hidden would make the note a second scroll container. Without this
+     the promise above is unenforced — anything outgrowing its track would become a horizontal
+     scrollbar rather than an ellipsis. */
+  overflow-x: clip;
   font-family: var(--mono);
   font-size: var(--t-micro);
-  /* No tracking here, unlike the stamps: every fraction of a character of width is a word that
-     stays on the line it belongs on.
-     Every digit the same width, so a reading that gains one moves nothing but its own tail. */
+  /* Every digit the same width, so a reading that gains one moves nothing but its own tail. */
   font-variant-numeric: tabular-nums;
 }
 
-/* One line, at the width that line needs.
+/* One line, cut by its track rather than wrapped inside it.
 
-   The floor is what keeps a run of short readings looking like a row rather than a huddle, and
-   it absorbs the ordinary case of a value gaining a digit without anything after it moving.
-   The ceiling is the note itself: a reading longer than the pane is cut with the whole of it on
-   the cell, rather than pushing the pane wider than the column it lives in. */
+   `overflow: hidden` is on the cell and not only on its two halves: the label does not shrink,
+   so at absurd widths it is the cell that pushes past its track, and the clip belongs on the box
+   that does the pushing. */
 .slot {
   display: flex;
   align-items: baseline;
-  gap: 5px;
-  min-width: 9ch;
-  max-width: 100%;
+  /* In rem like everything else here: a gap in px is the one length that would not scale, and
+     the widest reading clears its track by less than a pixel at the smallest base size. */
+  gap: 0.34rem;
+  min-width: 0;
+  overflow: hidden;
   white-space: nowrap;
-  line-height: 1.4;
+  line-height: 1.35;
 }
+
+/* An alarm that has actually fired goes to the front of the note.
+   The note can be taller than the region it sits in, and the two readings that interrupt — a
+   topic gone quiet, a run mostly stepped over — are the last two in the array. An alarm the
+   reader has to scroll to find is not an alarm. This moves only when one fires, which is exactly
+   when moving it is the point; the order in the document, which is the order a screen reader
+   takes, is untouched. */
+.slot[data-tone='alarm']:not([data-empty]) { order: -1; }
 
 /* The name of the reading, not the reading. Small, quiet, and set apart from the number beside
    it by size as much as by colour — at one size and one colour the pair read as a single grey

@@ -211,6 +211,39 @@ describe('opening one reading', () => {
   });
 });
 
+describe('how the readings are laid out', () => {
+  // The note is a grid of equal tracks so the readings line up down it as well as across it,
+  // and the track is sized to the widest reading the note can print — so nothing spans, nothing
+  // wraps, and a value changing length takes up its own slack rather than moving a neighbour.
+  it('lays the readings out in one grid rather than a row that wraps', () => {
+    readings('sensors/temp', ...wobble(40, 21.5, 1.5));
+    show();
+
+    expect(screen.getByTestId('note').querySelectorAll('[data-slot]').length).toBeGreaterThan(10);
+    expect(screen.getByTestId('note').querySelector('[data-span]')).toBeNull();
+  });
+
+  // An alarm the reader has to scroll to find is not an alarm, and the two that interrupt are
+  // the last two readings in the array.
+  it('marks a firing alarm so it can be hoisted out of the tail', () => {
+    readings('sensors/mixed', '1', 'warming', 'warming', 'warming', 'warming', '2');
+    show();
+
+    const skipped = screen.getByTestId('note').querySelector('[data-slot="skipped"]');
+    expect(skipped).toHaveAttribute('data-tone', 'alarm');
+    expect(skipped).not.toHaveAttribute('data-empty');
+  });
+
+  it('leaves an alarm with nothing to say in its place', () => {
+    readings('sensors/temp', ...wobble(40, 21.5, 1.5));
+    show();
+
+    const silence = screen.getByTestId('note').querySelector('[data-slot="silence"]');
+    expect(silence).toHaveAttribute('data-tone', 'alarm');
+    expect(silence).toHaveAttribute('data-empty');
+  });
+});
+
 describe('the ground the plot is drawn on', () => {
   const run = () => readings('sensors/temp', ...wobble(30, 21.5, 1.5));
 
