@@ -98,8 +98,8 @@
   border-left: 1px solid var(--rule);
 }
 
-/* How the run is read, and how to take it away — hard right, so the row has two ends rather than
-   one long run. Wraps to its own line on a narrow pane and stays right-aligned there. */
+/* How the run is read — hard right, so the row has two ends rather than one long run. Wraps to
+   its own line on a narrow pane and stays right-aligned there. */
 .views {
   display: flex;
   flex-wrap: nowrap;
@@ -108,13 +108,6 @@
   margin-left: auto;
 }
 
-/* csv is not a view of the run, it is the run leaving — so it sits with the views but apart. */
-.export {
-  display: flex;
-  gap: 4px;
-  padding-left: 8px;
-  border-left: 1px solid var(--rule);
-}
 
 /* Quiet until it is either the one in force or the one under the pointer. A pressed chip wears
    the ink rather than a fill: the pane has one fill already, and it belongs to a hovered row. */
