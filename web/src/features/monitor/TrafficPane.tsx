@@ -40,11 +40,12 @@ export function TrafficPane() {
 }
 
 /**
- * The control that throws the chart open over the console, in the corner it opens from.
+ * The control that lifts the chart out of its column, in the corner it opens from.
  *
  * Its own element rather than a chip in the controls row: the row is absent at the plainest
  * detail level, and a bare line is exactly the drawing a reader most often wants more room for.
- * It sits over the top-right corner of the chart, which is the corner it grows out of.
+ * It sits over the top-right corner of the region, which is the corner it grows out of, and
+ * stays there while it is open so the way back is where the way out was.
  */
 function Zoom() {
   const zoomed = useZoomStore((state) => state.zoomed);

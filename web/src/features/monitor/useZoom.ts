@@ -2,12 +2,15 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 
 /**
- * Whether the chart has been thrown open over the whole console.
+ * Whether the chart has been lifted out of its column.
  *
  * The chart lives in a third of a column that is itself a third of the window, which is the right
  * size for glancing at a run and the wrong size for reading one. Folding the two regions around
- * it helps and is two clicks; this is one, it reaches past the column into the space the tree and
- * the panel are using, and it goes back to exactly where it was.
+ * it helps and is two clicks; this is one, and it reaches past the column entirely.
+ *
+ * Open, it takes three fifths of the window and leaves the console readable around it — and
+ * live, since nothing it draws blocks a pointer. A reader with the chart open can still click a
+ * topic in the tree and watch this redraw for it, which is the thing they were going to do next.
  *
  * A store rather than state in the chart: the pane that has to become an overlay is the region
  * around it, and that is placed by the workspace, three components up.
@@ -23,8 +26,8 @@ export const useZoomStore = create<ZoomState>((set) => ({
 /**
  * Escape puts it back.
  *
- * Anything that covers the whole window has to close on Escape, or the reader is hunting for a
- * control to undo something they may have done by accident.
+ * Anything that lifts itself over the page has to close on Escape, or a reader who did it by
+ * accident is hunting for the control that undoes it.
  */
 export function useEscapeFromZoom() {
   const zoomed = useZoomStore((state) => state.zoomed);
