@@ -1,3 +1,4 @@
+import { READINGS, showsReading, type ReadingId } from '../appearance/readings';
 import type { Fit } from '../../lib/distribution';
 import { duration, short } from '../../lib/format';
 import type { Domain } from '../../lib/scale';
@@ -12,12 +13,16 @@ import styles from './TrafficChart.module.css';
  * every other reading is exactly where it was a second ago.
  */
 type Slot = {
-  label: string;
+  /** Its entry in the catalogue, which is both what names it and what switches it off. */
+  id: ReadingId;
   value: string | null;
   title: string;
   /** 'stat' counts something, 'reading' says something about it, 'alarm' interrupts. */
   tone: 'stat' | 'reading' | 'alarm';
 };
+
+/** The label and the meaning both come from the catalogue, so the panel and the note agree. */
+const named = (id: ReadingId) => READINGS[id];
 
 /**
  * What the run adds up to, under the chart that draws it.
@@ -47,7 +52,8 @@ export function ChartNote({
   period = null,
   of = null,
   silence = null,
-  quartiles = false,
+  deep = false,
+  chosen = {},
 }: {
   summary: Summary;
   /** What kind of run this is, which decides which of the readings below mean anything. */
@@ -69,15 +75,17 @@ export function ChartNote({
   of?: number | null;
   /** How long the topic has been quiet, when that is longer than its own rhythm allows. */
   silence?: number | null;
-  /** The middle half and the fences around it, for a reader who came for the numbers. */
-  quartiles?: boolean;
+  /** The chart is drawn at its deepest, which is what turns the quartile readings on by default. */
+  deep?: boolean;
+  /** The readings the reader has switched on or off in the Chart panel. */
+  chosen?: Partial<Record<ReadingId, boolean>>;
 }) {
   const counted =
     shape.id === 'state' || shape.id === 'pulse'
       ? events(summary, shape.pulses, pace)
       : shape.id === 'counter'
         ? climbing(summary, shape.rate, shape.wraps)
-        : measurements(summary, quartiles);
+        : measurements(summary);
 
   const read: Slot[] = [
     ...(shape.id === 'continuous'
@@ -87,7 +95,7 @@ export function ChartNote({
           stepped(step, stepAt),
           cycles(period, pace),
           {
-            label: 'outliers',
+            id: 'outliers' as const,
             value: `${summary.outliers.length}`,
             title: `readings outside ${short(summary.fences.low)} to ${short(summary.fences.high)}, one and a half box-widths past the quartiles`,
             tone: 'reading' as const,
@@ -97,7 +105,7 @@ export function ChartNote({
     arrivals(pace),
     offScale(domain),
     {
-      label: 'window',
+      id: 'window',
       // A window is not the whole run, and 'n 500' beside a history of five thousand, without
       // saying which five hundred, would be the chart cropping the topic quietly.
       value: of === null ? 'all' : `${summary.n} of ${of}`,
@@ -108,7 +116,7 @@ export function ChartNote({
       tone: 'reading',
     },
     {
-      label: 'skipped',
+      id: 'skipped',
       // Never silent about what was left out: a chart quietly dropping messages is a chart
       // lying about how much of the topic it is showing. Past half, it is not a run with gaps
       // in it — it is a topic that mostly sends something else, and the line over these numbers
@@ -120,7 +128,7 @@ export function ChartNote({
       tone: sparse ? 'alarm' : 'reading',
     },
     {
-      label: 'silence',
+      id: 'silence',
       // The one item here about the topic rather than the readings, and the only one worth
       // interrupting for: a sensor that published every second and has not published for a
       // minute is either dead or unreachable, and nothing else in the column would say so.
@@ -133,23 +141,29 @@ export function ChartNote({
     },
   ];
 
+  // Only what the reader has left switched on. A note with nothing left in it is not a note, so
+  // the whole caption goes rather than an empty rule under the plot.
+  const shown = [...counted, ...read].filter((slot) => showsReading(slot.id, chosen, deep));
+  if (shown.length === 0) return null;
+
   return (
     <figcaption className={styles.note} data-testid="note" data-shape={shape.id}>
-      {[...counted, ...read].map((slot) => (
+      {shown.map((slot) => (
         <div
-          key={slot.label}
+          key={slot.id}
           className={styles.slot}
-          data-slot={slot.label}
+          data-slot={named(slot.id).label}
           data-tone={slot.tone}
           data-empty={slot.value === null ? '' : undefined}
-          title={slot.title}
+          // The catalogue's own words, so hovering a cell says exactly what the Chart panel says.
+          title={`${named(slot.id).what} — ${slot.title}`}
         >
-          <span className={styles.slotLabel}>{slot.label}</span>
+          <span className={styles.slotLabel}>{named(slot.id).label}</span>
           {/* The value carries its own title as well as the cell: cut short by the fixed column,
               it is the half a reader will reach for. */}
           <span
             className={styles.slotValue}
-            data-testid={`reading-${slot.label}`}
+            data-testid={`reading-${named(slot.id).label}`}
             title={slot.value ?? undefined}
           >
             {slot.value ?? '—'}
@@ -161,19 +175,19 @@ export function ChartNote({
 }
 
 /** What the readings are, counted and averaged — the readings of a quantity. */
-function measurements(summary: Summary, quartiles: boolean): Slot[] {
-  const slots: Slot[] = [
-    { label: 'n', value: `${summary.n}`, title: `${summary.n} readings charted`, tone: 'stat' },
-    { label: 'mean', value: short(summary.mean), title: 'x̄ — the average of the readings', tone: 'stat' },
-    { label: 'median', value: short(summary.median), title: 'M — the middle reading', tone: 'stat' },
+function measurements(summary: Summary): Slot[] {
+  return [
+    { id: 'n', value: `${summary.n}`, title: `${summary.n} readings charted`, tone: 'stat' },
+    { id: 'mean', value: short(summary.mean), title: 'x̄, over the readings charted', tone: 'stat' },
+    { id: 'median', value: short(summary.median), title: 'M, over the readings charted', tone: 'stat' },
     {
-      label: 'spread',
+      id: 'spread',
       value: short(summary.sd),
-      title: 'σ — standard deviation, over all readings held',
+      title: 'σ — the population deviation, over all readings held',
       tone: 'stat',
     },
     {
-      label: 'range',
+      id: 'range',
       // A dash between a negative low and its high reads as arithmetic; the word does not.
       value:
         summary.low < 0 || summary.high < 0
@@ -182,24 +196,19 @@ function measurements(summary: Summary, quartiles: boolean): Slot[] {
       title: `lowest to highest · quartiles ${short(summary.q1)} and ${short(summary.q3)}`,
       tone: 'stat',
     },
-  ];
-
-  if (quartiles) {
-    slots.push({
-      label: 'quartiles',
+    {
+      id: 'quartiles',
       value: `${short(summary.q1)}–${short(summary.q3)}`,
-      title: 'half the readings are between these two',
+      title: 'Q1 to Q3',
       tone: 'stat',
-    });
-    slots.push({
-      label: 'fences',
+    },
+    {
+      id: 'fences',
       value: `${short(summary.fences.low)}–${short(summary.fences.high)}`,
-      title: 'a reading outside these is marked an outlier',
+      title: 'Q1 − 1.5 × IQR to Q3 + 1.5 × IQR',
       tone: 'stat',
-    });
-  }
-
-  return slots;
+    },
+  ];
 }
 
 /**
@@ -212,21 +221,21 @@ function measurements(summary: Summary, quartiles: boolean): Slot[] {
  */
 function events(summary: Summary, pulses: Pulses, pace: Cadence | null): Slot[] {
   return [
-    { label: 'n', value: `${summary.n}`, title: `${summary.n} readings charted`, tone: 'stat' },
+    { id: 'n', value: `${summary.n}`, title: `${summary.n} readings charted`, tone: 'stat' },
     {
-      label: 'levels',
+      id: 'levels',
       value: `${short(pulses.rest)} → ${short(pulses.peak)}`,
       title: `the level the run rests at, and the level it goes to — counted across ${short(pulses.threshold)}`,
       tone: 'stat',
     },
     {
-      label: 'events',
+      id: 'events',
       value: `${pulses.count}`,
       title: `separate excursions past ${short(pulses.threshold)} — a mean over these would describe none of them`,
       tone: 'reading',
     },
     {
-      label: 'duty',
+      id: 'duty',
       // Two figures, not one: 'a third of the time' is the reading, and the percentage is the
       // number someone will want to quote.
       value: `${Math.round(pulses.duty * 100)}%`,
@@ -234,7 +243,7 @@ function events(summary: Summary, pulses: Pulses, pace: Cadence | null): Slot[] 
       tone: 'reading',
     },
     {
-      label: 'width',
+      id: 'width',
       value: pulses.width === null ? null : duration(pulses.width),
       title:
         pulses.width === null
@@ -243,7 +252,7 @@ function events(summary: Summary, pulses: Pulses, pace: Cadence | null): Slot[] 
       tone: 'reading',
     },
     {
-      label: 'period',
+      id: 'period',
       value: pulses.every === null ? null : duration(pulses.every),
       title:
         pulses.every === null
@@ -263,9 +272,9 @@ function events(summary: Summary, pulses: Pulses, pace: Cadence | null): Slot[] 
  */
 function climbing(summary: Summary, rate: number | null, wraps: number): Slot[] {
   return [
-    { label: 'n', value: `${summary.n}`, title: `${summary.n} readings charted`, tone: 'stat' },
+    { id: 'n', value: `${summary.n}`, title: `${summary.n} readings charted`, tone: 'stat' },
     {
-      label: 'rate',
+      id: 'rate',
       value: rate === null ? null : `${short(rate)}/s`,
       title:
         rate === null
@@ -274,19 +283,19 @@ function climbing(summary: Summary, rate: number | null, wraps: number): Slot[] 
       tone: 'reading',
     },
     {
-      label: 'counted',
+      id: 'counted',
       value: short(summary.high - summary.low),
       title: 'how much the total rose across the readings on the chart',
       tone: 'stat',
     },
     {
-      label: 'at',
+      id: 'at',
       value: short(summary.high),
       title: 'the newest reading of the total',
       tone: 'stat',
     },
     {
-      label: 'restarts',
+      id: 'restarts',
       value: wraps === 0 ? null : `${wraps}`,
       title:
         wraps === 0
@@ -308,7 +317,7 @@ function offScale(domain: Domain): Slot {
   const outside = domain.over + domain.under;
 
   return {
-    label: 'off scale',
+    id: 'offScale',
     value: outside === 0 ? null : `${domain.over > 0 ? `↑${domain.over}` : ''}${domain.under > 0 ? ` ↓${domain.under}` : ''}`.trim(),
     title:
       outside === 0
@@ -330,7 +339,7 @@ function shapeSlot(summary: Summary, fit: Fit | null, drift: Slot | null, step: 
   const named = fit && !drifting(drift) && !step;
 
   return {
-    label: 'shape',
+    id: 'shape',
     // '≈', because the test returns 'not enough evidence to reject' rather than 'is' — at these
     // sample sizes the difference between those two is the whole claim.
     value: named ? `≈ ${fit.name}` : null,
@@ -353,7 +362,7 @@ function shapeSlot(summary: Summary, fit: Fit | null, drift: Slot | null, step: 
 function direction(summary: Summary, drift: Slot | null, step: Change | null): Slot {
   if (step || !drift) {
     return {
-      label: 'trend',
+      id: 'trend',
       value: null,
       title: step
         ? 'the run holds two levels rather than one direction — see the step beside this'
@@ -375,7 +384,7 @@ function stepped(step: Change | null, stepAt: Date | null): Slot {
   const when = stepAt ? ` at ${stepAt.toLocaleTimeString('en-GB', { hour12: false })}` : '';
 
   return {
-    label: 'step',
+    id: 'step',
     value: step ? `${step.shift > 0 ? '+' : '−'}${short(Math.abs(step.shift))}${when}` : null,
     title: step
       ? `the run holds two levels — ${short(step.before)} before, ${short(step.after)} after — and the split between them clears the scatter about both`
@@ -392,7 +401,7 @@ function stepped(step: Change | null, stepAt: Date | null): Slot {
  *  sit on one line of the cell; the label on it spells out which is which. */
 function cycles(period: number | null, pace: Cadence | null): Slot {
   return {
-    label: 'cycle',
+    id: 'cycle',
     value: period === null ? null : `${period}${pace ? ` · ${duration(period * pace.every)}` : ' readings'}`,
     title:
       period === null
@@ -405,7 +414,7 @@ function cycles(period: number | null, pace: Cadence | null): Slot {
 /** How often the topic publishes, and how far its gaps stray from that. */
 function arrivals(pace: Cadence | null): Slot {
   return {
-    label: 'every',
+    id: 'every',
     value: pace ? `${duration(pace.every)}${pace.jitter > 0 ? ` ±${duration(pace.jitter)}` : ''}` : null,
     title: pace
       ? `middle gap between arrivals${pace.jitter > 0 ? ', and how far the gaps stray from it' : ', evenly spaced'}`
@@ -425,7 +434,7 @@ const drifting = (drift: Slot | null) => !!drift && drift.value !== 'unchanged';
  */
 function trend(summary: Summary, pace: Cadence | null): Slot | null {
   if (summary.sd === 0) {
-    return { label: 'trend', value: 'unchanged', title: 'every reading identical', tone: 'reading' };
+    return { id: 'trend', value: 'unchanged', title: 'every reading identical', tone: 'reading' };
   }
 
   const drift = summary.slope * (summary.n - 1);
@@ -435,7 +444,7 @@ function trend(summary: Summary, pace: Cadence | null): Slot | null {
   const rate = perMinute === null ? `${short(summary.slope)}/reading` : `${short(perMinute)}/min`;
 
   return {
-    label: 'trend',
+    id: 'trend',
     value: `${summary.slope > 0 ? 'rising' : 'falling'} ${rate.replace('-', '')}`,
     title: `least-squares trend — ${short(Math.abs(drift))} across the run, against a spread of ${short(summary.sd)}`,
     tone: 'reading',
