@@ -174,8 +174,9 @@ such a topic and the pane draws its run, and writes what the run adds up to unde
   than printed: see *what kind of thing it is* below.
 - **Where the readings actually are** — every arrival gets a dot on the line, so a run sampled ten
   times cannot be mistaken for one sampled a thousand; between two dots the line is an
-  interpolation nobody measured. They are dropped once they would be closer together than they
-  are wide, which is a smear rather than five hundred marks.
+  interpolation nobody measured. The dot is sized against the plot it is drawn in — a speck in a
+  folded-down region would be a blot in a chart thrown open over the window — and dropped
+  altogether once the readings are closer together than a dot is wide.
 - **What does not belong** — readings outside Tukey's fences wear a ring instead of a dot, in the
   fault colour, and are counted in the note.
 - **Where it is going** — a least-squares trend, but only when the drift is larger than the

@@ -24,6 +24,7 @@ import { shapeOf } from './lib/shape';
 import { summarise } from './lib/stats';
 import { MARKS } from './features/brand/marks';
 import { TrafficChart } from './features/monitor/TrafficChart';
+import { TrafficLine } from './features/monitor/TrafficLine';
 import { queryKeys } from './api/queryKeys';
 import { createFakeHub } from './realtime/fakeHub';
 import { useAppearanceStore } from './stores/appearanceStore';
@@ -44,6 +45,9 @@ const OUT = '/Users/ilkhan/RiderProjects/MqttForge/src/MqttForge.Api/wwwroot';
  */
 const PLOT_ACROSS = 380;
 
+/** Reset per render, so a page can show the same run drawn at several plot heights. */
+let plotDown = 150;
+
 class MeasuredTo {
   ran: ResizeObserverCallback;
 
@@ -52,7 +56,10 @@ class MeasuredTo {
   }
 
   observe() {
-    this.ran([{ contentRect: { width: PLOT_ACROSS } } as ResizeObserverEntry], this as never);
+    this.ran(
+      [{ contentRect: { width: PLOT_ACROSS, height: plotDown } } as ResizeObserverEntry],
+      this as never,
+    );
   }
 
   unobserve() {}
@@ -293,6 +300,7 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
     ...pages.map((_, i) => `gallery-${i + 1}.html`),
     'gallery-panel.html',
     'gallery-detail.html',
+    'gallery-dots.html',
     'gallery-log.html',
     'console.html',
     'console-zoomed.html',
@@ -305,6 +313,8 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
             ? 'Chart panel'
             : href === 'gallery-detail.html'
               ? 'A reading'
+              : href === 'gallery-dots.html'
+                ? 'The dots'
               : href === 'gallery-log.html'
                 ? 'The log'
               : href === 'console.html'
@@ -370,7 +380,66 @@ ${inner}
   );
 
   writeFileSync(`${OUT}/gallery-log.html`, page('the log', `<h2>The log</h2>${logStates(client)}`));
+
+  writeFileSync(
+    `${OUT}/gallery-dots.html`,
+    page('a dot per reading', `<h2>A dot per reading</h2>${dotSizes(client)}`),
+  );
 });
+
+/**
+ * The same run at three plot heights.
+ *
+ * A mark that is right in a region forty pixels tall is a speck in a chart thrown open over the
+ * window, and a mark that is right there is a blot in the region — so the dot is a fraction of the
+ * plot's own height. That only shows side by side, and the page is static, so each is rendered
+ * against the height it will really have.
+ */
+function dotSizes(client) {
+  const series = numericSeries(entries('sensors/room/temp', wobble(34, 21.5, 2.2)))!;
+  const values = series.readings.map((reading) => reading.value);
+  const summary = summarise(values)!;
+  const shape = shapeOf(series.readings, summary);
+  const domain = domainFor(values, summary, 'typical');
+  const was = plotDown;
+
+  const drawn = [
+    { down: 90, about: 'a folded-down region — the dot at its floor, so it never disappears' },
+    { down: 220, about: 'an ordinary chart region' },
+    { down: 460, about: 'the chart thrown open over the console' },
+  ]
+    .map(({ down, about }) => {
+      plotDown = down;
+      const { container, unmount } = render(
+        <QueryClientProvider client={client}>
+          <div
+            style={{
+              width: 440,
+              height: down,
+              display: 'grid',
+              gridTemplateColumns: 'auto 1fr',
+              gap: 8,
+              background: 'var(--surface)',
+              border: '1px solid var(--rule)',
+              borderRadius: 3,
+              padding: 10,
+            }}
+          >
+            <TrafficLine series={series} summary={summary} domain={domain} shape={shape} />
+          </div>
+        </QueryClientProvider>,
+      );
+      const html = container.innerHTML;
+      unmount();
+
+      return `<div class="gCell"><span class="gTag">${down}px — ${about}</span>${html}</div>`;
+    })
+    .join('');
+
+  plotDown = was;
+
+  return `<div class="gRow" style="align-items:flex-start">${drawn}</div>`;
+}
 
 /**
  * The log in the states it actually reaches.

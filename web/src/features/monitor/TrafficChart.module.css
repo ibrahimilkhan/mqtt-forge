@@ -236,32 +236,39 @@
    The line says the shape; these say where the readings actually are, which the line cannot —
    between two of them it is an interpolation nobody measured. Drawn as zero-length subpaths with
    a round cap, so each is a true circle: the viewBox is stretched to the pane, and a real circle
-   element would come out an ellipse. Pinned to device pixels for the same reason the line is. */
+   element would come out an ellipse.
+
+   The width comes from the component, which sizes it against the plot's own height and against
+   the room between two readings. Pinned to device pixels for the same reason the line is —
+   otherwise the stretch would make the dots wide ovals on a wide pane. */
 .dots {
-  stroke-width: 3.5;
   stroke-linecap: round;
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
 }
 
-/* Where the run ends, which is the reading on the row above. */
+/* Where the run ends, which is the reading on the row above. Half again the size of an ordinary
+   reading, so it is the same mark with emphasis rather than a different one. */
 .head {
   position: absolute;
-  width: 5px;
-  height: 5px;
+  width: calc(var(--dot, 3px) * 1.5);
+  height: calc(var(--dot, 3px) * 1.5);
   border-radius: 50%;
   background: currentColor;
   transform: translate(-50%, -50%);
 }
 
 /* A ring, where an ordinary reading is a filled dot: with every arrival marked, the outliers had
-   to stop being 'a mark' and start being 'a different mark'. Bigger than the dot it sits over,
-   hollow where the dot is solid, and in the fault colour rather than the run's. The surface fill
-   is what makes the dot underneath disappear inside it. */
+   to stop being 'a mark' and start being 'a different mark'. Hollow where the dot is solid, in
+   the fault colour rather than the run's, and — since the dots grow with the plot — sized off the
+   same measure, so it stays plainly the larger of the two at every size. The surface fill is what
+   makes the dot underneath disappear inside it. */
 .outlier {
   position: absolute;
-  width: 11px;
-  height: 11px;
+  width: calc(var(--dot, 3px) * 3);
+  height: calc(var(--dot, 3px) * 3);
+  min-width: 9px;
+  min-height: 9px;
   border: 1.5px solid var(--fault);
   border-radius: 50%;
   background: var(--surface);

@@ -1,4 +1,4 @@
-import { act, screen, within } from '@testing-library/react';
+import { act, cleanup, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithClient as render } from '../../test/renderWithClient';
@@ -251,7 +251,7 @@ describe('how the readings are laid out', () => {
 describe('marking the readings themselves', () => {
   // jsdom lays nothing out, so the plot has to be told how wide it is before it will decide the
   // dots can be told apart.
-  const widen = (px: number) => {
+  const widen = (px: number, tall = 160) => {
     vi.stubGlobal(
       'ResizeObserver',
       class {
@@ -262,7 +262,10 @@ describe('marking the readings themselves', () => {
         }
 
         observe() {
-          this.ran([{ contentRect: { width: px } } as ResizeObserverEntry], this as never);
+          this.ran(
+            [{ contentRect: { width: px, height: tall } } as ResizeObserverEntry],
+            this as never,
+          );
         }
 
         unobserve() {}
@@ -279,6 +282,32 @@ describe('marking the readings themselves', () => {
     show();
 
     expect(screen.getByTestId('dots')).toBeInTheDocument();
+  });
+
+  // A mark that is right in a region forty pixels tall is a speck in a chart thrown open over
+  // the window, and a mark that is right there is a blot in the region.
+  it('draws a bigger dot in a taller plot', () => {
+    widen(600, 500);
+    readings('sensors/temp', ...wobble(20, 21.5, 1.5));
+    show();
+    const big = Number(screen.getByTestId('dots').getAttribute('stroke-width'));
+
+    cleanup();
+    useLogStore.getState().clear();
+    widen(600, 60);
+    readings('sensors/temp', ...wobble(20, 21.5, 1.5));
+    show();
+    const small = Number(screen.getByTestId('dots').getAttribute('stroke-width'));
+
+    expect(big).toBeGreaterThan(small);
+  });
+
+  it('will not let a dot outgrow the plot it is in', () => {
+    widen(600, 4000);
+    readings('sensors/temp', ...wobble(20, 21.5, 1.5));
+    show();
+
+    expect(Number(screen.getByTestId('dots').getAttribute('stroke-width'))).toBeLessThanOrEqual(8);
   });
 
   // Five hundred readings across two hundred pixels is not five hundred marks, it is a thicker
