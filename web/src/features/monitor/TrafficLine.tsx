@@ -34,12 +34,14 @@ const ENOUGH_FOR_A_BAND = 5;
  * It follows the plot's own height, but only a little. The first attempt ran from three pixels to
  * eight across the range this chart spans, and both ends were wrong in use: the dots were lost in
  * an ordinary region and were the loudest thing on the plot once it was thrown open. The floor
- * and the ceiling are two pixels apart now, so the mark stays the same mark and only settles a
- * little into the room it has — four pixels in a region, six with the console behind it.
+ * and the ceiling are a pixel apart now, so the mark stays the same mark and only settles a
+ * little into the room it has — four pixels in a region, five with the console behind it. It is
+ * twice the line's own weight, which reads as the line thickening at each reading rather than as
+ * a second thing drawn over it.
  */
 const DOT_OF_HEIGHT = 0.014;
 const DOT_SMALLEST = 4;
-const DOT_LARGEST = 6;
+const DOT_LARGEST = 5;
 
 /**
  * The clear space a dot keeps from the next one along.
@@ -217,19 +219,7 @@ export function TrafficLine({
     room - DOT_CLEAR,
   );
 
-  // Zero-length subpaths with a round cap: one element for every dot, each of them a true circle.
-  // A <circle> would come out an ellipse — the viewBox is stretched to the pane — and five hundred
-  // HTML spans would be five hundred nodes relaid out on every arrival.
-  const dotted = marks && box.across > 0 && dot >= DOT_SMALLEST;
-  const dots = dotted
-    ? readings
-        .map((reading, index) => {
-          const at = `${x(index)},${y(reading.value)}`;
-
-          return `M${at}L${at}`;
-        })
-        .join('')
-    : '';
+  const dotted = marks && box.across > 0 && box.down > 0 && dot >= DOT_SMALLEST;
 
   // Readings the domain could not fit, drawn on the edge they went past. Not silently clamped:
   // a run flattened against the top of the plot with nothing to say why would be the chart
@@ -394,19 +384,35 @@ export function TrafficLine({
               stroke={colour ?? 'currentColor'}
             />
 
-            {/* Over the line, so a reading sits on top of the interpolation between it and the
-                one beside it rather than under it. */}
-            {dotted && (
-              <path
-                data-testid="dots"
-                className={styles.dots}
-                d={dots}
-                fill="none"
-                stroke={colour ?? 'currentColor'}
-                strokeWidth={dot}
-              />
-            )}
           </svg>
+
+          {/* One dot per reading, over the line.
+
+              In a layer of its own, measured in real pixels rather than in the plot's own units.
+              The SVG above is stretched to the pane by preserveAspectRatio="none", and anything
+              round drawn inside it is round only as far as the engine's handling of a non-uniform
+              transform allows: Chromium keeps a round cap round under non-scaling-stroke, WebKit —
+              which is what the desktop build renders in — does not, and the dots came out as
+              ellipses.
+
+              This layer has no viewBox at all, so its user space is CSS pixels and a radius is a
+              radius. The positions are percentages, which resolve against the layer's own size —
+              so nothing here depends on the measurement being current, and a resize cannot put a
+              dot off its reading even for a frame. The measurement decides only how big a dot is,
+              where being a frame stale costs nothing. */}
+          {dotted && (
+            <svg className={styles.dots} data-testid="dots" aria-hidden="true">
+              {readings.map((reading, index) => (
+                <circle
+                  key={index}
+                  cx={`${(index / Math.max(last, 1)) * 100}%`}
+                  cy={`${(y(reading.value) / SIDE) * 100}%`}
+                  r={dot / 2}
+                  fill={colour ?? 'currentColor'}
+                />
+              ))}
+            </svg>
+          )}
 
           {/* Round dots and real type, in HTML: both would be stretched out of shape inside the
               viewBox above. The dot marks where the run ends, which is the row above it. */}

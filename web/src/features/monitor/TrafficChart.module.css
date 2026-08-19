@@ -232,19 +232,21 @@
   vector-effect: non-scaling-stroke;
 }
 
-/* One dot per reading, over the line.
+/* One dot per reading, in a layer of its own over the line.
    The line says the shape; these say where the readings actually are, which the line cannot —
-   between two of them it is an interpolation nobody measured. Drawn as zero-length subpaths with
-   a round cap, so each is a true circle: the viewBox is stretched to the pane, and a real circle
-   element would come out an ellipse.
+   between two of them it is an interpolation nobody measured.
 
-   The width comes from the component, which sizes it against the plot's own height and against
-   the room between two readings. Pinned to device pixels for the same reason the line is —
-   otherwise the stretch would make the dots wide ovals on a wide pane. */
+   Its own SVG rather than a path in the plot's: that one is stretched to the pane, and nothing
+   round survives a non-uniform transform in every engine. This one has no viewBox, so its user
+   space is CSS pixels and a circle stays a circle. Overflowing on purpose, since a reading at the
+   very top or bottom of the range sits half outside the box. */
 .dots {
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  vector-effect: non-scaling-stroke;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
 }
 
 /* Where the run ends, which is the reading on the row above. Half again the size of an ordinary
