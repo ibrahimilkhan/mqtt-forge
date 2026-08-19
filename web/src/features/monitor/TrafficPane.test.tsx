@@ -1,6 +1,6 @@
 import { act, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithClient as render } from '../../test/renderWithClient';
 import { useAppearanceStore } from '../../stores/appearanceStore';
 import { useLogStore } from '../../stores/logStore';
@@ -33,6 +33,10 @@ beforeEach(() => {
   useHoldStore.getState().release();
   useZoomStore.getState().close();
   useAppearanceStore.getState().reset();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 const show = () => {
@@ -241,6 +245,62 @@ describe('how the readings are laid out', () => {
     const silence = screen.getByTestId('note').querySelector('[data-slot="silence"]');
     expect(silence).toHaveAttribute('data-tone', 'alarm');
     expect(silence).toHaveAttribute('data-empty');
+  });
+});
+
+describe('marking the readings themselves', () => {
+  // jsdom lays nothing out, so the plot has to be told how wide it is before it will decide the
+  // dots can be told apart.
+  const widen = (px: number) => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        ran: ResizeObserverCallback;
+
+        constructor(ran: ResizeObserverCallback) {
+          this.ran = ran;
+        }
+
+        observe() {
+          this.ran([{ contentRect: { width: px } } as ResizeObserverEntry], this as never);
+        }
+
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+  };
+
+  // A line alone cannot tell a run sampled ten times from one sampled a thousand, and between
+  // two readings it is an interpolation nobody measured.
+  it('marks every reading with a dot of its own', () => {
+    widen(600);
+    readings('sensors/temp', ...wobble(20, 21.5, 1.5));
+    show();
+
+    expect(screen.getByTestId('dots')).toBeInTheDocument();
+  });
+
+  // Five hundred readings across two hundred pixels is not five hundred marks, it is a thicker
+  // line lying about its own resolution.
+  it('drops them once they are closer together than they are wide', () => {
+    widen(120);
+    readings('sensors/temp', ...wobble(200, 21.5, 1.5));
+    show();
+
+    expect(screen.queryByTestId('dots')).not.toBeInTheDocument();
+    expect(screen.getByTestId('plot')).toBeInTheDocument();
+  });
+
+  // With every arrival marked, an outlier has to stop being 'a mark' and start being a different
+  // one: a ring where the others are filled, and in the fault colour rather than the run's.
+  it('keeps the outliers a different mark from the readings around them', () => {
+    widen(600);
+    readings('sensors/temp', '10', '11', '12', '11', '10', '12', '11', '90');
+    show();
+
+    expect(screen.getByTestId('dots')).toBeInTheDocument();
+    expect(screen.getAllByTestId('outlier')).toHaveLength(1);
   });
 });
 

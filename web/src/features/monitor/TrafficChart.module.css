@@ -77,23 +77,44 @@
   gap: 4px 10px;
   padding-right: 28px;
 }
-/* The fields wrap as far as they need to; the three view controls stay together on one line —
-   a 'csv' that has wrapped away from 'time' and 'dist' reads as a fourth thing. */
+/* Three groups, and they answer three different questions: what is charted, what range it is
+   drawn in, and how it is read. Ranged left to right in that order, with the last pushed to the
+   far end — a row of ten chips with one spacing between them is one control with ten positions,
+   which is what this looked like and is not what it is.
+
+   The fields wrap as far as they need to; each group keeps its own chips on one line, since a
+   'log' that has wrapped away from 'ends' and 'mid' reads as a fifth thing rather than one of
+   four. */
 .fields { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
-/* The four range chips are one control with four positions, so they never break across lines:
-   'log' on its own on the next row reads as a fifth thing rather than as one of four. */
+
+/* What range the plot is drawn in — the left-hand group, beside the fields it applies to. */
 .ranges {
   display: flex;
   flex-wrap: nowrap;
   gap: 4px;
-  /* A rule down the left rather than a label: at micro size the word 'range' would cost more
-     width than the three chips it names. The title on each chip carries the meaning. */
+  /* A rule rather than a label: at micro size the word 'range' costs more width than the four
+     chips it would name, and each chip's own title carries the meaning. */
   padding-left: 8px;
   border-left: 1px solid var(--rule);
 }
-/* Left, under the value they belong to, rather than floated to the far side: with no fields to
-   sit beside, a right-aligned group of three reads as furniture that lost its label. */
-.views { display: flex; flex-wrap: nowrap; gap: 4px; }
+
+/* How the run is read, and how to take it away — hard right, so the row has two ends rather than
+   one long run. Wraps to its own line on a narrow pane and stays right-aligned there. */
+.views {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+/* csv is not a view of the run, it is the run leaving — so it sits with the views but apart. */
+.export {
+  display: flex;
+  gap: 4px;
+  padding-left: 8px;
+  border-left: 1px solid var(--rule);
+}
 
 /* Quiet until it is either the one in force or the one under the pointer. A pressed chip wears
    the ink rather than a fill: the pane has one fill already, and it belongs to a hovered row. */
@@ -211,6 +232,18 @@
   vector-effect: non-scaling-stroke;
 }
 
+/* One dot per reading, over the line.
+   The line says the shape; these say where the readings actually are, which the line cannot —
+   between two of them it is an interpolation nobody measured. Drawn as zero-length subpaths with
+   a round cap, so each is a true circle: the viewBox is stretched to the pane, and a real circle
+   element would come out an ellipse. Pinned to device pixels for the same reason the line is. */
+.dots {
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
 /* Where the run ends, which is the reading on the row above. */
 .head {
   position: absolute;
@@ -221,12 +254,14 @@
   transform: translate(-50%, -50%);
 }
 
-/* A ring rather than a dot: the reading is still part of the line, and a filled mark would read
-   as a second series of one. Surface behind it so the line does not run through the middle. */
+/* A ring, where an ordinary reading is a filled dot: with every arrival marked, the outliers had
+   to stop being 'a mark' and start being 'a different mark'. Bigger than the dot it sits over,
+   hollow where the dot is solid, and in the fault colour rather than the run's. The surface fill
+   is what makes the dot underneath disappear inside it. */
 .outlier {
   position: absolute;
-  width: 9px;
-  height: 9px;
+  width: 11px;
+  height: 11px;
   border: 1.5px solid var(--fault);
   border-radius: 50%;
   background: var(--surface);

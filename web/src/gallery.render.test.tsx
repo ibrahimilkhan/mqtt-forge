@@ -35,6 +35,32 @@ import { useZoomStore } from './features/monitor/useZoom';
 
 const OUT = '/Users/ilkhan/RiderProjects/MqttForge/src/MqttForge.Api/wwwroot';
 
+/**
+ * The width the plot would have in the box these pages draw it in.
+ *
+ * jsdom lays nothing out, so a component that asks how wide it is gets nothing — and the chart
+ * asks, because whether a dot per reading is a row of dots or a smear is a question only the real
+ * width can answer. Told the width it will actually have, the page shows what the app shows.
+ */
+const PLOT_ACROSS = 380;
+
+class MeasuredTo {
+  ran: ResizeObserverCallback;
+
+  constructor(ran: ResizeObserverCallback) {
+    this.ran = ran;
+  }
+
+  observe() {
+    this.ran([{ contentRect: { width: PLOT_ACROSS } } as ResizeObserverEntry], this as never);
+  }
+
+  unobserve() {}
+  disconnect() {}
+}
+
+globalThis.ResizeObserver = MeasuredTo as unknown as typeof ResizeObserver;
+
 /** Three runs a page: one screenshot's worth, and no page that has to be scrolled to be read. */
 const PER_PAGE = 3;
 

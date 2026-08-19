@@ -172,8 +172,12 @@ such a topic and the pane draws its run, and writes what the run adds up to unde
 - **How many, and where the middle is** — count, mean, median, standard deviation and range,
   with the quartiles a switch away. On a run that is not a quantity these are replaced rather
   than printed: see *what kind of thing it is* below.
-- **What does not belong** — readings outside Tukey's fences are ringed on the line and counted
-  in the note.
+- **Where the readings actually are** — every arrival gets a dot on the line, so a run sampled ten
+  times cannot be mistaken for one sampled a thousand; between two dots the line is an
+  interpolation nobody measured. They are dropped once they would be closer together than they
+  are wide, which is a smear rather than five hundred marks.
+- **What does not belong** — readings outside Tukey's fences wear a ring instead of a dot, in the
+  fault colour, and are counted in the note.
 - **Where it is going** — a least-squares trend, but only when the drift is larger than the
   readings' own spread; anything smaller is a line through a cloud.
 - **What one reading is** — click anywhere on the plot, or press Enter while walking it with

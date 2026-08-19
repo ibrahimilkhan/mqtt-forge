@@ -1,4 +1,12 @@
-import { useEffect, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+  type PointerEvent,
+} from 'react';
 import { GRIDS, type GridId } from '../appearance/grid';
 import { short } from '../../lib/format';
 import { PlotGrid } from './PlotGrid';
@@ -14,6 +22,17 @@ const SIDE = 100;
 
 /** Below this a band and a mean line are furniture over a handful of points. */
 const ENOUGH_FOR_A_BAND = 5;
+
+/**
+ * How far apart two readings have to be before each gets a dot of its own.
+ *
+ * A dot per arrival says where the readings actually are — a line alone cannot tell a run sampled
+ * ten times from one sampled a thousand, and between two dots the line is an interpolation nobody
+ * measured. But five hundred readings across two hundred pixels is a dot every two fifths of a
+ * pixel, which is not five hundred marks, it is a thicker line lying about its own resolution. So
+ * they are drawn while they can be told apart and dropped when they cannot.
+ */
+const DOT_APART = 5;
 
 /** Keeps the readout over the plot at either end of the run, rather than hanging off it. */
 const shift = (index: number, count: number) =>
@@ -58,6 +77,10 @@ export function TrafficLine({
   grid?: GridId;
 }) {
   const [hovered, setHovered] = useState<number | null>(null);
+  // The plot's width in real pixels, which is the only thing that says whether a dot per reading
+  // would be a row of dots or a smear.
+  const plotRef = useRef<HTMLDivElement>(null);
+  const [across, setAcross] = useState(0);
   // A reading the reader has clicked, which stays open while the pointer goes elsewhere. Held
   // apart from `hovered` so moving across the plot does not drag the opened one along with it.
   const [opened, setOpened] = useState<number | null>(null);
@@ -156,6 +179,30 @@ export function TrafficLine({
     return () => window.removeEventListener('keydown', listen);
   }, [opened]);
 
+  useLayoutEffect(() => {
+    const box = plotRef.current;
+    if (!box || typeof ResizeObserver === 'undefined') return;
+
+    const watch = new ResizeObserver(([entry]) => setAcross(entry.contentRect.width));
+    watch.observe(box);
+
+    return () => watch.disconnect();
+  }, []);
+
+  // Zero-length subpaths with a round cap: one element for every dot, each of them a true circle.
+  // A <circle> would come out an ellipse — the viewBox is stretched to the pane — and five hundred
+  // HTML spans would be five hundred nodes relaid out on every arrival.
+  const dotted = marks && across > 0 && across / Math.max(last, 1) >= DOT_APART;
+  const dots = dotted
+    ? readings
+        .map((reading, index) => {
+          const at = `${x(index)},${y(reading.value)}`;
+
+          return `M${at}L${at}`;
+        })
+        .join('')
+    : '';
+
   // Readings the domain could not fit, drawn on the edge they went past. Not silently clamped:
   // a run flattened against the top of the plot with nothing to say why would be the chart
   // lying about its own range.
@@ -206,6 +253,7 @@ export function TrafficLine({
         {/* The shape is the whole point, so the words standing in for it carry the same facts:
             how many readings, of what, over what range, and where they ended up. */}
         <div
+          ref={plotRef}
           className={styles.plot}
           data-testid="plotArea"
           data-shape={shape.id}
@@ -314,6 +362,18 @@ export function TrafficLine({
               fill="none"
               stroke={colour ?? 'currentColor'}
             />
+
+            {/* Over the line, so a reading sits on top of the interpolation between it and the
+                one beside it rather than under it. */}
+            {dotted && (
+              <path
+                data-testid="dots"
+                className={styles.dots}
+                d={dots}
+                fill="none"
+                stroke={colour ?? 'currentColor'}
+              />
+            )}
           </svg>
 
           {/* Round dots and real type, in HTML: both would be stretched out of shape inside the
