@@ -6,6 +6,7 @@
    chart's rather than each plot's, so that with two plots stacked they start at the same edge
    however wide their own labels are. */
 .chart {
+  position: relative;
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 8px;
@@ -36,17 +37,45 @@
 /* Hands the scale and the plot up to the grid above, so both plots share its columns. */
 .frame { display: contents; }
 
+/* Against the region's top-right corner rather than in the controls row: the row is not drawn at
+   the plainest detail level, and it is not drawn at all when no topic has been picked — and both
+   of those are panes a reader may well want bigger. */
+.zoom {
+  all: unset;
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  /* The 24px a finger needs. */
+  min-width: 24px;
+  min-height: 24px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  color: var(--muted);
+  /* The pane's own surface behind it, so the corner of a plot drawn under it stays readable. */
+  background: var(--surface);
+}
+.zoom:hover { color: var(--ink); border-color: var(--rule); }
+.zoom:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+.zoom[aria-pressed='true'] { color: var(--ink); border-color: var(--ink); }
+
 .controls,
 .note { grid-column: 1 / -1; }
 
 /* What to chart and how to read it, over the picture rather than under it: these change what
    the picture *is*, so they are read first. Fields left, views right; both wrap on a narrow
-   pane rather than pushing it wider. */
+   pane rather than pushing it wider. Room at the end for the control in the corner, so a chip
+   never slides underneath it. */
 .controls {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 10px;
+  padding-right: 28px;
 }
 /* The fields wrap as far as they need to; the three view controls stay together on one line —
    a 'csv' that has wrapped away from 'time' and 'dist' reads as a fourth thing. */
