@@ -41,7 +41,7 @@ row, and the publish form below it](.github/assets/console.png)
 - **QR panel** — opens the same console on a phone on your network.
 - **Chart panel** — how much of the chart to draw, what range it opens on, what is drawn round
   it, a switch for every reading the note can make, and a line on every chip over the plot saying
-  what it does. `spread`, `duty` and `mid` are three-letter labels; this is where they are
+  what it does. `spread`, `duty` and `csv` are three-letter labels; this is where they are
   spelled out.
 - **Settings** — the fonts and their size, and which of six marks the console wears.
 
@@ -137,8 +137,9 @@ chart of the run behind it, and the publish form. If the topic sends numbers, th
 the run and the note under it says what that adds up to — every reading in a slot of its own, so
 the numbers change without shifting each other about. A branch covering several topics draws one
 plot each, and clicking a row narrows the pane to that topic. **hold** freezes the column while
-you read it, without stopping the log behind it. Drag either seam to give a region more room, or
-fold a region to its own strip and give the whole column to one of the other two.
+you read it, without stopping the log behind it; **csv** takes the readings away with you. Drag
+either seam to give a region more room, or fold a region to its own strip and give the whole
+column to one of the other two.
 
 **6. Send one.** The publish form takes a topic, a payload as text, JSON or hex, a QoS and the
 retained flag. Clicking any logged message loads it back into the form to send again.
@@ -234,9 +235,11 @@ Four chips over the plot decide how much of its height goes on the run's range:
 - **log** gives each decade the same height. Positive runs only; a run that reaches zero falls
   back to its extremes rather than pretending.
 
-**time** and **dist** read the same run in order or as a distribution. Every chip over the plot is
-three or four characters, because the row shares a pane that can be two hundred pixels wide; the
-**Chart** panel prints what each of them does. The control in the region's top-right corner lifts the chart out of its column —
+**time** and **dist** read the same run in order or as a distribution. **csv** copies the readings
+on the chart to the clipboard — a header, then one row per reading with its time in full — so they
+go straight into a spreadsheet or a notebook. Every chip over the plot is three or four characters,
+because the row shares a pane that can be two hundred pixels wide; the **Chart** panel prints what
+each of them does. The control in the region's top-right corner lifts the chart out of its column —
 the plot lives in a third of a column that is itself a third of the window, which is the right
 size for glancing at a run and the wrong size for reading one. Open, it takes three fifths of the
 window and leaves the console readable around it, and still live: click a topic in the tree and

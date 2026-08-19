@@ -80,6 +80,7 @@ export function TrafficChart({
       offerViews={!detail.histogram && drawn.kind === 'one'}
       // Nothing drawn, nothing to scale: four chips offering to change the range of a sentence.
       offerRanges={drawn.kind !== 'none'}
+      series={drawn.kind === 'one' ? drawn.series : null}
       // The way back out of a topic the reader clicked into, in the place the way in was.
       branch={focus}
       onBranch={() => setFocus(null)}
@@ -262,6 +263,7 @@ function Controls({
   onRange,
   offerViews,
   offerRanges,
+  series,
   branch,
   onBranch,
 }: {
@@ -274,9 +276,28 @@ function Controls({
   onRange: (range: ScaleId | null) => void;
   offerViews: boolean;
   offerRanges: boolean;
+  series: Series | null;
   branch: string | null;
   onBranch: () => void;
 }) {
+  const [copy, setCopy] = useState<'idle' | 'done' | 'refused'>('idle');
+
+  // Clipboard access is refused often enough — an insecure origin, a locked-down browser — that
+  // a button which silently does nothing is a real outcome rather than a theoretical one.
+  const take = async () => {
+    if (!series) return;
+
+    try {
+      await navigator.clipboard.writeText(csv(series));
+      setCopy('done');
+    } catch {
+      setCopy('refused');
+    }
+    window.setTimeout(() => setCopy('idle'), 2000);
+  };
+
+  const copyLabel = { idle: 'Copy as CSV', done: 'Copied', refused: 'Copy failed' }[copy];
+
   return (
     <div className={styles.controls}>
       {branch && (
@@ -366,8 +387,30 @@ function Controls({
             </button>
           </>
         )}
+        {/* Beside the views, not among them: csv is not another way of reading the run, it is
+            the run leaving. */}
+        {series && (
+          <span className={styles.export}>
+            <button
+              type="button"
+              className={styles.chip}
+              aria-label={copyLabel}
+              title={CONTROLS.csv.what}
+              data-state={copy}
+              onClick={take}
+            >
+              {{ idle: CONTROLS.csv.label, done: 'copied', refused: 'failed' }[copy]}
+            </button>
+          </span>
+        )}
       </div>
     </div>
   );
 }
 
+/** Timestamps in full, so a run pasted into anything else sorts and plots without being fixed. */
+function csv(series: Series): string {
+  const rows = series.readings.map((reading) => `${reading.at.toISOString()},${reading.value}`);
+
+  return [`time,${series.field ?? series.topic}`, ...rows].join('\n');
+}
