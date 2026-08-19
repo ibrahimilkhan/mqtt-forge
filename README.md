@@ -40,8 +40,9 @@ row, and the publish form below it](.github/assets/console.png)
   hundreds.
 - **QR panel** — opens the same console on a phone on your network.
 - **Chart panel** — how much of the chart to draw, what range it opens on, what is drawn round
-  it, and a switch for every reading the note can make, each with a line saying what it means.
-  `spread` and `duty` are three-letter labels; this is where they are spelled out.
+  it, a switch for every reading the note can make, and a line on every chip over the plot saying
+  what it does. `spread`, `duty` and `csv` are three-letter labels; this is where they are
+  spelled out.
 - **Settings** — the fonts and their size, and which of six marks the console wears.
 
 It speaks MQTT 5.0 only, over TCP or TLS, with a username and password if the broker wants them.
@@ -229,8 +230,11 @@ Four chips over the plot decide how much of its height goes on the run's range:
 - **log** gives each decade the same height. Positive runs only; a run that reaches zero falls
   back to its extremes rather than pretending.
 
-**time** and **dist** read the same run in order or as a distribution. **csv** copies it out with
-full timestamps. The control in the region's top-right corner lifts the chart out of its column —
+**time** and **dist** read the same run in order or as a distribution. **csv** copies the readings
+on the chart to the clipboard — a header, then one row per reading with its time in full — so they
+go straight into a spreadsheet or a notebook. Every chip over the plot is three or four characters,
+because the row shares a pane that can be two hundred pixels wide; the **Chart** panel prints what
+each of them does. The control in the region's top-right corner lifts the chart out of its column —
 the plot lives in a third of a column that is itself a third of the window, which is the right
 size for glancing at a run and the wrong size for reading one. Open, it takes three fifths of the
 window and leaves the console readable around it, and still live: click a topic in the tree and

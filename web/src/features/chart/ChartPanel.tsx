@@ -4,6 +4,13 @@ import panel from '../../styles/panel.module.css';
 import { SCALES, type ScaleId } from '../../lib/scale';
 import { useAppearanceStore } from '../../stores/appearanceStore';
 import { CHART_DETAIL, type ChartDetailId } from '../appearance/chart';
+import {
+  CONTROL_GROUP_TITLES,
+  CONTROL_GROUPS,
+  CONTROL_IDS,
+  CONTROLS,
+  RANGE_CHIPS,
+} from '../appearance/controls';
 import { GRIDS, type GridId } from '../appearance/grid';
 import {
   READING_GROUPS,
@@ -127,6 +134,42 @@ export function ChartPanel({ onClose }: { onClose: () => void }) {
                 </span>
               </label>
             ))}
+          </fieldset>
+        ))}
+      </section>
+
+      {/* The chips over the plot are three and four characters long, because they share a row
+          with a pane that can be two hundred pixels wide. Short is right for the chip and wrong
+          for a reader meeting it — and a `title` is a thing you have to already suspect is there.
+          So the words live here, beside the readings that are explained the same way. */}
+      <section className={styles.readings}>
+        <h3 className={styles.heading}>Controls over the plot</h3>
+
+        {CONTROL_GROUPS.map((group) => (
+          <fieldset key={group} className={styles.group}>
+            <legend className={styles.legend}>{CONTROL_GROUP_TITLES[group].title}</legend>
+            <p className={styles.about}>{CONTROL_GROUP_TITLES[group].about}</p>
+
+            {/* In the order the chart puts them in, so the list can be read against the row. */}
+            {CONTROL_IDS.filter((id) => CONTROLS[id].group === group).map((id) => (
+              <p key={id} className={styles.control}>
+                <b className={styles.chip}>{CONTROLS[id].label}</b>
+                <span className={styles.what}>
+                  {CONTROLS[id].what}
+                  {CONTROLS[id].when && <em className={styles.when}> {CONTROLS[id].when}</em>}
+                </span>
+              </p>
+            ))}
+
+            {/* The ranges describe themselves in the scale catalogue the chart draws them from,
+                so they are printed from there rather than said a second time here. */}
+            {group === 'range' &&
+              RANGE_CHIPS.map((chip) => (
+                <p key={chip.id} className={styles.control}>
+                  <b className={styles.chip}>{chip.label}</b>
+                  <span className={styles.what}>{chip.hint}</span>
+                </p>
+              ))}
           </fieldset>
         ))}
       </section>
