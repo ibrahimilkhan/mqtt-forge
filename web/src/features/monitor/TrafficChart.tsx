@@ -7,6 +7,7 @@ import { shapeOf } from '../../lib/shape';
 import { cadence, changePoint, cycle, summarise } from '../../lib/stats';
 import { useNow } from '../../lib/useNow';
 import { useRuleLookup } from '../../lib/useRuleLookup';
+import { copyText } from '../mobile/copyText';
 import { CHART_DETAIL } from '../appearance/chart';
 import { CHIP, CONTROLS } from '../appearance/controls';
 import type { GridId } from '../appearance/grid';
@@ -282,17 +283,15 @@ function Controls({
 }) {
   const [copy, setCopy] = useState<'idle' | 'done' | 'refused'>('idle');
 
-  // Clipboard access is refused often enough — an insecure origin, a locked-down browser — that
-  // a button which silently does nothing is a real outcome rather than a theoretical one.
+  // Through the shared helper, not `navigator.clipboard` directly. That API exists only in a
+  // secure context and is missing or refuses outright in the runtime the desktop build renders
+  // in — so this button reported 'failed' every time it was pressed there, which is a fair
+  // description of a control that never worked. The helper falls back to the deprecated
+  // execCommand path, which is what still works, and says whether anything was actually copied.
   const take = async () => {
     if (!series) return;
 
-    try {
-      await navigator.clipboard.writeText(csv(series));
-      setCopy('done');
-    } catch {
-      setCopy('refused');
-    }
+    setCopy((await copyText(csv(series))) ? 'done' : 'refused');
     window.setTimeout(() => setCopy('idle'), 2000);
   };
 
