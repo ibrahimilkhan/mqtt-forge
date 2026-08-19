@@ -223,10 +223,11 @@ Four chips over the plot decide how much of its height goes on the run's range:
   back to its extremes rather than pretending.
 
 **time** and **dist** read the same run in order or as a distribution. **csv** copies it out with
-full timestamps. The control in the region's top-right corner throws the chart open over the
-whole console — the plot lives in a third of a column that is itself a third of the window, which
-is the right size for glancing at a run and the wrong size for reading one. The same control, or
-**Escape**, puts it back.
+full timestamps. The control in the region's top-right corner lifts the chart out of its column —
+the plot lives in a third of a column that is itself a third of the window, which is the right
+size for glancing at a run and the wrong size for reading one. Open, it takes three fifths of the
+window and leaves the console readable around it, and still live: click a topic in the tree and
+the chart redraws for it without closing. The same control, or **Escape**, puts it back.
 
 ### The chart panel
 

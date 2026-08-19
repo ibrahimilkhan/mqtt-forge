@@ -183,20 +183,38 @@
 
 /* Thrown open. The chart lives in a third of a column that is itself a third of the window,
    which is the right size for glancing at a run and the wrong size for reading one — so this
-   takes the lot, and Escape or the same control puts it back.
+   lifts it out and gives it three fifths of the window, which is several times the pane it came
+   from. Escape or the same control puts it back.
+
+   Three fifths rather than the lot, and a scrim that only takes a tenth: the console behind stays
+   readable *and* stays live. Nothing here blocks a pointer, so a reader with the chart open can
+   still click a topic in the tree and watch this redraw for it — which is the thing they were
+   going to do next anyway.
 
    Fixed rather than grown in place: every ancestor between the chart and the window is a grid
-   track with a share of a height, and there is no share that means 'all of it'. */
+   track with a share of a height, and no share of a height means all of it. */
 .chartPane[data-zoomed] {
   position: fixed;
-  inset: 0;
+  /* A fifth off each edge leaves three fifths in the middle, on both axes. */
+  inset: 20vh 20vw;
   z-index: 20;
-  padding: 16px 24px 20px;
-  /* Opaque, and its own edge: the console behind it must not read through a chart. */
+  padding: 14px 22px 18px;
+  /* Opaque, and lifted: the console shows around it, so it must plainly not be part of it. */
   background: var(--surface);
-  box-shadow: 0 0 0 1px var(--rule);
-  /* Scrolls nothing — the plot is drawn to the height it is given, and that is now the window. */
+  border-radius: 3px;
+  box-shadow:
+    0 0 0 1px var(--rule),
+    0 16px 44px color-mix(in srgb, var(--ink) 20%, transparent),
+    /* The scrim, over everything the panel does not cover. A tenth: enough to say what is in
+       front, far too little to stop the console behind being read. */
+    0 0 0 100vmax color-mix(in srgb, var(--ink) 10%, transparent);
+  /* The plot is drawn to the height it is given, and that is now this box. */
   overflow: hidden;
+}
+
+/* Stacked, there is no console beside it worth leaving room to see, so it takes what it can. */
+@media (max-width: 760px) {
+  .chartPane[data-zoomed] { inset: 6vh 4vw; }
 }
 
 /* Once the columns stack, the page scrolls instead of each pane pinning its own row. */
