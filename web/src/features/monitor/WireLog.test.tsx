@@ -9,7 +9,7 @@ import { byteLength } from '../../lib/payload';
 import type { DecodedMessage } from '../../realtime/decodeIncoming';
 import { useAppearanceStore } from '../../stores/appearanceStore';
 import { useComposeStore } from '../../stores/composeStore';
-import { MAX_LOG_ENTRIES, useLogStore } from '../../stores/logStore';
+import { MAX_LOG_ENTRIES, MIN_TOPIC_ENTRIES, useLogStore } from '../../stores/logStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { TrafficPane } from './TrafficPane';
 import { useHoldStore } from './useTraffic';
@@ -255,7 +255,8 @@ describe('WireLog', () => {
     render(<Monitor />);
 
     const head = screen.getByTestId('head');
-    expect(head).toHaveTextContent(/^\d\d:\d\d:\d\dQoS 1RETAINED4B$/);
+    // The action the row offers sits at the far end of the same line.
+    expect(head).toHaveTextContent(/^\d\d:\d\d:\d\dQoS 1RETAINED4Bload$/);
     expect(within(screen.getByTestId('topic')).queryByText('4B')).not.toBeInTheDocument();
   });
 
@@ -321,6 +322,163 @@ describe('WireLog', () => {
 
 // Under a flood, the row and the chart move under the reader while they are reading them. Every
 // console has this problem; none of them has a way to stop it that does not also stop the log.
+describe('what the pane says when nothing is arriving', () => {
+  const chip = { label: 'sensors/#', filter: 'sensors/#' };
+
+  // A silent topic and a refused subscription looked identical from here, and only one of them
+  // is the broker's doing. Every fault the console records was written to a log nothing drew.
+  it('says which command failed, instead of calling the topic quiet', () => {
+    useLogStore.getState().push({ kind: 'fault', verb: 'Subscribe failed', topic: 'sensors/#', body: 'Not authorised (135)' });
+    useSelectionStore.getState().select(chip);
+
+    render(<Monitor />);
+
+    expect(screen.getByTestId('stalled')).toHaveTextContent('Subscribe failed');
+    expect(screen.getByTestId('stalled')).toHaveTextContent('Not authorised (135)');
+    expect(screen.queryByText(/No traffic on/)).not.toBeInTheDocument();
+  });
+
+  // A failure that has since been retried and granted is not the reason for today's silence.
+  it('drops a fault a later success has answered', () => {
+    useLogStore.getState().push({ kind: 'fault', verb: 'Subscribe failed', topic: 'sensors/#', body: 'Not authorised (135)' });
+    useLogStore.getState().push({ kind: 'ok', verb: 'Subscribed', topic: 'sensors/#' });
+    useSelectionStore.getState().select(chip);
+
+    render(<Monitor />);
+
+    expect(screen.queryByTestId('stalled')).not.toBeInTheDocument();
+    expect(screen.getByText(/No traffic on/)).toBeInTheDocument();
+  });
+
+  // The command was aimed at a filter and the reader is looking at another; neither direction of
+  // the ordinary match is enough on its own.
+  it('finds a fault aimed at a filter that covers the selection', () => {
+    useLogStore.getState().push({ kind: 'fault', verb: 'Subscribe failed', topic: 'sensors/#', body: 'Not authorised (135)' });
+    useSelectionStore.getState().select({ label: 'sensors/temp', filter: 'sensors/temp' });
+
+    render(<Monitor />);
+
+    expect(screen.getByTestId('stalled')).toHaveTextContent('Subscribe failed');
+  });
+
+  it('leaves a fault about somewhere else alone', () => {
+    useLogStore.getState().push({ kind: 'fault', verb: 'Subscribe failed', topic: 'alerts/#', body: 'Not authorised (135)' });
+    useSelectionStore.getState().select(chip);
+
+    render(<Monitor />);
+
+    expect(screen.queryByTestId('stalled')).not.toBeInTheDocument();
+  });
+});
+
+describe('reaching a row without a mouse', () => {
+  const chip = { label: 'sensors/#', filter: 'sensors/#' };
+  const readings = (topic: string, ...bodies: string[]) =>
+    bodies.forEach((body) => useLogStore.getState().push({ kind: 'recv', topic, body }));
+
+  // The row used to be one control named 'Load … into publish' — and `button` is a role whose
+  // children are presentational, so the time, the stamps, the topic and the payload were all
+  // dropped from the accessibility tree. The pane's whole content was unreadable.
+  it('leaves the row a row, and puts the action on a button of its own', () => {
+    readings('sensors/temp', '21.5');
+    useSelectionStore.getState().select(chip);
+
+    render(<Monitor />);
+
+    expect(screen.getByTestId('entry')).not.toHaveAttribute('role', 'button');
+    expect(screen.getByRole('button', { name: 'Load sensors/temp into publish' })).toBeInTheDocument();
+  });
+
+  it('loads the row from that button', async () => {
+    readings('sensors/temp', '21.5');
+    useSelectionStore.getState().select(chip);
+
+    render(<Monitor />);
+    await userEvent.click(screen.getByRole('button', { name: 'Load sensors/temp into publish' }));
+
+    expect(useComposeStore.getState().draft).toMatchObject({ topic: 'sensors/temp', payload: '21.5' });
+  });
+
+  // The publish form is a region of its own and can be folded away, so the action can otherwise
+  // have no observable result at all.
+  it('says out loud that the row was loaded', async () => {
+    readings('sensors/temp', '21.5');
+    useSelectionStore.getState().select(chip);
+
+    render(<Monitor />);
+    await userEvent.click(screen.getByRole('button', { name: 'Load sensors/temp into publish' }));
+
+    expect(screen.getByTestId('loaded')).toHaveTextContent('sensors/temp loaded into publish');
+  });
+
+  // The selection check catches a finished drag; it does not catch the first click of a
+  // double-click on a word, which used to load the row out from under a reader copying a value.
+  it('does not load the row when the click was on the payload', async () => {
+    readings('sensors/temp', '21.5');
+    useSelectionStore.getState().select(chip);
+
+    render(<Monitor />);
+    await userEvent.click(screen.getByTestId('body'));
+
+    expect(useComposeStore.getState().draft).toBeNull();
+  });
+});
+
+describe('opening the history', () => {
+  const chip = { label: 'sensors/#', filter: 'sensors/#' };
+  const readings = (topic: string, ...bodies: string[]) =>
+    bodies.forEach((body) => useLogStore.getState().push({ kind: 'recv', topic, body }));
+
+  // It used to mount every entry the log held for the selection — up to five thousand — into a
+  // region measured for one row, on the broker selection people leave up.
+  it('opens a step at a time rather than all of it', async () => {
+    readings('sensors/temp', ...Array.from({ length: 70 }, (_, i) => `${i}`));
+    useSelectionStore.getState().select(chip);
+
+    render(<Monitor />);
+    await userEvent.click(screen.getByRole('button', { name: '70 in history' }));
+
+    expect(screen.getAllByTestId('entry')).toHaveLength(MIN_TOPIC_ENTRIES);
+    expect(screen.getByRole('button', { name: `${MIN_TOPIC_ENTRIES} more` })).toBeInTheDocument();
+  });
+
+  it('offers the way back once it has drawn them all', async () => {
+    readings('sensors/temp', '1', '2', '3');
+    useSelectionStore.getState().select(chip);
+
+    render(<Monitor />);
+    await userEvent.click(screen.getByRole('button', { name: '3 in history' }));
+
+    expect(screen.getAllByTestId('entry')).toHaveLength(3);
+    await userEvent.click(screen.getByRole('button', { name: 'Show fewer' }));
+    expect(screen.getAllByTestId('entry')).toHaveLength(1);
+  });
+
+  // The pane already names the topic when every row is the same one; repeating it costs more ink
+  // than the value it sits above.
+  it('names the topic once when every row is the same topic', async () => {
+    readings('sensors/temp', '1', '2', '3');
+    useSelectionStore.getState().select(chip);
+
+    render(<Monitor />);
+    await userEvent.click(screen.getByRole('button', { name: '3 in history' }));
+
+    expect(screen.getAllByTestId('topic')).toHaveLength(1);
+  });
+
+  // Under a wildcard the topic is what tells the rows apart, so every row keeps it.
+  it('names the topic on every row when the rows are different topics', async () => {
+    readings('sensors/temp', '1', '2');
+    readings('sensors/hum', '54');
+    useSelectionStore.getState().select(chip);
+
+    render(<Monitor />);
+    await userEvent.click(screen.getByRole('button', { name: '3 in history' }));
+
+    expect(screen.getAllByTestId('topic')).toHaveLength(3);
+  });
+});
+
 describe('a payload too big for the pane', () => {
   const readings = (topic: string, ...bodies: string[]) =>
     bodies.forEach((body) => useLogStore.getState().push({ kind: 'recv', topic, body }));
