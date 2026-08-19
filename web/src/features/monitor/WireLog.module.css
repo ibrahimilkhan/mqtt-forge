@@ -1,3 +1,17 @@
+/* ---- why a selection is silent, when the console knows ---- */
+
+/* The verb of a command that failed, in the colour a failed command's row would have worn. */
+.faultVerb {
+  display: block;
+  font-family: var(--mono);
+  font-size: var(--t-code);
+  color: var(--fault);
+}
+/* What it was aimed at, on the verb's own line: the filter is half the answer. */
+.faultAt { font-family: var(--mono); font-size: var(--t-code); color: var(--fault); }
+/* And why, in the pane's ordinary voice — the reason is prose from the broker, not a label. */
+.faultWhy { display: block; margin-top: 3px; color: var(--muted); }
+
 /* ---- signature element: the wire log ---- */
 .log { display: flex; flex-direction: column; gap: 2px; }
 
@@ -52,17 +66,23 @@ button.history:focus-visible { outline: 2px solid var(--signal); outline-offset:
   padding: 8px 0 10px 12px;
   font-family: var(--mono);
   font-size: var(--t-code);
-  animation: arrive 0.24s ease-out;
+  /* A tint that decays, not a fade from nothing. The collapsed pane shows one row, so every
+     arrival used to remount it and restart a 240ms fade from opacity 0 — under traffic at ten a
+     second the newest value never got past about two-thirds opacity and blinked continuously.
+     TopicTree reached this same conclusion one component over. A colour that fades out leaves
+     the text readable the whole time, whatever the rate. */
+  animation: arrive 0.5s ease-out;
 }
 /* A row with a topic loads itself into the publish form, so it has to look like it does
    something. Padding on the right keeps the hover fill off the pane's edge. */
-.entry[role="button"] {
+.entry[data-loads] {
   cursor: pointer;
   padding-right: 8px;
   border-radius: 0 2px 2px 0;
 }
-.entry[role="button"]:hover { background: var(--paper); }
-.entry[role="button"]:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
+.entry[data-loads]:hover { background: var(--paper); }
+/* Focus lives on the controls inside the row now, not on the row. */
+.entry:focus-within { background: var(--paper); }
 
 /* What the kind says the edge should be, held in a property so the rule below can offer to
    stand in for it without having to restate all four. */
@@ -76,14 +96,22 @@ button.history:focus-visible { outline: 2px solid var(--signal); outline-offset:
 .entry { border-left-color: var(--rule-colour, var(--edge, var(--rule))); }
 
 @keyframes arrive {
-  from { opacity: 0; transform: translateY(-3px); }
+  from { background: color-mix(in srgb, var(--signal) 12%, transparent); }
+}
+
+/* The tint is the only motion here, and it is decoration: the row's own arrival is the news. */
+@media (prefers-reduced-motion: reduce) {
+  .entry { animation: none; }
 }
 
 /* The time, the verb and the stamps are the entry's furniture — what arrived, when, at what QoS
    and size. One faint black voice for all of them: black so they belong to the same page as the
    topic, faint so they never compete with it for the eye. The topic is what carries colour now,
    and a second coloured thing in the row only made the first harder to find. */
-.entry { --faint: color-mix(in srgb, var(--ink) 55%, transparent); }
+/* 70%, not 55%. At 55% this composited to rgb(125,129,135) — 3.9:1 on the pane's surface and
+   3.7:1 on the hover fill, under the 4.5:1 floor, at 10.5px type which is nowhere near large.
+   70% gives 6.4:1 and 6.0:1 and is still plainly quieter than the topic's 17.5:1. */
+.entry { --faint: color-mix(in srgb, var(--ink) 70%, transparent); }
 
 .entryHead {
   display: flex;
@@ -101,12 +129,45 @@ button.history:focus-visible { outline: 2px solid var(--signal); outline-offset:
      caps at this size read as shouting in a pane whose whole job is to be scanned. */
   text-transform: lowercase;
 }
+/* The action the row offers, at the far end of its head line. It was the whole row, with no mark
+   on it at all: undiscoverable to a reader looking, and to anyone not looking the row was one
+   button called 'Load … into publish' whose contents — the time, the stamps, the topic, the
+   payload — were dropped from the accessibility tree by the role's own children-presentational
+   rule. Small and quiet, but present and named. */
+.load {
+  all: unset;
+  margin-left: auto;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 20px;
+  padding: 0 5px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  font-size: var(--t-micro);
+  letter-spacing: 0.06em;
+  color: var(--faint);
+}
+.load:hover:not(:disabled) { color: var(--ink); border-color: var(--rule); background: var(--surface); }
+.load:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
 /* A failure is the one thing here that has to be loud — the box goes with it, or a red word
    sitting in a grey outline reads as half-marked. */
 .entry[data-kind="fault"] .verb { color: var(--fault); border-color: var(--fault); font-weight: 600; }
 
-.topic { margin-top: 3px; font-size: var(--t-code); word-break: break-all; }
-.topic .sep { color: var(--rule); margin: 0 1px; }
+/* Breaks between segments rather than between any two characters. `break-all` filled to the box
+   edge and cut mid-segment, across the very separators the row splits the path to show. */
+.topic {
+  margin-top: 3px;
+  font-size: var(--t-code);
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+/* The separators were --rule: 1.4:1, which is not a colour, it is an absence — and the Topic
+   component goes to the trouble of splitting the path precisely so they can be seen. A shade
+   darker than --muted, which clears 4.5:1 on the surface and on the hover fill both. */
+.topic .sep { color: color-mix(in srgb, var(--ink) 62%, transparent); margin: 0 1px; }
 
 .body { margin-top: 2px; color: var(--ink); word-break: break-word; }
 .entry[data-kind="fault"] .body { color: var(--fault); }
@@ -140,7 +201,11 @@ button.history:focus-visible { outline: 2px solid var(--signal); outline-offset:
 
 /* Sits in the head line now, so the row's gap places it: no offset of its own, and the same
    spacing between stamps as the head puts between the boxes on either side of them. */
-.stamps { display: inline-flex; gap: 6px; }
+/* Wraps. As one unwrappable inline-flex group it shrank to its own min-content once the head's
+   line could not hold it, which broke 'qos 0' inside its own 1px border — the thing the head's
+   comment above says cannot happen. The row gap matches the head's own, so a wrapped second line
+   of stamps sits at the same pitch as the line it came off. */
+.stamps { display: inline-flex; flex-wrap: wrap; gap: 4px 6px; }
 
 /* A command's verb is boxed with the stamps: what it did is the same kind of label as 'qos 1'
    and 'retained' — a fact about the entry, not a sentence about it — so the row reads as one run

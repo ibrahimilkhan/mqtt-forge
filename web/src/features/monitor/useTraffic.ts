@@ -34,6 +34,42 @@ useSelectionStore.subscribe((state, previous) => {
   if (state.selected?.filter !== previous.selected?.filter) useHoldStore.getState().release();
 });
 
+/**
+ * The newest command that failed on this selection, and is still failing.
+ *
+ * Every fault the console records — a subscribe the broker refused, a publish it rejected — is
+ * written to the same log the arrivals go into, and nothing has ever drawn one: this store has
+ * exactly one display reader, and it admits arrivals only. So a reader whose subscribe was
+ * refused saw the same sentence a genuinely quiet topic gives, and 'the broker is silent', 'my
+ * subscription failed' and 'the publish never left' were indistinguishable.
+ *
+ * Only while it is still true. A 'Subscribe failed' from ten minutes ago, since retried and
+ * granted, would otherwise go on explaining a silence it is no longer the cause of — so a later
+ * success naming the same filter clears it.
+ */
+export function faultOn(log: LogEntry[], filter: string): LogEntry | null {
+  for (const entry of log) {
+    if (!entry.topic || !overlaps(filter, entry.topic)) continue;
+
+    // The log is newest first, so the first of either kind found is the one that stands.
+    if (entry.kind === 'ok') return null;
+    if (entry.kind === 'fault') return entry;
+  }
+
+  return null;
+}
+
+/**
+ * Whether a command aimed at one filter has anything to say about a selection of another.
+ *
+ * Both sides are filters rather than topics — a command is aimed at `sensors/#` and the reader is
+ * looking at `sensors/room/temp/#` — so neither direction of the ordinary match is enough on its
+ * own, and both are tried. A command whose topic is not a filter at all, like the '3 filters' a
+ * batch subscribe records, matches nothing and is passed over.
+ */
+const overlaps = (filter: string, aimedAt: string) =>
+  matchesFilter(filter, aimedAt) || matchesFilter(aimedAt, filter);
+
 export type Traffic = {
   selected: ReturnType<typeof useSelectionStore.getState>['selected'];
   /** What the log holds on the selection right now, whatever the column is showing. */
@@ -43,6 +79,10 @@ export type Traffic = {
   held: boolean;
   /** How much has arrived behind the hold — nothing to say while the column is live. */
   arrived: number;
+  /** The newest command that failed on this selection and has not since succeeded. */
+  fault: LogEntry | null;
+  /** Every entry on show is the same topic, so naming it on each of them says nothing new. */
+  single: boolean;
 };
 
 export function useTraffic(): Traffic {
@@ -53,6 +93,13 @@ export function useTraffic(): Traffic {
   const live = useMemo(
     () => (selected ? log.filter((entry) => carriesTraffic(entry, selected.filter)) : []),
     [log, selected],
+  );
+
+  // Only worth looking for while the selection has nothing to show; that is the one moment a
+  // reader is asking why, and a scan of the log on every arrival is not worth paying otherwise.
+  const fault = useMemo(
+    () => (selected && live.length === 0 ? faultOn(log, selected.filter) : null),
+    [log, selected, live.length],
   );
 
   // The filter is checked as well as the hold: the release above runs on the store rather than
@@ -69,6 +116,11 @@ export function useTraffic(): Traffic {
     held: held !== null,
     // Ids only go up, so what has arrived since is what is newer than the newest one held.
     arrived: held?.length ? live.filter((entry) => entry.id > held[0].id).length : 0,
+    fault,
+    // Read off the run rather than off the filter: a tree leaf selects `path/#`, which is a
+    // wildcard that happens to match one topic, and a wildcard that happens to match one topic
+    // is exactly the case worth catching.
+    single: (held ?? live).every((entry) => entry.topic === (held ?? live)[0]?.topic),
   };
 }
 

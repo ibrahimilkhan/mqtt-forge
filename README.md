@@ -19,7 +19,9 @@ row, and the publish form below it](.github/assets/console.png)
 
 - **Topic tree** — the broker's topology as it builds, each topic showing its own latest payload.
 - **Wire log** — the newest message on whatever you pick, one branch or the whole broker,
-  stamped with its time, QoS and size, with the history behind it a click away.
+  stamped with its time, QoS and size, with the history behind it a click at a time. When a
+  selection is silent because a command failed rather than because the sensor is quiet, it says
+  which one and why.
 - **Readings, not just messages** — a topic sending numbers gets a chart of its run, in a
   region of its own, and under it what that run adds up to. What it says depends on what the run
   *is*: a quantity gets a mean, a spread, a trend and its outliers; a switch or a pulse train

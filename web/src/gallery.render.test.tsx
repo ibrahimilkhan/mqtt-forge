@@ -10,12 +10,13 @@
  */
 import { existsSync, writeFileSync } from 'node:fs';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { it } from 'vitest';
 import './styles/global.css';
 import chartStyles from './features/monitor/TrafficChart.module.css';
 import { App } from './App';
 import { ChartPanel } from './features/chart/ChartPanel';
+import { WireLog } from './features/monitor/WireLog';
 import { ReadingDetail } from './features/monitor/ReadingDetail';
 import { domainFor } from './lib/scale';
 import { numericSeries } from './lib/series';
@@ -28,6 +29,7 @@ import { createFakeHub } from './realtime/fakeHub';
 import { useAppearanceStore } from './stores/appearanceStore';
 import { useLogStore } from './stores/logStore';
 import { useSelectionStore } from './stores/selectionStore';
+import { useHoldStore } from './features/monitor/useTraffic';
 import { useTopicTreeStore } from './stores/topicTreeStore';
 import { useZoomStore } from './features/monitor/useZoom';
 
@@ -265,6 +267,7 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
     ...pages.map((_, i) => `gallery-${i + 1}.html`),
     'gallery-panel.html',
     'gallery-detail.html',
+    'gallery-log.html',
     'console.html',
     'console-zoomed.html',
   ]
@@ -276,6 +279,8 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
             ? 'Chart panel'
             : href === 'gallery-detail.html'
               ? 'A reading'
+              : href === 'gallery-log.html'
+                ? 'The log'
               : href === 'console.html'
                 ? 'The console'
                 : href === 'console-zoomed.html'
@@ -337,7 +342,123 @@ ${inner}
     `${OUT}/gallery-detail.html`,
     page('one reading, opened', `<h2>One reading, opened</h2>${detail()}`),
   );
+
+  writeFileSync(`${OUT}/gallery-log.html`, page('the log', `<h2>The log</h2>${logStates(client)}`));
 });
+
+/**
+ * The log in the states it actually reaches.
+ *
+ * The pane shows one entry until asked, so the interesting states — a run of history, a wildcard
+ * mixing topics, a command that failed, a payload too big for the region — are all behind a click
+ * or behind traffic that has not happened yet.
+ */
+function logStates(client) {
+  const shown = [
+    {
+      name: 'One topic, as it arrives',
+      note: 'The default: the newest arrival, and a count of what is behind it.',
+      seed: () => {
+        wobble(60, 21.5, 1.4).forEach((body) =>
+          useLogStore.getState().push({ kind: 'recv', topic: 'sensors/livingroom/temp', body, qos: 0, stamps: ['qos 0', '4 b'] }),
+        );
+      },
+      pick: { label: 'sensors/livingroom/temp', filter: 'sensors/livingroom/temp' },
+      open: true,
+    },
+    {
+      name: 'A branch, mixing topics',
+      note: 'Every row names its own topic, which is what tells them apart — and what is repeated when they do not need telling apart.',
+      seed: () => {
+        for (let i = 0; i < 8; i++) {
+          useLogStore.getState().push({ kind: 'recv', topic: 'sensors/livingroom/temp', body: (21 + i * 0.3).toFixed(2), qos: 0, stamps: ['qos 0', '5 b'] });
+          useLogStore.getState().push({ kind: 'recv', topic: 'sensors/livingroom/humidity', body: `${52 + i}`, qos: 1, stamps: ['qos 1', 'retained', '2 b'] });
+        }
+      },
+      pick: { label: 'sensors/livingroom/#', filter: 'sensors/livingroom/#' },
+      open: true,
+    },
+    {
+      name: 'A silence the console can explain',
+      note: 'Every fault the console recorded used to be written to a log nothing drew, so a refused subscription and a quiet sensor gave the reader the same sentence. A failure that has not since been answered is now the answer.',
+      seed: () => {
+        useLogStore.getState().push({ kind: 'fault', verb: 'Subscribe failed', topic: 'sensors/kiln/#', body: 'Not authorised (135)' });
+      },
+      pick: { label: 'sensors/kiln/#', filter: 'sensors/kiln/#' },
+      open: false,
+    },
+    {
+      name: 'A silence the console cannot explain',
+      note: 'Nothing has failed, so the topic really is quiet, and the pane says so.',
+      seed: () => {
+        useLogStore.getState().push({ kind: 'ok', verb: 'Subscribed', topic: 'sensors/attic/#' });
+      },
+      pick: { label: 'sensors/attic/#', filter: 'sensors/attic/#' },
+      open: false,
+    },
+    {
+      name: 'A payload bigger than the pane',
+      note: 'Cut at about five hundred characters, with the rest a click away.',
+      seed: () => {
+        useLogStore.getState().push({
+          kind: 'recv',
+          topic: 'devices/gateway/config',
+          body: JSON.stringify({ firmware: '4.2.1-rc3', uptime: 918273, radios: Array.from({ length: 12 }, (_, i) => ({ id: `radio-${i}`, channel: 11 + i, dbm: -42 - i, peers: 3 + (i % 5) })) }),
+          qos: 1,
+          stamps: ['qos 1', 'retained', '892 b'],
+        });
+      },
+      pick: { label: 'devices/gateway/config', filter: 'devices/gateway/config' },
+      open: false,
+    },
+    {
+      name: 'Nothing picked yet',
+      note: 'The pane before a reader has told it what to show.',
+      seed: () => {},
+      pick: null,
+      open: false,
+    },
+  ];
+
+  return shown
+    .map((state) => {
+      useLogStore.getState().clear();
+      useHoldStore.getState().release();
+      state.seed();
+      if (state.pick) useSelectionStore.getState().select(state.pick);
+      else useSelectionStore.getState().clear();
+
+      const { container, unmount } = render(
+        <QueryClientProvider client={client}>
+          <div
+            style={{
+              width: 360,
+              background: 'var(--surface)',
+              border: '1px solid var(--rule)',
+              borderRadius: 3,
+              padding: '11px 20px 16px',
+            }}
+          >
+            <WireLog />
+          </div>
+        </QueryClientProvider>,
+      );
+
+      // The history is behind a click, and a static page cannot carry one — so the click is made
+      // here and the markup taken afterwards.
+      if (state.open) {
+        const opener = container.querySelector('[aria-expanded="false"]');
+        if (opener) act(() => fireEvent.click(opener));
+      }
+
+      const html = container.innerHTML;
+      unmount();
+
+      return `<section class="gRun"><h3>${state.name}</h3><p>${state.note}</p>
+        <div class="gRow"><div class="gCell">${html}</div></div></section>`;
+    })
+    .join('');
+}
 
 /**
  * The card that opens on a reading, in each of the four corners it can take.

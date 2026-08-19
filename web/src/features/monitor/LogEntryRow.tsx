@@ -17,19 +17,34 @@ import styles from './WireLog.module.css';
  */
 const SHOW = 480;
 
+/** What the clamp in the stylesheet actually shows. Kept here so the control agrees with it. */
+const CLAMP_LINES = 4;
+
+const lines = (body: string) => body.split('\n').length;
+
 // Entries are immutable, so memoising means a new arrival re-renders only one row.
 export const LogEntryRow = memo(function LogEntryRow({
   entry,
   rule,
+  repeats = false,
+  onLoaded,
 }: {
   entry: LogEntry;
   /** The colour rule covering this entry's topic, or null when none does. */
   rule?: ColourRule | null;
+  /** The row above already named this topic, and the pane is showing one topic only. */
+  repeats?: boolean;
+  /** Told when this row has been put in the publish form, so the pane can say so out loud. */
+  onLoaded?: (topic: string) => void;
 }) {
   const load = useComposeStore((state) => state.load);
   const [whole, setWhole] = useState(false);
 
-  const long = !!entry.body && entry.body.length > SHOW;
+  // A body is long when it has more characters than the clamp shows OR more lines than it has
+  // room for. The clamp is a height and the threshold is a character count, so on their own they
+  // disagree in both directions: a pretty-printed three-hundred-character object is fifteen lines
+  // and was cut with nothing offering to open it.
+  const long = !!entry.body && (entry.body.length > SHOW || lines(entry.body) > CLAMP_LINES);
 
   // Only an arrival can be sent back. A command entry carries the filter it was aimed at, which
   // may be a wildcard, and an outcome rather than a payload — neither is publishable. The whole
@@ -47,29 +62,31 @@ export const LogEntryRow = memo(function LogEntryRow({
           })
       : undefined;
 
+  const take = () => {
+    reload?.();
+    if (entry.topic) onLoaded?.(entry.topic);
+  };
+
   return (
     <div
       className={styles.entry}
       data-kind={entry.kind}
       data-testid="entry"
-      // The left edge reads this. Unset when no rule covers the topic, so the edge falls back
-      // to the colour of the entry's kind rather than to an empty one.
+      // Clickable, but not a button. It used to carry role="button" with an aria-label, which
+      // made the whole row one control named 'Load … into publish' — and `button` is a role whose
+      // children are presentational, so the time, the stamps, the topic and the payload itself
+      // were all dropped from the accessibility tree. The pane's entire content was unreadable to
+      // anyone not looking at it. The action lives on a real button below; this is the mouse's
+      // shortcut to the same thing, and nothing but a shortcut.
+      data-loads={reload ? '' : undefined}
       style={rule ? ({ '--rule-colour': rule.colour } as CSSProperties) : undefined}
       {...(reload && {
-        role: 'button',
-        tabIndex: 0,
-        title: 'Load into publish',
-        'aria-label': `Load ${entry.topic} into publish`,
-        // A click that ends a drag over the payload is someone copying it, not re-sending it.
-        // Keyboard activation skips the check: a selection left elsewhere is not this row's.
-        onClick: () => {
-          if (window.getSelection()?.isCollapsed !== false) reload();
-        },
-        onKeyDown: (event: React.KeyboardEvent) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            reload();
-          }
+        onClick: (event: React.MouseEvent) => {
+          // Reading a payload is not asking to send it. The selection check catches a finished
+          // drag; the target check catches the first click of a double-click on a word, which
+          // leaves no selection behind and used to load the row out from under the reader.
+          if ((event.target as Element).closest(`[data-testid='body']`)) return;
+          if (window.getSelection()?.isCollapsed !== false) take();
         },
       })}
     >
@@ -92,9 +109,28 @@ export const LogEntryRow = memo(function LogEntryRow({
             ))}
           </span>
         )}
+
+        {/* The action, as one real button with a name of its own. On the head rather than on the
+            topic, because a repeated topic is not drawn — and a row every reader can reach has to
+            be reachable on the rows where it is not. */}
+        {reload && (
+          <button
+            type="button"
+            className={styles.load}
+            data-testid="load"
+            aria-label={`Load ${entry.topic} into publish`}
+            title="Load into publish"
+            onClick={(event) => {
+              event.stopPropagation();
+              take();
+            }}
+          >
+            load
+          </button>
+        )}
       </div>
 
-      {entry.topic && (
+      {entry.topic && !repeats && (
         /* The rule paints the topic itself rather than a mark beside it, so a scrolling log
            reads by colour without a column of marks down its edge. The title names the filter:
            with rules overlapping, which one won is what the colour leaves open. */
@@ -136,7 +172,9 @@ export const LogEntryRow = memo(function LogEntryRow({
             setWhole((open) => !open);
           }}
         >
-          {whole ? 'show less' : `${entry.body!.length - SHOW} more characters`}
+          {/* What is hidden is decided by a height, not by the character count that decided to
+              clamp at all — so the only number that is true at every pane width is the whole. */}
+          {whole ? 'show less' : `show all ${entry.body!.length} characters`}
         </button>
       )}
     </div>
