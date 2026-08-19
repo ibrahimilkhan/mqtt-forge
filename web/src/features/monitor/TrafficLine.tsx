@@ -1,7 +1,8 @@
-import { useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { useEffect, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
 import { GRIDS, type GridId } from '../appearance/grid';
 import { short } from '../../lib/format';
 import { PlotGrid } from './PlotGrid';
+import { ReadingDetail } from './ReadingDetail';
 import { pinned, positionIn, type Domain } from '../../lib/scale';
 import type { Series } from '../../lib/series';
 import type { Shape } from '../../lib/shape';
@@ -57,6 +58,9 @@ export function TrafficLine({
   grid?: GridId;
 }) {
   const [hovered, setHovered] = useState<number | null>(null);
+  // A reading the reader has clicked, which stays open while the pointer goes elsewhere. Held
+  // apart from `hovered` so moving across the plot does not drag the opened one along with it.
+  const [opened, setOpened] = useState<number | null>(null);
   const { readings } = series;
 
   const y = (value: number) => SIDE - positionIn(domain, value) * SIDE;
@@ -88,11 +92,27 @@ export function TrafficLine({
   const last = readings.length - 1;
   const settle = (step: number) => setHovered(Math.min(Math.max(step, 0), last));
 
-  const follow = (event: PointerEvent<HTMLDivElement>) => {
-    const { left, width } = event.currentTarget.getBoundingClientRect();
-    if (!width) return;
+  /** Which reading a pointer at this position is nearest. */
+  const nearest = (clientX: number, box: DOMRect) =>
+    Math.min(Math.max(Math.round(((clientX - box.left) / box.width) * last), 0), last);
 
-    settle(Math.round(((event.clientX - left) / width) * last));
+  // Clicking the reading that is already open closes it, so the same gesture goes both ways.
+  const open = (at: number) => setOpened((current) => (current === at ? null : at));
+
+  const follow = (event: PointerEvent<HTMLDivElement>) => {
+    const box = event.currentTarget.getBoundingClientRect();
+    if (!box.width) return;
+
+    settle(nearest(event.clientX, box));
+  };
+
+  // The whole plot is the target rather than the two-pixel line: a reader aims at a moment, and
+  // the nearest reading to where they aimed is the one they meant.
+  const take = (event: MouseEvent<HTMLDivElement>) => {
+    const box = event.currentTarget.getBoundingClientRect();
+    if (!box.width) return;
+
+    open(nearest(event.clientX, box));
   };
 
   /**
@@ -104,6 +124,17 @@ export function TrafficLine({
    */
   const walk = (event: KeyboardEvent<HTMLDivElement>) => {
     const at = hovered ?? last;
+
+    // The same reading a pointer would have opened, opened from the keyboard. Without this the
+    // detail is a thing only a mouse can reach, which is the readout's oldest failing.
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      open(at);
+      settle(at);
+
+      return;
+    }
+
     const steps: Record<string, number> = { ArrowLeft: at - 1, ArrowRight: at + 1, Home: 0, End: last };
     const next = steps[event.key];
     if (next === undefined) return;
@@ -111,6 +142,19 @@ export function TrafficLine({
     event.preventDefault();
     settle(next);
   };
+
+  // Escape closes it, wherever the focus has got to since.
+  useEffect(() => {
+    if (opened === null) return;
+
+    const listen = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') setOpened(null);
+    };
+
+    window.addEventListener('keydown', listen);
+
+    return () => window.removeEventListener('keydown', listen);
+  }, [opened]);
 
   // Readings the domain could not fit, drawn on the edge they went past. Not silently clamped:
   // a run flattened against the top of the plot with nothing to say why would be the chart
@@ -166,7 +210,7 @@ export function TrafficLine({
           data-testid="plotArea"
           data-shape={shape.id}
           role="img"
-          aria-label={spoken(series, domain, shape, latest.value)}
+          aria-label={`${spoken(series, domain, shape, latest.value)} Enter opens the one you are on.`}
           // Focusable so the readings can be walked without a pointer. Landing on it starts at
           // the newest reading, which is the one the row above is showing.
           tabIndex={compact ? -1 : 0}
@@ -174,6 +218,7 @@ export function TrafficLine({
           onPointerLeave={() => setHovered(null)}
           onFocus={() => setHovered((at) => at ?? last)}
           onBlur={() => setHovered(null)}
+          onClick={take}
           onKeyDown={walk}
         >
           <svg
@@ -243,6 +288,19 @@ export function TrafficLine({
               </line>
             )}
 
+            {/* The opened reading keeps a hairline of its own once the pointer has left, so the
+                card and the point it is about stay tied together. */}
+            {opened !== null && opened !== hovered && (
+              <line
+                className={styles.opened}
+                data-testid="opened"
+                x1={x(opened)}
+                y1={0}
+                x2={x(opened)}
+                y2={SIDE}
+              />
+            )}
+
             {hovered !== null && (
               <line className={styles.crosshair} x1={x(hovered)} y1={0} x2={x(hovered)} y2={SIDE} />
             )}
@@ -303,6 +361,27 @@ export function TrafficLine({
             </span>
           )}
         </div>
+
+        {/* Outside the plot for the same reason the live region below is: role="img" makes
+            everything inside it presentational, so a card in there would be a card no screen
+            reader could reach. Placed in the corner furthest from the reading it is about, so it
+            never covers the thing that was clicked. */}
+        {opened !== null && !compact && (
+          <div
+            className={styles.detailSlot}
+            data-side={opened > last / 2 ? 'left' : 'right'}
+            data-half={positionIn(domain, readings[opened].value) > 0.5 ? 'low' : 'high'}
+          >
+            <ReadingDetail
+              series={series}
+              summary={summary}
+              shape={shape}
+              domain={domain}
+              at={opened}
+              onClose={() => setOpened(null)}
+            />
+          </div>
+        )}
 
         {/* Outside the plot on purpose: role="img" makes everything inside it presentational, so
             a live region in there would announce nothing. This is the same readout in words. */}
