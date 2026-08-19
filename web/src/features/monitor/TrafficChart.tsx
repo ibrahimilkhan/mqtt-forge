@@ -387,17 +387,21 @@ function Controls({
             </button>
           </>
         )}
+        {/* Beside the views, not among them: csv is not another way of reading the run, it is
+            the run leaving. */}
         {series && (
-          <button
-            type="button"
-            className={styles.chip}
-            aria-label={copyLabel}
-            title={CONTROLS.csv.what}
-            data-state={copy}
-            onClick={take}
-          >
-            {{ idle: CONTROLS.csv.label, done: 'copied', refused: 'failed' }[copy]}
-          </button>
+          <span className={styles.export}>
+            <button
+              type="button"
+              className={styles.chip}
+              aria-label={copyLabel}
+              title={CONTROLS.csv.what}
+              data-state={copy}
+              onClick={take}
+            >
+              {{ idle: CONTROLS.csv.label, done: 'copied', refused: 'failed' }[copy]}
+            </button>
+          </span>
         )}
       </div>
     </div>
