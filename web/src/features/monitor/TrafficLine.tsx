@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import {
   useEffect,
   useLayoutEffect,
@@ -24,15 +25,27 @@ const SIDE = 100;
 const ENOUGH_FOR_A_BAND = 5;
 
 /**
- * How far apart two readings have to be before each gets a dot of its own.
+ * How big a dot is, against the plot it is drawn in.
  *
  * A dot per arrival says where the readings actually are — a line alone cannot tell a run sampled
  * ten times from one sampled a thousand, and between two dots the line is an interpolation nobody
- * measured. But five hundred readings across two hundred pixels is a dot every two fifths of a
- * pixel, which is not five hundred marks, it is a thicker line lying about its own resolution. So
- * they are drawn while they can be told apart and dropped when they cannot.
+ * measured. But a mark that is right in a pane region forty pixels tall is a speck in a chart
+ * thrown open over the window, and a mark that is right there is a blot in the pane. So the dot
+ * is a fraction of the plot's own height, floored so it never disappears and capped so it never
+ * becomes the subject.
  */
-const DOT_APART = 5;
+const DOT_OF_HEIGHT = 0.016;
+const DOT_SMALLEST = 3;
+const DOT_LARGEST = 8;
+
+/**
+ * The clear space a dot keeps from the next one along.
+ *
+ * Without it the marks touch, and a row of touching dots is not five hundred readings, it is a
+ * thicker line lying about its own resolution. When the run is dense enough that a dot cannot be
+ * drawn at its smallest and still keep this gap, none are drawn at all.
+ */
+const DOT_CLEAR = 1.5;
 
 /** Keeps the readout over the plot at either end of the run, rather than hanging off it. */
 const shift = (index: number, count: number) =>
@@ -80,7 +93,7 @@ export function TrafficLine({
   // The plot's width in real pixels, which is the only thing that says whether a dot per reading
   // would be a row of dots or a smear.
   const plotRef = useRef<HTMLDivElement>(null);
-  const [across, setAcross] = useState(0);
+  const [box, setBox] = useState({ across: 0, down: 0 });
   // A reading the reader has clicked, which stays open while the pointer goes elsewhere. Held
   // apart from `hovered` so moving across the plot does not drag the opened one along with it.
   const [opened, setOpened] = useState<number | null>(null);
@@ -180,19 +193,31 @@ export function TrafficLine({
   }, [opened]);
 
   useLayoutEffect(() => {
-    const box = plotRef.current;
-    if (!box || typeof ResizeObserver === 'undefined') return;
+    const measured = plotRef.current;
+    if (!measured || typeof ResizeObserver === 'undefined') return;
 
-    const watch = new ResizeObserver(([entry]) => setAcross(entry.contentRect.width));
-    watch.observe(box);
+    const watch = new ResizeObserver(([entry]) =>
+      setBox({ across: entry.contentRect.width, down: entry.contentRect.height }),
+    );
+    watch.observe(measured);
 
     return () => watch.disconnect();
   }, []);
 
+  // Sized against the plot, then against the run: as big as the height affords, but never so big
+  // that two neighbouring readings touch. A run too dense to hold even the smallest dot with its
+  // clear space gets none, and keeps the line it already had.
+  const room = box.across / Math.max(last, 1);
+  const dot = Math.min(
+    Math.max(box.down * DOT_OF_HEIGHT, DOT_SMALLEST),
+    DOT_LARGEST,
+    room - DOT_CLEAR,
+  );
+
   // Zero-length subpaths with a round cap: one element for every dot, each of them a true circle.
   // A <circle> would come out an ellipse — the viewBox is stretched to the pane — and five hundred
   // HTML spans would be five hundred nodes relaid out on every arrival.
-  const dotted = marks && across > 0 && across / Math.max(last, 1) >= DOT_APART;
+  const dotted = marks && box.across > 0 && dot >= DOT_SMALLEST;
   const dots = dotted
     ? readings
         .map((reading, index) => {
@@ -256,6 +281,9 @@ export function TrafficLine({
           ref={plotRef}
           className={styles.plot}
           data-testid="plotArea"
+          // The head and the outlier rings are HTML, so they take the measure through a property
+          // rather than an attribute — and stay in proportion to the dots they sit among.
+          style={{ '--dot': `${Math.max(dot, DOT_SMALLEST)}px` } as CSSProperties}
           data-shape={shape.id}
           role="img"
           aria-label={`${spoken(series, domain, shape, latest.value)} Enter opens the one you are on.`}
@@ -372,6 +400,7 @@ export function TrafficLine({
                 d={dots}
                 fill="none"
                 stroke={colour ?? 'currentColor'}
+                strokeWidth={dot}
               />
             )}
           </svg>
