@@ -68,11 +68,28 @@
     color: var(--surface);
     cursor: pointer;
   }
-  /* A control's label is not prose. Swept over by a pointer on its way somewhere else — which is
-     what a drag across a console of chips is — the words in them highlighted and changed colour,
-     and a chip in selection blue reads as a chip that is on. Nothing here is worth copying: the
-     readings are, and they are not controls. */
-  button, label { user-select: none; }
+  /* ---- what can be selected, and what cannot ----
+
+     This is an instrument, not a document. A press on the background of a pane — the empty half
+     of the tree, the space beside a chip, the gap under a form — used to start a selection, and
+     dragging from there ran it across every pane it crossed: chip labels highlighting, headings
+     and controls coming out blue, none of it anything a reader meant to take. A chip in
+     selection blue also reads as a chip that is on.
+
+     So nothing is selectable, and the things worth copying say so. It is written this way round
+     because the exceptions are countable and the furniture is not: the readings, the traffic,
+     the addresses and whatever was typed into a field. Everything else on the screen is a
+     control or the space around one.
+
+     Inheritance is what carries it, which is also the only way down to the controls built with
+     `all: unset` — that resets user-select to `inherit`, so no rule written against those
+     elements could reach them anyway. */
+  body { user-select: none; }
+
+  /* Prose, table and list content, anything typed, and anything marked as carrying a reading.
+     `[data-copy]` is for the few places where the text is in a span with a job of its own. */
+  p, h1, h2, h3, h4, li, dt, dd, td, th, code, pre,
+  input, textarea, [data-copy] { user-select: text; }
 
   button:hover:not(:disabled) { background: var(--muted); border-color: var(--muted); }
   button.ghost { background: transparent; color: var(--ink); }

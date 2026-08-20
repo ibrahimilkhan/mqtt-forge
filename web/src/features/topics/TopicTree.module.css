@@ -121,6 +121,9 @@
 }
 
 /* One weight for every level; the twisty already marks it as a branch. */
+/* The topic and its newest value. Inside the button that selects the row, but a name someone
+   pastes into a filter or a publish form — so it is text before it is part of a control. */
+.seg, .val { user-select: text; }
 .seg { flex: none; color: var(--ink); }
 
 /* Sits right beside the topic name, so the eye reads them as one.

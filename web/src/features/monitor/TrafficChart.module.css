@@ -71,12 +71,6 @@
    pane rather than pushing it wider. Room at the end for the control in the corner, so a chip
    never slides underneath it. */
 .controls {
-  /* Nothing in this row is prose, and a drag that crosses the console on its way somewhere else
-     used to leave the whole row highlighted — a chip in selection blue reads as a chip that is
-     on. Set here rather than on the chips: they are built with `all: unset`, which resolves
-     user-select to `inherit`, so the row is the only place a rule about them can be written and
-     the only place it cannot be forgotten when another chip is added. */
-  user-select: none;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -152,6 +146,7 @@
 /* The range, at the height it belongs to: high at the top of the plot, low at the bottom. Muted
    micro type, the same faint voice the stamps use — the line is what the eye should land on. */
 .scale {
+  user-select: text;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -299,6 +294,7 @@
    Absolute rather than in the flow: the plot is drawn to the height it was given, and a card in
    the flow would take that height away from the line it is about. */
 .detailSlot {
+  user-select: text;
   position: absolute;
   z-index: 3;
   max-width: min(62%, 260px);
@@ -443,6 +439,9 @@
    ordinary value is `trend rising 0.423/min` at sixteen characters. Nine plus sixteen is 12.15rem,
    which is why nothing spans two columns and why the note has no second layout to go wrong. */
 .note {
+  /* Every cell here is a reading off the run — a number someone came to the console to write
+     down. The chips above it are not. */
+  user-select: text;
   /* One column, and the gap between two. Everything is in rem, so the note scales with the base
      size the reader chose rather than holding still while the type inside it grows — the widest
      reading is 10.75rem at every base size, not only at fifteen pixels. */

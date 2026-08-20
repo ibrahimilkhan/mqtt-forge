@@ -17,15 +17,7 @@
 
 /* How much is behind the row, and the control that stops it moving: one line, the count at the
    reading edge and the control at the other. */
-/* Both of them are controls, and neither is worth copying — the readings above are. Set on the
-   row because both are built with `all: unset`, which leaves user-select inheriting. */
-.foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  user-select: none;
-}
+.foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 
 /* The list shows the newest arrival; this says how much history sits behind it. */
 .history {
@@ -115,6 +107,9 @@ button.history:focus-visible { outline: 2px solid var(--signal); outline-offset:
 .hold span { font-variant-numeric: tabular-nums; }
 
 .entry {
+  /* The traffic, which is the one thing on this screen a reader copies out of the console and
+     into something else — a topic into a filter, a payload into a bug report. */
+  user-select: text;
   border-left: 2px solid var(--rule);
   padding: 8px 0 10px 12px;
   font-family: var(--mono);
