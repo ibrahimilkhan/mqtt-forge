@@ -67,7 +67,10 @@ function WindowBar({ label, filter }: { label?: string; filter?: string }) {
 
   const keep = () => {
     if (!filter) return;
-    open(filter, label ?? filter);
+    // Where this chart is standing, so the window takes its place exactly rather than jumping
+    // to the middle out from under the reader. It opens in the middle, so that is usually the
+    // same answer — and when it is not, it is because the reader put it somewhere.
+    open(filter, label ?? filter, box ?? undefined);
     // The window carries on where this one was, so leaving this one open would be the same
     // chart twice, one exactly over the other.
     close();

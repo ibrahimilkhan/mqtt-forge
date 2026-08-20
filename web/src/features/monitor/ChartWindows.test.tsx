@@ -99,6 +99,39 @@ describe('pinning a chart', () => {
     expect(screen.getByTestId('chart-window')).toBeInTheDocument();
   });
 
+  // The one real surprise this whole arrangement had: a chart dragged aside and closed came back
+  // aside, and the window its pin opened came up in the middle — so pressing the pin moved the
+  // chart across the screen. It was the remembering that moved it, not the pin.
+  it('throws the chart open in the same place every time, whatever was done to it last', async () => {
+    readings('sensors/kiln', '900', '910');
+    useSelectionStore.getState().select(kiln);
+
+    render(<Console />);
+    await userEvent.click(screen.getByTestId('zoom'));
+    const opened = useZoomStore.getState().box;
+
+    // Dragged aside, shut, and thrown open again.
+    act(() => useZoomStore.getState().place({ x: 4, y: 4, w: 380, h: 260 }));
+    await userEvent.click(screen.getByTestId('zoom'));
+    await userEvent.click(screen.getByTestId('zoom'));
+
+    expect(useZoomStore.getState().box).toEqual(opened);
+  });
+
+  // ...and with it opening in one place, the pin has nothing left to move: the window takes the
+  // place of the chart it was opened from, whatever that place is.
+  it('opens the window where the chart it was opened from was standing', async () => {
+    readings('sensors/kiln', '900', '910');
+    useSelectionStore.getState().select(kiln);
+
+    render(<Console />);
+    await userEvent.click(screen.getByTestId('zoom'));
+    act(() => useZoomStore.getState().place({ x: 40, y: 30, w: 420, h: 300 }));
+    await userEvent.click(screen.getByRole('button', { name: /^Pin / }));
+
+    expect(useChartWindows.getState().windows[0].box).toMatchObject({ x: 40, y: 30, w: 420, h: 300 });
+  });
+
   // Every one of these is the first one, as far as where it starts is concerned: not stepped
   // clear of the last — that gave a reader pinning four of them a staircase — and not inherited
   // from a window that had been dragged and sized somewhere else since.

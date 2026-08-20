@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { openingBox, type Box } from './floating';
+import { moved, openingBox, type Box } from './floating';
 
 /**
  * The chart windows a reader has opened, each one standing over the console.
@@ -32,7 +32,7 @@ export type ChartWindow = {
 type WindowState = {
   /** Back to front: the last one is the one on top, which is the one last opened or touched. */
   windows: ReadonlyArray<ChartWindow>;
-  open: (filter: string, label: string) => void;
+  open: (filter: string, label: string, from?: Box) => void;
   close: (id: string) => void;
   place: (id: string, box: Box) => void;
   fix: (id: string, fixed: boolean) => void;
@@ -46,18 +46,23 @@ export const useChartWindows = create<WindowState>((set) => ({
 
   // A new window opens where a new window opens: the middle of the screen, at the size the chart
   // has always thrown open at. Not stepped clear of the last one — that gave a reader opening
-  // four of them a staircase — and not inherited from whatever it was opened from, which is how
-  // the second one used to come out wherever the first had been dragged to. And last in the run,
-  // so it is the one on top: a window that opened underneath the others would look like nothing
-  // had happened at all.
-  open: (filter, label) =>
+  // four of them a staircase.
+  //
+  // `from` is where the chart it was opened from is standing, which is the middle too unless the
+  // reader has moved it since. Taking it is what keeps the pin from moving anything: press it
+  // and the window is where the chart was, whether that is the standard place or somewhere the
+  // reader chose a moment ago.
+  //
+  // And last in the run, so it is the one on top: a window that opened underneath the others
+  // would look like nothing had happened at all.
+  open: (filter, label, from) =>
     set((state) => {
       count += 1;
 
       return {
         windows: [
           ...state.windows,
-          { id: `chart-${count}`, filter, label, box: openingBox(), fixed: true },
+          { id: `chart-${count}`, filter, label, box: from ? moved(from, 0, 0) : openingBox(), fixed: true },
         ],
       };
     }),
