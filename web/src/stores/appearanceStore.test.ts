@@ -6,7 +6,6 @@ const DEFAULTS = {
   mono: 'jetbrains',
   size: 15,
   scale: 'typical',
-  logo: 'anvil',
   readings: {},
 };
 
@@ -92,8 +91,8 @@ describe('persistence', () => {
 
     await useAppearanceStore.persist.rehydrate();
 
-    const { sans, mono, size, scale, logo, readings } = useAppearanceStore.getState();
-    expect({ sans, mono, size, scale, logo, readings }).toEqual(DEFAULTS);
+    const { sans, mono, size, scale, readings } = useAppearanceStore.getState();
+    expect({ sans, mono, size, scale, readings }).toEqual(DEFAULTS);
   });
 
   it('does not throw when the storage write fails, and the choice still applies to this tab', () => {
@@ -130,7 +129,7 @@ describe('persistence', () => {
 
     await useAppearanceStore.persist.rehydrate();
 
-    const { sans, mono, size, scale, logo, readings } = useAppearanceStore.getState();
-    expect({ sans, mono, size, scale, logo, readings }).toEqual(DEFAULTS);
+    const { sans, mono, size, scale, readings } = useAppearanceStore.getState();
+    expect({ sans, mono, size, scale, readings }).toEqual(DEFAULTS);
   });
 });

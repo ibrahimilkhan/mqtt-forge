@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import styles from './App.module.css';
 import { StatusReadout } from './components/StatusReadout';
 import { AppearancePanel } from './features/appearance/AppearancePanel';
-import { MARKS, Wordmark } from './features/brand/marks';
+import { Mark, Wordmark } from './features/brand/marks';
 import { ChartPanel } from './features/chart/ChartPanel';
 import { ColoursPanel } from './features/colours/ColoursPanel';
 import { BrokerPanel } from './features/connection/BrokerPanel';
@@ -19,7 +19,6 @@ import { PublishPanel } from './features/publish/PublishPanel';
 import { SubscribePanel } from './features/subscribe/SubscribePanel';
 import { Workspace } from './features/workspace/Workspace';
 import type { Hub } from './realtime/hub';
-import { useAppearanceStore } from './stores/appearanceStore';
 import { useHubBridge } from './realtime/useHubBridge';
 import { useHubStatusStore } from './stores/hubStatusStore';
 
@@ -58,7 +57,6 @@ export function App({ hub }: { hub: Hub }) {
   const { state } = useConnectionState();
   const where = useBrokerAddress();
   const hubStatus = useHubStatusStore((s) => s.status);
-  const logo = useAppearanceStore((s) => s.logo);
   const zoomed = useZoomStore((s) => s.zoomed);
   const zoomBox = useZoomStore((s) => s.box);
 
@@ -72,7 +70,7 @@ export function App({ hub }: { hub: Hub }) {
       <div className={styles.rail} data-open={menuOpen ? '' : undefined}>
         <div className={styles.railHead}>
           <span className={styles.mark} aria-hidden="true">
-            {MARKS[logo].draw()}
+            <Mark />
           </span>
           {menuOpen && (
             <h1 className={styles.wordmark}>

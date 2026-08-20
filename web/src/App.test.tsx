@@ -208,12 +208,15 @@ describe('App', () => {
     expect(pane()).toHaveAttribute('data-zoomed');
   });
 
-  it('wears the mark the settings choose', async () => {
+  // There were six marks and a row of them in Settings to choose between. Six marks is six
+  // answers to a question a tool should answer once, and the choosing was work asked of a reader
+  // who came to watch a broker.
+  it('wears one mark, with nothing in Settings offering another', async () => {
     renderApp();
 
     await userEvent.click(menu().getByRole('button', { name: 'Settings' }));
-    await userEvent.click(screen.getByRole('button', { name: /^Wave —/ }));
 
-    expect(screen.getByRole('button', { name: /^Wave —/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('group', { name: 'Mark' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'MQTTForge' })).toBeInTheDocument();
   });
 });
