@@ -57,7 +57,7 @@ export const CONTROLS: Record<ControlId, Control & { group: ControlGroup }> = {
   auto: {
     label: 'auto',
     group: 'range',
-    what: 'Lets the readings decide: measurements take whatever Range above says, while a switch, a pulse or a counter always takes its extremes, because clipping a pulse shaves off the signal.',
+    what: 'Lets the readings decide: measurements take whatever Range above says, while a switch or a pulse always takes its extremes, because clipping a pulse shaves off the signal.',
   },
   time: {
     label: 'time',

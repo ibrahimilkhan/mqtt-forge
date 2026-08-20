@@ -8,7 +8,6 @@ import {
   type MouseEvent,
   type PointerEvent,
 } from 'react';
-import { GRIDS, type GridId } from '../appearance/grid';
 import { short } from '../../lib/format';
 import { PlotGrid } from './PlotGrid';
 import { ReadingDetail } from './ReadingDetail';
@@ -77,7 +76,6 @@ export function TrafficLine({
   colour,
   marks = true,
   compact = false,
-  grid = 'frame',
 }: {
   series: Series;
   summary: Summary;
@@ -91,8 +89,6 @@ export function TrafficLine({
   marks?: boolean;
   /** One of several stacked plots: no readout, no scale, no focus ring, no furniture. */
   compact?: boolean;
-  /** What is drawn round and behind the line. */
-  grid?: GridId;
 }) {
   const [hovered, setHovered] = useState<number | null>(null);
   // The plot's width in real pixels, which is the only thing that says whether a dot per reading
@@ -298,7 +294,7 @@ export function TrafficLine({
           >
             {/* The plot's own edge, and the quarters of it. First, so everything the run does is
                 drawn over the ground rather than under it. */}
-            <PlotGrid grid={compact && GRIDS[grid].frame ? 'frame' : grid} side={SIDE} />
+            <PlotGrid side={SIDE} />
 
             {/* One deviation either side of the mean, which is where the readings mostly are.
                 The line crossing out of it is the part worth looking at. */}
@@ -504,7 +500,10 @@ export function TrafficLine({
  */
 function spoken(series: Series, domain: Domain, shape: Shape, latest: number): string {
   const what = series.field ? ` of ${series.field}` : '';
-  const kind = shape.id === 'continuous' ? '' : `, read as ${shape.id === 'counter' ? 'a counter' : shape.id === 'state' ? `${shape.levels} levels` : 'a pulse train'}`;
+  const kind =
+    shape.id === 'continuous'
+      ? ''
+      : `, read as ${shape.id === 'state' ? `${shape.levels} levels` : 'a pulse train'}`;
   const clipped =
     domain.over + domain.under > 0
       ? `, ${domain.over + domain.under} outside the plot's range and drawn on its edge`

@@ -103,43 +103,13 @@ describe('shapeOf, on a pulse train', () => {
   });
 });
 
-describe('shapeOf, on a counter', () => {
-  // Bursty, the way anything that gets counted actually arrives: a total that climbed by exactly
-  // the same amount every second would be a ramp, and is read as one.
-  const bursts = [0, 5, 9, 2, 12, 0, 8, 3, 15, 6, 1, 9, 4, 11, 7, 2, 10, 5, 8];
-  const packets = bursts.reduce<number[]>(
-    (total, burst) => [...total, total[total.length - 1] + burst],
-    [1000],
-  );
+// A running total used to be a fourth shape here, read as the rate it climbs at. Nobody asked
+// for it and it fired rarely; a total is a quantity going up, and the trend already says so.
+describe('shapeOf, on a run that only ever climbs', () => {
+  it('reads it as a quantity going somewhere', () => {
+    const bursts = [0, 5, 9, 2, 12, 0, 8, 3, 15, 6, 1, 9, 4, 11, 7, 2, 10, 5, 8];
+    const totals = bursts.reduce<number[]>((run, burst) => [...run, run[run.length - 1] + burst], [1000]);
 
-  it('reads a number that only ever goes up as a counter', () => {
-    expect(shape(...packets)).toMatchObject({ id: 'counter' });
-  });
-
-  // The value is an accident of when the device last restarted; the slope is the reading.
-  it('gives the rate it is climbing at, per second', () => {
-    const climbed = packets[packets.length - 1] - packets[0];
-
-    expect(shape(...packets)).toMatchObject({ rate: climbed / (packets.length - 1) });
-  });
-
-  // Nothing that gets counted arrives at exactly the same rate every second. A run that does is
-  // a sweep or a setpoint, and it has a value and a trend that both mean something.
-  it('reads a perfectly even climb as a quantity rising, not as a total', () => {
-    expect(shape(...Array.from({ length: 40 }, (_, i) => 20 + i))).toMatchObject({
-      id: 'continuous',
-    });
-  });
-
-  it('allows for a counter starting again, and counts it', () => {
-    const wrapped = [...packets, 3, 10, 18, 24, 33, 38, 46, 52];
-
-    expect(shape(...wrapped)).toMatchObject({ id: 'counter', wraps: 1 });
-  });
-
-  it('is not fooled by a quantity that happens to be going up', () => {
-    const warming = [20, 20.2, 20.1, 20.4, 20.6, 20.5, 20.8, 21, 21.1, 21, 21.3, 21.5];
-
-    expect(shape(...warming)).toMatchObject({ id: 'continuous' });
+    expect(shape(...totals)).toMatchObject({ id: 'continuous' });
   });
 });

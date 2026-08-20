@@ -4,8 +4,6 @@ import { beforeEach, describe, expect, it } from 'vitest';
 // The panel reads where saved readings go through react-query, so it needs a client.
 import { renderWithClient as render } from '../../test/renderWithClient';
 import { useAppearanceStore } from '../../stores/appearanceStore';
-import { CHART_DETAIL } from '../appearance/chart';
-import { GRIDS } from '../appearance/grid';
 import { CHIP, CONTROL_IDS, CONTROLS } from '../appearance/controls';
 import { SCALES } from '../../lib/scale';
 import { READING_IDS, READINGS } from '../appearance/readings';
@@ -19,22 +17,6 @@ beforeEach(() => {
 const panel = () => render(<ChartPanel onClose={() => {}} />);
 
 describe('ChartPanel', () => {
-  // How much of the chart to draw, and in what range, are matters of who is at the keyboard.
-  it('keeps the chosen chart version', async () => {
-    panel();
-
-    await userEvent.selectOptions(screen.getByLabelText('Detail'), 'deep');
-
-    expect(useAppearanceStore.getState().chart).toBe('deep');
-  });
-
-  it('offers every chart version by name', () => {
-    panel();
-
-    const labels = [...screen.getByLabelText('Detail').children].map((o) => o.textContent);
-    expect(labels).toEqual(Object.values(CHART_DETAIL).map((detail) => detail.label));
-  });
-
   it('keeps the chosen range', async () => {
     panel();
 
@@ -43,14 +25,12 @@ describe('ChartPanel', () => {
     expect(useAppearanceStore.getState().scale).toBe('extremes');
   });
 
-  it('offers every grid by name', async () => {
+  // How much of the note to draw used to be a second control beside the switches below, asking
+  // the same question in fewer words. The switches are the answer, so the select went.
+  it('leaves how much to draw to the switches, not to a second control', () => {
     panel();
 
-    const labels = [...screen.getByLabelText('Grid').children].map((o) => o.textContent);
-    expect(labels).toEqual(Object.values(GRIDS).map((option) => option.label));
-
-    await userEvent.selectOptions(screen.getByLabelText('Grid'), 'lines');
-    expect(useAppearanceStore.getState().grid).toBe('lines');
+    expect(screen.queryByLabelText('Detail')).not.toBeInTheDocument();
   });
 });
 
@@ -133,14 +113,13 @@ describe('the readings, and what they mean', () => {
     expect(screen.getByRole('checkbox', { name: 'median' })).toBeChecked();
   });
 
-  // The two quartile readings are the numbers behind the fences the chart already draws, and
-  // 'deep' is the setting that says the reader wants them spelled out.
-  it('shows the quartile readings as off until the chart is drawn deep', async () => {
+  // The numbers behind the fences the chart already draws — most readers never need them
+  // spelled out, and the switch beside them is right there for the ones who do.
+  it('shows the quartile readings as off until the reader asks for them', async () => {
     panel();
-
     expect(screen.getByRole('checkbox', { name: 'quartiles' })).not.toBeChecked();
 
-    await userEvent.selectOptions(screen.getByLabelText('Detail'), 'deep');
+    await userEvent.click(screen.getByRole('checkbox', { name: 'quartiles' }));
 
     expect(screen.getByRole('checkbox', { name: 'quartiles' })).toBeChecked();
   });

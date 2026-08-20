@@ -7,9 +7,7 @@ import { shapeOf } from '../../lib/shape';
 import { cadence, changePoint, cycle, summarise } from '../../lib/stats';
 import { useNow } from '../../lib/useNow';
 import { useRuleLookup } from '../../lib/useRuleLookup';
-import { CHART_DETAIL } from '../appearance/chart';
 import { CHIP, CONTROLS } from '../appearance/controls';
-import type { GridId } from '../appearance/grid';
 import type { ReadingId } from '../appearance/readings';
 import { useAppearanceStore } from '../../stores/appearanceStore';
 import type { LogEntry } from '../../stores/logStore';
@@ -52,11 +50,8 @@ export function TrafficChart({
   // One topic out of a branch, once the reader has clicked into it.
   const [focus, setFocus] = useState<string | null>(null);
   const ruleOf = useRuleLookup();
-  const detailId = useAppearanceStore((state) => state.chart);
   const preferred = useAppearanceStore((state) => state.scale);
-  const grid = useAppearanceStore((state) => state.grid);
   const readings = useAppearanceStore((state) => state.readings);
-  const detail = CHART_DETAIL[detailId];
 
   const narrowed = useMemo(
     () => (focus ? entries.filter((entry) => entry.topic === focus) : entries),
@@ -69,7 +64,7 @@ export function TrafficChart({
   const fields = useMemo(() => numericFields(run), [run]);
   const drawn = useMemo(() => chartable(run, field), [run, field]);
 
-  const controls = detail.controls && (
+  const controls = (
     <Controls
       fields={fields}
       field={drawn.kind === 'one' ? drawn.series.field : field}
@@ -78,7 +73,7 @@ export function TrafficChart({
       onView={setView}
       range={range}
       onRange={setRange}
-      offerViews={!detail.histogram && drawn.kind === 'one'}
+      offerViews={drawn.kind === 'one'}
       // Nothing drawn, nothing to scale: four chips offering to change the range of a sentence.
       offerRanges={drawn.kind !== 'none'}
       series={drawn.kind === 'one' ? drawn.series : null}
@@ -115,15 +110,12 @@ export function TrafficChart({
   return (
     <Single
       series={drawn.series}
-      detailId={detailId}
-      detail={detail}
       view={view}
       range={range}
       preferred={preferred}
       frozen={frozen}
       colour={ruleOf(drawn.series.topic)?.colour}
       controls={controls}
-      grid={grid}
       readings={readings}
     />
   );
@@ -131,27 +123,21 @@ export function TrafficChart({
 
 function Single({
   series,
-  detailId,
-  detail,
   view,
   range,
   preferred,
   frozen,
   colour,
   controls,
-  grid,
   readings,
 }: {
   series: Series;
-  detailId: string;
-  detail: (typeof CHART_DETAIL)[keyof typeof CHART_DETAIL];
   view: View;
   range: ScaleId | null;
   preferred: ScaleId;
   frozen: boolean;
   colour?: string;
   controls: React.ReactNode;
-  grid: GridId;
   readings: Partial<Record<ReadingId, boolean>>;
 }) {
   // Held against the readings rather than the render: a pointer moving across the plot must not
@@ -200,33 +186,29 @@ function Single({
     <figure
       className={styles.chart}
       data-testid="chart"
-      // What rows the chart has, so the plot can take the height left over between the controls
-      // and the note however many of each this detail level draws.
-      data-detail={detailId}
+      // The controls, the plot and the note — the plot is the one that stretches.
+      data-detail={view === 'distribution' ? 'dist' : 'full'}
       data-shape={stats.shape.id}
       style={colour ? { color: colour } : undefined}
     >
       {controls}
 
-      {(detail.histogram || view === 'time') && (
+      {view === 'time' && (
         <TrafficLine
           series={series}
           summary={stats.summary}
           domain={domain}
           shape={stats.shape}
-          step={detail.marks ? stats.step : null}
+          step={stats.step}
           colour={colour}
-          marks={detail.marks}
-          grid={grid}
         />
       )}
 
-      {(detail.histogram || view === 'distribution') && (
-        <TrafficHistogram series={series} summary={stats.summary} colour={colour} grid={grid} />
+      {view === 'distribution' && (
+        <TrafficHistogram series={series} summary={stats.summary} colour={colour} />
       )}
 
-      {detail.note && (
-        <ChartNote
+      <ChartNote
           summary={stats.summary}
           shape={stats.shape}
           domain={domain}
@@ -239,10 +221,8 @@ function Single({
           sparse={series.sparse}
           of={series.of}
           silence={silence}
-          deep={detail.histogram}
           chosen={readings}
         />
-      )}
     </figure>
   );
 }

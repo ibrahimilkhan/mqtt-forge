@@ -111,15 +111,11 @@ describe('throwing the chart open', () => {
     expect(useZoomStore.getState().zoomed).toBe(false);
   });
 
-  // The plainest detail level draws no controls at all, and a bare line is the drawing that most
-  // often wants more room — so this control is not one of them.
-  it('is there at every detail level', () => {
-    useAppearanceStore.getState().setChart('plain');
+  it('sits outside the controls, so it is there whatever else is', () => {
     run();
     show();
 
     expect(screen.getByTestId('zoom')).toBeInTheDocument();
-    expect(screen.queryByTestId('note')).not.toBeInTheDocument();
   });
 
   it('is there when there is nothing to draw, since that is a pane too', () => {
@@ -404,21 +400,6 @@ describe('the ground the plot is drawn on', () => {
     expect(screen.queryByTestId('gridline')).not.toBeInTheDocument();
   });
 
-  it('marks the quarters when asked', () => {
-    useAppearanceStore.getState().setGrid('lines');
-    run();
-    show();
-
-    expect(screen.getAllByTestId('gridline').length).toBeGreaterThan(0);
-  });
-
-  it('draws neither when the reader wants the line alone', () => {
-    useAppearanceStore.getState().setGrid('none');
-    run();
-    show();
-
-    expect(screen.queryByTestId('plot-frame')).not.toBeInTheDocument();
-  });
 });
 
 describe('choosing which readings the note makes', () => {
@@ -500,19 +481,6 @@ describe('a run whose readings are not measurements', () => {
 
     expect(screen.getByTestId('note')).toHaveAttribute('data-shape', 'pulse');
     expect(screen.queryByTestId('pinned')).not.toBeInTheDocument();
-  });
-
-  it('reads a running total as the rate it is climbing at', () => {
-    const bursts = [0, 5, 9, 2, 12, 0, 8, 3, 15, 6, 1, 9, 4, 11, 7, 2, 10, 5, 8];
-    const totals = bursts.reduce<number[]>((run, burst) => [...run, run[run.length - 1] + burst], [1000]);
-    readings('sensors/packets', ...totals.map(String));
-    show();
-
-    expect(screen.getByTestId('note')).toHaveAttribute('data-shape', 'counter');
-    // How much it counted across the run, rather than the value it happens to sit at — which
-    // only says when the device last restarted. The rate needs arrivals spread over real time,
-    // and the log stamps a burst of pushes with one instant.
-    expect(reading('counted')).toBe(`${totals[totals.length - 1] - totals[0]}`);
   });
 });
 
