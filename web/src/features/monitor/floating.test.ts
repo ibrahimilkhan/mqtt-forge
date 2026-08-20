@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { beside, moved, openingBox, sized } from './floating';
+import { moved, openingBox, sized } from './floating';
 
 // jsdom's own window, which is what the module measures against.
 const SCREEN = { w: window.innerWidth, h: window.innerHeight };
@@ -63,18 +63,5 @@ describe('sizing a chart window', () => {
 
     expect(grown.w).toBe(SCREEN.w - box.x);
     expect(grown.h).toBe(SCREEN.h - box.y);
-  });
-});
-
-describe('standing a second window', () => {
-  it('steps clear of one already in that place', () => {
-    const stepped = beside(box, [box]);
-
-    expect(stepped.x).toBeGreaterThan(box.x);
-    expect(stepped.y).toBeGreaterThan(box.y);
-  });
-
-  it('leaves it where it was asked when nothing is there', () => {
-    expect(beside(box, [{ ...box, x: box.x + 200 }])).toMatchObject({ x: box.x, y: box.y });
   });
 });

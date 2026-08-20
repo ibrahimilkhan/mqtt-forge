@@ -95,7 +95,9 @@ describe('pinning a chart', () => {
     expect(screen.getByTestId('pinned-chart')).toBeInTheDocument();
   });
 
-  it('stands a second window clear of the first rather than exactly on it', async () => {
+  // Stepping each new one clear of the last sounds helpful and is not: the chart is thrown open
+  // in the middle of the screen, so a reader pinning four of them got a staircase.
+  it('stands a second window where the chart it was pinned from was standing', async () => {
     readings('sensors/kiln', '900', '910');
     readings('sensors/room', '21', '22');
     useSelectionStore.getState().select(kiln);
@@ -107,8 +109,10 @@ describe('pinning a chart', () => {
     await openAndPin();
 
     const [first, second] = screen.getAllByTestId('pinned-chart');
-    expect(second.style.left).not.toBe(first.style.left);
-    expect(second.style.top).not.toBe(first.style.top);
+    expect(second.style.left).toBe(first.style.left);
+    expect(second.style.top).toBe(first.style.top);
+    // And the newest is the one on top, so it is not hidden behind what it landed on.
+    expect(second).toHaveAttribute('data-filter', 'sensors/room');
   });
 
   // A second window on the same topic would draw the same run over the top of the first, and
