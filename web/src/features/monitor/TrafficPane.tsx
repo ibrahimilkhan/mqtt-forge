@@ -78,13 +78,16 @@ function WindowBar({ label, filter }: { label?: string; filter?: string }) {
 
   return (
     <>
-      <div className={floating.bar} {...bar} title="Drag to move — the corner sizes it">
+      <div
+        className={`${floating.bar} ${floating.overChart}`}
+        {...bar}
+        title="Drag to move — the corner sizes it"
+      >
         <span className={floating.name}>{label ?? 'Chart'}</span>
         {filter && (
           <button
             type="button"
             className={floating.pin}
-            aria-pressed={false}
             aria-label={`Pin ${label ?? filter}`}
             title={`Pin ${label ?? filter} — it opens a window that keeps drawing this topic while the console moves on`}
             onClick={keep}

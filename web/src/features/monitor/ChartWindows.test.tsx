@@ -315,6 +315,22 @@ describe('placing a window', () => {
   });
 
   // A window that can only be placed with a pointer is a window some readers cannot place.
+  it('moves with the arrow keys as well', async () => {
+    readings('sensors/kiln', '900', '910');
+    useSelectionStore.getState().select(kiln);
+
+    render(<Console />);
+    await openAndPin();
+    await unpin('sensors/kiln');
+
+    const window_ = screen.getByTestId('chart-window');
+    const was = parseInt(window_.style.left, 10);
+    screen.getByRole('application', { name: 'Move the sensors/kiln chart' }).focus();
+    await userEvent.keyboard('{ArrowRight}');
+
+    expect(parseInt(window_.style.left, 10)).toBeGreaterThan(was);
+  });
+
   it('sizes with the arrow keys as well', async () => {
     readings('sensors/kiln', '900', '910');
     useSelectionStore.getState().select(kiln);
@@ -351,14 +367,19 @@ describe('placing a window', () => {
     });
     expect(window_.style.left).toBe('900px');
 
-    act(() => {
-      Object.defineProperty(window, 'innerWidth', { configurable: true, value: 600 });
-      Object.defineProperty(window, 'innerHeight', { configurable: true, value: 400 });
+    const viewport = { w: window.innerWidth, h: window.innerHeight };
+    const sized = (to: { w: number; h: number }) => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: to.w });
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: to.h });
       window.dispatchEvent(new Event('resize'));
-    });
+    };
+
+    act(() => sized({ w: 600, h: 400 }));
 
     expect(parseInt(window_.style.left, 10)).toBeLessThanOrEqual(600 - 64);
     expect(parseInt(window_.style.top, 10)).toBeLessThanOrEqual(400 - 64);
+    // Given back: every test after this one measures against the viewport it was written for.
+    act(() => sized(viewport));
   });
 
   // Reaching into a window behind another one should bring it forward before the press lands.

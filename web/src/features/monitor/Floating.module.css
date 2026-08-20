@@ -13,12 +13,16 @@
   /* The whole bar is the handle, so the target is the width of the window. */
   cursor: move;
   touch-action: none;
-  padding: 2px 34px 6px 0;
+  padding: 2px 0 6px;
   min-width: 0;
 }
+/* Over the thrown-open chart the far corner is taken by the control that puts it back, so the
+   bar stops short of it. A window has no such corner, and a bar that changed its padding with
+   the pin would move the close out from under the hand that had just used it. */
+.bar.overChart { padding-right: 34px; }
 /* Pinned, the bar is a label with controls on it. Nothing about it should invite a drag that
    the pin is going to refuse. */
-.window[data-fixed] .bar { cursor: default; padding-right: 0; }
+.window[data-fixed] .bar { cursor: default; }
 
 /* What this window is a chart of. It is the one thing telling two pinned windows apart, so it is
    the one thing here drawn in the pane's own ink rather than in the furniture's grey. */
@@ -144,6 +148,9 @@
   min-width: 0;
   overflow-y: auto;
 }
+/* A sentence, not a column. The line beside it is drawn down whatever it is given, and a rule
+   down an empty window reads as a frame round nothing. */
+.body > .empty { align-self: start; }
 
 /* No narrow-screen rule, deliberately. A window opens at three fifths of whatever the viewport
    is and is clamped to it on every move, so a phone gets a smaller window rather than a broken
