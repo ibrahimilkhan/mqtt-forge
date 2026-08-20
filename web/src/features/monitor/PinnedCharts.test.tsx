@@ -136,6 +136,20 @@ describe('pinning a chart', () => {
     expect(screen.getAllByTestId('pinned-chart')).toHaveLength(1);
   });
 
+  // The window opens where the chart it was pinned from was standing, at the same size — so the
+  // far end of its bar is exactly where the pin that made it was a moment ago. A second press
+  // there, the one that asks 'did that work?', used to let the window straight back go.
+  it('keeps the control that lets it go clear of the one that made it', async () => {
+    readings('sensors/kiln', '900', '910');
+    useSelectionStore.getState().select(kiln);
+
+    render(<Console />);
+    await openAndPin();
+
+    const bar = screen.getByTitle('Drag to move — the corner sizes it');
+    expect(bar.firstElementChild).toHaveAttribute('aria-label', 'Unpin sensors/kiln');
+  });
+
   it('lets the window go when the pin is pressed again', async () => {
     readings('sensors/kiln', '900', '910');
     useSelectionStore.getState().select(kiln);

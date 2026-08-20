@@ -31,7 +31,8 @@
   white-space: nowrap;
 }
 
-/* Pushed against the far end of the bar, away from the name. */
+/* Pushed against the far end of the bar, away from the name — unless it is the first thing in
+   the bar, which is where a pinned window keeps it. */
 .pin {
   all: unset;
   margin-left: auto;
@@ -49,8 +50,16 @@
 }
 .pin:hover { color: var(--ink); border-color: var(--rule); }
 .pin:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
-/* Pinned. The window only exists because this is pressed, so it says so plainly. */
-.pin[aria-pressed='true'] { color: var(--ink); border-color: var(--ink); }
+.bar > .pin:first-child { margin-left: 0; }
+/* Pinned. The window only exists because this is pressed, so it says so plainly — filled rather
+   than outlined, since what it has to be is unmistakable from across the console: a pin that
+   merely looked available is a pin that gets pressed again. */
+.pin[aria-pressed='true'] {
+  color: var(--surface);
+  background: var(--ink);
+  border-color: var(--ink);
+}
+.pin[aria-pressed='true']:hover { background: var(--muted); border-color: var(--muted); }
 
 /* The corner that sizes it. Two hairlines rather than a hatched box: at this size a texture
    reads as dirt on the corner, and two rules read as a corner. */
