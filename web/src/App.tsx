@@ -8,6 +8,7 @@ import { ColoursPanel } from './features/colours/ColoursPanel';
 import { BrokerPanel } from './features/connection/BrokerPanel';
 import { MobilePanel } from './features/mobile/MobilePanel';
 import { useBrokerAddress, useConnectionState } from './api/useConnectionState';
+import { PinnedCharts } from './features/monitor/PinnedCharts';
 import { TrafficPane } from './features/monitor/TrafficPane';
 import { useZoomStore } from './features/monitor/useZoom';
 import { WireLog } from './features/monitor/WireLog';
@@ -59,6 +60,7 @@ export function App({ hub }: { hub: Hub }) {
   const hubStatus = useHubStatusStore((s) => s.status);
   const logo = useAppearanceStore((s) => s.logo);
   const zoomed = useZoomStore((s) => s.zoomed);
+  const zoomBox = useZoomStore((s) => s.box);
 
   const close = () => setOpenPanel(null);
   const Panel = openPanel && PANEL_VIEWS[openPanel];
@@ -138,12 +140,37 @@ export function App({ hub }: { hub: Hub }) {
         chart={
           // Thrown open, the region leaves the column and takes the window. The strip that folds
           // it stays where it was, so the column does not rearrange itself underneath.
-          <section className={styles.chartPane} data-zoomed={zoomed ? '' : undefined}>
+          <section
+            className={styles.chartPane}
+            data-zoomed={zoomed ? '' : undefined}
+            // Where the reader put it. Inline because it is a place rather than a style: the
+            // stylesheet says what a thrown-open chart looks like, and this says where this one
+            // is standing right now.
+            style={
+              zoomed && zoomBox
+                ? {
+                    left: zoomBox.x,
+                    top: zoomBox.y,
+                    // The opening inset in the stylesheet sets all four sides; a placed window
+                    // is two sides and a size, so the other two are given back.
+                    right: 'auto',
+                    bottom: 'auto',
+                    width: zoomBox.w,
+                    height: zoomBox.h,
+                  }
+                : undefined
+            }
+          >
             <TrafficPane />
           </section>
         }
         publish={<PublishPanel />}
       />
+
+      {/* Over everything, and outside the workspace: a pinned chart is placed against the
+          viewport, and every ancestor inside the workspace is a grid track with a share of a
+          height. */}
+      <PinnedCharts />
     </div>
   );
 }

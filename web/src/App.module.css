@@ -203,10 +203,14 @@
    track with a share of a height, and no share of a height means all of it. */
 .chartPane[data-zoomed] {
   position: fixed;
-  /* A fifth off each edge leaves three fifths in the middle, on both axes. */
+  /* Where it stands is written inline by the app, since the reader can move it. A fifth off each
+     edge — three fifths in the middle, on both axes — is where it opens, and the stand-in here
+     for the one frame before the box is measured. */
   inset: 20vh 20vw;
   z-index: 20;
-  padding: 14px 22px 18px;
+  /* The bar that moves it, then the chart. */
+  grid-template-rows: auto minmax(0, 1fr);
+  padding: 10px 22px 18px;
   /* Opaque, and lifted: the console shows around it, so it must plainly not be part of it. */
   background: var(--surface);
   border-radius: 3px;

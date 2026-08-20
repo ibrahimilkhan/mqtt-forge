@@ -1,5 +1,9 @@
+import floating from './Floating.module.css';
+import { useFloating } from './floating';
+import { Pin } from './Pin';
 import { TrafficChart } from './TrafficChart';
 import styles from './TrafficChart.module.css';
+import { usePinnedStore } from './usePinned';
 import { useTraffic } from './useTraffic';
 import { useEscapeFromZoom, useZoomStore } from './useZoom';
 
@@ -14,6 +18,7 @@ import { useEscapeFromZoom, useZoomStore } from './useZoom';
  */
 export function TrafficPane() {
   const { selected, entries, held } = useTraffic();
+  const zoomed = useZoomStore((state) => state.zoomed);
   useEscapeFromZoom();
 
   return (
@@ -23,6 +28,12 @@ export function TrafficPane() {
       {/* On the region rather than on the chart: the region is what grows, and it is still there
           — with something to say — when no topic has been picked and there is no chart at all. */}
       <Zoom />
+
+      {/* Thrown open, the region is a window: it says what it is a chart of, it is moved by that
+          line and sized by its corner, and the pin is where it stops following the selection and
+          becomes one of several. Shut, none of that exists — the region is a third of a column
+          and has neither the room for a bar nor anywhere to be moved to. */}
+      {zoomed && <WindowBar label={selected?.label} filter={selected?.filter} />}
 
       {!selected && <p className="empty">The shape of a topic's readings is drawn here.</p>}
 
@@ -35,6 +46,58 @@ export function TrafficPane() {
       {selected && entries.length > 0 && (
         <TrafficChart key={selected.filter} entries={entries} frozen={held} />
       )}
+    </>
+  );
+}
+
+/**
+ * The bar the thrown-open chart is moved by, and the pin that keeps it.
+ *
+ * Pinning takes this window off the selection: it keeps the filter it was pinned on, the console
+ * underneath goes back to one chart in its column, and the reader can pick a second topic and
+ * pin that one beside it. Which is the whole point — two runs on screen at once, rather than one
+ * run and the memory of another.
+ */
+function WindowBar({ label, filter }: { label?: string; filter?: string }) {
+  const box = useZoomStore((state) => state.box);
+  const place = useZoomStore((state) => state.place);
+  const close = useZoomStore((state) => state.close);
+  const pin = usePinnedStore((state) => state.pin);
+  const { bar, grip } = useFloating(box ?? { x: 0, y: 0, w: 0, h: 0 }, place);
+
+  const keep = () => {
+    if (!filter || !box) return;
+    pin(filter, label ?? filter, box);
+    // The window carries on as a pinned one, so leaving this one open would be the same chart
+    // twice, one exactly over the other.
+    close();
+  };
+
+  return (
+    <>
+      <div className={floating.bar} {...bar} title="Drag to move — the corner sizes it">
+        <span className={floating.name}>{label ?? 'Chart'}</span>
+        {filter && (
+          <button
+            type="button"
+            className={floating.pin}
+            aria-pressed={false}
+            aria-label={`Pin ${label ?? filter}`}
+            title={`Pin ${label ?? filter} — it keeps drawing this topic while the console moves on`}
+            onClick={keep}
+          >
+            <Pin />
+          </button>
+        )}
+      </div>
+
+      <button
+        type="button"
+        className={floating.grip}
+        aria-label="Resize the chart window"
+        title="Drag to size"
+        {...grip}
+      />
     </>
   );
 }
