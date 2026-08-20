@@ -66,8 +66,8 @@ function WindowBar({ label, filter }: { label?: string; filter?: string }) {
   const { bar, grip } = useFloating(box ?? { x: 0, y: 0, w: 0, h: 0 }, place);
 
   const keep = () => {
-    if (!filter || !box) return;
-    pin(filter, label ?? filter, box);
+    if (!filter) return;
+    pin(filter, label ?? filter);
     // The window carries on as a pinned one, so leaving this one open would be the same chart
     // twice, one exactly over the other.
     close();

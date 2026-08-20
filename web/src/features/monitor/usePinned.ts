@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { moved, type Box } from './floating';
+import { openingBox, type Box } from './floating';
 
 /**
  * The charts a reader has pinned to the console, each one a window of its own.
@@ -21,7 +21,7 @@ export type PinnedChart = {
 type PinnedState = {
   /** Back to front: the last one is the one on top, which is the one last touched. */
   pinned: ReadonlyArray<PinnedChart>;
-  pin: (filter: string, label: string, box: Box) => void;
+  pin: (filter: string, label: string) => void;
   unpin: (id: string) => void;
   place: (id: string, box: Box) => void;
   raise: (id: string) => void;
@@ -32,7 +32,7 @@ let count = 0;
 export const usePinnedStore = create<PinnedState>((set) => ({
   pinned: [],
 
-  pin: (filter, label, box) =>
+  pin: (filter, label) =>
     set((state) => {
       // A topic already pinned is not pinned twice: the second window would draw the same run as
       // the first, over the top of it, and look like the first having gone wrong.
@@ -41,14 +41,13 @@ export const usePinnedStore = create<PinnedState>((set) => ({
 
       count += 1;
 
-      // Where the window being pinned is standing, and nowhere else. It used to step clear of
-      // anything already in that place, which sounds helpful and is not: the chart is thrown
-      // open in the middle of the screen, so every pin after the first landed a little down and
-      // to the right of the last, and a reader pinning four of them got a staircase nobody
-      // asked for. Pinned where it was, the new window is exactly where the reader was already
-      // looking — and it is the one on top, so nothing is hidden that they can see.
+      // A new window opens where a new window opens: the middle of the screen, at the size the
+      // chart has always thrown open at. Not stepped clear of the last one — that gave a reader
+      // pinning four of them a staircase — and not inherited from the window it was pinned
+      // from, which is how the second one came out wherever the first had been dragged and
+      // sized to. Every one of these is the first one, as far as where it starts is concerned.
       return {
-        pinned: [...state.pinned, { id: `pin-${count}`, filter, label, box: moved(box, 0, 0) }],
+        pinned: [...state.pinned, { id: `pin-${count}`, filter, label, box: openingBox() }],
       };
     }),
 

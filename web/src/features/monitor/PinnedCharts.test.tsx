@@ -95,9 +95,10 @@ describe('pinning a chart', () => {
     expect(screen.getByTestId('pinned-chart')).toBeInTheDocument();
   });
 
-  // Stepping each new one clear of the last sounds helpful and is not: the chart is thrown open
-  // in the middle of the screen, so a reader pinning four of them got a staircase.
-  it('stands a second window where the chart it was pinned from was standing', async () => {
+  // Every one of these is the first one, as far as where it starts is concerned: not stepped
+  // clear of the last — that gave a reader pinning four of them a staircase — and not inherited
+  // from a window that had been dragged and sized somewhere else since.
+  it('opens each new window in the middle, wherever the last one ended up', async () => {
     readings('sensors/kiln', '900', '910');
     readings('sensors/room', '21', '22');
     useSelectionStore.getState().select(kiln);
@@ -105,12 +106,19 @@ describe('pinning a chart', () => {
     render(<Console />);
     await openAndPin();
 
+    const opened = { ...usePinnedStore.getState().pinned[0].box };
+    // The first one is dragged off into a corner and made small.
+    act(() =>
+      usePinnedStore
+        .getState()
+        .place(usePinnedStore.getState().pinned[0].id, { x: 0, y: 0, w: 320, h: 240 }),
+    );
+
     act(() => useSelectionStore.getState().select(room));
     await openAndPin();
 
-    const [first, second] = screen.getAllByTestId('pinned-chart');
-    expect(second.style.left).toBe(first.style.left);
-    expect(second.style.top).toBe(first.style.top);
+    expect(usePinnedStore.getState().pinned[1].box).toEqual(opened);
+    const [, second] = screen.getAllByTestId('pinned-chart');
     // And the newest is the one on top, so it is not hidden behind what it landed on.
     expect(second).toHaveAttribute('data-filter', 'sensors/room');
   });
