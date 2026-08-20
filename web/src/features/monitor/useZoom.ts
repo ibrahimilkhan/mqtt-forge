@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { create } from 'zustand';
-import { moved, openingBox, type Box } from './floating';
+import { openingBox, type Box } from './floating';
 
 /**
  * Whether the chart has been lifted out of its column.
@@ -29,13 +29,14 @@ export const useZoomStore = create<ZoomState>((set) => ({
   zoomed: false,
   box: null,
 
-  // Kept when it closes, so a window put where the reader wanted it opens there again. Passed
-  // through the move first: the viewport may have been resized since, and a window remembered
-  // off the edge of it is a window with no bar to take hold of.
-  toggle: () =>
-    set((state) =>
-      state.zoomed ? { zoomed: false } : { zoomed: true, box: state.box ? moved(state.box, 0, 0) : openingBox() },
-    ),
+  // Always the standard place: the middle of the screen, at three fifths of it.
+  //
+  // It used to be remembered across closings, which sounds like a courtesy and was the cause of
+  // the one real surprise in this whole arrangement. A chart dragged aside and closed came back
+  // aside; the window its pin then opened came up in the middle, where windows open — so
+  // pressing the pin moved the chart across the screen, and it was the remembering that moved
+  // it, not the pin. Opened in the same place every time, the pin has nothing to move.
+  toggle: () => set((state) => (state.zoomed ? { zoomed: false } : { zoomed: true, box: openingBox() })),
 
   close: () => set({ zoomed: false }),
   place: (box) => set({ box }),
