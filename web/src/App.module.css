@@ -207,7 +207,13 @@
      edge — three fifths in the middle, on both axes — is where it opens, and the stand-in here
      for the one frame before the box is measured. */
   inset: 20vh 20vw;
-  z-index: 20;
+  /* Above every pinned window. Thrown open, this is the one thing on screen with a scrim behind
+     it: it is over the whole console for as long as it is open, and a window standing in front
+     of it would be a window standing in front of something that has dimmed the room. It opens in
+     the same place a window opens, too, so a window left there would cover it exactly — the
+     reader would press the control, watch the console dim, and see no chart appear.
+     200 leaves room for more windows than anyone will open. */
+  z-index: 200;
   /* The bar that moves it, then the chart. */
   grid-template-rows: auto minmax(0, 1fr);
   padding: 10px 22px 18px;

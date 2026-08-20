@@ -115,8 +115,10 @@
    a window the reader placed must not have. */
 .window {
   position: fixed;
-  /* The app writes the depth inline: two windows open in the same place here, so which of them
-     is in front is a fact about the stack rather than about the order they were drawn in. */
+  /* The app writes the depth inline, from 22 up: two windows open in the same place here, so
+     which of them is in front is a fact about the stack rather than about the order they were
+     drawn in. The thrown-open chart sits above all of them — it carries a scrim over the whole
+     console, and it opens where these open. */
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   padding: 10px 14px 14px;

@@ -247,6 +247,23 @@ describe('placing a window', () => {
     done();
   });
 
+  // Thrown open, the chart opens in the same place a window opens and carries a scrim over the
+  // whole console. A window left standing there covered it exactly: the reader pressed the
+  // control, watched the console dim, and saw no chart appear.
+  it('stands below the chart when that is thrown open over the console', async () => {
+    readings('sensors/kiln', '900', '910');
+    useSelectionStore.getState().select(kiln);
+
+    render(<Console />);
+    await openAndPin();
+    await userEvent.click(screen.getByTestId('zoom'));
+
+    const window_ = screen.getByTestId('chart-window');
+    // The pane itself is placed by the app, so its z-index is read off the stylesheet rather
+    // than the DOM here; what this holds is the window's end of the bargain.
+    expect(Number(window_.style.zIndex)).toBeLessThan(200);
+  });
+
   it('comes forward when it is touched, pinned or not', async () => {
     readings('sensors/kiln', '900', '910');
     readings('sensors/room', '21', '22');
