@@ -16,7 +16,14 @@ public static class MqttForgeHost
     /// <summary>Where it listens when nothing else says. See the note in <see cref="Build"/>.</summary>
     public const string DefaultUrls = "http://0.0.0.0:5169";
 
-    public static WebApplication Build(string[] args, string? urls = null)
+    /// <param name="configure">
+    /// What only the host knows how to provide. The folder dialog belongs to the window, and a
+    /// run with no window registers none — which is what makes the interface fall back.
+    /// </param>
+    public static WebApplication Build(
+        string[] args,
+        string? urls = null,
+        Action<IServiceCollection>? configure = null)
     {
         var builder = WebApplication.CreateBuilder(args);
 
@@ -48,6 +55,7 @@ public static class MqttForgeHost
                 p.WithOrigins("http://localhost:5173").AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
 
         builder.Services.AddMqttForge();
+        configure?.Invoke(builder.Services);
 
         var app = builder.Build();
 

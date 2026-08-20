@@ -7,6 +7,8 @@ const defaultHandlers = [
   http.get('/api/connection/settings', () => new HttpResponse(null, { status: 204 })),
   http.get('/api/subscriptions', () => HttpResponse.json([])),
   http.get('/api/colour-rules', () => HttpResponse.json({ rules: [] })),
+  // A test host owns no window, so it offers no folder dialog — which is the browser's answer too.
+  http.get('/api/export/folder', () => HttpResponse.json({ folder: null, canChoose: false })),
 ];
 
 export const server = setupServer(...defaultHandlers);

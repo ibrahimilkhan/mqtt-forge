@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Sockets;
 using MqttForge.Api;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
+using MqttForge.Domain.Abstractions;
 
 namespace MqttForge.Desktop;
 
@@ -23,7 +25,8 @@ public static class DesktopBind
         string settingsPath,
         int candidatePort,
         IPAddress? lanBindAddress = null,
-        IPAddress? loopbackBindAddress = null)
+        IPAddress? loopbackBindAddress = null,
+        IFolderPicker? picker = null)
     {
         lanBindAddress ??= IPAddress.Any;
         loopbackBindAddress ??= IPAddress.Loopback;
@@ -32,7 +35,7 @@ public static class DesktopBind
         try
         {
             var lanPort = PortFinder.FirstFree(candidatePort, lanBindAddress);
-            lanApp = Build(args, settingsPath, $"http://{lanBindAddress}:{lanPort}");
+            lanApp = Build(args, settingsPath, $"http://{lanBindAddress}:{lanPort}", picker);
             await lanApp.StartAsync();
             return (lanApp, Decide(lanBindSucceeded: true, loopbackBindSucceeded: false), lanPort);
         }
@@ -45,7 +48,7 @@ public static class DesktopBind
         try
         {
             var loopbackPort = PortFinder.FirstFree(candidatePort, loopbackBindAddress);
-            loopbackApp = Build(args, settingsPath, $"http://{loopbackBindAddress}:{loopbackPort}");
+            loopbackApp = Build(args, settingsPath, $"http://{loopbackBindAddress}:{loopbackPort}", picker);
             await loopbackApp.StartAsync();
             return (loopbackApp, Decide(lanBindSucceeded: false, loopbackBindSucceeded: true), loopbackPort);
         }
@@ -54,11 +57,19 @@ public static class DesktopBind
             if (loopbackApp is not null) await loopbackApp.DisposeAsync();
 
             // Unstarted host only so App is never null; caller skips it on Unavailable
-            var fallback = Build(args, settingsPath, urls: null);
+            var fallback = Build(args, settingsPath, urls: null, picker);
             return (fallback, Decide(lanBindSucceeded: false, loopbackBindSucceeded: false), candidatePort);
         }
     }
 
-    private static WebApplication Build(string[] args, string settingsPath, string? urls) =>
-        MqttForgeHost.Build([.. args, $"--MqttForge:SettingsPath={settingsPath}"], urls: urls);
+    // The picker is the one thing the API cannot supply for itself: it belongs to the window,
+    // and only a host that has one registers it.
+    private static WebApplication Build(string[] args, string settingsPath, string? urls, IFolderPicker? picker) =>
+        MqttForgeHost.Build(
+            [.. args, $"--MqttForge:SettingsPath={settingsPath}"],
+            urls: urls,
+            configure: services =>
+            {
+                if (picker is not null) services.AddSingleton(picker);
+            });
 }

@@ -7,7 +7,6 @@ import { shapeOf } from '../../lib/shape';
 import { cadence, changePoint, cycle, summarise } from '../../lib/stats';
 import { useNow } from '../../lib/useNow';
 import { useRuleLookup } from '../../lib/useRuleLookup';
-import { copyText } from '../mobile/copyText';
 import { CHART_DETAIL } from '../appearance/chart';
 import { CHIP, CONTROLS } from '../appearance/controls';
 import type { GridId } from '../appearance/grid';
@@ -19,6 +18,7 @@ import { ChartVoid } from './ChartVoid';
 import { TrafficHistogram } from './TrafficHistogram';
 import { TrafficLine } from './TrafficLine';
 import { TrafficMultiples } from './TrafficMultiples';
+import { useExport } from './useExport';
 import styles from './TrafficChart.module.css';
 
 type View = 'time' | 'distribution';
@@ -281,21 +281,28 @@ function Controls({
   branch: string | null;
   onBranch: () => void;
 }) {
-  const [copy, setCopy] = useState<'idle' | 'done' | 'refused'>('idle');
+  const [saved, setSaved] = useState<'idle' | 'done' | 'refused'>('idle');
+  const exporter = useExport();
 
-  // Through the shared helper, not `navigator.clipboard` directly. That API exists only in a
-  // secure context and is missing or refuses outright in the runtime the desktop build renders
-  // in — so this button reported 'failed' every time it was pressed there, which is a fair
-  // description of a control that never worked. The helper falls back to the deprecated
-  // execCommand path, which is what still works, and says whether anything was actually copied.
+  // A first save with no folder yet opens the dialog rather than refusing and telling the reader
+  // to go and set something up before pressing the button they have just pressed.
   const take = async () => {
     if (!series) return;
 
-    setCopy((await copyText(csv(series))) ? 'done' : 'refused');
-    window.setTimeout(() => setCopy('idle'), 2000);
+    try {
+      const where = await exporter.save(fileName(series), csv(series));
+      // Null is a dismissed dialog, which is an answer rather than a failure — nothing was
+      // written, and saying 'failed' at someone who changed their mind would be a lie.
+      setSaved(where === null && exporter.canChoose ? 'idle' : 'done');
+    } catch {
+      setSaved('refused');
+    }
+    window.setTimeout(() => setSaved('idle'), 2500);
   };
 
-  const copyLabel = { idle: 'Copy as CSV', done: 'Copied', refused: 'Copy failed' }[copy];
+  const saveLabel = exporter.folder
+    ? `Save the readings as CSV into ${exporter.folder}`
+    : 'Save the readings as CSV';
 
   return (
     <div className={styles.controls}>
@@ -393,12 +400,13 @@ function Controls({
             <button
               type="button"
               className={styles.chip}
-              aria-label={copyLabel}
+              aria-label={saveLabel}
               title={CONTROLS.csv.what}
-              data-state={copy}
+              data-state={saved}
+              disabled={exporter.saving || exporter.choosing}
               onClick={take}
             >
-              {{ idle: CONTROLS.csv.label, done: 'copied', refused: 'failed' }[copy]}
+              {{ idle: CONTROLS.csv.label, done: 'saved', refused: 'failed' }[saved]}
             </button>
           </span>
         )}
@@ -406,6 +414,10 @@ function Controls({
     </div>
   );
 }
+
+/** The topic and the field it was charted on, which is what tells two saved runs apart. */
+const fileName = (series: Series) =>
+  `${series.topic}${series.field ? `-${series.field}` : ''}`;
 
 /** Timestamps in full, so a run pasted into anything else sorts and plots without being fixed. */
 function csv(series: Series): string {

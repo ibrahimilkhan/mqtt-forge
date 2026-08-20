@@ -72,7 +72,7 @@ export const CONTROLS: Record<ControlId, Control & { group: ControlGroup }> = {
   csv: {
     label: 'csv',
     group: 'view',
-    what: 'Copies the readings on the chart to the clipboard as CSV — a header, then one row per reading with its time in full. It copies rather than downloads, so it can go straight into a spreadsheet or a notebook.',
+    what: 'Saves the readings on the chart as a CSV file — a header, then one row per reading with its time in full. It goes into the folder set below, and asks for one the first time. In a browser, where there is no folder dialog to open, it comes down as a download instead.',
   },
 };
 

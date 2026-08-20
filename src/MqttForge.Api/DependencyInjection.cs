@@ -32,6 +32,9 @@ public static class DependencyInjection
         services.AddSingleton<ColourRuleService>();
         services.AddSingleton<PublishService>();
         services.AddSingleton<SubscriptionService>();
+        // The picker is registered by the host that owns a window, and by nothing else — a run
+        // with no window resolves null here and the interface falls back to a download.
+        services.AddSingleton(sp => new ExportService(sp.GetService<IFolderPicker>()));
         return services;
     }
 }

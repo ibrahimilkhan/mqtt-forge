@@ -1,6 +1,8 @@
-import { render, screen, within } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
+// The panel reads where saved readings go through react-query, so it needs a client.
+import { renderWithClient as render } from '../../test/renderWithClient';
 import { useAppearanceStore } from '../../stores/appearanceStore';
 import { CHART_DETAIL } from '../appearance/chart';
 import { GRIDS } from '../appearance/grid';

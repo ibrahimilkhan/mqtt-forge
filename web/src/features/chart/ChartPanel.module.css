@@ -113,3 +113,29 @@
 
 /* When a control is not always there. A reader who has never seen one should not go looking. */
 .when { color: var(--faint, var(--muted)); font-style: italic; }
+
+/* ---- where saved readings go ---- */
+
+/* The path and the control that changes it. The path takes what is left, since it is the part
+   that varies and the button's label never does. */
+.folder {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Tail first: the last two segments of a path are what tell two folders apart, and the volume in
+   front of them never does. One line — a wrapped path pushes the button off the row. */
+.folderPath {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  color: var(--muted);
+  direction: rtl;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

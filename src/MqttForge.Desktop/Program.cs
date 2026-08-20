@@ -24,12 +24,14 @@ var settingsPath = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
     "MQTTForge", "connection-settings.json");
 
-var (app, outcome, port) = await DesktopBind.StartAsync(args, settingsPath, 5169);
-
+// The window is built first: the server's folder dialog is the window's, and the service that
+// offers it has to be handed one before the first request can ask.
 var window = new PhotinoWindow()
     .SetTitle("MQTTForge")
     .SetUseOsDefaultSize(false)
     .SetSize(1280, 860);
+
+var (app, outcome, port) = await DesktopBind.StartAsync(args, settingsPath, 5169, picker: new WindowFolderPicker(window));
 
 if (outcome == DesktopBind.Outcome.Unavailable)
 {
