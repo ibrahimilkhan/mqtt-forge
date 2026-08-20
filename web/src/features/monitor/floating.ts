@@ -17,6 +17,16 @@ const MIN_H = 210;
 /** How much of a window must stay on screen: enough to get hold of the bar again. */
 const HELD = 64;
 
+/**
+ * How near an edge a window has to be brought before it takes that edge exactly.
+ *
+ * Narrow on purpose. A window that pulls itself straight from ten pixels away is helping; one
+ * that pulls itself from fifty has taken the placing off the reader, and a reader who wanted it
+ * forty pixels off the corner cannot have it. Twelve is about the distance a hand comes to rest
+ * within when it is aiming at a corner and not thinking about it.
+ */
+const SNAP = 12;
+
 /** Three fifths of the window, centred — the size and place the chart has always opened at. */
 export function openingBox(): Box {
   const w = Math.round(window.innerWidth * 0.6);
@@ -44,17 +54,43 @@ export function beside(box: Box, taken: ReadonlyArray<Box>): Box {
 
 /** Dragged by the bar. The window keeps its size; only the corner it starts at moves. */
 export function moved(box: Box, dx: number, dy: number): Box {
-  return onScreen({ ...box, x: box.x + dx, y: box.y + dy });
+  return onScreen(docked({ ...box, x: box.x + dx, y: box.y + dy }));
 }
 
 /** Dragged by the grip. The top-left corner is the anchor, so only the far edges move. */
 export function sized(box: Box, dx: number, dy: number): Box {
+  const w = clamp(box.w + dx, MIN_W, window.innerWidth - box.x);
+  const h = clamp(box.h + dy, MIN_H, window.innerHeight - box.y);
+
+  // The far edges settle onto the viewport's the same way the near ones do when it is dragged,
+  // so a window sized into a corner fills it exactly rather than to within a few pixels.
   return {
     ...box,
-    w: clamp(box.w + dx, MIN_W, window.innerWidth - box.x),
-    h: clamp(box.h + dy, MIN_H, window.innerHeight - box.y),
+    w: near(box.x + w, window.innerWidth) ? window.innerWidth - box.x : w,
+    h: near(box.y + h, window.innerHeight) ? window.innerHeight - box.y : h,
   };
 }
+
+/**
+ * A window brought near an edge takes it exactly.
+ *
+ * Each axis on its own, which is what makes the corners work without being a case: a window
+ * carried into the top-left is near two edges at once, and taking both is what putting something
+ * in a corner means. Two of these side by side then have edges that meet rather than nearly
+ * meet — which is the whole reason to want it, with several charts on screen.
+ */
+function docked(box: Box): Box {
+  const right = window.innerWidth - box.w;
+  const bottom = window.innerHeight - box.h;
+
+  return {
+    ...box,
+    x: near(box.x, 0) ? 0 : near(box.x, right) ? right : box.x,
+    y: near(box.y, 0) ? 0 : near(box.y, bottom) ? bottom : box.y,
+  };
+}
+
+const near = (value: number, edge: number) => Math.abs(value - edge) <= SNAP;
 
 /** A window may hang off any edge, but never so far that there is no bar left to take hold of. */
 function onScreen(box: Box): Box {
