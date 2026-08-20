@@ -607,7 +607,7 @@ describe('holding the pane still', () => {
     useSelectionStore.getState().select(chip);
 
     render(<Monitor />);
-    await userEvent.click(screen.getByRole('button', { name: 'Hold the pane' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Pause the pane' }));
     act(() => readings('sensors/temp', '99'));
 
     expect(screen.getByTestId('body')).toHaveTextContent('22');
@@ -619,10 +619,10 @@ describe('holding the pane still', () => {
     useSelectionStore.getState().select(chip);
 
     render(<Monitor />);
-    await userEvent.click(screen.getByRole('button', { name: 'Hold the pane' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Pause the pane' }));
     act(() => readings('sensors/temp', '23', '24', '25'));
 
-    expect(screen.getByRole('button', { name: 'Let the pane go, 3 arrived while held' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Let the pane go, 3 arrived while it was paused' })).toBeInTheDocument();
   });
 
   it('counts nothing while nothing has arrived behind it', async () => {
@@ -630,9 +630,10 @@ describe('holding the pane still', () => {
     useSelectionStore.getState().select(chip);
 
     render(<Monitor />);
-    await userEvent.click(screen.getByRole('button', { name: 'Hold the pane' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Pause the pane' }));
 
-    expect(screen.getByRole('button', { name: 'Let the pane go' })).toHaveTextContent('held');
+    // The shape alone: a count of nothing is not news.
+    expect(screen.getByRole('button', { name: 'Let the pane go' }).textContent).toBe('');
   });
 
   it('catches up when it is let go', async () => {
@@ -640,11 +641,33 @@ describe('holding the pane still', () => {
     useSelectionStore.getState().select(chip);
 
     render(<Monitor />);
-    await userEvent.click(screen.getByRole('button', { name: 'Hold the pane' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Pause the pane' }));
     act(() => readings('sensors/temp', '99'));
     await userEvent.click(screen.getByRole('button', { name: /Let the pane go/ }));
 
     expect(screen.getByTestId('body')).toHaveTextContent('99');
+  });
+
+  // What it does is not what pausing usually means — the rows stop, the traffic does not — and a
+  // shape cannot say that. The hover is where it is written.
+  it('explains itself on hover, both ways round', async () => {
+    readings('sensors/temp', '21', '22');
+    useSelectionStore.getState().select(chip);
+
+    render(<Monitor />);
+
+    expect(screen.getByRole('button', { name: 'Pause the pane' })).toHaveAttribute(
+      'title',
+      'Pause the pane — the rows stop where they are, and the traffic behind them carries on arriving',
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Pause the pane' }));
+    act(() => readings('sensors/temp', '23', '24'));
+
+    expect(screen.getByRole('button', { name: /Let the pane go/ })).toHaveAttribute(
+      'title',
+      'Paused — 2 arrived behind it. Click to catch up.',
+    );
   });
 
   it('lets go by itself when the selection changes', async () => {
@@ -653,10 +676,10 @@ describe('holding the pane still', () => {
     useSelectionStore.getState().select(chip);
 
     render(<Monitor />);
-    await userEvent.click(screen.getByRole('button', { name: 'Hold the pane' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Pause the pane' }));
     act(() => useSelectionStore.getState().select({ label: 'sensors/hall', filter: 'sensors/hall' }));
 
-    expect(screen.getByRole('button', { name: 'Hold the pane' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pause the pane' })).toBeInTheDocument();
   });
 });
 
