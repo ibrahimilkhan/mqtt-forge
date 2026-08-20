@@ -309,6 +309,7 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
     'gallery-dots.html',
     'gallery-log.html',
     'console.html',
+    'console-colours.html',
     'console-zoomed.html',
     'console-pinned.html',
   ]
@@ -326,6 +327,8 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
                 ? 'The log'
               : href === 'console.html'
                 ? 'The console'
+              : href === 'console-colours.html'
+                ? 'Colour rules'
                 : href === 'console-zoomed.html'
                   ? 'Chart opened'
                   : href === 'console-pinned.html'
@@ -359,12 +362,13 @@ ${inner}
     writeFileSync(`${OUT}/gallery-${i + 1}.html`, page(`charts ${i + 1}`, `<h2>The chart</h2>${inner}`)),
   );
 
-  writeFileSync(`${OUT}/console.html`, console_(client));
+  writeFileSync(`${OUT}/console.html`, console_(client, { panel: null }));
+  writeFileSync(`${OUT}/console-colours.html`, console_(client, { panel: 'colours' }));
   // The same console with the chart thrown open, which is the state a static page can show and
   // a click cannot be recorded in.
-  writeFileSync(`${OUT}/console-zoomed.html`, console_(client, { zoomed: true }));
+  writeFileSync(`${OUT}/console-zoomed.html`, console_(client, { zoomed: true, panel: null }));
   // And the same console with two charts pinned off it, standing over a console still in use.
-  writeFileSync(`${OUT}/console-pinned.html`, console_(client, { pinned: true }));
+  writeFileSync(`${OUT}/console-pinned.html`, console_(client, { pinned: true, panel: null }));
   useChartWindows.setState({ windows: [] });
 
   // Back to the defaults: the runs above set the range on the store to draw themselves both
@@ -678,7 +682,7 @@ function detail() {
  * a fake hub satisfies the bridge. What this writes is the real layout with real components in
  * it, at whatever size the window opens — which is what a screenshot of the console is.
  */
-function console_(client, { zoomed = false, pinned = false } = {}) {
+function console_(client, { zoomed = false, pinned = false, panel = 'broker' } = {}) {
   // Primed rather than fetched. Rendering here is one synchronous pass, so a query that has to
   // go and ask would still be pending when the HTML is taken — and the page would show a console
   // that had not connected to anything.
@@ -725,13 +729,24 @@ function console_(client, { zoomed = false, pinned = false } = {}) {
         ]
       : [],
   });
+  // A broker with enough on it to look like one: three branches, a few kinds of reading, and the
+  // colour rules above landing on more than one row.
   const traffic = [
     ['sensors/livingroom/temp', wobble(60, 21.6, 1.4)],
+    ['sensors/livingroom/humidity', wobble(60, 48, 3)],
     ['sensors/garage/temp', wobble(60, 12.6, 0.8)],
+    ['sensors/garage/humidity', wobble(40, 63, 5)],
+    ['sensors/kitchen/temp', wobble(60, 23.1, 0.9)],
     ['sensors/kitchen/humidity', wobble(60, 52, 4)],
     ['sensors/loft/temp', wobble(60, 19.4, 0.6)],
     ['devices/thermostat/battery', wobble(20, 92, 1)],
+    ['devices/thermostat/state', repeat(4, '{"mode":"heat","target":21}')],
+    ['devices/lamp/hall/state', repeat(6, 'on', 'on', 'off')],
+    ['devices/lamp/porch/state', repeat(6, 'off', 'on')],
+    ['home/energy/meter', wobble(30, 4213, 6)],
+    ['home/energy/tariff', repeat(4, 'night')],
     ['alerts/door/front', repeat(12, '0', '0', '0', '1', '1')],
+    ['alerts/door/back', repeat(10, '0')],
     ['alerts/smoke/kitchen', repeat(8, 'clear')],
   ];
   for (const [topic, bodies] of traffic) {
@@ -763,6 +778,18 @@ function console_(client, { zoomed = false, pinned = false } = {}) {
       <App hub={createFakeHub()} />
     </QueryClientProvider>,
   );
+
+  // The console opens with the Broker panel over the first column, which is right for a reader
+  // who has just started it and wrong for a picture of the tool working. The panel is a click,
+  // and a static page cannot carry one — so the click is made here.
+  const menu = (name) =>
+    [...container.querySelectorAll('nav[aria-label="Panels"] button')].find(
+      (button) => button.textContent === name,
+    );
+  if (panel !== 'broker') {
+    act(() => fireEvent.click(menu('Broker')));
+    if (panel) act(() => fireEvent.click(menu(panel[0].toUpperCase() + panel.slice(1))));
+  }
 
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
