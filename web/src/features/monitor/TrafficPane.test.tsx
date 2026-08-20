@@ -352,6 +352,45 @@ describe('marking the readings themselves', () => {
   });
 });
 
+describe('how the note is laid out', () => {
+  // Every number starts at the same place down the note rather than at the end of whatever word
+  // happened to precede it, so the eye reads a column of values instead of hunting each one.
+  it('ranges the names right and the numbers left off one shared edge', () => {
+    readings('sensors/temp', ...wobble(40, 21.5, 1.5));
+    show();
+
+    const cell = screen.getByTestId('note').querySelector('[data-slot="mean"]')!;
+    expect(cell.children).toHaveLength(2);
+    expect(cell.firstElementChild).toHaveTextContent('mean');
+  });
+
+  // Readings of the same kind belong beside each other: a reader looking for the spread should
+  // not have to pass the arrival rate to reach it.
+  it('opens a row for each group of readings', () => {
+    readings('sensors/temp', ...wobble(40, 21.5, 1.5));
+    show();
+
+    const note = screen.getByTestId('note');
+    const opens = [...note.querySelectorAll('[data-opens]')].map((c) => c.getAttribute('data-slot'));
+
+    // What the run adds up to, then what can be said about it, then what is true of any run.
+    expect(opens).toEqual(['shape', 'every']);
+  });
+
+  // A switch has no trend and no distribution, so that group is absent rather than a row of
+  // dashes — and the group after it still opens a row of its own.
+  it('leaves out a group the run has nothing to put in', () => {
+    readings('sensors/door', ...repeat(6, '0', '0', '0', '1', '1'));
+    show();
+
+    const note = screen.getByTestId('note');
+    expect(note.querySelector('[data-slot="shape"]')).toBeNull();
+    expect([...note.querySelectorAll('[data-opens]')].map((c) => c.getAttribute('data-slot'))).toEqual([
+      'every',
+    ]);
+  });
+});
+
 describe('the ground the plot is drawn on', () => {
   const run = () => readings('sensors/temp', ...wobble(30, 21.5, 1.5));
 

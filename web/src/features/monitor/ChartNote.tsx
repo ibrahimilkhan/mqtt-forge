@@ -87,8 +87,8 @@ export function ChartNote({
         ? climbing(summary, shape.rate, shape.wraps)
         : measurements(summary);
 
-  const read: Slot[] = [
-    ...(shape.id === 'continuous'
+  // What can be said about the run itself, when it is the kind of run those things describe.
+  const shaped: Slot[] = shape.id === 'continuous'
       ? [
           shapeSlot(summary, fit, trend(summary, pace), step),
           direction(summary, trend(summary, pace), step),
@@ -101,7 +101,10 @@ export function ChartNote({
             tone: 'reading' as const,
           },
         ]
-      : []),
+      : [];
+
+  // True of every run, whatever the readings in it are.
+  const run: Slot[] = [
     arrivals(pace),
     offScale(domain),
     {
@@ -141,20 +144,29 @@ export function ChartNote({
     },
   ];
 
-  // Only what the reader has left switched on. A note with nothing left in it is not a note, so
-  // the whole caption goes rather than an empty rule under the plot.
-  const shown = [...counted, ...read].filter((slot) => showsReading(slot.id, chosen, deep));
-  if (shown.length === 0) return null;
+  // Kept as groups rather than flattened: readings of the same kind belong beside each other, and
+  // a reader looking for the spread should not have to pass the arrival rate to reach it. Each
+  // group starts a row of its own, so where one ends and the next begins is visible rather than
+  // implied by the order.
+  const groups = [counted, ...(shaped.length > 0 ? [shaped] : []), run]
+    .map((group) => group.filter((slot) => showsReading(slot.id, chosen, deep)))
+    .filter((group) => group.length > 0);
+
+  if (groups.length === 0) return null;
 
   return (
     <figcaption className={styles.note} data-testid="note" data-shape={shape.id}>
-      {shown.map((slot) => (
+      {groups.flatMap((group, at) =>
+        group.map((slot, index) => (
         <div
           key={slot.id}
           className={styles.slot}
           data-slot={named(slot.id).label}
           data-tone={slot.tone}
           data-empty={slot.value === null ? '' : undefined}
+          // The first of a group opens a row, so a group is a block rather than a run of cells
+          // that happens to be adjacent.
+          data-opens={index === 0 && at > 0 ? '' : undefined}
           // The catalogue's own words, so hovering a cell says exactly what the Chart panel says.
           title={`${named(slot.id).what} — ${slot.title}`}
         >
@@ -169,7 +181,8 @@ export function ChartNote({
             {slot.value ?? '—'}
           </span>
         </div>
-      ))}
+        )),
+      )}
     </figcaption>
   );
 }
