@@ -1,8 +1,8 @@
 # MQTTForge
 
-[![Release](https://img.shields.io/github/v/release/ibrahimilkhan/mqtt-forge?color=1e40af&label=release)](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest)
-[![Image](https://img.shields.io/badge/ghcr.io-mqtt--forge-1e40af?logo=docker&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/pkgs/container/mqtt-forge)
-[![Licence](https://img.shields.io/github/license/ibrahimilkhan/mqtt-forge?color=1e40af)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/ibrahimilkhan/mqtt-forge?color=1b3a7a&label=release)](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest)
+[![Image](https://img.shields.io/badge/ghcr.io-mqtt--forge-1b3a7a?logo=docker&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/pkgs/container/mqtt-forge)
+[![Licence](https://img.shields.io/github/license/ibrahimilkhan/mqtt-forge?color=1b3a7a)](LICENSE)
 
 An open-source MQTT test tool with a window you look at: connect to a broker, watch topics as
 they arrive, chart what they are sending, and publish. It runs as a desktop app or as one Docker
@@ -59,7 +59,7 @@ A broker that speaks just 3.1.1 refuses the connection.
 [![macOS Apple Silicon](https://img.shields.io/badge/macOS-Apple_Silicon-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-macos-arm64.dmg)
 [![macOS Intel](https://img.shields.io/badge/macOS-Intel-555555?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-macos-x64.dmg)
 [![Windows x64](https://img.shields.io/badge/Windows-x64-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-windows-x64.zip)
-[![Linux x64](https://img.shields.io/badge/Linux-x64-1e40af?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-linux-x64.tar.gz)
+[![Linux x64](https://img.shields.io/badge/Linux-x64-1b3a7a?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-linux-x64.tar.gz)
 
 Each button downloads the newest release, so they stay valid as versions come and go. Or run it
 as a container, which installs nothing and asks for no permissions:

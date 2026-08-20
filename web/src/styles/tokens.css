@@ -4,7 +4,12 @@
     --ink:     #131a24;
     --muted:   #67728a;
     --rule:    #d2d8e2;
-    --signal:  #1e40af;
+    /* Deep rather than electric. At #1e40af this was the loudest thing on a page whose whole
+       manner is quiet — it sat beside near-black type in the wordmark and read as a sticker on
+       the instrument. Twelve points of saturation and eleven of lightness off it, and the same
+       blue now says the same thing without shouting: still 10.5:1 on the surface, so a focus
+       ring drawn in it is no harder to find. */
+    --signal:  #1b3a7a;
     --live:    #0d7a63;
     --fault:   #ab3520;
 

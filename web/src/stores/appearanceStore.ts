@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { READINGS, type ReadingId } from '../features/appearance/readings';
 import { SCALE_DEFAULT, SCALES, type ScaleId } from '../lib/scale';
-import { MARK_DEFAULT, MARKS, type MarkId } from '../features/brand/marks';
 import { DEFAULTS as FONTS, MONO, SANS, SIZE, type MonoId, type SansId } from '../features/appearance/fonts';
 
 export type AppearanceChoices = {
@@ -12,7 +11,6 @@ export type AppearanceChoices = {
   /** Which range a chart opens on, for the runs whose peaks are not the whole point. */
   scale: ScaleId;
   /** The mark at the top of the rail. Six were drawn and none of them is obviously the one. */
-  logo: MarkId;
   /**
    * Only the readings the reader has actually switched; the rest follow the catalogue.
    *
@@ -27,7 +25,6 @@ type AppearanceState = AppearanceChoices & {
   setMono: (id: MonoId) => void;
   setSize: (px: number) => void;
   setScale: (id: ScaleId) => void;
-  setLogo: (id: MarkId) => void;
   toggleReading: (id: ReadingId, shown: boolean) => void;
   /** Back to the catalogue's own answer for every reading. */
   resetReadings: () => void;
@@ -40,7 +37,6 @@ export const STORAGE_KEY = 'mqttforge.appearance';
 export const DEFAULTS: AppearanceChoices = {
   ...FONTS,
   scale: SCALE_DEFAULT,
-  logo: MARK_DEFAULT,
   readings: {},
 };
 
@@ -59,7 +55,7 @@ function switched(raw: unknown): Partial<Record<ReadingId, boolean>> {
 export function sanitize(raw: unknown): AppearanceChoices {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { ...DEFAULTS };
 
-  const { sans, mono, size, scale, logo, readings } = raw as Record<string, unknown>;
+  const { sans, mono, size, scale, readings } = raw as Record<string, unknown>;
 
   return {
     sans: typeof sans === 'string' && sans in SANS ? (sans as SansId) : DEFAULTS.sans,
@@ -69,7 +65,6 @@ export function sanitize(raw: unknown): AppearanceChoices {
         ? Math.min(SIZE.max, Math.max(SIZE.min, Math.round(size)))
         : DEFAULTS.size,
     scale: typeof scale === 'string' && scale in SCALES ? (scale as ScaleId) : DEFAULTS.scale,
-    logo: typeof logo === 'string' && logo in MARKS ? (logo as MarkId) : DEFAULTS.logo,
     readings: switched(readings),
   };
 }
@@ -84,7 +79,6 @@ export const useAppearanceStore = create<AppearanceState>()(
       setMono: (mono) => set({ mono }),
       setSize: (size) => set({ size }),
       setScale: (scale) => set({ scale }),
-      setLogo: (logo) => set({ logo }),
       toggleReading: (id, shown) =>
         set((state) => ({ readings: { ...state.readings, [id]: shown } })),
       resetReadings: () => set({ readings: {} }),
@@ -93,12 +87,11 @@ export const useAppearanceStore = create<AppearanceState>()(
     {
       name: STORAGE_KEY,
       version: 5,
-      partialize: ({ sans, mono, size, scale, logo, readings }) => ({
+      partialize: ({ sans, mono, size, scale, readings }) => ({
         sans,
         mono,
         size,
         scale,
-        logo,
         readings,
       }),
       merge: (persisted, current) => ({ ...current, ...sanitize(persisted) }),

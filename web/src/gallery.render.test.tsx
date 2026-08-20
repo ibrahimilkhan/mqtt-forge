@@ -22,7 +22,7 @@ import { domainFor } from './lib/scale';
 import { numericSeries } from './lib/series';
 import { shapeOf } from './lib/shape';
 import { summarise } from './lib/stats';
-import { MARKS } from './features/brand/marks';
+import { Mark } from './features/brand/marks';
 import { TrafficChart } from './features/monitor/TrafficChart';
 import { TrafficLine } from './features/monitor/TrafficLine';
 import { queryKeys } from './api/queryKeys';
@@ -208,27 +208,35 @@ function stamp(root: HTMLElement): HTMLElement {
 it.skipIf(!existsSync(OUT))('writes the gallery', () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
+  // One mark, at the three sizes it has to survive: the panel, the open rail, and the strip the
+  // rail shuts to.
   const marks = (
     <div className="gMarks">
-      {Object.entries(MARKS).map(([mid, mark]) => (
-        <figure key={mid} className="gMark">
-          <div className="gMarkRow">
-            <span style={{ fontSize: 44, lineHeight: 0 }}>{mark.draw()}</span>
-            <span style={{ fontSize: 26, lineHeight: 0 }}>{mark.draw()}</span>
-            <span style={{ fontSize: 16, lineHeight: 0 }}>{mark.draw()}</span>
-          </div>
-          <div className="gRail">
-            <span style={{ fontSize: 22, lineHeight: 0 }}>{mark.draw()}</span>
-            <b className="gWord">
-              MQTT<span>Forge</span>
-            </b>
-          </div>
-          <figcaption>
-            <b>{mark.label}</b>
-            <span>{mark.about}</span>
-          </figcaption>
-        </figure>
-      ))}
+      <figure className="gMark">
+        <div className="gMarkRow">
+          <span style={{ fontSize: 44, lineHeight: 0 }}>
+            <Mark />
+          </span>
+          <span style={{ fontSize: 26, lineHeight: 0 }}>
+            <Mark />
+          </span>
+          <span style={{ fontSize: 16, lineHeight: 0 }}>
+            <Mark />
+          </span>
+        </div>
+        <div className="gRail">
+          <span style={{ fontSize: 22, lineHeight: 0 }}>
+            <Mark />
+          </span>
+          <b className="gWord">
+            MQTT<span>Forge</span>
+          </b>
+        </div>
+        <figcaption>
+          <b>Ember</b>
+          <span>the heat rather than the tool — what a forge is for, and what this watches for</span>
+        </figcaption>
+      </figure>
     </div>
   );
 

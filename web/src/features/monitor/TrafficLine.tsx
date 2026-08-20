@@ -97,8 +97,16 @@ export function TrafficLine({
   const [box, setBox] = useState({ across: 0, down: 0 });
   // A reading the reader has clicked, which stays open while the pointer goes elsewhere. Held
   // apart from `hovered` so moving across the plot does not drag the opened one along with it.
-  const [opened, setOpened] = useState<number | null>(null);
+  const [held_, setOpened] = useState<number | null>(null);
   const { readings } = series;
+
+  // An index into a run that may since have got shorter. Every message on a topic carries some
+  // fields and only the newest carry others, so picking one of the rarer fields can take a run
+  // of thirty readings down to three — and the reading opened at index twelve is then an index
+  // into nothing. It was read for its value without asking, which crashed the pane and took the
+  // whole console down with it. Nothing that names a position in a list the reader can shorten
+  // may be trusted to still be in it.
+  const opened = held_ !== null && held_ < readings.length ? held_ : null;
 
   const y = (value: number) => SIDE - positionIn(domain, value) * SIDE;
 
