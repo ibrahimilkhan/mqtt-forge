@@ -87,6 +87,7 @@ button.history:focus-visible { outline: 2px solid var(--signal); outline-offset:
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 5px;
   cursor: pointer;
   margin-top: 10px;
   min-height: 24px;
@@ -102,6 +103,8 @@ button.history:focus-visible { outline: 2px solid var(--signal); outline-offset:
 .hold:hover:not(:disabled) { color: var(--ink); border-color: var(--rule); background: none; }
 .hold:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 .hold[aria-pressed="true"] { color: var(--ink); border-color: var(--ink); }
+/* The count of what is waiting behind the pause, beside the shape that lets it through. */
+.hold span { font-variant-numeric: tabular-nums; }
 
 .entry {
   border-left: 2px solid var(--rule);
