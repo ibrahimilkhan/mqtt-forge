@@ -3,7 +3,6 @@ import { PanelShell } from '../../components/PanelShell';
 import panel from '../../styles/panel.module.css';
 import { SCALES, type ScaleId } from '../../lib/scale';
 import { useAppearanceStore } from '../../stores/appearanceStore';
-import { CHART_DETAIL, type ChartDetailId } from '../appearance/chart';
 import {
   CONTROL_GROUP_TITLES,
   CONTROL_GROUPS,
@@ -11,7 +10,6 @@ import {
   CONTROLS,
   RANGE_CHIPS,
 } from '../appearance/controls';
-import { GRIDS, type GridId } from '../appearance/grid';
 import { useExport } from '../monitor/useExport';
 import {
   READING_GROUPS,
@@ -36,31 +34,11 @@ const GROUPS = Object.keys(READING_GROUPS) as ReadingGroup[];
  */
 export function ChartPanel({ onClose }: { onClose: () => void }) {
   // No selector: the panel shows every value, so it must re-render on any change.
-  const { chart, scale, grid, readings, setChart, setScale, setGrid, toggleReading, resetReadings } =
-    useAppearanceStore();
-
-  const deep = CHART_DETAIL[chart].histogram;
+  const { scale, readings, setScale, toggleReading, resetReadings } = useAppearanceStore();
   const exporter = useExport();
 
   return (
     <PanelShell title="Chart" onClose={onClose}>
-      <div className={panel.row}>
-        <Field label="Detail" htmlFor="chart-detail">
-          <select
-            id="chart-detail"
-            className={styles.select}
-            value={chart}
-            onChange={(event) => setChart(event.target.value as ChartDetailId)}
-          >
-            {Object.entries(CHART_DETAIL).map(([id, detail]) => (
-              <option key={id} value={id}>
-                {detail.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-      </div>
-
       <div className={panel.row}>
         <Field label="Range" htmlFor="chart-range">
           <select
@@ -83,25 +61,40 @@ export function ChartPanel({ onClose }: { onClose: () => void }) {
         Runs whose peaks are the signal — pulses, switches — are always drawn on their extremes.
       </p>
 
+      {/* Where csv puts the readings. Its own row rather than a line in the chip's explanation:
+          it is a setting, it persists across saves, and a reader who wants to change it should
+          not have to press the thing that uses it. */}
       <div className={panel.row}>
-        <Field label="Grid" htmlFor="chart-grid">
-          <select
-            id="chart-grid"
-            className={styles.select}
-            value={grid}
-            onChange={(event) => setGrid(event.target.value as GridId)}
+        <span className={styles.markLabel} id="save-folder-label">
+          Save folder
+        </span>
+        <div className={styles.folder}>
+          <span
+            className={styles.folderPath}
+            data-testid="export-folder"
+            // A path is cut from its head, since the tail is what tells two folders apart. A
+            // sentence is not, and cutting one from its head reads as gibberish.
+            data-path={exporter.folder ? '' : undefined}
+            title={exporter.folder ?? undefined}
           >
-            {Object.entries(GRIDS).map(([id, option]) => (
-              <option key={id} value={id}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </Field>
+            {exporter.canChoose
+              ? (exporter.folder ?? 'Not set — csv will ask the first time')
+              : 'This browser has no folder dialog, so csv comes down as a download'}
+          </span>
+          {exporter.canChoose && (
+            <button
+              type="button"
+              className="ghost"
+              aria-labelledby="save-folder-label"
+              disabled={exporter.choosing}
+              onClick={() => exporter.choose()}
+            >
+              {exporter.folder ? 'Change…' : 'Choose…'}
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Not a panel row: that is a flex row for fields that sit beside each other, and these
-          are a column of groups. */}
       <section className={styles.readings}>
         <h3 className={styles.heading}>Readings</h3>
         <p className={panel.note}>
@@ -123,7 +116,7 @@ export function ChartPanel({ onClose }: { onClose: () => void }) {
                   type="checkbox"
                   aria-labelledby={`reading-${id}`}
                   aria-describedby={`what-${id}`}
-                  checked={showsReading(id, readings, deep)}
+                  checked={showsReading(id, readings)}
                   onChange={(event) => toggleReading(id, event.target.checked)}
                 />
                 <span className={styles.readingText}>
@@ -148,7 +141,14 @@ export function ChartPanel({ onClose }: { onClose: () => void }) {
           Save folder
         </span>
         <div className={styles.folder}>
-          <span className={styles.folderPath} data-testid="export-folder" title={exporter.folder ?? undefined}>
+          <span
+            className={styles.folderPath}
+            data-testid="export-folder"
+            // A path is cut from its head, since the tail is what tells two folders apart. A
+            // sentence is not, and cutting one from its head reads as gibberish.
+            data-path={exporter.folder ? '' : undefined}
+            title={exporter.folder ?? undefined}
+          >
             {exporter.canChoose
               ? (exporter.folder ?? 'Not set — csv will ask the first time')
               : 'This browser has no folder dialog, so csv comes down as a download'}

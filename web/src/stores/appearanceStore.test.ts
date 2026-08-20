@@ -5,10 +5,8 @@ const DEFAULTS = {
   sans: 'inter',
   mono: 'jetbrains',
   size: 15,
-  chart: 'full',
   scale: 'typical',
   logo: 'anvil',
-  grid: 'frame',
   readings: {},
 };
 
@@ -24,14 +22,7 @@ describe('sanitize', () => {
   });
 
   // A hand-edited or stale stored value can name a version that no longer exists.
-  it('falls back to the default chart version when the id is not one of them', () => {
-    expect(sanitize({ ...DEFAULTS, chart: 'lavish' }).chart).toBe('full');
-    expect(sanitize({ ...DEFAULTS, chart: 7 }).chart).toBe('full');
-  });
 
-  it('keeps a chart version that is one of them', () => {
-    expect(sanitize({ ...DEFAULTS, chart: 'deep' }).chart).toBe('deep');
-  });
 
   it('clamps a size that sits outside the allowed range', () => {
     expect(sanitize({ ...DEFAULTS, size: 99 }).size).toBe(20);
@@ -101,8 +92,8 @@ describe('persistence', () => {
 
     await useAppearanceStore.persist.rehydrate();
 
-    const { sans, mono, size, chart, scale, logo, grid, readings } = useAppearanceStore.getState();
-    expect({ sans, mono, size, chart, scale, logo, grid, readings }).toEqual(DEFAULTS);
+    const { sans, mono, size, scale, logo, readings } = useAppearanceStore.getState();
+    expect({ sans, mono, size, scale, logo, readings }).toEqual(DEFAULTS);
   });
 
   it('does not throw when the storage write fails, and the choice still applies to this tab', () => {
@@ -139,7 +130,7 @@ describe('persistence', () => {
 
     await useAppearanceStore.persist.rehydrate();
 
-    const { sans, mono, size, chart, scale, logo, grid, readings } = useAppearanceStore.getState();
-    expect({ sans, mono, size, chart, scale, logo, grid, readings }).toEqual(DEFAULTS);
+    const { sans, mono, size, scale, logo, readings } = useAppearanceStore.getState();
+    expect({ sans, mono, size, scale, logo, readings }).toEqual(DEFAULTS);
   });
 });

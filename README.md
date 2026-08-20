@@ -205,9 +205,7 @@ such a topic and the pane draws its run, and writes what the run adds up to unde
   levels the run really moves between — is drawn as the steps it actually is, and read as events,
   duty cycle, how long each excursion lasts and how often one comes, with the line they were
   counted against drawn on the plot. A **pulse train** — a rest with events on it — is read the
-  same way. A **counter** is read as the rate it climbs at, since its value only says when the
-  device last restarted; a total that climbs by exactly the same amount every time is a ramp
-  rather than a counter, and keeps its trend.
+  same way.
 
 One message can carry a whole environment, so a JSON body's numeric fields are offered by name —
 `temp`, `env.hum`, `cells.0` — and the pane opens on whichever of them is doing the most,
@@ -227,7 +225,7 @@ topic's own newest message underneath as evidence.
 Four chips over the plot decide how much of its height goes on the run's range:
 
 - **auto** lets the readings decide. A quantity takes whatever **Chart → Range** says; a switch,
-  a pulse or a counter always takes its extremes, because clipping a pulse shaves off the signal.
+  a pulse always takes its extremes, because clipping a pulse shaves off the signal.
 - **ends** spends the height on the whole run, from its lowest reading to its highest.
 - **mid** spends it on where the readings mostly are — Tukey's fences, the same line the note
   draws between spread and an outlier. Readings past the edge are drawn *on* it, marked, and
@@ -235,6 +233,7 @@ Four chips over the plot decide how much of its height goes on the run's range:
 - **log** gives each decade the same height. Positive runs only; a run that reaches zero falls
   back to its extremes rather than pretending.
 
+The plot carries its own edge, so a line lying along the top can be told from one near it.
 **time** and **dist** read the same run in order or as a distribution. **csv** copies the readings
 on the chart to the clipboard — a header, then one row per reading with its time in full — so they
 go straight into a spreadsheet or a notebook. Every chip over the plot is three or four characters,
@@ -247,13 +246,7 @@ the chart redraws for it without closing. The same control, or **Escape**, puts 
 
 ### The chart panel
 
-Everything else about the chart is here. **Detail** picks how much of it to draw: *plain* is the
-line alone, *full* adds the marks and the note, *deep* draws both views at once. **Grid** picks
-what is drawn round it — nothing, the plot's own edge, or the edge with the quarters marked. An
-edge is the default: without one, a line lying along the top of the plot cannot be told from a
-line near the top, which is exactly the reading the pinned marks depend on.
-
-And then every reading the note can make, grouped by the kind of run it applies to, each with a
+Everything else about the chart is here. Every reading the note can make, grouped by the kind of run it applies to, each with a
 switch and a line saying what it is:
 
 | | |
@@ -266,7 +259,6 @@ switch and a line saying what it is:
 | `quartiles` `fences` | the middle half, and the line past which a reading is an outlier |
 | `shape` `trend` `step` `cycle` `outliers` | what the run is doing, and what does not belong to it |
 | `levels` `events` `duty` `width` `period` | a switch or a pulse, counted and timed |
-| `rate` `counted` `at` `restarts` | a running total, read as its slope |
 | `every` `off scale` `window` `skipped` `silence` | true of any run: its rhythm, what the plot could not hold, and what was left out |
 
 A reading switched off leaves the note; switch them all off and the note goes with them. Hovering

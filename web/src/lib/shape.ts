@@ -6,20 +6,16 @@ import type { Summary } from './stats';
  *
  * A mean is a fact about a temperature and a fiction about a door sensor: 'the door was 0.3 open
  * on average' describes nothing that ever happened. The same goes for a pulse train, where the
- * average sits in the gap between the two levels the signal actually visits, and for a packet
- * counter, where the value itself is meaningless and the only reading anyone wants is how fast it
- * is climbing.
+ * average sits in the gap between the two levels the signal actually visits.
  *
  * So the run is classified first, and the chart and the note both follow it: how the line is
  * drawn, which range it is drawn in, and which numbers are worth printing under it.
  */
-export type ShapeId = 'continuous' | 'state' | 'pulse' | 'counter';
+export type ShapeId = 'continuous' | 'state' | 'pulse';
 
 export type Shape =
   /** Readings of a quantity. Means, deviations and trends all mean what they usually mean. */
   | { id: 'continuous' }
-  /** A number that only ever goes up. Its value says nothing; its rate says everything. */
-  | { id: 'counter'; rate: number | null; wraps: number }
   /** A handful of levels, or a rest with events on it. Counted and timed, not averaged. */
   | { id: 'state' | 'pulse'; levels: number; pulses: Pulses };
 
@@ -82,9 +78,6 @@ export function shapeOf(readings: Reading[], summary: Summary): Shape {
 
   const levels = tally(values);
 
-  const counting = climbing(readings, levels.size);
-  if (counting) return counting;
-
   // A handful of levels, each of them somewhere the run actually lives: a switch, a mode, a
   // state machine. Checked before the pulse test, since a switch also rests and leaves — the
   // difference is that its rest is one exact value rather than a band the readings wander in.
@@ -100,56 +93,6 @@ export function shapeOf(readings: Reading[], summary: Summary): Shape {
   if (events) return { id: 'pulse', levels: levels.size, pulses: events };
 
   return { id: 'continuous' };
-}
-
-/**
- * A number that only ever goes up.
- *
- * Packets, bytes, joules, revolutions: the reading is a running total, so its value is an
- * accident of when the device last restarted and the only thing worth charting is the slope.
- * Sensor noise makes a real quantity wobble, so 'never once went down' is a strict enough test to
- * separate a total from a temperature that happens to be rising.
- *
- * A wrap or a restart is allowed for — that is a counter behaving exactly like a counter — and
- * counted, since a rate worked out straight across one would be a large negative number.
- */
-function climbing(readings: Reading[], levels: number): Shape | null {
-  // A total worth reading takes more than a handful of values. Without this, a door sensor going
-  // 0, 1, 0, 1 reads as a counter that wraps on every close.
-  if (levels <= MOST_LEVELS) return null;
-
-  let rise = 0;
-  let wraps = 0;
-  const steps = new Set<number>();
-
-  for (let i = 1; i < readings.length; i++) {
-    const step = readings[i].value - readings[i - 1].value;
-
-    if (step >= 0) {
-      rise += step;
-      steps.add(step);
-      continue;
-    }
-
-    // A drop that lands near the bottom of the run is a counter starting again. A drop that
-    // lands anywhere else is a quantity going down, and this is not a counter at all.
-    if (readings[i].value > readings[i - 1].value / 2) return null;
-    wraps++;
-  }
-
-  // Every wrap is a reading the rate cannot be taken across, and a run that is mostly wraps is
-  // not a counter being read, it is a device being restarted.
-  if (rise <= 0 || wraps * 4 > readings.length) return null;
-
-  // A total that climbs by exactly the same amount every single time is not a total — nothing
-  // that gets counted arrives that evenly. It is a ramp: a sweep, a setpoint, a simulator, a
-  // temperature climbing steadily. Those have a value that means something and a trend worth
-  // printing, and reading them as counters would throw both away.
-  if (steps.size < 2) return null;
-
-  const span = readings[readings.length - 1].at.getTime() - readings[0].at.getTime();
-
-  return { id: 'counter', rate: span > 0 ? (rise / span) * 1000 : null, wraps };
 }
 
 /**

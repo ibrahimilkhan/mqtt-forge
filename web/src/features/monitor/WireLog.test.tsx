@@ -1267,67 +1267,46 @@ describe('choosing what the chart draws', () => {
   });
 });
 
-// The same readings answer different questions for different readers, and which of those a
-// console should answer is not ours to decide — it is a setting, next to the fonts.
-describe('the three versions of the chart', () => {
+// What the chart draws is no longer a level to pick between: everything is drawn, and which
+// readings the note makes is a switch each in the Chart panel.
+describe('what the chart draws', () => {
   const readings = (topic: string, ...bodies: string[]) =>
     bodies.forEach((body) => useLogStore.getState().push({ kind: 'recv', topic, body }));
 
   const wave = () => Array.from({ length: 20 }, (_, i) => `${(21 + Math.sin(i) * 2).toFixed(2)}`);
 
-  it('draws the line alone on plain', () => {
-    useAppearanceStore.getState().setChart('plain');
+  it('draws the line, its marks and the note', () => {
     readings('sensors/temp', ...wave());
     useSelectionStore.getState().select(chip);
 
     render(<Monitor />);
 
     expect(screen.getByTestId('plotArea')).toBeInTheDocument();
-    expect(screen.queryByTestId('note')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Save the readings as CSV/ })).not.toBeInTheDocument();
-  });
-
-  it('draws the line, its marks and the note on full', () => {
-    useAppearanceStore.getState().setChart('full');
-    readings('sensors/temp', ...wave());
-    useSelectionStore.getState().select(chip);
-
-    render(<Monitor />);
-
     expect(screen.getByTestId('note')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Save the readings as CSV/ })).toBeInTheDocument();
     expect(screen.queryByTestId('histogram')).not.toBeInTheDocument();
   });
 
-  it('draws both views at once on deep, with the quartiles under them', () => {
-    useAppearanceStore.getState().setChart('deep');
+  it('swaps the line for the distribution when that view is picked', async () => {
+    readings('sensors/temp', ...wave());
+    useSelectionStore.getState().select(chip);
+
+    render(<Monitor />);
+    await userEvent.click(screen.getByRole('button', { name: 'Distribution' }));
+
+    expect(screen.getByTestId('histogram')).toBeInTheDocument();
+    expect(screen.queryByTestId('plotArea')).not.toBeInTheDocument();
+  });
+
+  // A reading switched off leaves the note; nothing else decides that any more.
+  it('leaves out a reading the panel has switched off', () => {
+    useAppearanceStore.getState().toggleReading('mean', false);
     readings('sensors/temp', ...wave());
     useSelectionStore.getState().select(chip);
 
     render(<Monitor />);
 
-    expect(screen.getByTestId('plot')).toBeInTheDocument();
-    expect(screen.getByTestId('histogram')).toBeInTheDocument();
-    expect(reading('quartiles')).not.toBe('—');
-    expect(reading('fences')).not.toBe('—');
-    // Nothing to choose between when both are drawn.
-    expect(screen.queryByRole('button', { name: 'Distribution' })).not.toBeInTheDocument();
-  });
-
-  it('keeps the readings reachable from the keyboard on every version', async () => {
-    for (const version of ['plain', 'full', 'deep'] as const) {
-      useAppearanceStore.getState().setChart(version);
-      useLogStore.getState().clear();
-      readings('sensors/temp', ...wave());
-      useSelectionStore.getState().select(chip);
-
-      const view = render(<Monitor />);
-      const plot = screen.getByTestId('plotArea');
-      for (let step = 0; step < 12 && document.activeElement !== plot; step++) await userEvent.tab();
-
-      expect(plot, `on ${version}`).toHaveFocus();
-      view.unmount();
-    }
+    expect(screen.queryByTestId('reading-mean')).not.toBeInTheDocument();
+    expect(screen.getByTestId('reading-median')).toBeInTheDocument();
   });
 });
 

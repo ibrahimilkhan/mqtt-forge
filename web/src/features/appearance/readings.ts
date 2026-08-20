@@ -26,10 +26,6 @@ export type ReadingId =
   | 'duty'
   | 'width'
   | 'period'
-  | 'rate'
-  | 'counted'
-  | 'at'
-  | 'restarts'
   | 'every'
   | 'offScale'
   | 'window'
@@ -37,7 +33,7 @@ export type ReadingId =
   | 'silence';
 
 /** Which kind of run a reading belongs to, which is also how the panel groups them. */
-export type ReadingGroup = 'quantity' | 'events' | 'total' | 'run';
+export type ReadingGroup = 'quantity' | 'events' | 'run';
 
 type Reading = {
   /** What the note prints. Short on purpose — the panel is where it gets explained. */
@@ -46,12 +42,12 @@ type Reading = {
   what: string;
   group: ReadingGroup;
   /**
-   * Off unless the reader asks, or unless the chart is drawn at its deepest.
+   * Off until the reader asks for it.
    *
    * The two quartile readings are the numbers behind the fences the chart already draws, and most
-   * readers never need them spelled out. 'Deep' is the setting that says otherwise.
+   * readers never need them spelled out — but the switch beside them is right there.
    */
-  deep?: true;
+  off?: true;
 };
 
 export const READING_GROUPS: Record<ReadingGroup, { title: string; about: string }> = {
@@ -63,11 +59,6 @@ export const READING_GROUPS: Record<ReadingGroup, { title: string; about: string
     title: 'A switch or a pulse',
     about:
       'A run that rests somewhere and leaves it. Averaging one describes nothing that happened, so it is counted and timed instead.',
-  },
-  total: {
-    title: 'A running total',
-    about:
-      'A number that only climbs. Its value says when the device last restarted; its slope says what it is doing.',
   },
   run: { title: 'Any run', about: 'True of every chart, whatever the readings are.' },
 };
@@ -94,13 +85,13 @@ export const READINGS: Record<ReadingId, Reading> = {
     label: 'quartiles',
     what: 'The middle half of the readings — a quarter fall below the first, a quarter above the second.',
     group: 'quantity',
-    deep: true,
+    off: true,
   },
   fences: {
     label: 'fences',
     what: 'A reading outside these is called an outlier: one and a half box-widths past the quartiles.',
     group: 'quantity',
-    deep: true,
+    off: true,
   },
   shape: {
     label: 'shape',
@@ -148,18 +139,6 @@ export const READINGS: Record<ReadingId, Reading> = {
     what: 'How long from one excursion starting to the next.',
     group: 'events',
   },
-  rate: { label: 'rate', what: 'How fast the total is climbing, per second.', group: 'total' },
-  counted: {
-    label: 'counted',
-    what: 'How much the total rose across the readings on the chart.',
-    group: 'total',
-  },
-  at: { label: 'at', what: 'The newest reading of the total itself.', group: 'total' },
-  restarts: {
-    label: 'restarts',
-    what: 'How many times the total went back to the beginning. The rate steps over those.',
-    group: 'total',
-  },
   every: {
     label: 'every',
     what: 'The middle gap between arrivals, and how far the gaps stray from it.',
@@ -199,5 +178,4 @@ export const READING_IDS = Object.keys(READINGS) as ReadingId[];
 export const showsReading = (
   id: ReadingId,
   chosen: Partial<Record<ReadingId, boolean>>,
-  deep: boolean,
-): boolean => chosen[id] ?? (READINGS[id].deep ? deep : true);
+): boolean => chosen[id] ?? !READINGS[id].off;

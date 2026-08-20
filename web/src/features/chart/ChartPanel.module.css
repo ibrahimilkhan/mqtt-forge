@@ -125,17 +125,23 @@
   min-width: 0;
 }
 
-/* Tail first: the last two segments of a path are what tell two folders apart, and the volume in
-   front of them never does. One line — a wrapped path pushes the button off the row. */
+/* One line either way — a second line pushes the button off the row. */
 .folderPath {
   flex: 1;
   min-width: 0;
-  font-family: var(--mono);
-  font-size: var(--t-micro);
+  font-size: var(--t-small);
   color: var(--muted);
-  direction: rtl;
-  text-align: left;
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A path is cut from its head: the last segments are what tell two folders apart and the volume
+   in front of them never does. The sentence that stands in when there is no path is cut the
+   ordinary way, since a sentence read from its tail is gibberish. */
+.folderPath[data-path] {
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  direction: rtl;
+  text-align: left;
 }

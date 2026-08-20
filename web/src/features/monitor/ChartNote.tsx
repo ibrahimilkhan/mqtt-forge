@@ -36,8 +36,7 @@ const named = (id: ReadingId) => READINGS[id];
  *
  * Which slots those are follows the shape of the run. A mean, a deviation and a trend describe a
  * temperature; under a door sensor they describe nothing that ever happened — the door was never
- * 0.3 open, and it has no trend. A switch is counted and timed instead, and a counter is read as
- * the rate it is climbing at, since its value is an accident of when the device last restarted.
+ * 0.3 open, and it has no trend. A switch is counted and timed instead.
  */
 export function ChartNote({
   summary,
@@ -52,7 +51,6 @@ export function ChartNote({
   period = null,
   of = null,
   silence = null,
-  deep = false,
   chosen = {},
 }: {
   summary: Summary;
@@ -75,17 +73,13 @@ export function ChartNote({
   of?: number | null;
   /** How long the topic has been quiet, when that is longer than its own rhythm allows. */
   silence?: number | null;
-  /** The chart is drawn at its deepest, which is what turns the quartile readings on by default. */
-  deep?: boolean;
   /** The readings the reader has switched on or off in the Chart panel. */
   chosen?: Partial<Record<ReadingId, boolean>>;
 }) {
   const counted =
     shape.id === 'state' || shape.id === 'pulse'
       ? events(summary, shape.pulses, pace)
-      : shape.id === 'counter'
-        ? climbing(summary, shape.rate, shape.wraps)
-        : measurements(summary);
+      : measurements(summary);
 
   // What can be said about the run itself, when it is the kind of run those things describe.
   const shaped: Slot[] = shape.id === 'continuous'
@@ -149,7 +143,7 @@ export function ChartNote({
   // group starts a row of its own, so where one ends and the next begins is visible rather than
   // implied by the order.
   const groups = [counted, ...(shaped.length > 0 ? [shaped] : []), run]
-    .map((group) => group.filter((slot) => showsReading(slot.id, chosen, deep)))
+    .map((group) => group.filter((slot) => showsReading(slot.id, chosen)))
     .filter((group) => group.length > 0);
 
   if (groups.length === 0) return null;
@@ -272,49 +266,6 @@ function events(summary: Summary, pulses: Pulses, pace: Cadence | null): Slot[] 
           ? 'the middle time from one excursion to the next, once there are two of them'
           : `middle time from one excursion starting to the next${pace ? `, on a topic publishing every ${duration(pace.every)}` : ''}`,
       tone: 'reading',
-    },
-  ];
-}
-
-/**
- * What a running total adds up to, which is its slope and nothing else.
- *
- * The value of a packet counter says when the device last restarted. The rate says what it is
- * doing, and a rate is the one reading a chart of the raw total makes hardest to see: every
- * counter looks like the same straight line whatever it is counting.
- */
-function climbing(summary: Summary, rate: number | null, wraps: number): Slot[] {
-  return [
-    { id: 'n', value: `${summary.n}`, title: `${summary.n} readings charted`, tone: 'stat' },
-    {
-      id: 'rate',
-      value: rate === null ? null : `${short(rate)}/s`,
-      title:
-        rate === null
-          ? 'how fast the total is climbing, once the readings are spread over any time at all'
-          : `the total climbs ${short(rate)} a second — the value itself only says when the device last restarted`,
-      tone: 'reading',
-    },
-    {
-      id: 'counted',
-      value: short(summary.high - summary.low),
-      title: 'how much the total rose across the readings on the chart',
-      tone: 'stat',
-    },
-    {
-      id: 'at',
-      value: short(summary.high),
-      title: 'the newest reading of the total',
-      tone: 'stat',
-    },
-    {
-      id: 'restarts',
-      value: wraps === 0 ? null : `${wraps}`,
-      title:
-        wraps === 0
-          ? 'times the total went back to the beginning, if it did'
-          : `the total went back to the beginning ${wraps} time${wraps === 1 ? '' : 's'}; the rate steps over those`,
-      tone: wraps === 0 ? 'reading' : 'alarm',
     },
   ];
 }
