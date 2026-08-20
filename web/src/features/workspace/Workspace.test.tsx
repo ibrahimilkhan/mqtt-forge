@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fitRows, Workspace } from './Workspace';
@@ -61,6 +61,37 @@ describe('fitRows', () => {
 afterEach(() => {
   vi.unstubAllGlobals();
 });
+
+// jsdom lays nothing out and knows nothing about pointer capture, so a drag has to be given
+// both: the rects the column would really have, and a capture that says the bar is holding the
+// pointer. Only the near pane's leading edge and the far pane's trailing edge are read.
+function laidOut(element: Element, top: number, bottom: number) {
+  element.getBoundingClientRect = () =>
+    ({ top, bottom, left: top, right: bottom, height: bottom - top, width: bottom - top }) as DOMRect;
+}
+
+function capturing() {
+  const held = {
+    setPointerCapture: () => {},
+    releasePointerCapture: () => {},
+    hasPointerCapture: () => true,
+  };
+  for (const [name, value] of Object.entries(held)) {
+    Object.defineProperty(HTMLElement.prototype, name, { configurable: true, value });
+  }
+
+  return () => {
+    for (const name of Object.keys(held)) Reflect.deleteProperty(HTMLElement.prototype, name);
+  };
+}
+
+/** A drag is a grab, a move and a release; the move only lands on the next animation frame. */
+async function drag(seam: HTMLElement, to: number) {
+  fireEvent.pointerDown(seam, { pointerId: 1, clientY: 0, clientX: 0 });
+  fireEvent.pointerMove(seam, { pointerId: 1, clientY: to, clientX: to });
+  await act(() => new Promise((frame) => requestAnimationFrame(() => frame(undefined))));
+  fireEvent.pointerUp(seam, { pointerId: 1 });
+}
 
 describe('Workspace', () => {
   // jsdom reports no heights, so the column stays in the mode it opens in — which is the
@@ -169,6 +200,34 @@ describe('Workspace', () => {
       'tabindex',
       '-1',
     );
+  });
+
+  // The complaint this is about: fold a region away and the seams below it stopped answering the
+  // pointer. They were measured against the whole column, and a folded region does not take a
+  // share of it — it takes a header and gives up the rest — so the boundary landed wherever that
+  // arithmetic said rather than under the reader's hand.
+  it('puts the seam under the pointer with a region folded away above it', async () => {
+    const done = capturing();
+    render(<Workspace {...parts} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Fold Log' }));
+
+    const column = screen.getByTestId('right-column');
+    const [, , chartRegion, , publishRegion] = [...column.children];
+    // The column is laid out too, so the old arithmetic has everything it wanted and the test
+    // turns on which box the seam measures against rather than on a missing rect.
+    laidOut(column, 0, 1000);
+    // A tall folded strip, so the two answers are far enough apart to tell apart.
+    laidOut(chartRegion, 200, 830);
+    laidOut(publishRegion, 833, 1000);
+
+    const seam = screen.getByRole('separator', { name: 'Chart and publish boundary' });
+    await drag(seam, 830);
+
+    // 830 of the 200..1000 the pair occupies: the chart takes 78.75% of it, not the 75.71% that
+    // measuring against a column with a folded strip at the top of it would have given.
+    expect(column.style.gridTemplateRows).toContain('minmax(0, 78.75fr)');
+    expect(column.style.gridTemplateRows).toContain('minmax(0, 21.25fr)');
+    done();
   });
 
   it('gives each boundary in the column a handle of its own', () => {

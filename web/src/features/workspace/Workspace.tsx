@@ -153,21 +153,52 @@ export function Workspace({ panel, tree, log, chart, publish }: Props) {
       ? { gridTemplateRows: REGIONS.map(({ id }) => track(open(id), weight(id) / spread)).join(' auto ') }
       : undefined;
 
-  // Both side-by-side handles report where their boundary sits across the whole row, which is what
-  // the pointer can measure; the widths either side follow from it.
-  const movePanelEdge = (edge: number) =>
-    setWidths({ ...widths, panel: edge, tree: widths.panel + widths.tree - edge });
+  // Every handle reports one number: where its boundary sits between the two panes it divides,
+  // as a share of that pair. The pair keeps the room it had and only the line inside it moves,
+  // so a seam never disturbs a third pane — and neither the seam nor this arithmetic has to know
+  // what else is in the row, or whether any of it is folded away.
+  const movePanelEdge = (share: number) => {
+    const pair = widths.panel + widths.tree;
+    setWidths({ ...widths, panel: share * pair, tree: (1 - share) * pair });
+  };
 
-  const moveTreeEdge = (edge: number) =>
-    setWidths({ ...widths, tree: edge - shown.panel - spare, right: 1 - edge - spare });
+  // Held as the row looks with a panel open, so what the reader dragged has the width a closed
+  // panel lent its neighbours taken back off it before it is stored.
+  const moveTreeEdge = (share: number) => {
+    const pair = shown.tree + shown.right;
+    setWidths({ ...widths, tree: share * pair - spare, right: (1 - share) * pair - spare });
+  };
 
-  // The same arithmetic down the column: a boundary is measured against the whole of it, and the
-  // two regions it divides take what falls either side. The third is untouched.
-  const moveLogEdge = (edge: number) =>
-    setRows({ ...split, log: edge, chart: split.log + split.chart - edge });
+  const moveLogEdge = (share: number) => {
+    const now = measured();
+    const pair = now.log + now.chart;
+    setRows({ ...now, log: share * pair, chart: (1 - share) * pair });
+  };
 
-  const moveChartEdge = (edge: number) =>
-    setRows({ ...split, chart: edge - split.log, publish: 1 - edge });
+  const moveChartEdge = (share: number) => {
+    const now = measured();
+    const pair = now.chart + now.publish;
+    setRows({ ...now, chart: share * pair, publish: (1 - share) * pair });
+  };
+
+  // What the column is actually divided into right now. Until the log has grown, that is not the
+  // stand-in above: the column is sizing its two ends to their content, and the stand-in is only
+  // there for the handles' arithmetic. Moving a boundary from where the stand-in says it is,
+  // rather than from where the reader can see it, made the first drag of a session jump — the
+  // log doubling in height because a seam three regions away was nudged. Read once, when that
+  // first drag happens; after it the split is real and this answers with it.
+  const measured = (): Rows => {
+    const column = columnRef.current;
+    if (rows !== null || shut.length > 0 || !column) return split;
+
+    return (
+      fitRows(
+        column.clientHeight,
+        logRef.current?.offsetHeight ?? 0,
+        publishRef.current?.offsetHeight ?? 0,
+      ) ?? split
+    );
+  };
 
   // The last one standing cannot be folded: a column of three shut headers is a column with
   // nothing in it, and nothing in the workspace would say what to do about that.
@@ -189,9 +220,7 @@ export function Workspace({ panel, tree, log, chart, publish }: Props) {
           <ResizeHandle
             axis="x"
             label="Panel and topics boundary"
-            value={shown.panel}
-            min={MIN_SHARE}
-            max={widths.panel + widths.tree - MIN_SHARE}
+            {...between(widths.panel, widths.tree)}
             onChange={movePanelEdge}
           />
         </>
@@ -202,9 +231,7 @@ export function Workspace({ panel, tree, log, chart, publish }: Props) {
       <ResizeHandle
         axis="x"
         label="Topics and log boundary"
-        value={shown.panel + shown.tree}
-        min={shown.panel + spare + MIN_SHARE}
-        max={1 - spare - MIN_SHARE}
+        {...between(shown.tree, shown.right)}
         onChange={moveTreeEdge}
       />
 
@@ -224,9 +251,7 @@ export function Workspace({ panel, tree, log, chart, publish }: Props) {
         <ResizeHandle
           axis="y"
           label="Log and chart boundary"
-          value={split.log}
-          min={MIN_SHARE}
-          max={split.log + split.chart - MIN_SHARE}
+          {...between(split.log, split.chart)}
           onChange={moveLogEdge}
           off={!open('log') || !open('chart')}
         />
@@ -236,9 +261,7 @@ export function Workspace({ panel, tree, log, chart, publish }: Props) {
         <ResizeHandle
           axis="y"
           label="Chart and publish boundary"
-          value={split.log + split.chart}
-          min={split.log + MIN_SHARE}
-          max={1 - MIN_SHARE}
+          {...between(split.chart, split.publish)}
           onChange={moveChartEdge}
           off={!open('chart') || !open('publish')}
         />
@@ -256,6 +279,19 @@ export function Workspace({ panel, tree, log, chart, publish }: Props) {
     </div>
   );
 }
+
+/**
+ * Where a seam sits between the two panes it divides, and how far along them it may travel.
+ *
+ * The floor is a share of the whole row or column, since that is what a pane is too narrow to be
+ * useful at; scaled into the pair here, because that is the only space the seam itself works in.
+ */
+const between = (near: number, far: number) => {
+  const pair = near + far;
+  const floor = MIN_SHARE / pair;
+
+  return { value: near / pair, min: floor, max: 1 - floor };
+};
 
 /** A region's track: its share of what the open ones are dividing, or just its own header. */
 const track = (open: boolean, share: number) =>
