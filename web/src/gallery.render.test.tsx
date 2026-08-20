@@ -33,7 +33,7 @@ import { useSelectionStore } from './stores/selectionStore';
 import { useHoldStore } from './features/monitor/useTraffic';
 import { useTopicTreeStore } from './stores/topicTreeStore';
 import { useZoomStore } from './features/monitor/useZoom';
-import { usePinnedStore } from './features/monitor/usePinned';
+import { useChartWindows } from './features/monitor/useChartWindows';
 
 const OUT = '/Users/ilkhan/RiderProjects/MqttForge/src/MqttForge.Api/wwwroot';
 
@@ -365,7 +365,7 @@ ${inner}
   writeFileSync(`${OUT}/console-zoomed.html`, console_(client, { zoomed: true }));
   // And the same console with two charts pinned off it, standing over a console still in use.
   writeFileSync(`${OUT}/console-pinned.html`, console_(client, { pinned: true }));
-  usePinnedStore.setState({ pinned: [] });
+  useChartWindows.setState({ windows: [] });
 
   // Back to the defaults: the runs above set the range on the store to draw themselves both
   // ways, and a panel showing the last of those would be showing the renderer's state rather
@@ -704,20 +704,23 @@ function console_(client, { zoomed = false, pinned = false } = {}) {
   useZoomStore.setState({ zoomed, box: null });
   // Two runs on screen at once, which is the thing one chart in one column cannot do. Placed by
   // hand here; in the console they are placed by whoever dragged them there.
-  usePinnedStore.setState({
-    pinned: pinned
+  useChartWindows.setState({
+    windows: pinned
       ? [
           {
-            id: 'pin-1',
+            id: 'chart-1',
             filter: 'sensors/garage/temp',
             label: 'sensors/garage/temp',
             box: { x: 300, y: 96, w: 470, h: 300 },
+            fixed: true,
           },
           {
-            id: 'pin-2',
+            id: 'chart-2',
             filter: 'sensors/kitchen/humidity',
             label: 'sensors/kitchen/humidity',
             box: { x: 420, y: 330, w: 470, h: 300 },
+            // One pinned and one loose, so the page shows both states of the bar at once.
+            fixed: false,
           },
         ]
       : [],
