@@ -426,18 +426,23 @@
    move another reading. It takes up its own slack, or it is cut — never wrapped, and never
    spilled.
 
-   The column is one measurement: the widest reading the note can print. Every value template in
-   ChartNote was read off and costed, and the longest at its ordinary value is `trend rising
-   0.423/min` at 10.75rem — a seven-character word, a three-significant-figure rate and a unit.
-   `step +3.4 at 14:23:07` is 10.32rem, `range -40.25 to -18.5` 10.27, `quartiles 21.24–21.71`
-   10.05. So the track is 10.8rem and every reading fits one, which is why none of them needs to
-   span two and why the note has no second layout to go wrong. A single number costs a third of
-   that — `median 21.5` is 5.11rem — and the slack is where the alignment comes from. */
+   Every reading is built the same way: the name of it ranged right against a shared edge, the
+   number ranged left off that edge. So the numbers start at one place down the whole note rather
+   than each at the end of its own label, and the eye reads a column of values instead of hunting
+   the start of each one. The label column is the longest label there is — `quartiles` and
+   `off scale`, nine characters — so nothing is ever cut on that side.
+
+   The track is one measurement: that label column, the gap, and the widest value the note can
+   print. Every value template in ChartNote was read off and costed, and the longest at its
+   ordinary value is `trend rising 0.423/min` at sixteen characters. Nine plus sixteen is 12.15rem,
+   which is why nothing spans two columns and why the note has no second layout to go wrong. */
 .note {
   /* One column, and the gap between two. Everything is in rem, so the note scales with the base
      size the reader chose rather than holding still while the type inside it grows — the widest
      reading is 10.75rem at every base size, not only at fifteen pixels. */
-  --note-col: 10.8rem;
+  --note-col: 12.15rem;
+  /* The longest label there is: `quartiles`, `off scale`. */
+  --note-label: 9ch;
   --note-gap-x: 0.667rem;
 
   display: grid;
@@ -445,13 +450,8 @@
      is narrower than the floor, and a single column of a reading nobody can read is the layout
      this replaced. Capping the floor at half the note keeps two columns at every width.
 
-     Below 22.3rem — two columns and a gap — the tracks are narrower than the floor and the
-     longest readings present are cut. Measured on a live temperature run, everything reads whole
-     from about 18.7rem of note: 230px at a 12px base, 280 at 15, 360 at 20. The default pane
-     gives 364px. Swept 60-1400px against base sizes 12, 15, 17 and 20 — 1344 configurations,
-     with the widest strings the note can produce forced into the cells — and found no width at
-     which anything spills the note or a cell leaves its track, and none at which the number of
-     distinct left edges differs from the number of columns. The half-pixel absorbs rounding. */
+     Below 24.97rem — two columns and a gap — the tracks are narrower than the floor and the
+     longest readings present are cut. The half-pixel absorbs rounding. */
   grid-template-columns: repeat(
     auto-fill,
     minmax(min(var(--note-col), (100% - var(--note-gap-x)) / 2 - 0.5px), 1fr)
@@ -471,21 +471,34 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* One line, cut by its track rather than wrapped inside it.
+/* Two columns: the name of the reading, then the reading.
 
-   `overflow: hidden` is on the cell and not only on its two halves: the label does not shrink,
+   The first is the width of the longest label there is, so every number in the note starts at the
+   same place rather than at the end of whatever word happened to precede it. The gap between them
+   is small on purpose — it is the alignment that separates the two halves now, not the space, and
+   space enough to see would only push the numbers further from the names they belong to.
+
+   `overflow: hidden` is on the cell and not only on its halves: the label column does not shrink,
    so at absurd widths it is the cell that pushes past its track, and the clip belongs on the box
    that does the pushing. */
 .slot {
-  display: flex;
+  display: grid;
+  grid-template-columns: var(--note-label) minmax(0, 1fr);
   align-items: baseline;
-  /* In rem like everything else here: a gap in px is the one length that would not scale, and
-     the widest reading clears its track by less than a pixel at the smallest base size. */
-  gap: 0.34rem;
+  gap: 0 0.2rem;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   line-height: 1.35;
+}
+
+/* The first reading of a group opens a row of its own, so the groups read as blocks rather than
+   as a run of cells that happens to be in a sensible order. The extra air above is what separates
+   one block from the next — a rule between them would be a third weight of ink in a caption that
+   already has two. */
+.slot[data-opens] {
+  grid-column-start: 1;
+  margin-top: 0.4rem;
 }
 
 /* An alarm that has actually fired goes to the front of the note.
@@ -500,9 +513,11 @@
    it by size as much as by colour — at one size and one colour the pair read as a single grey
    string, and a row of them read as one long one. */
 .slotLabel {
-  flex: none;
+  /* Ranged right, against the edge every value starts from. No tracking: it bought a little air
+     when the label ran straight into its number, and now the alignment does that instead — while
+     the width it costs comes out of the column every reading has to fit in. */
+  text-align: right;
   font-size: var(--t-micro);
-  letter-spacing: 0.05em;
   color: var(--muted);
   text-transform: lowercase;
 }
@@ -513,6 +528,8 @@
    value is the thing a reader came to the note for, so it carries the page's ink, a step more
    size than its label, and the weight to hold that against a chart above it. */
 .slotValue {
+  /* Ranged left off that same edge, so the numbers read as a column. */
+  text-align: left;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
