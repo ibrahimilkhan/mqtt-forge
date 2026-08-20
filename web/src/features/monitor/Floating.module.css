@@ -1,0 +1,107 @@
+/* ---- the chrome a floating chart wears ---- */
+/* Two of them wear it: the chart thrown open over the console, and every chart pinned beside it.
+   A bar to take hold of, a pin, and a corner to size it by — the least a window can be and still
+   be one. */
+
+/* The bar. Quiet, and the height of a label rather than of a title: this is a handle with a name
+   on it, not a heading over the chart. The right end is left clear of the corner control that
+   puts the chart back, which stands over the pane rather than in this row. */
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* The whole bar is the handle, so the target is the width of the window. */
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+  padding: 2px 34px 6px 0;
+  min-width: 0;
+}
+
+/* What this window is a chart of. It is the one thing telling two pinned windows apart, so it is
+   the one thing here drawn in the pane's own ink rather than in the furniture's grey. */
+.name {
+  font-family: var(--mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Pushed against the far end of the bar, away from the name. */
+.pin {
+  all: unset;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  /* The 24px a finger needs. */
+  min-width: 24px;
+  min-height: 24px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  color: var(--muted);
+  flex: none;
+}
+.pin:hover { color: var(--ink); border-color: var(--rule); }
+.pin:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+/* Pinned. The window only exists because this is pressed, so it says so plainly. */
+.pin[aria-pressed='true'] { color: var(--ink); border-color: var(--ink); }
+
+/* The corner that sizes it. Two hairlines rather than a hatched box: at this size a texture
+   reads as dirt on the corner, and two rules read as a corner. */
+.grip {
+  all: unset;
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 20px;
+  height: 20px;
+  cursor: nwse-resize;
+  touch-action: none;
+  /* --rule is the colour of a hairline nobody is meant to notice, and this one has to be found.
+     A quarter of the ink reads as a mark on the corner and still sits under everything else. */
+  --corner: color-mix(in srgb, var(--ink) 26%, transparent);
+  background:
+    linear-gradient(to right, var(--corner) 0 100%) no-repeat right 4px bottom 4px / 13px 1px,
+    linear-gradient(to bottom, var(--corner) 0 100%) no-repeat right 4px bottom 4px / 1px 13px;
+}
+.grip:hover { --corner: var(--ink); }
+.grip:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
+
+/* ---- a pinned chart's own window ---- */
+
+/* Placed against the viewport, like the thrown-open chart it was pinned from: every ancestor in
+   the console is a grid track with a share of a height, and a share of a height is exactly what
+   a window the reader placed must not have. */
+.window {
+  position: fixed;
+  z-index: 22;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  padding: 10px 14px 14px;
+  background: var(--surface);
+  border-radius: 3px;
+  /* The same lift the thrown-open chart has, without its scrim: these stand over a console that
+     goes on being used, so nothing behind them is dimmed. */
+  box-shadow:
+    0 0 0 1px var(--rule),
+    0 14px 38px color-mix(in srgb, var(--ink) 18%, transparent);
+  overflow: hidden;
+}
+
+/* The chart takes what the bar leaves. */
+.body {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  min-width: 0;
+}
+
+/* No narrow-screen rule, deliberately. A window opens at three fifths of whatever the viewport
+   is and is clamped to it on every move, so a phone gets a smaller window rather than a broken
+   one — and a rule that took the placing back would be taking back the whole point of pinning. */

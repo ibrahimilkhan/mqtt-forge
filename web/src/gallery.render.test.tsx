@@ -33,6 +33,7 @@ import { useSelectionStore } from './stores/selectionStore';
 import { useHoldStore } from './features/monitor/useTraffic';
 import { useTopicTreeStore } from './stores/topicTreeStore';
 import { useZoomStore } from './features/monitor/useZoom';
+import { usePinnedStore } from './features/monitor/usePinned';
 
 const OUT = '/Users/ilkhan/RiderProjects/MqttForge/src/MqttForge.Api/wwwroot';
 
@@ -304,6 +305,7 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
     'gallery-log.html',
     'console.html',
     'console-zoomed.html',
+    'console-pinned.html',
   ]
     .map((href, i) => {
       const name =
@@ -321,7 +323,9 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
                 ? 'The console'
                 : href === 'console-zoomed.html'
                   ? 'Chart opened'
-                  : `Charts ${i}`;
+                  : href === 'console-pinned.html'
+                    ? 'Charts pinned'
+                    : `Charts ${i}`;
 
       return `<a href="${href}">${name}</a>`;
     })
@@ -353,7 +357,10 @@ ${inner}
   writeFileSync(`${OUT}/console.html`, console_(client));
   // The same console with the chart thrown open, which is the state a static page can show and
   // a click cannot be recorded in.
-  writeFileSync(`${OUT}/console-zoomed.html`, console_(client, true));
+  writeFileSync(`${OUT}/console-zoomed.html`, console_(client, { zoomed: true }));
+  // And the same console with two charts pinned off it, standing over a console still in use.
+  writeFileSync(`${OUT}/console-pinned.html`, console_(client, { pinned: true }));
+  usePinnedStore.setState({ pinned: [] });
 
   // Back to the defaults: the runs above set the range on the store to draw themselves both
   // ways, and a panel showing the last of those would be showing the renderer's state rather
@@ -666,7 +673,7 @@ function detail() {
  * a fake hub satisfies the bridge. What this writes is the real layout with real components in
  * it, at whatever size the window opens — which is what a screenshot of the console is.
  */
-function console_(client, zoomed = false) {
+function console_(client, { zoomed = false, pinned = false } = {}) {
   // Primed rather than fetched. Rendering here is one synchronous pass, so a query that has to
   // go and ask would still be pending when the HTML is taken — and the page would show a console
   // that had not connected to anything.
@@ -689,7 +696,27 @@ function console_(client, zoomed = false) {
 
   useLogStore.getState().clear();
   useTopicTreeStore.getState().reset();
-  useZoomStore.setState({ zoomed });
+  useZoomStore.setState({ zoomed, box: null });
+  // Two runs on screen at once, which is the thing one chart in one column cannot do. Placed by
+  // hand here; in the console they are placed by whoever dragged them there.
+  usePinnedStore.setState({
+    pinned: pinned
+      ? [
+          {
+            id: 'pin-1',
+            filter: 'sensors/garage/temp',
+            label: 'sensors/garage/temp',
+            box: { x: 300, y: 96, w: 470, h: 300 },
+          },
+          {
+            id: 'pin-2',
+            filter: 'sensors/kitchen/humidity',
+            label: 'sensors/kitchen/humidity',
+            box: { x: 420, y: 330, w: 470, h: 300 },
+          },
+        ]
+      : [],
+  });
   const traffic = [
     ['sensors/livingroom/temp', wobble(60, 21.6, 1.4)],
     ['sensors/garage/temp', wobble(60, 12.6, 0.8)],

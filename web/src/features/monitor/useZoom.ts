@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { create } from 'zustand';
+import { moved, openingBox, type Box } from './floating';
 
 /**
  * Whether the chart has been lifted out of its column.
@@ -15,12 +16,29 @@ import { create } from 'zustand';
  * A store rather than state in the chart: the pane that has to become an overlay is the region
  * around it, and that is placed by the workspace, three components up.
  */
-type ZoomState = { zoomed: boolean; toggle: () => void; close: () => void };
+type ZoomState = {
+  zoomed: boolean;
+  /** Where it stands, once it has been opened at least once. Null until then. */
+  box: Box | null;
+  toggle: () => void;
+  close: () => void;
+  place: (box: Box) => void;
+};
 
 export const useZoomStore = create<ZoomState>((set) => ({
   zoomed: false,
-  toggle: () => set((state) => ({ zoomed: !state.zoomed })),
+  box: null,
+
+  // Kept when it closes, so a window put where the reader wanted it opens there again. Passed
+  // through the move first: the viewport may have been resized since, and a window remembered
+  // off the edge of it is a window with no bar to take hold of.
+  toggle: () =>
+    set((state) =>
+      state.zoomed ? { zoomed: false } : { zoomed: true, box: state.box ? moved(state.box, 0, 0) : openingBox() },
+    ),
+
   close: () => set({ zoomed: false }),
+  place: (box) => set({ box }),
 }));
 
 /**

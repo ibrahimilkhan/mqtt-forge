@@ -85,15 +85,28 @@ export type Traffic = {
   single: boolean;
 };
 
+/**
+ * The run on one filter, whatever the console has selected.
+ *
+ * The pane below reads the selection; a pinned window reads the filter it was pinned on and goes
+ * on reading it while the selection moves elsewhere. Both are the same question of the log, so
+ * both ask it the same way.
+ */
+export function useRunFor(filter: string | undefined): LogEntry[] {
+  const log = useLogStore((state) => state.entries);
+
+  return useMemo(
+    () => (filter ? log.filter((entry) => carriesTraffic(entry, filter)) : []),
+    [log, filter],
+  );
+}
+
 export function useTraffic(): Traffic {
   const log = useLogStore((state) => state.entries);
   const selected = useSelectionStore((state) => state.selected);
   const holding = useHoldStore((state) => state.held);
 
-  const live = useMemo(
-    () => (selected ? log.filter((entry) => carriesTraffic(entry, selected.filter)) : []),
-    [log, selected],
-  );
+  const live = useRunFor(selected?.filter);
 
   // Only worth looking for while the selection has nothing to show; that is the one moment a
   // reader is asking why, and a scan of the log on every arrival is not worth paying otherwise.
