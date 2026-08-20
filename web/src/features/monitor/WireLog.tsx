@@ -252,12 +252,29 @@ function useBelowFold(listRef: RefObject<HTMLDivElement | null>, drawn: number) 
     };
   }, [listRef, drawn]);
 
-  // A screen at a time, with a row's worth of overlap so nothing passes by unread between one
-  // click and the next. Not to the end: the reader asked to see what is below, not to arrive at
+  // A screen at a time — not to the end: the reader asked to see what is below, not to arrive at
   // the oldest entry the log is holding.
+  //
+  // And it stops on a row's edge rather than after a fixed distance. A screen of a list is only
+  // rarely a whole number of rows, so a fixed step leaves the last one cut in half at the fold,
+  // and the reader's eye has to decide whether the half-value it can see is worth scrolling for.
+  // The step here is the furthest row that ends within a screen of where the fold is now, so the
+  // screen it lands on finishes exactly where that row does.
   const onward = () => {
     const pane = region.current;
-    pane?.scrollBy({ top: Math.max(pane.clientHeight - 44, 44), behavior: 'smooth' });
+    const list = listRef.current;
+    if (!pane || !list) return;
+
+    const fold = pane.getBoundingClientRect().bottom;
+    let step = 0;
+    for (const row of list.children) {
+      const gap = row.getBoundingClientRect().bottom - fold;
+      // In order, so the last one that still fits is the furthest one that does.
+      if (gap > 0 && gap <= pane.clientHeight) step = gap;
+    }
+
+    // Nothing ends inside the next screen: one row is taller than the region, so take the screen.
+    pane.scrollBy({ top: step || pane.clientHeight, behavior: 'smooth' });
   };
 
   return { below, onward };
