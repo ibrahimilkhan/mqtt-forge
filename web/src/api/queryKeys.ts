@@ -3,4 +3,5 @@ export const queryKeys = {
   savedSettings: ['connection', 'settings'] as const,
   subscriptions: ['subscriptions'] as const,
   colourRules: ['colour-rules'] as const,
+  exportFolder: ['export', 'folder'] as const,
 };

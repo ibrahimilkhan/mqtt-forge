@@ -12,6 +12,7 @@ import {
   RANGE_CHIPS,
 } from '../appearance/controls';
 import { GRIDS, type GridId } from '../appearance/grid';
+import { useExport } from '../monitor/useExport';
 import {
   READING_GROUPS,
   READING_IDS,
@@ -39,6 +40,7 @@ export function ChartPanel({ onClose }: { onClose: () => void }) {
     useAppearanceStore();
 
   const deep = CHART_DETAIL[chart].histogram;
+  const exporter = useExport();
 
   return (
     <PanelShell title="Chart" onClose={onClose}>
@@ -137,6 +139,33 @@ export function ChartPanel({ onClose }: { onClose: () => void }) {
           </fieldset>
         ))}
       </section>
+
+      {/* Where csv puts the readings. Its own row rather than a line in the chip's explanation:
+          it is a setting, it persists across saves, and a reader who wants to change it should
+          not have to press the thing that uses it. */}
+      <div className={panel.row}>
+        <span className={styles.markLabel} id="save-folder-label">
+          Save folder
+        </span>
+        <div className={styles.folder}>
+          <span className={styles.folderPath} data-testid="export-folder" title={exporter.folder ?? undefined}>
+            {exporter.canChoose
+              ? (exporter.folder ?? 'Not set — csv will ask the first time')
+              : 'This browser has no folder dialog, so csv comes down as a download'}
+          </span>
+          {exporter.canChoose && (
+            <button
+              type="button"
+              className="ghost"
+              aria-labelledby="save-folder-label"
+              disabled={exporter.choosing}
+              onClick={() => exporter.choose()}
+            >
+              {exporter.folder ? 'Change…' : 'Choose…'}
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* The chips over the plot are three and four characters long, because they share a row
           with a pane that can be two hundred pixels wide. Short is right for the chip and wrong

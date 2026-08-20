@@ -1176,66 +1176,94 @@ describe('choosing what the chart draws', () => {
   });
 
   // Every console can show a number. Getting the run out of the console and into whatever the
-  // reader actually analyses in is the part they all leave undone.
-  it('copies the readings out as CSV', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+  // reader actually analyses in is the part they all leave undone — and the browser cannot do it
+  // here: the window loads a LAN address over plain http, which is not a secure context, so the
+  // folder picker is as absent as the clipboard. The host opens the dialog; the server writes.
+  it('saves the readings as CSV into the chosen folder', async () => {
+    const written: Array<{ name: string; content: string }> = [];
+    server.use(
+      http.get('/api/export/folder', () =>
+        HttpResponse.json({ folder: '/Users/someone/readings', canChoose: true }),
+      ),
+      http.post('/api/export/csv', async ({ request }) => {
+        written.push((await request.json()) as { name: string; content: string });
+
+        return HttpResponse.json({ path: '/Users/someone/readings/sensors-temp.csv' });
+      }),
+    );
     readings('sensors/temp', '21.5', '22');
     useSelectionStore.getState().select(chip);
 
     render(<Monitor />);
-    await userEvent.click(screen.getByRole('button', { name: 'Copy as CSV' }));
+    await userEvent.click(await screen.findByRole('button', { name: /Save the readings as CSV/ }));
 
-    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('time,sensors/temp'));
-    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('21.5'));
+    await waitFor(() => expect(written).toHaveLength(1));
+    expect(written[0].name).toBe('sensors/temp');
+    expect(written[0].content).toContain('time,sensors/temp');
+    expect(written[0].content).toContain('21.5');
   });
 
-  // Clipboard access is refused often enough — an insecure origin, a locked-down browser — that
-  // a button which silently does nothing is a real outcome rather than a theoretical one.
-  it('says so when the clipboard refuses', async () => {
-    Object.defineProperty(navigator, 'clipboard', {
-      value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
-      configurable: true,
-    });
+  // Pressing the button is the reader asking to save. Refusing because they have not been to a
+  // settings panel first would be the console telling them to go and set up what they just asked
+  // for.
+  it('asks for a folder the first time, then saves into it', async () => {
+    let chosen: string | null = null;
+    const written: unknown[] = [];
+    server.use(
+      http.get('/api/export/folder', () => HttpResponse.json({ folder: chosen, canChoose: true })),
+      http.post('/api/export/folder', () => {
+        chosen = '/Users/someone/readings';
+
+        return HttpResponse.json({ folder: chosen, canChoose: true });
+      }),
+      http.post('/api/export/csv', async ({ request }) => {
+        written.push(await request.json());
+
+        return HttpResponse.json({ path: '/Users/someone/readings/sensors-temp.csv' });
+      }),
+    );
     readings('sensors/temp', '21.5', '22');
     useSelectionStore.getState().select(chip);
 
     render(<Monitor />);
-    await userEvent.click(screen.getByRole('button', { name: 'Copy as CSV' }));
+    await userEvent.click(await screen.findByRole('button', { name: /Save the readings as CSV/ }));
 
-    expect(await screen.findByRole('button', { name: 'Copy failed' })).toBeInTheDocument();
+    await waitFor(() => expect(written).toHaveLength(1));
+    expect(chosen).toBe('/Users/someone/readings');
   });
 
-  // The runtime the desktop build renders in has no clipboard API at all, so this button
-  // reported 'failed' every time it was pressed there — which is a fair description of a control
-  // that never worked. The deprecated path is what still works, and the app already had a helper
-  // for it; the chart simply was not using it.
-  it('still copies where there is no clipboard API', async () => {
-    const exec = vi.fn().mockReturnValue(true);
-    vi.spyOn(navigator, 'clipboard', 'get').mockReturnValue(undefined as unknown as Clipboard);
-    document.execCommand = exec;
+  // A browser pointed at the same server has no dialog to open and no filesystem to write to, so
+  // it gets the file the only way it can. Both routes end with a CSV on disk; only one of them
+  // lets the reader say where.
+  it('comes down as a download where the host has no folder dialog', async () => {
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    URL.createObjectURL = vi.fn().mockReturnValue('blob:readings');
+    URL.revokeObjectURL = vi.fn();
     readings('sensors/temp', '21.5', '22');
     useSelectionStore.getState().select(chip);
 
     render(<Monitor />);
-    await userEvent.click(screen.getByRole('button', { name: 'Copy as CSV' }));
+    await userEvent.click(await screen.findByRole('button', { name: /Save the readings as CSV/ }));
 
-    expect(exec).toHaveBeenCalledWith('copy');
-    expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument();
+    await waitFor(() => expect(click).toHaveBeenCalled());
+    expect(URL.createObjectURL).toHaveBeenCalled();
   });
 
-  it('says when the readings have been copied', async () => {
-    Object.defineProperty(navigator, 'clipboard', {
-      value: { writeText: vi.fn().mockResolvedValue(undefined) },
-      configurable: true,
-    });
+  // A dismissed dialog is an answer, not a failure: nothing was written, and saying 'failed' at
+  // someone who changed their mind would be a lie.
+  it('says nothing happened when the dialog is dismissed', async () => {
+    server.use(
+      http.get('/api/export/folder', () => HttpResponse.json({ folder: null, canChoose: true })),
+      http.post('/api/export/folder', () => HttpResponse.json({ folder: null, canChoose: true })),
+    );
     readings('sensors/temp', '21.5', '22');
     useSelectionStore.getState().select(chip);
 
     render(<Monitor />);
-    await userEvent.click(screen.getByRole('button', { name: 'Copy as CSV' }));
+    await userEvent.click(await screen.findByRole('button', { name: /Save the readings as CSV/ }));
 
-    expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument();
+    expect(screen.queryByText('failed')).not.toBeInTheDocument();
+    expect(screen.queryByText('saved')).not.toBeInTheDocument();
   });
 });
 
@@ -1256,7 +1284,7 @@ describe('the three versions of the chart', () => {
 
     expect(screen.getByTestId('plotArea')).toBeInTheDocument();
     expect(screen.queryByTestId('note')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Copy as CSV' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Save the readings as CSV/ })).not.toBeInTheDocument();
   });
 
   it('draws the line, its marks and the note on full', () => {
@@ -1267,7 +1295,7 @@ describe('the three versions of the chart', () => {
     render(<Monitor />);
 
     expect(screen.getByTestId('note')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Copy as CSV' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Save the readings as CSV/ })).toBeInTheDocument();
     expect(screen.queryByTestId('histogram')).not.toBeInTheDocument();
   });
 
