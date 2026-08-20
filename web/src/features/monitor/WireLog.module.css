@@ -38,6 +38,44 @@ button.history { cursor: pointer; }
 button.history:hover:not(:disabled) { color: var(--ink); background: none; }
 button.history:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
+/* ---- how much is drawn below the fold ---- */
+
+/* Pinned to the bottom of the region, and empty: the height is zero and the pill inside is taken
+   out of the flow, so this neither adds to the log's own height — the region is measured to it,
+   and every pixel here is a pixel off the chart — nor changes the thing it is reporting on by
+   appearing and going. */
+.dock {
+  position: sticky;
+  bottom: 0;
+  height: 0;
+  z-index: 1;
+}
+
+/* Sits at the reading edge, where the count in the foot sits, and lifted off the row it covers:
+   it belongs to the region rather than to the run, and a chip flat on the list would read as the
+   end of it. */
+.below {
+  all: unset;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  padding: 3px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  background: var(--surface);
+  box-shadow: 0 1px 7px color-mix(in srgb, var(--ink) 12%, transparent);
+}
+.below:hover:not(:disabled) { color: var(--ink); border-color: var(--muted); background: var(--surface); }
+.below:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
 /* Quiet while the pane is live, and marked while it is not: a frozen pane that looks like a
    live one is worse than no hold at all. */
 .hold {

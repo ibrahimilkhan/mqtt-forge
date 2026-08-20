@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import type { ColourRule } from '../../lib/topicColour';
 import { useRuleLookup } from '../../lib/useRuleLookup';
 import { MIN_TOPIC_ENTRIES, type LogEntry } from '../../stores/logStore';
@@ -74,6 +74,9 @@ function EntryList() {
   const shown = entries.slice(0, count);
   const all = count >= entries.length;
 
+  const list = useRef<HTMLDivElement>(null);
+  const { below, onward } = useBelowFold(list, count);
+
   // What the log still holds on this topic, which is what says whether there is history to open
   // and how far back it goes. Not the whole log: the pane only ever answers for the selection.
   const history = `${entries.length} in history`;
@@ -81,7 +84,7 @@ function EntryList() {
 
   return (
     <>
-      <div className={styles.log}>
+      <div className={styles.log} ref={list}>
         {shown.map((entry, index) => (
           <LogEntryRow
             key={entry.id}
@@ -142,8 +145,119 @@ function EntryList() {
           {held ? (arrived > 0 ? `held · ${arrived}` : 'held') : 'hold'}
         </button>
       </div>
+
+      {/* Opened, the run is nearly always taller than the region it is drawn in, and the only
+          thing saying so was a scrollbar — which on this platform is not drawn until the pointer
+          is already moving. So the pane says it: how much is down there, pinned to the fold,
+          pointing at it. The click is what a reader was going to do next anyway.
+
+          Named 'more' like the control in the foot above, and they do mean the same word about
+          two different things: that one draws rows the log is holding back, this one scrolls
+          onto rows already drawn. The arrow is the difference, and it is the reason this one
+          can be a glance rather than a read. */}
+      {below > 0 && (
+        <div className={styles.dock}>
+          <button
+            type="button"
+            className={styles.below}
+            aria-label={`${below} more below`}
+            onClick={onward}
+          >
+            {below} more <span aria-hidden="true">↓</span>
+          </button>
+        </div>
+      )}
     </>
   );
+}
+
+/**
+ * How many rows are drawn below what the region can show, and the way onto them.
+ *
+ * The region is the scrolling one, not this pane: the log is given a height by the workspace and
+ * scrolls inside it, so the fold is the region's bottom edge and the rows are measured against
+ * it. Nothing is passed down to say which element that is — the pane has never had to know — so
+ * it is found the way the browser finds it, by walking up to the first ancestor that scrolls.
+ */
+function useBelowFold(listRef: RefObject<HTMLDivElement | null>, drawn: number) {
+  const [below, setBelow] = useState(0);
+  const region = useRef<HTMLElement | null>(null);
+
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    const pane = scrolling(list);
+    region.current = pane;
+    if (!list || !pane) return setBelow(0);
+
+    const recount = () => {
+      const fold = pane.getBoundingClientRect().bottom;
+      // A layout nothing has measured puts every row at zero, which is not the same answer as
+      // every row being out of sight.
+      if (fold <= 0) return setBelow(0);
+
+      const rows = [...list.children];
+      setBelow(rows.length - firstBelow(rows, fold));
+    };
+
+    recount();
+    pane.addEventListener('scroll', recount, { passive: true });
+    // The seam that sizes the region, and the rows themselves: a payload opened out is as much a
+    // change to what fits as a drag is.
+    const watch = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(recount);
+    watch?.observe(pane);
+    watch?.observe(list);
+
+    return () => {
+      pane.removeEventListener('scroll', recount);
+      watch?.disconnect();
+    };
+  }, [listRef, drawn]);
+
+  // A screen at a time, with a row's worth of overlap so nothing passes by unread between one
+  // click and the next. Not to the end: the reader asked to see what is below, not to arrive at
+  // the oldest entry the log is holding.
+  const onward = () => {
+    const pane = region.current;
+    pane?.scrollBy({ top: Math.max(pane.clientHeight - 44, 44), behavior: 'smooth' });
+  };
+
+  return { below, onward };
+}
+
+/**
+ * The first row whose top edge has fallen past the fold.
+ *
+ * Binary search rather than a sweep: this answers on every scroll frame, and the rows are in
+ * document order, so a run of two hundred costs eight measurements instead of two hundred.
+ */
+function firstBelow(rows: ReadonlyArray<Element>, fold: number) {
+  let low = 0;
+  let high = rows.length;
+
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (rows[mid].getBoundingClientRect().top >= fold) high = mid;
+    else low = mid + 1;
+  }
+
+  return low;
+}
+
+/**
+ * The nearest ancestor that actually scrolls — the region the workspace gave this pane.
+ *
+ * Stops at the body rather than walking into it: once the columns stack, the region is told to
+ * overflow visibly and the page itself is what scrolls. Nothing is clipped then, so there is
+ * nothing to report, and a walk that went as far as the document would have reported the whole
+ * rest of the page as hidden below the fold.
+ */
+function scrolling(from: Element | null) {
+  for (let node = from?.parentElement; node && node !== document.body; node = node.parentElement) {
+    const flow = getComputedStyle(node).overflowY;
+    if (flow === 'auto' || flow === 'scroll') return node;
+  }
+
+  return null;
 }
 
 /** A rule colours the topic a message landed on; a command entry never reaches the rows. */

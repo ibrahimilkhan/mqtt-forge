@@ -507,6 +507,22 @@ function logStates(client) {
       open: false,
     },
     {
+      name: 'More of the run than the region can show',
+      note: 'Opened, the run is nearly always taller than the region the workspace gave it — and on this platform the scrollbar that would say so is not drawn until the pointer is already moving. So the pane says it, pinned to the fold, pointing at what is under it.',
+      seed: () => {
+        wobble(60, 21.5, 1.4).forEach((body) =>
+          useLogStore.getState().push({ kind: 'recv', topic: 'sensors/livingroom/temp', body, qos: 0, stamps: ['qos 0', '4 b'] }),
+        );
+      },
+      pick: { label: 'sensors/livingroom/temp', filter: 'sensors/livingroom/temp' },
+      open: true,
+      // The height the workspace would give the region, and what a row costs in it. jsdom lays
+      // nothing out, so the pane is told both — otherwise every row measures zero and the pane
+      // reads a run of twenty-five as entirely on screen.
+      region: 260,
+      row: 90,
+    },
+    {
       name: 'Nothing picked yet',
       note: 'The pane before a reader has told it what to show.',
       seed: () => {},
@@ -523,15 +539,19 @@ function logStates(client) {
       if (state.pick) useSelectionStore.getState().select(state.pick);
       else useSelectionStore.getState().clear();
 
+      const measured = state.region ? laidOut(state.region, state.row) : null;
       const { container, unmount } = render(
         <QueryClientProvider client={client}>
           <div
+            data-region={state.region ? '' : undefined}
             style={{
               width: 360,
               background: 'var(--surface)',
               border: '1px solid var(--rule)',
               borderRadius: 3,
               padding: '11px 20px 16px',
+              // A region that scrolls, which is what the workspace gives this pane.
+              ...(state.region ? { height: state.region, overflowY: 'auto' } : {}),
             }}
           >
             <WireLog />
@@ -547,12 +567,32 @@ function logStates(client) {
       }
 
       const html = container.innerHTML;
+      measured?.();
       unmount();
 
       return `<section class="gRun"><h3>${state.name}</h3><p>${state.note}</p>
         <div class="gRow"><div class="gCell">${html}</div></div></section>`;
     })
     .join('');
+}
+
+/**
+ * Lends jsdom a layout for the run of one region: a fold `deep` pixels down, and rows of `row`
+ * each from the top of the list. Returns the way to take it back.
+ */
+function laidOut(deep, row) {
+  const own = Element.prototype.getBoundingClientRect;
+  Element.prototype.getBoundingClientRect = function () {
+    if (this.hasAttribute?.('data-region')) return { top: 0, bottom: deep };
+    if (this.getAttribute?.('data-testid') !== 'entry') return own.call(this);
+    const index = [...(this.parentElement?.children ?? [])].indexOf(this);
+
+    return { top: index * row, bottom: index * row + row };
+  };
+
+  return () => {
+    Element.prototype.getBoundingClientRect = own;
+  };
 }
 
 /**

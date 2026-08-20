@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
+import type { ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 // The log reads its colour rules through react-query, so every render here needs a client.
 import { renderWithClient as render } from '../../test/renderWithClient';
@@ -431,6 +432,78 @@ describe('opening the history', () => {
   const chip = { label: 'sensors/#', filter: 'sensors/#' };
   const readings = (topic: string, ...bodies: string[]) =>
     bodies.forEach((body) => useLogStore.getState().push({ kind: 'recv', topic, body }));
+
+  /**
+   * jsdom lays nothing out, so the region and its rows are given the geometry a real column
+   * would have: a fold at `fold` pixels down, and rows of `step` each from the top.
+   */
+  function laidOut(fold: number, step: number) {
+    const own = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function () {
+      if (this.getAttribute('data-testid') === 'region') return { top: 0, bottom: fold } as DOMRect;
+      if (this.getAttribute('data-testid') !== 'entry') return own.call(this);
+      const index = [...(this.parentElement?.children ?? [])].indexOf(this);
+      return { top: index * step, bottom: index * step + step } as DOMRect;
+    };
+
+    return () => {
+      Element.prototype.getBoundingClientRect = own;
+    };
+  }
+
+  /** The region the workspace gives the pane: a box of its own that scrolls. */
+  const inRegion = (ui: ReactElement) => (
+    <div data-testid="region" style={{ overflowY: 'auto' }}>
+      {ui}
+    </div>
+  );
+
+  // Opened, the run is nearly always taller than the region it is drawn in, and on this platform
+  // the scrollbar that would say so is not drawn until the pointer is already moving.
+  it('says how much of the run is drawn below what the region can show', async () => {
+    readings('sensors/temp', ...Array.from({ length: 6 }, (_, i) => `${i}`));
+    useSelectionStore.getState().select(chip);
+    const done = laidOut(200, 50);
+
+    render(inRegion(<Monitor />));
+    await userEvent.click(screen.getByRole('button', { name: '6 in history' }));
+
+    // Six rows of fifty in a region two hundred deep: four are on screen, two are not.
+    expect(screen.getByRole('button', { name: '2 more below' })).toBeInTheDocument();
+    done();
+  });
+
+  it('says nothing while the whole run is on screen', async () => {
+    readings('sensors/temp', '1', '2', '3');
+    useSelectionStore.getState().select(chip);
+    const done = laidOut(400, 50);
+
+    render(inRegion(<Monitor />));
+    await userEvent.click(screen.getByRole('button', { name: '3 in history' }));
+
+    expect(screen.queryByRole('button', { name: /more below/ })).not.toBeInTheDocument();
+    done();
+  });
+
+  // The click is what the reader was going to do next anyway.
+  it('scrolls the region on, a screen at a time', async () => {
+    readings('sensors/temp', ...Array.from({ length: 6 }, (_, i) => `${i}`));
+    useSelectionStore.getState().select(chip);
+    const done = laidOut(200, 50);
+
+    render(inRegion(<Monitor />));
+    await userEvent.click(screen.getByRole('button', { name: '6 in history' }));
+
+    const region = screen.getByTestId('region');
+    const scrolled: unknown[] = [];
+    region.scrollBy = (...args: unknown[]) => scrolled.push(args[0]);
+    Object.defineProperty(region, 'clientHeight', { configurable: true, value: 200 });
+
+    await userEvent.click(screen.getByRole('button', { name: '2 more below' }));
+
+    expect(scrolled).toEqual([{ top: 156, behavior: 'smooth' }]);
+    done();
+  });
 
   // It used to mount every entry the log held for the selection — up to five thousand — into a
   // region measured for one row, on the broker selection people leave up.
