@@ -8,7 +8,7 @@ import { ColoursPanel } from './features/colours/ColoursPanel';
 import { BrokerPanel } from './features/connection/BrokerPanel';
 import { MobilePanel } from './features/mobile/MobilePanel';
 import { useBrokerAddress, useConnectionState } from './api/useConnectionState';
-import { PinnedCharts } from './features/monitor/PinnedCharts';
+import { ChartWindows } from './features/monitor/ChartWindows';
 import { TrafficPane } from './features/monitor/TrafficPane';
 import { useZoomStore } from './features/monitor/useZoom';
 import { WireLog } from './features/monitor/WireLog';
@@ -167,10 +167,10 @@ export function App({ hub }: { hub: Hub }) {
         publish={<PublishPanel />}
       />
 
-      {/* Over everything, and outside the workspace: a pinned chart is placed against the
+      {/* Over everything, and outside the workspace: a chart window is placed against the
           viewport, and every ancestor inside the workspace is a grid track with a share of a
           height. */}
-      <PinnedCharts />
+      <ChartWindows />
     </div>
   );
 }

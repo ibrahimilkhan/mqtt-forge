@@ -5,9 +5,9 @@ import { renderWithClient as render } from '../../test/renderWithClient';
 import { useAppearanceStore } from '../../stores/appearanceStore';
 import { useLogStore } from '../../stores/logStore';
 import { useSelectionStore } from '../../stores/selectionStore';
-import { PinnedCharts } from './PinnedCharts';
+import { ChartWindows } from './ChartWindows';
 import { TrafficPane } from './TrafficPane';
-import { usePinnedStore } from './usePinned';
+import { useChartWindows } from './useChartWindows';
 import { useHoldStore } from './useTraffic';
 import { useZoomStore } from './useZoom';
 
@@ -15,7 +15,7 @@ import { useZoomStore } from './useZoom';
 const Console = () => (
   <>
     <TrafficPane />
-    <PinnedCharts />
+    <ChartWindows />
   </>
 );
 
@@ -54,16 +54,20 @@ const openAndPin = async () => {
   await userEvent.click(screen.getByRole('button', { name: /^Pin / }));
 };
 
+/** A window opens pinned in place; taking the pin out is what lets it be moved. */
+const unpin = async (label: string) =>
+  userEvent.click(screen.getByRole('button', { name: `Let ${label} move` }));
+
 beforeEach(() => {
   useLogStore.getState().clear();
   useSelectionStore.getState().clear();
   useHoldStore.getState().release();
   useZoomStore.setState({ zoomed: false, box: null });
-  usePinnedStore.setState({ pinned: [] });
+  useChartWindows.setState({ windows: [] });
   useAppearanceStore.getState().reset();
 });
 
-afterEach(() => usePinnedStore.setState({ pinned: [] }));
+afterEach(() => useChartWindows.setState({ windows: [] }));
 
 describe('pinning a chart', () => {
   // The whole point: two runs on screen at once, rather than one run and the memory of another.
@@ -77,7 +81,7 @@ describe('pinning a chart', () => {
 
     act(() => useSelectionStore.getState().select(room));
 
-    const window_ = screen.getByTestId('pinned-chart');
+    const window_ = screen.getByTestId('chart-window');
     expect(window_).toHaveAttribute('data-filter', 'sensors/kiln');
     expect(window_).toHaveAccessibleName('sensors/kiln chart');
     // And the console's own chart has followed the selection, as it always did.
@@ -92,7 +96,7 @@ describe('pinning a chart', () => {
     await openAndPin();
 
     expect(useZoomStore.getState().zoomed).toBe(false);
-    expect(screen.getByTestId('pinned-chart')).toBeInTheDocument();
+    expect(screen.getByTestId('chart-window')).toBeInTheDocument();
   });
 
   // Every one of these is the first one, as far as where it starts is concerned: not stepped
@@ -106,26 +110,26 @@ describe('pinning a chart', () => {
     render(<Console />);
     await openAndPin();
 
-    const opened = { ...usePinnedStore.getState().pinned[0].box };
+    const opened = { ...useChartWindows.getState().windows[0].box };
     // The first one is dragged off into a corner and made small.
     act(() =>
-      usePinnedStore
+      useChartWindows
         .getState()
-        .place(usePinnedStore.getState().pinned[0].id, { x: 0, y: 0, w: 320, h: 240 }),
+        .place(useChartWindows.getState().windows[0].id, { x: 0, y: 0, w: 320, h: 240 }),
     );
 
     act(() => useSelectionStore.getState().select(room));
     await openAndPin();
 
-    expect(usePinnedStore.getState().pinned[1].box).toEqual(opened);
-    const [, second] = screen.getAllByTestId('pinned-chart');
+    expect(useChartWindows.getState().windows[1].box).toEqual(opened);
+    const [, second] = screen.getAllByTestId('chart-window');
     // And the newest is the one on top, so it is not hidden behind what it landed on.
     expect(second).toHaveAttribute('data-filter', 'sensors/room');
   });
 
-  // A second window on the same topic would draw the same run over the top of the first, and
-  // read as the first having gone wrong.
-  it('pins a topic once, however many times it is asked', async () => {
+  // One window on the last ten minutes and another on the whole history, or the same run in two
+  // ranges side by side: a rule against this would be the tool deciding what is being compared.
+  it('opens as many windows on one topic as it is asked for', async () => {
     readings('sensors/kiln', '900', '910');
     useSelectionStore.getState().select(kiln);
 
@@ -133,7 +137,7 @@ describe('pinning a chart', () => {
     await openAndPin();
     await openAndPin();
 
-    expect(screen.getAllByTestId('pinned-chart')).toHaveLength(1);
+    expect(screen.getAllByTestId('chart-window')).toHaveLength(2);
   });
 
   // The window opens where the chart it was pinned from was standing, at the same size — so the
@@ -146,19 +150,33 @@ describe('pinning a chart', () => {
     render(<Console />);
     await openAndPin();
 
-    const bar = screen.getByTitle('Drag to move — the corner sizes it');
-    expect(bar.firstElementChild).toHaveAttribute('aria-label', 'Unpin sensors/kiln');
+    const bar = screen.getByTitle('Pinned in place — unpin to move it');
+    expect(bar.firstElementChild).toHaveAttribute('aria-label', 'Let sensors/kiln move');
   });
 
-  it('lets the window go when the pin is pressed again', async () => {
+  it('closes the window when its close is pressed', async () => {
     readings('sensors/kiln', '900', '910');
     useSelectionStore.getState().select(kiln);
 
     render(<Console />);
     await openAndPin();
-    await userEvent.click(screen.getByRole('button', { name: 'Unpin sensors/kiln' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Close the sensors/kiln chart' }));
 
-    expect(screen.queryByTestId('pinned-chart')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('chart-window')).not.toBeInTheDocument();
+  });
+
+  // The pin is what holds a window still, not what holds it open. Pressing it used to close the
+  // window, which is a different promise from the one a pin makes anywhere else.
+  it('leaves the window standing when the pin comes out', async () => {
+    readings('sensors/kiln', '900', '910');
+    useSelectionStore.getState().select(kiln);
+
+    render(<Console />);
+    await openAndPin();
+    await userEvent.click(screen.getByRole('button', { name: 'Let sensors/kiln move' }));
+
+    expect(screen.getByTestId('chart-window')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pin sensors/kiln in place' })).toBeInTheDocument();
   });
 
   it('says so when the topic it holds has nothing to chart', async () => {
@@ -171,13 +189,14 @@ describe('pinning a chart', () => {
 
     // Inside the window: the console's own pane is still on this topic and says the same thing.
     expect(
-      within(screen.getByTestId('pinned-chart')).getByText('Nothing on sensors/kiln to chart yet.'),
+      within(screen.getByTestId('chart-window')).getByText('Nothing on sensors/kiln to chart yet.'),
     ).toBeInTheDocument();
   });
 });
 
 describe('placing a window', () => {
-  it('moves with the bar it is dragged by', async () => {
+  // Opening one is a deliberate act, and a chart that slid under the next drag would undo it.
+  it('holds its place while it is pinned, and offers no corner to size it by', async () => {
     readings('sensors/kiln', '900', '910');
     useSelectionStore.getState().select(kiln);
     const done = capturing();
@@ -185,7 +204,41 @@ describe('placing a window', () => {
     render(<Console />);
     await openAndPin();
 
-    const window_ = screen.getByTestId('pinned-chart');
+    const window_ = screen.getByTestId('chart-window');
+    const from = { left: window_.style.left, top: window_.style.top };
+    await drag(screen.getByTitle('Pinned in place — unpin to move it'), 60, 60);
+
+    expect(window_.style.left).toBe(from.left);
+    expect(window_.style.top).toBe(from.top);
+    expect(screen.queryByRole('button', { name: /^Resize / })).not.toBeInTheDocument();
+    done();
+  });
+
+  it('comes forward when it is touched, pinned or not', async () => {
+    readings('sensors/kiln', '900', '910');
+    readings('sensors/room', '21', '22');
+    useSelectionStore.getState().select(kiln);
+
+    render(<Console />);
+    await openAndPin();
+    act(() => useSelectionStore.getState().select(room));
+    await openAndPin();
+
+    fireEvent.pointerDown(screen.getByLabelText('sensors/kiln chart'), { pointerId: 1 });
+
+    expect(screen.getAllByTestId('chart-window').at(-1)).toHaveAttribute('data-filter', 'sensors/kiln');
+  });
+
+  it('moves with the bar it is dragged by', async () => {
+    readings('sensors/kiln', '900', '910');
+    useSelectionStore.getState().select(kiln);
+    const done = capturing();
+
+    render(<Console />);
+    await openAndPin();
+    await unpin('sensors/kiln');
+
+    const window_ = screen.getByTestId('chart-window');
     const from = { left: window_.style.left, top: window_.style.top };
     await drag(screen.getByTitle('Drag to move — the corner sizes it'), 40, 30);
 
@@ -201,8 +254,9 @@ describe('placing a window', () => {
 
     render(<Console />);
     await openAndPin();
+    await unpin('sensors/kiln');
 
-    const window_ = screen.getByTestId('pinned-chart');
+    const window_ = screen.getByTestId('chart-window');
     const was = parseInt(window_.style.width, 10);
     await drag(screen.getByRole('button', { name: 'Resize the sensors/kiln chart' }), 60, 40);
 
@@ -217,8 +271,9 @@ describe('placing a window', () => {
 
     render(<Console />);
     await openAndPin();
+    await unpin('sensors/kiln');
 
-    const window_ = screen.getByTestId('pinned-chart');
+    const window_ = screen.getByTestId('chart-window');
     const was = parseInt(window_.style.width, 10);
     screen.getByRole('button', { name: 'Resize the sensors/kiln chart' }).focus();
     await userEvent.keyboard('{ArrowRight}');
@@ -235,9 +290,9 @@ describe('placing a window', () => {
     render(<Console />);
     await openAndPin();
 
-    const window_ = screen.getByTestId('pinned-chart');
+    const window_ = screen.getByTestId('chart-window');
     act(() => {
-      usePinnedStore.getState().place(usePinnedStore.getState().pinned[0].id, {
+      useChartWindows.getState().place(useChartWindows.getState().windows[0].id, {
         x: 900,
         y: 600,
         w: 400,
@@ -268,10 +323,10 @@ describe('placing a window', () => {
     await openAndPin();
 
     // Drawn back to front, so the last one is the one on top.
-    expect(screen.getAllByTestId('pinned-chart').at(-1)).toHaveAttribute('data-filter', 'sensors/room');
+    expect(screen.getAllByTestId('chart-window').at(-1)).toHaveAttribute('data-filter', 'sensors/room');
 
     fireEvent.pointerDown(screen.getByLabelText('sensors/kiln chart'), { pointerId: 1 });
 
-    expect(screen.getAllByTestId('pinned-chart').at(-1)).toHaveAttribute('data-filter', 'sensors/kiln');
+    expect(screen.getAllByTestId('chart-window').at(-1)).toHaveAttribute('data-filter', 'sensors/kiln');
   });
 });

@@ -13,14 +13,17 @@
   /* The whole bar is the handle, so the target is the width of the window. */
   cursor: move;
   touch-action: none;
-  user-select: none;
   padding: 2px 34px 6px 0;
   min-width: 0;
 }
+/* Pinned, the bar is a label with controls on it. Nothing about it should invite a drag that
+   the pin is going to refuse. */
+.window[data-fixed] .bar { cursor: default; padding-right: 0; }
 
 /* What this window is a chart of. It is the one thing telling two pinned windows apart, so it is
    the one thing here drawn in the pane's own ink rather than in the furniture's grey. */
 .name {
+  flex: 1;
   font-family: var(--mono);
   font-size: var(--t-label);
   letter-spacing: 0.06em;
@@ -35,7 +38,6 @@
    the bar, which is where a pinned window keeps it. */
 .pin {
   all: unset;
-  margin-left: auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -50,7 +52,9 @@
 }
 .pin:hover { color: var(--ink); border-color: var(--rule); }
 .pin:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
-.bar > .pin:first-child { margin-left: 0; }
+/* In the chart's own bar the pin is the only control and stands at the far end; in a window's
+   bar it comes first, and the name takes the room between it and the close. */
+.bar > .pin:last-child { margin-left: auto; }
 /* Pinned. The window only exists because this is pressed, so it says so plainly — filled rather
    than outlined, since what it has to be is unmistakable from across the console: a pin that
    merely looked available is a pin that gets pressed again. */
@@ -60,6 +64,28 @@
   border-color: var(--ink);
 }
 .pin[aria-pressed='true']:hover { background: var(--muted); border-color: var(--muted); }
+
+/* The far end of the bar, which is where a window's close has been since windows had corners.
+   Quiet: it is the one control here that cannot be undone, so it should be found when it is
+   looked for and never fall under a hand that was reaching for something else. */
+.close {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  min-width: 24px;
+  min-height: 24px;
+  flex: none;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: var(--t-lead);
+  line-height: 1;
+  color: var(--muted);
+}
+.close:hover { color: var(--fault); border-color: color-mix(in srgb, var(--fault) 40%, transparent); }
+.close:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 /* The corner that sizes it. Two hairlines rather than a hatched box: at this size a texture
    reads as dirt on the corner, and two rules read as a corner. */
@@ -89,7 +115,8 @@
    a window the reader placed must not have. */
 .window {
   position: fixed;
-  z-index: 22;
+  /* The app writes the depth inline: two windows open in the same place here, so which of them
+     is in front is a fact about the stack rather than about the order they were drawn in. */
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   padding: 10px 14px 14px;
