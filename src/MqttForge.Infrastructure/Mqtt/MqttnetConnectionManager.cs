@@ -16,7 +16,7 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
     // MQTTnet defaults to pinging every 15 seconds and calls the link dead when a PINGRESP is
     // late. On a loaded public broker — with a '#' subscription filling the read loop — that is
     // no margin at all, and a working connection drops reporting "didn't respond in time".
-    // A minute still notices a black-holed link quickly enough for a test console, and a socket
+    // A minute still notices a black-holed link quickly enough for a test tool, and a socket
     // that actually breaks is reported immediately either way; this only covers silent stalls.
     public static readonly TimeSpan KeepAlive = TimeSpan.FromSeconds(60);
 

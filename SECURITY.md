@@ -12,7 +12,7 @@ Fixes go into the next one; older versions are not patched.
 
 ## What this app is
 
-A test console with no authentication of its own, which binds `0.0.0.0` on purpose — that is what
+A test tool with no authentication of its own, which binds `0.0.0.0` on purpose — that is what
 lets the QR panel open it on a phone. Anyone who can reach the port can drive it: publish to your
 broker, read the traffic, and see the broker host and username. Treat "on my network" as "reachable
 by everyone on my network".

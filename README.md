@@ -4,16 +4,19 @@
 [![Image](https://img.shields.io/badge/ghcr.io-mqtt--forge-1e40af?logo=docker&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/pkgs/container/mqtt-forge)
 [![Licence](https://img.shields.io/github/license/ibrahimilkhan/mqtt-forge?color=1e40af)](LICENSE)
 
-An open-source MQTT test console: connect to a broker, watch topics as they arrive, and publish.
+An open-source MQTT test tool with a window you look at: connect to a broker, watch topics as
+they arrive, chart what they are sending, and publish. It runs as a desktop app or as one Docker
+image — nothing to drive from a terminal.
+
 The broker connection is held by the server rather than by the browser, so every device you point
 at it — your desktop, or a phone from the QR panel — is working one connection, one set of
 subscriptions and one set of colour rules.
 
 MQTTForge connects to a broker you already run — it is not a broker itself.
 
-![The console connected to a broker: the topic tree in the middle with alert and device branches
-in their rule colours, the wire log on the right showing time, direction, QoS and size on every
-row, and the publish form below it](.github/assets/console.png)
+![MQTTForge connected to a broker: the topic tree in the middle, each topic showing its latest
+value and the shape of its run, with alert and sensor branches in their rule colours; on the
+right the newest message, the chart of the run behind it and the publish form](.github/assets/console.png)
 
 ## What it does
 
@@ -38,12 +41,15 @@ row, and the publish form below it](.github/assets/console.png)
   own; narrow it to one filter or a list when a busy broker makes that too much.
 - **Colour rules** — MQTT filters you pick colours for, so a branch stands out in a tree of
   hundreds.
-- **QR panel** — opens the same console on a phone on your network.
+- **Chart windows** — open a chart over the app, and pin it to keep it there: it holds the topic
+  it was opened on while the rest of the app moves on. Several at once, so two runs can be read
+  side by side.
+- **QR panel** — opens the same app on a phone on your network.
 - **Chart panel** — how much of the chart to draw, what range it opens on, what is drawn round
   it, a switch for every reading the note can make, and a line on every chip over the plot saying
   what it does. `spread`, `duty` and `csv` are three-letter labels; this is where they are
   spelled out.
-- **Settings** — the fonts and their size, and which of six marks the console wears.
+- **Settings** — the fonts and their size, and which of six marks the app wears.
 
 It speaks MQTT 5.0 only, over TCP or TLS, with a username and password if the broker wants them.
 A broker that speaks just 3.1.1 refuses the connection.
@@ -99,7 +105,7 @@ on Apple Silicon:
 docker run -d -p 5169:5169 --name mqtt-forge ghcr.io/ibrahimilkhan/mqtt-forge
 ```
 
-**2. Open http://localhost:5169.** The console loads with the Broker panel already open.
+**2. Open http://localhost:5169.** It loads with the Broker panel already open.
 
 **3. Point it at your broker** — fill in the host and port, then **Connect**. Which host depends
 on where the broker runs:
@@ -153,9 +159,9 @@ The **Colours** panel takes a list of MQTT filters and a colour for each — `se
 `alerts/#`, whatever you watch for. Every topic a rule covers is then drawn in that colour, in
 the tree and in the log, with the row's left edge carrying it too.
 
-![The Colours panel holding three rules beside the tree they paint: sensors/+/temp in purple
-picks the temperatures out of the sensor branches, alerts/# colours that whole subtree red, and
-devices/# colours its own in teal](.github/assets/colours.png)
+![The Colours panel holding two rules beside the tree they paint: sensors/+/temp in purple picks
+the temperatures out of the sensor branches, and alerts/# colours that whole subtree
+red](.github/assets/colours.png)
 
 When two rules cover one topic the more specific filter wins: read left to right, a named
 segment beats `+`, and `+` beats `#`. So `sensors/#` can colour a whole subtree while
@@ -165,7 +171,7 @@ opened from the QR panel sees the same colours.
 
 ## Reading a sensor
 
-A topic whose messages are numbers is a measurement, and a console that only shows you the
+A topic whose messages are numbers is a measurement, and a tool that only shows you the
 latest one leaves the arithmetic to your eye — which is the arithmetic an eye is worst at. Pick
 such a topic and the pane draws its run, and writes what the run adds up to underneath:
 
@@ -213,6 +219,18 @@ measured against its own size. A message that carries no reading is stepped over
 abandoning the chart, and the note counts what it stepped over — in the fault colour when more of
 the run was stepped over than was drawn.
 
+### Two runs at once
+
+The corner control over the chart opens it as a window across the app, and the pin in that
+window's bar keeps it there: a pinned window holds the topic it was opened on while the app below
+carries on being used for something else. Open a second on another topic and the two stand side
+by side. Unpin one to move or size it, drag it near an edge and it takes the edge, and the × in
+its bar closes it.
+
+![Two chart windows standing over the app, each with the topic it was opened on in its bar and
+its own readings underneath: one pinned in place, one loose with its resize corner
+showing](.github/assets/windows.png)
+
 A selection covering several topics — which is what clicking a branch of the tree gives you —
 draws one small plot per topic, each on its own scale, since °C and % share no axis but do share
 a moment. Clicking a row narrows the pane to that topic, where the note and the field chips are.
@@ -241,8 +259,9 @@ because the row shares a pane that can be two hundred pixels wide; the **Chart**
 each of them does. The control in the region's top-right corner lifts the chart out of its column —
 the plot lives in a third of a column that is itself a third of the window, which is the right
 size for glancing at a run and the wrong size for reading one. Open, it takes three fifths of the
-window and leaves the console readable around it, and still live: click a topic in the tree and
-the chart redraws for it without closing. The same control, or **Escape**, puts it back.
+window and leaves the rest readable around it, and still live: click a topic in the tree and the
+chart redraws for it without closing. The same control, or **Escape**, puts it back — or pin it,
+and it stays as a window of its own.
 
 ### The chart panel
 
