@@ -17,7 +17,15 @@
 
 /* How much is behind the row, and the control that stops it moving: one line, the count at the
    reading edge and the control at the other. */
-.foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+/* Both of them are controls, and neither is worth copying — the readings above are. Set on the
+   row because both are built with `all: unset`, which leaves user-select inheriting. */
+.foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  user-select: none;
+}
 
 /* The list shows the newest arrival; this says how much history sits behind it. */
 .history {

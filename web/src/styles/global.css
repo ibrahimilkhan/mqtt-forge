@@ -68,6 +68,12 @@
     color: var(--surface);
     cursor: pointer;
   }
+  /* A control's label is not prose. Swept over by a pointer on its way somewhere else — which is
+     what a drag across a console of chips is — the words in them highlighted and changed colour,
+     and a chip in selection blue reads as a chip that is on. Nothing here is worth copying: the
+     readings are, and they are not controls. */
+  button, label { user-select: none; }
+
   button:hover:not(:disabled) { background: var(--muted); border-color: var(--muted); }
   button.ghost { background: transparent; color: var(--ink); }
   button.ghost:hover:not(:disabled) { background: var(--ink); color: var(--surface); }
