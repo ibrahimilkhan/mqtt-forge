@@ -71,6 +71,12 @@
    pane rather than pushing it wider. Room at the end for the control in the corner, so a chip
    never slides underneath it. */
 .controls {
+  /* Nothing in this row is prose, and a drag that crosses the console on its way somewhere else
+     used to leave the whole row highlighted — a chip in selection blue reads as a chip that is
+     on. Set here rather than on the chips: they are built with `all: unset`, which resolves
+     user-select to `inherit`, so the row is the only place a rule about them can be written and
+     the only place it cannot be forgotten when another chip is added. */
+  user-select: none;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
