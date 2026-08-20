@@ -35,23 +35,6 @@ export function openingBox(): Box {
   return { x: Math.round((window.innerWidth - w) / 2), y: Math.round((window.innerHeight - h) / 2), w, h };
 }
 
-/**
- * The same box, stepped clear of any window already standing there.
- *
- * Two charts pinned from the same opening place would land exactly on each other, and the second
- * would look like the first having changed rather than like a second window.
- */
-export function beside(box: Box, taken: ReadonlyArray<Box>): Box {
-  let placed = box;
-
-  // A step per collision, so the third one clears the second as well as the first.
-  while (taken.some((other) => Math.abs(other.x - placed.x) < 8 && Math.abs(other.y - placed.y) < 8)) {
-    placed = { ...placed, x: placed.x + 28, y: placed.y + 28 };
-  }
-
-  return onScreen(placed);
-}
-
 /** Dragged by the bar. The window keeps its size; only the corner it starts at moves. */
 export function moved(box: Box, dx: number, dy: number): Box {
   return onScreen(docked({ ...box, x: box.x + dx, y: box.y + dy }));

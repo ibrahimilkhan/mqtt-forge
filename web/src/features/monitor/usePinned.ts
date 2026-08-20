@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { beside, type Box } from './floating';
+import { moved, type Box } from './floating';
 
 /**
  * The charts a reader has pinned to the console, each one a window of its own.
@@ -41,11 +41,14 @@ export const usePinnedStore = create<PinnedState>((set) => ({
 
       count += 1;
 
+      // Where the window being pinned is standing, and nowhere else. It used to step clear of
+      // anything already in that place, which sounds helpful and is not: the chart is thrown
+      // open in the middle of the screen, so every pin after the first landed a little down and
+      // to the right of the last, and a reader pinning four of them got a staircase nobody
+      // asked for. Pinned where it was, the new window is exactly where the reader was already
+      // looking — and it is the one on top, so nothing is hidden that they can see.
       return {
-        pinned: [
-          ...state.pinned,
-          { id: `pin-${count}`, filter, label, box: beside(box, state.pinned.map((chart) => chart.box)) },
-        ],
+        pinned: [...state.pinned, { id: `pin-${count}`, filter, label, box: moved(box, 0, 0) }],
       };
     }),
 
