@@ -485,8 +485,9 @@ describe('opening the history', () => {
     done();
   });
 
-  // The click is what the reader was going to do next anyway.
-  it('scrolls the region on, a screen at a time', async () => {
+  // A screen of a list is only rarely a whole number of rows, and a step of a fixed distance
+  // leaves the last one cut in half at the fold.
+  it('scrolls on to where a row ends, not to a fixed distance', async () => {
     readings('sensors/temp', ...Array.from({ length: 6 }, (_, i) => `${i}`));
     useSelectionStore.getState().select(chip);
     const done = laidOut(200, 50);
@@ -501,7 +502,9 @@ describe('opening the history', () => {
 
     await userEvent.click(screen.getByRole('button', { name: '2 more below' }));
 
-    expect(scrolled).toEqual([{ top: 156, behavior: 'smooth' }]);
+    // Six rows of fifty, the fold at two hundred: the furthest row ending within a screen of it
+    // is the last, and it ends a hundred below — so the screen it lands on ends where it does.
+    expect(scrolled).toEqual([{ top: 100, behavior: 'smooth' }]);
     done();
   });
 
