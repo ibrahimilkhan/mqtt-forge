@@ -2,17 +2,21 @@ import { useEffect, useMemo, useRef, type KeyboardEvent, type PointerEvent } fro
 import { createFrameLatest } from '../../lib/frameLatest';
 import styles from './ResizeHandle.module.css';
 
-// Neither side is useful once it is a sliver, so the drag stops short of both ends.
+// Neither side is useful once it is a sliver, so the drag stops short of both ends. A share of
+// the whole box, which is where the caller reasons about it; the handle itself is told that
+// floor already scaled into the pair it divides.
 export const MIN_SHARE = 0.12;
+// A step of the pair, not of the box: a seam dividing two narrow panes moves in finer steps than
+// one dividing the width of the window, which is the same relationship the pointer has to it.
 const STEP = 0.02;
 
 type Props = {
   /** 'x' splits side by side, 'y' splits top from bottom. */
   axis: 'x' | 'y';
   label: string;
-  /** Where the boundary sits inside the box it divides, as a fraction of that box. */
+  /** The near pane's share of the two this divides — 0.5 is the boundary halfway between them. */
   value: number;
-  /** How far it may travel — the caller knows what else is in the box. */
+  /** How far along the pair it may travel — the caller knows what a pane may shrink to. */
   min: number;
   max: number;
   onChange: (value: number) => void;
@@ -20,8 +24,14 @@ type Props = {
   off?: boolean;
 };
 
-// Measures the element it divides rather than taking a ref, so the panes either side stay unaware
-// they are being resized.
+// Measures the two panes it sits between rather than taking refs to them, so neither is aware it
+// is being resized.
+//
+// The pair, not the box they share. Fold the log away and the right column is a header, a chart
+// and a form: the boundary the reader is dragging is no longer at any fixed fraction of the
+// column, because a folded region takes a header's worth of it and gives up the rest. The pair
+// either side of a seam is always contiguous and always laid out, so its own rect answers where
+// the seam is without anyone having to know what else is in the column, or what it is doing.
 export function ResizeHandle({ axis, label, value, min, max, onChange, off = false }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -37,13 +47,21 @@ export function ResizeHandle({ axis, label, value, min, max, onChange, off = fal
   useEffect(() => frame.cancel, [frame]);
 
   const dragTo = (event: PointerEvent<HTMLDivElement>) => {
-    const box = ref.current?.parentElement?.getBoundingClientRect();
+    const bar = ref.current;
+    const near = bar?.previousElementSibling?.getBoundingClientRect();
+    const far = bar?.nextElementSibling?.getBoundingClientRect();
+    if (!near || !far) return;
+
+    const [start, end, along] =
+      axis === 'x'
+        ? [near.left, far.right, event.clientX]
+        : [near.top, far.bottom, event.clientY];
+
     // An unmeasured layout reports zero size; there is nothing to divide yet.
-    if (!box) return;
-    const span = axis === 'x' ? box.width : box.height;
+    const span = end - start;
     if (span <= 0) return;
-    const along = axis === 'x' ? event.clientX - box.left : event.clientY - box.top;
-    frame.offer(clamp(along / span));
+
+    frame.offer(clamp((along - start) / span));
   };
 
   const grab = (event: PointerEvent<HTMLDivElement>) => {

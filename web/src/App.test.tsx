@@ -102,18 +102,20 @@ describe('App', () => {
     expect(share('right')).toBe('44.00fr');
   });
 
+  // A step is two percent of the pair the seam divides, not of the whole row — the same
+  // relationship the pointer has to it, and the reason these numbers are not round.
   it('puts the panel column back the width it was when it reopens', async () => {
     renderApp();
 
     const seam = screen.getByRole('separator', { name: 'Panel and topics boundary' });
     seam.focus();
     await userEvent.keyboard('{ArrowLeft}');
-    expect(share('panel')).toBe('22.00fr');
+    expect(share('panel')).toBe('22.64fr');
 
     await userEvent.click(menu().getByRole('button', { name: 'Broker' }));
     await userEvent.click(menu().getByRole('button', { name: 'Broker' }));
 
-    expect(share('panel')).toBe('22.00fr');
+    expect(share('panel')).toBe('22.64fr');
   });
 
   it('moves the topics boundary with the arrow keys', async () => {
@@ -123,8 +125,8 @@ describe('App', () => {
     seam.focus();
     await userEvent.keyboard('{ArrowRight}');
 
-    expect(share('tree')).toBe('46.00fr');
-    expect(share('right')).toBe('30.00fr');
+    expect(share('tree')).toBe('45.52fr');
+    expect(share('right')).toBe('30.48fr');
   });
 
   // Unmeasured in jsdom, so the column opens content-sized: the entries and the publish form
@@ -140,8 +142,8 @@ describe('App', () => {
     await userEvent.keyboard('{ArrowUp}');
 
     expect(screen.getByTestId('right-column')).toHaveAttribute('data-fit', 'split');
-    expect(share('log')).toBe('28.00fr');
-    expect(share('chart')).toBe('42.00fr');
+    expect(share('log')).toBe('28.60fr');
+    expect(share('chart')).toBe('41.40fr');
     expect(share('publish')).toBe('30.00fr');
   });
 
@@ -155,8 +157,8 @@ describe('App', () => {
     await userEvent.keyboard('{ArrowUp}');
 
     expect(share('log')).toBe('30.00fr');
-    expect(share('chart')).toBe('38.00fr');
-    expect(share('publish')).toBe('32.00fr');
+    expect(share('chart')).toBe('38.60fr');
+    expect(share('publish')).toBe('31.40fr');
   });
 
   // The control that narrows the rail lives in the rail, since there is no bar above it any more
