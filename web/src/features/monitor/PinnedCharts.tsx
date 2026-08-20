@@ -69,7 +69,10 @@ function PinnedWindow({ chart }: { chart: Chart }) {
       onPointerDownCapture={() => raise(chart.id)}
     >
       <div className={styles.bar} {...bar} title="Drag to move — the corner sizes it">
-        <span className={styles.name}>{chart.label}</span>
+        {/* At the near end of the bar, not the far one. In here the pin is not an action, it is
+            the state — this chart is being kept — and the far end is where the pin that made
+            this window was standing a moment ago. A second press there is the one that asks
+            'did that work?', and it would have let the window straight back go. */}
         <button
           type="button"
           className={styles.pin}
@@ -80,6 +83,7 @@ function PinnedWindow({ chart }: { chart: Chart }) {
         >
           <Pin />
         </button>
+        <span className={styles.name}>{chart.label}</span>
       </div>
 
       <div className={styles.body}>
