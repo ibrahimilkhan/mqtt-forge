@@ -34,12 +34,22 @@
   min-width: 0;
 }
 
-/* Before the split is measured: the entries and the publish form take exactly their own heights
-   and the chart gets the rest, so nothing is clipped on the first paint whatever the window
-   height happens to be. The chart is the one that stretches — the other two have a height their
-   content asks for, and a line does not. */
+/* Before the split is fixed: the entries and the publish form take exactly their own heights and
+   the chart gets the rest, so nothing is clipped on the first paint whatever the window height
+   happens to be. The chart is the one that stretches — the other two have a height their content
+   asks for, and a line does not.
+
+   The chart keeps its own floor here as well as in the split below. It is not reachable in the
+   ordinary run of things — the split is fixed as soon as the log has a message in it — but it
+   costs a word and covers the case where that never happens: a runtime that delivers no resize,
+   a history opened before anything else. Without it a content-sized region could take the whole
+   column and leave the chart nothing.
+
+   A max-height on the regions was tried here and is the wrong tool. A percentage height against
+   a track that is itself content-sized has nothing definite to resolve against: rather than
+   capping, every region rendered at exactly half its own track. */
 .right[data-fit='content'] {
-  grid-template-rows: min-content auto minmax(0, 1fr) auto min-content;
+  grid-template-rows: min-content auto minmax(46px, 1fr) auto min-content;
 }
 
 /* Panes bring their own background and padding; the cell only has to hold them. */
