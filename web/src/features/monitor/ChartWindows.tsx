@@ -1,6 +1,6 @@
 import { useEffect, type CSSProperties } from 'react';
 import styles from './Floating.module.css';
-import { moved, useFloating } from './floating';
+import { moved, sized, useFloating } from './floating';
 import { Pin } from './Pin';
 import { TrafficChart } from './TrafficChart';
 import { useChartWindows, type ChartWindow as Chart } from './useChartWindows';
@@ -18,13 +18,16 @@ export function ChartWindows() {
   const place = useChartWindows((state) => state.place);
 
   // A window placed against one viewport and left there while the window got smaller can end up
-  // with no bar on screen — and the bar is the only way to bring it back. Moving each of them by
-  // nothing is enough: the move is what clamps them.
+  // with no bar on screen — and the bar is the only way to bring it back. Sizing and moving each
+  // of them by nothing is enough: those are what clamp them. The size as well as the corner,
+  // since a window wider than the viewport keeps its close and its grip off the far edge.
   useEffect(() => {
     const settle = () => {
       for (const chart of useChartWindows.getState().windows) {
-        const box = moved(chart.box, 0, 0);
-        if (box.x !== chart.box.x || box.y !== chart.box.y) place(chart.id, box);
+        const box = moved(sized(chart.box, 0, 0), 0, 0);
+        if (box.x !== chart.box.x || box.y !== chart.box.y || box.w !== chart.box.w || box.h !== chart.box.h) {
+          place(chart.id, box);
+        }
       }
     };
 
@@ -72,14 +75,22 @@ function ChartFrame({ chart, depth }: { chart: Chart; depth: number }) {
       aria-label={`${chart.label} chart`}
       // On the way down rather than on the click: a reader reaching for a control in a window
       // behind another one should have the window they are reaching into come forward first,
-      // not after they have already pressed something on it.
+      // not after they have already pressed something on it. Focus counts as reaching in: a
+      // reader tabbing into a window that is behind another one would otherwise be working a
+      // window they cannot see.
       onPointerDownCapture={() => raise(chart.id)}
+      onFocusCapture={() => raise(chart.id)}
     >
       <div
         className={styles.bar}
         // Pinned, the bar is a label with controls on it rather than a handle. The window still
         // comes forward when it is touched — it is being moved that the pin stops.
         {...(chart.fixed ? {} : bar)}
+        // In the tab order only while it can do something, and named for what the arrow keys
+        // will do with it once it is there.
+        tabIndex={chart.fixed ? undefined : 0}
+        role={chart.fixed ? undefined : 'application'}
+        aria-label={chart.fixed ? undefined : `Move the ${chart.label} chart`}
         title={chart.fixed ? 'Pinned in place — unpin to move it' : 'Drag to move — the corner sizes it'}
       >
         {/* At the near end of the bar, not the far one. A window opens in the middle at the size

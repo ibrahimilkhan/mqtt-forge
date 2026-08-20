@@ -21,7 +21,11 @@
    have to be named for the plot to be the one that stretches. The floor is the height the plot
    had when it lived inside the entries — below that a line is a smudge. */
 .chart[data-detail='plain'] { grid-template-rows: minmax(46px, 1fr); }
-.chart[data-detail='full'] { grid-template-rows: auto minmax(46px, 1fr) auto; }
+/* The controls, the plot and the note. A distribution is the same three, drawn as bars rather
+   than as a line — it was left out of this list and got three even rows, which gave a histogram
+   a third of the height and the note two thirds of it. */
+.chart[data-detail='full'],
+.chart[data-detail='dist'] { grid-template-rows: auto minmax(46px, 1fr) auto; }
 .chart[data-detail='deep'] {
   grid-template-rows: auto minmax(46px, 1fr) minmax(46px, 1fr) auto;
 }

@@ -125,7 +125,8 @@
     inset-block: 0;
     left: 0;
     width: min(380px, 62%);
-    z-index: 4;
+    /* Over the chart windows and the chart thrown open: a panel is opened to be used. */
+    z-index: 300;
     /* Its own edge, since the seam that used to draw one is not in the row any more, and the
        scrim behind it: without both, a form lying over a tree reads as part of the tree. */
     border-right: 1px solid var(--rule);

@@ -151,7 +151,9 @@
     position: absolute;
     inset-block: 0;
     left: 0;
-    z-index: 4;
+    /* Over the chart windows and over the chart thrown open. This is the way to every panel in
+       the app, and a reader who opens it while a window is up has opened it to use it. */
+    z-index: 300;
     box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--ink) 12%, transparent);
   }
 }
@@ -230,9 +232,15 @@
   overflow: hidden;
 }
 
-/* Stacked, there is no console beside it worth leaving room to see, so it takes what it can. */
+/* Stacked, there is nothing beside it worth leaving room to see, so it takes what it can. The
+   app writes a place inline once it is open, and !important is what lets this still win: on a
+   phone the standard opening box is three fifths of 375, which is a chart nobody can read. */
 @media (max-width: 760px) {
-  .chartPane[data-zoomed] { inset: 6vh 4vw; }
+  .chartPane[data-zoomed] {
+    inset: 6vh 4vw !important;
+    width: auto !important;
+    height: auto !important;
+  }
 }
 
 /* Once the columns stack, the page scrolls instead of each pane pinning its own row. */

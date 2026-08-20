@@ -28,12 +28,22 @@ const HELD = 64;
  */
 const SNAP = 12;
 
-/** Three fifths of the window, centred — the size and place the chart has always opened at. */
+/**
+ * Three fifths of the window, centred — the size and place the chart has always opened at.
+ *
+ * Never under the floor a drag would stop at: on a phone three fifths is about 225 across, which
+ * is a window that opens smaller than it can be sized back to, and a chart nobody can read.
+ */
 export function openingBox(): Box {
-  const w = Math.round(window.innerWidth * 0.6);
-  const h = Math.round(window.innerHeight * 0.6);
+  const w = Math.max(Math.round(window.innerWidth * 0.6), MIN_W);
+  const h = Math.max(Math.round(window.innerHeight * 0.6), MIN_H);
 
-  return { x: Math.round((window.innerWidth - w) / 2), y: Math.round((window.innerHeight - h) / 2), w, h };
+  return {
+    x: Math.round((window.innerWidth - w) / 2),
+    y: Math.round((window.innerHeight - h) / 2),
+    w,
+    h,
+  };
 }
 
 /** Dragged by the bar. The window keeps its size; only the corner it starts at moves. */
@@ -99,7 +109,7 @@ const STEP = 16;
  * window moves out from under it.
  */
 export function useFloating(box: Box, onChange: (next: Box) => void) {
-  const grabbed = useRef<{ x: number; y: number; from: Box } | null>(null);
+  const grabbed = useRef<{ pointer: number; x: number; y: number; from: Box } | null>(null);
 
   // A pointer reports far more often than the screen redraws, and every report relays out a
   // chart. Only the newest position of each frame is worth anything. Same reasoning as the
@@ -116,15 +126,19 @@ export function useFloating(box: Box, onChange: (next: Box) => void) {
     const on = event.target as Element;
     if (on !== event.currentTarget && on.closest('button')) return;
 
+    // One pointer at a time. A second finger landing on the bar would otherwise take the drag
+    // over from where IT went down, and the window would jump by the distance between the two.
+    if (grabbed.current) return;
+
     // Without this the drag selects the text it sweeps across.
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
-    grabbed.current = { x: event.clientX, y: event.clientY, from: box };
+    grabbed.current = { pointer: event.pointerId, x: event.clientX, y: event.clientY, from: box };
   };
 
   const drag = (apply: (from: Box, dx: number, dy: number) => Box) => (event: ReactPointer<HTMLElement>) => {
     const held = grabbed.current;
-    if (!held) return;
+    if (!held || held.pointer !== event.pointerId) return;
 
     frame.offer(apply(held.from, event.clientX - held.x, event.clientY - held.y));
   };
@@ -133,7 +147,7 @@ export function useFloating(box: Box, onChange: (next: Box) => void) {
   // — the tail of a click on a control in the bar — was never captured, and asking to release it
   // is asking about a pointer nothing is holding.
   const drop = (event: ReactPointer<HTMLElement>) => {
-    if (!grabbed.current) return;
+    if (grabbed.current?.pointer !== event.pointerId) return;
 
     grabbed.current = null;
     event.currentTarget.releasePointerCapture(event.pointerId);
@@ -154,7 +168,16 @@ export function useFloating(box: Box, onChange: (next: Box) => void) {
   };
 
   return {
-    bar: { onPointerDown: take, onPointerMove: drag(moved), onPointerUp: drop, onPointerCancel: drop },
+    bar: {
+      onPointerDown: take,
+      onPointerMove: drag(moved),
+      onPointerUp: drop,
+      onPointerCancel: drop,
+      // The bar takes focus and the arrow keys move the window by it, for the same reason the
+      // grip does: a window that can only be placed with a pointer is a window some readers
+      // cannot place at all.
+      onKeyDown: keys(moved),
+    },
     grip: {
       onPointerDown: take,
       onPointerMove: drag(sized),
