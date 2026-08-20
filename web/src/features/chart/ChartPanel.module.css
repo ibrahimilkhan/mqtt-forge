@@ -82,7 +82,9 @@
   color: var(--ink);
 }
 
-.readingWhat { font-size: var(--t-small); line-height: 1.4; color: var(--muted); }
+/* Prose, inside a label because the switch for the reading it explains is beside it — and prose
+   is selectable wherever it is. */
+.readingWhat { font-size: var(--t-small); line-height: 1.4; color: var(--muted); user-select: text; }
 
 /* ---- what the chips over the plot do ---- */
 
