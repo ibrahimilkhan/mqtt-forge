@@ -51,14 +51,18 @@ button.history:focus-visible { outline: 2px solid var(--signal); outline-offset:
   z-index: 1;
 }
 
-/* Sits at the reading edge, where the count in the foot sits, and lifted off the row it covers:
-   it belongs to the region rather than to the run, and a chip flat on the list would read as the
-   end of it. */
+/* Sits at the far edge, and lifted off the row it covers: it belongs to the region rather than to
+   the run, and a chip flat on the list would read as the end of it.
+
+   The far edge rather than the reading one, where the foot puts its count. Every row here is
+   written from the left — the time, then the topic, then the value — and the row it lands on is
+   the one already cut in half by the fold, so the left is where the last readable thing is and
+   the right is the empty tail of it. */
 .below {
   all: unset;
   position: absolute;
   bottom: 0;
-  left: 0;
+  right: 0;
   display: inline-flex;
   align-items: center;
   gap: 5px;
