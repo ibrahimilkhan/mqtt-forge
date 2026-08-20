@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getSavedSettings } from '../../api/connection';
 import { queryKeys } from '../../api/queryKeys';
 import { Field } from '../../components/Field';
@@ -27,7 +27,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
 
   const { data: saved } = useQuery({ queryKey: queryKeys.savedSettings, queryFn: getSavedSettings });
   const { connectMutation, disconnectMutation, abortMutation } = useConnectionActions();
-  const { isOnline, isConnecting, failure: faulted } = useConnectionState();
+  const { isOnline, isConnecting, failure: faulted, answered } = useConnectionState();
   const guardedConnect = useGuardedMutate(connectMutation);
   const guardedDisconnect = useGuardedMutate(disconnectMutation);
   const guardedAbort = useGuardedMutate(abortMutation);
@@ -36,6 +36,21 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
   // fires, before the API has been asked anything; isConnecting is the only one a panel that
   // was closed when the attempt started — or reopened since — has to go on.
   const attemptRunning = isConnecting || connectMutation.isPending;
+
+  // This panel exists to get a link up, so a link coming up is the end of its job: it stands
+  // aside and hands its column back to the traffic it just started. The rail's lamp and the
+  // address under it carry the state from here, and the menu button reopens it.
+  //
+  // Only on the change, and only after the API has answered once. Opened over a link that is
+  // already up — to read the summary, or to disconnect — nothing has just happened, and a panel
+  // that shut itself the moment it was asked for would be unusable.
+  const wasOnline = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (!answered) return;
+    const before = wasOnline.current;
+    wasOnline.current = isOnline;
+    if (before === false && isOnline) onClose();
+  }, [answered, isOnline, onClose]);
 
   // Arrives after first render; password is never returned by the API.
   useEffect(() => {

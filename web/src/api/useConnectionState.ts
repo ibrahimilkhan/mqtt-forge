@@ -16,6 +16,10 @@ export function useConnectionState() {
     link: data?.connection ?? undefined,
     isOnline: state === 'Connected',
     isConnecting: state === 'Connecting',
+    // Whether the state above is the API's answer or the standing-in Disconnected. Anything
+    // watching for a CHANGE of state needs it: without it the first answer looks like a change
+    // from a guess, and a page reloaded over a live link reads as one that just came up.
+    answered: data !== undefined,
   };
 }
 

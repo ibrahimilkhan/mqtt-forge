@@ -16,7 +16,8 @@ function renderPanel(queryClient = newQueryClient()) {
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
-  return render(<BrokerPanel onClose={vi.fn()} />, { wrapper });
+  const onClose = vi.fn();
+  return { ...render(<BrokerPanel onClose={onClose} />, { wrapper }), onClose };
 }
 
 beforeEach(() => {
@@ -102,6 +103,36 @@ describe('BrokerPanel', () => {
       await screen.findByText('A password is saved but never sent back. Enter it again to connect.'),
     ).toBeInTheDocument();
     expect(screen.getByLabelText('Password')).toHaveValue('');
+  });
+
+  // The panel is here to get a link up. Once one is up it is a form nobody is filling in, and
+  // the column it holds is worth more to the traffic that has just started arriving.
+  it('closes itself the moment the link comes up', async () => {
+    let state = 'Disconnected';
+    server.use(
+      http.get('/api/connection', () => HttpResponse.json({ state })),
+      http.post('/api/connection', () => {
+        state = 'Connected';
+        return HttpResponse.json({ state: 'Connected' });
+      }),
+      http.post('/api/subscriptions', () => new HttpResponse(null, { status: 202 })),
+    );
+
+    const { onClose } = renderPanel();
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+  });
+
+  // Reopened over a link that is already up — to read the summary, or to disconnect — nothing
+  // has just happened, and shutting it in the reader's face would be a bug, not a courtesy.
+  it('stays open when it is opened over a link that is already up', async () => {
+    server.use(http.get('/api/connection', () => HttpResponse.json({ state: 'Connected' })));
+
+    const { onClose } = renderPanel();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Disconnect' })).toBeEnabled());
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('subscribes to everything after connecting when the box is ticked', async () => {
