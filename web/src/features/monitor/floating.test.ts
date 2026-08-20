@@ -55,7 +55,7 @@ describe('sizing a chart window', () => {
   });
 
   it('keeps a chart above the size it stops being readable at', () => {
-    expect(sized(box, -4000, -4000)).toMatchObject({ w: 300, h: 210 });
+    expect(sized(box, -4000, -4000)).toMatchObject({ w: 300, h: 260 });
   });
 
   it('fills a corner exactly when its far edge is brought near one', () => {

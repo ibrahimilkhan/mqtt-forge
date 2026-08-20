@@ -132,12 +132,17 @@
   overflow: hidden;
 }
 
-/* The chart takes what the bar leaves. */
+/* The chart takes what the bar leaves — and scrolls rather than losing anything when the reader
+   sizes the window below what the chart's own rows add up to. The note is the part that goes
+   first, and the reading it takes with it is `silence`, which is parked in the corner precisely
+   so it can be found: a window small enough to hide it would be a window quietly dropping the
+   one line about whether the topic is still there. */
 .body {
   display: grid;
   grid-template-rows: minmax(0, 1fr);
   min-height: 0;
   min-width: 0;
+  overflow-y: auto;
 }
 
 /* No narrow-screen rule, deliberately. A window opens at three fifths of whatever the viewport

@@ -10,9 +10,10 @@ import { createFrameLatest } from '../../lib/frameLatest';
  */
 export type Box = { x: number; y: number; w: number; h: number };
 
-/** Below this a chart is a smudge with chips over it, whatever the reader drags. */
+/** Below this a chart is a smudge with chips over it, whatever the reader drags. The height is
+ *  what the plot's own floor, the controls over it and a line or two of the note come to. */
 const MIN_W = 300;
-const MIN_H = 210;
+const MIN_H = 260;
 
 /** How much of a window must stay on screen: enough to get hold of the bar again. */
 const HELD = 64;
