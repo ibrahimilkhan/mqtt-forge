@@ -81,9 +81,12 @@
 .rail:not([data-open]) .railState { align-items: center; padding-inline: 0; }
 
 /* Where the traffic is coming from. One line, tail first: the port and the host are what tell
-   two brokers apart, and the scheme in front of them never does. */
+   two brokers apart, and the scheme in front of them never does.
+   Indented onto the lamp above it, which is the same axis the panel buttons below start on: the
+   head is the only thing in the rail that sits further left, and everything under it lines up. */
 .where {
   margin: 0;
+  padding-left: 11px;
   font-family: var(--mono);
   font-size: var(--t-micro);
   color: var(--muted);

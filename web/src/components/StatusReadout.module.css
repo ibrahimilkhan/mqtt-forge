@@ -1,38 +1,37 @@
-/* Bar owns placement; no margin here. The readout is the one thing in the bar that changes,
-   so it wears a chip: at a glance across the room you should know if the link is up. */
+/* The rail owns placement; no margin here.
+   Type, weight and tracking are the rail's own — the same as the panel buttons under it — so the
+   state reads as one more line of the rail rather than as a badge stuck on it. The chip is drawn
+   in transparent: every state keeps the same box, and only the ones worth interrupting for fill
+   it in. A state you are in nearly all the time should not be the loudest thing on the screen. */
 .readout {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   font-family: var(--mono);
-  font-size: var(--t-small);
+  font-size: var(--t-label);
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.11em;
   color: var(--muted);
-  padding: 7px 14px;
-  border: 1px solid var(--rule);
+  padding: 4px 10px;
+  border: 1px solid transparent;
   border-radius: 999px;
-  background: var(--paper);
 }
 .lamp {
-  width: 9px; height: 9px;
+  width: 7px; height: 7px;
   border-radius: 50%;
   background: var(--muted);
   flex: none;
 }
 /* Connected is the state you are in nearly all the time, and nothing about it needs answering,
-   so it holds its volume down: the tint and the halo pull back until the text colour carries it
-   on its own, and the lamp breathes rather than blinks. Faulted and Reconnecting keep the louder
-   treatment below — those are the two worth taking your eye off the messages for. */
+   so it is a word and a lit dot and nothing else: no fill, no edge, no halo. The colour is the
+   whole signal, which is all anyone reads it for from across a room, and the lamp breathes
+   rather than blinks. Faulted and Reconnecting keep the chip below — those are the two worth
+   taking your eye off the messages for, and they can only read as loud if this one is quiet. */
 .readout[data-state="Connected"] {
   color: var(--live);
-  border-color: color-mix(in srgb, var(--live) 22%, transparent);
-  background: color-mix(in srgb, var(--live) 5%, var(--surface));
 }
 .readout[data-state="Connected"] .lamp {
   background: var(--live);
-  /* Halo rather than a bigger dot, so the chip's height stays put as states change. */
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--live) 14%, transparent);
   animation: breathe 4s ease-in-out infinite;
 }
 .readout[data-state="Faulted"] {
@@ -42,6 +41,7 @@
 }
 .readout[data-state="Faulted"] .lamp {
   background: var(--fault);
+  /* Halo rather than a bigger dot, so the line's height stays put as states change. */
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--fault) 22%, transparent);
 }
 
