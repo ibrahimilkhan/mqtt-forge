@@ -77,18 +77,44 @@ export function Workspace({ panel, tree, log, chart, publish }: Props) {
   const logRef = useRef<HTMLDivElement>(null);
   const publishRef = useRef<HTMLDivElement>(null);
 
+  // Fixed the first time the log's own height changes, which is when its first message lands —
+  // not at mount, when the log is still showing the sentence asking the reader to pick a topic.
+  // Taken then, the share was the height of that sentence, and the message that replaced it did
+  // not fit: the count of what is behind it fell off the bottom of the region and had to be
+  // scrolled to. Taken now, the region is the height of one message and the line under it.
+  //
+  // Only the first change. Every later one is the reader opening the history, and a log region
+  // that grew to twenty-five rows would leave the chart its floor and nothing else.
   useLayoutEffect(() => {
-    if (rows !== null) return;
+    if (rows !== null || typeof ResizeObserver === 'undefined') return;
 
     const column = columnRef.current;
     const top = logRef.current;
     const pane = publishRef.current;
     if (!column || !top || !pane) return;
 
-    // scrollHeight, not clientHeight: content-sized now, but this still reads the full form
-    // if anything has already clipped it.
-    const measured = fitRows(column.clientHeight, top.scrollHeight, pane.scrollHeight);
-    if (measured !== null) setRows(measured);
+    let mounted: number | null = null;
+    const watch = new ResizeObserver(([entry]) => {
+      const height = entry.contentRect.height;
+
+      // The observer reports the size it is already at before it reports a change.
+      if (mounted === null) {
+        mounted = height;
+
+        return;
+      }
+
+      if (Math.abs(height - mounted) < 1) return;
+
+      // scrollHeight, not clientHeight: content-sized now, but this still reads the full form
+      // if anything has already clipped it.
+      const measured = fitRows(column.clientHeight, top.scrollHeight, pane.scrollHeight);
+      if (measured !== null) setRows(measured);
+    });
+
+    watch.observe(top);
+
+    return () => watch.disconnect();
   }, [rows]);
 
   // A closed panel hands half its width to each neighbour, rather than to whichever is wider.

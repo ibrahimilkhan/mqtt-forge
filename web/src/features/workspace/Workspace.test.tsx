@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fitRows, Workspace } from './Workspace';
 import { MIN_SHARE } from './ResizeHandle';
 
@@ -58,6 +58,10 @@ describe('fitRows', () => {
   });
 });
 
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 describe('Workspace', () => {
   // jsdom reports no heights, so the column stays in the mode it opens in — which is the
   // mode that matters: the two ends take what they need and the chart gets the rest.
@@ -84,6 +88,50 @@ describe('Workspace', () => {
     const panes = [...column.children].map((child) => child.getAttribute('data-region') ?? '');
 
     expect(panes).toEqual(['log', '', 'chart', '', 'publish']);
+  });
+
+  // The share used to be taken at mount, when the log is still showing the sentence asking the
+  // reader to pick a topic. The message that replaced it did not fit, and the count of what was
+  // behind it fell off the bottom of the region.
+  it('waits for the log to have something in it before fixing the split', () => {
+    const seen: Element[] = [];
+    let report: ((entries: ResizeObserverEntry[]) => void) | null = null;
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(ran: (entries: ResizeObserverEntry[]) => void) {
+          report = ran;
+        }
+        observe(target: Element) {
+          seen.push(target);
+          report?.([{ target, contentRect: { height: 60 } } as unknown as ResizeObserverEntry]);
+        }
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+
+    // jsdom lays nothing out, and a column of no height has no split to work out.
+    const sized = (name: 'clientHeight' | 'scrollHeight', px: number) =>
+      Object.defineProperty(HTMLElement.prototype, name, { configurable: true, value: px });
+    sized('clientHeight', 800);
+    sized('scrollHeight', 120);
+
+    render(<Workspace {...parts} />);
+
+    // Mounted, and told its own size — still content-fit, nothing fixed.
+    expect(seen).toHaveLength(1);
+    expect(screen.getByTestId('right-column')).toHaveAttribute('data-fit', 'content');
+
+    // The first message lands and the log grows.
+    act(() =>
+      report?.([{ target: seen[0], contentRect: { height: 185 } } as unknown as ResizeObserverEntry]),
+    );
+
+    expect(screen.getByTestId('right-column')).toHaveAttribute('data-fit', 'split');
+
+    Reflect.deleteProperty(HTMLElement.prototype, 'clientHeight');
+    Reflect.deleteProperty(HTMLElement.prototype, 'scrollHeight');
   });
 
   it('folds a region away to its own strip, and brings it back', async () => {

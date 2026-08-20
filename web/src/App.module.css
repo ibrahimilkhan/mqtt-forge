@@ -167,6 +167,11 @@
   overflow-y: auto;
 }
 
+/* The log is sized to hold one message and the line under it, so the breathing room the other
+   panes keep at the end of a scroll would be dead space below the count — and the region is
+   measured with it, so it would be dead space the chart paid for. */
+.wire { padding-bottom: 12px; }
+
 /* The chart is drawn to the height it is given rather than to its content, so the pane hands
    its whole region down to the one thing in it. Less room at the top than the panes either
    side: the region's own edge is the chart's frame, and the controls sit right under it. */
