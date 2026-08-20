@@ -82,8 +82,8 @@ let id = 0;
  * and every chart on the page would carry a silence alarm that is about the fixture rather than
  * about anything the chart does.
  */
-const entries = (topic: string, bodies: string[], everyMs = 1000) => {
-  const ends = Date.now() - everyMs;
+const entries = (topic: string, bodies: string[], everyMs = 1000, stoppedMs = 0) => {
+  const ends = Date.now() - everyMs - stoppedMs;
 
   return bodies
     .map((body, index) => ({
@@ -167,6 +167,11 @@ const RUNS = [
     name: 'Nothing to draw: the run is one message old',
     note: 'Temporary, and it says so. The old sentence read like a refusal.',
     log: entries('sensors/room/temp', ['21.5']),
+  },
+  {
+    name: 'A topic that has stopped',
+    note: "The one reading here about whether the run is still happening rather than about the readings in it, and it keeps the bottom-right corner of the note whether it has fired or not. It used to jump to the front when it fired, which dragged every other reading along with it — and it fires and clears on its own, so holding the pane and letting it go again shuffled the note twice.",
+    log: entries('sensors/kiln/temp', wobble(60, 1180, 12), 1000, 40_000),
   },
   {
     name: 'A topic that mostly sends something else',

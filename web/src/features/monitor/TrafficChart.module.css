@@ -502,12 +502,24 @@
 }
 
 /* An alarm that has actually fired goes to the front of the note.
-   The note can be taller than the region it sits in, and the two readings that interrupt — a
-   topic gone quiet, a run mostly stepped over — are the last two in the array. An alarm the
-   reader has to scroll to find is not an alarm. This moves only when one fires, which is exactly
-   when moving it is the point; the order in the document, which is the order a screen reader
-   takes, is untouched. */
-.slot[data-tone='alarm']:not([data-empty]) { order: -1; }
+   The note can be taller than the region it sits in, and a run mostly stepped over is worth
+   interrupting for. This moves only when one fires, which is exactly when moving it is the
+   point; the order in the document, which is the order a screen reader takes, is untouched.
+
+   Silence is exempt, and has the corner below instead. It is the one alarm that fires and clears
+   on its own — a held pane clears it, letting the pane go can light it again — and every one of
+   those transitions was dragging the whole note past a reader trying to read one number in it.
+   An alarm that reorders the page it is on is worse than one that stays put and is looked for in
+   the same place every time. */
+.slot[data-tone='alarm']:not([data-empty]):not([data-slot='silence']) { order: -1; }
+
+/* Silence, in the bottom right corner of the note and nowhere else.
+
+   The last column, so it takes the corner of whatever row it ends up in — and being last in the
+   document, that row is the last one. Everything else on the note is a reading of the run; this
+   is the one line about whether the run is still happening, and a reader watching for it should
+   be watching one place rather than wherever this month's set of readings happens to leave it. */
+.slot[data-slot='silence'] { grid-column: -2 / -1; }
 
 /* The name of the reading, not the reading. Small, quiet, and set apart from the number beside
    it by size as much as by colour — at one size and one colour the pair read as a single grey
