@@ -4,8 +4,7 @@
 [![Image](https://img.shields.io/badge/ghcr.io-mqtt--forge-1b3a7a?logo=docker&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/pkgs/container/mqtt-forge)
 [![Licence](https://img.shields.io/github/license/ibrahimilkhan/mqtt-forge?color=1b3a7a)](LICENSE)
 
-An open-source MQTT test tool with a window you look at: connect to a broker, watch topics as
-they arrive, chart what they are sending, and publish. It runs as a desktop app or as one Docker
+An open-source MQTT test tool: connect, watch, chart, and publish. It runs as a desktop app or as one Docker
 image — nothing to drive from a terminal.
 
 The broker connection is held by the server rather than by the browser, so every device you point
