@@ -1,5 +1,6 @@
 import { asReading } from './number';
 import type { BodyMode } from './payload';
+import { matchesFilter } from './topicMatch';
 
 export type TopicNode = {
   name: string;
@@ -337,6 +338,98 @@ export function flattenTree(
 }
 
 // What a branch is carrying; nothing for leaves, whose own payload is on the row already.
+/**
+ * Every node a filter covers, by path, exactly as it stands now.
+ *
+ * For holding a branch of the tree still. Every message gives each node on its path a fresh
+ * object — that is what the memoised rows compare — so a node captured here goes on saying what
+ * it said at the moment of capture however much arrives behind it. What is not captured is the
+ * `children` map, which is updated in place; nothing here reads one, and a row reads only the
+ * fields of its own node.
+ *
+ * A topic that arrives under the filter afterwards is absent, which is how the caller tells it
+ * apart from one that was already there: it has no frozen self to draw.
+ */
+export function snapshotUnder(root: TopicNode, filter: string): Map<string, TopicNode> {
+  const frozen = new Map<string, TopicNode>();
+  const branch = filterPath(filter);
+
+  // Every hold the tree can take is a row's own filter — a path with '/#' on the end — so the
+  // walk starts at that row rather than at the root and matches nothing on the way. On a broker
+  // with fifty thousand topics, holding one of them reads one node instead of all of them.
+  if (branch !== null) {
+    let node: TopicNode | undefined = root;
+    for (const name of branch.split('/')) {
+      node = node?.children.get(name);
+      if (!node) return frozen;
+    }
+
+    return under(node, branch, frozen);
+  }
+
+  // Anything else — a '+' in the middle, a filter that came from somewhere other than a row —
+  // is answered by asking the matcher about every topic there is.
+  const stack: Array<{ node: TopicNode; path: string; isRoot: boolean }> = [
+    { node: root, path: '', isRoot: true },
+  ];
+
+  while (stack.length > 0) {
+    const { node, path, isRoot } = stack.pop()!;
+
+    if (!isRoot && matchesFilter(filter, path)) frozen.set(path, node);
+
+    for (const [name, child] of node.children) {
+      stack.push({ node: child, path: isRoot ? name : `${path}/${name}`, isRoot: false });
+    }
+  }
+
+  return frozen;
+}
+
+/**
+ * The path a `path/#` filter hangs off, or null for anything that does not name one — a filter
+ * with a `+` in it, or the `#` that means every topic there is.
+ *
+ * Every hold the tree can take is a row's own filter, so this answers with that row's path: what
+ * the hold is over, which is also what has to be kept out of the counts above it.
+ */
+export function filterPath(filter: string): string | null {
+  if (!filter.endsWith('/#') || filter.includes('+')) return null;
+
+  const path = filter.slice(0, -2);
+
+  return path.includes('#') ? null : path;
+}
+
+/** The node at a slash-separated path, or null where the tree has none. */
+export function nodeAt(root: TopicNode, path: string): TopicNode | null {
+  let node: TopicNode | undefined = root;
+  for (const name of path.split('/')) {
+    node = node?.children.get(name);
+    if (!node) return null;
+  }
+
+  return node;
+}
+
+/** One subtree, path by path, into the map given. */
+function under(
+  root: TopicNode,
+  path: string,
+  frozen: Map<string, TopicNode>,
+): Map<string, TopicNode> {
+  const stack: Array<{ node: TopicNode; path: string }> = [{ node: root, path }];
+
+  while (stack.length > 0) {
+    const { node, path: at } = stack.pop()!;
+
+    frozen.set(at, node);
+    for (const [name, child] of node.children) stack.push({ node: child, path: `${at}/${name}` });
+  }
+
+  return frozen;
+}
+
 export function nodeSummary(node: TopicNode): string {
   if (node.children.size === 0) return '';
 

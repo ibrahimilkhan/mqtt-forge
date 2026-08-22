@@ -1,0 +1,68 @@
+/* The last band of the rail, and the full width of it.
+   It used to float against the middle of the rail as a glyph in a small box; standing at the foot
+   it has the width to say what it does in words, which is what a control this consequential should
+   be doing. Shut, the words go and the glyph is the whole control again. */
+.stream {
+  all: unset;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  box-sizing: border-box;
+  cursor: pointer;
+  min-height: 32px;
+  padding: 6px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  font-weight: 600;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  /* Coloured for the action it offers rather than for the state it is in, which is the way
+     every transport control anyone has used is coloured: red stops what is running, green
+     starts what is stopped. The glyph says the same thing a second time, for a reader who does
+     not separate the two.
+
+     Filled, and the loudest thing in the rail. A console that has stopped taking messages looks
+     exactly like one that is keeping up — same rows, same numbers, all of them merely old — and
+     this is the only thing on screen that says which of the two it is. */
+  color: var(--surface);
+  background: var(--fault);
+  border-color: var(--fault);
+}
+
+/* Shut, in a 52px rail: the glyph alone, in a box still big enough to hit. */
+.stream[data-compact] {
+  width: 32px;
+  min-height: 28px;
+  padding: 0;
+}
+
+/* No broker, so nothing to stop. Drawn as the outline it would be if it were not the loudest
+   thing in the rail: the fill is what says the console is taking messages in, and it should not
+   be saying that when there is nothing to take. */
+.stream:disabled {
+  color: var(--muted);
+  background: none;
+  border-color: var(--rule);
+  cursor: default;
+}
+
+.stream:hover:not(:disabled) { color: var(--surface); border-color: var(--ink); }
+.stream:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+/* Stopped, so what it offers is to start again. */
+.stream[aria-pressed='true'] {
+  background: var(--live);
+  border-color: var(--live);
+}
+
+/* What went past while it was stopped. Set apart from the word beside it — lighter, and tracked
+   like a figure rather than like a label — because it is a reading, not part of the verb. */
+.count {
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+}

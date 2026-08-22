@@ -6,6 +6,7 @@ import {
   flattenTree,
   nodeSummary,
   pruneTopics,
+  snapshotUnder,
   TREE_READINGS,
   type TopicNode,
 } from './topicTree';
@@ -544,5 +545,76 @@ describe('the empty a new node starts from', () => {
     expect(tree.children.size).toBe(0);
     expect(tree.order).toEqual([]);
     expect(tree.readings).toEqual([]);
+  });
+});
+
+/*
+ * What a held row is drawn from.
+ *
+ * Every message gives the nodes on its path fresh objects, so a node captured here goes on
+ * saying what it said however much arrives behind it. That is the whole mechanism behind the
+ * pause on a topic row: without it the reader watches the row they paused go on counting.
+ */
+describe('snapshotUnder', () => {
+  const tree = () =>
+    applyMessages(
+      emptyTree(),
+      [
+        { topic: 'sensors/temp', payload: '21' },
+        { topic: 'sensors/humidity', payload: '55' },
+        { topic: 'plant/kiln', payload: '900' },
+      ],
+      1000,
+    );
+
+  it('takes the row a filter names and everything under it', () => {
+    const frozen = snapshotUnder(tree(), 'sensors/#');
+
+    expect([...frozen.keys()].sort()).toEqual(['sensors', 'sensors/humidity', 'sensors/temp']);
+  });
+
+  it('takes one leaf, and nothing beside it', () => {
+    const frozen = snapshotUnder(tree(), 'sensors/temp/#');
+
+    expect([...frozen.keys()]).toEqual(['sensors/temp']);
+  });
+
+  it('takes every topic there is for the filter that means everything', () => {
+    const frozen = snapshotUnder(tree(), '#');
+
+    expect([...frozen.keys()].sort()).toEqual([
+      'plant',
+      'plant/kiln',
+      'sensors',
+      'sensors/humidity',
+      'sensors/temp',
+    ]);
+  });
+
+  // The shortcut is only for filters that name a path; a wildcard in the middle falls back to
+  // asking the matcher about every topic, and must still answer the same way.
+  it('answers a filter with a wildcard in the middle', () => {
+    const frozen = snapshotUnder(tree(), 'sensors/+');
+
+    expect([...frozen.keys()].sort()).toEqual(['sensors/humidity', 'sensors/temp']);
+  });
+
+  it('is empty for a filter no topic answers to', () => {
+    expect(snapshotUnder(tree(), 'boiler/#').size).toBe(0);
+  });
+
+  // The point of all of it.
+  it('goes on saying what it said while the tree moves on', () => {
+    const before = tree();
+    const frozen = snapshotUnder(before, 'sensors/#');
+
+    const after = applyMessage(before, 'sensors/temp', '99', 2000);
+
+    expect(frozen.get('sensors/temp')!.latestPayload).toBe('21');
+    expect(frozen.get('sensors/temp')!.hits).toBe(1);
+    expect(frozen.get('sensors')!.subMessages).toBe(2);
+    // And the live tree is not the one being held.
+    expect(at(after, 'sensors/temp').latestPayload).toBe('99');
+    expect(at(after, 'sensors').subMessages).toBe(3);
   });
 });

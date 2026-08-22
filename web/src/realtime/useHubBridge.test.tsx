@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { queryKeys } from '../api/queryKeys';
 import { MAX_LOG_ENTRIES, runFor, useLogStore } from '../stores/logStore';
+import { usePauseStore } from '../stores/pauseStore';
 import { useTopicTreeStore } from '../stores/topicTreeStore';
 import type { MqttMessage } from '../types/api';
 import { createFakeHub } from './fakeHub';
@@ -28,6 +29,17 @@ beforeEach(() => {
 });
 
 afterEach(() => vi.unstubAllGlobals());
+
+/**
+ * Runs frames until nothing more is scheduled: the queue hands over a frame's worth at a time
+ * and books the next frame itself, so one pass over the array is no longer the whole drain.
+ */
+function runFrames(limit = 1000) {
+  for (let ran = 0; frames.length > 0; ran++) {
+    if (ran > limit) throw new Error('the queue never emptied');
+    frames.shift()!();
+  }
+}
 
 function renderBridge(hub: ReturnType<typeof createFakeHub>) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -110,10 +122,12 @@ describe('useHubBridge', () => {
     expect(BURST).toBeLessThanOrEqual(MAX_LOG_ENTRIES);
     const burst = Array.from({ length: BURST }, (_, i) => message(`sensors/${i % 50}/reading`, String(i)));
 
-    // In batches, the way the hub sends them, all landing inside the same frame.
+    // In batches, the way the hub sends them, all arriving before a single frame has run — and
+    // handed over across as many frames as the rate takes, which is the point: the burst lands
+    // whole, but no one frame carries the whole of it.
     const start = performance.now();
     for (let i = 0; i < burst.length; i += 256) hub.emit('messagesReceived', burst.slice(i, i + 256));
-    frames[0]();
+    runFrames();
     const elapsedMs = performance.now() - start;
 
     expect(useLogStore.getState().held).toBe(BURST);
@@ -127,8 +141,157 @@ describe('useHubBridge', () => {
 
     hub.emit('messagesReceived', [message('a')]);
     unmount();
-    frames.forEach((frame) => frame());
+    runFrames();
 
     expect(arrivals()).toHaveLength(0);
+  });
+});
+
+// The console-wide stop. What it stops is the taking in, not the broker: messages go on
+// arriving and are queued rather than thrown away, because what went past while the reader was
+// looking is what they stopped the console to look at. The queue has a ceiling and comes in a
+// frame at a time, which is what makes keeping it affordable.
+describe('while the console is stopped', () => {
+  beforeEach(() => usePauseStore.setState({ paused: false, waiting: 0, lost: 0 }));
+
+  it('takes nothing in', () => {
+    const hub = createFakeHub();
+    renderBridge(hub);
+    usePauseStore.setState({ paused: true });
+
+    hub.emit('messagesReceived', [message('sensors/one'), message('sensors/two')]);
+    runFrames();
+
+    expect(useLogStore.getState().held).toBe(0);
+    expect(useTopicTreeStore.getState().root.subTopics).toBe(0);
+  });
+
+  it('says how many are waiting', () => {
+    const hub = createFakeHub();
+    renderBridge(hub);
+    usePauseStore.setState({ paused: true });
+
+    hub.emit('messagesReceived', [message('a'), message('b'), message('c')]);
+
+    expect(usePauseStore.getState().waiting).toBe(3);
+  });
+
+  it('keeps what was already queued when it is pressed', () => {
+    const hub = createFakeHub();
+    renderBridge(hub);
+
+    hub.emit('messagesReceived', [message('a'), message('b')]);
+    usePauseStore.getState().toggle();
+    runFrames();
+
+    expect(useLogStore.getState().held).toBe(0);
+    expect(usePauseStore.getState().waiting).toBe(2);
+  });
+
+  // The whole point of keeping them: five thousand messages behind a stop are five thousand
+  // rows in the log and five thousand readings under the topics, not a number in a tooltip.
+  it('writes everything it held onto the topics once it is let go', () => {
+    const hub = createFakeHub();
+    renderBridge(hub);
+    usePauseStore.getState().toggle();
+
+    hub.emit('messagesReceived', [message('sensors/one', '1'), message('sensors/two', '2')]);
+    hub.emit('messagesReceived', [message('sensors/one', '3')]);
+    usePauseStore.getState().toggle();
+    runFrames();
+
+    expect(useLogStore.getState().held).toBe(3);
+    expect(runFor(useLogStore.getState().byTopic, 'sensors/one')).toHaveLength(2);
+    expect(useTopicTreeStore.getState().root.subTopics).toBeGreaterThan(0);
+    expect(usePauseStore.getState().waiting).toBe(0);
+  });
+
+  it('takes them again once it is let go', () => {
+    const hub = createFakeHub();
+    renderBridge(hub);
+    usePauseStore.getState().toggle();
+    usePauseStore.getState().toggle();
+
+    hub.emit('messagesReceived', [message('sensors/one')]);
+    runFrames();
+
+    expect(useLogStore.getState().held).toBe(1);
+    expect(usePauseStore.getState().waiting).toBe(0);
+  });
+
+  // The case this was rebuilt for: five thousand behind a stop, and five thousand on the topics
+  // when it is let go — over three frames, so no single frame carries the lot.
+  it('lands five thousand held messages, over as many frames as the rate takes', () => {
+    const hub = createFakeHub();
+    renderBridge(hub);
+    usePauseStore.getState().toggle();
+
+    const stopped = Array.from({ length: 5_000 }, (_, n) =>
+      message(`sensors/${n % 50}/reading`, String(n)),
+    );
+    // In batches, the way the hub sends them.
+    for (let at = 0; at < stopped.length; at += 256) {
+      hub.emit('messagesReceived', stopped.slice(at, at + 256));
+    }
+
+    expect(useLogStore.getState().held).toBe(0);
+    expect(usePauseStore.getState().waiting).toBe(5_000);
+
+    usePauseStore.getState().toggle();
+    let ran = 0;
+    while (frames.length > 0) {
+      frames.shift()!();
+      ran++;
+    }
+
+    expect(useLogStore.getState().held).toBe(5_000);
+    expect(useTopicTreeStore.getState().root.children.get('sensors')?.subTopics).toBe(50);
+    expect(usePauseStore.getState().waiting).toBe(0);
+    expect(usePauseStore.getState().lost).toBe(0);
+    expect(ran).toBe(3);
+  });
+
+  // The one thing a held queue does not survive, and should not: a connection. The tree starts
+  // again when one is made, and what was queued behind the stop was meant for the tree that has
+  // just gone — another broker's traffic, or this one's from before its retained messages
+  // refilled the tree. Handing it over then would write older readings over newer ones.
+  it('lets go of what it held when a connection starts the tree again', () => {
+    const hub = createFakeHub();
+    renderBridge(hub);
+    usePauseStore.getState().toggle();
+
+    hub.emit('messagesReceived', [message('sensors/one'), message('sensors/two')]);
+    expect(usePauseStore.getState().waiting).toBe(2);
+
+    // What connecting does, and the reason the queue is no longer about anything.
+    act(() => useTopicTreeStore.getState().reset());
+
+    expect(usePauseStore.getState().waiting).toBe(0);
+    expect(usePauseStore.getState().lost).toBe(2);
+
+    usePauseStore.getState().toggle();
+    runFrames();
+
+    expect(useLogStore.getState().held).toBe(0);
+    expect(useTopicTreeStore.getState().root.subTopics).toBe(0);
+  });
+
+  // A stop that is let go and pressed again before the queue has drained keeps the rest: the
+  // reader has stopped it a second time, not thrown away what they stopped it for.
+  it('holds the rest when it is pressed again mid-drain', () => {
+    const hub = createFakeHub();
+    renderBridge(hub);
+    usePauseStore.getState().toggle();
+
+    // More than one frame's worth, so the drain cannot finish in the frame below.
+    const many = Array.from({ length: 3_000 }, (_, n) => message(`sensors/${n}`));
+    hub.emit('messagesReceived', many);
+    usePauseStore.getState().toggle();
+    frames.shift()!();
+    usePauseStore.getState().toggle();
+    runFrames();
+
+    expect(useLogStore.getState().held).toBe(2_000);
+    expect(usePauseStore.getState().waiting).toBe(1_000);
   });
 });

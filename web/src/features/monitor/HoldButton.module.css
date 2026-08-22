@@ -1,0 +1,65 @@
+/* Rides at the right end of the selected row of the topic tree, beside that row's own counts.
+   Sized like the tree's other row controls: 18px tall with the block margin pulled back in, so
+   the row the reader has picked is exactly as tall as the rows around it — a selection that
+   nudged the tree half a line taller would move every row below it on every pick. */
+.hold {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex: none;
+  align-self: center;
+  cursor: pointer;
+  height: 18px;
+  min-width: 18px;
+  margin-block: -3px;
+  padding: 0 3px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  letter-spacing: 0.06em;
+  /* Coloured for the act it offers, the same way the console-wide pause is: red stops what is
+     running, green starts what is stopped. They are one idea at two scales, and a reader who
+     has learnt the one in the rail should not have to learn this one over again.
+
+     Softer than the rail's, though, and deliberately. That one is full strength because it is
+     the loudest thing in the rail and it stops the whole console; this one rides on whichever
+     row the reader has just picked, in a tree where the fault colour already means a topic in
+     trouble. Both reds pulled towards the muted grey of the row's own furniture: the colour is
+     still legible as red, and it no longer competes with the traffic. Hover takes it the rest
+     of the way, so the strong colour is what answers a pointer rather than what greets it. */
+  color: color-mix(in srgb, var(--fault) 82%, var(--muted));
+  border-color: color-mix(in srgb, var(--fault) 26%, transparent);
+}
+
+.hold:hover:not(:disabled) {
+  color: var(--fault);
+  border-color: color-mix(in srgb, var(--fault) 55%, transparent);
+  background: color-mix(in srgb, var(--fault) 7%, transparent);
+}
+.hold:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+/* Held: washed rather than filled.
+   A pane showing numbers that have stopped moving looks exactly like one whose topic has gone
+   quiet, so this state has to be plainly different from the one above it — but it is one row's
+   worth of held, not the console's, and a solid green block on a tree row was saying the louder
+   of those two things. The wash, the green mark and the count behind it are enough to tell the
+   two apart at a glance, without the row shouting. */
+.hold[aria-pressed='true'] {
+  color: var(--live);
+  background: color-mix(in srgb, var(--live) 9%, var(--surface));
+  border-color: color-mix(in srgb, var(--live) 45%, transparent);
+}
+/* Its own colour, said again. The hover above it sets the red of the state this is not in, and
+   without this line hovering the green control turned its mark red — which on a row whose topic
+   wears a colour rule read as the rule bleeding into the control. */
+.hold[aria-pressed='true']:hover {
+  color: var(--live);
+  background: color-mix(in srgb, var(--live) 16%, var(--surface));
+  border-color: var(--live);
+}
+
+/* The count of what is waiting behind the pause, beside the shape that lets it through. */
+.hold span { font-variant-numeric: tabular-nums; }
