@@ -20,11 +20,26 @@ public enum BrokerFailureReason
     TlsNotOffered,
     ProtocolVersionUnsupported,
 
+    // Every MQTT version was offered and none was taken. Distinct from the above, which is one
+    // version being refused and names the fix; this one has already tried the fix.
+    NoSupportedProtocolVersion,
+
+    // The WebSocket half never completed. Something is listening and speaking HTTP, but what it
+    // returned was not an upgrade to a WebSocket — nearly always the path, occasionally a proxy
+    // or an auth gate in front of the broker.
+    WebSocketUpgradeRejected,
+
     // The encrypted channel could not be established
     TlsFailed,
     TlsCertUntrusted,
     TlsCertExpired,
     TlsCertNameMismatch,
+
+    // The certificate side of a mutual-TLS connection. Kept apart from the broker's own
+    // certificate above, because the fix is at the opposite end: these are about ours.
+    ClientCertificateRequired,
+    ClientCertificateRejected,
+    CertificateFileUnreadable,
 
     // A broker answered, and said no
     CredentialsRequired,

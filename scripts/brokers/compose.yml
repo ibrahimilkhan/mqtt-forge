@@ -1,0 +1,68 @@
+# The broker lab: four brokers, three vendors, every transport and every MQTT version MQTTForge
+# claims to speak. `./up.sh` starts it and prints the table of endpoints.
+#
+# Nothing here is meant to be reachable from anywhere but this machine, and the certificates it
+# serves are the throwaways in ./certs. Ports are deliberately in a high block so the lab never
+# argues with a broker you already have on 1883.
+name: mqttforge-lab
+
+services:
+  # Mosquitto 2 — every listener at once. See mosquitto/mosquitto2.conf for what each one is.
+  mosquitto2:
+    image: eclipse-mosquitto:2
+    container_name: mqf-mosquitto2
+    restart: unless-stopped
+    volumes:
+      - ./mosquitto/mosquitto2.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto/passwd:/mosquitto/config/passwd:ro
+      - ./certs:/mosquitto/certs:ro
+    ports:
+      - "21883:1883"   # mqtt
+      - "21884:1884"   # mqtt, username and password
+      - "28883:8883"   # mqtts
+      - "28884:8884"   # mqtts, client certificate required
+      - "28885:8885"   # mqtts, expired certificate
+      - "28886:8886"   # mqtts, certificate for another name
+      - "29001:9001"   # ws
+      - "29443:9443"   # wss
+
+  # Mosquitto 1.5 — no MQTT 5. The rung the version ladder has to fall off.
+  #
+  # 1.5 and not 1.6: MQTT 5 landed in mosquitto 1.6.0, so the 1.6 image answers a v5 CONNECT
+  # perfectly happily and proves nothing. Measured, after 1.6 was picked for this on the
+  # assumption that the last of the 1.x line predated v5.
+  mosquitto15:
+    image: eclipse-mosquitto:1.5
+    container_name: mqf-mosquitto15
+    restart: unless-stopped
+    volumes:
+      - ./mosquitto/mosquitto15.conf:/mosquitto/config/mosquitto.conf:ro
+    ports:
+      - "31883:1883"   # mqtt, 3.1 and 3.1.1 only
+
+  # EMQX 5 — a second implementation of all three versions and all four transports, and the one
+  # that mounts its WebSocket at a fixed path, so a wrong path is a real failure to classify.
+  emqx:
+    image: emqx/emqx:5.8
+    container_name: mqf-emqx
+    restart: unless-stopped
+    environment:
+      EMQX_ALLOW_ANONYMOUS: "true"
+    ports:
+      - "41883:1883"   # mqtt
+      - "48883:8883"   # mqtts, EMQX's own self-signed certificate
+      - "48083:8083"   # ws,  path /mqtt
+      - "48084:8084"   # wss, path /mqtt
+      - "48081:18083"  # dashboard, admin / public
+
+  # HiveMQ Community Edition — a third vendor's 3.1.1 and 5.0, and a WebSocket on a path of its
+  # own, so "the path is wrong" is not a claim resting on one broker's behaviour.
+  hivemq:
+    image: hivemq/hivemq-ce:latest
+    container_name: mqf-hivemq
+    restart: unless-stopped
+    volumes:
+      - ./hivemq/config.xml:/opt/hivemq/conf/config.xml:ro
+    ports:
+      - "51883:1883"   # mqtt
+      - "58000:8000"   # ws, path /mqtt
