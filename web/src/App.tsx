@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import styles from './App.module.css';
 import { StatusReadout } from './components/StatusReadout';
 import { AppearancePanel } from './features/appearance/AppearancePanel';
@@ -9,6 +9,9 @@ import { BrokerPanel } from './features/connection/BrokerPanel';
 import { MobilePanel } from './features/mobile/MobilePanel';
 import { useBrokerAddress, useConnectionState } from './api/useConnectionState';
 import { ChartWindows } from './features/monitor/ChartWindows';
+import { StreamPause } from './features/monitor/StreamPause';
+import { HealthStrip } from './features/health/HealthStrip';
+import { useAppearanceStore } from './stores/appearanceStore';
 import { TrafficPane } from './features/monitor/TrafficPane';
 import { useZoomStore } from './features/monitor/useZoom';
 import { WireLog } from './features/monitor/WireLog';
@@ -55,6 +58,8 @@ export function App({ hub }: { hub: Hub }) {
   const [menuOpen, setMenuOpen] = useState(() => !window.matchMedia?.(NARROW).matches);
 
   const { state } = useConnectionState();
+  const health = useAppearanceStore((state) => state.health);
+
   const where = useBrokerAddress();
   const hubStatus = useHubStatusStore((s) => s.status);
   const zoomed = useZoomStore((s) => s.zoomed);
@@ -64,10 +69,12 @@ export function App({ hub }: { hub: Hub }) {
   const Panel = openPanel && PANEL_VIEWS[openPanel];
 
   return (
-    <div className={styles.body}>
+    <>
+      <div className={styles.body}>
       {/* Never removed, only narrowed. With no bar above it, a rail that vanished would take the
           way back to itself with it. */}
       <div className={styles.rail} data-open={menuOpen ? '' : undefined}>
+        {/* What this is. */}
         <div className={styles.railHead}>
           <span className={styles.mark} aria-hidden="true">
             <Mark />
@@ -90,9 +97,13 @@ export function App({ hub }: { hub: Hub }) {
           </button>
         </div>
 
-        {/* The one thing in the rail that changes. Shut, it is the lamp alone — which is all
-            anyone reads it for from across a room. */}
-        <div className={styles.railState}>
+        {/* Straight under the name, because it is the second thing anyone wants from the rail and
+            the whole console is a lie without it: identity, link, panels, flow, in that order.
+            Shut, it is the lamp alone — which is all anyone reads it for from across a room. */}
+        <div
+          className={styles.railState}
+          data-state={hubStatus === 'reconnecting' ? 'Reconnecting' : state}
+        >
           <StatusReadout
             state={state}
             reconnecting={hubStatus === 'reconnecting'}
@@ -105,21 +116,49 @@ export function App({ hub }: { hub: Hub }) {
           )}
         </div>
 
-        {menuOpen && (
-          <nav id="panel-menu" className={styles.menu} aria-label="Panels">
-            {PANELS.map((panel) => (
-              <button
-                key={panel.id}
-                type="button"
-                className={styles.menuBtn}
-                aria-expanded={openPanel === panel.id}
-                onClick={() => setOpenPanel((current) => (current === panel.id ? null : panel.id))}
-              >
-                {panel.label}
-              </button>
-            ))}
-          </nav>
-        )}
+        {/* Kept at both widths. Shut, the labels go and the icons stay, so narrowing the rail
+            costs the reader the words rather than the way to every panel in the app. */}
+        <nav id="panel-menu" className={styles.menu} aria-label="Panels">
+          {PANELS.map((panel, index) => {
+            const Icon = panel.icon;
+            // The first row of a group. Open, the group says its name; shut, there is no room
+            // for one, so the same division is drawn as a rule between the icons.
+            const opens = PANELS[index - 1]?.group !== panel.group;
+
+            return (
+              <Fragment key={panel.id}>
+                {opens &&
+                  (menuOpen ? (
+                    <h2 className={styles.menuGroup}>{panel.group}</h2>
+                  ) : (
+                    index > 0 && <span className={styles.menuSplit} aria-hidden="true" />
+                  ))}
+                <button
+                  type="button"
+                  className={styles.menuBtn}
+                  aria-expanded={openPanel === panel.id}
+                  // Shut, the label is not on the page, so the button has to carry it itself.
+                  aria-label={menuOpen ? undefined : panel.label}
+                  title={menuOpen ? undefined : panel.label}
+                  onClick={() => setOpenPanel((current) => (current === panel.id ? null : panel.id))}
+                >
+                  <Icon />
+                  {menuOpen && <span>{panel.label}</span>}
+                </button>
+              </Fragment>
+            );
+          })}
+        </nav>
+
+        {/* At the foot, and the full width of it. What it stops is different from what the state
+            above reports — whether there is a broker, against whether we are taking anything from
+            it — and a reader can stop the second without touching the first. Standing here it is
+            the last thing in the rail rather than a control floating in the middle of it, and it
+            can afford to say what it does in words. The narrower pause, one run in one pane, is
+            in that pane's foot. */}
+        <div className={styles.railFoot}>
+          <StreamPause compact={!menuOpen} live={state === 'Connected'} />
+        </div>
       </div>
 
       <Workspace
@@ -169,6 +208,11 @@ export function App({ hub }: { hub: Hub }) {
           viewport, and every ancestor inside the workspace is a grid track with a share of a
           height. */}
       <ChartWindows />
-    </div>
+      </div>
+
+      {/* Outside the workspace and under it: the workspace is a grid with a share of the height,
+          and this is a line the reader has asked for rather than part of the tool. */}
+      {health && <HealthStrip />}
+    </>
   );
 }

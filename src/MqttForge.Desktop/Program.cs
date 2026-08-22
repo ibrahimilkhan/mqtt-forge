@@ -31,6 +31,16 @@ var window = new PhotinoWindow()
     .SetUseOsDefaultSize(false)
     .SetSize(1280, 860);
 
+// The window wears the mark as well as the tab inside it. macOS reads an app's icon from the
+// bundle it was launched from rather than from the window, so it is left to the .icns there;
+// Windows takes the one stamped into the executable, and only Linux needs telling at runtime.
+if (OperatingSystem.IsLinux())
+{
+    var icon = Path.Combine(AppContext.BaseDirectory, "Resources", "MQTTForge.png");
+    // Missing only in a half-built tree; a window with no icon is better than no window.
+    if (File.Exists(icon)) window.SetIconFile(icon);
+}
+
 var (app, outcome, port) = await DesktopBind.StartAsync(args, settingsPath, 5169, picker: new WindowFolderPicker(window));
 
 if (outcome == DesktopBind.Outcome.Unavailable)

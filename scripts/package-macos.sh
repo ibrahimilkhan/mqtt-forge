@@ -27,6 +27,10 @@ dotnet publish "$ROOT/src/MqttForge.Desktop" \
   -p:Version="$VERSION" \
   -o "$APP/Contents/MacOS"
 
+# The Dock, Finder and the app switcher all read this one file. Named without its extension in
+# the plist, which is how CFBundleIconFile is written.
+cp "$ROOT/src/MqttForge.Desktop/Resources/MQTTForge.icns" "$APP/Contents/Resources/MQTTForge.icns"
+
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -38,6 +42,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleVersion</key><string>$VERSION</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleExecutable</key><string>MQTTForge</string>
+  <key>CFBundleIconFile</key><string>MQTTForge</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict>

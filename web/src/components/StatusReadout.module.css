@@ -1,8 +1,9 @@
 /* The rail owns placement; no margin here.
    Type, weight and tracking are the rail's own — the same as the panel buttons under it — so the
-   state reads as one more line of the rail rather than as a badge stuck on it. The chip is drawn
-   in transparent: every state keeps the same box, and only the ones worth interrupting for fill
-   it in. A state you are in nearly all the time should not be the loudest thing on the screen. */
+   state reads as one more line of the rail rather than as a badge stuck on it. Ranged left, like
+   every other line in the console, with the address underneath on the lamp's axis.
+   No box of its own any more: the two states worth interrupting for wash the band this sits in,
+   which is a louder signal than a chip and a quieter one than a chip inside a washed band. */
 .readout {
   display: inline-flex;
   align-items: center;
@@ -12,9 +13,6 @@
   font-weight: 600;
   letter-spacing: 0.11em;
   color: var(--muted);
-  padding: 4px 10px;
-  border: 1px solid transparent;
-  border-radius: 999px;
 }
 .lamp {
   width: 7px; height: 7px;
@@ -23,9 +21,9 @@
   flex: none;
 }
 /* Connected is the state you are in nearly all the time, and nothing about it needs answering,
-   so it is a word and a lit dot and nothing else: no fill, no edge, no halo. The colour is the
+   so it is a word and a lit dot and nothing else: no wash on the band, no halo. The colour is the
    whole signal, which is all anyone reads it for from across a room, and the lamp breathes
-   rather than blinks. Faulted and Reconnecting keep the chip below — those are the two worth
+   rather than blinks. Faulted and Reconnecting wash the band they sit in — those are the two worth
    taking your eye off the messages for, and they can only read as loud if this one is quiet. */
 .readout[data-state="Connected"] {
   color: var(--live);
@@ -36,8 +34,6 @@
 }
 .readout[data-state="Faulted"] {
   color: var(--fault);
-  border-color: color-mix(in srgb, var(--fault) 40%, transparent);
-  background: color-mix(in srgb, var(--fault) 10%, var(--surface));
 }
 .readout[data-state="Faulted"] .lamp {
   background: var(--fault);
@@ -48,8 +44,6 @@
 /* Fault colour with a pulse — reads as "working on it", not "broken". */
 .readout[data-state="Reconnecting"] {
   color: var(--fault);
-  border-color: color-mix(in srgb, var(--fault) 40%, transparent);
-  background: color-mix(in srgb, var(--fault) 10%, var(--surface));
 }
 .readout[data-state="Reconnecting"] .lamp {
   background: var(--fault);

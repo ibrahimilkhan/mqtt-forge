@@ -4,7 +4,18 @@
     <OutputType>Exe</OutputType>
     <AssemblyName>MQTTForge</AssemblyName>
     <RootNamespace>MqttForge.Desktop</RootNamespace>
+    <!-- Stamped into the executable, which is where Windows reads an icon from: the file in
+         Explorer, the button in the taskbar and the window's own corner all come from here.
+         Ignored when the host being built is not a Windows one. -->
+    <ApplicationIcon>Resources/MQTTForge.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <!-- Only the .png travels with the app: Linux is the one platform that has to be handed a
+       path at runtime. The .ico is read here at build time and the .icns by the macOS packaging
+       script, so neither is worth carrying into every build's output. -->
+  <ItemGroup>
+    <None Update="Resources/MQTTForge.png" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 
   <!-- A console-SDK project hosting ASP.NET Core doesn't get this via the project reference, so it's declared explicitly. -->
   <ItemGroup>

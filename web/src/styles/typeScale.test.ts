@@ -40,14 +40,14 @@ describe('type scale', () => {
     expect(tokens).toContain(`--mono: ${MONO[DEFAULTS.mono].stack}`);
   });
 
-  it('defines exactly the 7 rem-based type tokens the design table specifies', () => {
+  it('defines exactly the 8 rem-based type tokens the design table specifies', () => {
     const tokens = readFileSync(join(SRC, 'styles/tokens.css'), 'utf8');
     const declarations = [...tokens.matchAll(/--t-([\w-]+):\s*([^;]+);/g)].map(([, name, rawValue]) => ({
       name,
       rawValue: rawValue.trim(),
     }));
 
-    expect(declarations).toHaveLength(7);
+    expect(declarations).toHaveLength(8);
 
     const REM = /^([\d.]+)rem$/;
     for (const { rawValue } of declarations) {
@@ -59,6 +59,9 @@ describe('type scale', () => {
     const BASE = 15;
     // px column is rounded intent (e.g. 0.767 * 15 = 11.505), so allow a small tolerance.
     const expectedPxAt15: Record<string, number> = {
+      // The step under micro, for the one line in the console smaller than an address: the
+      // heading over a group of panel buttons in the rail.
+      nano: 10,
       micro: 10.5,
       label: 11.5,
       small: 12.75,
