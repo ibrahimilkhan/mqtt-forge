@@ -35,6 +35,11 @@ export class TopicRing {
     return this.items.length - this.start;
   }
 
+  /** What the run weighs, in the characters its bodies are held as. */
+  get weight(): number {
+    return this.bytes;
+  }
+
   /** The id of the newest arrival held, or -1 when nothing is. Ids only go up, so this orders
    *  topics by how recently each last spoke without keeping a clock. */
   get newestId(): number {

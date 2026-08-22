@@ -7,6 +7,8 @@ const DEFAULTS = {
   size: 15,
   scale: 'typical',
   readings: {},
+  // The line under the workspace is diagnostics, and starts out of the way.
+  health: false,
 };
 
 beforeEach(() => {
@@ -91,8 +93,8 @@ describe('persistence', () => {
 
     await useAppearanceStore.persist.rehydrate();
 
-    const { sans, mono, size, scale, readings } = useAppearanceStore.getState();
-    expect({ sans, mono, size, scale, readings }).toEqual(DEFAULTS);
+    const { sans, mono, size, scale, readings, health } = useAppearanceStore.getState();
+    expect({ sans, mono, size, scale, readings, health }).toEqual(DEFAULTS);
   });
 
   it('does not throw when the storage write fails, and the choice still applies to this tab', () => {
@@ -129,7 +131,7 @@ describe('persistence', () => {
 
     await useAppearanceStore.persist.rehydrate();
 
-    const { sans, mono, size, scale, readings } = useAppearanceStore.getState();
-    expect({ sans, mono, size, scale, readings }).toEqual(DEFAULTS);
+    const { sans, mono, size, scale, readings, health } = useAppearanceStore.getState();
+    expect({ sans, mono, size, scale, readings, health }).toEqual(DEFAULTS);
   });
 });

@@ -318,6 +318,20 @@ export function runFor(byTopic: ReadonlyMap<string, TopicRing>, filter: string):
 }
 
 /**
+ * What every run together weighs, in the characters their bodies are held as.
+ *
+ * Walked rather than kept running: it is asked for once a second by a line nobody has open most
+ * of the time, and a total maintained on the hot path would be paid for on every arrival by
+ * every reader instead.
+ */
+export function heldWeight(byTopic: ReadonlyMap<string, TopicRing>): number {
+  let weight = 0;
+  for (const ring of byTopic.values()) weight += ring.weight;
+
+  return weight;
+}
+
+/**
  * One sequence of arrivals, put back into a run per topic.
  *
  * For a run that is already fixed — a held pane — where grouping is paid once rather than on

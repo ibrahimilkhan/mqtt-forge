@@ -18,6 +18,13 @@ export type AppearanceChoices = {
    * preference rewritten to know whether to draw it.
    */
   readings: Partial<Record<ReadingId, boolean>>;
+  /**
+   * Whether the line under the workspace saying what the console is carrying is shown.
+   *
+   * Off by default. It answers a question most readers never ask, and a row of numbers changing
+   * every second at the foot of a tool whose whole manner is quiet is not what they came for.
+   */
+  health: boolean;
 };
 
 type AppearanceState = AppearanceChoices & {
@@ -26,6 +33,7 @@ type AppearanceState = AppearanceChoices & {
   setSize: (px: number) => void;
   setScale: (id: ScaleId) => void;
   toggleReading: (id: ReadingId, shown: boolean) => void;
+  setHealth: (shown: boolean) => void;
   /** Back to the catalogue's own answer for every reading. */
   resetReadings: () => void;
   reset: () => void;
@@ -38,6 +46,7 @@ export const DEFAULTS: AppearanceChoices = {
   ...FONTS,
   scale: SCALE_DEFAULT,
   readings: {},
+  health: false,
 };
 
 /** The stored switches, keeping only the ones that name a reading and say true or false. */
@@ -55,7 +64,7 @@ function switched(raw: unknown): Partial<Record<ReadingId, boolean>> {
 export function sanitize(raw: unknown): AppearanceChoices {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { ...DEFAULTS };
 
-  const { sans, mono, size, scale, readings } = raw as Record<string, unknown>;
+  const { sans, mono, size, scale, readings, health } = raw as Record<string, unknown>;
 
   return {
     sans: typeof sans === 'string' && sans in SANS ? (sans as SansId) : DEFAULTS.sans,
@@ -66,6 +75,7 @@ export function sanitize(raw: unknown): AppearanceChoices {
         : DEFAULTS.size,
     scale: typeof scale === 'string' && scale in SCALES ? (scale as ScaleId) : DEFAULTS.scale,
     readings: switched(readings),
+    health: typeof health === 'boolean' ? health : DEFAULTS.health,
   };
 }
 
@@ -79,6 +89,7 @@ export const useAppearanceStore = create<AppearanceState>()(
       setMono: (mono) => set({ mono }),
       setSize: (size) => set({ size }),
       setScale: (scale) => set({ scale }),
+      setHealth: (health) => set({ health }),
       toggleReading: (id, shown) =>
         set((state) => ({ readings: { ...state.readings, [id]: shown } })),
       resetReadings: () => set({ readings: {} }),
@@ -87,12 +98,13 @@ export const useAppearanceStore = create<AppearanceState>()(
     {
       name: STORAGE_KEY,
       version: 5,
-      partialize: ({ sans, mono, size, scale, readings }) => ({
+      partialize: ({ sans, mono, size, scale, readings, health }) => ({
         sans,
         mono,
         size,
         scale,
         readings,
+        health,
       }),
       merge: (persisted, current) => ({ ...current, ...sanitize(persisted) }),
       // Migrates rather than discarding on version bump; sanitize handles any shape.

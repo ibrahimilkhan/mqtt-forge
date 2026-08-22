@@ -1,0 +1,31 @@
+/* A line under the workspace, not a bar across it: it is diagnostics, and it should read as an
+   aside to the console rather than as part of the tool. */
+.strip {
+  display: flex;
+  flex: none;
+  gap: 18px;
+  align-items: baseline;
+  padding: 5px 14px;
+  border-top: 1px solid var(--rule);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--t-small);
+  color: var(--muted);
+  /* A number changing under the pointer must not move the ones beside it. */
+  font-variant-numeric: tabular-nums;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.cell { display: inline-flex; gap: 6px; align-items: baseline; }
+
+.label { letter-spacing: 0.08em; }
+
+/* The number is the thing; the word beside it is the caption. */
+.value { color: var(--ink); }
+
+/* Only when a reading is saying something is wrong. Not red — nothing here is a fault, it is
+   the console reporting on itself — but it should be findable without reading the whole line. */
+.cell[data-tense] .value { color: var(--fault); }
+
+.quiet { color: var(--muted); }

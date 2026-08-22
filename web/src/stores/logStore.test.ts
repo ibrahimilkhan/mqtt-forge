@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { byteLength } from '../lib/payload';
 import type { DecodedMessage } from '../realtime/decodeIncoming';
 import {
+  heldWeight,
   narrowRuns,
   MIN_TOPIC_ENTRIES,
   runFor,
@@ -252,5 +253,25 @@ describe('clearing', () => {
     expect(arrivals()).toEqual([]);
     expect(useLogStore.getState().commands).toEqual([]);
     expect(useLogStore.getState().held).toBe(0);
+  });
+});
+
+// What the runs weigh together, for the line that reports what the console is carrying.
+describe('what the log weighs', () => {
+  it('adds up the bodies it is holding', () => {
+    send(message('a', 'x'.repeat(100)), message('b', 'y'.repeat(50)));
+
+    expect(heldWeight(useLogStore.getState().byTopic)).toBe(150);
+  });
+
+  it('weighs nothing when nothing has arrived', () => {
+    expect(heldWeight(useLogStore.getState().byTopic)).toBe(0);
+  });
+
+  // A run cut back to its depth is lighter, and the weight has to follow it down.
+  it('lets go of the weight a run has dropped', () => {
+    send(...Array.from({ length: TOPIC_DEPTH + 200 }, () => message('one', 'x'.repeat(10))));
+
+    expect(heldWeight(useLogStore.getState().byTopic)).toBe(TOPIC_DEPTH * 10);
   });
 });
