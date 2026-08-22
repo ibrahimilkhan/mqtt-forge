@@ -57,50 +57,11 @@ export function ChartPanel({ onClose }: { onClose: () => void }) {
       </div>
       {/* Under the field, not beside it: a panel row is a flex row, and a sentence sharing one
           with a select squeezes the select down to a few characters of its own label. */}
-      <p className={panel.note}>
-        Runs whose peaks are the signal — pulses, switches — are always drawn on their extremes.
-      </p>
-
-      {/* Where csv puts the readings. Its own row rather than a line in the chip's explanation:
-          it is a setting, it persists across saves, and a reader who wants to change it should
-          not have to press the thing that uses it. */}
-      <div className={panel.row}>
-        <span className={styles.markLabel} id="save-folder-label">
-          Save folder
-        </span>
-        <div className={styles.folder}>
-          <span
-            className={styles.folderPath}
-            data-testid="export-folder"
-            // A path is cut from its head, since the tail is what tells two folders apart. A
-            // sentence is not, and cutting one from its head reads as gibberish.
-            data-path={exporter.folder ? '' : undefined}
-            title={exporter.folder ?? undefined}
-          >
-            {exporter.canChoose
-              ? (exporter.folder ?? 'Not set — csv will ask the first time')
-              : 'This browser has no folder dialog, so csv comes down as a download'}
-          </span>
-          {exporter.canChoose && (
-            <button
-              type="button"
-              className="ghost"
-              aria-labelledby="save-folder-label"
-              disabled={exporter.choosing}
-              onClick={() => exporter.choose()}
-            >
-              {exporter.folder ? 'Change…' : 'Choose…'}
-            </button>
-          )}
-        </div>
-      </div>
+      <p className={panel.note}>Pulses and switches are always drawn on their extremes.</p>
 
       <section className={styles.readings}>
         <h3 className={styles.heading}>Readings</h3>
-        <p className={panel.note}>
-          What the note under the chart says, and what each of them means. Which apply depends on
-          what the run is — a mean is a fact about a temperature and a fiction about a door.
-        </p>
+        <p className={panel.note}>What the note under the chart says. Which apply depends on the run.</p>
 
         {GROUPS.map((group) => (
           <fieldset key={group} className={styles.group}>
@@ -132,40 +93,6 @@ export function ChartPanel({ onClose }: { onClose: () => void }) {
           </fieldset>
         ))}
       </section>
-
-      {/* Where csv puts the readings. Its own row rather than a line in the chip's explanation:
-          it is a setting, it persists across saves, and a reader who wants to change it should
-          not have to press the thing that uses it. */}
-      <div className={panel.row}>
-        <span className={styles.markLabel} id="save-folder-label">
-          Save folder
-        </span>
-        <div className={styles.folder}>
-          <span
-            className={styles.folderPath}
-            data-testid="export-folder"
-            // A path is cut from its head, since the tail is what tells two folders apart. A
-            // sentence is not, and cutting one from its head reads as gibberish.
-            data-path={exporter.folder ? '' : undefined}
-            title={exporter.folder ?? undefined}
-          >
-            {exporter.canChoose
-              ? (exporter.folder ?? 'Not set — csv will ask the first time')
-              : 'This browser has no folder dialog, so csv comes down as a download'}
-          </span>
-          {exporter.canChoose && (
-            <button
-              type="button"
-              className="ghost"
-              aria-labelledby="save-folder-label"
-              disabled={exporter.choosing}
-              onClick={() => exporter.choose()}
-            >
-              {exporter.folder ? 'Change…' : 'Choose…'}
-            </button>
-          )}
-        </div>
-      </div>
 
       {/* The chips over the plot are three and four characters long, because they share a row
           with a pane that can be two hundred pixels wide. Short is right for the chip and wrong
@@ -202,6 +129,40 @@ export function ChartPanel({ onClose }: { onClose: () => void }) {
           </fieldset>
         ))}
       </section>
+
+      {/* Where csv puts the readings, under the chip that calls it 'the folder set below'. Its
+          own row rather than a line in that chip's explanation: it is a setting, it persists
+          across saves, and changing it should not mean pressing the thing that uses it. */}
+      <div className={panel.row}>
+        <span className={styles.markLabel} id="save-folder-label">
+          Save folder
+        </span>
+        <div className={styles.folder}>
+          <span
+            className={styles.folderPath}
+            data-testid="export-folder"
+            // A path is cut from its head, since the tail is what tells two folders apart. A
+            // sentence is not, and cutting one from its head reads as gibberish.
+            data-path={exporter.folder ? '' : undefined}
+            title={exporter.folder ?? undefined}
+          >
+            {exporter.canChoose
+              ? (exporter.folder ?? 'Not set — csv will ask the first time')
+              : 'This browser has no folder dialog, so csv comes down as a download'}
+          </span>
+          {exporter.canChoose && (
+            <button
+              type="button"
+              className="ghost"
+              aria-labelledby="save-folder-label"
+              disabled={exporter.choosing}
+              onClick={() => exporter.choose()}
+            >
+              {exporter.folder ? 'Change…' : 'Choose…'}
+            </button>
+          )}
+        </div>
+      </div>
 
       <div className={panel.actions}>
         <button type="button" className="ghost" onClick={resetReadings}>

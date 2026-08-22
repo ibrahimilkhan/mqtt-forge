@@ -21,8 +21,17 @@ export type BrokerPreset = {
   username: string;
   /** Subscribed to on connect, when the box beside it is ticked. */
   onConnectFilter: string;
-  /** One line under the form: what the broker is, and what to expect from it. */
+  /** One short line under the chips: what the broker is. */
   note: string;
+  /**
+   * Someone else's broker, out on the internet.
+   *
+   * Worth offering — they are the fastest way to see the console work without standing a broker
+   * up first — but none of them is the answer to 'which broker am I connecting to', and four of
+   * them above the form made picking the real one a reading exercise. They sit in their own
+   * section at the foot of the panel instead, out of the way of the fields.
+   */
+  public?: true;
 };
 
 export const BROKER_PRESETS: readonly BrokerPreset[] = [
@@ -33,45 +42,55 @@ export const BROKER_PRESETS: readonly BrokerPreset[] = [
     useTls: false,
     username: '',
     onConnectFilter: '#',
-    note: 'A broker on this machine — the only one here that will answer a bare #, because the only traffic on it is yours.',
+    note: 'On this machine. The only one here that answers a bare #.',
   },
   {
     name: 'Helsinki transit',
+    public: true,
     host: 'mqtt.hsl.fi',
     port: 8883,
     useTls: true,
     username: '',
     onConnectFilter: '/hfp/v2/journey/ongoing/vp/tram/#',
-    note: 'Every tram in Helsinki, reporting position and speed: about 130 messages a second. Swap tram for bus, train or metro.',
+    note: 'Every tram in Helsinki. About 130 messages a second. Swap tram for bus, train or metro.',
   },
   {
     name: 'HiveMQ',
+    public: true,
     host: 'broker.hivemq.com',
     port: 8883,
     useTls: true,
     username: '',
     onConnectFilter: 'testtopic/#',
-    note: "Public test broker, open to anyone. Around 10 messages a second of other people's testing. Refuses a bare #.",
+    note: "Around 10 messages a second of other people's testing. Refuses a bare #.",
   },
   {
     name: 'EMQX',
+    public: true,
     host: 'broker.emqx.io',
     port: 8883,
     useTls: true,
     username: '',
     onConnectFilter: 'testtopic/#',
-    note: 'Public test broker, all but silent. Bring your own traffic from the Publish panel. Refuses a bare #.',
+    note: 'All but silent. Bring your own traffic from Publish. Refuses a bare #.',
   },
   {
     name: 'Mosquitto test',
+    public: true,
     host: 'test.mosquitto.org',
     port: 8886,
     useTls: true,
     username: 'wildcard',
     onConnectFilter: '#',
-    note: 'The original public test broker. The wildcard username is what buys a # subscription here, and it lasts 20 seconds — long enough to see what topics exist.',
+    note: 'The wildcard username buys a # subscription here, for 20 seconds.',
   },
 ];
+
+/** A broker of your own, which is what this panel is for. */
+export const LOCAL_PRESETS = BROKER_PRESETS.filter((preset) => !preset.public);
+
+/** Everyone else's, kept together at the foot of the panel. */
+export const PUBLIC_PRESETS = BROKER_PRESETS.filter((preset) => preset.public);
 
 /** What the form holds before any preset is picked, and what Local Mosquitto restates. */
 export const NO_PRESET_FILTER = '#';

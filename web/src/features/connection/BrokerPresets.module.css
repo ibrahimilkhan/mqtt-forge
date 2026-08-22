@@ -1,5 +1,7 @@
-/* Sits above the form it fills in, so it reads as the way in rather than another field. */
+/* Sits above the form it fills in, so it reads as the way in rather than another field. The
+   group at the foot of the panel has nothing under it, so it gives its margin back. */
 .presets { margin-bottom: 16px; }
+.presets:last-child { margin-bottom: 0; }
 
 .lede {
   font-family: var(--mono);
@@ -7,6 +9,16 @@
   letter-spacing: 0.04em;
   color: var(--muted);
   margin: 0 0 7px;
+}
+
+/* What the group is, before the chips rather than after: a reader deciding whether to pick one
+   of these at all needs it first. Quieter than the note under a chosen chip — that one answers a
+   question the reader has just asked, this one heads off a question they have not. */
+.hint {
+  font-size: var(--t-small);
+  color: var(--muted);
+  margin: 0 0 8px;
+  line-height: 1.45;
 }
 
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }

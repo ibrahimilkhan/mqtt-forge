@@ -31,48 +31,48 @@ export const CONTROL_GROUP_TITLES: Record<ControlGroup, { title: string; about: 
   what: { title: 'What is drawn', about: 'Which readings the plot is of, and how much room it gets.' },
   range: {
     title: 'The range',
-    about: 'How much of the plot’s height goes on the run’s range. Each of these is a whole chip row of its own.',
+    about: 'How much of the plot’s height goes on the run’s range.',
   },
-  view: { title: 'The view, and taking it away', about: 'How the same run is drawn, and how to get it out of the console.' },
+  view: { title: 'The view, and taking it away', about: 'How the run is drawn, and how to get it out.' },
 };
 
 export const CONTROLS: Record<ControlId, Control & { group: ControlGroup }> = {
   field: {
     label: 'temp, hum, …',
     group: 'what',
-    what: 'One message can carry a whole environment, so each numeric field of a JSON body is offered by name. The chart opens on whichever of them is doing the most.',
+    what: 'Each numeric field of a JSON body, by name. It opens on the busiest.',
     when: 'Only when the bodies carry more than one number.',
   },
   branch: {
     label: '← all',
     group: 'what',
-    what: 'Back out to every topic under the branch, after clicking into one of them.',
-    when: 'Only after you have clicked a row of a branch’s small plots.',
+    what: 'Back out to every topic under the branch.',
+    when: 'Only after clicking into one of a branch’s small plots.',
   },
   open: {
     label: '⤢',
     group: 'what',
-    what: 'Lifts the chart out of its column and floats it over three fifths of the window, leaving the console readable — and live — around it. Escape puts it back.',
+    what: 'Floats the chart over the console, still live around it. Escape puts it back.',
   },
   auto: {
     label: 'auto',
     group: 'range',
-    what: 'Lets the readings decide: measurements take whatever Range above says, while a switch or a pulse always takes its extremes, because clipping a pulse shaves off the signal.',
+    what: 'Measurements take Range above; pulses always take their extremes.',
   },
   time: {
     label: 'time',
     group: 'view',
-    what: 'The readings in the order they arrived — what the run has been doing.',
+    what: 'The readings in the order they arrived.',
   },
   dist: {
     label: 'dist',
     group: 'view',
-    what: 'The same readings as a distribution — how often each value came up, which is what the run usually does rather than what it did.',
+    what: 'The same readings as a distribution — what the run usually does.',
   },
   csv: {
     label: 'csv',
     group: 'view',
-    what: 'Saves the readings on the chart as a CSV file — a header, then one row per reading with its time in full. It goes into the folder set below, and asks for one the first time. In a browser, where there is no folder dialog to open, it comes down as a download instead.',
+    what: 'Saves the charted readings as CSV, into the folder set below.',
   },
 };
 
