@@ -1,9 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { App } from './App';
 import { createFakeHub } from './realtime/fakeHub';
+import { useHubStatusStore } from './stores/hubStatusStore';
+
+afterEach(() => useHubStatusStore.setState({ status: 'live' }));
 
 function renderApp() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -168,11 +171,62 @@ describe('App', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Panel menu' }));
 
-    expect(screen.queryByRole('navigation', { name: 'Panels' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Panel menu' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
 
     await userEvent.click(screen.getByRole('button', { name: 'Panel menu' }));
 
-    expect(screen.getByRole('navigation', { name: 'Panels' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Panel menu' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+  });
+
+  // Narrowing the rail used to take the menu with it: every panel in the app was then behind the
+  // toggle and a second click. The icons stay at both widths, so what narrowing costs is the
+  // words rather than the way in.
+  it('keeps every panel reachable with the rail narrowed', async () => {
+    renderApp();
+    await userEvent.click(screen.getByRole('button', { name: 'Panel menu' }));
+
+    expect(menu().getAllByRole('button')).toHaveLength(6);
+
+    await userEvent.click(menu().getByRole('button', { name: 'Filters' }));
+
+    expect(screen.getByRole('region', { name: 'Filters panel' })).toBeInTheDocument();
+  });
+
+  // The label is off the page, so each button has to carry its own name.
+  it('drops the labels when the rail narrows, and keeps them on the buttons', async () => {
+    renderApp();
+    expect(menu().getByRole('button', { name: 'Broker' })).toHaveTextContent('Broker');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Panel menu' }));
+
+    expect(menu().getByRole('button', { name: 'Broker' })).toHaveTextContent('');
+    expect(menu().queryByRole('heading', { name: 'Link' })).not.toBeInTheDocument();
+  });
+
+  // Six flat buttons was a list to read through. The headings are the questions a reader
+  // actually arrives with, and Chart leads Reading because that is where a topic is read.
+  it('groups the panels under headings, in the order they are worked through', () => {
+    renderApp();
+
+    expect(menu().getAllByRole('heading').map((heading) => heading.textContent)).toEqual([
+      'Link',
+      'Reading',
+      'Tools',
+    ]);
+    expect(menu().getAllByRole('button').map((button) => button.textContent)).toEqual([
+      'Broker',
+      'Filters',
+      'Chart',
+      'Colours',
+      'QR',
+      'Settings',
+    ]);
   });
 
   it('shows the connection state read from the API', async () => {
@@ -191,6 +245,18 @@ describe('App', () => {
 
     expect(screen.queryByText('DISCONNECTED')).not.toBeInTheDocument();
     expect(screen.getByLabelText('DISCONNECTED')).toBeInTheDocument();
+  });
+
+  // The state used to be a chip at the foot of the rail. It stands under the name now, and the
+  // two states worth interrupting for wash the whole band rather than drawing a box inside it.
+  it('washes the state band when the hub is reconnecting', async () => {
+    renderApp();
+    await screen.findByText('DISCONNECTED');
+
+    act(() => useHubStatusStore.setState({ status: 'reconnecting' }));
+
+    const band = screen.getByText('RECONNECTING').closest('div')!.parentElement!;
+    expect(band).toHaveAttribute('data-state', 'Reconnecting');
   });
 
   // The chart's region is a third of a column that is itself a third of the window. Thrown open

@@ -20,6 +20,7 @@
     font-size: 15px;
 
     /* Every font-size derives from this in rem, so the root size scales all of them. */
+    --t-nano:  0.667rem; /* 10px */
     --t-micro: 0.7rem;   /* 10.5px */
     --t-label: 0.767rem; /* 11.5px */
     --t-small: 0.85rem;  /* 12.75px */

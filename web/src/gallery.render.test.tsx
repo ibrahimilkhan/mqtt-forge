@@ -22,7 +22,7 @@ import { domainFor } from './lib/scale';
 import { numericSeries } from './lib/series';
 import { shapeOf } from './lib/shape';
 import { summarise } from './lib/stats';
-import { Mark } from './features/brand/marks';
+import { Mark, MarkSolid } from './features/brand/marks';
 import { TrafficChart } from './features/monitor/TrafficChart';
 import { TrafficLine } from './features/monitor/TrafficLine';
 import { queryKeys } from './api/queryKeys';
@@ -209,7 +209,7 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
   // One mark, at the three sizes it has to survive: the panel, the open rail, and the strip the
-  // rail shuts to.
+  // rail shuts to — and beside it the solid cut, which is what a favicon and a window list get.
   const marks = (
     <div className="gMarks">
       <figure className="gMark">
@@ -233,8 +233,34 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
           </b>
         </div>
         <figcaption>
-          <b>Ember</b>
-          <span>the heat rather than the tool — what a forge is for, and what this watches for</span>
+          <b>Diyez</b>
+          <span>
+            the wildcard a fresh connection subscribes to, slanted so it is the character MQTT
+            uses rather than a hashtag or a grid
+          </span>
+        </figcaption>
+      </figure>
+      <figure className="gMark">
+        <div className="gMarkRow">
+          <span style={{ fontSize: 44, lineHeight: 0 }}>
+            <MarkSolid />
+          </span>
+          <span style={{ fontSize: 26, lineHeight: 0 }}>
+            <MarkSolid />
+          </span>
+          <span style={{ fontSize: 16, lineHeight: 0 }}>
+            <MarkSolid />
+          </span>
+          <span style={{ fontSize: 12, lineHeight: 0 }}>
+            <MarkSolid />
+          </span>
+        </div>
+        <figcaption>
+          <b>Diyez, solid</b>
+          <span>
+            the same drawing cut out of a block, for the sizes and grounds an outline cannot
+            hold: the favicon, a tab, a window list, the icon the app wears
+          </span>
         </figcaption>
       </figure>
     </div>
@@ -317,9 +343,11 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
     'gallery-dots.html',
     'gallery-log.html',
     'console.html',
+    'console-broker.html',
     'console-colours.html',
     'console-zoomed.html',
     'console-pinned.html',
+    'console-shut.html',
   ]
     .map((href, i) => {
       const name =
@@ -335,13 +363,17 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
                 ? 'The log'
               : href === 'console.html'
                 ? 'The console'
+              : href === 'console-broker.html'
+                ? 'Broker panel'
               : href === 'console-colours.html'
                 ? 'Colour rules'
                 : href === 'console-zoomed.html'
                   ? 'Chart opened'
                   : href === 'console-pinned.html'
                     ? 'Charts pinned'
-                    : `Charts ${i}`;
+                    : href === 'console-shut.html'
+                      ? 'Rail shut'
+                      : `Charts ${i}`;
 
       return `<a href="${href}">${name}</a>`;
     })
@@ -355,15 +387,16 @@ ${document.head.innerHTML}
 ${STYLE}
 </head><body>
 <h1>MQTT<span style="color:var(--signal)">Forge</span></h1>
-<p class="gLede">Six marks to choose between, and the chart in every state the brief asked about.
-Rendered through the console's own components, so what is below is what the tool draws.</p>
+<p class="gLede">The mark the tool wears, the rail it stands in, and the chart in every state the
+brief asked about. Rendered through the console's own components, so what is below is what the
+tool draws.</p>
 <nav class="gNav">${nav}</nav>
 ${inner}
 </body></html>`;
 
   writeFileSync(
     `${OUT}/gallery.html`,
-    page('marks', `<h2>Marks — pick one</h2>${markBox.innerHTML}`),
+    page('marks', `<h2>The mark</h2>${markBox.innerHTML}`),
   );
 
   drawn.forEach((inner, i) =>
@@ -372,11 +405,16 @@ ${inner}
 
   writeFileSync(`${OUT}/console.html`, console_(client, { panel: null }));
   writeFileSync(`${OUT}/console-colours.html`, console_(client, { panel: 'colours' }));
+  // The panel the console opens on, which is the one page that shows the broker form whole.
+  writeFileSync(`${OUT}/console-broker.html`, console_(client, { panel: 'broker' }));
   // The same console with the chart thrown open, which is the state a static page can show and
   // a click cannot be recorded in.
   writeFileSync(`${OUT}/console-zoomed.html`, console_(client, { zoomed: true, panel: null }));
   // And the same console with two charts pinned off it, standing over a console still in use.
   writeFileSync(`${OUT}/console-pinned.html`, console_(client, { pinned: true, panel: null }));
+  // The rail narrowed to its strip, which is the other half of the rail's design and a click
+  // away rather than a state the app can be started in.
+  writeFileSync(`${OUT}/console-shut.html`, console_(client, { panel: null, rail: 'shut' }));
   useChartWindows.setState({ windows: [] });
 
   // Back to the defaults: the runs above set the range on the store to draw themselves both
@@ -690,7 +728,7 @@ function detail() {
  * a fake hub satisfies the bridge. What this writes is the real layout with real components in
  * it, at whatever size the window opens — which is what a screenshot of the console is.
  */
-function console_(client, { zoomed = false, pinned = false, panel = 'broker' } = {}) {
+function console_(client, { zoomed = false, pinned = false, panel = 'broker', rail = 'open' } = {}) {
   // Primed rather than fetched. Rendering here is one synchronous pass, so a query that has to
   // go and ask would still be pending when the HTML is taken — and the page would show a console
   // that had not connected to anything.
@@ -707,8 +745,8 @@ function console_(client, { zoomed = false, pinned = false, panel = 'broker' } =
     },
   });
   client.setQueryData(queryKeys.colourRules, [
-    { filter: 'sensors/+/temp', colour: '#6d28d9' },
-    { filter: 'alerts/#', colour: '#b91c1c' },
+    { filter: 'sensors/+/temp', colour: '#8161b3' },
+    { filter: 'alerts/#', colour: '#b7514e' },
   ]);
 
   useLogStore.getState().clear();
@@ -775,9 +813,12 @@ function console_(client, { zoomed = false, pinned = false, panel = 'broker' } =
     );
   }
   useTopicTreeStore.getState().setAllOpen(true);
+  // The filter the tree itself would set — '/#' on the end, which matches the topic and
+  // everything under it. Written the short way, no row read as selected on these pages and the
+  // controls that ride on the selected row were never drawn.
   useSelectionStore.getState().select({
     label: 'sensors/livingroom/temp',
-    filter: 'sensors/livingroom/temp',
+    filter: 'sensors/livingroom/temp/#',
     topic: 'sensors/livingroom/temp',
   });
 
@@ -797,6 +838,17 @@ function console_(client, { zoomed = false, pinned = false, panel = 'broker' } =
   if (panel !== 'broker') {
     act(() => fireEvent.click(menu('Broker')));
     if (panel) act(() => fireEvent.click(menu(panel[0].toUpperCase() + panel.slice(1))));
+  }
+
+  // Same click, for the same reason: the strip is a state the reader puts the rail in.
+  if (rail === 'shut') {
+    act(() =>
+      fireEvent.click(
+        [...container.querySelectorAll('button')].find(
+          (button) => button.getAttribute('aria-label') === 'Panel menu',
+        ),
+      ),
+    );
   }
 
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">

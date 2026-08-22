@@ -1,34 +1,44 @@
 /* ---- the rail down the left ---- */
-/* Everything that is not the workspace lives here: the mark, the link's state, and the way into
-   each panel. It replaced a bar across the top, which cost sixty pixels of height for two facts
-   that never changed — and height is the scarce dimension in a console whose every pane is a
-   list, a form or a plot.
+/* Everything that is not the workspace lives here: the mark, the link's state, the way into each
+   panel, and the one control that stops the console taking messages. It replaced a bar across the
+   top, which cost sixty pixels of height for two facts that never changed — and height is the
+   scarce dimension in a console whose every pane is a list, a form or a plot.
 
-   Two widths, not two states of existence: shut, it is a strip wide enough for the mark, the
-   lamp and the control that opens it again. A rail that disappeared would take the way back to
-   itself with it, now that there is no bar to keep one in. */
+   Four bands, in the order the questions arrive: what is this, what is it connected to, what can
+   I open, and is it still taking anything in. Each answers a different question, so each is ruled
+   off from the next rather than run together.
+
+   Two widths, not two states of existence: shut, it is a strip wide enough for the mark, the lamp,
+   the six icons and the control that opens it again. A rail that disappeared would take the way
+   back to itself with it, now that there is no bar to keep one in. */
 .rail {
   display: flex;
   flex-direction: column;
-  width: 46px;
+  width: 52px;
   flex: none;
   background: var(--surface);
   border-right: 1px solid var(--rule);
   overflow: hidden auto;
 }
-.rail[data-open] { width: 170px; }
+.rail[data-open] { width: 196px; }
 
 /* Mark, name and the control that changes the width. Shut, the three stack instead. */
 .railHead {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 11px 10px 9px;
+  gap: 9px;
+  padding: 10px 12px 9px;
+  border-bottom: 1px solid var(--rule);
 }
-.rail:not([data-open]) .railHead { flex-direction: column; gap: 6px; padding-inline: 0; }
+.rail:not([data-open]) .railHead { flex-direction: column; gap: 8px; padding: 11px 0 9px; }
 
-/* The mark is drawn at 1em, so its size is set here — in a token, so it scales with the base
-   size the reader chose rather than standing still while the name beside it grows. */
+/* The mark is drawn at 1em, so its size is set here — off the type scale, so a reader who turns
+   the base size up gets a mark that grows with the name beside it rather than one stranded next
+   to it.
+   It stood in a ruled square with a registration cross at each corner. The square was the frame
+   a drawing gets on a sheet, and beside a mark that is already a closed shape it read as a
+   second box around a box — the rail is ruled into bands already, and that was one rule too
+   many. The mark stands on its own. */
 .mark {
   display: flex;
   font-size: calc(var(--t-title) * 1.15);
@@ -36,13 +46,18 @@
   color: var(--ink);
   flex: none;
 }
+.rail:not([data-open]) .mark { font-size: var(--t-title); }
 
 .wordmark {
   font-family: var(--mono);
   font-size: var(--t-lead);
   font-weight: 600;
   letter-spacing: -0.03em;
-  line-height: 1;
+  /* Room for the tails. At a line height of 1 the box is shorter than the glyphs need, and the
+     clip below — which is here to stop the name spilling sideways out of a rail that can be
+     52px wide — took the descenders of the Q and the g off with it. The band's height is set by
+     the mark beside this, which is taller than either, so the room costs nothing. */
+  line-height: 1.25;
   margin: 0;
   /* The name is not worth a second line at any width the rail can be. */
   white-space: nowrap;
@@ -70,42 +85,91 @@
 .railToggle:hover { color: var(--ink); background: var(--paper); }
 .railToggle:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
-/* The link's state, and what it is a link to. */
+/* ---- the link's state, and what it is a link to ---- */
+/* Straight under the name. It used to sit at the foot, below the menu, where it was the last
+   thing in the rail and read as a footnote — and it is not a footnote: every number in the
+   workspace is worthless if this word is not CONNECTED. Second band, centred in the rail with
+   the address under it, so the pair reads as one stamp on the band rather than as the first two
+   lines of the menu below. Centred at both widths, so narrowing the rail moves nothing sideways
+   — it only takes the words out from under the lamp. */
 .railState {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  padding: 0 10px 12px;
+  align-items: center;
+  gap: 3px;
+  padding: 11px 12px 12px;
   border-bottom: 1px solid var(--rule);
 }
-.rail:not([data-open]) .railState { align-items: center; padding-inline: 0; }
+.rail:not([data-open]) .railState { padding: 9px 0; }
 
-/* Where the traffic is coming from. One line, tail first: the port and the host are what tell
-   two brokers apart, and the scheme in front of them never does.
-   Indented onto the lamp above it, which is the same axis the panel buttons below start on: the
-   head is the only thing in the rail that sits further left, and everything under it lines up. */
+/* The two states worth taking your eye off the messages for wash the whole band rather than
+   drawing a chip inside it. Six percent: enough that the band is plainly not white, nowhere near
+   enough to compete with the log. Connected leaves the band alone — a state you are in nearly
+   all the time should not be the loudest thing on the screen. */
+.railState[data-state='Faulted'],
+.railState[data-state='Reconnecting'] {
+  background: color-mix(in srgb, var(--fault) 6%, var(--surface));
+}
+
+/* Where the traffic is coming from. One line, tail first: the port and the host are what tell two
+   brokers apart, and the scheme in front of them never does. The right-to-left direction is not
+   about language — it is what makes a long address lose its head rather than its tail. */
 .where {
   margin: 0;
-  padding-left: 11px;
+  max-width: 100%;
+  /* Said explicitly, because the direction below would otherwise range it against the right
+     edge: the direction is here for where the ellipsis lands, not for where the line sits. */
+  text-align: center;
   font-family: var(--mono);
   font-size: var(--t-micro);
   color: var(--muted);
   direction: rtl;
-  text-align: left;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* ---- panel menu, under the state ---- */
+/* ---- panel menu ---- */
+/* No rule of its own: the group headings already divide it, and a border under the last group
+   would draw a line the eye reads as another heading. */
 .menu {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 10px 8px;
+  padding: 4px 8px 6px;
   min-height: 0;
+  flex: none;
 }
+.rail:not([data-open]) .menu { align-items: center; gap: 2px; padding: 8px 0; }
+
+/* Six flat buttons was a list to read through; three groups of two is a list to point at. */
+.menuGroup {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--t-nano);
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 9px 12px 4px;
+}
+/* Nothing above it but a rule, so it does not need the room the others put between groups. */
+.menuGroup:first-child { padding: 8px 12px 5px; }
+
+/* Shut, the same division with no room for a word. */
+.menuSplit {
+  width: 20px;
+  height: 1px;
+  flex: none;
+  background: var(--rule);
+  margin: 5px 0;
+}
+
 .menuBtn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  padding: 7px 11px;
   font-family: var(--mono);
   font-size: var(--t-label);
   font-weight: 600;
@@ -116,8 +180,21 @@
   background: none;
   border: 1px solid transparent;
   border-radius: 2px;
-  padding: 8px 11px;
   cursor: pointer;
+}
+/* The icons are drawn on a 24-unit square at 1em; the rail says how big that is, the same way it
+   says how big the mark is. */
+.menuBtn svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  display: block;
+}
+/* Shut, the icon is the whole row, in a box wide enough to hit. */
+.rail:not([data-open]) .menuBtn {
+  justify-content: center;
+  width: 34px;
+  padding: 0;
 }
 .menuBtn:hover { color: var(--ink); background: var(--paper); }
 .menuBtn[aria-expanded="true"] {
@@ -133,6 +210,18 @@
 }
 .menuBtn:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
+/* ---- the foot: the one control that stops the console taking messages ---- */
+/* It used to float against the middle of the rail, because centred in what the bands left it sat
+   a hundred pixels low. At the foot it needs no such trick: it is the last band, the full width
+   of the rail, and it has room to say what it does in words rather than in a glyph alone. */
+.railFoot {
+  margin-top: auto;
+  flex: none;
+  padding: 9px 8px 11px;
+  border-top: 1px solid var(--rule);
+}
+.rail:not([data-open]) .railFoot { display: flex; justify-content: center; padding: 9px 0 11px; }
+
 /* ---- the row: rail, then the workspace ---- */
 .body {
   display: flex;
@@ -142,7 +231,7 @@
 }
 
 /* Open, the rail would eat a narrow screen, so it lies over the workspace instead of beside it.
-   Shut it still sits in the row: 46px is cheaper than the gesture needed to get it back.
+   Shut it still sits in the row: 52px is cheaper than the gesture needed to get it back.
    The same width at which the workspace stops being columns, so there is one story about what
    this console does when the window gets small rather than two that disagree. */
 @media (max-width: 760px) {
