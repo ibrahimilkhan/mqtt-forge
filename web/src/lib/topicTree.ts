@@ -98,17 +98,21 @@ export function pruneTopics(root: TopicNode, remove: (topic: string) => boolean)
     index: number;
     kept: Map<string, TopicNode>;
     order: string[];
+    /** The root is not a topic. Carried rather than inferred from an empty path, which a topic
+     *  beginning with '/' also has. */
+    isRoot: boolean;
   };
 
-  const frame = (node: TopicNode, path: string): Frame => ({
+  const frame = (node: TopicNode, path: string, isRoot = false): Frame => ({
     node,
     path,
     index: 0,
     kept: new Map(),
     order: [],
+    isRoot,
   });
 
-  const stack: Frame[] = [frame(root, '')];
+  const stack: Frame[] = [frame(root, '', true)];
   // undefined means 'no child has just finished'; null means the child that did was dropped.
   let finished: TopicNode | null | undefined = undefined;
 
@@ -128,12 +132,12 @@ export function pruneTopics(root: TopicNode, remove: (topic: string) => boolean)
     if (current.index < current.node.order.length) {
       const name = current.node.order[current.index];
       const child = current.node.children.get(name)!;
-      stack.push(frame(child, current.path ? `${current.path}/${name}` : name));
+      stack.push(frame(child, current.isRoot ? name : `${current.path}/${name}`));
       continue;
     }
 
     stack.pop();
-    finished = rebuild(current.node, current.path, current.kept, current.order, remove);
+    finished = rebuild(current.node, current.path, current.isRoot, current.kept, current.order, remove);
   }
 
   // The root is never a topic, so it survives whatever happens beneath it.
@@ -143,11 +147,12 @@ export function pruneTopics(root: TopicNode, remove: (topic: string) => boolean)
 function rebuild(
   node: TopicNode,
   path: string,
+  isRoot: boolean,
   kept: Map<string, TopicNode>,
   order: string[],
   remove: (topic: string) => boolean,
 ): TopicNode | null {
-  const dropped = path !== '' && remove(path);
+  const dropped = !isRoot && remove(path);
   const survived =
     !dropped &&
     order.length === node.order.length &&
@@ -157,7 +162,7 @@ function rebuild(
 
   // Nothing of its own left and nothing underneath: the branch itself is gone. Not the root,
   // which has to hand back a tree even when it is empty.
-  if (path !== '' && order.length === 0 && (dropped || node.hits === 0)) return null;
+  if (!isRoot && order.length === 0 && (dropped || node.hits === 0)) return null;
 
   let subTopics = dropped || node.hits === 0 ? 0 : 1;
   let subMessages = dropped ? 0 : node.hits;
@@ -207,7 +212,8 @@ export function flattenTree(
   limit: number,
 ): { rows: TopicRow[]; hidden: number } {
   const rows: TopicRow[] = [];
-  let hidden = 0;
+  // Counted while the rows are built, so what is left over does not have to be walked for.
+  let shown = 0;
 
   // Reverse order in, so popping walks siblings alphabetically.
   const stack: TopicRow[] = [];
@@ -217,7 +223,10 @@ export function flattenTree(
       const child = children.get(order[i])!;
       stack.push({
         node: child,
-        path: path ? `${path}/${child.name}` : child.name,
+        // Depth, not the truthiness of `path`: a topic beginning with '/' has an empty first
+        // segment, whose path is legitimately '' — and joining from it must still produce the
+        // leading slash. Only the root, which is not a topic, contributes no prefix at all.
+        path: depth === 0 ? child.name : `${path}/${child.name}`,
         depth,
         isBranch: child.children.size > 0,
         open: false,
@@ -228,14 +237,27 @@ export function flattenTree(
   descend(root, '', 0);
 
   while (stack.length > 0) {
+    // Past the cap the walk stops rather than carrying on to count what it will not draw.
+    // It was descending into every open node the broker had, building a path string and a row
+    // object for each, and then throwing all but the first fifteen hundred away: measured on
+    // Helsinki's feed, ten thousand topics cost twice what two thousand did for exactly the
+    // same fifteen hundred rows on screen.
+    if (rows.length >= limit) break;
+
     const row = stack.pop()!;
     row.open = row.isBranch && isOpen(row.path);
 
-    if (rows.length < limit) rows.push(row);
-    else hidden++;
+    rows.push(row);
+    if (row.node.hits > 0) shown++;
 
     if (row.open) descend(row.node, row.path, row.depth + 1);
   }
+
+  // Only once the cap has bitten is anything hidden, and then it is counted from the tree's own
+  // running totals rather than by walking to the end of it. What it counts is topics rather than
+  // rows — which is what the line under the tree has always said out loud — so a branch nobody
+  // has opened is counted here too. Uncapped, as before, nothing is hidden.
+  const hidden = rows.length < limit ? 0 : Math.max(root.subTopics - shown, 0);
 
   return { rows, hidden };
 }

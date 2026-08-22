@@ -1,4 +1,4 @@
-import { numericSeries, seriesByTopic, type Series } from './series';
+import { numericSeries, seriesFromRuns, type Series } from './series';
 import type { LogEntry } from '../stores/logStore';
 
 /**
@@ -36,19 +36,26 @@ export type Reason =
  */
 export const MOST_LINES = 6;
 
-export function chartable(entries: LogEntry[], field?: string | null): Chartable {
-  if (entries.length < 2) return { kind: 'none', reason: { code: 'too-few', have: entries.length } };
+/**
+ * Takes the traffic as one run per topic, which is how the log holds it and how a chart of a
+ * branch draws it. It used to take one flat sequence and group it again here, and the log had
+ * to merge and sort the runs to produce that sequence — work whose only purpose was to be
+ * undone one call later.
+ */
+export function chartable(runs: readonly LogEntry[][], field?: string | null): Chartable {
+  let total = 0;
+  for (const run of runs) total += run.length;
 
-  const topics = new Set(entries.map((entry) => entry.topic).filter(Boolean));
+  if (total < 2) return { kind: 'none', reason: { code: 'too-few', have: total } };
 
-  if (topics.size <= 1) {
-    const series = numericSeries(entries, field);
+  if (runs.length <= 1) {
+    const series = numericSeries(runs[0] ?? [], field);
 
-    return series ? { kind: 'one', series } : { kind: 'none', reason: why(entries, field) };
+    return series ? { kind: 'one', series } : { kind: 'none', reason: why(runs, field) };
   }
 
-  const drawn = seriesByTopic(entries, field);
-  if (drawn.length === 0) return { kind: 'none', reason: why(entries, field) };
+  const drawn = seriesFromRuns(runs, field, MOST_LINES);
+  if (drawn.length === 0) return { kind: 'none', reason: why(runs, field) };
 
   // One topic in the selection that charts is one line, not a set of small multiples with a
   // single member — the reader asked for a branch, but what came back is a topic.
@@ -56,8 +63,13 @@ export function chartable(entries: LogEntry[], field?: string | null): Chartable
 
   return {
     kind: 'many',
-    series: drawn.slice(0, MOST_LINES),
-    more: Math.max(drawn.length - MOST_LINES, 0),
+    series: drawn,
+    // The topics under the branch that are not drawn, which is what the line beneath the plots
+    // says out loud. It counts every one of them rather than only the ones that would chart:
+    // knowing which of ten thousand topics carry numbers means building a series for each, and
+    // that is the work this stopped doing. The two counts agree wherever a branch is one kind
+    // of device, which is the ordinary shape of a branch.
+    more: Math.max(runs.length - drawn.length, 0),
   };
 }
 
@@ -69,17 +81,28 @@ export function chartable(entries: LogEntry[], field?: string | null): Chartable
  * own payload and knows immediately whether to pick a field, a different topic, or to go and fix
  * the device.
  */
-function why(entries: LogEntry[], field?: string | null): Reason {
+function why(runs: readonly LogEntry[][], field?: string | null): Reason {
   // A field the reader picked that this topic does not carry is not the topic's fault, and the
   // way out of it is a different chip rather than a different topic.
   if (field) return { code: 'no-field', field };
 
-  const bodies = entries.filter((entry) => entry.body);
-  const topics = new Set(entries.map((entry) => entry.topic).filter(Boolean)).size;
+  let bodies = 0;
+  let newest: LogEntry | null = null;
+
+  for (const run of runs) {
+    for (const entry of run) {
+      if (!entry.body) continue;
+
+      bodies++;
+      // Ids only go up, so the newest body across the runs is the highest of them — the runs
+      // are each newest first but are not in any order relative to one another.
+      if (newest === null || entry.id > newest.id) newest = entry;
+    }
+  }
 
   // Only one message on the topic that carried anything at all: nothing is wrong, the run is
   // simply one message old.
-  if (bodies.length < 2) return { code: 'too-few', have: bodies.length };
+  if (bodies < 2) return { code: 'too-few', have: bodies };
 
-  return { code: 'no-numbers', sample: bodies[0].body ?? null, topics };
+  return { code: 'no-numbers', sample: newest?.body ?? null, topics: runs.length };
 }

@@ -17,7 +17,7 @@ import { useEscapeFromZoom, useZoomStore } from './useZoom';
  * changes.
  */
 export function TrafficPane() {
-  const { selected, entries, held } = useTraffic();
+  const { selected, entries, runs, held } = useTraffic();
   const zoomed = useZoomStore((state) => state.zoomed);
   useEscapeFromZoom();
 
@@ -44,7 +44,7 @@ export function TrafficPane() {
       {/* Keyed like the entries above: a new selection is a new run, so the field being charted
           and the view it is drawn in start again rather than carrying over from another topic. */}
       {selected && entries.length > 0 && (
-        <TrafficChart key={selected.filter} entries={entries} frozen={held} />
+        <TrafficChart key={selected.filter} runs={runs} frozen={held} />
       )}
     </>
   );

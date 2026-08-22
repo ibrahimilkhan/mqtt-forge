@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { create } from 'zustand';
 import { matchesFilter } from '../../lib/topicMatch';
-import { useLogStore, type LogEntry } from '../../stores/logStore';
+import { runFor, runsFor, runsOf, useLogStore, type LogEntry } from '../../stores/logStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 
 /**
@@ -47,8 +47,8 @@ useSelectionStore.subscribe((state, previous) => {
  * granted, would otherwise go on explaining a silence it is no longer the cause of — so a later
  * success naming the same filter clears it.
  */
-export function faultOn(log: LogEntry[], filter: string): LogEntry | null {
-  for (const entry of log) {
+export function faultOn(commands: LogEntry[], filter: string): LogEntry | null {
+  for (const entry of commands) {
     if (!entry.topic || !overlaps(filter, entry.topic)) continue;
 
     // The log is newest first, so the first of either kind found is the one that stands.
@@ -74,6 +74,8 @@ export type Traffic = {
   selected: ReturnType<typeof useSelectionStore.getState>['selected'];
   /** What the log holds on the selection right now, whatever the column is showing. */
   live: LogEntry[];
+  /** What the column is showing, one run per topic — the shape a chart draws from. */
+  runs: LogEntry[][];
   /** What the column is showing: the live run, or the one the hold froze. */
   entries: LogEntry[];
   held: boolean;
@@ -93,35 +95,68 @@ export type Traffic = {
  * both ask it the same way.
  */
 export function useRunFor(filter: string | undefined): LogEntry[] {
-  const log = useLogStore((state) => state.entries);
+  const byTopic = useLogStore((state) => state.byTopic);
+  // The runs are mutated in place, so the map is the same object from one arrival to the next
+  // and cannot say on its own that anything changed. `version` is what says it, and is held
+  // here for that alone: the signal to ask again, not something read.
+  const changed = useLogStore((state) => state.version);
 
   return useMemo(
-    () => (filter ? log.filter((entry) => carriesTraffic(entry, filter)) : []),
-    [log, filter],
+    () => (filter ? runFor(byTopic, filter) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `changed` is the signal, see above
+    [byTopic, changed, filter],
+  );
+}
+
+/**
+ * The same run, left as one sequence per topic — what a chart of a branch actually draws.
+ *
+ * Beside `useRunFor` rather than replacing it: the log reads one topic after another in the
+ * order they arrived and wants them merged, the chart draws a plot per topic and wants them
+ * apart. Merging for the chart and splitting again on the other side was the most expensive
+ * thing this console did.
+ */
+export function useRunsFor(filter: string | undefined): LogEntry[][] {
+  const byTopic = useLogStore((state) => state.byTopic);
+  const changed = useLogStore((state) => state.version);
+
+  return useMemo(
+    () => (filter ? runsFor(byTopic, filter) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `changed` is the signal, see above
+    [byTopic, changed, filter],
   );
 }
 
 export function useTraffic(): Traffic {
-  const log = useLogStore((state) => state.entries);
+  // Only the commands: this is read to explain a silence, and what explains one is what this
+  // console tried and was refused, never the traffic itself.
+  const commands = useLogStore((state) => state.commands);
   const selected = useSelectionStore((state) => state.selected);
   const holding = useHoldStore((state) => state.held);
 
   const live = useRunFor(selected?.filter);
+  const liveRuns = useRunsFor(selected?.filter);
 
   // Only worth looking for while the selection has nothing to show; that is the one moment a
   // reader is asking why, and a scan of the log on every arrival is not worth paying otherwise.
   const fault = useMemo(
-    () => (selected && live.length === 0 ? faultOn(log, selected.filter) : null),
-    [log, selected, live.length],
+    () => (selected && live.length === 0 ? faultOn(commands, selected.filter) : null),
+    [commands, selected, live.length],
   );
 
   // The filter is checked as well as the hold: the release above runs on the store rather than
   // in a render, so for one render the hold can still be the old selection's.
   const held = holding && holding.filter === selected?.filter ? holding.entries : null;
 
+  // Held, the chart goes on drawing what it was drawing. The hold keeps one sequence because
+  // the log beside it reads that way; grouping it back into runs costs one pass, paid when the
+  // hold is taken rather than on every arrival — nothing arrives into a run that is held.
+  const runs = useMemo(() => (held ? runsOf(held) : liveRuns), [held, liveRuns]);
+
   return {
     selected,
     live,
+    runs,
     // Held, the column keeps drawing the run it was drawing; the log behind it carries on
     // filling. Reading a value while the row it is in is being replaced is the oldest complaint
     // about consoles, and stopping the log to fix it throws away the traffic you were there for.
@@ -137,14 +172,3 @@ export function useTraffic(): Traffic {
   };
 }
 
-/**
- * The column answers one question — what has arrived on this topic — so only arrivals belong in it.
- *
- * A command entry's `topic` is what the command was aimed at: a filter, possibly a wildcard, or
- * a count like '3 filters'. Matching that against the selection reads as traffic that never
- * happened — 'Subscribed to sensors/#' would sit under a selected sensors/# looking like an
- * arrival on a topic no broker ever published to.
- */
-function carriesTraffic(entry: LogEntry, filter: string): boolean {
-  return entry.kind === 'recv' && !!entry.topic && matchesFilter(filter, entry.topic);
-}

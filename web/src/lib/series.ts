@@ -242,11 +242,69 @@ export function seriesByTopic(entries: LogEntry[], field?: string | null): Serie
     else byTopic.set(entry.topic, [entry]);
   }
 
-  return [...byTopic.values()]
+  return seriesFromRuns([...byTopic.values()], field);
+}
+
+/**
+ * The same thing from runs that are already a topic each, which is how the log holds them.
+ *
+ * Grouping by topic was being done twice: once by the log, and again here after the runs had
+ * been flattened into one sequence in between. This is that second grouping removed.
+ */
+export function seriesFromRuns(
+  runs: readonly LogEntry[][],
+  field?: string | null,
+  /** Stop once this many have been drawn. The rest are never read. */
+  limit = Infinity,
+): Series[] {
+  const ordered = [...runs]
     // The busiest topic is the one the selection is mostly about, so it leads. Ties go
     // alphabetically rather than by whichever arrived first, so the order does not shuffle
     // under a reader as traffic comes in.
-    .sort((a, b) => b.length - a.length || a[0].topic!.localeCompare(b[0].topic!))
-    .map((run) => numericSeries(run, field))
-    .filter((series): series is Series => series !== null);
+    .sort((a, b) => b.length - a.length || a[0].topic!.localeCompare(b[0].topic!));
+
+  // Lazily, and this is the whole cost of a chart over a wildcard. Building a series parses the
+  // bodies of a run, and a branch of Helsinki's feed is fourteen thousand topics of which six
+  // are ever drawn — measured at 347ms an update to make fourteen thousand of them and throw
+  // all but six away, against 6ms to gather the runs in the first place.
+  const drawn: Series[] = [];
+  for (const run of ordered) {
+    if (drawn.length >= limit) break;
+
+    const series = numericSeries(run, field);
+    if (series) drawn.push(series);
+  }
+
+  return drawn;
+}
+
+/**
+ * The newest messages across a set of runs, bounded, for working out what they carry.
+ *
+ * One topic is read straight off the front, as it always was. Several are read a message at a
+ * time from each in turn rather than strictly newest first: the sample is there to say what a
+ * branch sends, and a branch with one loud topic on it would otherwise be described entirely by
+ * that topic. The cost is bounded by the sample rather than by the branch, which is the point —
+ * a wildcard over thousands of topics must not turn a list of chips into a walk of the log.
+ */
+export function sampleOfRuns(runs: readonly LogEntry[][], limit = SAMPLE): LogEntry[] {
+  if (runs.length === 0) return [];
+  if (runs.length === 1) return runs[0].slice(0, limit);
+
+  const sample: LogEntry[] = [];
+  for (let depth = 0; sample.length < limit; depth++) {
+    let added = 0;
+
+    for (const run of runs) {
+      if (depth >= run.length) continue;
+
+      sample.push(run[depth]);
+      added++;
+      if (sample.length >= limit) break;
+    }
+
+    if (added === 0) break;
+  }
+
+  return sample;
 }

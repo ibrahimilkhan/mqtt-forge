@@ -28,7 +28,7 @@ import { TrafficLine } from './features/monitor/TrafficLine';
 import { queryKeys } from './api/queryKeys';
 import { createFakeHub } from './realtime/fakeHub';
 import { useAppearanceStore } from './stores/appearanceStore';
-import { useLogStore } from './stores/logStore';
+import { runsOf, useLogStore } from './stores/logStore';
 import { useSelectionStore } from './stores/selectionStore';
 import { useHoldStore } from './features/monitor/useTraffic';
 import { useTopicTreeStore } from './stores/topicTreeStore';
@@ -253,7 +253,7 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
           const { container, unmount } = render(
             <QueryClientProvider client={client}>
               <Framed>
-                <TrafficChart entries={run.log} />
+                <TrafficChart runs={runsOf(run.log)} />
               </Framed>
             </QueryClientProvider>,
           );

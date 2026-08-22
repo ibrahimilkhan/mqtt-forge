@@ -1,19 +1,93 @@
 import { create } from 'zustand';
 import { describeError } from '../lib/problemDetails';
+import { matchesFilter } from '../lib/topicMatch';
 import type { BodyMode } from '../lib/payload';
 import type { DecodedMessage } from '../realtime/decodeIncoming';
+import { TopicRing } from './topicRing';
 
 /**
- * What the log holds in total. Sized against the cost of reading it, not memory: the pane
- * re-filters the whole log on every frame that carries traffic, which at this size measures
- * well under a millisecond.
+ * What the log holds in total.
+ *
+ * It used to be five thousand, and that was a reading budget rather than a memory one: the pane
+ * re-filtered the whole log on every frame that carried traffic, so the cost of an arrival grew
+ * with how much history was kept. Measured against a broker with two thousand topics and the
+ * deep names a real one has, one read cost 4.5ms at five thousand entries and 174ms at two
+ * hundred thousand — which is why the number had to stay small, and why an hour of history was
+ * not on offer from a tool meant to watch a plant.
+ *
+ * `byTopic` took that cost out: the same read is 1.8ms at two hundred thousand entries, and flat
+ * — it is set by the run asked for, not by the log behind it. So the number is a memory budget
+ * now, and this is what it buys, measured with the payloads a real broker sends:
+ *
+ *     100,000 entries  ~20MB   ~33 minutes at 50 messages a second
+ *
+ * The remaining cost that does grow is a selection covering every topic at once, which has to
+ * gather everything it matches whatever holds it: about 6ms here, inside a frame. That is what
+ * keeps this at a hundred thousand rather than higher.
  */
-export const MAX_LOG_ENTRIES = 5000;
+/**
+ * The longest run a topic keeps when the console can afford it.
+ *
+ * The log used to be one list of the newest messages from the whole broker, and that made a
+ * topic's history a matter of what everything else was doing: a tram that finished its journey
+ * had its messages pushed out by traffic on other topics within a couple of minutes, so the
+ * tree went on counting them while the pane said none had ever arrived. A run per topic ends
+ * that — nothing another topic does can shorten this one.
+ *
+ * Four times MAX_PLOT, deliberately. The chart draws the newest five hundred readings and its
+ * note says how many more are behind them; at a depth of five hundred there never were any, and
+ * a whole reading of the pane — 'there is more here than I am being shown' — quietly stopped
+ * being true.
+ *
+ * A ceiling this generous is only affordable because breadth takes it back: a broker with
+ * thousands of topics has every run narrowed to what MAX_LOG_ENTRIES affords, so this is the
+ * depth a small broker gets rather than a promise made to every broker.
+ */
+export const TOPIC_DEPTH = 2000;
 
 /**
- * The run of history a topic keeps however crowded the broker is. Breadth alone is not a log:
- * at one line per topic, every arrival erases the line before it and there is nothing to read.
- * When the broker has few enough topics to afford more, they get more — this is the floor.
+ * And how much weight, because a count is not a memory bound. A topic sending megabyte payloads
+ * would otherwise hold five hundred of them. MQTT Explorer bounds its own history the same way
+ * and for the same reason, at a hundred messages or twenty kilobytes; this is more generous on
+ * both, because this pane is the thing being used rather than a detail panel beside a tree.
+ */
+export const TOPIC_BYTES = 256 * 1024;
+
+/**
+ * The most the log holds across every topic, and the only bound that is about the machine
+ * rather than about one topic.
+ *
+ * Reached by breadth rather than by depth: a broker with more topics than this affords at
+ * TOPIC_DEPTH has every run narrowed to what fits, down to MIN_TOPIC_ENTRIES, rather than
+ * losing topics. Depth is what gives way, because a topic the log has thrown away entirely is
+ * the fault this shape was built to end.
+ *
+ * Half a million rather than the million first tried, and the reason is memory measured rather
+ * than estimated: a million of these costs about 460MB with the payloads a real broker sends,
+ * which is more than a console watching a plant should ask of the machine it is watching from.
+ * Half that is about 230MB, and at fifty messages a second it is still close to three hours of
+ * history where the first version of this log held a hundred seconds.
+ *
+ * There is a cheaper million available and it is not taken here: `at` is a Date on every entry
+ * and costs about 86 bytes each for something only ever rendered as a time, and the stamps are
+ * built up front rather than when a row is drawn. Together they are more than a third of what
+ * an entry weighs, measured. Worth having, and a different change from this one.
+ */
+export const MAX_LOG_ENTRIES = 500_000;
+
+/**
+ * How many commands the log remembers.
+ *
+ * Kept apart from the traffic and kept small. Commands are what this console did — subscribed,
+ * published, failed — and there are a handful a minute at most, so they neither need a topic's
+ * ring nor should be evicted by one.
+ */
+export const MAX_COMMANDS = 500;
+
+/**
+ * The run of history a topic keeps however crowded the broker is. Now the floor under
+ * TOPIC_DEPTH rather than a per-topic share of one budget, and still what the pane steps
+ * through history by.
  */
 export const MIN_TOPIC_ENTRIES = 25;
 
@@ -40,8 +114,30 @@ export type LogEntry = {
 
 type NewLogEntry = Omit<LogEntry, 'id' | 'at'>;
 
-type LogState = {
-  entries: LogEntry[];
+export type LogState = {
+  /**
+   * What this console did, newest first: subscribed, published, and what failed.
+   *
+   * Apart from the traffic because it is a different thing asked a different way — the pane
+   * reads arrivals by topic and reads these to explain a silence — and because a burst of
+   * faults should not be able to push a topic's history out, nor the other way round.
+   */
+  commands: LogEntry[];
+  /**
+   * The traffic, one bounded run per topic.
+   *
+   * This is the log now. There is no second list holding every arrival in one sequence: that
+   * list was what made an arrival cost more the longer the console had been running, and what
+   * made a quiet topic's history the property of every other topic's traffic.
+   *
+   * Mutated in place, deliberately — rebuilding a map of thousands of topics on every batch
+   * would be the very cost this removes. `version` is what says something changed.
+   */
+  byTopic: Map<string, TopicRing>;
+  /** How many arrivals are held across every topic, for the ceiling above. */
+  held: number;
+  /** Bumped on every change, because the two structures above are mutated rather than replaced. */
+  version: number;
   push: (entry: NewLogEntry) => void;
   appendReceived: (messages: DecodedMessage[]) => void;
   clear: () => void;
@@ -50,16 +146,116 @@ type LogState = {
 let nextId = 0;
 
 export const useLogStore = create<LogState>((set) => ({
-  entries: [],
+  commands: [],
+  byTopic: new Map(),
+  held: 0,
+  version: 0,
 
   push: (entry) =>
-    set((state) => ({ entries: cap([{ ...entry, id: nextId++, at: new Date() }, ...state.entries]) })),
+    set((state) => {
+      const written = { ...entry, id: nextId++, at: new Date() };
+
+      // An arrival can arrive this way too — the renderer seeds the console with them — and it
+      // belongs with the traffic wherever it came from.
+      if (written.kind === 'recv' && written.topic) {
+        return { held: file(state, written, state.held), version: state.version + 1 };
+      }
+
+      return {
+        commands: [written, ...state.commands].slice(0, MAX_COMMANDS),
+        version: state.version + 1,
+      };
+    }),
 
   appendReceived: (messages) =>
-    set((state) => ({ entries: cap([...messages.map(toEntry).reverse(), ...state.entries]) })),
+    set((state) => {
+      let held = state.held;
+      for (const message of messages) held = file(state, toEntry(message), held);
 
-  clear: () => set({ entries: [] }),
+      return { held, version: state.version + 1 };
+    }),
+
+  clear: () =>
+    set((state) => {
+      state.byTopic.clear();
+      return { commands: [], held: 0, version: state.version + 1 };
+    }),
 }));
+
+/**
+ * Puts an arrival in its topic's run, and keeps the console inside its ceiling.
+ *
+ * `held` is passed in rather than read off the state: a batch files its messages one after
+ * another before the state is replaced, so the state's own count is the one from before the
+ * batch started and every message in the batch but the last would be counted away.
+ */
+function file(state: LogState, entry: LogEntry, held: number): number {
+  const topic = entry.topic!;
+  let ring = state.byTopic.get(topic);
+  if (!ring) {
+    ring = new TopicRing({ maxItems: TOPIC_DEPTH, maxBytes: TOPIC_BYTES });
+    state.byTopic.set(topic, ring);
+  }
+
+  const before = ring.length;
+  ring.push(entry);
+  const now = held + (ring.length - before);
+
+  return now > MAX_LOG_ENTRIES ? narrowRuns(state.byTopic, now) : now;
+}
+
+/**
+ * Brings the console back inside its ceiling by making every run shorter.
+ *
+ * Depth is what gives way, not breadth. Dropping whole topics was the first thing tried and it
+ * is exactly the fault this shape was built to end: a topic the log had thrown away entirely
+ * still stands in the tree with its count, and clicking it says nothing ever arrived. Every
+ * topic keeps a run — down to MIN_TOPIC_ENTRIES, below which a run stops being one — and the
+ * console holds fewer messages each rather than none for some.
+ *
+ * Only reached by breadth: a broker with more topics than the ceiling affords at TOPIC_DEPTH.
+ * It walks the topics rather than the messages, so it is cheap even then.
+ */
+export function narrowRuns(
+  byTopic: Map<string, TopicRing>,
+  held: number,
+  // A parameter so the rule can be exercised without a million messages; the console never
+  // passes anything but its own ceiling.
+  ceiling: number = MAX_LOG_ENTRIES,
+): number {
+  if (held <= ceiling || byTopic.size === 0) return held;
+
+  const share = Math.max(MIN_TOPIC_ENTRIES, Math.floor(ceiling / byTopic.size));
+
+  let now = 0;
+  for (const ring of byTopic.values()) {
+    ring.narrowTo(share);
+    now += ring.length;
+  }
+
+  return now > ceiling ? evictQuietest(byTopic, now, ceiling) : now;
+}
+
+/**
+ * The last resort, when even the shortest run each is more than the console can hold — a broker
+ * with more topics than MAX_LOG_ENTRIES / MIN_TOPIC_ENTRIES, which is tens of thousands.
+ *
+ * The ones that go are those whose newest message is oldest: a topic still moving is one
+ * somebody may be watching.
+ */
+function evictQuietest(byTopic: Map<string, TopicRing>, held: number, ceiling: number): number {
+  const byAge = [...byTopic.entries()]
+    .map(([topic, ring]) => ({ topic, ring, newest: ring.newestId }))
+    .sort((a, b) => a.newest - b.newest);
+
+  for (const { topic, ring } of byAge) {
+    if (held <= ceiling) break;
+    held -= ring.length;
+    byTopic.delete(topic);
+  }
+
+  return held;
+}
 
 /**
  * Every failed command reaches the log the same way: what was attempted, and why it did not
@@ -98,65 +294,71 @@ function payloadSize(bytes: number): string {
   return bytes < 1024 ? `${bytes}B` : `${(bytes / 1024).toFixed(1)}kB`;
 }
 
-// Bounds growth from a '#' subscription on a busy broker.
-const cap = (entries: LogEntry[]) => (entries.length > MAX_LOG_ENTRIES ? trim(entries) : entries);
-
 /**
- * Drops the overflow per topic rather than off the tail.
+ * What the log holds on one filter, newest first.
  *
- * The log is read one topic at a time, so a plain tail-drop is the wrong shape: one topic under
- * steady traffic fills every slot, and every other topic in the tree — each with real traffic
- * behind it — reads as silent. So each topic gets its own allowance and only the topics over it
- * lose anything. Command entries share one allowance between them: they carry no topic, and a
- * burst of faults should not crowd out messages either.
+ * Two steps rather than one scan: which topics the filter covers, and then their runs. The
+ * first is asked of the topics, the second copies without matching anything — so the work is
+ * set by how much the reader asked for, not by how much the log happens to be holding.
  *
- * What a crowded broker costs is breadth, not depth. Once every topic holds its floor there may
- * be no room left, and the walk below stops — so the topics that go are the ones whose newest
- * message is oldest, which are the ones nobody is watching. A topic still on screen keeps its
- * run of history intact.
+ * A filter covering one topic is the ordinary case — every leaf in the tree selects `path/#` —
+ * and it is answered by reading one run. Several are merged on `id`, which only ever goes up,
+ * so it orders arrivals across topics exactly as they arrived.
  */
-function trim(entries: LogEntry[]): LogEntry[] {
-  const counts = new Map<string, number>();
-  for (const entry of entries) counts.set(entry.topic ?? '', (counts.get(entry.topic ?? '') ?? 0) + 1);
+export function runFor(byTopic: ReadonlyMap<string, TopicRing>, filter: string): LogEntry[] {
+  const runs = runsFor(byTopic, filter);
 
-  const allowance = Math.max(MIN_TOPIC_ENTRIES, shareOut([...counts.values()]));
+  if (runs.length === 0) return [];
+  if (runs.length === 1) return runs[0];
 
-  const taken = new Map<string, number>();
-  const kept: LogEntry[] = [];
+  const merged: LogEntry[] = [];
+  for (const run of runs) merged.push(...run);
 
-  // Newest first, so what a topic loses is always its oldest.
-  for (const entry of entries) {
-    if (kept.length === MAX_LOG_ENTRIES) break;
-
-    const key = entry.topic ?? '';
-    const already = taken.get(key) ?? 0;
-    if (already >= allowance) continue;
-
-    taken.set(key, already + 1);
-    kept.push(entry);
-  }
-
-  return kept;
+  return merged.sort((a, b) => b.id - a.id);
 }
 
 /**
- * The largest per-topic allowance the cap affords: the level a tank fills to when the budget is
- * poured over the topics, so topics under it keep everything and only the ones above it are cut
- * back. Two loud topics get half the log each. Below MIN_TOPIC_ENTRIES the answer stops being
- * useful and the caller takes the floor instead.
+ * One sequence of arrivals, put back into a run per topic.
+ *
+ * For a run that is already fixed — a held pane — where grouping is paid once rather than on
+ * every arrival, and the live path never needs it because the log holds the runs apart already.
  */
-function shareOut(counts: number[]): number {
-  const ascending = counts.sort((a, b) => a - b);
+export function runsOf(entries: readonly LogEntry[]): LogEntry[][] {
+  const byTopic = new Map<string, LogEntry[]>();
 
-  let spent = 0;
-  for (let i = 0; i < ascending.length; i++) {
-    const above = ascending.length - i; // topics holding at least this many
-    if (spent + ascending[i] * above > MAX_LOG_ENTRIES) {
-      // Never zero: one line of a topic is what tells the pane it is not silent.
-      return Math.max(1, Math.floor((MAX_LOG_ENTRIES - spent) / above));
-    }
-    spent += ascending[i];
+  for (const entry of entries) {
+    if (entry.kind !== 'recv' || !entry.topic) continue;
+
+    const run = byTopic.get(entry.topic);
+    if (run) run.push(entry);
+    else byTopic.set(entry.topic, [entry]);
   }
 
-  return ascending[ascending.length - 1];
+  return [...byTopic.values()];
+}
+
+/**
+ * The same traffic, left as one run per topic.
+ *
+ * For readers that are going to group by topic anyway, which is the chart: it draws a plot per
+ * topic, so the merge and the sort above were work done only to be undone — the run was
+ * flattened into one sequence and then split back apart on the other side. Measured against
+ * Helsinki's feed with a branch of fourteen thousand topics selected, that round trip was the
+ * difference between a console that keeps up and one that stalls for two thirds of a second at
+ * a time, on every batch, for as long as the selection is held.
+ *
+ * Each run is newest first, which is what a series wants: it takes its window off the front.
+ */
+export function runsFor(byTopic: ReadonlyMap<string, TopicRing>, filter: string): LogEntry[][] {
+  if (!filter) return [];
+
+  const runs: LogEntry[][] = [];
+  for (const [topic, ring] of byTopic) {
+    if (!matchesFilter(filter, topic)) continue;
+
+    const run = ring.newestFirst();
+    if (run.length > 0) runs.push(run);
+  }
+
+  return runs;
 }

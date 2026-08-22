@@ -196,7 +196,14 @@ public class BrokerFailureClassifierTests
     [InlineData(MqttClientDisconnectReason.ServerMoved, BrokerFailureReason.BrokerClosed)]
     [InlineData(MqttClientDisconnectReason.ServerShuttingDown, BrokerFailureReason.BrokerShuttingDown)]
     [InlineData(MqttClientDisconnectReason.AdministrativeAction, BrokerFailureReason.Kicked)]
-    [InlineData(MqttClientDisconnectReason.NotAuthorized, BrokerFailureReason.CredentialsRejected)]
+    // Measured against mqtt.hsl.fi, which takes no credentials at all: subscribe to a wildcard
+    // it considers too broad and it answers DISCONNECT rather than a failing SUBACK. Reading
+    // that as a rejected password sent the reader hunting for credentials that do not exist.
+    [InlineData(MqttClientDisconnectReason.NotAuthorized, BrokerFailureReason.NotPermitted)]
+    [InlineData(MqttClientDisconnectReason.TopicFilterInvalid, BrokerFailureReason.FilterRefused)]
+    // On a CONNACK this is genuinely about identity; on a live link it is still the one
+    // disconnect reason that is, so it keeps its wording.
+    [InlineData(MqttClientDisconnectReason.BadAuthenticationMethod, BrokerFailureReason.CredentialsRejected)]
     [InlineData(MqttClientDisconnectReason.ServerBusy, BrokerFailureReason.BrokerBusy)]
     [InlineData(MqttClientDisconnectReason.MessageRateTooHigh, BrokerFailureReason.BrokerBusy)]
     [InlineData(MqttClientDisconnectReason.KeepAliveTimeout, BrokerFailureReason.Timeout)]

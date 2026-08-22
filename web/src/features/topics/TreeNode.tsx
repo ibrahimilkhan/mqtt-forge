@@ -22,6 +22,16 @@ type Props = {
   onSelect: (path: string, node: TopicNode) => void;
 };
 
+/**
+ * What stands in for a level with no name of its own.
+ *
+ * A topic beginning with '/' has an empty first level, and one written 'a//b' an empty middle
+ * one — real levels either way: they are part of the topic, and they open and pick like any
+ * other row. Drawn blank they read as a row that failed to render, so they are drawn as the
+ * slash that implies them, in muted ink so it is plainly a mark and not a segment named '/'.
+ */
+export const EMPTY_LEVEL = '/';
+
 // Purely presentational: everything it needs arrives as a prop. Rows used to subscribe to the
 // stores themselves, which made every message wake every row on a broker with thousands of them.
 export const TreeNode = memo(function TreeNode({
@@ -38,6 +48,13 @@ export const TreeNode = memo(function TreeNode({
   onToggle,
   onSelect,
 }: Props) {
+  // The broker row carries a label and is not a topic; every other row is its own segment.
+  const segment = label ?? node.name;
+  const nameless = segment === '';
+  // The twisty names the row it opens, and the empty first level's path is '' — so without this
+  // it was told to 'Collapse ', an instruction naming nothing.
+  const spoken = label ?? (path === '' ? EMPTY_LEVEL : path);
+
   return (
     <div
       className={styles.node}
@@ -55,7 +72,7 @@ export const TreeNode = memo(function TreeNode({
           type="button"
           className={styles.twisty}
           onClick={() => onToggle(path)}
-          aria-label={`${open ? 'Collapse' : 'Expand'} ${label ?? path}`}
+          aria-label={`${open ? 'Collapse' : 'Expand'} ${spoken}`}
         >
           ▾
         </button>
@@ -95,12 +112,12 @@ export const TreeNode = memo(function TreeNode({
             topic — is the thing wearing it. The title names the filter, not the topic: the topic
             is already on the row, and with rules overlapping, which one won is the open question. */}
         <span
-          className={styles.seg}
+          className={nameless ? `${styles.seg} ${styles.empty}` : styles.seg}
           data-testid="segment"
           style={rule ? { color: rule.colour } : undefined}
           title={rule ? `Coloured by ${rule.filter}` : undefined}
         >
-          {label ?? node.name}
+          {nameless ? EMPTY_LEVEL : segment}
         </span>
         <span className={styles.val}>{node.latestPayload ?? ''}</span>
         {/* Between the value and the counts: what the topic has been doing, for a reader

@@ -8,6 +8,7 @@ import { useLogStore } from '../../stores/logStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import { server } from '../../test/server';
 import { BrokerPanel } from './BrokerPanel';
+import { BROKER_PRESETS } from './presets';
 
 const newQueryClient = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
@@ -200,7 +201,7 @@ describe('BrokerPanel', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
 
     await waitFor(() =>
-      expect(useLogStore.getState().entries[0]).toMatchObject({ kind: 'ok', verb: 'Already connected' }),
+      expect(useLogStore.getState().commands[0]).toMatchObject({ kind: 'ok', verb: 'Already connected' }),
     );
     expect(useTopicTreeStore.getState().root.children.size).toBe(1);
   });
@@ -216,7 +217,7 @@ describe('BrokerPanel', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
 
     await waitFor(() =>
-      expect(useLogStore.getState().entries[0]).toMatchObject({
+      expect(useLogStore.getState().commands[0]).toMatchObject({
         kind: 'fault',
         verb: 'Connect failed',
         body: 'Connection refused',
@@ -402,9 +403,9 @@ describe('BrokerPanel', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Abort' }));
 
     await waitFor(() =>
-      expect(useLogStore.getState().entries[0]).toMatchObject({ verb: 'Connect aborted' }),
+      expect(useLogStore.getState().commands[0]).toMatchObject({ verb: 'Connect aborted' }),
     );
-    expect(useLogStore.getState().entries[0].kind).not.toBe('fault');
+    expect(useLogStore.getState().commands[0].kind).not.toBe('fault');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
@@ -470,5 +471,140 @@ describe('BrokerPanel', () => {
 
     await screen.findByRole('button', { name: 'Connect' });
     expect(screen.queryByLabelText('Connection details')).not.toBeInTheDocument();
+  });
+});
+
+// Pointing this console somewhere real used to mean knowing a hostname, a port, whether it
+// wanted TLS, and — the part that actually caught people — a filter it would answer. The chips
+// carry all four. They fill the form and stop there: connecting is still the reader's move.
+describe('the broker presets', () => {
+  const hsl = BROKER_PRESETS.find((p) => p.name === 'Helsinki transit')!;
+
+  const pick = (name: string) => userEvent.click(screen.getByRole('button', { name }));
+
+  it('fills the address from the chip', async () => {
+    renderPanel();
+    await pick(hsl.name);
+
+    expect(screen.getByLabelText('Host')).toHaveValue(hsl.host);
+    expect(screen.getByLabelText('Port')).toHaveValue(hsl.port);
+  });
+
+  it('brings the TLS setting with the port, rather than leaving the two disagreeing', async () => {
+    renderPanel();
+    await pick(hsl.name);
+
+    expect(screen.getByLabelText('Use TLS')).toBeChecked();
+  });
+
+  // The half a bare address does not give you, and the reason the console used to connect to
+  // this broker and immediately fall over: it refuses '#' by closing the session.
+  it('brings a filter the broker will actually answer', async () => {
+    renderPanel();
+    await pick(hsl.name);
+
+    expect(screen.getByLabelText('On-connect filter')).toHaveValue(hsl.onConnectFilter);
+    expect(screen.getByLabelText('On-connect filter')).not.toHaveValue('#');
+  });
+
+  it('subscribes to the preset filter on connect, not to everything', async () => {
+    let subscribed: unknown;
+    server.use(
+      http.post('/api/connection', () => HttpResponse.json({ state: 'Connected' })),
+      http.post('/api/subscriptions', async ({ request }) => {
+        subscribed = await request.json();
+        return new HttpResponse(null, { status: 202 });
+      }),
+    );
+
+    renderPanel();
+    await pick(hsl.name);
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+
+    await waitFor(() =>
+      expect(subscribed).toEqual({ topicFilter: hsl.onConnectFilter, qos: 0 }),
+    );
+  });
+
+  it('marks the chip the form is sitting on', async () => {
+    renderPanel();
+    await pick(hsl.name);
+
+    expect(screen.getByRole('button', { name: hsl.name })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  // Derived from the fields rather than remembered, so a form that is no longer the preset
+  // cannot go on claiming to be it.
+  it('stops marking the chip once the host is typed over', async () => {
+    renderPanel();
+    await pick(hsl.name);
+    await userEvent.clear(screen.getByLabelText('Host'));
+    await userEvent.type(screen.getByLabelText('Host'), 'somewhere.else');
+
+    expect(screen.getByRole('button', { name: hsl.name })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  // These are all public brokers, and a password typed for a private one has no business
+  // riding along to them.
+  it('does not carry a typed password over to a preset', async () => {
+    renderPanel();
+    await userEvent.type(screen.getByLabelText('Password'), 'private-secret');
+    await pick(hsl.name);
+
+    expect(screen.getByLabelText('Password')).toHaveValue('');
+  });
+
+  // Found running the real thing: reopen the panel over a saved Helsinki connection, press
+  // Connect, and it sent a bare '#' — which that broker refuses by closing the session. The
+  // address came back from the saved settings and the filter did not, so the one part of the
+  // preset that makes it work was the part that was lost.
+  it('brings the filter back with a broker it has connected to before', async () => {
+    server.use(
+      http.get('/api/connection/settings', () =>
+        HttpResponse.json({
+          host: hsl.host,
+          port: hsl.port,
+          clientId: 'mqttforge-console',
+          username: null,
+          hasPassword: false,
+          useTls: hsl.useTls,
+        }),
+      ),
+    );
+
+    renderPanel();
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('On-connect filter')).toHaveValue(hsl.onConnectFilter),
+    );
+  });
+
+  // A broker nobody has a preset for gets the same '#' it always did: there is nothing better
+  // to guess, and guessing a filter for an address we know nothing about would be worse.
+  it('leaves the filter alone for a saved broker it has no preset for', async () => {
+    server.use(
+      http.get('/api/connection/settings', () =>
+        HttpResponse.json({
+          host: 'broker.example',
+          port: 1883,
+          clientId: 'mqttforge-console',
+          username: null,
+          hasPassword: false,
+          useTls: false,
+        }),
+      ),
+    );
+
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByLabelText('Host')).toHaveValue('broker.example'));
+    expect(screen.getByLabelText('On-connect filter')).toHaveValue('#');
+  });
+
+  it('explains what the broker is once one is picked', async () => {
+    renderPanel();
+    await pick(hsl.name);
+
+    expect(screen.getByText(hsl.note)).toBeInTheDocument();
   });
 });

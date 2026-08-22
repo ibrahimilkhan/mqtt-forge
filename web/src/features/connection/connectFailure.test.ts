@@ -83,9 +83,26 @@ describe('describeFailureReason', () => {
     ['kicked', 'An administrator disconnected this client.'],
     ['connectionLost', 'The connection to broker.local:1883 was lost.'],
     ['timeout', "broker.local:1883 didn't respond in time."],
+    [
+      'notPermitted',
+      'The broker refused something this console asked for and closed the connection — most often a subscription to a filter it does not allow.',
+    ],
+    [
+      'filterRefused',
+      "The broker refused the topic filter and closed the connection — it doesn't allow one covering this much of the tree.",
+    ],
   ])('words %s as a sentence', (reason, expected) => {
     expect(describeFailureReason(reason, FORM)).toBe(expected);
   });
+
+  // The bug these two exist for: a broker that asks for no credentials at all refused a wildcard
+  // by closing the session, and the console told the reader their username or password was wrong.
+  it.each([['notPermitted'], ['filterRefused']])(
+    'does not blame credentials for %s',
+    (reason) => {
+      expect(describeFailureReason(reason, FORM)).not.toMatch(/username|password/i);
+    },
+  );
 
   // No detail to fall back on here, and FAULTED in the top bar already says this much.
   it.each([['unknown'], ['somethingNew'], [undefined], [null]])(

@@ -4,7 +4,7 @@ import { moved, sized, useFloating } from './floating';
 import { Pin } from './Pin';
 import { TrafficChart } from './TrafficChart';
 import { useChartWindows, type ChartWindow as Chart } from './useChartWindows';
-import { useRunFor } from './useTraffic';
+import { useRunsFor } from './useTraffic';
 
 /**
  * The chart windows a reader has opened, floating over the console.
@@ -54,7 +54,10 @@ function ChartFrame({ chart, depth }: { chart: Chart; depth: number }) {
   const place = useChartWindows((state) => state.place);
   const fix = useChartWindows((state) => state.fix);
   const raise = useChartWindows((state) => state.raise);
-  const entries = useRunFor(chart.filter);
+  // Runs, not one merged sequence: a pinned window redraws on every batch for as long as it is
+  // open, and merging a branch of thousands of topics only for the chart to split it again was
+  // what made a pinned window cost two thirds of a second at a time.
+  const runs = useRunsFor(chart.filter);
   const { bar, grip } = useFloating(chart.box, (box) => place(chart.id, box));
 
   const where: CSSProperties = {
@@ -126,10 +129,10 @@ function ChartFrame({ chart, depth }: { chart: Chart; depth: number }) {
       </div>
 
       <div className={styles.body}>
-        {entries.length > 0 ? (
+        {runs.length > 0 ? (
           // Keyed on the filter like the pane's own chart: this window only ever draws one, so
           // the key is really a statement that it never changes run under the reader.
-          <TrafficChart key={chart.filter} entries={entries} />
+          <TrafficChart key={chart.filter} runs={runs} />
         ) : (
           <p className="empty">Nothing on {chart.label} to chart yet.</p>
         )}

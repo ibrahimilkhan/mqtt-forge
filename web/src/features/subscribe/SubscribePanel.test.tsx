@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useLogStore } from '../../stores/logStore';
+import { useSelectionStore } from '../../stores/selectionStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import { server } from '../../test/server';
 import { SubscribePanel } from './SubscribePanel';
@@ -23,6 +24,7 @@ function renderPanel() {
 beforeEach(() => {
   useLogStore.getState().clear();
   useTopicTreeStore.getState().reset();
+  useSelectionStore.getState().clear();
 });
 
 describe('SubscribePanel', () => {
@@ -112,7 +114,7 @@ describe('SubscribePanel', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Subscribe' }));
 
     await waitFor(() =>
-      expect(useLogStore.getState().entries[0]).toMatchObject({
+      expect(useLogStore.getState().commands[0]).toMatchObject({
         kind: 'ok',
         verb: 'Subscribed',
         topic: 'sensors/#',
@@ -135,7 +137,7 @@ describe('SubscribePanel', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Subscribe' }));
 
     await waitFor(() =>
-      expect(useLogStore.getState().entries[0]).toMatchObject({
+      expect(useLogStore.getState().commands[0]).toMatchObject({
         kind: 'fault',
         verb: 'Subscribe failed',
         body: 'Connect to a broker before subscribing.',
@@ -314,12 +316,81 @@ describe('SubscribePanel', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Subscribe to 2' }));
 
       await waitFor(() =>
-        expect(useLogStore.getState().entries[0]).toMatchObject({
+        expect(useLogStore.getState().commands[0]).toMatchObject({
           kind: 'ok',
           verb: 'Subscribed',
           topic: '2 filters',
         }),
       );
     });
+  });
+});
+
+// Building a filter meant reading a topic off the tree and typing it back in by hand, one
+// segment at a time, with the tree right there on screen. A click writes it instead.
+describe('picking a topic into the box', () => {
+  const box = () => screen.getByRole('textbox', { name: 'Topic filter' });
+  const pick = (selection: { label: string; filter: string; topic?: string }) =>
+    act(() => useSelectionStore.getState().select(selection));
+
+  it('writes a topic picked off the tree', async () => {
+    renderPanel();
+    pick({ label: 'plant/line1/temp', filter: 'plant/line1/temp/#', topic: 'plant/line1/temp' });
+
+    await waitFor(() => expect(box()).toHaveValue('plant/line1/temp'));
+  });
+
+  // A branch stands for everything under it, and that is what the tree hands over.
+  it('writes a branch as the subtree it covers', async () => {
+    renderPanel();
+    pick({ label: 'plant/line1', filter: 'plant/line1/#', topic: 'plant/line1/#' });
+
+    await waitFor(() => expect(box()).toHaveValue('plant/line1/#'));
+  });
+
+  it('adds a second pick rather than replacing the first', async () => {
+    renderPanel();
+    pick({ label: 'a/x', filter: 'a/x/#', topic: 'a/x' });
+    await waitFor(() => expect(box()).toHaveValue('a/x'));
+    pick({ label: 'b/y', filter: 'b/y/#', topic: 'b/y' });
+
+    await waitFor(() => expect(box()).toHaveValue('a/x\nb/y'));
+  });
+
+  it('keeps what the reader typed and adds under it', async () => {
+    renderPanel();
+    await userEvent.clear(box());
+    await userEvent.type(box(), 'typed/#');
+    pick({ label: 'a/x', filter: 'a/x/#', topic: 'a/x' });
+
+    await waitFor(() => expect(box()).toHaveValue('typed/#\na/x'));
+  });
+
+  // The broker row is the connection, not a topic — it carries no topic to write.
+  it('writes nothing for a pick that is not a topic', async () => {
+    renderPanel();
+    const before = (box() as HTMLTextAreaElement).value;
+    pick({ label: 'broker:1883', filter: '#' });
+
+    await waitFor(() => expect(box()).toHaveValue(before));
+  });
+
+  // The other way in, and the one on this panel: the chips are right under the box.
+  it('writes a filter clicked on its own chip', async () => {
+    server.use(http.get('/api/subscriptions', () => HttpResponse.json(['plant/line1/#'])));
+
+    renderPanel();
+    await userEvent.click(await screen.findByRole('button', { name: 'plant/line1/#' }));
+
+    await waitFor(() => expect(box()).toHaveValue('plant/line1/#'));
+  });
+
+  // Opening the panel over a selection made earlier is not a click on anything.
+  it('does not write a selection that was already made before it opened', async () => {
+    act(() => useSelectionStore.getState().select({ label: 'old/one', filter: 'old/one/#', topic: 'old/one' }));
+
+    renderPanel();
+
+    await waitFor(() => expect(box()).not.toHaveValue('old/one'));
   });
 });

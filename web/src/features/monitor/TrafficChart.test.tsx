@@ -3,8 +3,12 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderWithClient as render } from '../../test/renderWithClient';
 import { useAppearanceStore } from '../../stores/appearanceStore';
-import type { LogEntry } from '../../stores/logStore';
+import { runsOf, type LogEntry } from '../../stores/logStore';
 import { TrafficChart } from './TrafficChart';
+
+// The chart takes one run per topic now. These tests still build a selection as one sequence,
+// which is how a reader thinks of it, and this is the grouping the log itself does.
+const asRuns = (entries: LogEntry[]) => runsOf(entries);
 
 let nextId = 0;
 
@@ -24,7 +28,7 @@ beforeEach(() => {
 
 describe('TrafficChart', () => {
   it('marks a topic with a rhythm as silent once it falls behind it', () => {
-    render(<TrafficChart entries={run(60_000)} />);
+    render(<TrafficChart runs={asRuns(run(60_000))} />);
 
     expect(screen.getByTestId('reading-silence').textContent).not.toBe('—');
   });
@@ -32,13 +36,13 @@ describe('TrafficChart', () => {
   // Held, the newest reading on show gets older by the second while the topic may be publishing
   // perfectly well behind the hold. An alarm then would be an alarm about the reader's own hand.
   it('raises no alarm about silence while the pane is being held still', () => {
-    render(<TrafficChart entries={run(60_000)} frozen />);
+    render(<TrafficChart runs={asRuns(run(60_000))} frozen />);
 
     expect(screen.getByTestId('reading-silence').textContent).toBe('—');
   });
 
   it('still charts the run it was given while held', () => {
-    render(<TrafficChart entries={run(60_000)} frozen />);
+    render(<TrafficChart runs={asRuns(run(60_000))} frozen />);
 
     expect(screen.getByTestId('plot')).toBeInTheDocument();
   });
@@ -61,7 +65,7 @@ describe('a run that gets shorter under an opened reading', () => {
     }));
 
   it('closes the reading rather than taking the pane down with it', async () => {
-    render(<TrafficChart entries={mixed()} />);
+    render(<TrafficChart runs={asRuns(mixed())} />);
 
     screen.getByTestId('plotArea').focus();
     await userEvent.keyboard('{Enter}');

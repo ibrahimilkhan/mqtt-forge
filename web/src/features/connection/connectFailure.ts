@@ -37,6 +37,16 @@ const SENTENCE: Record<string, (attempt: Attempt) => string> = {
   brokerBusy: () => 'The broker is unavailable or too busy right now.',
   brokerRejected: () => 'The broker refused the connection over something this console sent.',
 
+  // A broker that took us in and then refused what we asked of it. Never worded as an identity
+  // problem: by DISCONNECT time the broker has already accepted who we are, and the broker this
+  // was found on asks for no credentials at all.
+  notPermitted: () =>
+    'The broker refused something this console asked for and closed the connection — most often ' +
+    'a subscription to a filter it does not allow.',
+  filterRefused: () =>
+    "The broker refused the topic filter and closed the connection — it doesn't allow one " +
+    'covering this much of the tree.',
+
   // A link that was up, and is not any more
   connectionLost: ({ host, port }) => `The connection to ${host}:${port} was lost.`,
   sessionTakenOver: ({ clientId }) => `Another client connected with the client ID '${clientId}'.`,

@@ -1,0 +1,39 @@
+/* Sits above the form it fills in, so it reads as the way in rather than another field. */
+.presets { margin-bottom: 16px; }
+
+.lede {
+  font-family: var(--mono);
+  font-size: var(--t-small);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin: 0 0 7px;
+}
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.chip {
+  font-family: var(--mono);
+  font-size: var(--t-small);
+  padding: 5px 9px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+/* The chosen one is stated by the border rather than a fill: the chips sit directly above the
+   fields they wrote, and a filled block up there pulled the eye away from them. */
+.chip[data-selected='true'] {
+  border-color: var(--signal);
+  box-shadow: inset 0 0 0 1px var(--signal);
+}
+
+.chip:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+.note {
+  font-size: var(--t-small);
+  color: var(--muted);
+  margin: 9px 0 0;
+  line-height: 1.45;
+}

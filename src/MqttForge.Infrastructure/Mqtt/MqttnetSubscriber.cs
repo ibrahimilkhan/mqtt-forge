@@ -42,14 +42,27 @@ public sealed class MqttnetSubscriber : IMqttSubscriber
                 .Build());
         }
 
+        var named = string.Join("', '", requests.Select(r => r.TopicFilter));
+
         try
         {
             await _client.SubscribeAsync(options.Build(), ct);
         }
         catch (MqttProtocolViolationException ex)
         {
-            var named = string.Join("', '", requests.Select(r => r.TopicFilter));
             throw new MessageRejectedException($"Could not subscribe to '{named}': {ex.Message}", ex);
+        }
+        // A broker is allowed to refuse a filter by ending the session rather than by answering
+        // the SUBSCRIBE, and public ones do: mqtt.hsl.fi closes on any wildcard it considers too
+        // broad, measured. MQTTnet raises that as an unexpected DISCONNECT, which is neither a
+        // protocol violation nor anything the catch above knew about — so it travelled out
+        // unhandled and the reader got a bare 500 naming neither the filter nor the objection.
+        catch (MqttClientUnexpectedDisconnectReceivedException ex)
+        {
+            throw new MessageRejectedException(
+                $"The broker refused '{named}' and closed the connection. " +
+                "A filter covering more of the topic tree than the broker allows is the usual cause.",
+                ex);
         }
 
         foreach (var request in requests) _filters[request.TopicFilter] = 0;
