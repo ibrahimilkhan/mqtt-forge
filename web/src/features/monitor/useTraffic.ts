@@ -1,6 +1,8 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { create } from 'zustand';
 import { matchesFilter } from '../../lib/topicMatch';
+import { snapshotUnder, type TopicNode } from '../../lib/topicTree';
+import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import { runFor, runsFor, runsOf, useLogStore, type LogEntry } from '../../stores/logStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 
@@ -12,18 +14,25 @@ import { useSelectionStore } from '../../stores/selectionStore';
  * It lives here, derived from the log and the selection, with the hold beside it.
  */
 
-type Held = { filter: string; entries: LogEntry[] };
+/**
+ * A run held still, and the rows of the tree it was read from.
+ *
+ * Both, because the control sits on one of those rows. A hold that stopped the entries and the
+ * chart but let the row's own counts go on climbing would be a pause the reader can watch not
+ * working, on the very row they pressed it.
+ */
+type Held = { filter: string; entries: LogEntry[]; nodes: Map<string, TopicNode> };
 
 type HoldState = {
   held: Held | null;
-  hold: (filter: string, entries: LogEntry[]) => void;
+  hold: (filter: string, entries: LogEntry[], nodes: Map<string, TopicNode>) => void;
   release: () => void;
 };
 
 export const useHoldStore = create<HoldState>((set) => ({
   held: null,
 
-  hold: (filter, entries) => set({ held: { filter, entries } }),
+  hold: (filter, entries, nodes) => set({ held: { filter, entries, nodes } }),
   release: () => set({ held: null }),
 }));
 
@@ -32,6 +41,14 @@ export const useHoldStore = create<HoldState>((set) => ({
 // holding a run nobody asked it to.
 useSelectionStore.subscribe((state, previous) => {
   if (state.selected?.filter !== previous.selected?.filter) useHoldStore.getState().release();
+});
+
+// Connecting starts the tree again, and what a hold froze belonged to the tree that has gone.
+// Left standing it would go on drawing a session that has ended — and, because a row it covers
+// with nothing frozen behind it is treated as one that arrived behind the hold, it would hide
+// the new session's rows under that filter entirely.
+useTopicTreeStore.subscribe((state, previous) => {
+  if (state.generation !== previous.generation) useHoldStore.getState().release();
 });
 
 /**
@@ -125,6 +142,57 @@ export function useRunsFor(filter: string | undefined): LogEntry[][] {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `changed` is the signal, see above
     [byTopic, changed, filter],
   );
+}
+
+/**
+ * The pause, for a control that is not in the pane it pauses.
+ *
+ * It reads what it needs and nothing more. The run itself is only gathered while the pane is
+ * actually held — which is a deliberate, temporary state — so a control sitting in the rail
+ * does not put a walk of the log on the path of every arrival for the sake of a badge that is
+ * usually not there. Taking the hold reads the run once, at the click.
+ */
+export function useHoldControl(): {
+  can: boolean;
+  held: boolean;
+  arrived: number;
+  toggle: () => void;
+} {
+  const selected = useSelectionStore((state) => state.selected);
+  const holding = useHoldStore((state) => state.held);
+  const byTopic = useLogStore((state) => state.byTopic);
+  // A number, so this costs a comparison per arrival rather than a run.
+  const changed = useLogStore((state) => state.version);
+
+  const held = holding !== null && holding.filter === selected?.filter;
+
+  const arrived = useMemo(() => {
+    if (!held || holding === null || holding.entries.length === 0) return 0;
+
+    // Ids only go up, so what has arrived behind the hold is what is newer than its newest.
+    const newest = holding.entries[0].id;
+
+    return runFor(byTopic, holding.filter).filter((entry) => entry.id > newest).length;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `changed` is the signal, see above
+  }, [held, holding, byTopic, changed]);
+
+  const toggle = useCallback(() => {
+    if (held) return useHoldStore.getState().release();
+    if (!selected) return;
+
+    // Read at the click rather than kept in state: both are only needed the moment they are
+    // frozen, and keeping them current would put a walk of the log and of the tree on the path
+    // of every arrival for the sake of a state that is usually not on.
+    useHoldStore
+      .getState()
+      .hold(
+        selected.filter,
+        runFor(byTopic, selected.filter),
+        snapshotUnder(useTopicTreeStore.getState().root, selected.filter),
+      );
+  }, [held, selected, byTopic]);
+
+  return { can: selected !== null, held, arrived, toggle };
 }
 
 export function useTraffic(): Traffic {

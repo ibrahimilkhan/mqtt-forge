@@ -827,3 +827,66 @@ describe('a level with no name of its own', () => {
     expect(screen.queryByRole('button', { name: /^(Collapse|Expand)$/ })).not.toBeInTheDocument();
   });
 });
+
+/*
+ * The narrow pause rides on the row it acts on.
+ *
+ * It stood in the log's foot, which is a pane it holds rather than the thing it is about: what
+ * it holds is the run the selection put on screen, and the selection is a row in this tree. One
+ * row carries it, and it is always the picked one.
+ */
+describe('the pause on the selected row', () => {
+  const send = (topic: string, ...payloads: string[]) =>
+    useTopicTreeStore.getState().apply(payloads.map((payload) => message(topic, payload)));
+
+  const rowOf = (segment: string) =>
+    screen.getByText(segment).closest<HTMLElement>('[data-testid="tree-row"]')!;
+
+  it('is on no row until one is picked', () => {
+    send('sensors/temp', '21');
+    useTopicTreeStore.setState({ defaultOpen: true });
+
+    render(<TopicTree broker="localhost:1883" />);
+
+    expect(screen.queryByRole('button', { name: 'Pause the pane' })).not.toBeInTheDocument();
+  });
+
+  it('rides on the row that was picked, and on no other', async () => {
+    send('sensors/temp', '21');
+    send('sensors/humidity', '55');
+    useTopicTreeStore.setState({ defaultOpen: true });
+
+    render(<TopicTree broker="localhost:1883" />);
+    await userEvent.click(screen.getByText('temp'));
+
+    expect(within(rowOf('temp')).getByRole('button', { name: 'Pause the pane' })).toBeInTheDocument();
+    expect(within(rowOf('humidity')).queryByRole('button', { name: 'Pause the pane' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Pause the pane' })).toHaveLength(1);
+  });
+
+  it('moves with the pick', async () => {
+    send('sensors/temp', '21');
+    send('sensors/humidity', '55');
+    useTopicTreeStore.setState({ defaultOpen: true });
+
+    render(<TopicTree broker="localhost:1883" />);
+    await userEvent.click(screen.getByText('temp'));
+    await userEvent.click(screen.getByText('humidity'));
+
+    expect(within(rowOf('humidity')).getByRole('button', { name: 'Pause the pane' })).toBeInTheDocument();
+    expect(within(rowOf('temp')).queryByRole('button', { name: 'Pause the pane' })).not.toBeInTheDocument();
+  });
+
+  // Picking the broker focuses the log on everything, which is a run like any other — and its
+  // row keeps the two tree glyphs it already had.
+  it('rides on the broker row too, in front of the glyphs that were already there', async () => {
+    send('sensors/temp', '21');
+
+    render(<TopicTree broker="localhost:1883" />);
+    await userEvent.click(screen.getByText('localhost:1883'));
+
+    const broker = screen.getAllByTestId('tree-row')[0];
+    expect(within(broker).getByRole('button', { name: 'Pause the pane' })).toBeInTheDocument();
+    expect(within(broker).getByRole('button', { name: 'Expand all' })).toBeInTheDocument();
+  });
+});

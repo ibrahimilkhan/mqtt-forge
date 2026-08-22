@@ -3,25 +3,82 @@ import { useEffect } from 'react';
 import { queryKeys } from '../api/queryKeys';
 import { createFrameBuffer } from '../lib/frameBuffer';
 import { useHubStatusStore } from '../stores/hubStatusStore';
-import { useLogStore } from '../stores/logStore';
+import { useHealthStore } from '../stores/healthStore';
+import { MAX_LOG_ENTRIES, useLogStore } from '../stores/logStore';
+import { usePauseStore } from '../stores/pauseStore';
 import { useTopicTreeStore } from '../stores/topicTreeStore';
 import type { MqttMessage } from '../types/api';
 import { decodeIncoming } from './decodeIncoming';
 import type { Hub } from './hub';
+
+/**
+ * How many messages one frame may take in.
+ *
+ * The work per message is a decode, a log append and a tree apply, and the frame that does it
+ * also has to draw. Two thousand is what a mid-range laptop takes in comfortably inside a frame,
+ * and it means a stop of five thousand is caught up in three frames — before the reader's finger
+ * is off the button — while a stop of half a million comes in over four seconds rather than in
+ * one locked frame.
+ */
+const PER_FRAME = 2_000;
 
 // Where hub events meet application state; mounted once, from App.
 export function useHubBridge(hub: Hub) {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    const buffer = createFrameBuffer<MqttMessage>((batch) => {
+    // Declared before the queue so the queue can be asked, on the way out of a flush, how much
+    // of it is left. Hoisted, so the reference is sound by the time a frame can fire.
+    function take(batch: MqttMessage[]) {
+      const started = performance.now();
+
       const decoded = batch.map(decodeIncoming);
       useLogStore.getState().appendReceived(decoded);
       useTopicTreeStore.getState().apply(decoded);
+
+      // What taking the messages in cost, which is not what drawing them costs — the line that
+      // reads this says both, because the second is the larger of the two.
+      useHealthStore.getState().took(batch.length, performance.now() - started);
+      usePauseStore.getState().track(buffer.waiting());
+    }
+
+    const buffer = createFrameBuffer<MqttMessage>(take, {
+      // A stop of any length ends in a queue, and handing all of it over in one frame is the
+      // avalanche that stopping used to be designed around. At sixty frames a second this is a
+      // hundred and twenty thousand messages a second — faster than any broker this watches —
+      // and the window goes on answering while it drains.
+      perFrame: PER_FRAME,
+      // What the log itself can hold. Past this the oldest go, which is exactly what the log's
+      // own ring would have done to them, so nothing is lost that the console could have shown.
+      ceiling: MAX_LOG_ENTRIES,
+      onOverflow: (lost) => usePauseStore.getState().lose(lost),
+    });
+
+    // Stopping holds the queue rather than emptying it: what went past while the reader was
+    // looking is what they stopped the console to look at.
+    const stopWatching = usePauseStore.subscribe((state, previous) => {
+      if (state.paused === previous.paused) return;
+
+      if (state.paused) buffer.hold();
+      else buffer.release();
+    });
+
+    // A connection resets the tree, and everything queued behind a stop was meant for the tree
+    // that has just gone: it came from another broker, or from before this one's retained
+    // messages refilled the tree, and either way handing it over now would write older readings
+    // over newer ones. This is the one place messages are let go of on purpose.
+    const stopWatchingTree = useTopicTreeStore.subscribe((state, previous) => {
+      if (state.generation === previous.generation) return;
+
+      usePauseStore.getState().lose(buffer.forget());
+      usePauseStore.getState().track(0);
     });
 
     const unsubscribe = hub.subscribe({
-      messagesReceived: (messages) => buffer.pushAll(messages),
+      messagesReceived: (messages) => {
+        buffer.pushAll(messages);
+        usePauseStore.getState().track(buffer.waiting());
+      },
       connectionStateChanged: (payload) => queryClient.setQueryData(queryKeys.connection, payload),
       reconnecting: () => useHubStatusStore.getState().setStatus('reconnecting'),
       // Broker state may have moved on while the hub was down; refetch, don't trust the cache.
@@ -35,8 +92,12 @@ export function useHubBridge(hub: Hub) {
     hub.start().catch(() => useHubStatusStore.getState().setStatus('reconnecting'));
 
     return () => {
+      stopWatching();
+      stopWatchingTree();
       unsubscribe();
       buffer.cancel();
+      // The queue went with the buffer, so the figure the control reads has to go with it too.
+      usePauseStore.getState().track(0);
     };
   }, [hub, queryClient]);
 }

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactElement, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import type { ColourRule } from '../../lib/topicColour';
 import { useRuleLookup } from '../../lib/useRuleLookup';
 import { MIN_TOPIC_ENTRIES, type LogEntry } from '../../stores/logStore';
@@ -57,8 +57,7 @@ function EntryList() {
   // one row, on the broker selection people leave up while watching a whole broker. A step at a
   // time instead, starting at the run this codebase already calls readable.
   const [count, setCount] = useState(1);
-  const { selected, live, entries, held, arrived, single } = useTraffic();
-  const hold = useHoldStore((state) => state.hold);
+  const { entries, single } = useTraffic();
   const release = useHoldStore((state) => state.release);
   const ruleOf = useRuleLookup();
   // What the pane says out loud when a row is put in the publish form. The form is a region of
@@ -68,7 +67,8 @@ function EntryList() {
 
   // A hold outlives the pane that controls it: fold the Log region and the workspace unmounts
   // this, taking the only control that releases it, while the chart below goes on drawing a run
-  // frozen at whatever moment the fold happened.
+  // frozen at whatever moment the fold happened. The console-wide pause in the rail is the one
+  // that survives a fold, and it is in the rail precisely so that it can.
   useEffect(() => release, [release]);
 
   const shown = entries.slice(0, count);
@@ -125,36 +125,6 @@ function EntryList() {
         ) : (
           <p className={styles.history}>{history}</p>
         )}
-
-        {/* Pause and play, the two shapes anyone already knows, rather than the two words that
-            had to be learnt — and the tooltip is where what it actually does is written, since
-            what it does is not what pausing usually means: the rows stop, the traffic does not.
-
-            A count of nothing is not news, so while nothing has arrived behind the pause the
-            control is the shape alone. */}
-        <button
-          type="button"
-          className={styles.hold}
-          aria-pressed={held}
-          aria-label={
-            held
-              ? arrived > 0
-                ? `Let the pane go, ${arrived} arrived while it was paused`
-                : 'Let the pane go'
-              : 'Pause the pane'
-          }
-          title={
-            held
-              ? arrived > 0
-                ? `Paused — ${arrived} arrived behind it. Click to catch up.`
-                : 'Paused — the traffic is still arriving behind it. Click to catch up.'
-              : 'Pause the pane — the rows stop where they are, and the traffic behind them carries on arriving'
-          }
-          onClick={() => (held ? release() : hold(selected!.filter, live))}
-        >
-          {held ? <Play /> : <Pause />}
-          {held && arrived > 0 && <span>{arrived}</span>}
-        </button>
       </div>
 
       {/* Opened, the run is nearly always taller than the region it is drawn in, and the only
@@ -189,26 +159,8 @@ function EntryList() {
  * them renders a pair of coloured lozenges in a row of 10px mono type. Twelve units square, in
  * the current text colour, so the control's own state colours them.
  */
-const Icon = ({ children }: { children: ReactElement }) => (
-  <svg viewBox="0 0 12 12" width="1.05em" height="1.05em" fill="currentColor" aria-hidden="true" focusable="false">
-    {children}
-  </svg>
-);
 
-const Pause = () => (
-  <Icon>
-    <>
-      <rect x="2.5" y="1.5" width="2.6" height="9" rx="0.6" />
-      <rect x="6.9" y="1.5" width="2.6" height="9" rx="0.6" />
-    </>
-  </Icon>
-);
 
-const Play = () => (
-  <Icon>
-    <path d="M3 1.8 10 6 3 10.2Z" />
-  </Icon>
-);
 
 /**
  * How many rows are drawn below what the region can show, and the way onto them.

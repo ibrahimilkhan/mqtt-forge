@@ -12,6 +12,7 @@ import { useAppearanceStore } from '../../stores/appearanceStore';
 import { useComposeStore } from '../../stores/composeStore';
 import { MAX_LOG_ENTRIES, MIN_TOPIC_ENTRIES, useLogStore } from '../../stores/logStore';
 import { useSelectionStore } from '../../stores/selectionStore';
+import { HoldButton } from './HoldButton';
 import { TrafficPane } from './TrafficPane';
 import { useHoldStore } from './useTraffic';
 import { WireLog } from './WireLog';
@@ -605,11 +606,21 @@ describe('holding the pane still', () => {
   const readings = (topic: string, ...bodies: string[]) =>
     bodies.forEach((body) => useLogStore.getState().push({ kind: 'recv', topic, body }));
 
+  // The control rides on the selected row of the topic tree, which is not this pane. What it
+  // does to this pane is what these are about, so it stands beside the pane here rather than
+  // pulling a whole tree into a test about the log.
+  const Held = () => (
+    <>
+      <HoldButton />
+      <Monitor />
+    </>
+  );
+
   it('keeps showing what it was showing while the traffic carries on', async () => {
     readings('sensors/temp', '21', '22');
     useSelectionStore.getState().select(chip);
 
-    render(<Monitor />);
+    render(<Held />);
     await userEvent.click(screen.getByRole('button', { name: 'Pause the pane' }));
     act(() => readings('sensors/temp', '99'));
 
@@ -621,7 +632,7 @@ describe('holding the pane still', () => {
     readings('sensors/temp', '21', '22');
     useSelectionStore.getState().select(chip);
 
-    render(<Monitor />);
+    render(<Held />);
     await userEvent.click(screen.getByRole('button', { name: 'Pause the pane' }));
     act(() => readings('sensors/temp', '23', '24', '25'));
 
@@ -632,7 +643,7 @@ describe('holding the pane still', () => {
     readings('sensors/temp', '21', '22');
     useSelectionStore.getState().select(chip);
 
-    render(<Monitor />);
+    render(<Held />);
     await userEvent.click(screen.getByRole('button', { name: 'Pause the pane' }));
 
     // The shape alone: a count of nothing is not news.
@@ -643,7 +654,7 @@ describe('holding the pane still', () => {
     readings('sensors/temp', '21', '22');
     useSelectionStore.getState().select(chip);
 
-    render(<Monitor />);
+    render(<Held />);
     await userEvent.click(screen.getByRole('button', { name: 'Pause the pane' }));
     act(() => readings('sensors/temp', '99'));
     await userEvent.click(screen.getByRole('button', { name: /Let the pane go/ }));
@@ -657,7 +668,7 @@ describe('holding the pane still', () => {
     readings('sensors/temp', '21', '22');
     useSelectionStore.getState().select(chip);
 
-    render(<Monitor />);
+    render(<Held />);
 
     expect(screen.getByRole('button', { name: 'Pause the pane' })).toHaveAttribute(
       'title',
@@ -678,7 +689,7 @@ describe('holding the pane still', () => {
     readings('sensors/hall', '31', '32');
     useSelectionStore.getState().select(chip);
 
-    render(<Monitor />);
+    render(<Held />);
     await userEvent.click(screen.getByRole('button', { name: 'Pause the pane' }));
     act(() => useSelectionStore.getState().select({ label: 'sensors/hall', filter: 'sensors/hall' }));
 

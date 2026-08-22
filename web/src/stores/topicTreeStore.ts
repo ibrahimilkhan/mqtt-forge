@@ -17,6 +17,13 @@ type TreeState = {
   toggleBroker: () => void;
   setAllOpen: (open: boolean) => void;
   reset: () => void;
+  /**
+   * Goes up every time the tree starts again, which is every time a connection is made.
+   *
+   * Read by anything holding messages that were meant for the tree that has just gone: they
+   * belong to a broker, or to a session, that is no longer the one on screen.
+   */
+  generation: number;
 };
 
 export const useTopicTreeStore = create<TreeState>((set, get) => ({
@@ -24,6 +31,7 @@ export const useTopicTreeStore = create<TreeState>((set, get) => ({
   openPaths: new Map(),
   defaultOpen: false,
   brokerOpen: true,
+  generation: 0,
 
   apply: (messages) => set((state) => ({ root: applyMessages(state.root, messages, Date.now()) })),
 
@@ -60,7 +68,13 @@ export const useTopicTreeStore = create<TreeState>((set, get) => ({
   setAllOpen: (open) => set({ openPaths: new Map(), defaultOpen: open, brokerOpen: open }),
 
   reset: () =>
-    set({ root: emptyTree(), openPaths: new Map(), defaultOpen: get().defaultOpen, brokerOpen: true }),
+    set({
+      root: emptyTree(),
+      openPaths: new Map(),
+      defaultOpen: get().defaultOpen,
+      brokerOpen: true,
+      generation: get().generation + 1,
+    }),
 }));
 
 export const isPathOpen = (
