@@ -34,7 +34,7 @@ public class SavedSettingsTests : IClassFixture<MqttForgeApiFactory>, IClassFixt
         var raw = await response.Content.ReadAsStringAsync();
         Assert.DoesNotContain("gizli-sifre", raw);
 
-        var saved = await response.Content.ReadFromJsonAsync<SavedConnectionDto>();
+        var saved = await response.Content.ReadFromJsonAsync<SavedConnectionDto>(WireJson.Client);
         Assert.Equal(_broker.Host, saved!.Host);
         Assert.Equal("gizli-kullanici", saved.Username);
         Assert.True(saved.HasPassword);

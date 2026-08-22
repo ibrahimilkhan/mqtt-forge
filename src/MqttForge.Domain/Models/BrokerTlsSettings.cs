@@ -1,5 +1,3 @@
-using System.Text.Json.Serialization;
-
 namespace MqttForge.Domain.Models;
 
 // Everything about the encrypted channel beyond "use one". All of it is optional and all of it
@@ -25,7 +23,10 @@ public sealed record BrokerTlsSettings(
     // PKCS#12 (.pfx/.p12) carries its key inside; a PEM pair is loaded as certificate + key.
     string? ClientCertificatePath = null,
     string? ClientCertificateKeyPath = null,
-    [property: JsonIgnore] string? ClientCertificatePassword = null,
+
+    // Saved alongside the rest, the same way the broker password already is, and returned to
+    // the console the same way too: never. What comes back is whether there is one.
+    string? ClientCertificatePassword = null,
 
     // The name to offer in the TLS handshake, when it is not the host being dialled. A broker
     // behind a load balancer reached by IP needs this, and so does anything routed by SNI.

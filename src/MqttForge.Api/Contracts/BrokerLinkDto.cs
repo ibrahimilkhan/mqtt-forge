@@ -1,3 +1,4 @@
+using MqttForge.Domain.Enums;
 using MqttForge.Domain.Models;
 
 namespace MqttForge.Api.Contracts;
@@ -13,12 +14,18 @@ public sealed record BrokerLinkDto(
     DateTimeOffset ConnectedAt,
     bool SessionPresent,
     string? AssignedClientId,
-    ushort? ServerKeepAlive)
+    ushort? ServerKeepAlive,
+    MqttTransport Transport,
+
+    // The version the broker agreed to, never the one that was asked for. With Auto choosing,
+    // those are different questions, and this is the one the console cannot answer for itself.
+    MqttProtocolLevel ProtocolVersion)
 {
     public static BrokerLinkDto? Of(BrokerLink? link) =>
         link is null
             ? null
             : new BrokerLinkDto(
                 link.Host, link.Port, link.ClientId, link.Username, link.UseTls,
-                link.ConnectedAt, link.SessionPresent, link.AssignedClientId, link.ServerKeepAlive);
+                link.ConnectedAt, link.SessionPresent, link.AssignedClientId, link.ServerKeepAlive,
+                link.Transport, link.ProtocolVersion);
 }
