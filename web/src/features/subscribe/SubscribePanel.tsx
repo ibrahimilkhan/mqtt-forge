@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { queryKeys } from '../../api/queryKeys';
 import { getSubscriptions, subscribe, subscribeBatch, unsubscribe } from '../../api/subscriptions';
 import { PanelShell } from '../../components/PanelShell';
@@ -7,14 +7,50 @@ import { QosSelect } from '../../components/QosSelect';
 import styles from '../../styles/panel.module.css';
 import { logFault, useLogStore } from '../../stores/logStore';
 import { useConnectionState } from '../../api/useConnectionState';
+import { useSelectionStore } from '../../stores/selectionStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import { useGuardedKeyedMutate, useGuardedMutate } from '../../lib/useGuardedMutate';
 import { FilterChips } from './FilterChips';
-import { chunkFilters, parseFilters } from './parseFilters';
+import { appendFilter, chunkFilters, parseFilters } from './parseFilters';
+
+/** A shape to start from, for a reader who has nothing to copy off the tree yet. */
+const SEED = 'sensors/#';
 
 export function SubscribePanel({ onClose }: { onClose: () => void }) {
-  const [topicFilter, setTopicFilter] = useState('sensors/#');
+  const [topicFilter, setTopicFilter] = useState(SEED);
   const [qos, setQos] = useState(0);
+
+  /**
+   * Writes whatever was last picked into the box.
+   *
+   * Both ways in arrive here: a chip and a tree row each announce themselves through the
+   * selection, and this panel is only mounted while it is open — so a pick lands in the box
+   * exactly when there is a box to land in, with nothing to drill down through the tree.
+   *
+   * `topic` rather than `filter`: a leaf gives its own path and a branch the subtree it stands
+   * for, which is what a reader clicking them means. The broker row carries no topic at all —
+   * it is the connection — and writes nothing.
+   */
+  const picked = useSelectionStore((state) => state.selected?.topic);
+  // What was already selected when the panel opened. Opening over an earlier pick is not a
+  // click on anything, so the box stays as it is until the next real one.
+  const written = useRef(picked);
+  // The seed is a suggestion nobody asked for, so the first pick takes its place rather than
+  // queueing behind it. One keystroke makes the box the reader's, and picks add to it after.
+  const untouched = useRef(true);
+
+  useEffect(() => {
+    if (picked === written.current) return;
+    written.current = picked;
+    if (!picked) return;
+
+    // Read before the updater, not inside it. React calls a state updater twice to check it is
+    // pure, and one that consulted this ref answered differently the second time — the seed it
+    // had just decided to replace was still there, with the pick appended under it.
+    const replacingSeed = untouched.current;
+    untouched.current = false;
+    setTopicFilter((current) => appendFilter(replacingSeed ? '' : current, picked));
+  }, [picked]);
 
   const queryClient = useQueryClient();
   const refreshFilters = () => queryClient.invalidateQueries({ queryKey: queryKeys.subscriptions });
@@ -86,7 +122,10 @@ export function SubscribePanel({ onClose }: { onClose: () => void }) {
           rows={2}
           spellCheck={false}
           value={topicFilter}
-          onChange={(e) => setTopicFilter(e.target.value)}
+          onChange={(e) => {
+            untouched.current = false;
+            setTopicFilter(e.target.value);
+          }}
         />
       </div>
 

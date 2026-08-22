@@ -197,8 +197,8 @@ describe('ColoursPanel', () => {
 
       await userEvent.click(saveButton());
 
-      await waitFor(() => expect(useLogStore.getState().entries).toHaveLength(1));
-      expect(useLogStore.getState().entries[0]).toMatchObject({ kind: 'ok', verb: 'Colours saved' });
+      await waitFor(() => expect(useLogStore.getState().commands).toHaveLength(1));
+      expect(useLogStore.getState().commands[0]).toMatchObject({ kind: 'ok', verb: 'Colours saved' });
     });
 
     it('logs a save the server refused, and keeps what was typed', async () => {
@@ -214,8 +214,8 @@ describe('ColoursPanel', () => {
 
       await userEvent.click(saveButton());
 
-      await waitFor(() => expect(useLogStore.getState().entries).toHaveLength(1));
-      expect(useLogStore.getState().entries[0]).toMatchObject({ kind: 'fault', verb: 'Colours not saved' });
+      await waitFor(() => expect(useLogStore.getState().commands).toHaveLength(1));
+      expect(useLogStore.getState().commands[0]).toMatchObject({ kind: 'fault', verb: 'Colours not saved' });
       expect(filterBox(rows()[0])).toHaveValue('a/#');
     });
   });
@@ -657,7 +657,7 @@ describe('an unsaved row follows the selection', () => {
     selectTopic('sensors/attic/temp');
 
     await userEvent.click(saveButton());
-    await waitFor(() => expect(useLogStore.getState().entries).toHaveLength(1));
+    await waitFor(() => expect(useLogStore.getState().commands).toHaveLength(1));
     selectTopic('alerts/water');
 
     expect(filterBox(rows()[0])).toHaveValue('sensors/attic/temp');
@@ -689,7 +689,7 @@ describe('an unsaved row follows the selection', () => {
     selectTopic('sensors/attic/temp');
 
     await userEvent.click(saveButton());
-    await waitFor(() => expect(useLogStore.getState().entries).toHaveLength(1));
+    await waitFor(() => expect(useLogStore.getState().commands).toHaveLength(1));
     selectTopic('alerts/water');
 
     expect(filterBox(rows()[0])).toHaveValue('alerts/water');

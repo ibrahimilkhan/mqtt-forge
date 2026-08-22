@@ -68,7 +68,7 @@ describe('PublishPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
 
     await waitFor(() => expect(accepted).toBe(true));
-    expect(useLogStore.getState().entries).toEqual([]);
+    expect(useLogStore.getState().commands).toEqual([]);
   });
 
   it('ignores extra clicks fired while a publish is already in flight', async () => {
@@ -107,7 +107,7 @@ describe('PublishPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
 
     await waitFor(() =>
-      expect(useLogStore.getState().entries[0]).toMatchObject({
+      expect(useLogStore.getState().commands[0]).toMatchObject({
         kind: 'fault',
         verb: 'Publish failed',
         topic: 'sensors/temp',

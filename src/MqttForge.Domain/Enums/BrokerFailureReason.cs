@@ -34,6 +34,12 @@ public enum BrokerFailureReason
     BrokerBusy,
     BrokerRejected,
 
+    // A broker that took us in, and then refused something we asked it to do. Not about who we
+    // are — the link was already established, credentials and all — so these must never be worded
+    // as an identity problem. A broker with no authentication at all sends them.
+    NotPermitted,
+    FilterRefused,
+
     // A link that was up, and is not any more
     ConnectionLost,
     SessionTakenOver,

@@ -789,3 +789,41 @@ describe('expand all reaches the broker row', () => {
     expect(screen.getByText('temp')).toBeInTheDocument();
   });
 });
+
+// A topic beginning with '/' has an empty first level, and one written 'a//b' an empty middle
+// one. The level is real — it is part of the topic, it can be opened and picked — but it has no
+// text of its own, so without a mark the row draws as a blank the eye reads as a fault.
+describe('a level with no name of its own', () => {
+  const send = (topic: string) => useTopicTreeStore.getState().apply([message(topic)]);
+
+  const segments = () => screen.getAllByTestId('segment').map((s) => s.textContent);
+
+  it('draws a mark rather than a blank row', () => {
+    send('/hfp/v2/tram');
+    useTopicTreeStore.setState({ defaultOpen: true });
+
+    render(<TopicTree broker="mqtt.hsl.fi:8883" />);
+
+    expect(segments()).toContain('/');
+    expect(segments()).not.toContain('');
+  });
+
+  it('marks an empty level in the middle of a topic too', () => {
+    send('plant//line1');
+    useTopicTreeStore.setState({ defaultOpen: true });
+
+    render(<TopicTree broker="broker:1883" />);
+
+    expect(segments()).not.toContain('');
+  });
+
+  it('gives the row a twisty a reader can be told about', () => {
+    send('/hfp/v2/tram');
+    useTopicTreeStore.setState({ defaultOpen: true });
+
+    render(<TopicTree broker="mqtt.hsl.fi:8883" />);
+
+    // Without a name the label was 'Collapse ', which normalises to a bare verb naming nothing.
+    expect(screen.queryByRole('button', { name: /^(Collapse|Expand)$/ })).not.toBeInTheDocument();
+  });
+});

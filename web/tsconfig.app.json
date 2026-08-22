@@ -25,5 +25,5 @@
   "include": ["src"],
   /* Guard tests that run on Node (e.g. typeScale.test.ts) use node: imports
      and require Node types; exclude them here to keep browser code clean. */
-  "exclude": ["src/styles/typeScale.test.ts"]
+  "exclude": ["src/styles/typeScale.test.ts", "src/styles/scrollPanes.test.ts"]
 }

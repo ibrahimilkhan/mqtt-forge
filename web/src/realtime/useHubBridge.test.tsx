@@ -3,7 +3,7 @@ import { renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { queryKeys } from '../api/queryKeys';
-import { MAX_LOG_ENTRIES, useLogStore } from '../stores/logStore';
+import { MAX_LOG_ENTRIES, runFor, useLogStore } from '../stores/logStore';
 import { useTopicTreeStore } from '../stores/topicTreeStore';
 import type { MqttMessage } from '../types/api';
 import { createFakeHub } from './fakeHub';
@@ -38,6 +38,9 @@ function renderBridge(hub: ReturnType<typeof createFakeHub>) {
   return { ...view, queryClient };
 }
 
+/** The traffic the bridge fed into the store, newest first. */
+const arrivals = () => runFor(useLogStore.getState().byTopic, '#');
+
 describe('useHubBridge', () => {
   it('starts the hub on mount', () => {
     const hub = createFakeHub();
@@ -54,7 +57,7 @@ describe('useHubBridge', () => {
     hub.emit('messagesReceived', [message('sensors/temp', '21.5'), message('sensors/humidity', '54')]);
     frames[0]();
 
-    expect(useLogStore.getState().entries).toHaveLength(2);
+    expect(arrivals()).toHaveLength(2);
     expect(useTopicTreeStore.getState().root.children.get('sensors')?.subTopics).toBe(2);
   });
 
@@ -68,7 +71,7 @@ describe('useHubBridge', () => {
     ]);
     frames[0]();
 
-    expect(useLogStore.getState().entries[0]).toMatchObject({
+    expect(arrivals()[0]).toMatchObject({
       mode: 'hex',
       body: '01 A4 FF',
       stamps: expect.arrayContaining(['BIN']),
@@ -100,7 +103,12 @@ describe('useHubBridge', () => {
   it('holds up under a burst of thousands of messages landing before one frame flushes', () => {
     const hub = createFakeHub();
     renderBridge(hub);
-    const burst = Array.from({ length: 5000 }, (_, i) => message(`sensors/${i % 50}/reading`, String(i)));
+    // Its own number, not the log's cap. The two were the same once and the assertion below
+    // read as 'the log filled up', when what this is about is that none of the burst was lost
+    // between the hub and the stores.
+    const BURST = 5000;
+    expect(BURST).toBeLessThanOrEqual(MAX_LOG_ENTRIES);
+    const burst = Array.from({ length: BURST }, (_, i) => message(`sensors/${i % 50}/reading`, String(i)));
 
     // In batches, the way the hub sends them, all landing inside the same frame.
     const start = performance.now();
@@ -108,7 +116,7 @@ describe('useHubBridge', () => {
     frames[0]();
     const elapsedMs = performance.now() - start;
 
-    expect(useLogStore.getState().entries).toHaveLength(MAX_LOG_ENTRIES);
+    expect(useLogStore.getState().held).toBe(BURST);
     expect(useTopicTreeStore.getState().root.children.get('sensors')?.subTopics).toBe(50);
     expect(elapsedMs).toBeLessThan(5000);
   });
@@ -121,6 +129,6 @@ describe('useHubBridge', () => {
     unmount();
     frames.forEach((frame) => frame());
 
-    expect(useLogStore.getState().entries).toHaveLength(0);
+    expect(arrivals()).toHaveLength(0);
   });
 });

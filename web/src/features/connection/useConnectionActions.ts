@@ -8,14 +8,16 @@ import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import type { ConnectRequest } from '../../types/api';
 import { wasAborted } from './connectFailure';
 
+type ConnectVars = { request: ConnectRequest; autoSubscribe: boolean; onConnectFilter: string };
+
 export function useConnectionActions() {
   const queryClient = useQueryClient();
 
   const connectMutation = useMutation({
     // Success means the connection itself succeeded; auto-subscribe failure doesn't count against it.
-    mutationFn: ({ request }: { request: ConnectRequest; autoSubscribe: boolean }) => connect(request),
+    mutationFn: ({ request }: ConnectVars) => connect(request),
 
-    onSuccess: async (result, { request, autoSubscribe }) => {
+    onSuccess: async (result, { request, autoSubscribe, onConnectFilter }) => {
       // Refetch, don't write the response: the hub may have already pushed a newer state.
       void queryClient.invalidateQueries({ queryKey: queryKeys.connection });
 
@@ -37,7 +39,7 @@ export function useConnectionActions() {
         body: `${request.host}:${request.port} · ${request.clientId}`,
       });
 
-      if (autoSubscribe) await subscribeToEverything();
+      if (autoSubscribe) await subscribeOnConnect(onConnectFilter);
 
       void queryClient.invalidateQueries({ queryKey: queryKeys.subscriptions });
       void queryClient.invalidateQueries({ queryKey: queryKeys.savedSettings });
@@ -79,13 +81,27 @@ export function useConnectionActions() {
   return { connectMutation, disconnectMutation, abortMutation };
 }
 
-// Reported on its own log line, so a failure here reads as a subscribe failure, not a connect failure.
-async function subscribeToEverything() {
+/**
+ * What to listen to the moment the link is up.
+ *
+ * The filter comes from the panel rather than being fixed at '#'. Every public broker tested
+ * refuses a bare '#' — mqtt.hsl.fi by closing the session, so the console used to connect and
+ * fall over in the same breath — and a broker's own preset knows what it will actually answer.
+ *
+ * Reported on its own log line, so a failure here reads as a subscribe failure, not a connect
+ * failure: the link is a separate thing and may well still be up.
+ */
+async function subscribeOnConnect(topicFilter: string) {
+  const filter = topicFilter.trim();
+  // Nothing to ask for. Not an error — a reader who emptied the box said they wanted no
+  // subscription, and the Subscribe panel is right there.
+  if (!filter) return;
+
   try {
-    await subscribe({ topicFilter: '#', qos: 0 });
-    useLogStore.getState().push({ kind: 'ok', verb: 'Subscribed', topic: '#', stamps: ['QoS 0'] });
+    await subscribe({ topicFilter: filter, qos: 0 });
+    useLogStore.getState().push({ kind: 'ok', verb: 'Subscribed', topic: filter, stamps: ['QoS 0'] });
   } catch (error) {
-    logFault('Subscribe failed', error, '#');
+    logFault('Subscribe failed', error, filter);
   }
 }
 

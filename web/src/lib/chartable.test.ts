@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { chartable, MOST_LINES } from './chartable';
-import type { LogEntry } from '../stores/logStore';
+import { runsOf, type LogEntry } from '../stores/logStore';
+
+/**
+ * The chart takes the traffic as one run per topic now. These tests still describe it as one
+ * sequence — that is how a reader thinks of a selection — and this is the same grouping the log
+ * itself does, so every assertion below is about the same traffic it always was.
+ */
+const asRuns = (entries: LogEntry[]) => runsOf(entries);
 
 let nextId = 0;
 
@@ -21,7 +28,7 @@ const run = (topic: string, ...bodies: string[]) =>
 
 describe('chartable, on one topic', () => {
   it('draws the line', () => {
-    expect(chartable(run('sensors/temp', '21', '22', '23'))).toMatchObject({
+    expect(chartable(asRuns(run('sensors/temp', '21', '22', '23')))).toMatchObject({
       kind: 'one',
       series: { topic: 'sensors/temp' },
     });
@@ -38,7 +45,7 @@ describe('chartable, on a selection covering several topics', () => {
       ['sensors/a', '3'], ['sensors/b', '92'],
     );
 
-    expect(chartable(mixed)).toMatchObject({
+    expect(chartable(asRuns(mixed))).toMatchObject({
       kind: 'many',
       series: [{ topic: 'sensors/a' }, { topic: 'sensors/b' }],
     });
@@ -50,7 +57,7 @@ describe('chartable, on a selection covering several topics', () => {
       ['sensors/busy', '5'], ['sensors/busy', '6'], ['sensors/busy', '7'], ['sensors/busy', '8'],
     );
 
-    expect((chartable(lopsided) as { series: Array<{ topic: string }> }).series[0].topic).toBe(
+    expect((chartable(asRuns(lopsided)) as { series: Array<{ topic: string }> }).series[0].topic).toBe(
       'sensors/busy',
     );
   });
@@ -62,7 +69,7 @@ describe('chartable, on a selection covering several topics', () => {
       ['sensors/a', '3'], ['sensors/b', 'ON'],
     );
 
-    expect(chartable(mixed)).toMatchObject({ kind: 'one', series: { topic: 'sensors/a' } });
+    expect(chartable(asRuns(mixed))).toMatchObject({ kind: 'one', series: { topic: 'sensors/a' } });
   });
 
   it('caps the lines and says how many it left out', () => {
@@ -72,7 +79,7 @@ describe('chartable, on a selection covering several topics', () => {
         `${i}`,
       ] as [string, string]),
     );
-    const drawn = chartable(many) as { kind: string; series: unknown[]; more: number };
+    const drawn = chartable(asRuns(many)) as { kind: string; series: unknown[]; more: number };
 
     expect(drawn.kind).toBe('many');
     expect(drawn.series).toHaveLength(MOST_LINES);
@@ -83,18 +90,18 @@ describe('chartable, on a selection covering several topics', () => {
 describe('chartable, when there is nothing to draw', () => {
   // Four situations used to share one sentence, and three of them were temporary.
   it('says the run is one message old rather than that it cannot be charted', () => {
-    expect(chartable(run('sensors/temp', '21'))).toMatchObject({
+    expect(chartable(asRuns(run('sensors/temp', '21')))).toMatchObject({
       kind: 'none',
       reason: { code: 'too-few', have: 1 },
     });
   });
 
   it('says nothing has arrived at all', () => {
-    expect(chartable([])).toMatchObject({ reason: { code: 'too-few', have: 0 } });
+    expect(chartable(asRuns([]))).toMatchObject({ reason: { code: 'too-few', have: 0 } });
   });
 
   it('says the bodies are not numbers, and carries the newest one as evidence', () => {
-    expect(chartable(run('sensors/state', '{"state":"ON"}', '{"state":"OFF"}'))).toMatchObject({
+    expect(chartable(asRuns(run('sensors/state', '{"state":"ON"}', '{"state":"OFF"}')))).toMatchObject({
       reason: { code: 'no-numbers', sample: '{"state":"OFF"}' },
     });
   });
@@ -102,13 +109,13 @@ describe('chartable, when there is nothing to draw', () => {
   it('counts the topics it looked at, so a branch does not read as one topic', () => {
     const mixed = log(['sensors/a', 'ON'], ['sensors/b', 'OFF'], ['sensors/c', 'ON']);
 
-    expect(chartable(mixed)).toMatchObject({ reason: { code: 'no-numbers', topics: 3 } });
+    expect(chartable(asRuns(mixed))).toMatchObject({ reason: { code: 'no-numbers', topics: 3 } });
   });
 
   // Picking a field the topic does not carry is the reader's own doing, and the way out of it is
   // another chip rather than another topic.
   it('names the field when it was the field that found nothing', () => {
-    expect(chartable(run('sensors/env', '{"temp":21}', '{"temp":22}'), 'humidity')).toMatchObject({
+    expect(chartable(asRuns(run('sensors/env', '{"temp":21}', '{"temp":22}')), 'humidity')).toMatchObject({
       reason: { code: 'no-field', field: 'humidity' },
     });
   });

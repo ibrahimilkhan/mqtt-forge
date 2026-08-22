@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { chartable } from '../../lib/chartable';
 import { fitDistribution } from '../../lib/distribution';
 import { domainFor, SCALES, type ScaleId } from '../../lib/scale';
-import { numericFields, type Series } from '../../lib/series';
+import { numericFields, sampleOfRuns, type Series } from '../../lib/series';
 import { shapeOf } from '../../lib/shape';
 import { cadence, changePoint, cycle, summarise } from '../../lib/stats';
 import { useNow } from '../../lib/useNow';
@@ -33,10 +33,11 @@ const SILENT_AFTER = 3;
  * whatever the reader actually analyses in.
  */
 export function TrafficChart({
-  entries,
+  runs,
   frozen = false,
 }: {
-  entries: LogEntry[];
+  /** The traffic as one run per topic, which is what a chart of a branch draws. */
+  runs: LogEntry[][];
   /** The pane is being held still, so the run on show is not the run arriving. */
   frozen?: boolean;
 }) {
@@ -53,16 +54,18 @@ export function TrafficChart({
   const preferred = useAppearanceStore((state) => state.scale);
   const readings = useAppearanceStore((state) => state.readings);
 
+  // A topic clicked into is one of the runs already, so this picks rather than walks: the
+  // branch's other thousands of topics are not touched to find it.
   const narrowed = useMemo(
-    () => (focus ? entries.filter((entry) => entry.topic === focus) : entries),
-    [entries, focus],
+    () => (focus ? runs.filter((run) => run[0]?.topic === focus) : runs),
+    [runs, focus],
   );
   // A focused topic that has fallen out of the log takes the pane back to the branch rather than
   // leaving it looking at nothing.
-  const run = narrowed.length > 0 ? narrowed : entries;
+  const shown = narrowed.length > 0 ? narrowed : runs;
 
-  const fields = useMemo(() => numericFields(run), [run]);
-  const drawn = useMemo(() => chartable(run, field), [run, field]);
+  const fields = useMemo(() => numericFields(sampleOfRuns(shown)), [shown]);
+  const drawn = useMemo(() => chartable(shown, field), [shown, field]);
 
   const controls = (
     <Controls

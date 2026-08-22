@@ -164,6 +164,15 @@
 .wire,
 .chartPane {
   background: var(--surface);
+  /* Load-bearing, and not for placing anything: it is what makes the promise above true.
+     These panes hold the visually-hidden controls that keep the rows reachable from a keyboard
+     — `position: absolute` boxes, one per row. With no positioned ancestor their containing
+     block is the page itself, and `overflow` here cannot clip a box anchored outside it: open
+     the log's history and twenty-five rows' worth of hidden buttons landed four thousand pixels
+     down the document, so the page grew a screenful of empty scroll under a layout that had not
+     moved. Containing them here costs nothing — they are one pixel and invisible — and the
+     panes go on scrolling exactly as before. */
+  position: relative;
   /* Top padding is the gap between the pane's edge and its heading; kept short so the heading
      sits just under the rule rather than floating below it. Bottom padding is scroll-end
      breathing room, not layout, so it stays the larger of the two. */

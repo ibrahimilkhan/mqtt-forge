@@ -126,6 +126,10 @@
 .seg, .val { user-select: text; }
 .seg { flex: none; color: var(--ink); }
 
+/* The mark standing in for a level with no name of its own. Muted, so it reads as the shape of
+   the gap rather than as a segment that happens to be called '/'. After .seg, which sets ink. */
+.empty { color: var(--muted); }
+
 /* Sits right beside the topic name, so the eye reads them as one.
    Ink rather than signal, at regular weight against the segment's 600: the segment is what a
    colour rule paints, and a payload with a colour of its own competed with it. */

@@ -110,8 +110,20 @@ public static class BrokerFailureClassifier
                 or MqttClientDisconnectReason.UseAnotherServer
                 or MqttClientDisconnectReason.ServerMoved => BrokerFailureReason.BrokerClosed,
 
-            MqttClientDisconnectReason.NotAuthorized
-                or MqttClientDisconnectReason.BadAuthenticationMethod => BrokerFailureReason.CredentialsRejected,
+            // Not an identity problem. By the time a DISCONNECT arrives the broker has already
+            // taken us in — CONNACK is where it judges who we are — so this is it refusing
+            // something we asked it to do afterwards, almost always a subscription. Wording it
+            // as a rejected password is worse than saying nothing: mqtt.hsl.fi takes no
+            // credentials at all and answers this way to a wildcard it considers too broad, so
+            // the reader was sent to fix a username that does not exist.
+            MqttClientDisconnectReason.NotAuthorized => BrokerFailureReason.NotPermitted,
+
+            // The same refusal, from a broker that names what it objected to.
+            MqttClientDisconnectReason.TopicFilterInvalid => BrokerFailureReason.FilterRefused,
+
+            // The exception: a broker can only object to how we authenticated if authentication
+            // is what we were doing, so this one is about identity wherever it arrives.
+            MqttClientDisconnectReason.BadAuthenticationMethod => BrokerFailureReason.CredentialsRejected,
 
             MqttClientDisconnectReason.ServerBusy
                 or MqttClientDisconnectReason.ConnectionRateExceeded

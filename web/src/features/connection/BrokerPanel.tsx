@@ -11,6 +11,8 @@ import { useGuardedMutate } from '../../lib/useGuardedMutate';
 import { describeConnectFailure, describeFailureReason } from './connectFailure';
 import { ConnectionSummary } from './ConnectionSummary';
 import { useConnectionActions } from './useConnectionActions';
+import { BrokerPresets } from './BrokerPresets';
+import { BROKER_PRESETS, NO_PRESET_FILTER, type BrokerPreset } from './presets';
 
 const DEFAULTS = {
   host: 'localhost',
@@ -24,6 +26,10 @@ const DEFAULTS = {
 export function BrokerPanel({ onClose }: { onClose: () => void }) {
   const [form, setForm] = useState(DEFAULTS);
   const [autoSubscribe, setAutoSubscribe] = useState(true);
+  // What auto-subscribe actually asks for. It used to be a hard-coded '#', which every public
+  // broker tested refuses — one of them by closing the session, so the console connected and
+  // fell over. A preset overwrites this; a reader typing their own broker can too.
+  const [onConnectFilter, setOnConnectFilter] = useState(NO_PRESET_FILTER);
 
   const { data: saved } = useQuery({ queryKey: queryKeys.savedSettings, queryFn: getSavedSettings });
   const { connectMutation, disconnectMutation, abortMutation } = useConnectionActions();
@@ -36,6 +42,24 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
   // fires, before the API has been asked anything; isConnecting is the only one a panel that
   // was closed when the attempt started — or reopened since — has to go on.
   const attemptRunning = isConnecting || connectMutation.isPending;
+
+  // Derived, not remembered: type over the host and the chip goes out by itself, with no second
+  // copy of the truth to get out of step with the fields.
+  const activePreset =
+    BROKER_PRESETS.find((p) => p.host === form.host && p.port === form.port) ?? null;
+
+  const applyPreset = (preset: BrokerPreset) => {
+    setForm((current) => ({
+      ...current,
+      host: preset.host,
+      port: preset.port,
+      useTls: preset.useTls,
+      username: preset.username,
+      // A password typed for one broker must not travel to another; these are all public.
+      password: '',
+    }));
+    setOnConnectFilter(preset.onConnectFilter);
+  };
 
   // This panel exists to get a link up, so a link coming up is the end of its job: it stands
   // aside and hands its column back to the traffic it just started. The rail's lamp and the
@@ -53,8 +77,19 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
   }, [answered, isOnline, onClose]);
 
   // Arrives after first render; password is never returned by the API.
+  //
+  // The filter comes back with it, from the preset the saved address belongs to. It is not
+  // saved alongside the address and reopening the panel over a Helsinki connection therefore
+  // offered to reconnect with a bare '#' — the one filter that broker refuses by closing the
+  // session. An address we have a preset for tells us what to listen to on it; one we do not
+  // keeps the '#' it always had, there being nothing better to guess.
   useEffect(() => {
     if (!saved) return;
+    // Only over the default. A preset picked, or a filter typed, before the saved settings
+    // arrived is the reader's own and outranks anything remembered about the last connection.
+    const preset = BROKER_PRESETS.find((p) => p.host === saved.host && p.port === saved.port);
+    if (preset) setOnConnectFilter((current) => (current === NO_PRESET_FILTER ? preset.onConnectFilter : current));
+
     setForm({
       host: saved.host,
       port: saved.port,
@@ -85,10 +120,13 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
         useTls: form.useTls,
       },
       autoSubscribe,
+      onConnectFilter,
     });
 
   return (
     <PanelShell title="Broker" onClose={onClose}>
+      <BrokerPresets active={activePreset} onPick={applyPreset} />
+
       <div className={styles.row}>
         <Field label="Host" htmlFor="host">
           <input
@@ -158,8 +196,23 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
             checked={autoSubscribe}
             onChange={(e) => setAutoSubscribe(e.target.checked)}
           />
-          {' Subscribe to every topic on connect'}
+          {' Subscribe on connect'}
         </label>
+      </div>
+
+      {/* Shown even when the box is clear, rather than swapped out for nothing: what a preset
+          brought is half of what it is, and a reader comparing two of them should be able to
+          read both filters without toggling a checkbox to see them. */}
+      <div className={styles.row}>
+        <Field label="On-connect filter" htmlFor="onConnectFilter">
+          <input
+            id="onConnectFilter"
+            type="text"
+            value={onConnectFilter}
+            disabled={!autoSubscribe}
+            onChange={(e) => setOnConnectFilter(e.target.value)}
+          />
+        </Field>
       </div>
 
       <div className={styles.actions}>

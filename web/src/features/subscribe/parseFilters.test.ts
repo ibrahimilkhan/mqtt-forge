@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chunkFilters, MAX_PER_BATCH, parseFilters } from './parseFilters';
+import { appendFilter, chunkFilters, MAX_PER_BATCH, parseFilters } from './parseFilters';
 
 describe('parseFilters', () => {
   it('reads a single filter as one', () => {
@@ -48,5 +48,42 @@ describe('chunkFilters', () => {
 
   it('makes no packets out of nothing', () => {
     expect(chunkFilters([])).toEqual([]);
+  });
+});
+
+// Clicking a chip or a topic writes into the same box the reader types in, so what it writes has
+// to survive whatever is already there — including nothing, and including the same filter twice.
+describe('appendFilter', () => {
+  it('puts a filter into an empty box on its own', () => {
+    expect(appendFilter('', 'sensors/#')).toBe('sensors/#');
+  });
+
+  it('adds to what is already there on a line of its own', () => {
+    expect(appendFilter('sensors/#', 'plant/+/temp')).toBe('sensors/#\nplant/+/temp');
+  });
+
+  // The box takes a list, and a reader clicking four topics means four filters, not four
+  // clicks fighting over one line.
+  it('keeps adding as the reader keeps clicking', () => {
+    const built = ['a/#', 'b/#', 'c/#'].reduce(appendFilter, '');
+
+    expect(built).toBe('a/#\nb/#\nc/#');
+  });
+
+  it('does not add a filter the box already holds', () => {
+    expect(appendFilter('sensors/#\nplant/#', 'sensors/#')).toBe('sensors/#\nplant/#');
+  });
+
+  // The same filter typed with a comma is still the same filter.
+  it('reads what is there the way the box itself does', () => {
+    expect(appendFilter('sensors/#, plant/#', 'plant/#')).toBe('sensors/#, plant/#');
+  });
+
+  it('does not leave a blank line behind a box that ends in one', () => {
+    expect(appendFilter('sensors/#\n', 'plant/#')).toBe('sensors/#\nplant/#');
+  });
+
+  it('ignores a click carrying nothing', () => {
+    expect(appendFilter('sensors/#', '  ')).toBe('sensors/#');
   });
 });

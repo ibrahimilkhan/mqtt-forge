@@ -452,3 +452,49 @@ describe('pruneTopics', () => {
     expect(at(tree, 'keep/me').hits).toBe(1);
   }, 30_000);
 });
+
+// A topic may begin with '/', which makes its first segment the empty string. Brokers carrying
+// real traffic do this — Helsinki's transit feed publishes every vehicle under '/hfp/v2/...' —
+// and the row a click carries is the path built here, so a path that cannot be matched back
+// against the topic it came from is a topic whose log reads as empty however much arrived.
+describe('a topic whose first segment is empty', () => {
+  const topic = '/hfp/v2/journey/tram';
+
+  const rowsOf = (t: string) =>
+    flattenTree(applyMessage(emptyTree(), t, '1', 1000), () => true, 100).rows;
+
+  it('gives the leaf a path that still names the topic', () => {
+    const leaf = rowsOf(topic).find((row) => row.node.hits > 0);
+
+    expect(leaf?.path).toBe(topic);
+  });
+
+  it('gives the leaf a path the log can match the topic with', () => {
+    const leaf = rowsOf(topic).find((row) => row.node.hits > 0);
+
+    expect(matchesFilter(leaf!.path, topic)).toBe(true);
+  });
+
+  it('gives a branch a path whose subtree filter still covers the topic', () => {
+    const branch = rowsOf(topic).find((row) => row.node.name === 'journey');
+
+    expect(matchesFilter(`${branch!.path}/#`, topic)).toBe(true);
+  });
+
+  // Unsubscribing names topics the same way a click does, so the same dropped slash would have
+  // pruneTopics asking about a topic that does not exist and leaving the real one in the tree.
+  it('offers unsubscribe the topic under the name it actually arrived with', () => {
+    const seen: string[] = [];
+    const tree = pruneTopics(
+      applyMessages(emptyTree(), [{ topic, payload: '1' }, { topic: '/hfp/v2/other', payload: '2' }], 1000),
+      (t) => {
+        seen.push(t);
+        return t === topic;
+      },
+    );
+
+    expect(seen).toContain(topic);
+    expect(at(tree, '/hfp/v2'.split('/').join('/')).children.has('journey')).toBe(false);
+    expect(at(tree, '').children.get('hfp')!.children.get('v2')!.children.has('other')).toBe(true);
+  });
+});

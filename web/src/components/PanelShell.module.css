@@ -5,6 +5,10 @@
   padding: 11px 20px 24px;
   min-height: 0;
   overflow-y: auto;
+  /* Same reason as the panes it sits beside: this scrolls its own content, and the heading
+     inside it is an `.srOnly` box. Without a containing block here that box anchors to the page,
+     where `overflow` cannot reach it. */
+  position: relative;
 }
 
 @media (max-width: 760px) {
