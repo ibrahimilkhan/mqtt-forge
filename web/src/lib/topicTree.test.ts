@@ -498,3 +498,51 @@ describe('a topic whose first segment is empty', () => {
     expect(at(tree, '').children.get('hfp')!.children.get('v2')!.children.has('other')).toBe(true);
   });
 });
+
+// Nodes that have never had a child share one empty map and one empty order between them, and a
+// run that has carried no numbers shares one empty array. It is the cheapest thing in a tree
+// that is mostly chain — and the one change here that could quietly corrupt every branch at
+// once, so what it must never do is written down.
+describe('the empty a new node starts from', () => {
+  it('does not hand one branch a child that belongs to another', () => {
+    const tree = applyMessages(emptyTree(), [
+      { topic: 'a/one', payload: '1' },
+      { topic: 'b/two', payload: '2' },
+    ], 1000);
+
+    expect([...at(tree, 'a').children.keys()]).toEqual(['one']);
+    expect([...at(tree, 'b').children.keys()]).toEqual(['two']);
+    expect(at(tree, 'a/one').children.size).toBe(0);
+  });
+
+  it('keeps each branch its own order as siblings arrive', () => {
+    const tree = applyMessages(emptyTree(), [
+      { topic: 'a/z', payload: '1' },
+      { topic: 'a/m', payload: '2' },
+      { topic: 'b/q', payload: '3' },
+    ], 1000);
+
+    expect(at(tree, 'a').order).toEqual(['m', 'z']);
+    expect(at(tree, 'b').order).toEqual(['q']);
+  });
+
+  // The readings array is replaced rather than pushed to, which is what makes it shareable.
+  it('does not give one topic the readings of another', () => {
+    const tree = applyMessages(emptyTree(), [
+      { topic: 'a/one', payload: '21' },
+      { topic: 'a/one', payload: '22' },
+      { topic: 'b/two', payload: 'words' },
+    ], 1000);
+
+    expect(at(tree, 'a/one').readings).toEqual([21, 22]);
+    expect(at(tree, 'b/two').readings).toEqual([]);
+  });
+
+  it('leaves a fresh tree empty', () => {
+    const tree = emptyTree();
+
+    expect(tree.children.size).toBe(0);
+    expect(tree.order).toEqual([]);
+    expect(tree.readings).toEqual([]);
+  });
+});
