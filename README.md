@@ -14,9 +14,9 @@ subscriptions and one set of colour rules.
 
 MQTTForge connects to a broker you already run — it is not a broker itself.
 
-![MQTTForge connected to a broker: the topic tree in the middle, each topic showing its latest
-value and the shape of its run, with alert and sensor branches in their rule colours; on the
-right the newest message, the chart of the run behind it and the publish form](.github/assets/console.png)
+![MQTTForge on Helsinki's tram feed: the topic tree in the middle, each vehicle showing what it
+has sent, in the colours its rules give it; on the right the newest message, the odometer of the
+runs behind it, and the publish form](.github/assets/console.png)
 
 ## What it does
 
@@ -49,7 +49,7 @@ right the newest message, the chart of the run behind it and the publish form](.
   it, a switch for every reading the note can make, and a line on every chip over the plot saying
   what it does. `spread`, `duty` and `csv` are three-letter labels; this is where they are
   spelled out.
-- **Settings** — the fonts and their size, and which of six marks the app wears.
+- **Settings** — the fonts and their size, and the line that says what the console is carrying.
 
 It speaks MQTT 5.0 only, over TCP or TLS, with a username and password if the broker wants them.
 A broker that speaks just 3.1.1 refuses the connection.
@@ -159,9 +159,9 @@ The **Colours** panel takes a list of MQTT filters and a colour for each — `se
 `alerts/#`, whatever you watch for. Every topic a rule covers is then drawn in that colour, in
 the tree and in the log, with the row's left edge carrying it too.
 
-![The Colours panel holding two rules beside the tree they paint: sensors/+/temp in purple picks
-the temperatures out of the sensor branches, and alerts/# colours that whole subtree
-red](.github/assets/colours.png)
+![The Colours panel holding two rules beside the tree they paint: /hfp/v2/# colours the whole
+feed red, and the longer filter under it picks the trams out of it in
+purple](.github/assets/colours.png)
 
 When two rules cover one topic the more specific filter wins: read left to right, a named
 segment beats `+`, and `+` beats `#`. So `sensors/#` can colour a whole subtree while
@@ -227,9 +227,8 @@ carries on being used for something else. Open a second on another topic and the
 by side. Unpin one to move or size it, drag it near an edge and it takes the edge, and the × in
 its bar closes it.
 
-![Two chart windows standing over the app, each with the topic it was opened on in its bar and
-its own readings underneath: one pinned in place, one loose with its resize corner
-showing](.github/assets/windows.png)
+![Two chart windows standing over the app, each with the tram it was opened on in its bar and
+its own readings underneath, while the console below carries on](.github/assets/windows.png)
 
 A selection covering several topics — which is what clicking a branch of the tree gives you —
 draws one small plot per topic, each on its own scale, since °C and % share no axis but do share
@@ -333,6 +332,24 @@ Planned, in rough order:
 - **Recording** — capture a session's traffic to a file and play it back.
 - **Load testing** — many clients and sustained publish rates, to see how a broker holds up.
 - **MQTT 3.1.1** — a broker that only speaks 3.1.1 currently refuses the connection.
+
+## How it is built
+
+- **API** (.NET 10) holds the one broker connection and pushes to every browser over SignalR.
+- **Console** (React 19, TypeScript, Vite) — no MQTT in the browser; one bundle, served by the API.
+- **Desktop** (Photino) wraps the same server in a window.
+
+## What it costs
+
+Measured on Helsinki's tram feed, in the console's own health line:
+
+| Holding | Taking it in | Drawing |
+| --- | --- | --- |
+| 128k messages · 6.7k topics · 36.8 MB | 1 ms per second | 47 fps |
+
+Arrivals are handed to the interface a frame at a time, 2,000 at most — about 120k a second — so
+a burst fills the log rather than locking the window. The log keeps half a million messages and
+drops the oldest.
 
 ## From source
 
