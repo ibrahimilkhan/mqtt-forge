@@ -15,15 +15,15 @@ import type { Summary } from './stats';
 export const SCALES = {
   extremes: {
     label: 'Extremes — every reading inside the plot',
-    hint: 'the lowest and highest readings are the top and bottom of the plot',
+    hint: 'the lowest and highest readings are the plot’s top and bottom',
   },
   typical: {
     label: 'Typical — scaled to where the readings mostly are',
-    hint: 'scaled to the middle of the run; readings past the edge are pinned to it and counted',
+    hint: 'scaled to the middle of the run; readings past the edge are pinned and counted',
   },
   log: {
     label: 'Logarithmic — each decade the same height',
-    hint: 'ten to a hundred takes the same height as a hundred to a thousand; positive runs only',
+    hint: 'every decade the same height; positive runs only',
   },
 } as const;
 

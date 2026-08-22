@@ -71,6 +71,16 @@
   overflow-wrap: anywhere;
 }
 
+/* A section at the foot of a panel that is not what the panel is for: a way in for someone with
+   nothing of their own to point at yet, kept behind the fields rather than in front of them. The
+   rule is the same one the summary uses — this is another block that has stopped being the form.
+   The margin is doubled, because the thing above it is usually already a ruled block. */
+.aside {
+  margin-top: 22px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule);
+}
+
 /* The filter box takes a whole list, so it is a textarea — but it should still read as a
    one-line field until someone pastes more into it. */
 .filterInput { min-height: 0; resize: vertical; }

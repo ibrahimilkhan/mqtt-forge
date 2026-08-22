@@ -1,21 +1,27 @@
 /**
  * The colours offered before the picker, and what to call them.
  *
- * Chosen to be told apart from each other at the size of a 7px dot, and to sit away from the
- * ink and muted greys the rows are already drawn in. Free choice is one click further on — this
- * is the shortlist, not the limit.
+ * Pastel rather than poster paint: these sit on topic names in the log and the tree, hundreds of
+ * rows of them at once, and a wall of fully saturated hues turns a list into a warning sign. So
+ * the saturation is held down around a third, which is what makes them read as soft, and the
+ * lightness is held where each one still clears 4.5:1 against the white a row is drawn on —
+ * softened, not faded. A colour nobody can read is not a colour rule, it is a decoration.
  *
- * Named because the name is what a screen reader can use. '#0d7a63' read out is a spelling test.
+ * Seven hues spread around the wheel and a neutral at the end, so two of them are told apart at
+ * the size of a 7px dot rather than only side by side in the popover. Free choice is one click
+ * further on — this is the shortlist, not the limit.
+ *
+ * Named because the name is what a screen reader can use. '#2e6d7a' read out is a spelling test.
  */
 export const PALETTE = [
-  { name: 'Brick', value: '#ab3520' },
-  { name: 'Amber', value: '#b45309' },
-  { name: 'Ochre', value: '#8a6d00' },
-  { name: 'Teal', value: '#0d7a63' },
-  { name: 'Blue', value: '#1e40af' },
-  { name: 'Violet', value: '#6d28d9' },
-  { name: 'Magenta', value: '#a21caf' },
-  { name: 'Slate', value: '#3f5060' },
+  { name: 'Rose', value: '#b7514e' },
+  { name: 'Clay', value: '#996538' },
+  { name: 'Sage', value: '#3b7257' },
+  { name: 'Teal', value: '#2e6d7a' },
+  { name: 'Cornflower', value: '#456eb5' },
+  { name: 'Lilac', value: '#8161b3' },
+  { name: 'Orchid', value: '#9f5085' },
+  { name: 'Storm', value: '#5c6f84' },
 ] as const;
 
 export const SUGGESTED = PALETTE.map((colour) => colour.value);

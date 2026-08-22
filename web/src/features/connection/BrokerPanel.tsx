@@ -12,7 +12,13 @@ import { describeConnectFailure, describeFailureReason } from './connectFailure'
 import { ConnectionSummary } from './ConnectionSummary';
 import { useConnectionActions } from './useConnectionActions';
 import { BrokerPresets } from './BrokerPresets';
-import { BROKER_PRESETS, NO_PRESET_FILTER, type BrokerPreset } from './presets';
+import {
+  BROKER_PRESETS,
+  LOCAL_PRESETS,
+  NO_PRESET_FILTER,
+  PUBLIC_PRESETS,
+  type BrokerPreset,
+} from './presets';
 
 const DEFAULTS = {
   host: 'localhost',
@@ -125,7 +131,13 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <PanelShell title="Broker" onClose={onClose}>
-      <BrokerPresets active={activePreset} onPick={applyPreset} />
+      <BrokerPresets
+        presets={LOCAL_PRESETS}
+        title="Start from a broker"
+        labelId="presetsLabel"
+        active={activePreset}
+        onPick={applyPreset}
+      />
 
       <div className={styles.row}>
         <Field label="Host" htmlFor="host">
@@ -253,6 +265,20 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
       )}
 
       <ConnectionSummary />
+
+      {/* At the foot, behind everything the panel is for. None of these is the answer to 'which
+          broker am I connecting to', and four chips above the form were four things to read past
+          on every visit. The section says once what its chips are, so no chip has to. */}
+      <section className={styles.aside}>
+        <BrokerPresets
+          presets={PUBLIC_PRESETS}
+          title="Or someone else's broker"
+          labelId="publicPresetsLabel"
+          hint="Open to anyone, shared with everyone. Never for anything private."
+          active={activePreset}
+          onPick={applyPreset}
+        />
+      </section>
     </PanelShell>
   );
 }
