@@ -2,6 +2,7 @@ using FluentValidation;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Net.Http.Headers;
+using MqttForge.Api.Contracts;
 using MqttForge.Api.ErrorHandling;
 using MqttForge.Api.Hubs;
 using MqttForge.Api.Validation;
@@ -42,8 +43,12 @@ public static class MqttForgeHost
 
         // Without this, controllers 404 when the entry assembly is MqttForge.Desktop, not this one
         builder.Services.AddControllers()
-            .AddApplicationPart(typeof(MqttForgeHost).Assembly);
-        builder.Services.AddSignalR();
+            .AddApplicationPart(typeof(MqttForgeHost).Assembly)
+            .AddJsonOptions(o => WireJson.Apply(o.JsonSerializerOptions));
+
+        // The same treatment for the hub, which sends the same two DTOs. See WireJson.
+        builder.Services.AddSignalR()
+            .AddJsonProtocol(o => WireJson.Apply(o.PayloadSerializerOptions));
         builder.Services.AddFluentValidationAutoValidation();
         builder.Services.AddValidatorsFromAssemblyContaining<ConnectRequestDtoValidator>();
         builder.Services.AddProblemDetails();
