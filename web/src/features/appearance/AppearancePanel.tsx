@@ -7,7 +7,8 @@ import { MONO, SANS, SIZE, type MonoId, type SansId } from './fonts';
 
 // No selector: the panel shows every value, so it must re-render on any change.
 export function AppearancePanel({ onClose }: { onClose: () => void }) {
-  const { sans, mono, size, setSans, setMono, setSize, reset } = useAppearanceStore();
+  const { sans, mono, size, health, setSans, setMono, setSize, setHealth, reset } =
+    useAppearanceStore();
 
   return (
     <PanelShell title="Settings" onClose={onClose}>
@@ -62,6 +63,17 @@ export function AppearancePanel({ onClose }: { onClose: () => void }) {
             <span className={styles.reading}>{size}px</span>
           </div>
         </Field>
+      </div>
+
+      <div className={panel.checks}>
+        <label>
+          <input
+            type="checkbox"
+            checked={health}
+            onChange={(event) => setHealth(event.target.checked)}
+          />
+          {' Show what the console is carrying'}
+        </label>
       </div>
 
       <p className={panel.note}>Stored in this browser only.</p>
