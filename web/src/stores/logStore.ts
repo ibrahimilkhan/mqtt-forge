@@ -1,9 +1,10 @@
 import { create } from 'zustand';
 import { describeError } from '../lib/problemDetails';
-import { matchesFilter } from '../lib/topicMatch';
+import { filterPath, matchesFilter, namesOneTopic } from '../lib/topicMatch';
 import type { BodyMode } from '../lib/payload';
 import type { DecodedMessage } from '../realtime/decodeIncoming';
 import { TopicRing } from './topicRing';
+import { TopicRuns } from './topicRuns';
 
 /**
  * The longest run a topic keeps when the console can afford it.
@@ -47,7 +48,7 @@ export const TOPIC_BYTES = 256 * 1024;
  * So this is a memory budget now rather than a reading one.
  *
  * The one cost that does still grow with it is a selection covering every topic at once, which
- * has to gather everything it matches whatever holds it: about 6ms here, inside a frame.
+ * has to gather every run there is however it finds them: about 7ms here, inside a frame.
  *
  * Reached by breadth rather than by depth: a broker with more topics than this affords at
  * TOPIC_DEPTH has every run narrowed to what fits, down to MIN_TOPIC_ENTRIES, rather than
@@ -60,10 +61,12 @@ export const TOPIC_BYTES = 256 * 1024;
  * Half that is about 230MB, and at fifty messages a second it is still close to three hours of
  * history where the first version of this log held a hundred seconds.
  *
- * There is a cheaper million available and it is not taken here: `at` is a Date on every entry
- * and costs about 86 bytes each for something only ever rendered as a time, and the stamps are
- * built up front rather than when a row is drawn. Together they are more than a third of what
- * an entry weighs, measured. Worth having, and a different change from this one.
+ * The cheaper million promised here has since been taken: `at` is the number a clock gives
+ * rather than a Date built around it, and an arrival's stamps are written when a row is drawn
+ * rather than when the message is filed. Measured over two hundred thousand of Helsinki's
+ * messages, an entry weighed 248 bytes and now weighs 120 — so the same ceiling costs about
+ * 110MB where it cost 230MB, and the number below could rise again if a longer memory were
+ * wanted more than a smaller one.
  */
 export const MAX_LOG_ENTRIES = 500_000;
 
@@ -91,15 +94,29 @@ type LogKind = 'recv' | 'ok' | 'fault';
 export type LogEntry = {
   id: number;
   kind: LogKind;
-  at: Date;
+  /**
+   * When it arrived, as a clock reads it.
+   *
+   * A number rather than a Date, and the log holds half a million of these: a Date costs about
+   * 86 bytes to say what eight say here, for something only ever read back as a time on one row
+   * on screen. The row builds its own Date, over the few entries it is drawing.
+   */
+  at: number;
   /** What a command did, in words. An arrival has none: the pane holds nothing else. */
   verb?: string;
   topic?: string;
   body?: string;
+  /**
+   * What a command wants said on its row. An arrival has none — `stampsFor` writes an arrival's
+   * from the fields below when a row is drawn, rather than holding four strings and an array per
+   * message for a line most of them are never on screen for.
+   */
   stamps?: string[];
   // Kept apart from the display stamps so re-publishing an entry doesn't mean parsing its labels.
   qos?: number;
   retain?: boolean;
+  /** Bytes on the wire, which a hex body's text is twice the length of. */
+  size?: number;
   /** How `body` is written. Absent means text, which is what every entry was before hex. */
   mode?: BodyMode;
 };
@@ -124,8 +141,11 @@ export type LogState = {
    *
    * Mutated in place, deliberately — rebuilding a map of thousands of topics on every batch
    * would be the very cost this removes. `version` is what says something changed.
+   *
+   * A map with an order over its topics, so a filter naming a branch is looked up rather than
+   * matched against everything held; `TopicRuns` says what that cost before.
    */
-  byTopic: Map<string, TopicRing>;
+  byTopic: TopicRuns;
   /** How many arrivals are held across every topic, for the ceiling above. */
   held: number;
   /** Bumped on every change, because the two structures above are mutated rather than replaced. */
@@ -139,13 +159,13 @@ let nextId = 0;
 
 export const useLogStore = create<LogState>((set) => ({
   commands: [],
-  byTopic: new Map(),
+  byTopic: new TopicRuns(),
   held: 0,
   version: 0,
 
   push: (entry) =>
     set((state) => {
-      const written = { ...entry, id: nextId++, at: new Date() };
+      const written = { ...entry, id: nextId++, at: Date.now() };
 
       // An arrival can arrive this way too — the renderer seeds the console with them — and it
       // belongs with the traffic wherever it came from.
@@ -197,6 +217,12 @@ function file(state: LogState, entry: LogEntry, held: number): number {
 }
 
 /**
+ * What narrowing asks of the runs: to walk them, and to let one go. A plain Map answers it, so
+ * the rule below can be exercised without standing a whole log up.
+ */
+type Narrowing = ReadonlyMap<string, TopicRing> & { delete: (topic: string) => boolean };
+
+/**
  * Brings the console back inside its ceiling by making every run shorter.
  *
  * Depth is what gives way, not breadth. Dropping whole topics was the first thing tried and it
@@ -209,7 +235,7 @@ function file(state: LogState, entry: LogEntry, held: number): number {
  * It walks the topics rather than the messages, so it is cheap even then.
  */
 export function narrowRuns(
-  byTopic: Map<string, TopicRing>,
+  byTopic: Narrowing,
   held: number,
   // A parameter so the rule can be exercised without a million messages; the console never
   // passes anything but its own ceiling.
@@ -235,7 +261,7 @@ export function narrowRuns(
  * The ones that go are those whose newest message is oldest: a topic still moving is one
  * somebody may be watching.
  */
-function evictQuietest(byTopic: Map<string, TopicRing>, held: number, ceiling: number): number {
+function evictQuietest(byTopic: Narrowing, held: number, ceiling: number): number {
   const byAge = [...byTopic.entries()]
     .map(([topic, ring]) => ({ topic, ring, newest: ring.newestId }))
     .sort((a, b) => a.newest - b.newest);
@@ -257,26 +283,42 @@ export const logFault = (verb: string, error: unknown, topic?: string) =>
   useLogStore.getState().push({ kind: 'fault', verb, topic, body: describeError(error) });
 
 function toEntry(message: DecodedMessage): LogEntry {
-  const stamps = [`QoS ${message.qos}`];
-  if (message.retain) stamps.push('RETAINED');
-  stamps.push(payloadSize(message.size));
-  if (message.mode === 'hex') stamps.push('BIN');
-
   return {
     id: nextId++,
     kind: 'recv',
-    at: new Date(message.receivedAt),
+    at: Date.parse(message.receivedAt),
     // No verb, and no arrow standing in for one. The pane holds arrivals and nothing else now,
     // so a mark on every row saying 'this one arrived' distinguished it from nothing — it was
     // read once and then became a column of identical glyphs to look past. The commands keep
     // their words: they say what was attempted, which is not something the row shows otherwise.
     topic: message.topic,
     body: message.payload,
-    stamps,
     qos: message.qos,
     retain: message.retain,
+    size: message.size,
     mode: message.mode,
   };
+}
+
+/**
+ * The labels on a row: what a command did, or what an arrival cost and how it came.
+ *
+ * An arrival's are written here, at the moment a row is drawn, rather than held on the entry
+ * from the moment it is filed. There are half a million entries and a screen's worth of rows,
+ * and the four strings and the array holding them were 32 bytes an entry — paid on every
+ * message for a line most of them are never on screen for. A command keeps the words it was
+ * given: what it says is not something its other fields could be read back into.
+ */
+export function stampsFor(entry: LogEntry): string[] | undefined {
+  if (entry.stamps) return entry.stamps;
+  if (entry.kind !== 'recv') return undefined;
+
+  const stamps = [`QoS ${entry.qos ?? 0}`];
+  if (entry.retain) stamps.push('RETAINED');
+  if (entry.size !== undefined) stamps.push(payloadSize(entry.size));
+  if (entry.mode === 'hex') stamps.push('BIN');
+
+  return stamps;
 }
 
 // Counted where the bytes were still bytes: a hex body is two characters per byte, so measuring
@@ -289,15 +331,17 @@ function payloadSize(bytes: number): string {
 /**
  * What the log holds on one filter, newest first.
  *
- * Two steps rather than one scan: which topics the filter covers, and then their runs. The
- * first is asked of the topics, the second copies without matching anything — so the work is
- * set by how much the reader asked for, not by how much the log happens to be holding.
+ * Two steps rather than one scan: which topics the filter covers, and then their runs. Neither
+ * step matches anything against the whole log — the first reads the shape of the filter and
+ * finds the topics in order, the second copies — so the work is set by how much the reader
+ * asked for, not by how much the log happens to be holding.
  *
  * A filter covering one topic is the ordinary case — every leaf in the tree selects `path/#` —
- * and it is answered by reading one run. Several are merged on `id`, which only ever goes up,
- * so it orders arrivals across topics exactly as they arrived.
+ * and it really is answered by reading one run now: measured on a broker with twenty thousand
+ * topics, 0.6ms where the walk that used to find it cost 15.2. Several runs are merged on `id`,
+ * which only ever goes up, so it orders arrivals across topics exactly as they arrived.
  */
-export function runFor(byTopic: ReadonlyMap<string, TopicRing>, filter: string): LogEntry[] {
+export function runFor(byTopic: TopicRuns, filter: string): LogEntry[] {
   const runs = runsFor(byTopic, filter);
 
   if (runs.length === 0) return [];
@@ -355,16 +399,48 @@ export function runsOf(entries: readonly LogEntry[]): LogEntry[][] {
  *
  * Each run is newest first, which is what a series wants: it takes its window off the front.
  */
-export function runsFor(byTopic: ReadonlyMap<string, TopicRing>, filter: string): LogEntry[][] {
+export function runsFor(byTopic: TopicRuns, filter: string): LogEntry[][] {
   if (!filter) return [];
 
   const runs: LogEntry[][] = [];
-  for (const [topic, ring] of byTopic) {
-    if (!matchesFilter(filter, topic)) continue;
-
+  for (const ring of ringsFor(byTopic, filter)) {
     const run = ring.newestFirst();
     if (run.length > 0) runs.push(run);
   }
 
   return runs;
 }
+
+/** The filter the broker row selects, which every topic is under. */
+const EVERY_TOPIC = '#';
+
+/**
+ * The runs a filter covers, found rather than searched for wherever its shape allows.
+ *
+ * Nearly every filter the console asks about names a place in the tree: a row selects its own
+ * `path/#`, the broker row selects `#`, and a colour rule or a hand-typed filter is the only
+ * thing that arrives with a `+` in the middle. So the shape of the filter is read first, and
+ * only what is left over is matched against every topic there is — which is what this used to
+ * do for all of them, at 15.2ms a read on a broker with twenty thousand topics.
+ */
+function ringsFor(byTopic: TopicRuns, filter: string): Iterable<TopicRing> {
+  if (filter === EVERY_TOPIC) return byTopic.all();
+
+  if (namesOneTopic(filter)) {
+    const ring = byTopic.get(filter);
+
+    return ring ? [ring] : [];
+  }
+
+  const branch = filterPath(filter);
+  if (branch !== null) return byTopic.covering(branch);
+
+  // A '+' in the middle, or a '#' with anything after it: nothing an order can answer.
+  const matched: TopicRing[] = [];
+  for (const [topic, ring] of byTopic) {
+    if (matchesFilter(filter, topic)) matched.push(ring);
+  }
+
+  return matched;
+}
+

@@ -6,6 +6,7 @@ import {
   narrowRuns,
   MIN_TOPIC_ENTRIES,
   runFor,
+  stampsFor,
   TOPIC_BYTES,
   TOPIC_DEPTH,
   useLogStore,
@@ -41,15 +42,13 @@ describe('what the log makes of an arrival', () => {
     expect(arrivals().map((e) => e.topic)).toEqual(['c', 'b', 'a']);
   });
 
+  // The stamps are written when a row is drawn rather than held on the entry, so this asks the
+  // entry for what a row would show rather than for a field.
   it('turns QoS, retain and payload size into stamps', () => {
     send(message('a', '1', { qos: 2, retain: true }));
 
-    expect(arrivals()[0]).toMatchObject({
-      kind: 'recv',
-      topic: 'a',
-      body: '1',
-      stamps: ['QoS 2', 'RETAINED', '1B'],
-    });
+    expect(arrivals()[0]).toMatchObject({ kind: 'recv', topic: 'a', body: '1' });
+    expect(stampsFor(arrivals()[0])).toEqual(['QoS 2', 'RETAINED', '1B']);
   });
 
   // Only commands carry a verb. Everything that reaches the pane arrived, so a word saying so
@@ -63,30 +62,42 @@ describe('what the log makes of an arrival', () => {
   it('leaves the retained stamp off when the message is not retained', () => {
     send(message('a', '1', { qos: 1 }));
 
-    expect(arrivals()[0].stamps).toEqual(['QoS 1', '1B']);
+    expect(stampsFor(arrivals()[0])).toEqual(['QoS 1', '1B']);
   });
 
   it('sizes the payload in bytes, not characters', () => {
     send(message('a', 'ölçüm'));
 
-    expect(arrivals()[0].stamps).toContain('8B');
+    expect(stampsFor(arrivals()[0])).toContain('8B');
   });
 
   it('switches to kB once the payload passes a kilobyte', () => {
     send(message('a', 'x'.repeat(2048)));
 
-    expect(arrivals()[0].stamps).toContain('2.0kB');
+    expect(stampsFor(arrivals()[0])).toContain('2.0kB');
   });
 
   it('stamps a binary arrival with its real byte count, not the hex length', () => {
     send(message('a', '01 A4 FF', { mode: 'hex', size: 3 }));
 
     expect(arrivals()[0]).toMatchObject({ mode: 'hex' });
-    expect(arrivals()[0].stamps).toEqual(expect.arrayContaining(['3B', 'BIN']));
+    expect(stampsFor(arrivals()[0])).toEqual(expect.arrayContaining(['3B', 'BIN']));
   });
 });
 
 describe('what this console did', () => {
+  it('keeps the words a command was given, rather than writing its own', () => {
+    useLogStore.getState().push({ kind: 'ok', verb: 'Subscribed', topic: 'a/#', stamps: ['QoS 1'] });
+
+    expect(stampsFor(useLogStore.getState().commands[0])).toEqual(['QoS 1']);
+  });
+
+  it('gives a command with no words of its own no stamps', () => {
+    useLogStore.getState().push({ kind: 'fault', verb: 'Subscribe failed', topic: 'a/#' });
+
+    expect(stampsFor(useLogStore.getState().commands[0])).toBeUndefined();
+  });
+
   it('puts the newest command first', () => {
     useLogStore.getState().push({ kind: 'ok', verb: 'Connected' });
     useLogStore.getState().push({ kind: 'ok', verb: 'Subscribed' });
@@ -178,7 +189,7 @@ describe('the ceiling across every topic', () => {
   const ringOf = (count: number, from = 0) => {
     const ring = new TopicRing({ maxItems: TOPIC_DEPTH, maxBytes: TOPIC_BYTES });
     for (let i = 0; i < count; i++) {
-      ring.push({ id: from + i, kind: 'recv', at: new Date(0), topic: 't', body: '.' });
+      ring.push({ id: from + i, kind: 'recv', at: 0, topic: 't', body: '.' });
     }
     return ring;
   };

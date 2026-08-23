@@ -10,7 +10,7 @@ const entries = (topic: string, ...bodies: Array<string | undefined>): LogEntry[
     .map((body, index) => ({
       id: nextId++,
       kind: 'recv' as const,
-      at: new Date(2026, 0, 1, 12, 0, index),
+      at: new Date(2026, 0, 1, 12, 0, index).getTime(),
       topic,
       body,
     }))

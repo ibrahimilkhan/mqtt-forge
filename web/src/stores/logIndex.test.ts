@@ -43,6 +43,14 @@ describe('the topic index answers exactly what a scan would', () => {
     'a',
     'a/b',
     'a/b/c',
+    // Names that only begin with another topic's letters. '.' and '-' sort before '/', so these
+    // land between a branch and its children in any order over the topics.
+    'plant.spare',
+    'plant-standby/line1/temp',
+    'plants',
+    'plantation/line1/temp',
+    'sensors',
+    'sensorsx/temp',
   ];
 
   const FILTERS = [
@@ -61,6 +69,12 @@ describe('the topic index answers exactly what a scan would', () => {
     'a/b/#',
     'nothing/here/#',
     'a/b/c/d',
+    // A leaf's own filter, which is what clicking a row in the tree asks for.
+    'plant/line1/cell2/sensor7/temp/#',
+    'plant/#',
+    'plants/#',
+    'sensors',
+    '/hfp/v2/journey/tram/0040/#',
   ];
 
   const flood = () => {

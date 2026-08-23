@@ -3,7 +3,7 @@ import type { LogEntry } from './logStore';
 import { TopicRing } from './topicRing';
 
 let id = 0;
-const entry = (body = 'x'): LogEntry => ({ id: id++, kind: 'recv', at: new Date(0), topic: 't', body });
+const entry = (body = 'x'): LogEntry => ({ id: id++, kind: 'recv', at: 0, topic: 't', body });
 
 const bodies = (ring: TopicRing) => ring.newestFirst().map((e) => e.body);
 

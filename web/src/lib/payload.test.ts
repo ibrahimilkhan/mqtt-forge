@@ -154,6 +154,31 @@ describe('byteLength', () => {
     expect(byteLength('ö')).toBe(2);
     expect(byteLength('abc')).toBe(3);
   });
+
+  it('counts the same as encoding would', () => {
+    const encoder = new TextEncoder();
+    const cases = [
+      '',
+      'plain ascii',
+      '{"temp":21.4,"unit":"°C"}',
+      'ölçüm',
+      '€100',
+      '☃',
+      '😀 done',
+      '𐍈',
+      // Half of a pair with nothing after it, and one with the wrong thing after it: both are
+      // written out as the replacement character, and both used to be able to walk past a
+      // character that was never part of the pair.
+      '\ud800',
+      '\ud800ö',
+      '\udc00',
+      'a😀b',
+    ];
+
+    for (const text of cases) {
+      expect([text, byteLength(text)]).toEqual([text, encoder.encode(text).length]);
+    }
+  });
 });
 
 describe('encodePayload', () => {

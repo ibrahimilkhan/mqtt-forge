@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer } from 'react';
 import { useRuleLookup } from '../../lib/useRuleLookup';
-import { matchesFilter, treeFilter } from '../../lib/topicMatch';
+import { filterPath, matchesFilter, treeFilter } from '../../lib/topicMatch';
 import {
-  filterPath,
   flattenTree,
   MAX_TREE_ROWS,
   nodeAt,

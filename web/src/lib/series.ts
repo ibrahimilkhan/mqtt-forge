@@ -76,7 +76,9 @@ export function numericSeries(entries: LogEntry[], field?: string | null): Serie
     const value = readingOf(window[i], path);
     if (value === null) continue;
 
-    readings.push({ value, at: window[i].at });
+    // The log holds the moment as a number; a reading is one of at most MAX_PLOT the chart is
+    // about to draw, and everything downstream of here reads it as a clock.
+    readings.push({ value, at: new Date(window[i].at) });
     low = Math.min(low, value);
     high = Math.max(high, value);
   }

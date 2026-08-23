@@ -1,6 +1,6 @@
 import { asReading } from './number';
 import type { BodyMode } from './payload';
-import { matchesFilter } from './topicMatch';
+import { filterPath, matchesFilter } from './topicMatch';
 
 export type TopicNode = {
   name: string;
@@ -386,20 +386,6 @@ export function snapshotUnder(root: TopicNode, filter: string): Map<string, Topi
   return frozen;
 }
 
-/**
- * The path a `path/#` filter hangs off, or null for anything that does not name one — a filter
- * with a `+` in it, or the `#` that means every topic there is.
- *
- * Every hold the tree can take is a row's own filter, so this answers with that row's path: what
- * the hold is over, which is also what has to be kept out of the counts above it.
- */
-export function filterPath(filter: string): string | null {
-  if (!filter.endsWith('/#') || filter.includes('+')) return null;
-
-  const path = filter.slice(0, -2);
-
-  return path.includes('#') ? null : path;
-}
 
 /** The node at a slash-separated path, or null where the tree has none. */
 export function nodeAt(root: TopicNode, path: string): TopicNode | null {

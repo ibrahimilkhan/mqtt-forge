@@ -1,7 +1,7 @@
 import { memo, useState, type CSSProperties } from 'react';
 import type { ColourRule } from '../../lib/topicColour';
 import { useComposeStore } from '../../stores/composeStore';
-import type { LogEntry } from '../../stores/logStore';
+import { stampsFor, type LogEntry } from '../../stores/logStore';
 import styles from './WireLog.module.css';
 
 /**
@@ -67,6 +67,10 @@ export const LogEntryRow = memo(function LogEntryRow({
     if (entry.topic) onLoaded?.(entry.topic);
   };
 
+  // Written here rather than carried on the entry: a row is drawn a screen at a time, where the
+  // log holds half a million of them.
+  const stamps = stampsFor(entry);
+
   return (
     <div
       className={styles.entry}
@@ -94,15 +98,15 @@ export const LogEntryRow = memo(function LogEntryRow({
           and the payload that are what the row is actually about. An arrival adds no verb to it —
           the pane holds nothing but arrivals, so there is nothing for one to tell apart. */}
       <div className={styles.entryHead} data-testid="head">
-        <span>{entry.at.toLocaleTimeString('en-GB', { hour12: false })}</span>
+        <span>{new Date(entry.at).toLocaleTimeString('en-GB', { hour12: false })}</span>
         {entry.verb && (
           <span className={styles.verb} data-testid="verb">
             {entry.verb}
           </span>
         )}
-        {entry.stamps && (
+        {stamps && (
           <span className={styles.stamps}>
-            {entry.stamps.map((stamp) => (
+            {stamps.map((stamp) => (
               <span key={stamp} className={styles.stamp} data-stamp={stamp}>
                 {stamp}
               </span>

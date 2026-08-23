@@ -17,7 +17,7 @@ const run = (endedAgo: number, count = 8): LogEntry[] =>
   Array.from({ length: count }, (_, i) => ({
     id: nextId++,
     kind: 'recv' as const,
-    at: new Date(Date.now() - endedAgo - i * 1000),
+    at: Date.now() - endedAgo - i * 1000,
     topic: 'sensors/temp',
     body: `${20 + (i % 3)}`,
   }));
@@ -58,7 +58,7 @@ describe('a run that gets shorter under an opened reading', () => {
     Array.from({ length: 30 }, (_, i) => ({
       id: id++,
       kind: 'recv' as const,
-      at: new Date(Date.parse('2026-08-21T00:00:00Z') - i * 1000),
+      at: Date.parse('2026-08-21T00:00:00Z') - i * 1000,
       topic: 'sensors/env',
       // Every message carries `a`; only the newest three carry `b`.
       body: i < 3 ? JSON.stringify({ a: 20 + i, b: 5 + i }) : JSON.stringify({ a: 20 + i }),

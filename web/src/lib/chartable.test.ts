@@ -17,7 +17,7 @@ const log = (...messages: Array<[topic: string, body: string]>): LogEntry[] =>
     .map(([topic, body], index) => ({
       id: nextId++,
       kind: 'recv' as const,
-      at: new Date(2026, 0, 1, 12, 0, index),
+      at: new Date(2026, 0, 1, 12, 0, index).getTime(),
       topic,
       body,
     }))

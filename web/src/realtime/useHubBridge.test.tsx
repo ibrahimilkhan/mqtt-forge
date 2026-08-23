@@ -3,7 +3,7 @@ import { act, renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { queryKeys } from '../api/queryKeys';
-import { MAX_LOG_ENTRIES, runFor, useLogStore } from '../stores/logStore';
+import { MAX_LOG_ENTRIES, runFor, stampsFor, useLogStore } from '../stores/logStore';
 import { useHealthStore } from '../stores/healthStore';
 import { usePauseStore } from '../stores/pauseStore';
 import { useTopicTreeStore } from '../stores/topicTreeStore';
@@ -85,11 +85,8 @@ describe('useHubBridge', () => {
     ]);
     frames[0]();
 
-    expect(arrivals()[0]).toMatchObject({
-      mode: 'hex',
-      body: '01 A4 FF',
-      stamps: expect.arrayContaining(['BIN']),
-    });
+    expect(arrivals()[0]).toMatchObject({ mode: 'hex', body: '01 A4 FF', size: 3 });
+    expect(stampsFor(arrivals()[0])).toEqual(expect.arrayContaining(['BIN']));
 
     const node = useTopicTreeStore.getState().root.children.get('device')?.children.get('binary');
     expect(node).toMatchObject({ latestMode: 'hex', latestPayload: '01 A4 FF' });
