@@ -1055,3 +1055,88 @@ describe('a port that implies a scheme', () => {
     expect(screen.getByRole('radio', { name: 'wss' })).toBeChecked();
   });
 });
+
+// The advice connectFailure.ts has written in prose since it was built, as a button. This is
+// where a reader who did not know which of the four to pick actually finds out.
+describe('a failure that names the scheme it should have been', () => {
+  const failWith = (reason: string) =>
+    server.use(
+      http.post('/api/connection', () =>
+        HttpResponse.json(
+          { title: 'Could not connect to broker', detail: 'raw backend detail', reason },
+          { status: 502 },
+        ),
+      ),
+    );
+
+  const connect = async () =>
+    userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+
+  // The one route left to plain MQTT on the encrypted port, and the one people take: an address
+  // that names both. Typing 8883 into the Port box moves the scheme, and pressing mqtt back
+  // afterwards drags the port to 1883 with it — the panel resists this state everywhere except
+  // where the reader writes it down themselves.
+  const writeAddress = async (text: string) => {
+    const address = screen.getByLabelText('Broker address');
+    await userEvent.clear(address);
+    await userEvent.type(address, text);
+    fireEvent.blur(address);
+  };
+
+  it('offers the encrypted scheme when the encrypted port said nothing', async () => {
+    failWith('timeout');
+    renderPanel();
+
+    await writeAddress('mqtt://broker.example:8883');
+    await connect();
+
+    expect(await screen.findByRole('button', { name: 'Try mqtts:// instead' })).toBeInTheDocument();
+  });
+
+  it('retries on the scheme it offered', async () => {
+    let sent: Record<string, unknown> | undefined;
+    server.use(
+      http.post('/api/connection', async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        if (body.useTls) {
+          sent = body;
+          return HttpResponse.json({ state: 'Connected' });
+        }
+        return HttpResponse.json(
+          { title: 'Could not connect to broker', detail: 'raw', reason: 'timeout' },
+          { status: 502 },
+        );
+      }),
+    );
+    renderPanel();
+
+    await writeAddress('mqtt://broker.example:8883');
+    await connect();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Try mqtts:// instead' }));
+
+    await waitFor(() => expect(sent).toMatchObject({ useTls: true, port: 8883 }));
+  });
+
+  it('offers the plain scheme when the broker refuses encryption', async () => {
+    failWith('tlsNotOffered');
+    renderPanel();
+    await userEvent.click(screen.getByRole('radio', { name: 'mqtts' }));
+    await connect();
+
+    expect(await screen.findByRole('button', { name: 'Try mqtt:// instead' })).toBeInTheDocument();
+  });
+
+  // A rejected password is about the password. An offer standing where the real answer should
+  // be is worse than no offer.
+  it('offers nothing for a failure that is not about the scheme', async () => {
+    failWith('credentialsRejected');
+    renderPanel();
+    await connect();
+
+    expect(
+      await screen.findByText('The broker rejected the username or password.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Try / })).not.toBeInTheDocument();
+  });
+});
