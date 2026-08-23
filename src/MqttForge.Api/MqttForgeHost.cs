@@ -60,6 +60,24 @@ public static class MqttForgeHost
         var app = builder.Build();
 
         app.UseExceptionHandler();
+
+        // Before anything is served, and only while nobody has taken the question over: a host
+        // named in AllowedHosts means the operator has said which names this answers to, and
+        // ASP.NET's own filtering is already enforcing exactly that. '*' — what ships, and what
+        // an unset value means — is the case with no answer at all, which is the one that needs
+        // one. See HostGuard for why a name is refused where an address is not.
+        if (Guarding(builder.Configuration))
+            app.Use(async (context, next) =>
+            {
+                if (!HostGuard.IsAllowed(context.Request.Host.Host))
+                {
+                    context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                    return;
+                }
+
+                await next(context);
+            });
+
         if (app.Environment.IsDevelopment()) app.UseCors();
 
         app.UseDefaultFiles();
@@ -73,6 +91,13 @@ public static class MqttForgeHost
 
         return app;
     }
+
+    /// <summary>
+    /// Whether the guard applies. Setting <c>AllowedHosts</c> to anything but <c>*</c> is how an
+    /// operator says they want a name of their own answered, and hands the question to ASP.NET.
+    /// </summary>
+    private static bool Guarding(IConfiguration configuration) =>
+        configuration["AllowedHosts"] is null or "" or "*";
 
     // Vite hashes every asset filename, so those are safe to keep forever. index.html is the
     // one file whose name never changes, and it names the hashed bundles — cache it and the

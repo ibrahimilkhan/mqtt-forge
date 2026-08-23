@@ -26,7 +26,12 @@ export function useExport() {
     canChoose: data?.canChoose ?? false,
     choosing: choose.isPending,
     saving: write.isPending,
-    choose: () => choose.mutateAsync(),
+
+    // Never rejects. Its one caller is a click handler, where a bare mutateAsync() is an unhandled
+    // rejection the moment the host refuses — which it now does when a dialog is already open for
+    // the other console this app exists to be opened on. What went wrong is on the mutation, and
+    // what the reader is looking at is the folder line beside the button.
+    choose: () => choose.mutateAsync().catch(() => null),
 
     /**
      * Save the run, by whichever route this host has.
