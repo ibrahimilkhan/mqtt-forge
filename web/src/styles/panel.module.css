@@ -198,3 +198,8 @@
   gap: 0 28px;
   align-items: start;
 }
+
+/* A box held on by something else still has to look like a box that is on. The platform greys
+   the tick along with the rest of the control, and at this size a greyed tick reads as no tick —
+   which is the opposite of what the box means. Grey the colour, keep the tick. */
+.checks input:disabled { accent-color: var(--muted); cursor: default; }

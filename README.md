@@ -72,6 +72,10 @@ Every MQTT there is, over every way in:
 - **A connection that fails on the wrong one says so with a button.** A broker that refuses
   encryption, or a plain connection that gets nothing back from the port brokers listen for
   encrypted ones on, both offer the scheme they point at and retry on it.
+- **The Broker tab is the readout** — green while a link is up, and breathing, so a glance at
+  the rail answers "is this thing connected" without opening anything. Red with a warning mark
+  when something is wrong, including the console losing its own link to the server. The address
+  it is pointed at is in its tooltip.
 - **Brokers you keep** — press **Save this broker**, give it a name, and it becomes a chip at
   the foot of the panel that fills the form back in. Saved to `saved-brokers.json` beside the
   rest, so one mounted volume keeps them. Passwords are written but never sent back to the
@@ -156,7 +160,7 @@ docker run -d -p 5169:5169 --name mqtt-forge ghcr.io/ibrahimilkhan/mqtt-forge
 
 **2. Open http://localhost:5169.** It loads with the Broker panel already open.
 
-**3. Point it at your broker** — paste the address, then **Connect**. The one off your broker's
+**3. Point it at your broker** — paste the address and press **Enter**. The one off your broker's
 own documentation goes in whole: `mqtts://host:8883` into **Broker address**, and the way in, the
 port and any WebSocket path sort themselves out. A hostname on its own works too; the dropdown
 beside it and the box below say how it will connect. Which host depends on where the broker runs:
