@@ -9,7 +9,7 @@ import styles from '../../styles/panel.module.css';
 import { useConnectionState } from '../../api/useConnectionState';
 import { fieldError } from '../../lib/problemDetails';
 import { useGuardedMutate } from '../../lib/useGuardedMutate';
-import { parseBrokerAddress } from './address';
+import { formatBrokerAddress } from './address';
 import { describeConnectFailure, describeFailureReason } from './connectFailure';
 import { ConnectionSummary } from './ConnectionSummary';
 import { useConnectionActions } from './useConnectionActions';
@@ -34,7 +34,7 @@ import {
   versionNote,
   type Scheme,
 } from './scheme';
-import { buildConnectRequest, formFromSaved, type BrokerForm } from './brokerForm';
+import { applyAddress, buildConnectRequest, formFromSaved, type BrokerForm } from './brokerForm';
 
 const DEFAULTS: BrokerForm = {
   scheme: 'mqtt',
@@ -84,6 +84,13 @@ const VERSION_OPTIONS = VERSIONS.map((v) => ({ value: v.value, label: v.label })
  */
 export function BrokerPanel({ onClose }: { onClose: () => void }) {
   const [form, setForm] = useState(DEFAULTS);
+  // The Broker address box's own text. The form holds the scheme and the host; this is how they
+  // look written down, and it is separate because a controlled box built from them directly
+  // would have to be re-parsed on every keystroke — which is exactly what splitting on the way
+  // out of the box exists to avoid.
+  const [addressText, setAddressText] = useState(
+    formatBrokerAddress(DEFAULTS.scheme, DEFAULTS.host),
+  );
   const [autoSubscribe, setAutoSubscribe] = useState(true);
   // What auto-subscribe actually asks for. It used to be a hard-coded '#', which every public
   // broker tested refuses — one of them by closing the session, so the console connected and
@@ -110,8 +117,13 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
   // was closed when the attempt started — or reopened since — has to go on.
   const attemptRunning = isConnecting || connectMutation.isPending;
 
-  // Derived, not remembered: type over the host and the chip goes out by itself, with no second
-  // copy of the truth to get out of step with the fields.
+  // Derived, not remembered: type over the address and the chip goes out by itself, with no
+  // second copy of the truth to get out of step with the box.
+  //
+  // Against what the box says, not against the form. The form does not move until the box is
+  // left, and a chip left lit beside an address it no longer matches is a chip claiming
+  // something untrue for as long as the typing takes. One string carries the scheme and the
+  // host together, which is also what makes this one comparison rather than three.
   //
   // A preset with no host of its own is never the answer. Three cloud services sit on 8883 over
   // mqtts, so an empty host matched all three and lit whichever came first in the list — press
@@ -119,13 +131,32 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
   // What the form matches is a question those presets deliberately do not answer; `picked` is.
   const activePreset =
     BROKER_PRESETS.find(
-      (p) => p.host !== '' && p.host === form.host && p.port === form.port && p.scheme === form.scheme,
+      (p) =>
+        p.host !== '' &&
+        formatBrokerAddress(p.scheme, p.host) === addressText &&
+        p.port === form.port,
     ) ?? null;
+
+  /**
+   * The form and the address box, moved together.
+   *
+   * They are one value in two places, and everything that moves either of them — a preset, the
+   * saved settings, a scheme chip, a port that implies a scheme, an address typed into the box
+   * itself — goes through here, so they cannot come apart. Typing is the one exception, and only
+   * until the box is left.
+   *
+   * No effect syncing the box from the form: one would fight with the typing it is meant to
+   * leave alone.
+   */
+  const settle = (next: BrokerForm) => {
+    setForm(next);
+    setAddressText(formatBrokerAddress(next.scheme, next.host));
+  };
 
   const applyPreset = (preset: BrokerPreset) => {
     setPicked(preset.name);
-    setForm((current) => ({
-      ...current,
+    settle({
+      ...form,
       host: preset.host,
       port: preset.port,
       scheme: preset.scheme,
@@ -135,7 +166,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
       // A password typed for one broker must not travel to another; these are all public.
       password: '',
       alpnProtocol: preset.tls?.alpnProtocol ?? '',
-    }));
+    });
     setOnConnectFilter(preset.onConnectFilter);
   };
 
@@ -144,38 +175,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
   // commonest switch of the four and keeps the same path, and a path typed under a TCP scheme
   // is dropped on the way out rather than saved against a connection that never used it.
   const pickScheme = (scheme: Scheme) =>
-    setForm((current) => ({
-      ...current,
-      scheme,
-      port: portFor(current.scheme, scheme, current.port),
-    }));
-
-  /**
-   * A whole address dropped into the Host box, taken apart into the fields it names.
-   *
-   * Answers whether it took anything, so the caller can fall back to treating the text as a
-   * hostname. What the address does not say is left as it stands rather than reset: pasting
-   * `mqtts://host` over a port somebody typed should move the port the way picking `mqtts`
-   * moves it, and no further.
-   */
-  const takeAddress = (text: string): boolean => {
-    const parsed = parseBrokerAddress(text);
-    if (!parsed) return false;
-
-    setForm((current) => {
-      const scheme = parsed.scheme ?? current.scheme;
-
-      return {
-        ...current,
-        scheme,
-        host: parsed.host,
-        port: parsed.port ?? portFor(current.scheme, scheme, current.port),
-        webSocketPath: parsed.webSocketPath ?? current.webSocketPath,
-      };
-    });
-
-    return true;
-  };
+    settle({ ...form, scheme, port: portFor(form.scheme, scheme, form.port) });
 
   // This panel exists to get a link up, so a link coming up is the end of its job: it stands
   // aside and hands its column back to the traffic it just started. The rail's lamp and the
@@ -206,7 +206,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
     const preset = BROKER_PRESETS.find((p) => p.host === saved.host && p.port === saved.port);
     if (preset) setOnConnectFilter((current) => (current === NO_PRESET_FILTER ? preset.onConnectFilter : current));
 
-    setForm(formFromSaved(saved));
+    settle(formFromSaved(saved));
   }, [saved]);
 
   // Read off the attempt that failed, not the form, which the user may have edited since.
@@ -226,8 +226,14 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
   const set = <K extends keyof BrokerForm>(key: K, value: BrokerForm[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
 
-  const submit = () =>
-    guardedConnect({ request: buildConnectRequest(form), autoSubscribe, onConnectFilter });
+  // The box's text is reconciled here rather than relied on to have been reconciled by the blur.
+  // A pure function called from both places means there is no ordering of events in which the
+  // box shows one broker and the attempt goes to another.
+  const submit = () => {
+    const resolved = applyAddress(form, addressText);
+    settle(resolved);
+    guardedConnect({ request: buildConnectRequest(resolved), autoSubscribe, onConnectFilter });
+  };
 
   return (
     <PanelShell title="Broker" onClose={onClose}>
@@ -265,33 +271,30 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
       >
         <summary>Connect somewhere else</summary>
 
-        <Segmented
-          label="Protocol"
-          name="scheme"
-          options={SCHEME_OPTIONS}
-          value={form.scheme}
-          onChange={pickScheme}
-          note={choiceOf(form.scheme).note}
-        />
-
+        {/* The address, first, because it is the only thing the reader actually has. Every
+            broker's documentation hands you one string, and the scheme in front of it is a fact
+            about that string rather than a question to answer before reading it. */}
         <div className={styles.row}>
-          <Field label="Host" htmlFor="host">
+          <Field label="Broker address" htmlFor="address">
             <input
-              id="host"
+              id="address"
               type="text"
-              value={form.host}
-              placeholder="host, or paste mqtts://host:8883"
-              onChange={(e) => set('host', e.target.value)}
+              value={addressText}
+              placeholder="mqtts://broker.example"
+              onChange={(e) => setAddressText(e.target.value)}
               // On the paste and on the way out of the box, never on the keystroke. Splitting
               // as it is typed takes the address apart at whatever it happens to be halfway
               // through a hostname — `mqtts://b` is a complete address and would leave `b` in
               // this box with the rest of the name typed after it. A paste arrives whole, and
               // by the time the box is left the reader has finished writing in it.
               onPaste={(e) => {
-                if (takeAddress(e.clipboardData.getData('text'))) e.preventDefault();
+                e.preventDefault();
+                settle(applyAddress(form, e.clipboardData.getData('text')));
               }}
-              onBlur={(e) => takeAddress(e.target.value)}
+              onBlur={(e) => settle(applyAddress(form, e.target.value))}
             />
+            {/* Still keyed on Host. The box is an address now, but what the API refuses in it is
+                the host, and the message belongs under the box that carries it. */}
             <FieldError error={connectMutation.error} field="Host" />
           </Field>
           <Field label="Port" htmlFor="port" narrow>
@@ -305,26 +308,46 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
           </Field>
         </div>
 
-        {/* Only where it means something. On TCP there is no path, and an empty box asking for
-            one reads as a field somebody forgot to fill in. */}
-        {overWebSocket && (
-          <div className={styles.row}>
-            <Field label="WebSocket path" htmlFor="webSocketPath">
-              <input
-                id="webSocketPath"
-                type="text"
-                value={form.webSocketPath}
-                placeholder="/mqtt"
-                onChange={(e) => set('webSocketPath', e.target.value)}
-              />
-              {/* No FieldError: the API refuses no path, deliberately. A wrong one comes back as
-                  a refused upgrade, which says more than any rule here could. */}
-              <p className={styles.note}>
-                Empty means /mqtt, which is what nearly every broker publishes.
-              </p>
-            </Field>
-          </div>
-        )}
+        {/* What the address above will do, in a sentence, with nothing to press. The four names
+            are still the vocabulary — every broker's documentation writes one of them — but here
+            they are what the reader is told rather than what they are asked. */}
+        <p className={styles.note}>{choiceOf(form.scheme).note}</p>
+
+        {/* The four names, and the one field that only two of them have. Behind a fold because
+            the sentence above already answers the question for the reader who pasted an address,
+            and pressing a chip is what the reader who has to override it came here to do. */}
+        <details className={styles.more}>
+          <summary>How it connects</summary>
+
+          <Segmented
+            label="Protocol"
+            name="scheme"
+            options={SCHEME_OPTIONS}
+            value={form.scheme}
+            onChange={pickScheme}
+          />
+
+          {/* Only where it means something. On TCP there is no path, and an empty box asking for
+              one reads as a field somebody forgot to fill in. */}
+          {overWebSocket && (
+            <div className={styles.row}>
+              <Field label="WebSocket path" htmlFor="webSocketPath">
+                <input
+                  id="webSocketPath"
+                  type="text"
+                  value={form.webSocketPath}
+                  placeholder="/mqtt"
+                  onChange={(e) => set('webSocketPath', e.target.value)}
+                />
+                {/* No FieldError: the API refuses no path, deliberately. A wrong one comes back
+                    as a refused upgrade, which says more than any rule here could. */}
+                <p className={styles.note}>
+                  Empty means /mqtt, which is what nearly every broker publishes.
+                </p>
+              </Field>
+            </div>
+          )}
+        </details>
 
         <div className={styles.row}>
           <Field label="Username" htmlFor="username">

@@ -98,8 +98,11 @@ describe('BrokerPanel', () => {
 
     renderPanel();
 
-    // Defaults render first; filled once the query resolves.
-    await waitFor(() => expect(screen.getByLabelText('Host')).toHaveValue('broker.example'));
+    // Defaults render first; filled once the query resolves. The scheme comes back written into
+    // the address, since that is where it was saved from: this connection was over TLS.
+    await waitFor(() =>
+      expect(screen.getByLabelText('Broker address')).toHaveValue('mqtts://broker.example'),
+    );
     expect(screen.getByLabelText('Port')).toHaveValue(8883);
     expect(screen.getByLabelText('Client ID')).toHaveValue('saved-client');
     expect(screen.getByLabelText('Username')).toHaveValue('alice');
@@ -498,7 +501,7 @@ describe('the broker presets', () => {
     renderPanel();
     await pick(hsl.name);
 
-    expect(screen.getByLabelText('Host')).toHaveValue(hsl.host);
+    expect(screen.getByLabelText('Broker address')).toHaveValue(`mqtts://${hsl.host}`);
     expect(screen.getByLabelText('Port')).toHaveValue(hsl.port);
   });
 
@@ -550,8 +553,8 @@ describe('the broker presets', () => {
   it('stops marking the chip once the host is typed over', async () => {
     renderPanel();
     await pick(hsl.name);
-    await userEvent.clear(screen.getByLabelText('Host'));
-    await userEvent.type(screen.getByLabelText('Host'), 'somewhere.else');
+    await userEvent.clear(screen.getByLabelText('Broker address'));
+    await userEvent.type(screen.getByLabelText('Broker address'), 'somewhere.else');
 
     expect(screen.getByRole('button', { name: hsl.name })).toHaveAttribute('aria-pressed', 'false');
   });
@@ -597,7 +600,9 @@ describe('the broker presets', () => {
 
     renderPanel();
 
-    await waitFor(() => expect(screen.getByLabelText('Host')).toHaveValue('broker.example'));
+    await waitFor(() =>
+      expect(screen.getByLabelText('Broker address')).toHaveValue('mqtt://broker.example'),
+    );
     expect(screen.getByLabelText('On-connect filter')).toHaveValue('#');
   });
 
@@ -769,7 +774,7 @@ describe('a cloud service, whose address is yours', () => {
     renderPanel();
     await userEvent.click(screen.getByRole('button', { name: aws.name }));
 
-    expect(screen.getByLabelText('Host')).toHaveValue('');
+    expect(screen.getByLabelText('Broker address')).toHaveValue('mqtts://');
     expect(screen.getByLabelText('Port')).toHaveValue(aws.port);
     expect(screen.getByRole('radio', { name: 'mqtts' })).toBeChecked();
   });
@@ -780,7 +785,10 @@ describe('a cloud service, whose address is yours', () => {
   it('keeps its instructions on screen while the address is being pasted in', async () => {
     renderPanel();
     await userEvent.click(screen.getByRole('button', { name: aws.name }));
-    await userEvent.type(screen.getByLabelText('Host'), 'abc-ats.iot.eu-west-1.amazonaws.com');
+    await userEvent.type(
+      screen.getByLabelText('Broker address'),
+      'abc-ats.iot.eu-west-1.amazonaws.com',
+    );
 
     expect(screen.getByText(aws.note)).toBeInTheDocument();
   });
@@ -873,16 +881,16 @@ describe('what the panel shows first', () => {
 
 // Every broker's own documentation hands you one string. Taking it apart into a scheme, a host,
 // a port and a path is the first thing anyone does here and the easiest to get wrong, so the
-// Host box does it. The splitting itself is covered in address.test.ts; this is the wiring.
-describe('an address dropped into the Host box', () => {
+// box does it. The splitting itself is covered in address.test.ts; this is the wiring.
+describe('an address dropped into the Broker address box', () => {
   it('fills the scheme, the port and the path from a pasted URL', async () => {
     renderPanel();
 
-    const host = await screen.findByLabelText('Host');
-    await userEvent.clear(host);
+    const address = await screen.findByLabelText('Broker address');
+    await userEvent.clear(address);
     await userEvent.paste('wss://broker.emqx.io:8084/mqtt');
 
-    expect(host).toHaveValue('broker.emqx.io');
+    expect(address).toHaveValue('wss://broker.emqx.io');
     expect(screen.getByLabelText('Port')).toHaveValue(8084);
     expect(screen.getByRole('radio', { name: 'wss' })).toBeChecked();
     expect(screen.getByLabelText('WebSocket path')).toHaveValue('/mqtt');
@@ -891,26 +899,100 @@ describe('an address dropped into the Host box', () => {
   it('splits a host and port typed by hand once the box is left', async () => {
     renderPanel();
 
-    const host = await screen.findByLabelText('Host');
-    await userEvent.clear(host);
-    await userEvent.type(host, 'broker.example:8883');
-    fireEvent.blur(host);
+    const address = await screen.findByLabelText('Broker address');
+    await userEvent.clear(address);
+    await userEvent.type(address, 'broker.example:8883');
+    fireEvent.blur(address);
 
-    await waitFor(() => expect(host).toHaveValue('broker.example'));
+    await waitFor(() => expect(address).toHaveValue('mqtts://broker.example'));
     expect(screen.getByLabelText('Port')).toHaveValue(8883);
   });
 
-  // A hostname is not an address to take apart, and half-typing one must not move anything.
-  it('leaves a plain hostname exactly where it was typed', async () => {
+  // The one thing the reader sees appear that they did not type. It shows the box's contract
+  // once: this is an address, not a hostname. Nothing else about the connection moves.
+  it('writes a plain hostname back out as an address', async () => {
     renderPanel();
 
-    const host = await screen.findByLabelText('Host');
-    await userEvent.clear(host);
-    await userEvent.type(host, 'broker.example');
-    fireEvent.blur(host);
+    const address = await screen.findByLabelText('Broker address');
+    await userEvent.clear(address);
+    await userEvent.type(address, 'broker.example');
+    fireEvent.blur(address);
 
-    expect(host).toHaveValue('broker.example');
+    await waitFor(() => expect(address).toHaveValue('mqtt://broker.example'));
     expect(screen.getByLabelText('Port')).toHaveValue(1883);
     expect(screen.getByRole('radio', { name: 'mqtt' })).toBeChecked();
+  });
+});
+
+// The panel's own question, in the order it now arrives: the address is what the reader has,
+// and the scheme is a thing they are told rather than asked.
+describe('the address, and the scheme read off it', () => {
+  const address = () => screen.getByLabelText('Broker address');
+
+  it('opens holding an address rather than a hostname', () => {
+    renderPanel();
+
+    expect(address()).toHaveValue('mqtt://localhost');
+    expect(screen.getByLabelText('Port')).toHaveValue(1883);
+  });
+
+  it('says what the scheme is in a sentence, with nothing to press', () => {
+    renderPanel();
+
+    expect(
+      screen.getByText('Plain MQTT over TCP. Nothing on the wire is encrypted.'),
+    ).toBeInTheDocument();
+  });
+
+  // The note used to sit under four chips, where its only job was to tell the chosen one from
+  // its neighbours — and the neighbours were on screen. Alone under the address it has to say
+  // both halves itself.
+  it('names the transport as well as the encryption, on every one of the four', async () => {
+    renderPanel();
+
+    for (const [chip, said] of [
+      ['mqtts', 'MQTT over TLS, straight to the broker. What every cloud broker wants.'],
+      ['ws', 'MQTT inside a plain WebSocket, for a broker behind an HTTP proxy.'],
+      [
+        'wss',
+        'MQTT inside an encrypted WebSocket. The way through a firewall that allows only HTTPS.',
+      ],
+    ] as const) {
+      await userEvent.click(screen.getByRole('radio', { name: chip }));
+      expect(screen.getByText(said)).toBeInTheDocument();
+    }
+  });
+
+  it('carries the scheme back into the box when a chip moves it', async () => {
+    renderPanel();
+    await userEvent.click(screen.getByRole('radio', { name: 'wss' }));
+
+    expect(address()).toHaveValue('wss://localhost');
+    expect(screen.getByLabelText('Port')).toHaveValue(8084);
+  });
+
+  // A box showing one broker while the attempt goes to another is the bug this guards. Connect
+  // reconciles the text itself rather than trusting the blur to have landed first.
+  //
+  // fireEvent.click, not userEvent.click: userEvent moves focus and would fire the blur this
+  // test exists to do without. With fireEvent the box is still focused and still unreconciled
+  // when the button is pressed, which is the state a keyboard can also reach.
+  it('connects to what the box says, with the box never left', async () => {
+    let sent: Record<string, unknown> | undefined;
+    server.use(
+      http.post('/api/connection', async ({ request }) => {
+        sent = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ state: 'Connected' });
+      }),
+    );
+
+    renderPanel();
+    await userEvent.clear(address());
+    await userEvent.type(address(), 'mqtts://broker.example:8883');
+    fireEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+
+    await waitFor(() =>
+      expect(sent).toMatchObject({ host: 'broker.example', port: 8883, useTls: true }),
+    );
   });
 });
