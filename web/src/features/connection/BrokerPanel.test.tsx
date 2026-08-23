@@ -101,13 +101,14 @@ describe('BrokerPanel', () => {
     // Defaults render first; filled once the query resolves. The scheme comes back written into
     // the address, since that is where it was saved from: this connection was over TLS.
     await waitFor(() =>
-      expect(screen.getByLabelText('Broker address')).toHaveValue('mqtts://broker.example'),
+      expect(screen.getByLabelText('Broker address')).toHaveValue('broker.example'),
     );
     expect(screen.getByLabelText('Port')).toHaveValue(8883);
     expect(screen.getByLabelText('Client ID')).toHaveValue('saved-client');
     expect(screen.getByLabelText('Username')).toHaveValue('alice');
-    // The scheme and the version are chips, not fields: what was saved is what is pressed.
-    expect(screen.getByRole('radio', { name: 'mqtts' })).toBeChecked();
+    // The way in comes back as the two controls it is asked in: this connection was over TLS.
+    expect(screen.getByLabelText('Transport')).toHaveValue('tcp');
+    expect(screen.getByLabelText('Encrypted (TLS)')).toBeChecked();
     expect(screen.getByRole('radio', { name: '3.1.1' })).toBeChecked();
   });
 
@@ -501,7 +502,7 @@ describe('the broker presets', () => {
     renderPanel();
     await pick(hsl.name);
 
-    expect(screen.getByLabelText('Broker address')).toHaveValue(`mqtts://${hsl.host}`);
+    expect(screen.getByLabelText('Broker address')).toHaveValue(hsl.host);
     expect(screen.getByLabelText('Port')).toHaveValue(hsl.port);
   });
 
@@ -509,7 +510,8 @@ describe('the broker presets', () => {
     renderPanel();
     await pick(hsl.name);
 
-    expect(screen.getByRole('radio', { name: 'mqtts' })).toBeChecked();
+    expect(screen.getByLabelText('Transport')).toHaveValue('tcp');
+    expect(screen.getByLabelText('Encrypted (TLS)')).toBeChecked();
   });
 
   // The half a bare address does not give you, and the reason the console used to connect to
@@ -601,7 +603,7 @@ describe('the broker presets', () => {
     renderPanel();
 
     await waitFor(() =>
-      expect(screen.getByLabelText('Broker address')).toHaveValue('mqtt://broker.example'),
+      expect(screen.getByLabelText('Broker address')).toHaveValue('broker.example'),
     );
     expect(screen.getByLabelText('On-connect filter')).toHaveValue('#');
   });
@@ -614,76 +616,7 @@ describe('the broker presets', () => {
   });
 });
 
-// ---- the transport and the version, as things the panel actually does ----
-
-describe('picking how the connection is made', () => {
-  const scheme = (name: string) => screen.getByRole('radio', { name });
-  const pickScheme = (name: string) => userEvent.click(scheme(name));
-
-  it('starts on plain MQTT, which is what a broker of your own usually is', () => {
-    renderPanel();
-
-    expect(scheme('mqtt')).toBeChecked();
-    expect(screen.getByLabelText('Port')).toHaveValue(1883);
-  });
-
-  it('moves the port with the scheme while the port is still the default', async () => {
-    renderPanel();
-    await pickScheme('mqtts');
-
-    expect(screen.getByLabelText('Port')).toHaveValue(8883);
-
-    await pickScheme('wss');
-    expect(screen.getByLabelText('Port')).toHaveValue(8084);
-  });
-
-  // The rule that makes the picker safe to press: a lab broker on a strange port stays on it.
-  it('leaves a port somebody typed exactly where they typed it', async () => {
-    renderPanel();
-    const port = screen.getByLabelText('Port');
-    await userEvent.clear(port);
-    await userEvent.type(port, '21883');
-    await pickScheme('mqtts');
-
-    expect(port).toHaveValue(21883);
-  });
-
-  // On TCP there is no path, and an empty box asking for one reads as a field somebody forgot.
-  it('asks for a path only where there is a WebSocket to put it on', async () => {
-    renderPanel();
-    expect(screen.queryByLabelText('WebSocket path')).not.toBeInTheDocument();
-
-    await pickScheme('ws');
-    expect(screen.getByLabelText('WebSocket path')).toBeInTheDocument();
-
-    await pickScheme('mqtt');
-    expect(screen.queryByLabelText('WebSocket path')).not.toBeInTheDocument();
-  });
-
-  it('offers the encryption fields only where there is encryption to configure', async () => {
-    renderPanel();
-    expect(screen.queryByText('Encryption')).not.toBeInTheDocument();
-
-    await pickScheme('mqtts');
-    expect(screen.getByText('Encryption')).toBeInTheDocument();
-  });
-
-  it('sends the scheme as a transport and a TLS flag', async () => {
-    let sent: Record<string, unknown> | undefined;
-    server.use(
-      http.post('/api/connection', async ({ request }) => {
-        sent = (await request.json()) as Record<string, unknown>;
-        return HttpResponse.json({ state: 'Connected' });
-      }),
-    );
-
-    renderPanel();
-    await pickScheme('wss');
-    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
-
-    await waitFor(() => expect(sent).toMatchObject({ transport: 'webSocket', useTls: true }));
-  });
-});
+// ---- the version, as a thing the panel actually does ----
 
 describe('picking which MQTT to speak', () => {
   const version = (name: string) => screen.getByRole('radio', { name });
@@ -774,9 +707,9 @@ describe('a cloud service, whose address is yours', () => {
     renderPanel();
     await userEvent.click(screen.getByRole('button', { name: aws.name }));
 
-    expect(screen.getByLabelText('Broker address')).toHaveValue('mqtts://');
+    expect(screen.getByLabelText('Broker address')).toHaveValue('');
     expect(screen.getByLabelText('Port')).toHaveValue(aws.port);
-    expect(screen.getByRole('radio', { name: 'mqtts' })).toBeChecked();
+    expect(screen.getByLabelText('Encrypted (TLS)')).toBeChecked();
   });
 
   // The note is the whole point of a cloud preset — it is the only place the port, the paths
@@ -890,9 +823,10 @@ describe('an address dropped into the Broker address box', () => {
     await userEvent.clear(address);
     await userEvent.paste('wss://broker.emqx.io:8084/mqtt');
 
-    expect(address).toHaveValue('wss://broker.emqx.io');
+    expect(address).toHaveValue('broker.emqx.io');
     expect(screen.getByLabelText('Port')).toHaveValue(8084);
-    expect(screen.getByRole('radio', { name: 'wss' })).toBeChecked();
+    expect(screen.getByLabelText('Transport')).toHaveValue('webSocket');
+    expect(screen.getByLabelText('Encrypted (TLS)')).toBeChecked();
     expect(screen.getByLabelText('WebSocket path')).toHaveValue('/mqtt');
   });
 
@@ -904,13 +838,14 @@ describe('an address dropped into the Broker address box', () => {
     await userEvent.type(address, 'broker.example:8883');
     fireEvent.blur(address);
 
-    await waitFor(() => expect(address).toHaveValue('mqtts://broker.example'));
+    await waitFor(() => expect(address).toHaveValue('broker.example'));
     expect(screen.getByLabelText('Port')).toHaveValue(8883);
+    // The port it named answers the encryption question too, the same as one typed into the box.
+    expect(screen.getByLabelText('Encrypted (TLS)')).toBeChecked();
   });
 
-  // The one thing the reader sees appear that they did not type. It shows the box's contract
-  // once: this is an address, not a hostname. Nothing else about the connection moves.
-  it('writes a plain hostname back out as an address', async () => {
+  // A hostname is not an address to take apart, and nothing else about the connection moves.
+  it('leaves a plain hostname exactly where it was typed', async () => {
     renderPanel();
 
     const address = await screen.findByLabelText('Broker address');
@@ -918,23 +853,16 @@ describe('an address dropped into the Broker address box', () => {
     await userEvent.type(address, 'broker.example');
     fireEvent.blur(address);
 
-    await waitFor(() => expect(address).toHaveValue('mqtt://broker.example'));
+    expect(address).toHaveValue('broker.example');
     expect(screen.getByLabelText('Port')).toHaveValue(1883);
-    expect(screen.getByRole('radio', { name: 'mqtt' })).toBeChecked();
+    expect(screen.getByLabelText('Encrypted (TLS)')).not.toBeChecked();
   });
 });
 
 // The panel's own question, in the order it now arrives: the address is what the reader has,
-// and the scheme is a thing they are told rather than asked.
-describe('the address, and the scheme read off it', () => {
+// and the way in is answered beside it rather than in front of it.
+describe('the address the panel leads with', () => {
   const address = () => screen.getByLabelText('Broker address');
-
-  it('opens holding an address rather than a hostname', () => {
-    renderPanel();
-
-    expect(address()).toHaveValue('mqtt://localhost');
-    expect(screen.getByLabelText('Port')).toHaveValue(1883);
-  });
 
   it('says what the scheme is in a sentence, with nothing to press', () => {
     renderPanel();
@@ -942,33 +870,6 @@ describe('the address, and the scheme read off it', () => {
     expect(
       screen.getByText('Plain MQTT over TCP. Nothing on the wire is encrypted.'),
     ).toBeInTheDocument();
-  });
-
-  // The note used to sit under four chips, where its only job was to tell the chosen one from
-  // its neighbours — and the neighbours were on screen. Alone under the address it has to say
-  // both halves itself.
-  it('names the transport as well as the encryption, on every one of the four', async () => {
-    renderPanel();
-
-    for (const [chip, said] of [
-      ['mqtts', 'MQTT over TLS, straight to the broker. What every cloud broker wants.'],
-      ['ws', 'MQTT inside a plain WebSocket, for a broker behind an HTTP proxy.'],
-      [
-        'wss',
-        'MQTT inside an encrypted WebSocket. The way through a firewall that allows only HTTPS.',
-      ],
-    ] as const) {
-      await userEvent.click(screen.getByRole('radio', { name: chip }));
-      expect(screen.getByText(said)).toBeInTheDocument();
-    }
-  });
-
-  it('carries the scheme back into the box when a chip moves it', async () => {
-    renderPanel();
-    await userEvent.click(screen.getByRole('radio', { name: 'wss' }));
-
-    expect(address()).toHaveValue('wss://localhost');
-    expect(screen.getByLabelText('Port')).toHaveValue(8084);
   });
 
   // A box showing one broker while the attempt goes to another is the bug this guards. Connect
@@ -1000,7 +901,7 @@ describe('the address, and the scheme read off it', () => {
 // The half of the inference that was missing: portFor has moved the port with the scheme since
 // the picker was written, and nothing moved the scheme with the port.
 describe('a port that implies a scheme', () => {
-  const address = () => screen.getByLabelText('Broker address');
+  const encrypted = () => screen.getByLabelText('Encrypted (TLS)');
   const port = () => screen.getByLabelText('Port');
 
   const typePort = async (value: string) => {
@@ -1013,16 +914,15 @@ describe('a port that implies a scheme', () => {
     renderPanel();
     await typePort('8883');
 
-    await waitFor(() => expect(screen.getByRole('radio', { name: 'mqtts' })).toBeChecked());
-    expect(address()).toHaveValue('mqtts://localhost');
+    await waitFor(() => expect(encrypted()).toBeChecked());
   });
 
   it('turns it off again for the plain port', async () => {
     renderPanel();
-    await userEvent.click(screen.getByRole('radio', { name: 'mqtts' }));
+    await userEvent.click(encrypted());
     await typePort('1883');
 
-    await waitFor(() => expect(screen.getByRole('radio', { name: 'mqtt' })).toBeChecked());
+    await waitFor(() => expect(encrypted()).not.toBeChecked());
   });
 
   // 8883 typed a digit at a time passes through 8, 88 and 888. A scheme moving on each of them
@@ -1033,26 +933,29 @@ describe('a port that implies a scheme', () => {
     await userEvent.clear(port());
     await userEvent.type(port(), '8883');
 
-    expect(screen.getByRole('radio', { name: 'mqtt' })).toBeChecked();
+    expect(encrypted()).not.toBeChecked();
 
     fireEvent.blur(port());
-    await waitFor(() => expect(screen.getByRole('radio', { name: 'mqtts' })).toBeChecked());
+    await waitFor(() => expect(encrypted()).toBeChecked());
   });
 
   it('leaves a lab broker on a strange port where it was put', async () => {
     renderPanel();
     await typePort('21883');
 
-    expect(screen.getByRole('radio', { name: 'mqtt' })).toBeChecked();
+    expect(encrypted()).not.toBeChecked();
   });
 
-  // Somebody on wss picked the WebSocket deliberately, and 8883 over wss is a real broker.
+  // Somebody over a WebSocket picked it deliberately, and 8883 over wss is a real broker. The
+  // port may tick the box; it may never move the control above it.
   it('never crosses the transport', async () => {
     renderPanel();
-    await userEvent.click(screen.getByRole('radio', { name: 'wss' }));
+    await userEvent.selectOptions(screen.getByLabelText('Transport'), 'webSocket');
+    await userEvent.click(encrypted());
     await typePort('8883');
 
-    expect(screen.getByRole('radio', { name: 'wss' })).toBeChecked();
+    expect(screen.getByLabelText('Transport')).toHaveValue('webSocket');
+    expect(encrypted()).toBeChecked();
   });
 });
 
@@ -1121,7 +1024,7 @@ describe('a failure that names the scheme it should have been', () => {
   it('offers the plain scheme when the broker refuses encryption', async () => {
     failWith('tlsNotOffered');
     renderPanel();
-    await userEvent.click(screen.getByRole('radio', { name: 'mqtts' }));
+    await userEvent.click(screen.getByLabelText('Encrypted (TLS)'));
     await connect();
 
     expect(await screen.findByRole('button', { name: 'Try mqtt:// instead' })).toBeInTheDocument();
@@ -1138,5 +1041,173 @@ describe('a failure that names the scheme it should have been', () => {
       await screen.findByText('The broker rejected the username or password.'),
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Try / })).not.toBeInTheDocument();
+  });
+});
+
+// Four names were two questions multiplied together, asked as one. The API has always kept them
+// apart — a transport and a TLS flag — and this is the panel finally asking them that way.
+describe('the way in, as two questions', () => {
+  const transport = () => screen.getByLabelText('Transport');
+  const encrypted = () => screen.getByLabelText('Encrypted (TLS)');
+
+  it('offers two ways in, not four', () => {
+    renderPanel();
+
+    expect([...transport().querySelectorAll('option')].map((o) => o.textContent)).toEqual([
+      'mqtt://',
+      'ws://',
+    ]);
+  });
+
+  it('starts on plain MQTT, which is what a broker of your own usually is', () => {
+    renderPanel();
+
+    expect(transport()).toHaveValue('tcp');
+    expect(encrypted()).not.toBeChecked();
+    expect(screen.getByLabelText('Port')).toHaveValue(1883);
+  });
+
+  // The whole point: 'Encrypted' is a word everybody has, and the s in mqtts is the same
+  // question asked in a letter nobody can see.
+  it('sends the two answers as a transport and a TLS flag', async () => {
+    let sent: Record<string, unknown> | undefined;
+    server.use(
+      http.post('/api/connection', async ({ request }) => {
+        sent = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ state: 'Connected' });
+      }),
+    );
+
+    renderPanel();
+    await userEvent.selectOptions(transport(), 'webSocket');
+    await userEvent.click(encrypted());
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+
+    await waitFor(() => expect(sent).toMatchObject({ transport: 'webSocket', useTls: true }));
+  });
+
+  it('moves the port with either answer, while the port is still a default', async () => {
+    renderPanel();
+    await userEvent.click(encrypted());
+    expect(screen.getByLabelText('Port')).toHaveValue(8883);
+
+    await userEvent.selectOptions(transport(), 'webSocket');
+    expect(screen.getByLabelText('Port')).toHaveValue(8084);
+  });
+
+  it('leaves a port somebody typed exactly where they typed it', async () => {
+    renderPanel();
+    const port = screen.getByLabelText('Port');
+    await userEvent.clear(port);
+    await userEvent.type(port, '21883');
+    await userEvent.click(encrypted());
+
+    expect(port).toHaveValue(21883);
+  });
+
+  it('asks for a path only where there is a WebSocket to put it on', async () => {
+    renderPanel();
+    expect(screen.queryByLabelText('WebSocket path')).not.toBeInTheDocument();
+
+    await userEvent.selectOptions(transport(), 'webSocket');
+    expect(screen.getByLabelText('WebSocket path')).toBeInTheDocument();
+  });
+
+  it('says what the two answers add up to, in a sentence', async () => {
+    renderPanel();
+    expect(
+      screen.getByText('Plain MQTT over TCP. Nothing on the wire is encrypted.'),
+    ).toBeInTheDocument();
+
+    await userEvent.click(encrypted());
+    expect(
+      screen.getByText('MQTT over TLS, straight to the broker. What every cloud broker wants.'),
+    ).toBeInTheDocument();
+  });
+
+  // A pasted address still answers both, which is the point of taking it whole.
+  it('reads both answers off a pasted address', async () => {
+    renderPanel();
+    const address = screen.getByLabelText('Broker address');
+    await userEvent.clear(address);
+    await userEvent.paste('wss://broker.emqx.io:8084/mqtt');
+
+    expect(transport()).toHaveValue('webSocket');
+    expect(encrypted()).toBeChecked();
+    expect(address).toHaveValue('broker.emqx.io');
+  });
+});
+
+// The rule the reader asked for, in the direction it is true. A certificate is a statement that
+// this connection is encrypted; the absence of one says nothing, since nine of the ten encrypted
+// brokers this console ships a preset for need no certificate at all.
+describe('a certificate, which settles the question by itself', () => {
+  const encrypted = () => screen.getByLabelText('Encrypted (TLS)');
+
+  it('offers the encryption fields whether or not encryption is on yet', () => {
+    renderPanel();
+
+    expect(screen.getByText('Encryption')).toBeInTheDocument();
+  });
+
+  it('turns encryption on when a certificate is named', async () => {
+    renderPanel();
+    await userEvent.type(screen.getByLabelText('Client certificate'), '/tmp/client.pem');
+
+    await waitFor(() => expect(encrypted()).toBeChecked());
+  });
+
+  it('turns it on for a CA, and for accepting any certificate', async () => {
+    renderPanel();
+    await userEvent.type(screen.getByLabelText('Extra CA certificate'), '/tmp/ca.crt');
+    expect(encrypted()).toBeChecked();
+
+    renderPanel();
+    await userEvent.click(screen.getAllByLabelText('Accept any certificate')[1]);
+    expect(screen.getAllByLabelText('Encrypted (TLS)')[1]).toBeChecked();
+  });
+
+  it('holds it on while the certificate is there, and says why', async () => {
+    renderPanel();
+    await userEvent.type(screen.getByLabelText('Client certificate'), '/tmp/client.pem');
+
+    expect(encrypted()).toBeDisabled();
+    expect(
+      screen.getByText(
+        'Held on by what is under Encryption: a certificate means nothing to a connection that is not encrypted.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('lets go once the certificate does', async () => {
+    renderPanel();
+    const cert = screen.getByLabelText('Client certificate');
+    await userEvent.type(cert, '/tmp/client.pem');
+    await userEvent.clear(cert);
+
+    expect(encrypted()).toBeEnabled();
+    // Still on: turning encryption off by itself would be a surprise, and the reader can.
+    expect(encrypted()).toBeChecked();
+  });
+
+  it('sends the certificate it was turned on by', async () => {
+    let sent: Record<string, unknown> | undefined;
+    server.use(
+      http.post('/api/connection', async ({ request }) => {
+        sent = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ state: 'Connected' });
+      }),
+    );
+
+    renderPanel();
+    await userEvent.type(screen.getByLabelText('Client certificate'), '/tmp/client.pem');
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+
+    await waitFor(() =>
+      expect(sent).toMatchObject({
+        useTls: true,
+        tls: expect.objectContaining({ clientCertificatePath: '/tmp/client.pem' }),
+      }),
+    );
   });
 });

@@ -865,12 +865,13 @@ ${document.head.innerHTML}
 }
 
 /**
- * The broker panel in the four states it is read in, at the width of the column it lives in.
+ * The broker panel in the five states it is read in, at the width of the column it lives in.
  *
  * Side by side, because the point of the layout is what each state puts first: nothing connected
  * and it is the address; connected and it is the link, with the form folded behind one line; a
- * failure and it is the sentence saying so, with the way out under it; and everything unfolded,
- * which is the whole of what the panel can ask for and is what it used to show on every visit.
+ * failure and it is the sentence saying so, with the way out under it; a certificate and it is
+ * the encryption box, held on by something folded away below; and everything unfolded, which is
+ * the whole of what the panel can ask for and is what it used to show on every visit.
  */
 function brokerStates() {
   const one = (label, prime, unfold = false, fill) => {
@@ -943,8 +944,11 @@ function brokerStates() {
 ${one('nothing connected', nothing)}
 ${one('a link up', link)}
 ${one('a failure with a way out', faulted, false, (box) => {
-  fireEvent.change(box('address'), { target: { value: 'mqtt://broker.example' } });
+  fireEvent.change(box('address'), { target: { value: 'broker.example' } });
   fireEvent.change(box('port'), { target: { value: '8883' } });
+})}
+${one('a certificate, settling it', nothing, false, (box) => {
+  fireEvent.change(box('clientCertPath'), { target: { value: '/etc/mqtt/client.pem' } });
 })}
 ${one('every fold opened', nothing, true)}
 </div>`;
