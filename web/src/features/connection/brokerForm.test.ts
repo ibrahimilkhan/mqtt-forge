@@ -11,7 +11,6 @@ const FORM: BrokerForm = {
   username: '',
   password: '',
   webSocketPath: '',
-  protocolVersion: 'auto',
   cleanSession: true,
   sessionExpiry: '',
   allowUntrusted: false,
@@ -86,16 +85,6 @@ describe('session expiry, which only one version has', () => {
     expect(buildConnectRequest({ ...kept, sessionExpiry: '600' }).sessionExpiryInterval).toBe(600);
   });
 
-  // The API refuses a 3.x request carrying one. A reader who typed a number and then chose
-  // 3.1.1 for an unrelated reason should not have their connect fail over a field the form has
-  // since stopped showing them.
-  it('is dropped on a version with nowhere to put it', () => {
-    expect(
-      buildConnectRequest({ ...kept, protocolVersion: 'v311', sessionExpiry: '600' })
-        .sessionExpiryInterval,
-    ).toBeNull();
-  });
-
   // The number is about a session that outlives the link. With a clean start there is none.
   it('is dropped when the session is not being kept', () => {
     expect(
@@ -146,13 +135,18 @@ describe('a saved connection, back in the form', () => {
       host: 'broker.example',
       port: 8084,
       webSocketPath: '/paho',
-      protocolVersion: 'v311',
       cleanSession: false,
       sessionExpiry: '300',
       caPath: '/ca.crt',
       clientCertPath: '/client.pfx',
       sniHost: 'real.example',
     });
+  });
+
+  // The one thing it deliberately does not bring. A connection saved when this console still
+  // asked which MQTT to speak would otherwise pin a version nothing on screen mentions.
+  it('leaves the version behind, since nothing asks for one any more', () => {
+    expect(buildConnectRequest(formFromSaved(SAVED)).protocolVersion).toBe('auto');
   });
 
   // Neither password is ever returned, and neither is guessed at.

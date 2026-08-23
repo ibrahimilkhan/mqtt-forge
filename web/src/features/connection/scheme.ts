@@ -107,40 +107,21 @@ export function schemeForPort(from: Scheme, port: number): Scheme {
   return SCHEMES.find((s) => s.transport === transport && s.defaultPort === port)?.scheme ?? from;
 }
 
-export type VersionChoice = {
-  value: MqttProtocolLevel;
-  /** On the chip. Short, because four of them share a row. */
-  label: string;
-  note: string;
-};
-
-export const VERSIONS: readonly VersionChoice[] = [
-  {
-    value: 'auto',
-    label: 'Auto',
-    note: 'Offer 5.0, then 3.1.1, then 3.1, and keep the first one the broker takes.',
-  },
-  {
-    value: 'v500',
-    label: '5.0',
-    note: 'Reason codes that say what went wrong, session expiry, and properties on every packet.',
-  },
-  {
-    value: 'v311',
-    label: '3.1.1',
-    note: 'The OASIS standard, and still what most brokers are configured for.',
-  },
-  {
-    value: 'v310',
-    label: '3.1',
-    note: 'The original. Client IDs are capped at 23 characters by the specification.',
-  },
+/**
+ * The numbers, for reading back rather than for choosing between.
+ *
+ * The console does not ask which MQTT to speak — it offers 5.0, then 3.1.1, then 3.1, and keeps
+ * the first one the broker takes, the reader being the wrong person to ask what their broker
+ * speaks. So this is only ever consulted about a version that has already happened: the one a
+ * link reports, or the one a failure was about.
+ */
+const VERSIONS: ReadonlyArray<{ value: MqttProtocolLevel; label: string }> = [
+  { value: 'v500', label: '5.0' },
+  { value: 'v311', label: '3.1.1' },
+  { value: 'v310', label: '3.1' },
 ];
 
-export const versionNote = (value: MqttProtocolLevel) =>
-  VERSIONS.find((v) => v.value === value)?.note ?? '';
-
-/** How a version reads in a sentence, rather than on a chip. */
+/** How a version reads in a sentence. */
 // A version with no entry here is one a newer backend named; printing it as it came is more use
 // than printing nothing, and it is the only place in the panel that would have said so at all.
 export const versionName = (value: MqttProtocolLevel): string => {
@@ -150,15 +131,3 @@ export const versionName = (value: MqttProtocolLevel): string => {
 
   return known ? `MQTT ${known.label}` : String(value);
 };
-
-/** MQTT 3.1 caps a client ID at 23 characters, and brokers do enforce it. */
-export const CLIENT_ID_LIMIT_310 = 23;
-
-/**
- * Whether this connection could end up speaking MQTT 5.
- *
- * Auto counts: it tries 5.0 first, and against nearly every broker in service that is the one it
- * gets. So a field that only means something on 5.0 is offered under Auto rather than hidden —
- * hiding it would make the commonest case the one you cannot configure.
- */
-export const mayBeV5 = (version: MqttProtocolLevel) => version === 'auto' || version === 'v500';

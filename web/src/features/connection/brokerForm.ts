@@ -1,10 +1,9 @@
-import type { ConnectRequest, MqttProtocolLevel, SavedConnection, TlsOptions } from '../../types/api';
+import type { ConnectRequest, SavedConnection, TlsOptions } from '../../types/api';
 import { parseBrokerAddress } from './address';
 import {
   choiceOf,
   isEncrypted,
   isWebSocket,
-  mayBeV5,
   portFor,
   schemeForPort,
   schemeOf,
@@ -27,7 +26,6 @@ export type BrokerForm = {
   username: string;
   password: string;
   webSocketPath: string;
-  protocolVersion: MqttProtocolLevel;
   cleanSession: boolean;
   sessionExpiry: string;
   allowUntrusted: boolean;
@@ -58,7 +56,10 @@ export function buildConnectRequest(form: BrokerForm): ConnectRequest {
     password: form.password || null,
     useTls: choice.useTls,
     transport: choice.transport,
-    protocolVersion: form.protocolVersion,
+    // Always. Auto offers 5.0, then 3.1.1, then 3.1, and keeps the first one the broker takes —
+    // and the reader is the wrong person to ask which their broker speaks. A fixed version is
+    // for testing a broker's behaviour on one, which is not what this console is for.
+    protocolVersion: 'auto',
     webSocketPath: isWebSocket(form.scheme) ? form.webSocketPath.trim() || null : null,
     cleanSession: form.cleanSession,
     sessionExpiryInterval: sessionExpiry(form),
@@ -75,7 +76,10 @@ export function buildConnectRequest(form: BrokerForm): ConnectRequest {
  * have their connect fail over a field the form has since stopped showing them.
  */
 function sessionExpiry(form: BrokerForm): number | null {
-  if (form.cleanSession || !mayBeV5(form.protocolVersion)) return null;
+  // Auto tries 5.0 first and against nearly every broker in service that is what it gets, so a
+  // field that only means something on 5.0 is offered rather than hidden. A broker that steps
+  // the connection down to 3.x ignores it, which is the same outcome as not sending it.
+  if (form.cleanSession) return null;
 
   const seconds = Number(form.sessionExpiry.trim());
 
@@ -128,7 +132,8 @@ export function formFromSaved(saved: SavedConnection): BrokerForm {
     username: saved.username ?? '',
     password: '',
     webSocketPath: saved.webSocketPath ?? '',
-    protocolVersion: saved.protocolVersion,
+    // The saved version is deliberately not read back. A connection saved when this console
+    // still asked which MQTT to speak would otherwise pin a version nothing on screen mentions.
     cleanSession: saved.cleanSession,
     sessionExpiry: saved.sessionExpiryInterval == null ? '' : String(saved.sessionExpiryInterval),
     allowUntrusted: saved.tls?.allowUntrustedCertificates ?? false,

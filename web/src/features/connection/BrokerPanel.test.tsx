@@ -108,7 +108,6 @@ describe('BrokerPanel', () => {
     // The way in comes back as the two controls it is asked in: this connection was over TLS.
     expect(screen.getByLabelText('Transport')).toHaveValue('tcp');
     expect(screen.getByLabelText('Encrypted (TLS)')).toBeChecked();
-    expect(screen.getByRole('radio', { name: '3.1.1' })).toBeChecked();
   });
 
   it('says a password is stored but never returned', async () => {
@@ -493,73 +492,6 @@ describe('BrokerPanel', () => {
 // wanted TLS, and — the part that actually caught people — a filter it would answer. The chips
 // carry all four. They fill the form and stop there: connecting is still the reader's move.
 
-// ---- the version, as a thing the panel actually does ----
-
-describe('picking which MQTT to speak', () => {
-  const version = (name: string) => screen.getByRole('radio', { name });
-
-  it('starts on Auto, because the reader is the wrong person to ask', () => {
-    renderPanel();
-
-    expect(version('Auto')).toBeChecked();
-  });
-
-  it('sends the version that was picked', async () => {
-    let sent: Record<string, unknown> | undefined;
-    server.use(
-      http.post('/api/connection', async ({ request }) => {
-        sent = (await request.json()) as Record<string, unknown>;
-        return HttpResponse.json({ state: 'Connected' });
-      }),
-    );
-
-    renderPanel();
-    await userEvent.click(version('3.1.1'));
-    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
-
-    await waitFor(() => expect(sent).toMatchObject({ protocolVersion: 'v311' }));
-  });
-
-  // The same bit on the wire, and the two specifications call it different things. A reader
-  // reading MQTT 5 documentation should find the word that documentation uses.
-  it('calls the box what the chosen version calls it', async () => {
-    renderPanel();
-    expect(screen.getByLabelText('Clean session')).toBeInTheDocument();
-
-    await userEvent.click(version('5.0'));
-    expect(screen.getByLabelText('Clean start')).toBeInTheDocument();
-  });
-
-  // The version difference this form actually has to show. Unticking the box is what makes
-  // session lifetime a question; only one of the two versions lets you answer it.
-  it('offers an expiry for a kept session on 5.0, and explains its absence on 3.1.1', async () => {
-    renderPanel();
-    expect(screen.queryByLabelText('Session expiry')).not.toBeInTheDocument();
-
-    await userEvent.click(screen.getByLabelText('Clean session'));
-    expect(screen.getByLabelText('Session expiry')).toBeInTheDocument();
-
-    await userEvent.click(version('3.1.1'));
-    expect(screen.queryByLabelText('Session expiry')).not.toBeInTheDocument();
-    expect(
-      screen.getByText(/On MQTT 3.1.1 a kept session has no expiry to set/),
-    ).toBeInTheDocument();
-  });
-
-  // The specification's own limit, said before the broker says it — a 3.1 broker's refusal
-  // names neither the length nor the version.
-  it('warns about a client ID too long for 3.1, and only for 3.1', async () => {
-    renderPanel();
-    const clientId = screen.getByLabelText('Client ID');
-    await userEvent.clear(clientId);
-    await userEvent.type(clientId, 'a-client-id-of-more-than-twenty-three');
-
-    expect(screen.queryByText(/MQTT 3.1 allows/)).not.toBeInTheDocument();
-
-    await userEvent.click(version('3.1'));
-    expect(screen.getByText(/MQTT 3.1 allows 23 characters; this is 37/)).toBeInTheDocument();
-  });
-});
 
 
 // ---- what the panel puts in front of you, and what it keeps behind a line ----
@@ -599,13 +531,39 @@ describe('what the panel shows first', () => {
     expect(screen.getByLabelText('Broker address')).toBeInTheDocument();
   });
 
-  // Two defaults nobody changes, and six fields the great majority of connections never need.
-  it('keeps the client, the session and the certificates behind their own lines', async () => {
+  // Six fields the great majority of connections never need. The client ID is not among them
+  // any more: brokers refuse connections over it and log by it.
+  it('keeps the certificates behind a line, and nothing else', async () => {
     renderPanel();
 
     await screen.findByRole('button', { name: 'Connect' });
-    expect(fold('Client and session').open).toBe(false);
     expect(fold('Encryption').open).toBe(false);
+    expect(screen.getByLabelText('Client ID')).toBeVisible();
+    expect(screen.queryByText('Client and session')).not.toBeInTheDocument();
+  });
+
+  // Auto offers 5.0, then 3.1.1, then 3.1, and keeps the first the broker takes. The reader is
+  // the wrong person to ask which their broker speaks, so they are not asked.
+  it('never asks which MQTT to speak', async () => {
+    renderPanel();
+
+    await screen.findByRole('button', { name: 'Connect' });
+    expect(screen.queryByText('MQTT version')).not.toBeInTheDocument();
+  });
+
+  it('speaks whichever the broker takes', async () => {
+    let sent: Record<string, unknown> | undefined;
+    server.use(
+      http.post('/api/connection', async ({ request }) => {
+        sent = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ state: 'Connected' });
+      }),
+    );
+
+    renderPanel();
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+
+    await waitFor(() => expect(sent).toMatchObject({ protocolVersion: 'auto' }));
   });
 
   // Reopened over a working link, the question is what is up — not where to connect, which this
