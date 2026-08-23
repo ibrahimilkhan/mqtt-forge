@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../../lib/problemDetails';
-import { describeConnectFailure, describeFailureReason } from './connectFailure';
+import { describeConnectFailure, describeFailureReason, suggestScheme } from './connectFailure';
 
 const FORM = { host: 'broker.local', port: 1883, clientId: 'mqttforge-console', useTls: false };
 
@@ -184,5 +184,60 @@ describe('a failure that depends on how the connection was being made', () => {
     ['certificateFileUnreadable', 'A certificate file could not be read'],
   ])('points %s at the right end of the connection', (reason, fragment) => {
     expect(describeConnectFailure(refusal(reason), FORM)).toContain(fragment);
+  });
+});
+
+// The advice these sentences already give, as something the reader can press.
+describe('the scheme worth offering after a failure', () => {
+  const attempt = (over: Record<string, unknown> = {}) => ({
+    ...FORM,
+    transport: 'tcp' as const,
+    ...over,
+  });
+
+  // Not a guess: the broker said it does not take encrypted connections.
+  it('offers the plain twin when the broker refuses encryption', () => {
+    expect(suggestScheme('tlsNotOffered', attempt({ useTls: true, port: 8883 }))).toMatchObject({
+      scheme: 'mqtt',
+    });
+    expect(
+      suggestScheme('tlsNotOffered', attempt({ useTls: true, transport: 'webSocket', port: 8084 })),
+    ).toMatchObject({ scheme: 'ws' });
+  });
+
+  // A guess, kept to the one shape where a guess is nearly always right.
+  it.each(['timeout', 'refused', 'noMqttResponse'])(
+    'offers the encrypted twin when %s comes back off the encrypted port',
+    (reason) => {
+      expect(suggestScheme(reason, attempt({ useTls: false, port: 8883 }))).toMatchObject({
+        scheme: 'mqtts',
+      });
+    },
+  );
+
+  it('offers the encrypted WebSocket for the WebSocket encrypted port', () => {
+    expect(
+      suggestScheme('timeout', attempt({ useTls: false, transport: 'webSocket', port: 8084 })),
+    ).toMatchObject({ scheme: 'wss' });
+  });
+
+  it('says why, naming the broker rather than the rule', () => {
+    expect(suggestScheme('timeout', attempt({ useTls: false, port: 8883 }))?.why).toContain('8883');
+  });
+
+  it.each([
+    ['a port that implies nothing', 'timeout', { useTls: false, port: 1883 }],
+    ['a reason about the path', 'webSocketUpgradeRejected', { useTls: false, port: 8083 }],
+    ['a reason about the password', 'credentialsRejected', { useTls: false, port: 8883 }],
+    ['an attempt that was already encrypted', 'timeout', { useTls: true, port: 8883 }],
+    ['no reason at all', undefined, { useTls: false, port: 8883 }],
+  ])('offers nothing for %s', (_what, reason, over) => {
+    expect(suggestScheme(reason, attempt(over))).toBeUndefined();
+  });
+
+  // tlsNotOffered on an attempt that was not encrypted is a backend saying something about a
+  // connection this one was not. Nothing to flip.
+  it('offers nothing when the encryption refusal is about an unencrypted attempt', () => {
+    expect(suggestScheme('tlsNotOffered', attempt({ useTls: false, port: 1883 }))).toBeUndefined();
   });
 });
