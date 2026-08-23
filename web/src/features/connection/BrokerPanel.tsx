@@ -383,7 +383,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
 
           {/* The second question, in the word everybody has for it. The s in mqtts asks exactly
               this and asks it in a letter nobody can see. Three things answer it — the port
-              beside it, a pasted address, and a certificate — and all three tick this one box. */}
+              beside it, a pasted address, and a certificate — and all three tick this box. */}
           <div className={styles.checks}>
             <label>
               <input
