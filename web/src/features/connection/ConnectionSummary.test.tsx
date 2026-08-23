@@ -113,11 +113,20 @@ describe('ConnectionSummary', () => {
   });
 
   // A dash, not a missing row: the field was asked about and the broker said nothing.
-  it('dashes the fields the broker did not fill in', async () => {
+  it('dashes a field the broker did not fill in', async () => {
     renderSummary();
 
-    expect(await readValue('Assigned ID')).toHaveTextContent('—');
     expect(await readValue('Keep-alive')).toHaveTextContent('—');
+  });
+
+  // The exception, and the reason it is one: a broker assigns an ID only when the client sends
+  // none, and this console always sends one. The row was a dash on every connection ever made
+  // here — a line spent saying nothing.
+  it('leaves the assigned ID out entirely when the broker imposed none', async () => {
+    renderSummary();
+
+    await screen.findByLabelText('Connection details');
+    expect(screen.queryByText('Assigned ID')).not.toBeInTheDocument();
   });
 
   it('shows the id and keep-alive the broker imposed', async () => {

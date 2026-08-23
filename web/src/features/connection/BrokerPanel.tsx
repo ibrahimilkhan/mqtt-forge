@@ -336,8 +336,6 @@ export function BrokerPanel({
         </div>
       )}
 
-      {/* The form. Bare when there is nothing connected, since then it is the whole panel;
-          folded behind one line when there is, since then it is the second question. */}
       {/* The form. Everything a connection needs, in the order the questions arrive:
           where to point it, how it gets there, who it says it is, and what to listen to.
           It used to be folded behind a line reading "Connect somewhere else" while a link
@@ -414,10 +412,7 @@ export function BrokerPanel({
 
       {/* Said where the box that will not move is, rather than left to be worked out. */}
       {certified && (
-        <p className={styles.note}>
-          Held on by what is under Encryption: a certificate means nothing to a connection that
-          is not encrypted.
-        </p>
+        <p className={styles.note}>Held on by the certificate under Encryption.</p>
       )}
 
       {/* What the two answers add up to. The four names are still the vocabulary — every
@@ -439,9 +434,7 @@ export function BrokerPanel({
             />
             {/* No FieldError: the API refuses no path, deliberately. A wrong one comes back as
                 a refused upgrade, which says more than any rule here could. */}
-            <p className={styles.note}>
-              Empty means /mqtt, which is what nearly every broker publishes.
-            </p>
+            <p className={styles.note}>Empty means /mqtt.</p>
           </Field>
         </div>
       )}
@@ -470,9 +463,7 @@ export function BrokerPanel({
       {/* Beside the box it is about rather than at the foot of the panel: it is an
           instruction to type into that box, and it used to stand nine fields away from it. */}
       {saved?.hasPassword && (
-        <p className={styles.note}>
-          A password is saved but never sent back. Enter it again to connect.
-        </p>
+        <p className={styles.note}>A password is saved but never sent back. Enter it again.</p>
       )}
 
       {/* One box, and what it asks for is everything. It used to carry a filter field beside it,
@@ -536,10 +527,7 @@ export function BrokerPanel({
               />
             </Field>
           </div>
-          <p className={styles.note}>
-            Seconds the broker keeps this session after the link goes. MQTT 5 only; an empty box
-            says nothing.
-          </p>
+          <p className={styles.note}>Seconds the broker keeps it after the link goes.</p>
         </>
       )}
 
@@ -566,8 +554,8 @@ export function BrokerPanel({
           </label>
         </div>
         <p className={styles.note}>
-          Turns verification off entirely — for a broker of your own with a certificate it
-          signed itself, and nothing else. Naming its CA below keeps the checking.
+          For your own broker with a certificate it signed itself. Naming its CA below keeps the
+          checking instead.
         </p>
 
         <div className={styles.row}>
@@ -629,20 +617,14 @@ export function BrokerPanel({
             </div>
 
             {saved?.tls?.hasClientCertificatePassword && (
-              <p className={styles.note}>
-                The certificate password is saved but never sent back either. Enter it again to
-                connect.
-              </p>
+              <p className={styles.note}>Saved but never sent back. Enter it again.</p>
             )}
           </>
         )}
 
-        {/* Files are read where the connection is held, which is the server — the same
-            machine for a desktop app, and inside the container for a container. */}
-        <p className={styles.note}>
-          Paths are read by MQTTForge, not by this browser: on a container they must be paths
-          inside it.
-        </p>
+        {/* Files are read where the connection is held, which is the server — the same machine
+            for a desktop app, and inside the container for a container. */}
+        <p className={styles.note}>Read by the server, not by this browser.</p>
 
         {/* The other two, behind a line of their own: neither is about a certificate, and
             neither is asked for by any broker you reach at its own address on its own port.
@@ -663,8 +645,7 @@ export function BrokerPanel({
             </Field>
           </div>
           <p className={styles.note}>
-            For a broker reached at an address its certificate does not carry — behind a load
-            balancer, or sharing an address with something else.
+            For a broker reached at an address its certificate does not carry.
           </p>
 
           <div className={styles.row}>
@@ -680,8 +661,7 @@ export function BrokerPanel({
             </Field>
           </div>
           <p className={styles.note}>
-            What gets MQTT through a firewall that allows only 443. AWS IoT Core wants
-            x-amzn-mqtt-ca there.
+            Gets MQTT through a firewall that allows only 443. AWS IoT Core wants x-amzn-mqtt-ca.
           </p>
         </details>
       </details>
@@ -775,9 +755,7 @@ export function BrokerPanel({
             onForget={(name) => forgetMutation.mutate(name)}
           />
           {profiles.some((one) => one.connection.hasPassword) && (
-            <p className={styles.note}>
-              Passwords are kept but never sent back. Enter one again to connect.
-            </p>
+            <p className={styles.note}>Passwords are kept but never sent back.</p>
           )}
         </div>
       )}

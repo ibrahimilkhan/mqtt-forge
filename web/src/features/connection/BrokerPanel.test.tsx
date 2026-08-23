@@ -120,7 +120,7 @@ describe('BrokerPanel', () => {
     renderPanel();
 
     expect(
-      await screen.findByText('A password is saved but never sent back. Enter it again to connect.'),
+      await screen.findByText('A password is saved but never sent back. Enter it again.'),
     ).toBeInTheDocument();
     expect(screen.getByLabelText('Password')).toHaveValue('');
   });
@@ -952,9 +952,7 @@ describe('a certificate, which settles the question by itself', () => {
 
     expect(encrypted()).toBeDisabled();
     expect(
-      screen.getByText(
-        'Held on by what is under Encryption: a certificate means nothing to a connection that is not encrypted.',
-      ),
+      screen.getByText('Held on by the certificate under Encryption.'),
     ).toBeInTheDocument();
   });
 
@@ -1205,7 +1203,7 @@ describe('the brokers you keep', () => {
     renderPanel();
 
     expect(
-      await screen.findByText('Passwords are kept but never sent back. Enter one again to connect.'),
+      await screen.findByText('Passwords are kept but never sent back.'),
     ).toBeInTheDocument();
   });
 });
