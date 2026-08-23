@@ -1,6 +1,6 @@
 import { ApiError } from '../../lib/problemDetails';
 import type { MqttProtocolLevel, MqttTransport } from '../../types/api';
-import { versionName } from './scheme';
+import { choiceOf, schemeOf, versionName, type Scheme } from './scheme';
 
 /**
  * What the console knows about the attempt that failed.
@@ -10,7 +10,7 @@ import { versionName } from './scheme';
  * "check the path" over a WebSocket, and a version that was refused is only worth naming when
  * somebody chose it by hand.
  */
-type Attempt = {
+export type Attempt = {
   host: string;
   port: number;
   clientId: string;
@@ -134,4 +134,61 @@ export function describeConnectFailure(error: unknown, attempt: Attempt): string
   // An unrecognised reason — including one a newer backend invented — falls back to the
   // detail rather than leaving the user with a blank line.
   return describeFailureReason(error.reason, attempt) ?? error.message;
+}
+
+/** A scheme to offer instead, and the one line saying what makes it worth offering. */
+export type SchemeSuggestion = { scheme: Scheme; why: string };
+
+// Along the encryption axis, never across the transport — the same rule `schemeForPort` keeps,
+// and for the same reason. None of these reasons announces a wrong transport, and offering one
+// would be a second guess stacked on the first.
+const TWIN: Readonly<Record<Scheme, Scheme>> = {
+  mqtt: 'mqtts',
+  mqtts: 'mqtt',
+  ws: 'wss',
+  wss: 'ws',
+};
+
+// The three ways an encrypted port answers a plain connection: it says nothing, it says no, or
+// it says something that is not MQTT. All three are the same mistake.
+const SILENCE = new Set(['timeout', 'refused', 'noMqttResponse']);
+
+/**
+ * The scheme worth offering after a failure, and why — or nothing, which is most of the time.
+ *
+ * Two cases, and they are the same mistake seen from opposite sides: a connection aimed at a
+ * port whose encryption is not the one it asked for.
+ *
+ * `tlsNotOffered` is not a guess. The broker was reached and said it does not take encrypted
+ * connections, so the plain twin is offered whatever the port is. The rest are guesses, and are
+ * held to the one shape where a guess is nearly always right: a plain scheme aimed at the
+ * encrypted default for its own transport. 8883 answering nothing to plain MQTT is not a mystery.
+ *
+ * Everything else gets nothing. A refused WebSocket upgrade is about the path and says so
+ * already; a rejected password is about the password. An offer on either would be noise standing
+ * where the real answer should be.
+ */
+export function suggestScheme(
+  reason: string | null | undefined,
+  attempt: Attempt,
+): SchemeSuggestion | undefined {
+  if (!reason) return undefined;
+
+  const scheme = schemeOf(attempt.transport ?? 'tcp', attempt.useTls);
+
+  if (reason === 'tlsNotOffered' && attempt.useTls) {
+    return {
+      scheme: TWIN[scheme],
+      why: `${attempt.host}:${attempt.port} doesn't accept encrypted connections.`,
+    };
+  }
+
+  if (SILENCE.has(reason) && !attempt.useTls && attempt.port === choiceOf(TWIN[scheme]).defaultPort) {
+    return {
+      scheme: TWIN[scheme],
+      why: `${attempt.port} is the port brokers listen for encrypted connections on.`,
+    };
+  }
+
+  return undefined;
 }
