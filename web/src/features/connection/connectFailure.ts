@@ -43,10 +43,12 @@ const SENTENCE: Record<string, (attempt: Attempt) => string> = {
   tlsNotOffered: ({ host, port }) =>
     `${host}:${port} doesn't accept encrypted connections — switch to mqtt://, or use the broker's TLS port.`,
 
-  // The WebSocket half never completed: something is speaking HTTP there and it did not upgrade.
+  // The WebSocket half never completed. Two causes, and the sentence used to name only the
+  // first: the path is wrong, or that port is not a WebSocket port at all — which is what
+  // pointing a WebSocket at 1883 does, measured against the lab.
   webSocketUpgradeRejected: ({ host, port }) =>
-    `${host}:${port} answered the WebSocket request without opening one — the path is usually ` +
-    'the reason, and /mqtt is what nearly every broker uses.',
+    `${host}:${port} did not open a WebSocket — check the path, or whether that port speaks ` +
+    'WebSocket at all.',
 
   // A version was asked for by name and refused. Worth naming the version: the reader chose it,
   // and Auto exists precisely so they do not have to.
@@ -163,6 +165,9 @@ const TWIN: Readonly<Record<Scheme, Scheme>> = {
 // it says something that is not MQTT. All three are the same mistake.
 const SILENCE = new Set(['timeout', 'refused', 'noMqttResponse']);
 
+// The ports MQTT is registered on, which nothing serves a WebSocket at.
+const TCP_PORTS = new Set([1883, 8883]);
+
 /**
  * The scheme worth offering after a failure, and why — or nothing, which is most of the time.
  *
@@ -197,6 +202,17 @@ export function suggestScheme(
     return {
       scheme: TWIN[scheme],
       why: `${attempt.port} is the port brokers listen for encrypted connections on.`,
+    };
+  }
+
+  // The one case that crosses the transport, and the evidence for it is a different kind: the
+  // broker answered and did not speak WebSocket, on a port MQTT is registered on. A broker
+  // serving a WebSocket at 1883 is not a thing anyone runs; a reader who picked ws:// out of
+  // habit is.
+  if (reason === 'webSocketUpgradeRejected' && TCP_PORTS.has(attempt.port)) {
+    return {
+      scheme: schemeOf('tcp', attempt.useTls),
+      why: `${attempt.port} is a port MQTT is spoken on directly, not through a WebSocket.`,
     };
   }
 

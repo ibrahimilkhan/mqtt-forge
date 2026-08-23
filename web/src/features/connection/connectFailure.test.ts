@@ -175,10 +175,13 @@ describe('a failure that depends on how the connection was being made', () => {
     );
   });
 
-  it('says an upgrade was refused when the handshake never opened one', () => {
+  // Two causes, and the sentence used to name only the path. Pointing a WebSocket at 1883 does
+  // this too — measured against the broker lab, where it was the one classification that
+  // surprised the sentence written for it.
+  it('names both reasons an upgrade never opened', () => {
     expect(describeConnectFailure(refusal('webSocketUpgradeRejected'), overWs)).toBe(
-      "broker.local:1883 answered the WebSocket request without opening one — the path is " +
-        'usually the reason, and /mqtt is what nearly every broker uses.',
+      'broker.local:1883 did not open a WebSocket — check the path, or whether that port ' +
+        'speaks WebSocket at all.',
     );
   });
 
@@ -279,5 +282,34 @@ describe('the scheme worth offering after a failure', () => {
   // connection this one was not. Nothing to flip.
   it('offers nothing when the encryption refusal is about an unencrypted attempt', () => {
     expect(suggestScheme('tlsNotOffered', attempt({ useTls: false, port: 1883 }))).toBeUndefined();
+  });
+});
+
+// The one suggestion that crosses the transport, and the evidence for it is different in kind:
+// the broker answered and did not speak WebSocket, on a port MQTT is registered on.
+describe('a WebSocket pointed at a port MQTT is spoken on directly', () => {
+  const overWebSocket = (port: number, useTls = false) => ({
+    ...FORM,
+    port,
+    useTls,
+    transport: 'webSocket' as const,
+  });
+
+  it.each([1883, 8883])('offers the direct scheme for %s', (port) => {
+    expect(suggestScheme('webSocketUpgradeRejected', overWebSocket(port))).toMatchObject({
+      scheme: port === 8883 ? 'mqtt' : 'mqtt',
+    });
+  });
+
+  it('keeps the encryption it was asked for while it crosses', () => {
+    expect(suggestScheme('webSocketUpgradeRejected', overWebSocket(8883, true))).toMatchObject({
+      scheme: 'mqtts',
+    });
+  });
+
+  // A broker really can serve a WebSocket at 8083 or 8084 and refuse a wrong path there. Those
+  // are WebSocket ports, so the path is the likely reason and there is nothing to offer.
+  it.each([8083, 8084, 29001])('offers nothing for %s, where a path is the likely reason', (port) => {
+    expect(suggestScheme('webSocketUpgradeRejected', overWebSocket(port))).toBeUndefined();
   });
 });
