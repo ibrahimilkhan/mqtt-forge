@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseBrokerAddress } from './address';
+import { formatBrokerAddress, parseBrokerAddress } from './address';
 
 // What a reader actually has in their hand is one string off a documentation page. These are the
 // shapes those strings come in.
@@ -85,5 +85,40 @@ describe('an address pasted into the Host box', () => {
       host: 'host',
       port: undefined,
     });
+  });
+});
+
+describe('an address written back out', () => {
+  it('puts the scheme in front of the host', () => {
+    expect(formatBrokerAddress('mqtts', 'broker.hivemq.com')).toBe('mqtts://broker.hivemq.com');
+  });
+
+  // What a cloud preset leaves in the box: the port and the path are filled in and the address
+  // is yours. It reads as the instruction it is rather than as an empty field.
+  it('leaves the scheme standing alone when there is no host yet', () => {
+    expect(formatBrokerAddress('mqtts', '')).toBe('mqtts://');
+    expect(formatBrokerAddress('mqtt', '   ')).toBe('mqtt://');
+  });
+
+  // parseBrokerAddress strips the brackets, and a bare ::1 written back is an address that
+  // cannot be read again: it is nothing but colons, and splitPort would take the last one
+  // for a port.
+  it('puts an IPv6 literal back inside its brackets', () => {
+    expect(formatBrokerAddress('mqtt', '::1')).toBe('mqtt://[::1]');
+  });
+
+  it('does not bracket one that is already bracketed', () => {
+    expect(formatBrokerAddress('mqtt', '[::1]')).toBe('mqtt://[::1]');
+  });
+
+  // The whole point of the pair: what this writes, the parser reads back unchanged.
+  it.each([
+    ['mqtt', 'localhost'],
+    ['mqtts', 'broker.hivemq.com'],
+    ['ws', '192.168.1.50'],
+    ['wss', 'broker.emqx.io'],
+    ['mqtt', '::1'],
+  ] as const)('round-trips %s://%s', (scheme, host) => {
+    expect(parseBrokerAddress(formatBrokerAddress(scheme, host))).toMatchObject({ scheme, host });
   });
 });
