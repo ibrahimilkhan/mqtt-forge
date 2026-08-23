@@ -1,6 +1,5 @@
 import { Fragment, useState, type ReactNode } from 'react';
 import styles from './App.module.css';
-import { StatusReadout } from './components/StatusReadout';
 import { AppearancePanel } from './features/appearance/AppearancePanel';
 import { Mark, Wordmark } from './features/brand/marks';
 import { ChartPanel } from './features/chart/ChartPanel';
@@ -78,18 +77,30 @@ export function App({ hub }: { hub: Hub }) {
   const close = () => setOpenPanel(null);
 
   /**
-   * What the Broker row wears, which is the link's own state and nothing else.
+   * What the Broker row wears, which is now the only place the link's state is said.
    *
-   * Green connected, red faulted, and the rail's ordinary grey for everything in between. Not
-   * red for "not connected": the console opens disconnected, having been asked to do nothing
-   * yet, and a red that is on at rest is a red nobody looks at when it means something.
+   * It used to be said twice: a lamp and a word at the top of the rail, and a tint on this row.
+   * One console, one link, one place to read it — and this is the row that leads to the panel
+   * that can do something about it.
    *
-   * A hub that is reconnecting makes the broker state stale rather than false, so it reads as
-   * neither — the readout at the top of the rail is where that is said, and saying it twice in
-   * two vocabularies would be worse than saying it once.
+   * Green connected, red for the two that are wrong, and the rail's ordinary grey for the two
+   * that are neither. Not red for "not connected": the console opens disconnected, having been
+   * asked to do nothing yet, and a red that is on at rest is a red nobody looks at when it
+   * finally means something.
+   *
+   * Reconnecting is the hub rather than the broker, but the reader's question is the same one —
+   * is this console showing me anything real — and the answer is no either way.
    */
   const linkState =
-    hubStatus === 'reconnecting' ? 'Unknown' : state === 'Connecting' ? 'Unknown' : state;
+    hubStatus === 'reconnecting' ? 'Reconnecting' : state === 'Connecting' ? 'Waiting' : state;
+
+  /** Said out loud on the row, since nothing else says it any more. */
+  const LINK_SAID: Partial<Record<typeof linkState, string>> = {
+    Connected: 'connected',
+    Faulted: 'connection faulted',
+    Reconnecting: 'reconnecting',
+    Waiting: 'connecting',
+  };
   const Panel = openPanel && PANEL_VIEWS[openPanel];
 
   return (
@@ -121,25 +132,6 @@ export function App({ hub }: { hub: Hub }) {
           </button>
         </div>
 
-        {/* Straight under the name, because it is the second thing anyone wants from the rail and
-            the whole console is a lie without it: identity, link, panels, flow, in that order.
-            Shut, it is the lamp alone — which is all anyone reads it for from across a room. */}
-        <div
-          className={styles.railState}
-          data-state={hubStatus === 'reconnecting' ? 'Reconnecting' : state}
-        >
-          <StatusReadout
-            state={state}
-            reconnecting={hubStatus === 'reconnecting'}
-            compact={!menuOpen}
-          />
-          {menuOpen && where && (
-            <p className={styles.where} title={where}>
-              {where}
-            </p>
-          )}
-        </div>
-
         {/* Kept at both widths. Shut, the labels go and the icons stay, so narrowing the rail
             costs the reader the words rather than the way to every panel in the app. */}
         <nav id="panel-menu" className={styles.menu} aria-label="Panels">
@@ -148,6 +140,9 @@ export function App({ hub }: { hub: Hub }) {
             // The first row of a group. Open, the group says its name; shut, there is no room
             // for one, so the same division is drawn as a rule between the icons.
             const opens = PANELS[index - 1]?.group !== panel.group;
+            // Only the Broker row has anything to add, and only in the states worth naming.
+            const linkSaid = panel.id === 'broker' ? LINK_SAID[linkState] : undefined;
+            const said = linkSaid ? `${panel.label}, ${linkSaid}` : undefined;
 
             return (
               <Fragment key={panel.id}>
@@ -163,9 +158,20 @@ export function App({ hub }: { hub: Hub }) {
                   aria-expanded={openPanel === panel.id}
                   // The one row that carries a state of its own. Everything else is a way in.
                   data-link={panel.id === 'broker' ? linkState : undefined}
-                  // Shut, the label is not on the page, so the button has to carry it itself.
-                  aria-label={menuOpen ? undefined : panel.label}
-                  title={menuOpen ? undefined : panel.label}
+                  // The row's own name says the state, since nothing else does any more. The
+                  // panel's name goes in with it whatever the rail is doing: an aria-label
+                  // replaces the contents rather than adding to them, so leaving it out on an
+                  // open rail named the row 'connected' and nothing else.
+                  aria-label={said ?? (menuOpen ? undefined : panel.label)}
+                  // The broker it is pointed at, for a reader who wants it without opening the
+                  // panel. It used to have a line of its own under the rail's readout.
+                  title={
+                    panel.id === 'broker' && where
+                      ? `${panel.label} · ${where}`
+                      : menuOpen
+                        ? undefined
+                        : panel.label
+                  }
                   onClick={() => setOpenPanel((current) => (current === panel.id ? null : panel.id))}
                 >
                   <Icon />
@@ -173,11 +179,12 @@ export function App({ hub }: { hub: Hub }) {
                   {/* At the end of the row, so the name is still what the eye lands on and this
                       is what it finds next. A shape as well as a colour, because a colour on its
                       own says nothing to a reader who cannot tell these two apart. */}
-                  {panel.id === 'broker' && state === 'Faulted' && (
-                    <span className={styles.menuWarn} role="img" aria-label="Connection faulted">
-                      <Warning />
-                    </span>
-                  )}
+                  {panel.id === 'broker' &&
+                    (linkState === 'Faulted' || linkState === 'Reconnecting') && (
+                      <span className={styles.menuWarn} aria-hidden="true">
+                        <Warning />
+                      </span>
+                    )}
                 </button>
               </Fragment>
             );
