@@ -44,9 +44,11 @@ public sealed class MqttnetSubscriber : IMqttSubscriber
 
         var named = string.Join("', '", requests.Select(r => r.TopicFilter));
 
+        MqttClientSubscribeResult result;
+
         try
         {
-            await _client.SubscribeAsync(options.Build(), ct);
+            result = await _client.SubscribeAsync(options.Build(), ct);
         }
         catch (MqttProtocolViolationException ex)
         {
@@ -65,8 +67,33 @@ public sealed class MqttnetSubscriber : IMqttSubscriber
                 ex);
         }
 
-        foreach (var request in requests) _filters[request.TopicFilter] = 0;
+        // The ordinary way a broker refuses a filter, and the quiet one: a SUBACK carries a reason
+        // code per filter, and a refusal is a code rather than an exception. The result used to be
+        // discarded and every filter recorded regardless, so a filter the broker had just turned
+        // down went into the active list and the console listed a subscription it did not have —
+        // the same fault the disconnect above was fixed for, arriving by the plain route rather
+        // than the dramatic one.
+        //
+        // Whatever WAS granted is genuinely up, so it is recorded whatever happened to the rest: a
+        // batch is one packet but not one decision, and forgetting the granted half would leave
+        // the console wrong in the other direction.
+        var refused = new List<string>();
+        foreach (var item in result.Items)
+        {
+            if (Granted(item.ResultCode)) _filters[item.TopicFilter.Topic] = 0;
+            else refused.Add($"'{item.TopicFilter.Topic}' ({item.ResultCode})");
+        }
+
+        if (refused.Count > 0)
+            throw new MessageRejectedException($"The broker refused {string.Join(", ", refused)}.");
     }
+
+    // The three codes that are a granted QoS rather than a refusal; everything else in the enum is
+    // the broker saying no, and MQTT 5 leaves room for reason codes this build has never heard of.
+    private static bool Granted(MqttClientSubscribeResultCode code) =>
+        code is MqttClientSubscribeResultCode.GrantedQoS0
+            or MqttClientSubscribeResultCode.GrantedQoS1
+            or MqttClientSubscribeResultCode.GrantedQoS2;
 
     public async Task UnsubscribeAsync(string topicFilter, CancellationToken ct)
     {

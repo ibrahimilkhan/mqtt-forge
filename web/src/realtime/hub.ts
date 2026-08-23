@@ -5,6 +5,8 @@ export type HubEvents = {
   // Batched server-side: a busy broker outruns one frame per message.
   messagesReceived: (messages: MqttMessage[]) => void;
   connectionStateChanged: (payload: ConnectionStateResponse) => void;
+  /** Running total the server's own queue has had to drop, sent only when it moves. */
+  messagesDropped: (total: number) => void;
   reconnecting: () => void;
   reconnected: () => void;
 };
@@ -79,6 +81,12 @@ export function createSignalRHub(url = '/hubs/mqtt'): Hub {
         const handler = handlers.connectionStateChanged;
         connection.on('connectionStateChanged', handler);
         registered.push(() => connection.off('connectionStateChanged', handler));
+      }
+
+      if (handlers.messagesDropped) {
+        const handler = handlers.messagesDropped;
+        connection.on('messagesDropped', handler);
+        registered.push(() => connection.off('messagesDropped', handler));
       }
 
       // signalR has no lifecycle-handler removal API; harmless since the connection outlives the app.

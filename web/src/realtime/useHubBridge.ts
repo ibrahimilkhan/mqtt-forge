@@ -22,6 +22,16 @@ import type { Hub } from './hub';
  */
 const PER_FRAME = 2_000;
 
+/**
+ * How often a drop is allowed to write a line in the log.
+ *
+ * A console that is behind stays behind, so the server sends a new total on nearly every batch.
+ * One line each would bury the traffic the reader is there for under a column of the same
+ * sentence; one every few seconds says the same thing and leaves the log readable. The health
+ * line carries the exact figure continuously either way.
+ */
+const DROPS_REPORTED_EVERY = 5_000;
+
 // Where hub events meet application state; mounted once, from App.
 export function useHubBridge(hub: Hub) {
   const queryClient = useQueryClient();
@@ -86,12 +96,35 @@ export function useHubBridge(hub: Hub) {
       useLogStore.getState().clear();
     });
 
+    // When the log last said something about drops. Held across batches, reset with the bridge.
+    let saidAt = -DROPS_REPORTED_EVERY;
+
     const unsubscribe = hub.subscribe({
       messagesReceived: (messages) => {
         buffer.pushAll(messages);
         usePauseStore.getState().track(buffer.waiting());
       },
       connectionStateChanged: (payload) => queryClient.setQueryData(queryKeys.connection, payload),
+      // The one loss the console cannot see for itself: these never arrived, so nothing on this
+      // side could have counted them. The server has always kept the figure; until now nothing
+      // asked for it, and a console quietly short of topics looked exactly like a quiet broker.
+      messagesDropped: (total) => {
+        if (total === useHealthStore.getState().dropped) return;
+
+        useHealthStore.getState().serverDropped(total);
+
+        const now = performance.now();
+        if (now - saidAt < DROPS_REPORTED_EVERY) return;
+        saidAt = now;
+
+        useLogStore.getState().push({
+          kind: 'fault',
+          verb: 'Messages dropped',
+          body:
+            `${total} message${total === 1 ? '' : 's'} never left the server: its queue filled ` +
+            'while this console was behind. The tree and the log are short of what they show.',
+        });
+      },
       reconnecting: () => useHubStatusStore.getState().setStatus('reconnecting'),
       // Broker state may have moved on while the hub was down; refetch, don't trust the cache.
       reconnected: () => {
