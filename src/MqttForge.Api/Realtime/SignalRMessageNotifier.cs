@@ -15,6 +15,9 @@ public sealed class SignalRMessageNotifier : BackgroundService, IMessageNotifier
 {
     public const string MessagesReceived = "messagesReceived";
 
+    /// <summary>Carries the running total below, so the console can say what it never received.</summary>
+    public const string MessagesDropped = "messagesDropped";
+
     // Deep enough to ride out a burst the console is still drawing. Past this the oldest go —
     // a stale message is worth less than a live one — but that is a last resort, not a budget,
     // and Dropped says when it happens instead of leaving the console quietly short of topics.
@@ -42,6 +45,9 @@ public sealed class SignalRMessageNotifier : BackgroundService, IMessageNotifier
     public int Dropped => Volatile.Read(ref _dropped);
 
     private readonly Channel<MqttMessage> _queue;
+
+    // The last total sent, so a console that is keeping up costs nothing.
+    private int _announced;
 
     public SignalRMessageNotifier(IHubContext<MqttHub> hub)
     {
@@ -72,6 +78,8 @@ public sealed class SignalRMessageNotifier : BackgroundService, IMessageNotifier
                 if (batch.Count > 0)
                     await _hub.Clients.All.SendAsync(MessagesReceived, batch, stoppingToken);
 
+                await AnnounceDropsAsync(stoppingToken);
+
                 // Only when the broker is quiet. Pausing after a full batch was what capped the
                 // whole pump at one batch per tick however fast messages were actually arriving.
                 if (ShouldCoalesceAfter(batch.Count))
@@ -82,6 +90,19 @@ public sealed class SignalRMessageNotifier : BackgroundService, IMessageNotifier
         {
             // Shutdown; whatever is still queued goes with the connection anyway.
         }
+    }
+
+    // The one loss the console cannot see for itself: the messages never arrive, so nothing at the
+    // other end can count them. Dropped was already kept for exactly this and read by nothing —
+    // the queue's whole reason for holding a figure rather than dropping quietly went no further
+    // than a field. Sent on a change only, which for a console keeping up is never.
+    private async Task AnnounceDropsAsync(CancellationToken stoppingToken)
+    {
+        var dropped = Dropped;
+        if (dropped == _announced) return;
+
+        _announced = dropped;
+        await _hub.Clients.All.SendAsync(MessagesDropped, dropped, stoppingToken);
     }
 
     private List<MqttMessage> Drain()

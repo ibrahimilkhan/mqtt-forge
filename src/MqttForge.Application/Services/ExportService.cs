@@ -14,12 +14,42 @@ namespace MqttForge.Application.Services;
 /// folder its owner already opened, which is a great deal less than the publish endpoint already
 /// allows them.
 /// </remarks>
-public sealed class ExportService
+public sealed class ExportService : IDisposable
 {
     /// <summary>Enough for the longest run the chart can hold, and far short of a disk filler.</summary>
     public const int LargestExport = 8 * 1024 * 1024;
 
+    /// <summary>What came of asking the host for a folder.</summary>
+    public enum Choice
+    {
+        /// <summary>Answered with a folder, and it is now the one in force.</summary>
+        Chosen,
+
+        /// <summary>
+        /// Dismissed, or answered with a folder that is not there. Either way the folder in force
+        /// is unchanged — 'not there, then' is an answer rather than a failure.
+        /// </summary>
+        Unchanged,
+
+        /// <summary>
+        /// Someone else's dialog is open on the window already, and a second was not put on top
+        /// of it.
+        /// </summary>
+        AlreadyOpen,
+
+        /// <summary>This host has no window, so there is no dialog to open.</summary>
+        Unavailable,
+    }
+
     private readonly IFolderPicker? _picker;
+
+    // One dialog at a time. Two consoles on one host is the ordinary case rather than the strange
+    // one — the QR panel exists to put a second on a phone — and without this both of them asking
+    // put two dialogs on one window, each holding a request open until somebody answered it.
+    private readonly SemaphoreSlim _choosing = new(1, 1);
+
+    // Written under the gate above and read by any request; through Volatile so a console that
+    // asks straight after choosing is not shown the folder from before.
     private string? _folder;
 
     // Null when the host has no window to hang a dialog on — a plain `dotnet run`, or a test.
@@ -29,7 +59,7 @@ public sealed class ExportService
     public bool CanChoose => _picker is not null;
 
     /// <summary>The folder in force, or null while none has been chosen.</summary>
-    public string? Folder => _folder;
+    public string? Folder => Volatile.Read(ref _folder);
 
     /// <summary>
     /// Opens the host's dialog and remembers what came back.
@@ -37,27 +67,44 @@ public sealed class ExportService
     /// <remarks>
     /// A folder that has since been deleted or unmounted is not remembered: the reader would
     /// otherwise be shown a path that every save is going to fail against.
+    /// <para>
+    /// A second console asking while a dialog is open is turned away rather than queued behind it.
+    /// Queued, its request would hang for as long as the first dialog went unanswered — up to the
+    /// picker's own five minutes — and then open a dialog nobody was waiting for any more.
+    /// </para>
     /// </remarks>
-    public async Task<string?> ChooseAsync(CancellationToken token = default)
+    public async Task<Choice> ChooseAsync(CancellationToken token = default)
     {
-        if (_picker is null) return null;
+        if (_picker is null) return Choice.Unavailable;
 
-        var chosen = await _picker.PickAsync("Where to save the readings", token);
-        if (string.IsNullOrWhiteSpace(chosen) || !Directory.Exists(chosen)) return null;
+        if (!await _choosing.WaitAsync(0, token)) return Choice.AlreadyOpen;
 
-        _folder = chosen;
+        try
+        {
+            var chosen = await _picker.PickAsync("Where to save the readings", token);
+            if (string.IsNullOrWhiteSpace(chosen) || !Directory.Exists(chosen)) return Choice.Unchanged;
 
-        return _folder;
+            Volatile.Write(ref _folder, chosen);
+
+            return Choice.Chosen;
+        }
+        finally
+        {
+            _choosing.Release();
+        }
     }
+
+    public void Dispose() => _choosing.Dispose();
 
     /// <summary>Writes one file into the chosen folder, and says where it landed.</summary>
     public async Task<string> SaveAsync(string name, string content, CancellationToken token = default)
     {
-        if (_folder is null) throw new InvalidOperationException("No folder has been chosen.");
-        if (!Directory.Exists(_folder)) throw new DirectoryNotFoundException(_folder);
+        var folder = Folder;
+        if (folder is null) throw new InvalidOperationException("No folder has been chosen.");
+        if (!Directory.Exists(folder)) throw new DirectoryNotFoundException(folder);
         if (content.Length > LargestExport) throw new ArgumentOutOfRangeException(nameof(content));
 
-        var path = Path.Combine(_folder, FileName(name));
+        var path = Path.Combine(folder, FileName(name));
         await File.WriteAllTextAsync(path, content, token);
 
         return path;

@@ -111,6 +111,41 @@ public class MessageBatchingTests
         Assert.Equal(1, notifier.Dropped);
     }
 
+    // Counting it was only half the job. The figure sat in a field nothing read, so the console
+    // went on showing fewer topics than the broker had with nothing anywhere saying why — which
+    // is the very thing counting rather than dropping quietly was for.
+    [Fact]
+    public async Task Tells_the_console_what_it_had_to_drop()
+    {
+        var hub = new RecordingHub();
+        var notifier = new SignalRMessageNotifier(hub.Context);
+
+        for (var i = 0; i <= SignalRMessageNotifier.QueueCapacity; i++)
+            await notifier.NotifyMessageReceivedAsync(Message($"lab/{i}"));
+
+        await notifier.StartAsync(CancellationToken.None);
+        var total = await hub.NextDropTotal();
+        await notifier.StopAsync(CancellationToken.None);
+
+        Assert.Equal(1, total);
+    }
+
+    // Sent on a change, so a console that is keeping up never hears about it.
+    [Fact]
+    public async Task Says_nothing_about_drops_while_there_are_none()
+    {
+        var hub = new RecordingHub();
+        var notifier = new SignalRMessageNotifier(hub.Context);
+
+        await notifier.NotifyMessageReceivedAsync(Message("lab/a"));
+
+        await notifier.StartAsync(CancellationToken.None);
+        await hub.NextBatch();
+        await notifier.StopAsync(CancellationToken.None);
+
+        Assert.True(hub.SaidNothingAboutDrops);
+    }
+
     [Fact]
     public async Task Drops_nothing_while_the_queue_has_room()
     {
@@ -147,6 +182,8 @@ public class MessageBatchingTests
         private readonly Channel<IReadOnlyList<MqttMessage>> _batches =
             Channel.CreateUnbounded<IReadOnlyList<MqttMessage>>();
 
+        private readonly Channel<int> _drops = Channel.CreateUnbounded<int>();
+
         public RecordingHub()
         {
             var proxy = Substitute.For<IClientProxy>();
@@ -155,7 +192,14 @@ public class MessageBatchingTests
                 .Returns(call =>
                 {
                     var payload = call.Arg<object?[]>()!;
-                    _batches.Writer.TryWrite((IReadOnlyList<MqttMessage>)payload[0]!);
+
+                    // Two methods travel this way now, so what was sent is kept apart by which
+                    // was called rather than by casting whatever turns up to a batch.
+                    if (call.ArgAt<string>(0) == SignalRMessageNotifier.MessagesDropped)
+                        _drops.Writer.TryWrite((int)payload[0]!);
+                    else
+                        _batches.Writer.TryWrite((IReadOnlyList<MqttMessage>)payload[0]!);
+
                     return Task.CompletedTask;
                 });
 
@@ -173,5 +217,14 @@ public class MessageBatchingTests
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             return await _batches.Reader.ReadAsync(timeout.Token);
         }
+
+        public async Task<int> NextDropTotal()
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            return await _drops.Reader.ReadAsync(timeout.Token);
+        }
+
+        /// <summary>Whether anything has been said about drops at all.</summary>
+        public bool SaidNothingAboutDrops => _drops.Reader.Count == 0;
     }
 }
