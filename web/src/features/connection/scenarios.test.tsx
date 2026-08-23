@@ -454,3 +454,72 @@ describe('a connection that does not come up', () => {
     expect(await screen.findByText('Host is required')).toBeInTheDocument();
   });
 });
+
+// The two things a pair of hands does without being told to.
+describe('the keyboard, which is what most of this is filled in with', () => {
+  it('connects on Enter from the address box', async () => {
+    const seen = watchConnect();
+    renderPanel();
+
+    await userEvent.clear(address());
+    await userEvent.type(address(), 'broker.example{Enter}');
+
+    await waitFor(() => expect(seen.request).toMatchObject({ host: 'broker.example' }));
+  });
+
+  it.each(['Port', 'Username', 'Password', 'Client ID'])('connects on Enter from %s', async (label) => {
+    const seen = watchConnect();
+    renderPanel();
+
+    await userEvent.type(screen.getByLabelText(label), '{Enter}');
+
+    await waitFor(() => expect(seen.request).toBeDefined());
+  });
+
+  // The name box answers Enter itself, and a keystroke that reached the form from inside it
+  // would connect as well as save.
+  it('saves rather than connects on Enter in the name box', async () => {
+    const seen = watchConnect();
+    let saved: unknown;
+    server.use(
+      http.put('/api/connection/profiles', async ({ request }) => {
+        saved = await request.json();
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Save this broker' }));
+    await userEvent.type(screen.getByLabelText('Save as'), '{Enter}');
+
+    await waitFor(() => expect(saved).toMatchObject({ name: 'localhost:1883' }));
+    expect(seen.request).toBeUndefined();
+  });
+
+  it('does nothing on Enter over a live link, which Connect cannot do anyway', async () => {
+    const seen = watchConnect();
+    server.use(http.get('/api/connection', () => HttpResponse.json({ state: 'Connected' })));
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Connect' })).toBeDisabled());
+    await userEvent.type(screen.getByLabelText('Port'), '{Enter}');
+
+    expect(seen.request).toBeUndefined();
+  });
+
+  // Where a reader who opened this panel is going to type first.
+  it('puts the cursor in the address box on the way in', async () => {
+    renderPanel();
+
+    await waitFor(() => expect(address()).toHaveFocus());
+  });
+
+  // That panel was opened to read the summary or to end the connection.
+  it('leaves the cursor alone over a live link', async () => {
+    server.use(http.get('/api/connection', () => HttpResponse.json({ state: 'Connected' })));
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Disconnect' })).toBeEnabled());
+    expect(address()).not.toHaveFocus();
+  });
+});

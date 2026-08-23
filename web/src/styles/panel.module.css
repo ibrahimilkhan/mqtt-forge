@@ -188,3 +188,13 @@
   font-weight: 400;
   margin: 0 0 8px;
 }
+
+/* The broker on the left, the client on the right. auto-fit rather than two fixed tracks: below
+   about 660px one column of fields stops being readable, and the pair becomes a stack without a
+   breakpoint written anywhere. */
+.pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 0 28px;
+  align-items: start;
+}
