@@ -20,7 +20,7 @@ import { schemeOf } from './scheme';
 const endpoint = ({ transport, useTls, host, port }: ConnectRequest) =>
   `${formatBrokerAddress(schemeOf(transport ?? 'tcp', useTls), host)}:${port}`;
 
-type ConnectVars = { request: ConnectRequest; autoSubscribe: boolean; onConnectFilter: string };
+type ConnectVars = { request: ConnectRequest; autoSubscribe: boolean };
 
 export function useConnectionActions() {
   const queryClient = useQueryClient();
@@ -29,7 +29,7 @@ export function useConnectionActions() {
     // Success means the connection itself succeeded; auto-subscribe failure doesn't count against it.
     mutationFn: ({ request }: ConnectVars) => connect(request),
 
-    onSuccess: async (result, { request, autoSubscribe, onConnectFilter }) => {
+    onSuccess: async (result, { request, autoSubscribe }) => {
       // Refetch, don't write the response: the hub may have already pushed a newer state.
       void queryClient.invalidateQueries({ queryKey: queryKeys.connection });
 
@@ -51,7 +51,7 @@ export function useConnectionActions() {
         body: `${endpoint(request)} · ${request.clientId}`,
       });
 
-      if (autoSubscribe) await subscribeOnConnect(onConnectFilter);
+      if (autoSubscribe) await subscribeOnConnect();
 
       void queryClient.invalidateQueries({ queryKey: queryKeys.subscriptions });
       void queryClient.invalidateQueries({ queryKey: queryKeys.savedSettings });
@@ -93,27 +93,28 @@ export function useConnectionActions() {
   return { connectMutation, disconnectMutation, abortMutation };
 }
 
+/** Everything, which is what the box beside Connect asks for. */
+const EVERYTHING = '#';
+
 /**
  * What to listen to the moment the link is up.
  *
- * The filter comes from the panel rather than being fixed at '#'. Every public broker tested
- * refuses a bare '#' — mqtt.hsl.fi by closing the session, so the console used to connect and
- * fall over in the same breath — and a broker's own preset knows what it will actually answer.
+ * Everything, or nothing at all. A good many brokers out on the internet refuse a bare '#' —
+ * mqtt.hsl.fi by closing the session — and that used to be guarded against with a filter box in
+ * the panel. It is answered where it happens instead: the refusal is reported, and the Filters
+ * panel is one button away from it.
  *
  * Reported on its own log line, so a failure here reads as a subscribe failure, not a connect
  * failure: the link is a separate thing and may well still be up.
  */
-async function subscribeOnConnect(topicFilter: string) {
-  const filter = topicFilter.trim();
-  // Nothing to ask for. Not an error — a reader who emptied the box said they wanted no
-  // subscription, and the Subscribe panel is right there.
-  if (!filter) return;
-
+async function subscribeOnConnect() {
   try {
-    await subscribe({ topicFilter: filter, qos: 0 });
-    useLogStore.getState().push({ kind: 'ok', verb: 'Subscribed', topic: filter, stamps: ['QoS 0'] });
+    await subscribe({ topicFilter: EVERYTHING, qos: 0 });
+    useLogStore
+      .getState()
+      .push({ kind: 'ok', verb: 'Subscribed', topic: EVERYTHING, stamps: ['QoS 0'] });
   } catch (error) {
-    logFault('Subscribe failed', error, filter);
+    logFault('Subscribe failed', error, EVERYTHING);
   }
 }
 

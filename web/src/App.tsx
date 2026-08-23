@@ -28,7 +28,16 @@ import { useHubStatusStore } from './stores/hubStatusStore';
 /** The width the workspace stops being columns at, and the rail starts lying over it. */
 const NARROW = '(max-width: 760px)';
 
-const PANEL_VIEWS: Record<PanelId, (props: { onClose: () => void }) => ReactNode> = {
+/**
+ * What every panel is handed.
+ *
+ * `open` is here for the one panel that has somewhere to send the reader: connecting with the
+ * broker refusing a subscription to everything is a dead end unless the Filters panel is a button
+ * away. Panels with nowhere to send anyone simply do not name it.
+ */
+type PanelProps = { onClose: () => void; open: (id: PanelId) => void };
+
+const PANEL_VIEWS: Record<PanelId, (props: PanelProps) => ReactNode> = {
   broker: BrokerPanel,
   subscribe: SubscribePanel,
   colours: ColoursPanel,
@@ -162,7 +171,9 @@ export function App({ hub }: { hub: Hub }) {
       </div>
 
       <Workspace
-        panel={Panel ? <Panel onClose={close} /> : undefined}
+        panel={Panel ? <Panel onClose={close} open={setOpenPanel} /> : undefined}
+        // The broker panel only. See Workspace's own note on why it is the one.
+        wide={openPanel === 'broker'}
         tree={
           <section className={styles.treePane}>
             {/* The live link, so every topic hangs off the broker it actually came from. */}

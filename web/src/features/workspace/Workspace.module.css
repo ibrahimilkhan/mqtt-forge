@@ -146,3 +146,17 @@
   .right,
   .right[data-fit='content'] { grid-template-rows: auto auto auto auto auto !important; }
 }
+
+/* One panel, the whole workspace. The rest stays mounted and goes out of the grid's way: a tree
+   unmounted is a tree rebuilt from nothing the next time the panel shuts, and the log's history
+   would go with it. `display: none` takes them out of the flow, so the single track is the whole
+   of the row rather than a first column with four empty ones after it. */
+.grid[data-panel='full'] { grid-template-columns: minmax(0, 1fr); }
+.grid[data-panel='full'] > *:not(:first-child) { display: none; }
+
+/* A form does not get better at 1400px. The panel takes the workspace so the reader is not
+   answering it down a column, but the fields stop growing where a pasted broker address stops
+   needing more room — `mqtts://abc-ats.iot.eu-west-1.amazonaws.com:8883` is fifty characters,
+   and the box holds seventy at this width. Left rather than centred: the label of the first
+   field is where the eye starts, and centring moves it somewhere different for every panel. */
+.grid[data-panel='full'] section > * { max-width: 900px; }

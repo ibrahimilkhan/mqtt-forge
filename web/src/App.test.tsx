@@ -25,6 +25,11 @@ const menu = () => within(screen.getByRole('navigation', { name: 'Panels' }));
 const share = (name: string) =>
   screen.getByTestId('layout').style.getPropertyValue(`--${name}`);
 
+// The app opens on the broker panel, which takes the whole workspace — so the columns it covers
+// are not on screen while it is up. Anything about those columns swaps it for a panel that lives
+// in one, which is every other panel there is.
+const intoColumns = () => userEvent.click(menu().getByRole('button', { name: 'Filters' }));
+
 describe('App', () => {
   it('opens the broker panel first, since connecting comes before everything else', async () => {
     renderApp();
@@ -32,8 +37,29 @@ describe('App', () => {
     expect(await menu().findByRole('button', { name: 'Broker' })).toHaveAttribute('aria-expanded', 'true');
   });
 
-  it('keeps topics, the log, the chart and publish on screen whatever the menu is doing', () => {
+  // The one panel that covers them, and the reason: nothing in the tree or the log means
+  // anything until the connection the broker panel describes is up.
+  it('gives the broker panel the whole workspace', async () => {
     renderApp();
+
+    await menu().findByRole('button', { name: 'Broker' });
+    expect(screen.getByTestId('layout')).toHaveAttribute('data-panel', 'full');
+    expect(
+      screen.queryByRole('separator', { name: 'Panel and topics boundary' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('gives the columns back to any other panel', async () => {
+    renderApp();
+    await intoColumns();
+
+    expect(screen.getByTestId('layout')).toHaveAttribute('data-panel', 'open');
+    expect(screen.getByRole('separator', { name: 'Panel and topics boundary' })).toBeInTheDocument();
+  });
+
+  it('keeps topics, the log, the chart and publish on screen whatever the menu is doing', async () => {
+    renderApp();
+    await intoColumns();
 
     expect(screen.getByRole('heading', { name: 'Topics' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Logs' })).toBeInTheDocument();
@@ -109,20 +135,22 @@ describe('App', () => {
   // relationship the pointer has to it, and the reason these numbers are not round.
   it('puts the panel column back the width it was when it reopens', async () => {
     renderApp();
+    await intoColumns();
 
     const seam = screen.getByRole('separator', { name: 'Panel and topics boundary' });
     seam.focus();
     await userEvent.keyboard('{ArrowLeft}');
     expect(share('panel')).toBe('22.64fr');
 
-    await userEvent.click(menu().getByRole('button', { name: 'Broker' }));
-    await userEvent.click(menu().getByRole('button', { name: 'Broker' }));
+    await intoColumns();
+    await intoColumns();
 
     expect(share('panel')).toBe('22.64fr');
   });
 
   it('moves the topics boundary with the arrow keys', async () => {
     renderApp();
+    await intoColumns();
 
     const seam = screen.getByRole('separator', { name: 'Topics and log boundary' });
     seam.focus();
@@ -137,6 +165,7 @@ describe('App', () => {
   // shares.
   it('opens the right column sized to its two ends, then splits on drag', async () => {
     renderApp();
+    await intoColumns();
 
     expect(screen.getByTestId('right-column')).toHaveAttribute('data-fit', 'content');
 
@@ -154,6 +183,7 @@ describe('App', () => {
   // the publish form must not also move the entries above it.
   it('leaves the entries where they were when the lower seam moves', async () => {
     renderApp();
+    await intoColumns();
 
     const seam = screen.getByRole('separator', { name: 'Chart and publish boundary' });
     seam.focus();
@@ -263,6 +293,7 @@ describe('App', () => {
   // it leaves the column entirely, which no share of a grid track can express.
   it('takes the window when the chart is thrown open', async () => {
     renderApp();
+    await intoColumns();
 
     const pane = () => screen.getByRole('heading', { name: 'Chart' }).closest('section')!;
     expect(pane()).not.toHaveAttribute('data-zoomed');

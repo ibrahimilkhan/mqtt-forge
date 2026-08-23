@@ -880,8 +880,8 @@ function brokerStates() {
 
     const { container } = render(
       <QueryClientProvider client={client}>
-        <div style={{ width: 320, border: '1px solid var(--rule)', borderRadius: 3 }}>
-          <BrokerPanel onClose={() => {}} />
+        <div style={{ width: 900, border: '1px solid var(--rule)', borderRadius: 3 }}>
+          <BrokerPanel onClose={() => {}} open={() => {}} />
         </div>
       </QueryClientProvider>,
     );
@@ -940,7 +940,7 @@ function brokerStates() {
       },
     });
 
-  return `<h2>The broker panel</h2><div class="gRow" style="align-items:flex-start">
+  return `<h2>The broker panel</h2><div style="display:grid;gap:18px">
 ${one('nothing connected', nothing)}
 ${one('a link up', link)}
 ${one('a failure with a way out', faulted, false, (box) => {
