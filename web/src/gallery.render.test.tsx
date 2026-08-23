@@ -15,6 +15,7 @@ import { it } from 'vitest';
 import './styles/global.css';
 import chartStyles from './features/monitor/TrafficChart.module.css';
 import { App } from './App';
+import { BrokerPanel } from './features/connection/BrokerPanel';
 import { ChartPanel } from './features/chart/ChartPanel';
 import { WireLog } from './features/monitor/WireLog';
 import { ReadingDetail } from './features/monitor/ReadingDetail';
@@ -339,6 +340,7 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
     'gallery.html',
     ...pages.map((_, i) => `gallery-${i + 1}.html`),
     'gallery-panel.html',
+    'gallery-broker.html',
     'gallery-detail.html',
     'gallery-dots.html',
     'gallery-log.html',
@@ -355,6 +357,8 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
           ? 'Marks'
           : href === 'gallery-panel.html'
             ? 'Chart panel'
+          : href === 'gallery-broker.html'
+            ? 'Broker, side by side'
             : href === 'gallery-detail.html'
               ? 'A reading'
               : href === 'gallery-dots.html'
@@ -435,6 +439,8 @@ ${inner}
     `${OUT}/gallery-panel.html`,
     page('the chart panel', `<h2>The chart panel</h2>${stamp(chartPanel).innerHTML}`),
   );
+
+  writeFileSync(`${OUT}/gallery-broker.html`, page('the broker panel', brokerStates()));
 
   writeFileSync(
     `${OUT}/gallery-detail.html`,
@@ -856,4 +862,59 @@ function console_(client, { zoomed = false, pinned = false, panel = 'broker', ra
 <title>MQTTForge — the console</title>
 ${document.head.innerHTML}
 </head><body>${stamp(container).innerHTML}</body></html>`;
+}
+
+/**
+ * The broker panel in the three states it is read in, at the width of the column it lives in.
+ *
+ * Side by side, because the point of the layout is what each state puts first: nothing connected
+ * and it is the form; connected and it is the link, with the form folded behind one line; and
+ * everything unfolded, which is the whole of what the panel can ask for and is what it used to
+ * show on every visit.
+ */
+function brokerStates() {
+  const one = (label, prime, unfold = false) => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    prime(client);
+
+    const { container } = render(
+      <QueryClientProvider client={client}>
+        <div style={{ width: 320, border: '1px solid var(--rule)', borderRadius: 3 }}>
+          <BrokerPanel onClose={() => {}} />
+        </div>
+      </QueryClientProvider>,
+    );
+
+    // A property React set, written down as an attribute — the same reason `stamp` exists.
+    if (unfold) {
+      for (const details of container.querySelectorAll('details')) details.setAttribute('open', '');
+    }
+
+    return `<div class="gCell"><span class="gTag">${label}</span>${stamp(container).innerHTML}</div>`;
+  };
+
+  const link = (client) =>
+    client.setQueryData(queryKeys.connection, {
+      state: 'Connected',
+      connection: {
+        host: 'mqtt.hsl.fi',
+        port: 8883,
+        clientId: 'mqttforge-console',
+        useTls: true,
+        transport: 'tcp',
+        protocolVersion: 'v500',
+        connectedAt: new Date(Date.now() - 184_000).toISOString(),
+        sessionPresent: false,
+        assignedClientId: null,
+        serverKeepAlive: 60,
+      },
+    });
+
+  const nothing = (client) => client.setQueryData(queryKeys.connection, { state: 'Disconnected' });
+
+  return `<h2>The broker panel</h2><div class="gRow" style="align-items:flex-start">
+${one('nothing connected', nothing)}
+${one('a link up', link)}
+${one('every fold opened', nothing, true)}
+</div>`;
 }

@@ -140,8 +140,10 @@ docker run -d -p 5169:5169 --name mqtt-forge ghcr.io/ibrahimilkhan/mqtt-forge
 
 **2. Open http://localhost:5169.** It loads with the Broker panel already open.
 
-**3. Point it at your broker** — fill in the host and port, then **Connect**. Which host depends
-on where the broker runs:
+**3. Point it at your broker** — fill in the host and port, then **Connect**. The address off
+your broker's own documentation goes in whole: paste `mqtts://host:8883` into **Host** and the
+scheme, the port and any WebSocket path sort themselves out. Which host depends on where the
+broker runs:
 
 | Your broker runs | Host to enter |
 |---|---|

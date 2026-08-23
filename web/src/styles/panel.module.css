@@ -71,14 +71,41 @@
   overflow-wrap: anywhere;
 }
 
-/* A section at the foot of a panel that is not what the panel is for: a way in for someone with
-   nothing of their own to point at yet, kept behind the fields rather than in front of them. The
-   rule is the same one the summary uses — this is another block that has stopped being the form.
-   The margin is doubled, because the thing above it is usually already a ruled block. */
-.aside {
-  margin-top: 22px;
-  padding-top: 14px;
-  border-top: 1px solid var(--rule);
+/* The same block standing first instead of last. Under a form it needs a rule to be set apart
+   from the controls above it; at the top of the panel there is nothing above it to be set apart
+   from, and a line under the close button drew a box around empty space. */
+.summaryLead {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+/* The live link and the one button that ends it, which is the whole of the panel while there is
+   one. The form below is folded behind a line — see .formFold. */
+.live { margin-bottom: 4px; }
+
+/* What to listen to the moment the link is up, as one block: the box is what the checkbox
+   means, and the two used to stand two blocks apart with a label of its own on the box. Ticking
+   the top line without a filter the broker will answer is how a connection comes up and shows
+   nothing, so the filter is never further away than the sentence about it. */
+.subscribe { margin: 12px 0; }
+.subscribe > label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+  font-family: var(--mono);
+  font-size: var(--t-small);
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--ink);
+  cursor: pointer;
+}
+.subscribe input[type='checkbox'] { accent-color: var(--ink); }
+/* Indented to the width of the box above it, so it reads as belonging to that line. */
+.subscribe > input[type='text'] {
+  width: calc(100% - 20px);
+  margin-left: 20px;
 }
 
 /* The filter box takes a whole list, so it is a textarea — but it should still read as a
@@ -113,3 +140,23 @@
 .more > summary:hover { color: var(--ink); }
 .more > summary:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
 .more[open] > summary { margin-bottom: 12px; color: var(--ink); }
+
+/* The connect form itself, which is a fold only some of the time.
+
+   With nothing connected it is the panel, so it wears none of this: no line, no summary, no way
+   to shut it. With a link up it becomes the second question on the page — the first being the
+   link — and folds behind the same quiet line every other optional block here uses. Drawn with
+   the same class rather than a copy of it, because a reader should not have to learn two kinds
+   of fold in one panel. */
+.formFold { composes: more; }
+.formFold[data-bare] {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+.formFold[data-bare] > summary { display: none; }
+
+/* The same fold, standing at the very foot of the panel behind the button rather than among the
+   fields. It gets the wider margin the section it replaced had: the thing above it is the
+   action the panel exists for, and a hairline 14px under a black button reads as part of it. */
+.footFold { composes: more; margin-top: 22px; }

@@ -12,9 +12,17 @@ import { schemeOf, versionName } from './scheme';
 // so the block keeps its shape from broker to broker and a gap reads as a gap.
 const NOTHING = '—';
 
-// What is up right now, under the form that would replace it. Keyed on the link rather than on
-// Connected: a state with no link is one we would rather show nothing for than guess about.
-export function ConnectionSummary() {
+/**
+ * What is up right now.
+ *
+ * `lead` is where it stands. Under the form that would replace it, it needs a rule to be set
+ * apart from the controls above; at the head of the panel — which is where it goes once there is
+ * a link, the form having folded away behind it — there is nothing above it to be set apart from.
+ *
+ * Keyed on the link rather than on Connected: a state with no link is one we would rather show
+ * nothing for than guess about.
+ */
+export function ConnectionSummary({ lead = false }: { lead?: boolean } = {}) {
   const { link } = useConnectionState();
   const { data: filters } = useQuery({
     queryKey: queryKeys.subscriptions,
@@ -25,7 +33,10 @@ export function ConnectionSummary() {
   if (!link) return null;
 
   return (
-    <dl className={styles.summary} aria-label="Connection details">
+    <dl
+      className={lead ? `${styles.summary} ${styles.summaryLead}` : styles.summary}
+      aria-label="Connection details"
+    >
       <Row label="Broker" value={`${link.host}:${link.port}`} />
       {/* How, and in what. Both are answers rather than settings: with the version left on Auto
           the form holds a request and this holds what the broker agreed to, which is the only

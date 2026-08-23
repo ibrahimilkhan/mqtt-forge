@@ -69,10 +69,14 @@ async function openPanelButton(name: 'Subscribe' | 'Publish') {
 }
 
 describe('connection gating', () => {
-  it('disables Disconnect while there is no connection', async () => {
+  // Not "disabled": absent. Disconnect stands with the link it would end, and with nothing
+  // connected there is no link and no block for it to stand in — a greyed button for something
+  // that does not exist is a control the reader has to rule out on every visit.
+  it('offers no Disconnect while there is no connection', async () => {
     renderApp('Disconnected');
 
-    expect(await screen.findByRole('button', { name: 'Disconnect' })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: 'Connect' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Disconnect' })).not.toBeInTheDocument();
   });
 
   it('enables Disconnect once connected', async () => {
