@@ -17,7 +17,14 @@ export type SchemeChoice = {
   useTls: boolean;
   /** What the broker almost certainly listens on, when nobody has said otherwise. */
   defaultPort: number;
-  /** Under the picker: what this one is, in the fewest words that distinguish it. */
+  /**
+   * Under the address: what this way in is, in the fewest words that distinguish it.
+   *
+   * Both halves, always — encrypted or not, and straight to the broker or inside a WebSocket.
+   * Under the four chips it only had to tell the chosen one from its neighbours, and the
+   * neighbours were on screen; standing alone under the address it is the only thing saying
+   * either. `mqtts` was the one that named the encryption without naming the transport.
+   */
   note: string;
 };
 
@@ -34,7 +41,7 @@ export const SCHEMES: readonly SchemeChoice[] = [
     transport: 'tcp',
     useTls: true,
     defaultPort: 8883,
-    note: 'MQTT over TLS. What every cloud broker wants.',
+    note: 'MQTT over TLS, straight to the broker. What every cloud broker wants.',
   },
   {
     scheme: 'ws',
