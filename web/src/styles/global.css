@@ -37,6 +37,29 @@
     margin-bottom: 5px;
   }
 
+  /* A select wears the same face as the boxes beside it: in this app it only ever appears as
+     part of a field, standing where a value would, and a control drawn any other way would read
+     as a different kind of thing. `appearance: none` takes the platform's own chrome off; the
+     arrow is drawn back on as a background so it survives both themes. */
+  select {
+    appearance: none;
+    font-family: var(--mono);
+    font-size: var(--t-code);
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    padding: 8px 22px 8px 9px;
+    cursor: pointer;
+    background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+      linear-gradient(135deg, currentColor 50%, transparent 50%);
+    background-position: right 10px center, right 6px center;
+    background-size: 4px 4px, 4px 4px;
+    background-repeat: no-repeat;
+  }
+
+  select:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
   input[type=text], input[type=number], input[type=password], textarea {
     width: 100%;
     font-family: var(--mono);

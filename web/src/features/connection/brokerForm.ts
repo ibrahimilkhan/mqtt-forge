@@ -62,7 +62,7 @@ export function buildConnectRequest(form: BrokerForm): ConnectRequest {
     webSocketPath: isWebSocket(form.scheme) ? form.webSocketPath.trim() || null : null,
     cleanSession: form.cleanSession,
     sessionExpiryInterval: sessionExpiry(form),
-    tls: isEncrypted(form.scheme) ? tlsOptions(form) : null,
+    tls: isEncrypted(form.scheme) && hasTlsMaterial(form) ? tlsOptions(form) : null,
   };
 }
 
@@ -84,9 +84,9 @@ function sessionExpiry(form: BrokerForm): number | null {
     : Math.floor(seconds);
 }
 
-/** The encryption block, or null when nothing in it was filled in. */
-function tlsOptions(form: BrokerForm): TlsOptions | null {
-  const options: TlsOptions = {
+/** The encryption block as the API takes it, whether or not anything is in it. */
+function tlsOptions(form: BrokerForm): TlsOptions {
+  return {
     allowUntrustedCertificates: form.allowUntrusted,
     certificateAuthorityPath: form.caPath.trim() || null,
     clientCertificatePath: form.clientCertPath.trim() || null,
@@ -96,12 +96,26 @@ function tlsOptions(form: BrokerForm): TlsOptions | null {
     sniHost: form.sniHost.trim() || null,
     alpnProtocol: form.alpnProtocol.trim() || null,
   };
+}
 
-  const touched =
+/**
+ * Whether anything under Encryption has been filled in.
+ *
+ * Two callers, one question. The request needs it to decide whether to send a TLS block at all,
+ * and the panel needs it because filling any of these in is a statement that this connection is
+ * encrypted — there is no certificate authority for a connection with no certificate in it.
+ *
+ * The rule only runs that way. The absence of a certificate says nothing at all: nine of the ten
+ * encrypted brokers this console ships a preset for present a publicly trusted certificate and
+ * need nothing configured for it.
+ */
+export function hasTlsMaterial(form: BrokerForm): boolean {
+  const options = tlsOptions(form);
+
+  return (
     options.allowUntrustedCertificates ||
-    Object.values(options).some((value) => typeof value === 'string' && value.length > 0);
-
-  return touched ? options : null;
+    Object.values(options).some((value) => typeof value === 'string' && value.length > 0)
+  );
 }
 
 /** The last connection that worked, back in the form. Neither password comes back with it. */

@@ -160,3 +160,22 @@
    fields. It gets the wider margin the section it replaced had: the thing above it is the
    action the panel exists for, and a hairline 14px under a black button reads as part of it. */
 .footFold { composes: more; margin-top: 22px; }
+
+/* The way in and the address it belongs to, on one line — a scheme and a host, drawn the way
+   they are written. The select carries the `://`, so nothing stands between them but the seam.
+
+   `min-width: 0` on the box because a flex item's default is its content, and a long hostname
+   would otherwise push the select off the panel rather than scroll inside its own field. */
+.addressLine { display: flex; align-items: stretch; gap: 0; }
+.addressLine > input { flex: 1; min-width: 0; border-radius: 0 2px 2px 0; }
+.addressLine > select { flex: 0 0 auto; border-right: 0; border-radius: 2px 0 0 2px; }
+
+/* The port and the encryption box on one line under the address.
+
+   Aligned to the foot of the row rather than the head: the port's label sits above its box, and
+   a checkbox lined up with the word PORT reads as a caption for the port rather than a question
+   of its own. The 9px lifts the checkbox's middle to the box's middle — the box is 8px of
+   padding either side of a 17px line, so its centre is 17px up, and the label's own is 8px. */
+.portLine { display: flex; gap: 14px; align-items: flex-end; margin-bottom: 10px; }
+.portLine > .narrow { flex: 0 0 96px; }
+.portLine > .checks { flex: 1; min-width: 0; margin: 0 0 9px; }
