@@ -996,3 +996,62 @@ describe('the address, and the scheme read off it', () => {
     );
   });
 });
+
+// The half of the inference that was missing: portFor has moved the port with the scheme since
+// the picker was written, and nothing moved the scheme with the port.
+describe('a port that implies a scheme', () => {
+  const address = () => screen.getByLabelText('Broker address');
+  const port = () => screen.getByLabelText('Port');
+
+  const typePort = async (value: string) => {
+    await userEvent.clear(port());
+    await userEvent.type(port(), value);
+    fireEvent.blur(port());
+  };
+
+  it('turns encryption on for the encrypted port', async () => {
+    renderPanel();
+    await typePort('8883');
+
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'mqtts' })).toBeChecked());
+    expect(address()).toHaveValue('mqtts://localhost');
+  });
+
+  it('turns it off again for the plain port', async () => {
+    renderPanel();
+    await userEvent.click(screen.getByRole('radio', { name: 'mqtts' }));
+    await typePort('1883');
+
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'mqtt' })).toBeChecked());
+  });
+
+  // 8883 typed a digit at a time passes through 8, 88 and 888. A scheme moving on each of them
+  // would land wherever the last keystroke left it, which is why this waits for the box to be
+  // left rather than reading the keystroke.
+  it('waits for the box to be left rather than moving mid-number', async () => {
+    renderPanel();
+    await userEvent.clear(port());
+    await userEvent.type(port(), '8883');
+
+    expect(screen.getByRole('radio', { name: 'mqtt' })).toBeChecked();
+
+    fireEvent.blur(port());
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'mqtts' })).toBeChecked());
+  });
+
+  it('leaves a lab broker on a strange port where it was put', async () => {
+    renderPanel();
+    await typePort('21883');
+
+    expect(screen.getByRole('radio', { name: 'mqtt' })).toBeChecked();
+  });
+
+  // Somebody on wss picked the WebSocket deliberately, and 8883 over wss is a real broker.
+  it('never crosses the transport', async () => {
+    renderPanel();
+    await userEvent.click(screen.getByRole('radio', { name: 'wss' }));
+    await typePort('8883');
+
+    expect(screen.getByRole('radio', { name: 'wss' })).toBeChecked();
+  });
+});
