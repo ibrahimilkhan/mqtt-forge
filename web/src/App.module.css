@@ -92,42 +92,7 @@
    the address under it, so the pair reads as one stamp on the band rather than as the first two
    lines of the menu below. Centred at both widths, so narrowing the rail moves nothing sideways
    — it only takes the words out from under the lamp. */
-.railState {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  padding: 11px 12px 12px;
-  border-bottom: 1px solid var(--rule);
-}
-.rail:not([data-open]) .railState { padding: 9px 0; }
 
-/* The two states worth taking your eye off the messages for wash the whole band rather than
-   drawing a chip inside it. Six percent: enough that the band is plainly not white, nowhere near
-   enough to compete with the log. Connected leaves the band alone — a state you are in nearly
-   all the time should not be the loudest thing on the screen. */
-.railState[data-state='Faulted'],
-.railState[data-state='Reconnecting'] {
-  background: color-mix(in srgb, var(--fault) 6%, var(--surface));
-}
-
-/* Where the traffic is coming from. One line, tail first: the port and the host are what tell two
-   brokers apart, and the scheme in front of them never does. The right-to-left direction is not
-   about language — it is what makes a long address lose its head rather than its tail. */
-.where {
-  margin: 0;
-  max-width: 100%;
-  /* Said explicitly, because the direction below would otherwise range it against the right
-     edge: the direction is here for where the ellipsis lands, not for where the line sits. */
-  text-align: center;
-  font-family: var(--mono);
-  font-size: var(--t-micro);
-  color: var(--muted);
-  direction: rtl;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
 /* ---- panel menu ---- */
 /* No rule of its own: the group headings already divide it, and a border under the last group
@@ -348,14 +313,41 @@
   .chartPane { overflow-y: visible; }
 }
 
-/* The link's state, worn by the Broker row.
+/* The link's state, worn by the Broker row — which is the only place it is said now.
 
-   Only the glyph is tinted, not the word beside it: the row is a way into a panel first and a
-   readout second, and a green label would read as a selected row. Kept off the open row too —
-   there the button is inverted, ink on surface, and a tint over that is a third colour on a
-   shape that is already saying something. */
-.menuBtn[data-link='Connected']:not([aria-expanded='true']) svg { color: var(--live); }
-.menuBtn[data-link='Faulted']:not([aria-expanded='true']) svg { color: var(--fault); }
+   The whole row takes the colour, glyph and word together, because the row IS the readout: there
+   is no lamp above it any more to carry it instead. A wash behind the two states that are wrong,
+   at the six percent the rail's own band used to use — enough that it is plainly not the paper,
+   nowhere near enough to compete with the log. */
+.menuBtn[data-link='Connected'] { color: var(--live); }
+.menuBtn[data-link='Faulted'],
+.menuBtn[data-link='Reconnecting'] {
+  color: var(--fault);
+  background: color-mix(in srgb, var(--fault) 6%, transparent);
+}
+
+/* The open row is already ink on surface, which is a louder statement than any of these and
+   would fight them. The glyph keeps the colour, so the state survives being looked at. */
+.menuBtn[aria-expanded='true'][data-link='Connected'] svg { color: var(--live); }
+.menuBtn[aria-expanded='true'][data-link='Faulted'] svg,
+.menuBtn[aria-expanded='true'][data-link='Reconnecting'] svg { color: var(--fault); }
+.menuBtn[aria-expanded='true'][data-link='Faulted'],
+.menuBtn[aria-expanded='true'][data-link='Reconnecting'] { background: var(--ink); }
+
+/* Alive, and saying so. A breath rather than a blink: this is the state the console is in nearly
+   all the time, and something flashing in the corner of a room all day is something people turn
+   away from. Four seconds, and a swing small enough to notice only when you look. */
+.menuBtn[data-link='Connected'] svg { animation: breathe 4s ease-in-out infinite; }
+.menuBtn[data-link='Reconnecting'] .menuWarn { animation: pulse 1s ease-in-out infinite; }
+
+@keyframes breathe { 50% { opacity: 0.55; } }
+@keyframes pulse { 50% { opacity: 0.35; } }
+
+/* Motion is decoration here; the colour and the mark already carry the state. */
+@media (prefers-reduced-motion: reduce) {
+  .menuBtn svg,
+  .menuWarn { animation: none; }
+}
 
 /* Pushed to the end of the row when there are words, and into the corner when there are not:
    shut, the button is 34px with the glyph centred, and a mark on the same line would sit on top

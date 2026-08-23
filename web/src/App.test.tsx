@@ -261,36 +261,6 @@ describe('App', () => {
     ]);
   });
 
-  it('shows the connection state read from the API', async () => {
-    renderApp();
-
-    expect(await screen.findByText('DISCONNECTED')).toBeInTheDocument();
-  });
-
-  // The bar carried the state across the top; the rail carries it now, and narrowed it keeps it
-  // as a lamp with the word on the element rather than dropping the state altogether.
-  it('keeps the connection state readable with the rail narrowed', async () => {
-    renderApp();
-    await screen.findByText('DISCONNECTED');
-
-    await userEvent.click(screen.getByRole('button', { name: 'Panel menu' }));
-
-    expect(screen.queryByText('DISCONNECTED')).not.toBeInTheDocument();
-    expect(screen.getByLabelText('DISCONNECTED')).toBeInTheDocument();
-  });
-
-  // The state used to be a chip at the foot of the rail. It stands under the name now, and the
-  // two states worth interrupting for wash the whole band rather than drawing a box inside it.
-  it('washes the state band when the hub is reconnecting', async () => {
-    renderApp();
-    await screen.findByText('DISCONNECTED');
-
-    act(() => useHubStatusStore.setState({ status: 'reconnecting' }));
-
-    const band = screen.getByText('RECONNECTING').closest('div')!.parentElement!;
-    expect(band).toHaveAttribute('data-state', 'Reconnecting');
-  });
-
   // The chart's region is a third of a column that is itself a third of the window. Thrown open
   // it leaves the column entirely, which no share of a grid track can express.
   it('takes the window when the chart is thrown open', async () => {
@@ -320,88 +290,117 @@ describe('App', () => {
   });
 });
 
-// The link's own state, worn by the row that leads to it. Green connected, red faulted, and the
-// rail's ordinary grey for everything else — a red that is on at rest is a red nobody looks at.
-describe('the Broker row, as a readout', () => {
-  // Not an exact name: a faulted row carries the fault in its own accessible name, which is the
-  // point of the mark being labelled rather than hidden.
+// The link's state, worn by the row that leads to the panel that can do something about it —
+// and worn nowhere else. There used to be a lamp and a word at the top of the rail saying the
+// same thing in a different vocabulary.
+describe('the Broker row, as the only readout', () => {
   const brokerRow = () => menu().getByRole('button', { name: /^Broker/ });
 
+  const link = {
+    host: 'broker.example',
+    port: 1883,
+    clientId: 'console',
+    username: null,
+    useTls: false,
+    connectedAt: '2026-08-24T12:00:00Z',
+    sessionPresent: false,
+    assignedClientId: null,
+    serverKeepAlive: null,
+  };
+
+  const failure = {
+    reason: 'refused',
+    host: 'broker.example',
+    port: 1883,
+    clientId: 'console',
+    useTls: false,
+    transport: 'tcp',
+    protocolVersion: 'auto',
+  };
+
   const linked = (state: string, extra: Record<string, unknown> = {}) =>
-    server.use(
-      http.get('/api/connection', () => HttpResponse.json({ state, ...extra })),
-    );
+    server.use(http.get('/api/connection', () => HttpResponse.json({ state, ...extra })));
+
+  it('says the state nowhere else', async () => {
+    renderApp();
+
+    await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Disconnected'));
+    expect(screen.queryByText('DISCONNECTED')).not.toBeInTheDocument();
+  });
 
   it('wears nothing at rest, having been asked to do nothing yet', async () => {
     renderApp();
 
     await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Disconnected'));
-    expect(screen.queryByRole('img', { name: 'Connection faulted' })).not.toBeInTheDocument();
+    // No state in the name either: there is nothing to say.
+    expect(menu().getByRole('button', { name: 'Broker' })).toBeInTheDocument();
   });
 
-  it('goes green on a live link', async () => {
-    linked('Connected', {
-      connection: {
-        host: 'broker.example',
-        port: 1883,
-        clientId: 'console',
-        username: null,
-        useTls: false,
-        connectedAt: '2026-08-24T12:00:00Z',
-        sessionPresent: false,
-        assignedClientId: null,
-        serverKeepAlive: null,
-      },
-    });
+  it('goes green on a live link, and says so out loud', async () => {
+    linked('Connected', { connection: link });
     renderApp();
 
     await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Connected'));
+    expect(menu().getByRole('button', { name: 'Broker, connected' })).toBeInTheDocument();
   });
 
-  // A colour on its own says nothing to a reader who cannot tell these two apart.
-  it('goes red on a fault, and says so in a shape as well', async () => {
-    linked('Faulted', {
-      failure: {
-        reason: 'refused',
-        host: 'broker.example',
-        port: 1883,
-        clientId: 'console',
-        useTls: false,
-        transport: 'tcp',
-        protocolVersion: 'auto',
-      },
-    });
+  // The address had a line of its own under the rail's readout. It is reachable without opening
+  // the panel, which is what that line was for.
+  it('carries the broker it is pointed at', async () => {
+    linked('Connected', { connection: link });
+    renderApp();
+
+    await waitFor(() => expect(brokerRow()).toHaveAttribute('title', 'Broker · broker.example:1883'));
+  });
+
+  it('goes red on a fault, and says so out loud', async () => {
+    linked('Faulted', { failure });
     renderApp();
 
     await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Faulted'));
-    expect(screen.getByRole('img', { name: 'Connection faulted' })).toBeInTheDocument();
+    expect(menu().getByRole('button', { name: 'Broker, connection faulted' })).toBeInTheDocument();
   });
 
-  // In flight is neither, and saying so in green would be a lie for up to twenty seconds.
+  // In flight is not yet an answer, and saying so in green would be a lie for up to twenty
+  // seconds.
   it('says neither while an attempt is in flight', async () => {
     linked('Connecting');
     renderApp();
 
-    await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Unknown'));
+    await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Waiting'));
   });
 
-  // The hub being down makes the broker state stale rather than false. The readout at the top of
-  // the rail is where that is said.
-  it('says neither while the hub is reconnecting', async () => {
+  // The hub, not the broker — but the reader's question is the same one, and the answer is the
+  // same too: nothing on this screen is currently proven.
+  it('shows the hub reconnecting on the same row', async () => {
+    linked('Connected', { connection: link });
     renderApp();
+    await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Connected'));
+
     act(() => useHubStatusStore.setState({ status: 'reconnecting' }));
 
-    await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Unknown'));
+    await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Reconnecting'));
+    expect(menu().getByRole('button', { name: 'Broker, reconnecting' })).toBeInTheDocument();
   });
 
-  // Only the glyph is tinted, and only while the row is not the open one: there the button is
-  // inverted, and a tint over that is a third colour on a shape already saying something.
-  it('leaves the open row alone', async () => {
-    linked('Faulted');
+  it('goes back to the broker state once the hub returns', async () => {
+    linked('Connected', { connection: link });
     renderApp();
+    act(() => useHubStatusStore.setState({ status: 'reconnecting' }));
+    await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Reconnecting'));
 
+    act(() => useHubStatusStore.setState({ status: 'live' }));
+
+    await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Connected'));
+  });
+
+  it('keeps the state on the row when the rail is narrowed', async () => {
+    linked('Faulted', { failure });
+    renderApp();
     await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Faulted'));
-    // Open, and still carrying the state — the stylesheet is what declines to tint it.
-    expect(brokerRow()).toHaveAttribute('aria-expanded', 'true');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Panel menu' }));
+
+    expect(menu().getByRole('button', { name: 'Broker, connection faulted' })).toBeInTheDocument();
   });
 });

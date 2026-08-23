@@ -99,37 +99,33 @@ describe('connection gating', () => {
     await waitFor(async () => expect(await openPanelButton('Publish')).toBeEnabled());
   });
 
-  // The bar carries the state alone; the address it is connected to lives in the broker panel.
-  it('shows the state, not the address, in the readout while connected', async () => {
+  // The state is worn by the Broker row and by nothing else. There used to be a lamp and a word
+  // at the top of the rail saying the same thing in a different vocabulary.
+  const brokerRow = () => screen.getByRole('button', { name: /^Broker/ });
+
+  it('wears the state on the Broker row', async () => {
     renderApp('Connected');
 
-    expect(await screen.findByText('CONNECTED')).toBeInTheDocument();
-    expect(screen.queryByText(/CONNECTED ·/)).not.toBeInTheDocument();
+    await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Connected'));
   });
 
-  it('shows the bare state when there is no connection', async () => {
-    renderApp('Disconnected');
-
-    expect(await screen.findByText('DISCONNECTED')).toBeInTheDocument();
-  });
-
-  it('reports a hub reconnect in the readout', async () => {
+  it('reports a hub reconnect on the same row', async () => {
     const hub = renderApp('Connected');
-    await screen.findByText('CONNECTED');
+    await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Connected'));
 
     hub.emit('reconnecting');
 
-    expect(await screen.findByText('RECONNECTING')).toBeInTheDocument();
+    await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Reconnecting'));
   });
 
   it('goes back to the broker state once the hub returns', async () => {
     const hub = renderApp('Connected');
     hub.emit('reconnecting');
-    await screen.findByText('RECONNECTING');
+    await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Reconnecting'));
 
     hub.emit('reconnected');
 
-    expect(await screen.findByText('CONNECTED')).toBeInTheDocument();
+    await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Connected'));
   });
 
   // The saved settings record the last connect that WORKED, which is a different question
