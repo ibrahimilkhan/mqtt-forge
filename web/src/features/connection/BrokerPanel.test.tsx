@@ -785,3 +785,132 @@ describe('a cloud service, whose address is yours', () => {
     expect(screen.getByText(aws.note)).toBeInTheDocument();
   });
 });
+
+// ---- what the panel puts in front of you, and what it keeps behind a line ----
+//
+// Measured at the panel's own width, the form that showed everything at once ran to 1477px in a
+// 900px window, and the two controls every connection goes through — the address and the button
+// — were 98px of it. These say which parts are which, because a control inside a shut <details>
+// is still in the DOM and every other test here would pass either way.
+
+const fold = (name: string) => screen.getByText(name).closest('details') as HTMLDetailsElement;
+
+describe('what the panel shows first', () => {
+  const connected = () =>
+    server.use(
+      http.get('/api/connection', () =>
+        HttpResponse.json({
+          state: 'Connected',
+          connection: {
+            host: 'broker.example',
+            port: 8883,
+            clientId: 'console',
+            username: null,
+            useTls: true,
+            connectedAt: '2026-08-08T12:00:00Z',
+            sessionPresent: false,
+            assignedClientId: null,
+            serverKeepAlive: null,
+          },
+        }),
+      ),
+    );
+
+  it('is the form itself while nothing is connected', async () => {
+    renderPanel();
+
+    await screen.findByRole('button', { name: 'Connect' });
+    expect(fold('Connect somewhere else').open).toBe(true);
+  });
+
+  it('keeps the client, the session and the known brokers behind their own lines', async () => {
+    renderPanel();
+
+    await screen.findByRole('button', { name: 'Connect' });
+    expect(fold('Client and session').open).toBe(false);
+    expect(fold('Start from a known broker').open).toBe(false);
+  });
+
+  // Reopened over a working link, the question is what is up — not where to connect, which this
+  // reader has already answered.
+  it('leads with the live link and folds the form behind it', async () => {
+    connected();
+    renderPanel();
+
+    const details = await screen.findByLabelText('Connection details');
+    expect(fold('Connect somewhere else').open).toBe(false);
+    // The link stands above the fold that holds the form, not under it.
+    expect(details.compareDocumentPosition(fold('Connect somewhere else'))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it('opens the form again on request, without losing the link', async () => {
+    connected();
+    renderPanel();
+
+    await screen.findByLabelText('Connection details');
+    await userEvent.click(screen.getByText('Connect somewhere else'));
+
+    expect(fold('Connect somewhere else').open).toBe(true);
+    expect(screen.getByLabelText('Connection details')).toBeInTheDocument();
+  });
+
+  // The fold offers to connect somewhere else and the button under it will not, a live link
+  // being the one thing this panel cannot connect over. Said, rather than left to be inferred
+  // from a greyed button.
+  it('says why Connect will not fire while a link is up', async () => {
+    connected();
+    renderPanel();
+
+    await screen.findByLabelText('Connection details');
+    await userEvent.click(screen.getByText('Connect somewhere else'));
+
+    expect(screen.getByRole('button', { name: 'Connect' })).toBeDisabled();
+    expect(screen.getByText('Disconnect first — one link at a time.')).toBeInTheDocument();
+  });
+});
+
+// Every broker's own documentation hands you one string. Taking it apart into a scheme, a host,
+// a port and a path is the first thing anyone does here and the easiest to get wrong, so the
+// Host box does it. The splitting itself is covered in address.test.ts; this is the wiring.
+describe('an address dropped into the Host box', () => {
+  it('fills the scheme, the port and the path from a pasted URL', async () => {
+    renderPanel();
+
+    const host = await screen.findByLabelText('Host');
+    await userEvent.clear(host);
+    await userEvent.paste('wss://broker.emqx.io:8084/mqtt');
+
+    expect(host).toHaveValue('broker.emqx.io');
+    expect(screen.getByLabelText('Port')).toHaveValue(8084);
+    expect(screen.getByRole('radio', { name: 'wss' })).toBeChecked();
+    expect(screen.getByLabelText('WebSocket path')).toHaveValue('/mqtt');
+  });
+
+  it('splits a host and port typed by hand once the box is left', async () => {
+    renderPanel();
+
+    const host = await screen.findByLabelText('Host');
+    await userEvent.clear(host);
+    await userEvent.type(host, 'broker.example:8883');
+    fireEvent.blur(host);
+
+    await waitFor(() => expect(host).toHaveValue('broker.example'));
+    expect(screen.getByLabelText('Port')).toHaveValue(8883);
+  });
+
+  // A hostname is not an address to take apart, and half-typing one must not move anything.
+  it('leaves a plain hostname exactly where it was typed', async () => {
+    renderPanel();
+
+    const host = await screen.findByLabelText('Host');
+    await userEvent.clear(host);
+    await userEvent.type(host, 'broker.example');
+    fireEvent.blur(host);
+
+    expect(host).toHaveValue('broker.example');
+    expect(screen.getByLabelText('Port')).toHaveValue(1883);
+    expect(screen.getByRole('radio', { name: 'mqtt' })).toBeChecked();
+  });
+});
