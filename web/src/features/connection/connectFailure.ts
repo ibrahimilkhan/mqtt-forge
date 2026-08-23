@@ -1,6 +1,25 @@
 import { ApiError } from '../../lib/problemDetails';
+import type { MqttProtocolLevel, MqttTransport } from '../../types/api';
+import { versionName } from './scheme';
 
-type Attempt = { host: string; port: number; clientId: string; useTls: boolean };
+/**
+ * What the console knows about the attempt that failed.
+ *
+ * The transport and the version are here because half the advice worth giving depends on them:
+ * a broker that answers with something that is not MQTT means "check the port" over TCP and
+ * "check the path" over a WebSocket, and a version that was refused is only worth naming when
+ * somebody chose it by hand.
+ */
+type Attempt = {
+  host: string;
+  port: number;
+  clientId: string;
+  useTls: boolean;
+  transport?: MqttTransport;
+  protocolVersion?: MqttProtocolLevel;
+};
+
+const overWebSocket = (attempt: Attempt) => attempt.transport === 'webSocket';
 
 // The backend classifies the failure; the wording lives here, next to the panel that shows it.
 // One table for both routes in — a reason means the same thing however it reached us.
@@ -14,26 +33,60 @@ const SENTENCE: Record<string, (attempt: Attempt) => string> = {
   timeout: ({ host, port }) => `${host}:${port} didn't respond in time.`,
 
   // Something answered, but not a broker we could talk to. The advice that helps depends on
-  // what the user already ticked, so this one reads the attempt rather than a fixed string.
-  noMqttResponse: ({ host, port, useTls }) =>
-    `${host}:${port} answered, but not as an MQTT broker — check the port number` +
-    (useTls ? '.' : ', and whether it needs TLS.'),
+  // what the user already picked, so these read the attempt rather than a fixed string.
+  noMqttResponse: (attempt) =>
+    overWebSocket(attempt)
+      ? `${attempt.host}:${attempt.port} opened a WebSocket but didn't speak MQTT over it — ` +
+        'check the path, and that this is the broker rather than something else on the same host.'
+      : `${attempt.host}:${attempt.port} answered, but not as an MQTT broker — check the port number` +
+        (attempt.useTls ? '.' : ', and whether it needs TLS.'),
   tlsNotOffered: ({ host, port }) =>
-    `${host}:${port} doesn't accept encrypted connections — turn off Use TLS, or use the broker's TLS port.`,
-  protocolVersionUnsupported: ({ host, port }) => `The broker at ${host}:${port} doesn't speak MQTT 5.`,
+    `${host}:${port} doesn't accept encrypted connections — switch to mqtt://, or use the broker's TLS port.`,
+
+  // The WebSocket half never completed: something is speaking HTTP there and it did not upgrade.
+  webSocketUpgradeRejected: ({ host, port }) =>
+    `${host}:${port} answered the WebSocket request without opening one — the path is usually ` +
+    'the reason, and /mqtt is what nearly every broker uses.',
+
+  // A version was asked for by name and refused. Worth naming the version: the reader chose it,
+  // and Auto exists precisely so they do not have to.
+  protocolVersionUnsupported: ({ host, port, protocolVersion }) =>
+    `The broker at ${host}:${port} doesn't speak ${versionName(protocolVersion ?? 'v500')} — ` +
+    'set the version to Auto and it will find one they both know.',
+
+  // Auto already did that, and there was nothing left to find.
+  noSupportedProtocolVersion: ({ host, port }) =>
+    `${host}:${port} refused MQTT 5.0, 3.1.1 and 3.1 — whatever is on that port, it isn't a ` +
+    'broker this console can talk to.',
 
   // The encrypted channel could not be established
   tlsFailed: ({ host }) => `The encrypted connection to ${host} couldn't be set up.`,
-  tlsCertUntrusted: ({ host }) => `${host} presented a certificate this machine doesn't trust.`,
+  tlsCertUntrusted: ({ host }) =>
+    `${host} presented a certificate this machine doesn't trust — point Extra CA certificate at ` +
+    'the CA that signed it, or accept any certificate if it is your own broker.',
   tlsCertExpired: ({ host }) => `The certificate for ${host} has expired.`,
   tlsCertNameMismatch: ({ host, port }) =>
-    `The certificate at ${host}:${port} was issued for a different name.`,
+    `The certificate at ${host}:${port} was issued for a different name — set Server name ` +
+    'if the broker is reached by an address its certificate does not carry.',
+
+  // Our certificate, not theirs. Both are qualified, because the broker did not say which of the
+  // two happened: it ended the handshake, and what is known is what was sent to it.
+  clientCertificateRequired: ({ host, port }) =>
+    `${host}:${port} ended the encrypted handshake without accepting the connection. Brokers do ` +
+    'this when they want a client certificate and none was sent.',
+  clientCertificateRejected: ({ host }) =>
+    `${host} would not accept the client certificate — check it was issued by a CA the broker ` +
+    'knows, and that it has not expired.',
+  certificateFileUnreadable: () =>
+    'A certificate file could not be read. Check the path, and the password if it is a .pfx.',
 
   // A broker answered, and said no
   credentialsRequired: () => 'This broker needs a username and password.',
   credentialsRejected: () => 'The broker rejected the username or password.',
   banned: () => 'The broker has banned this client.',
-  clientIdRejected: ({ clientId }) => `The broker rejected the client ID '${clientId}'.`,
+  clientIdRejected: ({ clientId, protocolVersion }) =>
+    `The broker rejected the client ID '${clientId}'.` +
+    (protocolVersion === 'v310' ? ' MQTT 3.1 allows at most 23 characters.' : ''),
   brokerBusy: () => 'The broker is unavailable or too busy right now.',
   brokerRejected: () => 'The broker refused the connection over something this console sent.',
 

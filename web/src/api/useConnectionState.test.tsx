@@ -35,6 +35,12 @@ function renderApp(state: string, connection: unknown = state === 'Connected' ? 
         username: null,
         hasPassword: false,
         useTls: true,
+        transport: 'tcp',
+        protocolVersion: 'auto',
+        webSocketPath: null,
+        cleanSession: true,
+        sessionExpiryInterval: null,
+        tls: null,
       }),
     ),
   );

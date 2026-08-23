@@ -16,10 +16,18 @@ describe('describeConnectFailure', () => {
     ['blockedLocally', 'This machine blocked the connection to broker.local:1883.'],
     ['timeout', "broker.local:1883 didn't respond in time."],
     ['tlsFailed', "The encrypted connection to broker.local couldn't be set up."],
-    ['tlsCertUntrusted', "broker.local presented a certificate this machine doesn't trust."],
+    [
+      'tlsCertUntrusted',
+      "broker.local presented a certificate this machine doesn't trust — point Extra CA " +
+        'certificate at the CA that signed it, or accept any certificate if it is your own broker.',
+    ],
     ['tlsCertExpired', 'The certificate for broker.local has expired.'],
-    ['tlsCertNameMismatch', 'The certificate at broker.local:1883 was issued for a different name.'],
-    ['protocolVersionUnsupported', "The broker at broker.local:1883 doesn't speak MQTT 5."],
+    [
+      'tlsCertNameMismatch',
+      'The certificate at broker.local:1883 was issued for a different name — set Server name ' +
+        'if the broker is reached by an address its certificate does not carry.',
+    ],
+
     ['credentialsRequired', 'This broker needs a username and password.'],
     ['credentialsRejected', 'The broker rejected the username or password.'],
     ['banned', 'The broker has banned this client.'],
@@ -111,4 +119,70 @@ describe('describeFailureReason', () => {
       expect(describeFailureReason(reason, FORM)).toBeUndefined();
     },
   );
+});
+
+// ---- what the transport and the version change about the advice ----
+
+describe('a failure that depends on how the connection was being made', () => {
+  const overWs = { ...FORM, transport: 'webSocket' as const };
+
+  // Same silence, different fix. Over TCP the thing to check is the port; over a WebSocket the
+  // port already answered — an upgrade completed — so what is left is the path.
+  it('sends a WebSocket attempt to look at the path, not the port', () => {
+    expect(describeConnectFailure(refusal('noMqttResponse'), overWs)).toBe(
+      "broker.local:1883 opened a WebSocket but didn't speak MQTT over it — check the path, " +
+        'and that this is the broker rather than something else on the same host.',
+    );
+  });
+
+  it('says an upgrade was refused when the handshake never opened one', () => {
+    expect(describeConnectFailure(refusal('webSocketUpgradeRejected'), overWs)).toBe(
+      "broker.local:1883 answered the WebSocket request without opening one — the path is " +
+        'usually the reason, and /mqtt is what nearly every broker uses.',
+    );
+  });
+
+  // A version that was asked for by name is named back, and the reader is pointed at the
+  // setting that exists so they never have to know the number.
+  it('names the version that was refused, and where to stop caring', () => {
+    expect(
+      describeConnectFailure(refusal('protocolVersionUnsupported'), {
+        ...FORM,
+        protocolVersion: 'v311',
+      }),
+    ).toBe(
+      "The broker at broker.local:1883 doesn't speak MQTT 3.1.1 — set the version to Auto and " +
+        'it will find one they both know.',
+    );
+  });
+
+  // Auto already walked the whole ladder, so there is no version left to suggest.
+  it('does not suggest Auto to an attempt that already was Auto', () => {
+    expect(describeConnectFailure(refusal('noSupportedProtocolVersion'), FORM)).toBe(
+      'broker.local:1883 refused MQTT 5.0, 3.1.1 and 3.1 — whatever is on that port, it isn\'t ' +
+        'a broker this console can talk to.',
+    );
+  });
+
+  // MQTT 3.1's own limit, which the broker's refusal does not mention.
+  it('explains a rejected client ID on 3.1 by the length the specification allows', () => {
+    expect(
+      describeConnectFailure(refusal('clientIdRejected'), { ...FORM, protocolVersion: 'v310' }),
+    ).toContain('MQTT 3.1 allows at most 23 characters.');
+  });
+
+  it('says nothing about length when the version has no such limit', () => {
+    expect(
+      describeConnectFailure(refusal('clientIdRejected'), { ...FORM, protocolVersion: 'v500' }),
+    ).toBe("The broker rejected the client ID 'mqttforge-console'.");
+  });
+
+  // Ours, not theirs, and each says which end to look at.
+  it.each([
+    ['clientCertificateRequired', 'want a client certificate and none was sent'],
+    ['clientCertificateRejected', 'would not accept the client certificate'],
+    ['certificateFileUnreadable', 'A certificate file could not be read'],
+  ])('points %s at the right end of the connection', (reason, fragment) => {
+    expect(describeConnectFailure(refusal(reason), FORM)).toContain(fragment);
+  });
 });
