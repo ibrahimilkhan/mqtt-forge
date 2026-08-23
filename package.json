@@ -1,25 +1,19 @@
 {
   "name": "mqttforge",
-  "version": "1.0.0",
-  "description": "[![Release](https://img.shields.io/github/v/release/ibrahimilkhan/mqtt-forge?color=1e40af&label=release)](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest) [![Image](https://img.shields.io/badge/ghcr.io-mqtt--forge-1e40af?logo=docker&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/pkgs/container/mqtt-forge) [![Licence](https://img.shields.io/github/license/ibrahimilkhan/mqtt-forge?color=1e40af)](LICENSE)",
-  "main": "index.js",
-  "directories": {
-    "doc": "docs",
-    "test": "tests"
-  },
-  "devDependencies": {},
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
+  "private": true,
+  "description": "An open-source MQTT test tool: connect, watch, chart, and publish.",
+  "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ibrahimilkhan/mqtt-forge.git"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "bugs": {
     "url": "https://github.com/ibrahimilkhan/mqtt-forge/issues"
   },
-  "homepage": "https://github.com/ibrahimilkhan/mqtt-forge#readme"
+  "homepage": "https://github.com/ibrahimilkhan/mqtt-forge#readme",
+  "//": "The interface is its own package under web/. This file exists so tools that look for one at the root find the licence and the links rather than guessing.",
+  "scripts": {
+    "test": "npm --prefix web test",
+    "build": "npm --prefix web run build"
+  }
 }
