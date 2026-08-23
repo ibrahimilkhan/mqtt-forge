@@ -112,13 +112,53 @@ describe('describeFailureReason', () => {
     },
   );
 
-  // No detail to fall back on here, and FAULTED in the top bar already says this much.
-  it.each([['unknown'], ['somethingNew'], [undefined], [null]])(
+  // It used to say nothing here, and a link that dropped for an unnamed reason showed FAULTED in
+  // the rail with no sentence anywhere. Naming the broker is half of what a reader can act on.
+  it('names the broker even when nothing could name the reason', () => {
+    expect(describeFailureReason('unknown', FORM)).toBe(
+      'The connection to broker.local:1883 failed, and nothing said why.',
+    );
+  });
+
+  // A reason invented by a backend newer than this console. Guessing at it would be worse than
+  // the raw detail describeConnectFailure falls back to.
+  it.each([['somethingNew'], [undefined], [null]])(
     'says nothing for %s, rather than guessing',
     (reason) => {
       expect(describeFailureReason(reason, FORM)).toBeUndefined();
     },
   );
+});
+
+// Thirty-two reasons the backend can classify a failure as. A reader who hits one this console
+// has no words for gets a raw .NET exception message, which is why this counts them rather than
+// trusting anyone to remember.
+describe('every reason the backend can send', () => {
+  const REASONS = [
+    'banned', 'blockedLocally', 'brokerBusy', 'brokerClosed', 'brokerRejected',
+    'brokerShuttingDown', 'certificateFileUnreadable', 'clientCertificateRejected',
+    'clientCertificateRequired', 'clientIdRejected', 'connectionLost', 'credentialsRejected',
+    'credentialsRequired', 'filterRefused', 'hostNotFound', 'nameLookupFailed', 'noMqttResponse',
+    'noSupportedProtocolVersion', 'notPermitted', 'protocolVersionUnsupported', 'refused',
+    'kicked', 'sessionTakenOver', 'timeout', 'tlsCertExpired', 'tlsCertNameMismatch',
+    'tlsCertUntrusted', 'tlsFailed', 'tlsNotOffered', 'unknown', 'unreachable',
+    'webSocketUpgradeRejected',
+  ];
+
+  it.each(REASONS)('has a sentence for %s', (reason) => {
+    const said = describeFailureReason(reason, FORM);
+
+    expect(said).toBeTruthy();
+    // A sentence, not a label: it ends in a full stop and reads as something said to a person.
+    expect(said).toMatch(/\.$/);
+  });
+
+  // Kept in step with BrokerFailureReason.cs by hand, so the count is the thing that catches a
+  // reason added on one side and not the other.
+  it('covers all thirty-two of them', () => {
+    expect(REASONS).toHaveLength(32);
+    expect(new Set(REASONS).size).toBe(32);
+  });
 });
 
 // ---- what the transport and the version change about the advice ----
