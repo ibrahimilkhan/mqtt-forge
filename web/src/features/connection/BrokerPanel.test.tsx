@@ -1115,3 +1115,139 @@ describe('a broker that will not give you everything', () => {
     expect(screen.queryByRole('button', { name: 'Ask for less in Filters' })).not.toBeInTheDocument();
   });
 });
+
+// The section at the foot used to hold eleven brokers somebody else runs. These are the ones the
+// reader kept, which is the whole difference: a list nobody wrote but them.
+describe('the brokers you keep', () => {
+  const savedProfile = (name: string, over: Record<string, unknown> = {}) => ({
+    name,
+    connection: savedConnection(over),
+  });
+
+  const withProfiles = (...profiles: unknown[]) =>
+    server.use(http.get('/api/connection/profiles', () => HttpResponse.json(profiles)));
+
+  it('shows nothing at all until something has been kept', async () => {
+    renderPanel();
+
+    await screen.findByRole('button', { name: 'Connect' });
+    expect(screen.queryByRole('group', { name: 'Saved brokers' })).not.toBeInTheDocument();
+  });
+
+  it('names each one, and offers to forget it', async () => {
+    withProfiles(savedProfile('Lab broker'), savedProfile('Staging'));
+    renderPanel();
+
+    expect(await screen.findByRole('button', { name: 'Lab broker' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Forget Staging' })).toBeInTheDocument();
+  });
+
+  it('keeps what is on screen, under the name that was typed', async () => {
+    let sent: Record<string, unknown> | undefined;
+    server.use(
+      http.put('/api/connection/profiles', async ({ request }) => {
+        sent = (await request.json()) as Record<string, unknown>;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    renderPanel();
+
+    const address = await screen.findByLabelText('Broker address');
+    await userEvent.clear(address);
+    await userEvent.type(address, 'mqtts://lab.example:8883');
+    await userEvent.click(screen.getByRole('button', { name: 'Save this broker' }));
+
+    const name = screen.getByLabelText('Save as');
+    await userEvent.clear(name);
+    await userEvent.type(name, 'Lab broker');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(sent).toMatchObject({ name: 'Lab broker' }));
+    // Through the same reconciliation Connect goes through, so the box's text is what is kept.
+    expect(sent).toMatchObject({
+      connection: expect.objectContaining({ host: 'lab.example', port: 8883, useTls: true }),
+    });
+  });
+
+  // Somebody with one broker would have typed the address anyway.
+  it('offers the address as the name', async () => {
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Save this broker' }));
+
+    expect(screen.getByLabelText('Save as')).toHaveValue('localhost:1883');
+  });
+
+  it('gives up on Cancel without asking anything', async () => {
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Save this broker' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByLabelText('Save as')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save this broker' })).toBeInTheDocument();
+  });
+
+  it('will not keep one under no name at all', async () => {
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Save this broker' }));
+    await userEvent.clear(screen.getByLabelText('Save as'));
+
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  it('fills the form from a chip', async () => {
+    withProfiles(savedProfile('Lab broker', { host: 'lab.example', port: 8883, useTls: true }));
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Lab broker' }));
+
+    expect(screen.getByLabelText('Broker address')).toHaveValue('lab.example');
+    expect(screen.getByLabelText('Port')).toHaveValue(8883);
+    expect(screen.getByLabelText('Encrypted (TLS)')).toBeChecked();
+  });
+
+  // Derived, not remembered: type over the address and the chip goes out by itself.
+  it('stops marking the chip once the form is no longer that broker', async () => {
+    withProfiles(savedProfile('Lab broker', { host: 'lab.example' }));
+    renderPanel();
+
+    const chip = await screen.findByRole('button', { name: 'Lab broker' });
+    await userEvent.click(chip);
+    expect(chip.closest('span')).toHaveAttribute('data-active');
+
+    const address = screen.getByLabelText('Broker address');
+    await userEvent.clear(address);
+    await userEvent.type(address, 'somewhere.else');
+    fireEvent.blur(address);
+
+    await waitFor(() => expect(chip.closest('span')).not.toHaveAttribute('data-active'));
+  });
+
+  it('forgets one when its cross is pressed', async () => {
+    let deleted: string | undefined;
+    withProfiles(savedProfile('Lab broker'));
+    server.use(
+      http.delete('/api/connection/profiles/:name', ({ params }) => {
+        deleted = params.name as string;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Forget Lab broker' }));
+
+    await waitFor(() => expect(deleted).toBe('Lab broker'));
+  });
+
+  // The rule the saved settings keep, said where the reader will need it.
+  it('says a kept password will have to be entered again', async () => {
+    withProfiles(savedProfile('Lab broker', { hasPassword: true }));
+    renderPanel();
+
+    expect(
+      await screen.findByText('Passwords are kept but never sent back. Enter one again to connect.'),
+    ).toBeInTheDocument();
+  });
+});

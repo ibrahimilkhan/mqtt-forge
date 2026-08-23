@@ -1,4 +1,9 @@
-import type { ConnectRequest, ConnectionStateResponse, SavedConnection } from '../types/api';
+import type {
+  ConnectRequest,
+  ConnectionStateResponse,
+  SavedConnection,
+  SavedProfile,
+} from '../types/api';
 import { json, request } from './client';
 
 export const getConnectionState = () => request<ConnectionStateResponse>('/api/connection');
@@ -19,3 +24,19 @@ export const disconnect = () => request<void>('/api/connection', { method: 'DELE
 // started it may belong to a panel the user has since navigated away from, so the abort is
 // its own request rather than a hang-up on that one.
 export const cancelConnect = () => request<void>('/api/connection/attempt', { method: 'DELETE' });
+
+// ---- brokers somebody chose to keep ----
+//
+// Apart from the settings above, which are a cache the API overwrites after every connect that
+// works. These are written only when somebody presses Save, and stay until they delete one.
+
+export const getSavedProfiles = () =>
+  request<SavedProfile[]>('/api/connection/profiles');
+
+// PUT because the name is the identity: saving one that is already there replaces it, which is
+// what correcting a port on a broker you already keep means by pressing Save again.
+export const saveProfile = (name: string, connection: ConnectRequest) =>
+  request<void>('/api/connection/profiles', { method: 'PUT', ...json({ name, connection }) });
+
+export const deleteProfile = (name: string) =>
+  request<void>(`/api/connection/profiles/${encodeURIComponent(name)}`, { method: 'DELETE' });

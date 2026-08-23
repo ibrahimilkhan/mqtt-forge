@@ -169,3 +169,22 @@
 .addressLine { display: flex; align-items: stretch; gap: 0; }
 .addressLine > input { flex: 1; min-width: 0; border-radius: 0 2px 2px 0; }
 .addressLine > select { flex: 0 0 auto; border-right: 0; border-radius: 2px 0 0 2px; }
+
+/* The two buttons beside the name box. Aligned to its foot, since the box has a label above it
+   and a button lined up with the word SAVE AS reads as a caption for it. */
+.namingActions { display: flex; align-items: flex-end; gap: 8px; flex: 0 0 auto; }
+.namingActions button { margin-bottom: 1px; }
+
+/* The brokers the reader kept, at the foot. Set apart by a rule rather than folded away: the
+   list is theirs, it is short, and there is nothing to hide it from at this width. */
+.saved { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--rule); }
+
+.savedTitle {
+  font-family: var(--mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 400;
+  margin: 0 0 8px;
+}
