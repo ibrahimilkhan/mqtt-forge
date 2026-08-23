@@ -45,7 +45,10 @@ export function ConnectionSummary({ lead = false }: { lead?: boolean } = {}) {
       <Row label="Protocol" value={`${schemeOf(link.transport, link.useTls)}://`} />
       <Row label="Speaking" value={versionName(link.protocolVersion)} />
       <Row label="Client ID" value={link.clientId} />
-      <Row label="Assigned ID" value={link.assignedClientId ?? NOTHING} />
+      {/* Only where there is one. A broker assigns an ID when the client sends none, and this
+          console always sends one — so the row was a dash on every connection anyone has ever
+          made here, which is a row that says nothing at the price of a line. */}
+      {link.assignedClientId && <Row label="Assigned ID" value={link.assignedClientId} />}
       <Row label="Username" value={link.username || 'none'} />
       <Row label="Connected" value={<ConnectedFor since={link.connectedAt} />} />
       <Row label="Session" value={link.sessionPresent ? 'resumed' : 'fresh'} />
