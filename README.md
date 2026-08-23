@@ -60,8 +60,15 @@ Every MQTT there is, over every way in:
   everything else, so a wrong password is still reported once rather than three times. The
   connection panel says which version the broker actually agreed to.
 - **`mqtt://`, `mqtts://`, `ws://`, `wss://`** — a socket of its own or a WebSocket, encrypted
-  or not. The WebSocket path is a field, because a broker behind a reverse proxy is the reason
-  you are using one; empty means `/mqtt`, which is what nearly every broker publishes.
+  or not. You are not asked which: the panel leads with the address, reads the scheme off what
+  you paste, and says in a sentence under it what that means. A port implies a scheme too, so
+  8883 typed into the port box moves the connection to TLS. All four are still there to press,
+  behind **How it connects**, along with the WebSocket path — a broker behind a reverse proxy
+  being the reason you are using one; empty means `/mqtt`, which is what nearly every broker
+  publishes.
+- **A connection that fails on the wrong one says so with a button.** A broker that refuses
+  encryption, or a plain connection that gets nothing back from the port brokers listen for
+  encrypted ones on, both offer the scheme they point at and retry on it.
 - **Cloud brokers** — HiveMQ Cloud, EMQX Cloud, AWS IoT Core and Azure IoT Hub each have a chip
   that fills in the port, the path and the shape of the credentials, and leaves the address for
   you. What they need beyond a username and password is under Encryption: a **client
@@ -140,10 +147,10 @@ docker run -d -p 5169:5169 --name mqtt-forge ghcr.io/ibrahimilkhan/mqtt-forge
 
 **2. Open http://localhost:5169.** It loads with the Broker panel already open.
 
-**3. Point it at your broker** — fill in the host and port, then **Connect**. The address off
-your broker's own documentation goes in whole: paste `mqtts://host:8883` into **Host** and the
-scheme, the port and any WebSocket path sort themselves out. Which host depends on where the
-broker runs:
+**3. Point it at your broker** — paste the address, then **Connect**. The one off your broker's
+own documentation goes in whole: `mqtts://host:8883` into **Broker address** and the scheme, the
+port and any WebSocket path sort themselves out. A bare hostname works too and is written back
+out as an address. Which host depends on where the broker runs:
 
 | Your broker runs | Host to enter |
 |---|---|
