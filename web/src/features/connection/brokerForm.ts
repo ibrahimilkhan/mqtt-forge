@@ -1,6 +1,15 @@
 import type { ConnectRequest, MqttProtocolLevel, SavedConnection, TlsOptions } from '../../types/api';
 import { parseBrokerAddress } from './address';
-import { choiceOf, isEncrypted, isWebSocket, mayBeV5, portFor, schemeOf, type Scheme } from './scheme';
+import {
+  choiceOf,
+  isEncrypted,
+  isWebSocket,
+  mayBeV5,
+  portFor,
+  schemeForPort,
+  schemeOf,
+  type Scheme,
+} from './scheme';
 
 /**
  * What the panel holds while it is being filled in.
@@ -150,7 +159,12 @@ export function applyAddress(form: BrokerForm, text: string): BrokerForm {
     return { ...form, host: text.trim() };
   }
 
-  const scheme = parsed.scheme ?? form.scheme;
+  // A scheme the address named wins outright. One it did not name, but whose port implies, gets
+  // the same inference the Port box makes on the way out — an address box and a port box that
+  // disagreed about what 8883 means would be two answers to one question.
+  const scheme =
+    parsed.scheme ??
+    (parsed.port === undefined ? form.scheme : schemeForPort(form.scheme, parsed.port));
 
   return {
     ...form,

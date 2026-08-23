@@ -279,3 +279,37 @@ describe('the address box, reconciled with the form', () => {
     });
   });
 });
+
+// The same inference the Port box makes when it is left, reached the other way. An address box
+// and a port box disagreeing about what 8883 means would be two answers to one question.
+describe('a port the address names, with no scheme in front of it', () => {
+  it('reads the encrypted port as the encrypted scheme', () => {
+    expect(applyAddress(FORM, 'broker.example:8883')).toMatchObject({
+      scheme: 'mqtts',
+      host: 'broker.example',
+      port: 8883,
+    });
+  });
+
+  it('never crosses the transport, the same as everywhere else', () => {
+    expect(applyAddress({ ...FORM, scheme: 'wss', port: 8084 }, 'broker.example:8883')).toMatchObject({
+      scheme: 'wss',
+      port: 8883,
+    });
+  });
+
+  it('leaves a port that implies nothing alone', () => {
+    expect(applyAddress(FORM, 'broker.example:21883')).toMatchObject({
+      scheme: 'mqtt',
+      port: 21883,
+    });
+  });
+
+  // The address said which one. Nothing is inferred over it.
+  it('does not second-guess a scheme the address wrote down', () => {
+    expect(applyAddress(FORM, 'mqtt://broker.example:8883')).toMatchObject({
+      scheme: 'mqtt',
+      port: 8883,
+    });
+  });
+});
