@@ -12,14 +12,13 @@ public sealed class ConnectRequestDtoValidator : AbstractValidator<ConnectReques
         RuleFor(x => x.Port).InclusiveBetween(1, 65535);
         RuleFor(x => x.ClientId).NotEmpty();
 
-        // Only what a broker could not tell us more usefully. A path with a space in it never
-        // reaches a broker at all — ClientWebSocket refuses to build the request — so it is worth
-        // stopping here; a path that is merely wrong is the broker's answer to give, and it gives
-        // a better one than any guess made from this side.
-        RuleFor(x => x.WebSocketPath)
-            .Must(BeAUsablePath)
-            .When(x => x.Transport == MqttTransport.WebSocket && !string.IsNullOrWhiteSpace(x.WebSocketPath))
-            .WithMessage("Not a usable path — write it as /mqtt.");
+        // Nothing checks the WebSocket path, deliberately. There was a rule here that asked
+        // Uri.TryCreate whether the path could be dialled, on the theory that a space or a
+        // backslash would never reach a broker — and it turned out Uri accepts both and escapes
+        // them, so the rule refused nothing and only looked like a guard. What actually happens
+        // is that the request goes out escaped, the broker answers 404, and the console says the
+        // upgrade was refused and that the path is usually why. That is a better answer than any
+        // guess from this side, which is the rule the rest of this validator follows.
 
         // Zero and 0xFFFFFFFF are both meaningful in MQTT 5 (no session, and a session that
         // never expires), so the whole range is allowed and nothing is checked but the version:
@@ -34,12 +33,4 @@ public sealed class ConnectRequestDtoValidator : AbstractValidator<ConnectReques
             .MaximumLength(255)
             .When(x => x.Tls?.AlpnProtocol is { Length: > 0 });
     }
-
-    // Reachable as a WebSocket URI once the host and port are put in front of it. Anything else
-    // fails inside HttpClient with a message about a URI the reader never typed.
-    private static bool BeAUsablePath(string? path) =>
-        Uri.TryCreate($"ws://h{Normalised(path)}", UriKind.Absolute, out _);
-
-    private static string Normalised(string? path) =>
-        path!.StartsWith('/') ? path : "/" + path;
 }

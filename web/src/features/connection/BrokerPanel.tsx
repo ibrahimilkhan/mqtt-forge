@@ -234,7 +234,8 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
               placeholder="/mqtt"
               onChange={(e) => set('webSocketPath', e.target.value)}
             />
-            <FieldError error={connectMutation.error} field="WebSocketPath" />
+            {/* No FieldError: the API refuses no path, deliberately. A wrong one comes back as
+                a refused upgrade, which says more than any rule here could. */}
             <p className={styles.note}>
               Empty means /mqtt, which is what nearly every broker publishes.
             </p>
