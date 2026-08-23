@@ -16,6 +16,8 @@ const LINK = {
   sessionPresent: false,
   assignedClientId: null,
   serverKeepAlive: null,
+  transport: 'tcp',
+  protocolVersion: 'v500',
 };
 
 function renderSummary(connection: unknown = LINK, subscriptions: string[] = []) {
@@ -61,7 +63,33 @@ describe('ConnectionSummary', () => {
 
     expect(await readValue('Client ID')).toHaveTextContent('console');
     expect(await readValue('Username')).toHaveTextContent('alice');
-    expect(await readValue('TLS')).toHaveTextContent('on');
+  });
+
+  // The transport and the encryption in one word, because that is how they were picked.
+  it('says how the link was made, as one scheme', async () => {
+    renderSummary();
+
+    expect(await readValue('Protocol')).toHaveTextContent('mqtts://');
+  });
+
+  it('names a WebSocket as one', async () => {
+    renderSummary({ ...LINK, transport: 'webSocket' });
+
+    expect(await readValue('Protocol')).toHaveTextContent('wss://');
+  });
+
+  // The answer, not the request. With the version left on Auto the form holds "whichever one
+  // works" and this row is the only place the one that did is written down.
+  it('names the version the broker agreed to', async () => {
+    renderSummary();
+
+    expect(await readValue('Speaking')).toHaveTextContent('MQTT 5.0');
+  });
+
+  it('names an older version just as plainly', async () => {
+    renderSummary({ ...LINK, protocolVersion: 'v311' });
+
+    expect(await readValue('Speaking')).toHaveTextContent('MQTT 3.1.1');
   });
 
   // Leaving the username blank is an answer, not a gap in what the broker told us.
@@ -69,7 +97,7 @@ describe('ConnectionSummary', () => {
     renderSummary({ ...LINK, username: null, useTls: false });
 
     expect(await readValue('Username')).toHaveTextContent('none');
-    expect(await readValue('TLS')).toHaveTextContent('off');
+    expect(await readValue('Protocol')).toHaveTextContent('mqtt://');
   });
 
   it('says whether the broker resumed a session', async () => {

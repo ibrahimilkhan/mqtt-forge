@@ -8,7 +8,27 @@ import { useLogStore } from '../../stores/logStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import { server } from '../../test/server';
 import { BrokerPanel } from './BrokerPanel';
-import { BROKER_PRESETS } from './presets';
+import { BROKER_PRESETS, CLOUD_PRESETS } from './presets';
+import { isEncrypted } from './scheme';
+
+// A saved connection as the API sends one. Written here rather than inline in six places so a
+// test says only what it is about — the host, or the filter, or the password — and the rest of
+// the shape stays in one place to be corrected in one place.
+const savedConnection = (over: Record<string, unknown> = {}) => ({
+  host: 'broker.example',
+  port: 1883,
+  clientId: 'mqttforge-console',
+  username: null,
+  hasPassword: false,
+  useTls: false,
+  transport: 'tcp',
+  protocolVersion: 'auto',
+  webSocketPath: null,
+  cleanSession: true,
+  sessionExpiryInterval: null,
+  tls: null,
+  ...over,
+});
 
 const newQueryClient = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
@@ -63,14 +83,16 @@ describe('BrokerPanel', () => {
   it('fills the form from the saved settings', async () => {
     server.use(
       http.get('/api/connection/settings', () =>
-        HttpResponse.json({
-          host: 'broker.example',
-          port: 8883,
-          clientId: 'saved-client',
-          username: 'alice',
-          hasPassword: true,
-          useTls: true,
-        }),
+        HttpResponse.json(
+          savedConnection({
+            port: 8883,
+            clientId: 'saved-client',
+            username: 'alice',
+            hasPassword: true,
+            useTls: true,
+            protocolVersion: 'v311',
+          }),
+        ),
       ),
     );
 
@@ -81,20 +103,15 @@ describe('BrokerPanel', () => {
     expect(screen.getByLabelText('Port')).toHaveValue(8883);
     expect(screen.getByLabelText('Client ID')).toHaveValue('saved-client');
     expect(screen.getByLabelText('Username')).toHaveValue('alice');
-    expect(screen.getByLabelText('Use TLS')).toBeChecked();
+    // The scheme and the version are chips, not fields: what was saved is what is pressed.
+    expect(screen.getByRole('radio', { name: 'mqtts' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: '3.1.1' })).toBeChecked();
   });
 
   it('says a password is stored but never returned', async () => {
     server.use(
       http.get('/api/connection/settings', () =>
-        HttpResponse.json({
-          host: 'h',
-          port: 1883,
-          clientId: 'c',
-          username: null,
-          hasPassword: true,
-          useTls: false,
-        }),
+        HttpResponse.json(savedConnection({ host: 'h', clientId: 'c', hasPassword: true })),
       ),
     );
 
@@ -278,18 +295,13 @@ describe('BrokerPanel', () => {
             port: 1999,
             clientId: 'probe',
             useTls: false,
+            transport: 'tcp',
+            protocolVersion: 'auto',
           },
         }),
       ),
       http.get('/api/connection/settings', () =>
-        HttpResponse.json({
-          host: 'broker.example',
-          port: 8883,
-          clientId: 'saved-client',
-          username: null,
-          hasPassword: false,
-          useTls: false,
-        }),
+        HttpResponse.json(savedConnection({ port: 8883, clientId: 'saved-client' })),
       ),
     );
 
@@ -490,11 +502,11 @@ describe('the broker presets', () => {
     expect(screen.getByLabelText('Port')).toHaveValue(hsl.port);
   });
 
-  it('brings the TLS setting with the port, rather than leaving the two disagreeing', async () => {
+  it('brings the scheme with the port, rather than leaving the two disagreeing', async () => {
     renderPanel();
     await pick(hsl.name);
 
-    expect(screen.getByLabelText('Use TLS')).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'mqtts' })).toBeChecked();
   });
 
   // The half a bare address does not give you, and the reason the console used to connect to
@@ -561,14 +573,9 @@ describe('the broker presets', () => {
   it('brings the filter back with a broker it has connected to before', async () => {
     server.use(
       http.get('/api/connection/settings', () =>
-        HttpResponse.json({
-          host: hsl.host,
-          port: hsl.port,
-          clientId: 'mqttforge-console',
-          username: null,
-          hasPassword: false,
-          useTls: hsl.useTls,
-        }),
+        HttpResponse.json(
+          savedConnection({ host: hsl.host, port: hsl.port, useTls: isEncrypted(hsl.scheme) }),
+        ),
       ),
     );
 
@@ -584,14 +591,7 @@ describe('the broker presets', () => {
   it('leaves the filter alone for a saved broker it has no preset for', async () => {
     server.use(
       http.get('/api/connection/settings', () =>
-        HttpResponse.json({
-          host: 'broker.example',
-          port: 1883,
-          clientId: 'mqttforge-console',
-          username: null,
-          hasPassword: false,
-          useTls: false,
-        }),
+        HttpResponse.json(savedConnection()),
       ),
     );
 
@@ -606,5 +606,166 @@ describe('the broker presets', () => {
     await pick(hsl.name);
 
     expect(screen.getByText(hsl.note)).toBeInTheDocument();
+  });
+});
+
+// ---- the transport and the version, as things the panel actually does ----
+
+describe('picking how the connection is made', () => {
+  const scheme = (name: string) => screen.getByRole('radio', { name });
+  const pickScheme = (name: string) => userEvent.click(scheme(name));
+
+  it('starts on plain MQTT, which is what a broker of your own usually is', () => {
+    renderPanel();
+
+    expect(scheme('mqtt')).toBeChecked();
+    expect(screen.getByLabelText('Port')).toHaveValue(1883);
+  });
+
+  it('moves the port with the scheme while the port is still the default', async () => {
+    renderPanel();
+    await pickScheme('mqtts');
+
+    expect(screen.getByLabelText('Port')).toHaveValue(8883);
+
+    await pickScheme('wss');
+    expect(screen.getByLabelText('Port')).toHaveValue(8084);
+  });
+
+  // The rule that makes the picker safe to press: a lab broker on a strange port stays on it.
+  it('leaves a port somebody typed exactly where they typed it', async () => {
+    renderPanel();
+    const port = screen.getByLabelText('Port');
+    await userEvent.clear(port);
+    await userEvent.type(port, '21883');
+    await pickScheme('mqtts');
+
+    expect(port).toHaveValue(21883);
+  });
+
+  // On TCP there is no path, and an empty box asking for one reads as a field somebody forgot.
+  it('asks for a path only where there is a WebSocket to put it on', async () => {
+    renderPanel();
+    expect(screen.queryByLabelText('WebSocket path')).not.toBeInTheDocument();
+
+    await pickScheme('ws');
+    expect(screen.getByLabelText('WebSocket path')).toBeInTheDocument();
+
+    await pickScheme('mqtt');
+    expect(screen.queryByLabelText('WebSocket path')).not.toBeInTheDocument();
+  });
+
+  it('offers the encryption fields only where there is encryption to configure', async () => {
+    renderPanel();
+    expect(screen.queryByText('Encryption')).not.toBeInTheDocument();
+
+    await pickScheme('mqtts');
+    expect(screen.getByText('Encryption')).toBeInTheDocument();
+  });
+
+  it('sends the scheme as a transport and a TLS flag', async () => {
+    let sent: Record<string, unknown> | undefined;
+    server.use(
+      http.post('/api/connection', async ({ request }) => {
+        sent = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ state: 'Connected' });
+      }),
+    );
+
+    renderPanel();
+    await pickScheme('wss');
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+
+    await waitFor(() => expect(sent).toMatchObject({ transport: 'webSocket', useTls: true }));
+  });
+});
+
+describe('picking which MQTT to speak', () => {
+  const version = (name: string) => screen.getByRole('radio', { name });
+
+  it('starts on Auto, because the reader is the wrong person to ask', () => {
+    renderPanel();
+
+    expect(version('Auto')).toBeChecked();
+  });
+
+  it('sends the version that was picked', async () => {
+    let sent: Record<string, unknown> | undefined;
+    server.use(
+      http.post('/api/connection', async ({ request }) => {
+        sent = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ state: 'Connected' });
+      }),
+    );
+
+    renderPanel();
+    await userEvent.click(version('3.1.1'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+
+    await waitFor(() => expect(sent).toMatchObject({ protocolVersion: 'v311' }));
+  });
+
+  // The same bit on the wire, and the two specifications call it different things. A reader
+  // reading MQTT 5 documentation should find the word that documentation uses.
+  it('calls the box what the chosen version calls it', async () => {
+    renderPanel();
+    expect(screen.getByLabelText('Clean session')).toBeInTheDocument();
+
+    await userEvent.click(version('5.0'));
+    expect(screen.getByLabelText('Clean start')).toBeInTheDocument();
+  });
+
+  // The version difference this form actually has to show. Unticking the box is what makes
+  // session lifetime a question; only one of the two versions lets you answer it.
+  it('offers an expiry for a kept session on 5.0, and explains its absence on 3.1.1', async () => {
+    renderPanel();
+    expect(screen.queryByLabelText('Session expiry')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByLabelText('Clean session'));
+    expect(screen.getByLabelText('Session expiry')).toBeInTheDocument();
+
+    await userEvent.click(version('3.1.1'));
+    expect(screen.queryByLabelText('Session expiry')).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/On MQTT 3.1.1 a kept session has no expiry to set/),
+    ).toBeInTheDocument();
+  });
+
+  // The specification's own limit, said before the broker says it — a 3.1 broker's refusal
+  // names neither the length nor the version.
+  it('warns about a client ID too long for 3.1, and only for 3.1', async () => {
+    renderPanel();
+    const clientId = screen.getByLabelText('Client ID');
+    await userEvent.clear(clientId);
+    await userEvent.type(clientId, 'a-client-id-of-more-than-twenty-three');
+
+    expect(screen.queryByText(/MQTT 3.1 allows/)).not.toBeInTheDocument();
+
+    await userEvent.click(version('3.1'));
+    expect(screen.getByText(/MQTT 3.1 allows 23 characters; this is 37/)).toBeInTheDocument();
+  });
+});
+
+describe('a cloud service, whose address is yours', () => {
+  const aws = CLOUD_PRESETS.find((p) => p.name === 'AWS IoT Core')!;
+
+  it('fills in the shape and leaves the address blank', async () => {
+    renderPanel();
+    await userEvent.click(screen.getByRole('button', { name: aws.name }));
+
+    expect(screen.getByLabelText('Host')).toHaveValue('');
+    expect(screen.getByLabelText('Port')).toHaveValue(aws.port);
+    expect(screen.getByRole('radio', { name: 'mqtts' })).toBeChecked();
+  });
+
+  // The note is the whole point of a cloud preset — it is the only place the port, the paths
+  // and the shape of the credentials are written down together — and it has to survive the
+  // reader typing the address it deliberately left empty.
+  it('keeps its instructions on screen while the address is being pasted in', async () => {
+    renderPanel();
+    await userEvent.click(screen.getByRole('button', { name: aws.name }));
+    await userEvent.type(screen.getByLabelText('Host'), 'abc-ats.iot.eu-west-1.amazonaws.com');
+
+    expect(screen.getByText(aws.note)).toBeInTheDocument();
   });
 });

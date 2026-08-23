@@ -13,6 +13,13 @@ type Props = {
   hint?: string;
   /** The preset the form currently matches, or null when the fields are the reader's own. */
   active: BrokerPreset | null;
+  /**
+   * The name of the last preset picked anywhere on the panel, which is not always one the form
+   * can be said to match: a cloud preset clears the host on purpose, so it never matches, and
+   * its note is the only place its port, its path and the shape of its username are written
+   * down together. That note has to survive the reader typing their own address in.
+   */
+  picked: string | null;
   onPick: (preset: BrokerPreset) => void;
 };
 
@@ -26,7 +33,10 @@ type Props = {
  * Two of these are on the panel: your own broker, above the fields it writes, and everyone
  * else's in a section of their own at the foot.
  */
-export function BrokerPresets({ presets, title, labelId, hint, active, onPick }: Props) {
+export function BrokerPresets({ presets, title, labelId, hint, active, picked, onPick }: Props) {
+  // What the note is about: the one the form matches, or failing that the one last picked.
+  const explained = active ?? presets.find((preset) => preset.name === picked) ?? null;
+
   return (
     <div className={styles.presets}>
       <p className={styles.lede} id={labelId}>
@@ -53,7 +63,9 @@ export function BrokerPresets({ presets, title, labelId, hint, active, onPick }:
       {/* Only for the one in the form, and only when it is one of ours. Five notes at once is a
           wall nobody reads, and the question a reader has is about the broker they just picked —
           which, with the groups split, may well be the other group's. */}
-      {active && presets.includes(active) && <p className={styles.note}>{active.note}</p>}
+      {explained && presets.includes(explained) && (
+        <p className={styles.note}>{explained.note}</p>
+      )}
     </div>
   );
 }

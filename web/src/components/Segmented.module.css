@@ -1,0 +1,76 @@
+/* A row of chips standing in for a short list of choices. The chip borrows its shape from
+   BrokerPresets — same face, same size, same way of saying which one is on — because they are
+   the same gesture, and two ways of drawing a pickable word in one panel is one too many. */
+
+.group { margin-bottom: 10px; }
+
+/* Matches the global `label` rule, which cannot reach this: the row's own name is a span, since
+   a `<label>` wrapping a radiogroup would point at nothing in particular. */
+.label {
+  display: block;
+  font-family: var(--mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+
+.options { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.option {
+  /* Overrides the global `label` rule, which is written for the word above a field. */
+  display: inline-flex;
+  /* So the radio inside stays inside: absolutely positioned, it would otherwise be placed
+     against whatever ancestor happens to be positioned, and a stray one-pixel control loose in
+     the panel is a click landing somewhere nobody aimed. */
+  position: relative;
+  align-items: center;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--t-small);
+  letter-spacing: 0.04em;
+  text-transform: none;
+  padding: 5px 9px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+/* The radio is the state and the keyboard; the chip is what is seen. Kept in the layout at a
+   pixel rather than display:none, so it stays focusable and the focus ring below has something
+   to sit on. It is left clickable — it is inside its own label and covers a pixel of it, so a
+   press there means what a press anywhere else on the chip means. */
+.option input {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  margin: 0;
+}
+
+/* Stated by the border, not a fill — the same reasoning as the preset chips, which sit in the
+   same panel: a filled block pulls the eye off the fields these choices are about. */
+.option[data-selected='true'] {
+  border-color: var(--signal);
+  box-shadow: inset 0 0 0 1px var(--signal);
+  color: var(--ink);
+}
+
+.option:hover { border-color: var(--muted); }
+
+/* The ring goes on the chip, because the input it belongs to is a pixel wide. */
+.option:has(input:focus-visible) {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
+.note {
+  font-size: var(--t-small);
+  color: var(--muted);
+  margin: 7px 0 0;
+  line-height: 1.45;
+}

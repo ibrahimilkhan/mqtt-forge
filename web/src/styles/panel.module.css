@@ -84,3 +84,32 @@
 /* The filter box takes a whole list, so it is a textarea — but it should still read as a
    one-line field until someone pastes more into it. */
 .filterInput { min-height: 0; resize: vertical; }
+
+/* A block of fields most connections never touch, folded away until they do. Drawn as a quiet
+   line rather than a heading: it is a way in, not a section of the form, and it sits between
+   the password and the button that uses it. */
+.more {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
+}
+.more > summary {
+  font-family: var(--mono);
+  font-size: var(--t-small);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+/* The default marker is a triangle whose size and colour cannot be set; this one follows the
+   type and the ink like everything else on the panel. */
+.more > summary::-webkit-details-marker { display: none; }
+.more > summary::before {
+  content: '+ ';
+  color: var(--signal);
+}
+.more[open] > summary::before { content: '− '; }
+.more > summary:hover { color: var(--ink); }
+.more > summary:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+.more[open] > summary { margin-bottom: 12px; color: var(--ink); }
