@@ -131,9 +131,18 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
             }
             catch (BrokerUnreachableException ex) when (!last && MovesToNextVersion(ex.Reason))
             {
-                // Next rung. Nothing is announced in between: the console is still connecting,
-                // and a Faulted flashing past on the way to a link that came up would be a lie
-                // about a connection that is about to work.
+                // Next rung, and the console is told nothing. It is still connecting — which is
+                // what the state has said since the walk began — and a Faulted flashing past on
+                // the way to a link that came up would be a lie about a connection that is
+                // about to work.
+            }
+            catch (BrokerUnreachableException)
+            {
+                // The end of the walk, whether because this rung's failure is not about the
+                // version or because there are no rungs left. Only now is there a fault.
+                _offlineState = ConnectionState.Faulted;
+                await AnnounceAsync();
+                throw;
             }
         }
     }
@@ -181,15 +190,15 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
             // Our own token is the only honest witness. The bare OperationCanceledException
             // covers the TCP phase, where MQTTnet does surface a cancellation, and an aborted
             // socket, which it converts into one.
-            throw await FaultAsync(
-                BrokerFailureReason.Timeout, settings, version,
+            throw Fault(
+                BrokerFailureReason.Timeout, settings,
                 $"The broker at {settings.Host}:{settings.Port} did not answer within "
                 + $"{_connectTimeout.TotalSeconds:0} seconds.", ex);
         }
         catch (Exception ex)
         {
-            throw await FaultAsync(
-                Explain(ex, settings), settings, version,
+            throw Fault(
+                Explain(ex, settings), settings,
                 $"Could not connect to broker ({settings.Endpoint}): {ex.Message}", ex);
         }
 
@@ -200,8 +209,8 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
             var reason = BrokerFailureClassifier.Classify(
                 result.ResultCode, MqttClientOptionsFactory.HasCredentials(settings));
 
-            throw await FaultAsync(
-                reason, settings, version,
+            throw Fault(
+                reason, settings,
                 $"The broker at {settings.Host}:{settings.Port} refused the connection ({result.ResultCode}).");
         }
 
@@ -217,11 +226,17 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
         await AnnounceAsync();
     }
 
-    // Records the fault, tells the console, and hands back the exception for the caller to
-    // throw — so that every failure path leaves the same three things behind in the same order.
-    private async Task<BrokerUnreachableException> FaultAsync(
-        BrokerFailureReason reason, BrokerConnectionSettings settings, MqttProtocolLevel version,
-        string message, Exception? inner = null)
+    // Records why this attempt failed and hands back the exception for the caller to throw, so
+    // that every failure path leaves the same thing behind in the same shape.
+    //
+    // Deliberately does not announce, and deliberately leaves the state at Connecting. A rung
+    // the ladder is about to step off is not a fault, and the console has no use for one — nor
+    // has MQTTnet's own disconnect event, which fires on every failed attempt from the thread
+    // pool and would otherwise find a Faulted state to broadcast. The walk announces once, when
+    // it gives up.
+    private BrokerUnreachableException Fault(
+        BrokerFailureReason reason, BrokerConnectionSettings settings, string message,
+        Exception? inner = null)
     {
         // A version that was asked for by name failed as itself. One picked off the Auto ladder
         // did not: the reader asked for "whatever works", so a failure that ends the walk is
@@ -230,9 +245,6 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
                          && reason == BrokerFailureReason.ProtocolVersionUnsupported
             ? BrokerFailureReason.NoSupportedProtocolVersion
             : reason;
-
-        _offlineState = ConnectionState.Faulted;
-        await AnnounceAsync();
 
         return new BrokerUnreachableException(reason, message, inner);
     }
