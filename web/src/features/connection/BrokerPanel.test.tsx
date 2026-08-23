@@ -749,6 +749,22 @@ describe('picking which MQTT to speak', () => {
 describe('a cloud service, whose address is yours', () => {
   const aws = CLOUD_PRESETS.find((p) => p.name === 'AWS IoT Core')!;
 
+  // Three of these sit on 8883 over mqtts, so a preset with no host matched all three and lit
+  // whichever came first — press AWS IoT Core and HiveMQ Cloud's chip came on, with HiveMQ
+  // Cloud's instructions under it.
+  it('lights its own chip and nobody else\'s', async () => {
+    renderPanel();
+    await userEvent.click(screen.getByRole('button', { name: aws.name }));
+
+    expect(screen.getByRole('button', { name: aws.name })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'HiveMQ Cloud' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    expect(screen.getByText(aws.note)).toBeInTheDocument();
+    expect(screen.queryByText(CLOUD_PRESETS[0].note)).not.toBeInTheDocument();
+  });
+
   it('fills in the shape and leaves the address blank', async () => {
     renderPanel();
     await userEvent.click(screen.getByRole('button', { name: aws.name }));
