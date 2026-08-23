@@ -16,6 +16,7 @@ import { TrafficPane } from './features/monitor/TrafficPane';
 import { useZoomStore } from './features/monitor/useZoom';
 import { WireLog } from './features/monitor/WireLog';
 import { TopicTree } from './features/topics/TopicTree';
+import { Warning } from './features/brand/icons';
 import { PANELS, type PanelId } from './features/panels';
 import { useProseSelection } from './lib/useProseSelection';
 import { PublishPanel } from './features/publish/PublishPanel';
@@ -75,6 +76,20 @@ export function App({ hub }: { hub: Hub }) {
   const zoomBox = useZoomStore((s) => s.box);
 
   const close = () => setOpenPanel(null);
+
+  /**
+   * What the Broker row wears, which is the link's own state and nothing else.
+   *
+   * Green connected, red faulted, and the rail's ordinary grey for everything in between. Not
+   * red for "not connected": the console opens disconnected, having been asked to do nothing
+   * yet, and a red that is on at rest is a red nobody looks at when it means something.
+   *
+   * A hub that is reconnecting makes the broker state stale rather than false, so it reads as
+   * neither — the readout at the top of the rail is where that is said, and saying it twice in
+   * two vocabularies would be worse than saying it once.
+   */
+  const linkState =
+    hubStatus === 'reconnecting' ? 'Unknown' : state === 'Connecting' ? 'Unknown' : state;
   const Panel = openPanel && PANEL_VIEWS[openPanel];
 
   return (
@@ -146,6 +161,8 @@ export function App({ hub }: { hub: Hub }) {
                   type="button"
                   className={styles.menuBtn}
                   aria-expanded={openPanel === panel.id}
+                  // The one row that carries a state of its own. Everything else is a way in.
+                  data-link={panel.id === 'broker' ? linkState : undefined}
                   // Shut, the label is not on the page, so the button has to carry it itself.
                   aria-label={menuOpen ? undefined : panel.label}
                   title={menuOpen ? undefined : panel.label}
@@ -153,6 +170,14 @@ export function App({ hub }: { hub: Hub }) {
                 >
                   <Icon />
                   {menuOpen && <span>{panel.label}</span>}
+                  {/* At the end of the row, so the name is still what the eye lands on and this
+                      is what it finds next. A shape as well as a colour, because a colour on its
+                      own says nothing to a reader who cannot tell these two apart. */}
+                  {panel.id === 'broker' && state === 'Faulted' && (
+                    <span className={styles.menuWarn} role="img" aria-label="Connection faulted">
+                      <Warning />
+                    </span>
+                  )}
                 </button>
               </Fragment>
             );

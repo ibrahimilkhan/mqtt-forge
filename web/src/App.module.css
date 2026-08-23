@@ -347,3 +347,35 @@
   .wire,
   .chartPane { overflow-y: visible; }
 }
+
+/* The link's state, worn by the Broker row.
+
+   Only the glyph is tinted, not the word beside it: the row is a way into a panel first and a
+   readout second, and a green label would read as a selected row. Kept off the open row too —
+   there the button is inverted, ink on surface, and a tint over that is a third colour on a
+   shape that is already saying something. */
+.menuBtn[data-link='Connected']:not([aria-expanded='true']) svg { color: var(--live); }
+.menuBtn[data-link='Faulted']:not([aria-expanded='true']) svg { color: var(--fault); }
+
+/* Pushed to the end of the row when there are words, and into the corner when there are not:
+   shut, the button is 34px with the glyph centred, and a mark on the same line would sit on top
+   of it. */
+.menuWarn {
+  margin-left: auto;
+  display: flex;
+  color: var(--fault);
+  /* The glyphs are drawn at 1em, so this is their size. Tokens rather than pixels: the
+     appearance panel scales the whole console and a px here would sit still while the row
+     around it grew. */
+  font-size: var(--t-code);
+}
+.rail:not([data-open]) .menuWarn {
+  position: absolute;
+  inset: -2px -2px auto auto;
+  margin: 0;
+  font-size: var(--t-micro);
+  /* Against the rail rather than the row, so the triangle stays legible at that size. */
+  background: var(--paper);
+  border-radius: 50%;
+}
+.rail:not([data-open]) .menuBtn { position: relative; }
