@@ -12,6 +12,18 @@ import styles from './Workspace.module.css';
 type Props = {
   /** Column one. Absent when no panel is open, and its width is shared out between the other two. */
   panel?: ReactNode;
+  /**
+   * Whether the open panel takes the whole workspace instead of a column of it.
+   *
+   * For the broker panel, which is read in one sitting and answered in one sitting: nothing in
+   * the tree or the log means anything until the connection it describes is up. The other panels
+   * are read against what is on screen — a filter against the tree it will narrow, a colour rule
+   * against the branch it will paint — so they stay in their column.
+   *
+   * The other panes stay mounted underneath. A tree unmounted is a tree rebuilt from nothing the
+   * next time the panel shuts, and the log would lose its history with it.
+   */
+  wide?: boolean;
   tree: ReactNode;
   log: ReactNode;
   chart: ReactNode;
@@ -58,7 +70,7 @@ export function fitRows(columnHeight: number, logHeight: number, publishHeight: 
 
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
 
-export function Workspace({ panel, tree, log, chart, publish }: Props) {
+export function Workspace({ panel, wide = false, tree, log, chart, publish }: Props) {
   // Held as the row looks with a panel open, so closing and reopening one puts it back as it was.
   const [widths, setWidths] = useState<Widths>(START);
 
@@ -211,18 +223,21 @@ export function Workspace({ panel, tree, log, chart, publish }: Props) {
     <div
       className={styles.grid}
       data-testid="layout"
-      data-panel={panel ? 'open' : 'closed'}
+      data-panel={panel ? (wide ? 'full' : 'open') : 'closed'}
       style={tracks}
     >
       {panel && (
         <>
           <div className={styles.pane}>{panel}</div>
-          <ResizeHandle
-            axis="x"
-            label="Panel and topics boundary"
-            {...between(widths.panel, widths.tree)}
-            onChange={movePanelEdge}
-          />
+          {/* No boundary to drag when the panel is the whole of it. */}
+          {!wide && (
+            <ResizeHandle
+              axis="x"
+              label="Panel and topics boundary"
+              {...between(widths.panel, widths.tree)}
+              onChange={movePanelEdge}
+            />
+          )}
         </>
       )}
 

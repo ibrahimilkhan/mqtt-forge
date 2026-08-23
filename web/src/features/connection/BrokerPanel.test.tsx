@@ -8,8 +8,6 @@ import { useLogStore } from '../../stores/logStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import { server } from '../../test/server';
 import { BrokerPanel } from './BrokerPanel';
-import { BROKER_PRESETS, CLOUD_PRESETS } from './presets';
-import { isEncrypted } from './scheme';
 
 // A saved connection as the API sends one. Written here rather than inline in six places so a
 // test says only what it is about — the host, or the filter, or the password — and the rest of
@@ -38,7 +36,8 @@ function renderPanel(queryClient = newQueryClient()) {
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
   const onClose = vi.fn();
-  return { ...render(<BrokerPanel onClose={onClose} />, { wrapper }), onClose };
+  const open = vi.fn();
+  return { ...render(<BrokerPanel onClose={onClose} open={open} />, { wrapper }), onClose, open };
 }
 
 beforeEach(() => {
@@ -493,128 +492,6 @@ describe('BrokerPanel', () => {
 // Pointing this console somewhere real used to mean knowing a hostname, a port, whether it
 // wanted TLS, and — the part that actually caught people — a filter it would answer. The chips
 // carry all four. They fill the form and stop there: connecting is still the reader's move.
-describe('the broker presets', () => {
-  const hsl = BROKER_PRESETS.find((p) => p.name === 'Helsinki transit')!;
-
-  const pick = (name: string) => userEvent.click(screen.getByRole('button', { name }));
-
-  it('fills the address from the chip', async () => {
-    renderPanel();
-    await pick(hsl.name);
-
-    expect(screen.getByLabelText('Broker address')).toHaveValue(hsl.host);
-    expect(screen.getByLabelText('Port')).toHaveValue(hsl.port);
-  });
-
-  it('brings the scheme with the port, rather than leaving the two disagreeing', async () => {
-    renderPanel();
-    await pick(hsl.name);
-
-    expect(screen.getByLabelText('Transport')).toHaveValue('tcp');
-    expect(screen.getByLabelText('Encrypted (TLS)')).toBeChecked();
-  });
-
-  // The half a bare address does not give you, and the reason the console used to connect to
-  // this broker and immediately fall over: it refuses '#' by closing the session.
-  it('brings a filter the broker will actually answer', async () => {
-    renderPanel();
-    await pick(hsl.name);
-
-    expect(screen.getByLabelText('On-connect filter')).toHaveValue(hsl.onConnectFilter);
-    expect(screen.getByLabelText('On-connect filter')).not.toHaveValue('#');
-  });
-
-  it('subscribes to the preset filter on connect, not to everything', async () => {
-    let subscribed: unknown;
-    server.use(
-      http.post('/api/connection', () => HttpResponse.json({ state: 'Connected' })),
-      http.post('/api/subscriptions', async ({ request }) => {
-        subscribed = await request.json();
-        return new HttpResponse(null, { status: 202 });
-      }),
-    );
-
-    renderPanel();
-    await pick(hsl.name);
-    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
-
-    await waitFor(() =>
-      expect(subscribed).toEqual({ topicFilter: hsl.onConnectFilter, qos: 0 }),
-    );
-  });
-
-  it('marks the chip the form is sitting on', async () => {
-    renderPanel();
-    await pick(hsl.name);
-
-    expect(screen.getByRole('button', { name: hsl.name })).toHaveAttribute('aria-pressed', 'true');
-  });
-
-  // Derived from the fields rather than remembered, so a form that is no longer the preset
-  // cannot go on claiming to be it.
-  it('stops marking the chip once the host is typed over', async () => {
-    renderPanel();
-    await pick(hsl.name);
-    await userEvent.clear(screen.getByLabelText('Broker address'));
-    await userEvent.type(screen.getByLabelText('Broker address'), 'somewhere.else');
-
-    expect(screen.getByRole('button', { name: hsl.name })).toHaveAttribute('aria-pressed', 'false');
-  });
-
-  // These are all public brokers, and a password typed for a private one has no business
-  // riding along to them.
-  it('does not carry a typed password over to a preset', async () => {
-    renderPanel();
-    await userEvent.type(screen.getByLabelText('Password'), 'private-secret');
-    await pick(hsl.name);
-
-    expect(screen.getByLabelText('Password')).toHaveValue('');
-  });
-
-  // Found running the real thing: reopen the panel over a saved Helsinki connection, press
-  // Connect, and it sent a bare '#' — which that broker refuses by closing the session. The
-  // address came back from the saved settings and the filter did not, so the one part of the
-  // preset that makes it work was the part that was lost.
-  it('brings the filter back with a broker it has connected to before', async () => {
-    server.use(
-      http.get('/api/connection/settings', () =>
-        HttpResponse.json(
-          savedConnection({ host: hsl.host, port: hsl.port, useTls: isEncrypted(hsl.scheme) }),
-        ),
-      ),
-    );
-
-    renderPanel();
-
-    await waitFor(() =>
-      expect(screen.getByLabelText('On-connect filter')).toHaveValue(hsl.onConnectFilter),
-    );
-  });
-
-  // A broker nobody has a preset for gets the same '#' it always did: there is nothing better
-  // to guess, and guessing a filter for an address we know nothing about would be worse.
-  it('leaves the filter alone for a saved broker it has no preset for', async () => {
-    server.use(
-      http.get('/api/connection/settings', () =>
-        HttpResponse.json(savedConnection()),
-      ),
-    );
-
-    renderPanel();
-
-    await waitFor(() =>
-      expect(screen.getByLabelText('Broker address')).toHaveValue('broker.example'),
-    );
-    expect(screen.getByLabelText('On-connect filter')).toHaveValue('#');
-  });
-
-  it('explains what the broker is once one is picked', async () => {
-    renderPanel();
-    await pick(hsl.name);
-
-    expect(screen.getByText(hsl.note)).toBeInTheDocument();
-  });
-});
 
 // ---- the version, as a thing the panel actually does ----
 
@@ -684,48 +561,6 @@ describe('picking which MQTT to speak', () => {
   });
 });
 
-describe('a cloud service, whose address is yours', () => {
-  const aws = CLOUD_PRESETS.find((p) => p.name === 'AWS IoT Core')!;
-
-  // Three of these sit on 8883 over mqtts, so a preset with no host matched all three and lit
-  // whichever came first — press AWS IoT Core and HiveMQ Cloud's chip came on, with HiveMQ
-  // Cloud's instructions under it.
-  it('lights its own chip and nobody else\'s', async () => {
-    renderPanel();
-    await userEvent.click(screen.getByRole('button', { name: aws.name }));
-
-    expect(screen.getByRole('button', { name: aws.name })).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByRole('button', { name: 'HiveMQ Cloud' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    );
-    expect(screen.getByText(aws.note)).toBeInTheDocument();
-    expect(screen.queryByText(CLOUD_PRESETS[0].note)).not.toBeInTheDocument();
-  });
-
-  it('fills in the shape and leaves the address blank', async () => {
-    renderPanel();
-    await userEvent.click(screen.getByRole('button', { name: aws.name }));
-
-    expect(screen.getByLabelText('Broker address')).toHaveValue('');
-    expect(screen.getByLabelText('Port')).toHaveValue(aws.port);
-    expect(screen.getByLabelText('Encrypted (TLS)')).toBeChecked();
-  });
-
-  // The note is the whole point of a cloud preset — it is the only place the port, the paths
-  // and the shape of the credentials are written down together — and it has to survive the
-  // reader typing the address it deliberately left empty.
-  it('keeps its instructions on screen while the address is being pasted in', async () => {
-    renderPanel();
-    await userEvent.click(screen.getByRole('button', { name: aws.name }));
-    await userEvent.type(
-      screen.getByLabelText('Broker address'),
-      'abc-ats.iot.eu-west-1.amazonaws.com',
-    );
-
-    expect(screen.getByText(aws.note)).toBeInTheDocument();
-  });
-});
 
 // ---- what the panel puts in front of you, and what it keeps behind a line ----
 //
@@ -757,55 +592,41 @@ describe('what the panel shows first', () => {
       ),
     );
 
-  it('is the form itself while nothing is connected', async () => {
+  it('leads with the address, which is the only thing the reader has', async () => {
     renderPanel();
 
     await screen.findByRole('button', { name: 'Connect' });
-    expect(fold('Connect somewhere else').open).toBe(true);
+    expect(screen.getByLabelText('Broker address')).toBeInTheDocument();
   });
 
-  it('keeps the client, the session and the known brokers behind their own lines', async () => {
+  // Two defaults nobody changes, and six fields the great majority of connections never need.
+  it('keeps the client, the session and the certificates behind their own lines', async () => {
     renderPanel();
 
     await screen.findByRole('button', { name: 'Connect' });
     expect(fold('Client and session').open).toBe(false);
-    expect(fold('Start from a known broker').open).toBe(false);
+    expect(fold('Encryption').open).toBe(false);
   });
 
   // Reopened over a working link, the question is what is up — not where to connect, which this
   // reader has already answered.
-  it('leads with the live link and folds the form behind it', async () => {
+  it('leads with the live link when there is one', async () => {
     connected();
     renderPanel();
 
     const details = await screen.findByLabelText('Connection details');
-    expect(fold('Connect somewhere else').open).toBe(false);
-    // The link stands above the fold that holds the form, not under it.
-    expect(details.compareDocumentPosition(fold('Connect somewhere else'))).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
+    const address = screen.getByLabelText('Broker address');
+
+    expect(details.compareDocumentPosition(address)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
-  it('opens the form again on request, without losing the link', async () => {
-    connected();
-    renderPanel();
-
-    await screen.findByLabelText('Connection details');
-    await userEvent.click(screen.getByText('Connect somewhere else'));
-
-    expect(fold('Connect somewhere else').open).toBe(true);
-    expect(screen.getByLabelText('Connection details')).toBeInTheDocument();
-  });
-
-  // The fold offers to connect somewhere else and the button under it will not, a live link
-  // being the one thing this panel cannot connect over. Said, rather than left to be inferred
-  // from a greyed button.
+  // A live link is the one thing this panel cannot connect over. Said, rather than left to be
+  // inferred from a greyed button.
   it('says why Connect will not fire while a link is up', async () => {
     connected();
     renderPanel();
 
     await screen.findByLabelText('Connection details');
-    await userEvent.click(screen.getByText('Connect somewhere else'));
 
     expect(screen.getByRole('button', { name: 'Connect' })).toBeDisabled();
     expect(screen.getByText('Disconnect first — one link at a time.')).toBeInTheDocument();
@@ -1209,5 +1030,88 @@ describe('a certificate, which settles the question by itself', () => {
         tls: expect.objectContaining({ clientCertificatePath: '/tmp/client.pem' }),
       }),
     );
+  });
+});
+
+// The box asks for every topic, and a good many brokers out on the internet will not give you
+// every topic — one of them by closing the session. That used to be guarded against with a
+// filter field beside the box. It is answered where it happens instead.
+describe('a broker that will not give you everything', () => {
+  const faulted = (reason: string) =>
+    server.use(
+      http.get('/api/connection', () =>
+        HttpResponse.json({
+          state: 'Faulted',
+          failure: {
+            reason,
+            host: 'mqtt.hsl.fi',
+            port: 8883,
+            clientId: 'console',
+            useTls: true,
+            transport: 'tcp',
+            protocolVersion: 'auto',
+          },
+        }),
+      ),
+    );
+
+  it('asks for everything, and says so in one box', () => {
+    renderPanel();
+
+    expect(screen.getByLabelText('Listen to every topic on connect')).toBeChecked();
+    expect(screen.queryByLabelText('On-connect filter')).not.toBeInTheDocument();
+  });
+
+  it('subscribes to # when the box is ticked', async () => {
+    let asked: unknown;
+    server.use(
+      http.post('/api/connection', () => HttpResponse.json({ state: 'Connected' })),
+      http.post('/api/subscriptions', async ({ request }) => {
+        asked = await request.json();
+        return new HttpResponse(null, { status: 202 });
+      }),
+    );
+
+    renderPanel();
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+
+    await waitFor(() => expect(asked).toEqual({ topicFilter: '#', qos: 0 }));
+  });
+
+  it('asks for nothing when it is not', async () => {
+    let asked = false;
+    server.use(
+      http.post('/api/connection', () => HttpResponse.json({ state: 'Connected' })),
+      http.post('/api/subscriptions', () => {
+        asked = true;
+        return new HttpResponse(null, { status: 202 });
+      }),
+    );
+
+    renderPanel();
+    await userEvent.click(screen.getByLabelText('Listen to every topic on connect'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Connect' })).toBeEnabled());
+    expect(asked).toBe(false);
+  });
+
+  // The dead end, and the way out of it. Without this the reader is connected to nothing with
+  // nothing on screen to do about it.
+  it.each(['filterRefused', 'notPermitted'])('offers Filters after %s', async (reason) => {
+    faulted(reason);
+    const { open } = renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Ask for less in Filters' }));
+
+    expect(open).toHaveBeenCalledWith('subscribe');
+  });
+
+  it('offers nothing of the sort for a failure about the connection itself', async () => {
+    faulted('credentialsRejected');
+    renderPanel();
+
+    expect(await screen.findByText('The broker rejected the username or password.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ask for less in Filters' })).not.toBeInTheDocument();
   });
 });
