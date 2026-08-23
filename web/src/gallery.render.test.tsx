@@ -873,7 +873,7 @@ ${document.head.innerHTML}
  * which is the whole of what the panel can ask for and is what it used to show on every visit.
  */
 function brokerStates() {
-  const one = (label, prime, unfold = false) => {
+  const one = (label, prime, unfold = false, fill) => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     prime(client);
 
@@ -884,6 +884,16 @@ function brokerStates() {
         </div>
       </QueryClientProvider>,
     );
+
+    // What the reader would have typed before pressing Connect. Only the failure state needs it,
+    // and it needs it badly: the failure names the broker it was about, and a panel whose address
+    // box disagreed with its own error message would look like the bug rather than the fix.
+    // Found by property rather than by `#id`: React sets `id` on the element without setting the
+    // attribute, so a CSS selector matches nothing here. It is the same gap `stamp` exists to
+    // close, met a step earlier.
+    if (fill) {
+      fill((id) => [...container.querySelectorAll('input')].find((input) => input.id === id));
+    }
 
     // A property React set, written down as an attribute — the same reason `stamp` exists.
     if (unfold) {
@@ -932,7 +942,10 @@ function brokerStates() {
   return `<h2>The broker panel</h2><div class="gRow" style="align-items:flex-start">
 ${one('nothing connected', nothing)}
 ${one('a link up', link)}
-${one('a failure with a way out', faulted)}
+${one('a failure with a way out', faulted, false, (box) => {
+  fireEvent.change(box('address'), { target: { value: 'mqtt://broker.example' } });
+  fireEvent.change(box('port'), { target: { value: '8883' } });
+})}
 ${one('every fold opened', nothing, true)}
 </div>`;
 }
