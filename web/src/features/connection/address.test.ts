@@ -122,3 +122,11 @@ describe('an address written back out', () => {
     expect(parseBrokerAddress(formatBrokerAddress(scheme, host))).toMatchObject({ scheme, host });
   });
 });
+
+// The log line is built out of this too — `Connected mqtt://[::1]:1883 · client` — and it is the
+// one place the brackets are load-bearing for a reader rather than for the parser.
+describe('an address in a log line', () => {
+  it('keeps the port findable beside an IPv6 host', () => {
+    expect(`${formatBrokerAddress('mqtt', '::1')}:1883`).toBe('mqtt://[::1]:1883');
+  });
+});

@@ -6,14 +6,19 @@ import { describeError } from '../../lib/problemDetails';
 import { logFault, useLogStore } from '../../stores/logStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import type { ConnectRequest } from '../../types/api';
+import { formatBrokerAddress } from './address';
 import { wasAborted } from './connectFailure';
 import { schemeOf } from './scheme';
 
 // What the log line calls the broker. The scheme is part of the address now: two lines reading
 // 'localhost:1883' would otherwise be the same line whether the second one went over a socket
 // or a WebSocket, which is exactly the thing somebody reading the log is checking.
-const endpoint = (request: ConnectRequest) =>
-  `${schemeOf(request.transport ?? 'tcp', request.useTls)}://${request.host}:${request.port}`;
+//
+// Built by the same function the panel's own address goes through, for the brackets: an IPv6
+// host written straight into a template makes `mqtt://::1:1883`, which is a line nobody can
+// find the port in.
+const endpoint = ({ transport, useTls, host, port }: ConnectRequest) =>
+  `${formatBrokerAddress(schemeOf(transport ?? 'tcp', useTls), host)}:${port}`;
 
 type ConnectVars = { request: ConnectRequest; autoSubscribe: boolean; onConnectFilter: string };
 
