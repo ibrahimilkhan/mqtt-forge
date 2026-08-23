@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 let startImpl: () => Promise<void>;
 let closeCallback: (() => void) | undefined;
 
+let startCount = 0;
+
 class FakeConnection {
   on() {}
   off() {}
@@ -13,6 +15,7 @@ class FakeConnection {
     closeCallback = callback;
   }
   start() {
+    startCount++;
     return startImpl();
   }
 }
@@ -35,6 +38,7 @@ const { createSignalRHub } = await import('./hub');
 
 beforeEach(() => {
   closeCallback = undefined;
+  startCount = 0;
   vi.useFakeTimers();
 });
 
@@ -84,5 +88,31 @@ describe('createSignalRHub', () => {
     await vi.advanceTimersByTimeAsync(5000);
 
     expect(reconnectedCount).toBe(1);
+  });
+
+  // Both recovery paths can answer for one failure — start() rejecting, and onclose firing behind
+  // it — and two retry loops racing means the loser calls start() on a connection the winner has
+  // already brought up. The real client rejects that with 'not in the Disconnected state', so the
+  // loser goes on retrying every five seconds for as long as the page is open.
+  it('runs one retry loop even when both recovery paths fire for the same failure', async () => {
+    startImpl = () => Promise.reject(new Error('api not up yet'));
+    const sut = createSignalRHub();
+    let reconnectedCount = 0;
+    sut.subscribe({ reconnected: () => reconnectedCount++ });
+
+    await expect(sut.start()).rejects.toThrow('api not up yet');
+    // The same failure reaching the other path.
+    closeCallback?.();
+    await Promise.resolve();
+
+    startImpl = () => Promise.resolve();
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(reconnectedCount).toBe(1);
+
+    // And the loop is done: nothing is still calling start() behind the connection that came up.
+    const settled = startCount;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(startCount).toBe(settled);
   });
 });

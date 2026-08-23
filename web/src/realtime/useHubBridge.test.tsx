@@ -145,6 +145,41 @@ describe('useHubBridge', () => {
 
     expect(arrivals()).toHaveLength(0);
   });
+
+  // The queue was not the only thing left holding another broker's traffic. The tree started
+  // again on its own while the log kept every run behind it, so a selection made on the broker
+  // just left went on drawing that broker's messages under a lamp reading Connected to the new
+  // one — the log's own clear() existed for this and nothing ever called it.
+  it('empties the log when a connection starts the tree again', () => {
+    const hub = createFakeHub();
+    renderBridge(hub);
+
+    hub.emit('messagesReceived', [message('sensors/one'), message('sensors/two')]);
+    runFrames();
+    expect(arrivals()).toHaveLength(2);
+
+    act(() => useTopicTreeStore.getState().reset());
+
+    expect(arrivals()).toHaveLength(0);
+    expect(useLogStore.getState().held).toBe(0);
+  });
+
+  // Cleared inside reset(), so anything the connection records after it stands. Connecting pushes
+  // its 'Connected' line straight after resetting the tree, and a clear that ran later would take
+  // the one line explaining why the pane had just emptied.
+  it('keeps a command recorded after the reset', () => {
+    const hub = createFakeHub();
+    renderBridge(hub);
+
+    useLogStore.getState().push({ kind: 'ok', verb: 'Subscribed', topic: 'sensors/#' });
+
+    act(() => {
+      useTopicTreeStore.getState().reset();
+      useLogStore.getState().push({ kind: 'ok', verb: 'Connected' });
+    });
+
+    expect(useLogStore.getState().commands.map((entry) => entry.verb)).toEqual(['Connected']);
+  });
 });
 
 // The console-wide stop. What it stops is the taking in, not the broker: messages go on

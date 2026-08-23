@@ -6,26 +6,6 @@ import type { DecodedMessage } from '../realtime/decodeIncoming';
 import { TopicRing } from './topicRing';
 
 /**
- * What the log holds in total.
- *
- * It used to be five thousand, and that was a reading budget rather than a memory one: the pane
- * re-filtered the whole log on every frame that carried traffic, so the cost of an arrival grew
- * with how much history was kept. Measured against a broker with two thousand topics and the
- * deep names a real one has, one read cost 4.5ms at five thousand entries and 174ms at two
- * hundred thousand — which is why the number had to stay small, and why an hour of history was
- * not on offer from a tool meant to watch a plant.
- *
- * `byTopic` took that cost out: the same read is 1.8ms at two hundred thousand entries, and flat
- * — it is set by the run asked for, not by the log behind it. So the number is a memory budget
- * now, and this is what it buys, measured with the payloads a real broker sends:
- *
- *     100,000 entries  ~20MB   ~33 minutes at 50 messages a second
- *
- * The remaining cost that does grow is a selection covering every topic at once, which has to
- * gather everything it matches whatever holds it: about 6ms here, inside a frame. That is what
- * keeps this at a hundred thousand rather than higher.
- */
-/**
  * The longest run a topic keeps when the console can afford it.
  *
  * The log used to be one list of the newest messages from the whole broker, and that made a
@@ -47,7 +27,7 @@ export const TOPIC_DEPTH = 2000;
 
 /**
  * And how much weight, because a count is not a memory bound. A topic sending megabyte payloads
- * would otherwise hold five hundred of them. MQTT Explorer bounds its own history the same way
+ * would otherwise hold TOPIC_DEPTH of them. MQTT Explorer bounds its own history the same way
  * and for the same reason, at a hundred messages or twenty kilobytes; this is more generous on
  * both, because this pane is the thing being used rather than a detail panel beside a tree.
  */
@@ -56,6 +36,18 @@ export const TOPIC_BYTES = 256 * 1024;
 /**
  * The most the log holds across every topic, and the only bound that is about the machine
  * rather than about one topic.
+ *
+ * It used to be five thousand, and that was a reading budget rather than a memory one: the pane
+ * re-filtered the whole log on every frame that carried traffic, so the cost of an arrival grew
+ * with how much history was kept. Measured against a broker with two thousand topics and the deep
+ * names a real one has, one read cost 4.5ms at five thousand entries and 174ms at two hundred
+ * thousand — which is why the number had to stay small, and why an hour of history was not on
+ * offer from a tool meant to watch a plant. `byTopic` took that cost out: the same read is 1.8ms
+ * at two hundred thousand entries, and flat — set by the run asked for, not by the log behind it.
+ * So this is a memory budget now rather than a reading one.
+ *
+ * The one cost that does still grow with it is a selection covering every topic at once, which
+ * has to gather everything it matches whatever holds it: about 6ms here, inside a frame.
  *
  * Reached by breadth rather than by depth: a broker with more topics than this affords at
  * TOPIC_DEPTH has every run narrowed to what fits, down to MIN_TOPIC_ENTRIES, rather than
