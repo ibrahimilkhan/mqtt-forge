@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 /**
- * The six marks the panel menu wears, one per panel.
+ * The six marks the panel menu wears, one per panel — and one more that is not a panel.
  *
  * Drawn here rather than pulled from an icon set. Six glyphs is not worth a dependency, and a
  * set drawn to its own rules would sit beside the mark in `marks.tsx` looking borrowed: the same
@@ -12,6 +12,10 @@ import type { ReactNode } from 'react';
  * 1.8 rather than Lucide's 1.5, because 1.8 is what the mark and every other line in here is
  * drawn at. The one exception is the cog, which has enough going on at sixteen pixels that the
  * heavier stroke closes its teeth up; it keeps 1.5.
+ *
+ * `Warning` is the seventh, and it is drawn to the same rules for the same reason: it stands on
+ * the Broker row beside `Antenna`, and a triangle borrowed from somewhere else would look stuck
+ * on rather than part of the rail.
  */
 const Glyph = ({ children, weight = 1.8 }: { children: ReactNode; weight?: number }) => (
   <svg
@@ -89,6 +93,24 @@ export const Settings = () => (
     <>
       <path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" />
       <circle cx="12" cy="12" r="3" />
+    </>
+  </Glyph>
+);
+
+/**
+ * Something went wrong with the link.
+ *
+ * Beside the Broker row rather than instead of it. The colour of the antenna already says
+ * connected or not; this says that the last thing that happened was a failure, which a colour
+ * cannot say to everyone and cannot say at all to somebody who has not learnt what green means
+ * here yet.
+ */
+export const Warning = () => (
+  <Glyph>
+    <>
+      <path d="M12 4.2 21 19.5H3z" />
+      <path d="M12 10v4" />
+      <path d="M12 16.6v.1" />
     </>
   </Glyph>
 );

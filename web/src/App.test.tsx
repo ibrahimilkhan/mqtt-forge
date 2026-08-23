@@ -1,7 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
+import { server } from './test/server';
 import { App } from './App';
 import { createFakeHub } from './realtime/fakeHub';
 import { useHubStatusStore } from './stores/hubStatusStore';
@@ -315,5 +317,91 @@ describe('App', () => {
 
     expect(screen.queryByRole('group', { name: 'Mark' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'MQTTForge' })).toBeInTheDocument();
+  });
+});
+
+// The link's own state, worn by the row that leads to it. Green connected, red faulted, and the
+// rail's ordinary grey for everything else — a red that is on at rest is a red nobody looks at.
+describe('the Broker row, as a readout', () => {
+  // Not an exact name: a faulted row carries the fault in its own accessible name, which is the
+  // point of the mark being labelled rather than hidden.
+  const brokerRow = () => menu().getByRole('button', { name: /^Broker/ });
+
+  const linked = (state: string, extra: Record<string, unknown> = {}) =>
+    server.use(
+      http.get('/api/connection', () => HttpResponse.json({ state, ...extra })),
+    );
+
+  it('wears nothing at rest, having been asked to do nothing yet', async () => {
+    renderApp();
+
+    await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Disconnected'));
+    expect(screen.queryByRole('img', { name: 'Connection faulted' })).not.toBeInTheDocument();
+  });
+
+  it('goes green on a live link', async () => {
+    linked('Connected', {
+      connection: {
+        host: 'broker.example',
+        port: 1883,
+        clientId: 'console',
+        username: null,
+        useTls: false,
+        connectedAt: '2026-08-24T12:00:00Z',
+        sessionPresent: false,
+        assignedClientId: null,
+        serverKeepAlive: null,
+      },
+    });
+    renderApp();
+
+    await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Connected'));
+  });
+
+  // A colour on its own says nothing to a reader who cannot tell these two apart.
+  it('goes red on a fault, and says so in a shape as well', async () => {
+    linked('Faulted', {
+      failure: {
+        reason: 'refused',
+        host: 'broker.example',
+        port: 1883,
+        clientId: 'console',
+        useTls: false,
+        transport: 'tcp',
+        protocolVersion: 'auto',
+      },
+    });
+    renderApp();
+
+    await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Faulted'));
+    expect(screen.getByRole('img', { name: 'Connection faulted' })).toBeInTheDocument();
+  });
+
+  // In flight is neither, and saying so in green would be a lie for up to twenty seconds.
+  it('says neither while an attempt is in flight', async () => {
+    linked('Connecting');
+    renderApp();
+
+    await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Unknown'));
+  });
+
+  // The hub being down makes the broker state stale rather than false. The readout at the top of
+  // the rail is where that is said.
+  it('says neither while the hub is reconnecting', async () => {
+    renderApp();
+    act(() => useHubStatusStore.setState({ status: 'reconnecting' }));
+
+    await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Unknown'));
+  });
+
+  // Only the glyph is tinted, and only while the row is not the open one: there the button is
+  // inverted, and a tint over that is a third colour on a shape already saying something.
+  it('leaves the open row alone', async () => {
+    linked('Faulted');
+    renderApp();
+
+    await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Faulted'));
+    // Open, and still carrying the state — the stylesheet is what declines to tint it.
+    expect(brokerRow()).toHaveAttribute('aria-expanded', 'true');
   });
 });
