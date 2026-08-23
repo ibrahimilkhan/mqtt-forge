@@ -26,7 +26,12 @@ export function useExport() {
     canChoose: data?.canChoose ?? false,
     choosing: choose.isPending,
     saving: write.isPending,
-    choose: () => choose.mutateAsync(),
+
+    // Never rejects. Its one caller is a click handler, where a bare mutateAsync() is an unhandled
+    // rejection the moment the host refuses — which it now does when a dialog is already open for
+    // the other console this app exists to be opened on. What went wrong is on the mutation, and
+    // what the reader is looking at is the folder line beside the button.
+    choose: () => choose.mutateAsync().catch(() => null),
 
     /**
      * Save the run, by whichever route this host has.
@@ -63,5 +68,8 @@ function download(name: string, content: string) {
   document.body.appendChild(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(url);
+  // Not straight after the click: the click only starts the download, and revoking the URL in the
+  // same turn cancels it before the browser has read the blob. One turn later is enough, and the
+  // blob is freed either way.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }

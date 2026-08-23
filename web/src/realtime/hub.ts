@@ -5,6 +5,8 @@ export type HubEvents = {
   // Batched server-side: a busy broker outruns one frame per message.
   messagesReceived: (messages: MqttMessage[]) => void;
   connectionStateChanged: (payload: ConnectionStateResponse) => void;
+  /** Running total the server's own queue has had to drop, sent only when it moves. */
+  messagesDropped: (total: number) => void;
   reconnecting: () => void;
   reconnected: () => void;
 };
@@ -28,15 +30,32 @@ export function createSignalRHub(url = '/hubs/mqtt'): Hub {
   const notifyReconnecting = () => reconnectingHandlers.forEach((handler) => handler());
   const notifyReconnected = () => reconnectedHandlers.forEach((handler) => handler());
 
-  // onclose fires both when withAutomaticReconnect exhausts its schedule and on a
-  // dead-on-arrival first start; retry by hand in both cases so the hub still recovers.
+  // onclose fires when withAutomaticReconnect exhausts its schedule, and start() rejects when the
+  // API is not up yet; retry by hand in both cases so the hub still recovers.
   connection.onclose(() => {
     notifyReconnecting();
     retryUntilConnected();
   });
 
+  // One loop at a time. Both paths above can answer for the same failure, and two loops racing
+  // means the loser calls start() on a connection the winner has already brought up — which
+  // rejects with 'not in the Disconnected state' and so schedules another try, and another, every
+  // five seconds for as long as the page is open. The flag is what makes the second caller a
+  // no-op rather than a second retrier.
+  let retrying = false;
+
   function retryUntilConnected(): void {
-    connection.start().then(notifyReconnected, () => setTimeout(retryUntilConnected, MANUAL_RETRY_DELAY_MS));
+    if (retrying) return;
+
+    retrying = true;
+    attempt();
+  }
+
+  function attempt(): void {
+    connection.start().then(() => {
+      retrying = false;
+      notifyReconnected();
+    }, () => setTimeout(attempt, MANUAL_RETRY_DELAY_MS));
   }
 
   return {
@@ -62,6 +81,12 @@ export function createSignalRHub(url = '/hubs/mqtt'): Hub {
         const handler = handlers.connectionStateChanged;
         connection.on('connectionStateChanged', handler);
         registered.push(() => connection.off('connectionStateChanged', handler));
+      }
+
+      if (handlers.messagesDropped) {
+        const handler = handlers.messagesDropped;
+        connection.on('messagesDropped', handler);
+        registered.push(() => connection.off('messagesDropped', handler));
       }
 
       // signalR has no lifecycle-handler removal API; harmless since the connection outlives the app.
