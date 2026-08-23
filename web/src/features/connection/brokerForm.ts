@@ -1,5 +1,6 @@
 import type { ConnectRequest, MqttProtocolLevel, SavedConnection, TlsOptions } from '../../types/api';
-import { choiceOf, isEncrypted, isWebSocket, mayBeV5, schemeOf, type Scheme } from './scheme';
+import { parseBrokerAddress } from './address';
+import { choiceOf, isEncrypted, isWebSocket, mayBeV5, portFor, schemeOf, type Scheme } from './scheme';
 
 /**
  * What the panel holds while it is being filled in.
@@ -114,5 +115,48 @@ export function formFromSaved(saved: SavedConnection): BrokerForm {
     clientCertPassword: '',
     sniHost: saved.tls?.sniHost ?? '',
     alpnProtocol: saved.tls?.alpnProtocol ?? '',
+  };
+}
+
+// A scheme, any scheme, in front of the rest. Only used to tell the two things
+// `parseBrokerAddress` returns null for apart from each other: a bare hostname, which belongs
+// in the box as the host it is, and a scheme this console has no transport for, which must move
+// nothing at all.
+const SCHEMED = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
+
+/**
+ * The Broker address box's text, reconciled with the form.
+ *
+ * Pure, and that is the point of it. The panel calls this on the paste, on the way out of the
+ * box, AND when Connect is pressed, using the returned form for the request directly — so there
+ * is no ordering in which the box shows one broker and the attempt goes to another.
+ *
+ * What the address does not say is left as it stands rather than reset: pasting `mqtts://host`
+ * over a port somebody typed moves the port exactly as far as pressing the `mqtts` chip would,
+ * and no further.
+ */
+export function applyAddress(form: BrokerForm, text: string): BrokerForm {
+  const parsed = parseBrokerAddress(text);
+
+  if (!parsed) {
+    // A scheme this console has no transport for. Nothing moves — including the host, which is
+    // the half of `foo://host` that looks safe to keep and is not: it would leave the box
+    // reading `mqtt://host` for an address whose scheme was just refused.
+    if (SCHEMED.test(text.trim())) return form;
+
+    // Everything else with no scheme, no port and no path is a hostname, and belongs in the box
+    // as the host it is. An empty box is an empty host: the reader cleared it, and the API's
+    // refusal says more about that than a value put back would.
+    return { ...form, host: text.trim() };
+  }
+
+  const scheme = parsed.scheme ?? form.scheme;
+
+  return {
+    ...form,
+    scheme,
+    host: parsed.host,
+    port: parsed.port ?? portFor(form.scheme, scheme, form.port),
+    webSocketPath: parsed.webSocketPath ?? form.webSocketPath,
   };
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildConnectRequest, formFromSaved, type BrokerForm } from './brokerForm';
+import { applyAddress, buildConnectRequest, formFromSaved, type BrokerForm } from './brokerForm';
 import { SCHEMES, portFor, schemeForPort, schemeOf, versionName } from './scheme';
 import type { SavedConnection } from '../../types/api';
 
@@ -218,5 +218,64 @@ describe('how a version reads', () => {
   // the attempt is what is being described.
   it('says what Auto is instead of naming a number', () => {
     expect(versionName('auto')).toBe('whichever version fits');
+  });
+});
+
+describe('the address box, reconciled with the form', () => {
+  it('takes a whole address apart into the fields it names', () => {
+    expect(applyAddress(FORM, 'wss://broker.emqx.io:8084/mqtt')).toMatchObject({
+      scheme: 'wss',
+      host: 'broker.emqx.io',
+      port: 8084,
+      webSocketPath: '/mqtt',
+    });
+  });
+
+  // A hostname is a hostname. Everything else about the connection stays where it was.
+  it('treats a bare hostname as the host', () => {
+    expect(applyAddress(FORM, 'somewhere.else')).toMatchObject({
+      scheme: 'mqtt',
+      host: 'somewhere.else',
+      port: 1883,
+    });
+  });
+
+  it('trims what was typed', () => {
+    expect(applyAddress(FORM, '  somewhere.else  ')).toMatchObject({ host: 'somewhere.else' });
+  });
+
+  // An emptied box is an empty host, not a host left behind. The API refuses it and the message
+  // lands under the box that holds it.
+  it('lets the box be emptied', () => {
+    expect(applyAddress(FORM, '')).toMatchObject({ host: '' });
+  });
+
+  // Moving the scheme moves the port exactly as far as pressing the chip would, and no further.
+  it('moves the port with a scheme the address names, when the address names no port', () => {
+    expect(applyAddress(FORM, 'mqtts://broker.local')).toMatchObject({
+      scheme: 'mqtts',
+      port: 8883,
+    });
+  });
+
+  it('leaves a typed port where it was typed', () => {
+    expect(applyAddress({ ...FORM, port: 21883 }, 'mqtts://broker.local')).toMatchObject({
+      scheme: 'mqtts',
+      port: 21883,
+    });
+  });
+
+  // Guessing at foo:// would put the connection on a transport nobody chose. The host is not
+  // kept either: it would leave the box reading mqtt://host for an address whose scheme was
+  // refused, which is a lie about what pressing Connect would do.
+  it('refuses a scheme this console has no transport for, and moves nothing', () => {
+    expect(applyAddress(FORM, 'foo://broker.example:1883')).toEqual(FORM);
+  });
+
+  it('keeps a path the address does not mention', () => {
+    const withPath = { ...FORM, scheme: 'wss' as const, webSocketPath: '/mqtt' };
+    expect(applyAddress(withPath, 'wss://elsewhere.example')).toMatchObject({
+      webSocketPath: '/mqtt',
+    });
   });
 });
