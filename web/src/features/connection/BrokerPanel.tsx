@@ -31,6 +31,7 @@ import {
   isWebSocket,
   mayBeV5,
   portFor,
+  schemeForPort,
   versionNote,
   type Scheme,
 } from './scheme';
@@ -303,6 +304,9 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
               type="number"
               value={form.port}
               onChange={(e) => set('port', Number(e.target.value))}
+              // On the way out, for the same reason the address box splits on the way out: a
+              // number halfway through being typed is not a number. See schemeForPort.
+              onBlur={() => settle({ ...form, scheme: schemeForPort(form.scheme, form.port) })}
             />
             <FieldError error={connectMutation.error} field="Port" />
           </Field>
