@@ -24,13 +24,60 @@ public class ExportServiceTests
     }
 
     [Fact]
+    public async Task ChooseAsync_says_so_where_the_host_has_no_window()
+    {
+        Assert.Equal(ExportService.Choice.Unavailable, await new ExportService().ChooseAsync());
+    }
+
+    // Two consoles on one host is what this app is for — the QR panel exists to put a second one
+    // on a phone — so two of them asking for a folder at once is the ordinary case, not the odd
+    // one. Both got a dialog: two of them on one window, each holding a request open until
+    // somebody answered it, and the picker gives an unanswered dialog five minutes.
+    [Fact]
+    public async Task ChooseAsync_turns_away_a_second_console_while_a_dialog_is_open()
+    {
+        var folder = TempFolder();
+        var opened = new TaskCompletionSource();
+        var answer = new TaskCompletionSource<string?>();
+        _picker.PickAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_ =>
+        {
+            opened.TrySetResult();
+            return answer.Task;
+        });
+        var sut = new ExportService(_picker);
+
+        var first = sut.ChooseAsync();
+        await opened.Task;
+
+        Assert.Equal(ExportService.Choice.AlreadyOpen, await sut.ChooseAsync());
+
+        answer.SetResult(folder);
+        Assert.Equal(ExportService.Choice.Chosen, await first);
+        // One dialog was put on the window, not two.
+        await _picker.Received(1).PickAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    // And the gate opens again afterwards: a console turned away must not be turned away for ever.
+    [Fact]
+    public async Task ChooseAsync_asks_again_once_the_dialog_is_answered()
+    {
+        var folder = TempFolder();
+        _picker.PickAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(folder);
+        var sut = new ExportService(_picker);
+
+        await sut.ChooseAsync();
+
+        Assert.Equal(ExportService.Choice.Chosen, await sut.ChooseAsync());
+    }
+
+    [Fact]
     public async Task ChooseAsync_remembers_what_the_dialog_returned()
     {
         var folder = TempFolder();
         _picker.PickAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(folder);
         var sut = new ExportService(_picker);
 
-        Assert.Equal(folder, await sut.ChooseAsync());
+        Assert.Equal(ExportService.Choice.Chosen, await sut.ChooseAsync());
         Assert.Equal(folder, sut.Folder);
     }
 
@@ -44,7 +91,7 @@ public class ExportServiceTests
         var sut = new ExportService(_picker);
         await sut.ChooseAsync();
 
-        Assert.Null(await sut.ChooseAsync());
+        Assert.Equal(ExportService.Choice.Unchanged, await sut.ChooseAsync());
         Assert.Equal(folder, sut.Folder);
     }
 
@@ -57,7 +104,7 @@ public class ExportServiceTests
             .Returns(Path.Combine(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}"));
         var sut = new ExportService(_picker);
 
-        Assert.Null(await sut.ChooseAsync());
+        Assert.Equal(ExportService.Choice.Unchanged, await sut.ChooseAsync());
         Assert.Null(sut.Folder);
     }
 

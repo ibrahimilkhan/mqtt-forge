@@ -12,10 +12,12 @@ describe('api client', () => {
     await expect(getConnectionState()).resolves.toEqual({ state: 'Connected' });
   });
 
-  it('returns undefined for the 204 the settings endpoint sends when nothing is saved', async () => {
+  // Null rather than undefined, which React Query refuses to hold: left as undefined the saved
+  // settings query threw on every first run and retried its way to the same empty form.
+  it('returns null for the 204 the settings endpoint sends when nothing is saved', async () => {
     server.use(http.get('/api/connection/settings', () => new HttpResponse(null, { status: 204 })));
 
-    await expect(getSavedSettings()).resolves.toBeUndefined();
+    await expect(getSavedSettings()).resolves.toBeNull();
   });
 
   it('turns a failure into an ApiError carrying the ProblemDetails message', async () => {
