@@ -63,5 +63,8 @@ function download(name: string, content: string) {
   document.body.appendChild(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(url);
+  // Not straight after the click: the click only starts the download, and revoking the URL in the
+  // same turn cancels it before the browser has read the blob. One turn later is enough, and the
+  // blob is freed either way.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }

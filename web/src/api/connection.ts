@@ -3,8 +3,12 @@ import { json, request } from './client';
 
 export const getConnectionState = () => request<ConnectionStateResponse>('/api/connection');
 
-// 204 when nothing has been saved yet, which the client turns into undefined.
-export const getSavedSettings = () => request<SavedConnection | undefined>('/api/connection/settings');
+// 204 when nothing has been saved yet, which the client turns into undefined — and undefined is
+// the one thing React Query refuses to hold, so 'nothing saved' is carried as null instead. Left
+// as undefined the query threw on every first run, retried three times, and arrived at the same
+// empty form by way of an error state.
+export const getSavedSettings = async (): Promise<SavedConnection | null> =>
+  (await request<SavedConnection | undefined>('/api/connection/settings')) ?? null;
 
 export const connect = (body: ConnectRequest) =>
   request<ConnectionStateResponse>('/api/connection', { method: 'POST', ...json(body) });
