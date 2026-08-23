@@ -7,6 +7,13 @@ import { logFault, useLogStore } from '../../stores/logStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import type { ConnectRequest } from '../../types/api';
 import { wasAborted } from './connectFailure';
+import { schemeOf } from './scheme';
+
+// What the log line calls the broker. The scheme is part of the address now: two lines reading
+// 'localhost:1883' would otherwise be the same line whether the second one went over a socket
+// or a WebSocket, which is exactly the thing somebody reading the log is checking.
+const endpoint = (request: ConnectRequest) =>
+  `${schemeOf(request.transport ?? 'tcp', request.useTls)}://${request.host}:${request.port}`;
 
 type ConnectVars = { request: ConnectRequest; autoSubscribe: boolean; onConnectFilter: string };
 
@@ -26,7 +33,7 @@ export function useConnectionActions() {
         useLogStore.getState().push({
           kind: 'ok',
           verb: 'Already connected',
-          body: `${request.host}:${request.port} · ${request.clientId}`,
+          body: `${endpoint(request)} · ${request.clientId}`,
         });
         return;
       }
@@ -36,7 +43,7 @@ export function useConnectionActions() {
       useLogStore.getState().push({
         kind: 'ok',
         verb: 'Connected',
-        body: `${request.host}:${request.port} · ${request.clientId}`,
+        body: `${endpoint(request)} · ${request.clientId}`,
       });
 
       if (autoSubscribe) await subscribeOnConnect(onConnectFilter);

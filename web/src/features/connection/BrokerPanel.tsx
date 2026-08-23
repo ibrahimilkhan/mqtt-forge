@@ -90,9 +90,14 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
 
   // Derived, not remembered: type over the host and the chip goes out by itself, with no second
   // copy of the truth to get out of step with the fields.
+  //
+  // A preset with no host of its own is never the answer. Three cloud services sit on 8883 over
+  // mqtts, so an empty host matched all three and lit whichever came first in the list — press
+  // AWS IoT Core and HiveMQ Cloud's chip came on, with HiveMQ Cloud's instructions under it.
+  // What the form matches is a question those presets deliberately do not answer; `picked` is.
   const activePreset =
     BROKER_PRESETS.find(
-      (p) => p.host === form.host && p.port === form.port && p.scheme === form.scheme,
+      (p) => p.host !== '' && p.host === form.host && p.port === form.port && p.scheme === form.scheme,
     ) ?? null;
 
   const applyPreset = (preset: BrokerPreset) => {
