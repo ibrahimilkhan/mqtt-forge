@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildConnectRequest, formFromSaved, type BrokerForm } from './brokerForm';
-import { SCHEMES, portFor, schemeOf, versionName } from './scheme';
+import { SCHEMES, portFor, schemeForPort, schemeOf, versionName } from './scheme';
 import type { SavedConnection } from '../../types/api';
 
 const FORM: BrokerForm = {
@@ -180,6 +180,31 @@ describe('the port a scheme change lands on', () => {
     expect(portFor('mqtt', 'mqtts', 1883)).toBe(8883);
     expect(portFor('mqtts', 'wss', 8883)).toBe(8084);
     expect(portFor('wss', 'mqtt', 8084)).toBe(1883);
+  });
+});
+
+describe('the scheme a port implies', () => {
+  it('turns encryption on for the encrypted default of the same transport', () => {
+    expect(schemeForPort('mqtt', 8883)).toBe('mqtts');
+    expect(schemeForPort('ws', 8084)).toBe('wss');
+  });
+
+  it('turns it off again for the plain default', () => {
+    expect(schemeForPort('mqtts', 1883)).toBe('mqtt');
+    expect(schemeForPort('wss', 8083)).toBe('ws');
+  });
+
+  // The rule that keeps this from undoing a choice rather than correcting a mistake: 8883 over
+  // a WebSocket is a configuration brokers really run, and somebody on wss picked the WebSocket
+  // deliberately.
+  it('never crosses the transport', () => {
+    expect(schemeForPort('wss', 8883)).toBe('wss');
+    expect(schemeForPort('mqtts', 8084)).toBe('mqtts');
+  });
+
+  it("leaves a port that is nobody's default alone", () => {
+    expect(schemeForPort('mqtt', 21883)).toBe('mqtt');
+    expect(schemeForPort('mqtts', 0)).toBe('mqtts');
   });
 });
 

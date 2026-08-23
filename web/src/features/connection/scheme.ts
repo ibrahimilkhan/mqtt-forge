@@ -79,6 +79,27 @@ export function portFor(from: Scheme, to: Scheme, port: number): number {
   return port === choiceOf(from).defaultPort ? choiceOf(to).defaultPort : port;
 }
 
+/**
+ * The scheme a port implies, when it implies one.
+ *
+ * The mirror of `portFor`, and deliberately the smaller half of it: this moves along the
+ * encryption axis only and never crosses the transport. Somebody on `wss` who types 8883 chose
+ * the WebSocket on purpose, and 8883 over `wss` is a configuration brokers really run — guessing
+ * across the transport would undo a choice, where guessing along encryption only ever corrects
+ * the mistake that actually happens, which is plain MQTT aimed at the encrypted port.
+ *
+ * There is no "was this port typed" guard, the way `portFor` has one, because here the port IS
+ * what was typed. The panel calls this when the box is left rather than on the keystroke, for
+ * the same reason the address box splits on the way out: 8883 typed a digit at a time passes
+ * through 8, 88 and 888, and a scheme that moved on each of them would land wherever the last
+ * keystroke happened to leave it.
+ */
+export function schemeForPort(from: Scheme, port: number): Scheme {
+  const { transport } = choiceOf(from);
+
+  return SCHEMES.find((s) => s.transport === transport && s.defaultPort === port)?.scheme ?? from;
+}
+
 export type VersionChoice = {
   value: MqttProtocolLevel;
   /** On the chip. Short, because four of them share a row. */
