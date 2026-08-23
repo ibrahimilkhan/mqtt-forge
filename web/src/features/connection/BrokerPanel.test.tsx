@@ -1209,3 +1209,46 @@ describe('the brokers you keep', () => {
     ).toBeInTheDocument();
   });
 });
+
+// Seven fields, but not seven at once: a key and a password are for a certificate, and a
+// certificate in a .pfx carries its own key.
+describe('the encryption fields, as far as they apply', () => {
+  const openEncryption = async () => {
+    renderPanel();
+    await userEvent.click(await screen.findByText('Encryption'));
+  };
+
+  it('asks for a certificate before asking anything about one', async () => {
+    await openEncryption();
+
+    expect(screen.getByLabelText('Client certificate')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Private key')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Certificate password')).not.toBeInTheDocument();
+  });
+
+  it('asks for the key and the password once there is a certificate', async () => {
+    await openEncryption();
+    await userEvent.type(screen.getByLabelText('Client certificate'), '/etc/client.crt');
+
+    expect(screen.getByLabelText('Private key')).toBeInTheDocument();
+    expect(screen.getByLabelText('Certificate password')).toBeInTheDocument();
+  });
+
+  // A .pfx carries its own key. Asking for one beside it is asking for a file nobody has.
+  it.each(['/etc/client.pfx', '/etc/client.P12'])('asks for no key beside %s', async (path) => {
+    await openEncryption();
+    await userEvent.type(screen.getByLabelText('Client certificate'), path);
+
+    expect(screen.queryByLabelText('Private key')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Certificate password')).toBeInTheDocument();
+  });
+
+  // Neither is about a certificate, and neither is asked for by a broker you reach at its own
+  // address on its own port. Kept, because without ALPN there is no reaching AWS IoT on 443.
+  it('keeps the server name and ALPN behind a line of their own', async () => {
+    await openEncryption();
+
+    expect(screen.getByText('Server name and ALPN')).toBeInTheDocument();
+    expect(screen.getByLabelText('ALPN protocol')).toBeInTheDocument();
+  });
+});

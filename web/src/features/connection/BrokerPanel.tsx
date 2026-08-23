@@ -253,6 +253,11 @@ export function BrokerPanel({
   // Anything filled in under Encryption, which holds the box on: a certificate is a statement
   // that this connection is encrypted, and there is nothing else it could mean.
   const certified = hasTlsMaterial(form);
+  // A certificate names the two fields that go with it. Until there is one, a key and a password
+  // are fields for a file that does not exist.
+  const clientCert = form.clientCertPath.trim();
+  // A .pfx carries its own key. Asking for one beside it is asking for a file nobody has.
+  const bundled = /\.(pfx|p12)$/i.test(clientCert);
   const sessionKept = !form.cleanSession;
 
   const set = <K extends keyof BrokerForm>(key: K, value: BrokerForm[K]) =>
@@ -544,7 +549,9 @@ export function BrokerPanel({
           were encrypting. Filling any of these in ticks the box above.
 
           Folded because six fields the great majority of connections never need would
-          otherwise sit between the password and the button that uses it. */}
+          otherwise sit between the password and the button that uses it. Inside, only what the
+          answers so far make sense of: a key and a password are for a certificate, and a
+          certificate in a .pfx carries its own key. */}
       <details className={styles.more}>
         <summary>Encryption</summary>
 
@@ -591,35 +598,43 @@ export function BrokerPanel({
           </Field>
         </div>
 
-        <div className={styles.row}>
-          <Field label="Private key" htmlFor="clientKeyPath">
-            <input
-              id="clientKeyPath"
-              type="text"
-              placeholder="not needed for a .pfx"
-              value={form.clientKeyPath}
-              onChange={(e) => setTls('clientKeyPath', e.target.value)}
-            />
-          </Field>
-        </div>
+        {/* Only where there is a certificate for it to belong to, and only where that
+            certificate does not already carry it. */}
+        {clientCert !== '' && !bundled && (
+          <div className={styles.row}>
+            <Field label="Private key" htmlFor="clientKeyPath">
+              <input
+                id="clientKeyPath"
+                type="text"
+                placeholder="/path/to/client.key"
+                value={form.clientKeyPath}
+                onChange={(e) => setTls('clientKeyPath', e.target.value)}
+              />
+            </Field>
+          </div>
+        )}
 
-        <div className={styles.row}>
-          <Field label="Certificate password" htmlFor="clientCertPassword">
-            <input
-              id="clientCertPassword"
-              type="password"
-              placeholder="optional"
-              value={form.clientCertPassword}
-              onChange={(e) => setTls('clientCertPassword', e.target.value)}
-            />
-          </Field>
-        </div>
+        {clientCert !== '' && (
+          <>
+            <div className={styles.row}>
+              <Field label="Certificate password" htmlFor="clientCertPassword">
+                <input
+                  id="clientCertPassword"
+                  type="password"
+                  placeholder="optional"
+                  value={form.clientCertPassword}
+                  onChange={(e) => setTls('clientCertPassword', e.target.value)}
+                />
+              </Field>
+            </div>
 
-        {saved?.tls?.hasClientCertificatePassword && (
-          <p className={styles.note}>
-            The certificate password is saved but never sent back either. Enter it again to
-            connect.
-          </p>
+            {saved?.tls?.hasClientCertificatePassword && (
+              <p className={styles.note}>
+                The certificate password is saved but never sent back either. Enter it again to
+                connect.
+              </p>
+            )}
+          </>
         )}
 
         {/* Files are read where the connection is held, which is the server — the same
@@ -629,27 +644,46 @@ export function BrokerPanel({
           inside it.
         </p>
 
-        <div className={styles.row}>
-          <Field label="Server name" htmlFor="sniHost">
-            <input
-              id="sniHost"
-              type="text"
-              placeholder="defaults to the host"
-              value={form.sniHost}
-              onChange={(e) => setTls('sniHost', e.target.value)}
-            />
-          </Field>
-          <Field label="ALPN protocol" htmlFor="alpnProtocol">
-            <input
-              id="alpnProtocol"
-              type="text"
-              placeholder="e.g. x-amzn-mqtt-ca"
-              value={form.alpnProtocol}
-              onChange={(e) => setTls('alpnProtocol', e.target.value)}
-            />
-            <FieldError error={connectMutation.error} field="Tls.AlpnProtocol" />
-          </Field>
-        </div>
+        {/* The other two, behind a line of their own: neither is about a certificate, and
+            neither is asked for by any broker you reach at its own address on its own port.
+            Kept rather than dropped, because without ALPN there is no way to reach AWS IoT Core
+            on 443, which is the documented way through a firewall that allows only HTTPS. */}
+        <details className={styles.more}>
+          <summary>Server name and ALPN</summary>
+
+          <div className={styles.row}>
+            <Field label="Server name" htmlFor="sniHost">
+              <input
+                id="sniHost"
+                type="text"
+                placeholder="defaults to the host"
+                value={form.sniHost}
+                onChange={(e) => setTls('sniHost', e.target.value)}
+              />
+            </Field>
+          </div>
+          <p className={styles.note}>
+            For a broker reached at an address its certificate does not carry — behind a load
+            balancer, or sharing an address with something else.
+          </p>
+
+          <div className={styles.row}>
+            <Field label="ALPN protocol" htmlFor="alpnProtocol">
+              <input
+                id="alpnProtocol"
+                type="text"
+                placeholder="e.g. x-amzn-mqtt-ca"
+                value={form.alpnProtocol}
+                onChange={(e) => setTls('alpnProtocol', e.target.value)}
+              />
+              <FieldError error={connectMutation.error} field="Tls.AlpnProtocol" />
+            </Field>
+          </div>
+          <p className={styles.note}>
+            What gets MQTT through a firewall that allows only 443. AWS IoT Core wants
+            x-amzn-mqtt-ca there.
+          </p>
+        </details>
       </details>
 
       {/* Two things to do with a form: use it, or keep it. Disconnect is neither and stands with
