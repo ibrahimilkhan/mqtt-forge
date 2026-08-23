@@ -307,3 +307,126 @@ describe('a port the address names, with no scheme in front of it', () => {
     });
   });
 });
+
+// The panel stops showing these at exactly these points, and a value left behind by a field that
+// has gone would be sent against a connection that never asked for it — then come back, on a
+// connection that failed, looking like the reason.
+describe('the encryption fields that cannot apply', () => {
+  const certified = (over: Partial<BrokerForm> = {}): BrokerForm => ({
+    ...FORM,
+    scheme: 'mqtts',
+    clientCertPath: '/etc/client.crt',
+    clientKeyPath: '/etc/client.key',
+    clientCertPassword: 'hunter2',
+    ...over,
+  });
+
+  it('sends a key and a password beside a certificate that needs them', () => {
+    expect(buildConnectRequest(certified()).tls).toMatchObject({
+      clientCertificateKeyPath: '/etc/client.key',
+      clientCertificatePassword: 'hunter2',
+    });
+  });
+
+  // A bundle carries its own key.
+  it.each(['/etc/client.pfx', '/etc/client.P12'])('drops the key beside %s', (path) => {
+    expect(buildConnectRequest(certified({ clientCertPath: path })).tls).toMatchObject({
+      clientCertificatePath: path,
+      clientCertificateKeyPath: null,
+      // The password still applies: a bundle is what usually has one.
+      clientCertificatePassword: 'hunter2',
+    });
+  });
+
+  // And with them go the last of it: a key and a password for a certificate that does not exist
+  // are not encryption material, so there is no TLS block left to send.
+  it('drops both when there is no certificate at all', () => {
+    expect(buildConnectRequest(certified({ clientCertPath: '  ' })).tls).toBeNull();
+  });
+
+  it('keeps the block when something else in it was filled in', () => {
+    expect(
+      buildConnectRequest(certified({ clientCertPath: '', caPath: '/etc/ca.crt' })).tls,
+    ).toMatchObject({ certificateAuthorityPath: '/etc/ca.crt', clientCertificateKeyPath: null });
+  });
+});
+
+// Every field the form holds has to reach the request, or it is a control that does nothing.
+// Counted rather than trusted: a field added to the form and forgotten here is invisible.
+describe('the whole form, as the API receives it', () => {
+  const FULL: BrokerForm = {
+    scheme: 'wss',
+    host: 'broker.example',
+    port: 8084,
+    clientId: 'console',
+    username: 'alice',
+    password: 'hunter2',
+    webSocketPath: '/mqtt',
+    cleanSession: false,
+    sessionExpiry: '300',
+    allowUntrusted: true,
+    caPath: '/etc/ca.crt',
+    clientCertPath: '/etc/client.crt',
+    clientKeyPath: '/etc/client.key',
+    clientCertPassword: 'certpass',
+    sniHost: 'real.example',
+    alpnProtocol: 'x-amzn-mqtt-ca',
+  };
+
+  it('carries all sixteen fields', () => {
+    expect(Object.keys(FULL)).toHaveLength(16);
+
+    expect(buildConnectRequest(FULL)).toEqual({
+      host: 'broker.example',
+      port: 8084,
+      clientId: 'console',
+      username: 'alice',
+      password: 'hunter2',
+      useTls: true,
+      transport: 'webSocket',
+      protocolVersion: 'auto',
+      webSocketPath: '/mqtt',
+      cleanSession: false,
+      sessionExpiryInterval: 300,
+      tls: {
+        allowUntrustedCertificates: true,
+        certificateAuthorityPath: '/etc/ca.crt',
+        clientCertificatePath: '/etc/client.crt',
+        clientCertificateKeyPath: '/etc/client.key',
+        clientCertificatePassword: 'certpass',
+        sniHost: 'real.example',
+        alpnProtocol: 'x-amzn-mqtt-ca',
+      },
+    });
+  });
+
+  // And back the other way: the same connection as the API returns it has to fill the same form.
+  // A field that survives the request but not the reply is one a saved broker quietly loses.
+  it('comes back out of what the API kept', () => {
+    const back = formFromSaved({
+      host: 'broker.example',
+      port: 8084,
+      clientId: 'console',
+      username: 'alice',
+      hasPassword: true,
+      useTls: true,
+      transport: 'webSocket',
+      protocolVersion: 'auto',
+      webSocketPath: '/mqtt',
+      cleanSession: false,
+      sessionExpiryInterval: 300,
+      tls: {
+        allowUntrustedCertificates: true,
+        certificateAuthorityPath: '/etc/ca.crt',
+        clientCertificatePath: '/etc/client.crt',
+        clientCertificateKeyPath: '/etc/client.key',
+        hasClientCertificatePassword: true,
+        sniHost: 'real.example',
+        alpnProtocol: 'x-amzn-mqtt-ca',
+      },
+    });
+
+    // Everything but the two passwords, which the API never sends back.
+    expect(back).toEqual({ ...FULL, password: '', clientCertPassword: '' });
+  });
+});

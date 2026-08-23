@@ -100,6 +100,11 @@ const SENTENCE: Record<string, (attempt: Attempt) => string> = {
     "The broker refused the topic filter and closed the connection — it doesn't allow one " +
     'covering this much of the tree.',
 
+  // Nothing the backend could name. The connect path prefers the raw detail over this, that
+  // being the only thing carrying any information at all; a link that dropped has no detail, and
+  // this is better than the nothing it used to show.
+  unknown: ({ host, port }) => `The connection to ${host}:${port} failed, and nothing said why.`,
+
   // A link that was up, and is not any more
   connectionLost: ({ host, port }) => `The connection to ${host}:${port} was lost.`,
   sessionTakenOver: ({ clientId }) => `Another client connected with the client ID '${clientId}'.`,
@@ -131,8 +136,13 @@ export function describeConnectFailure(error: unknown, attempt: Attempt): string
 
   if (wasAborted(error)) return undefined;
 
-  // An unrecognised reason — including one a newer backend invented — falls back to the
-  // detail rather than leaving the user with a blank line.
+  // A reason nothing could name: the backend's own words carry more than the standing sentence
+  // for it, so they win here. On a dropped link there are no words and the sentence is all there
+  // is, which is why it exists.
+  if (error.reason === 'unknown' && error.message) return error.message;
+
+  // An unrecognised reason — one a newer backend invented — falls back to the detail rather than
+  // leaving the reader with a blank line.
   return describeFailureReason(error.reason, attempt) ?? error.message;
 }
 

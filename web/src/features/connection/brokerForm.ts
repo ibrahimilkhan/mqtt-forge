@@ -88,15 +88,28 @@ function sessionExpiry(form: BrokerForm): number | null {
     : Math.floor(seconds);
 }
 
-/** The encryption block as the API takes it, whether or not anything is in it. */
+/** A certificate bundle carries its own key; a `.crt` needs one named beside it. */
+const BUNDLED = /\.(pfx|p12)$/i;
+
+/**
+ * The encryption block as the API takes it, whether or not anything is in it.
+ *
+ * The key and the password are dropped where they could not apply — no certificate to belong to,
+ * or one that carries its own key. The panel stops showing them at exactly those points, and a
+ * value left behind by a field that has gone would otherwise be sent against a connection that
+ * never asked for it and come back looking, on a connection that then failed, like the reason.
+ */
 function tlsOptions(form: BrokerForm): TlsOptions {
+  const certificate = form.clientCertPath.trim();
+  const needsKey = certificate !== '' && !BUNDLED.test(certificate);
+
   return {
     allowUntrustedCertificates: form.allowUntrusted,
     certificateAuthorityPath: form.caPath.trim() || null,
-    clientCertificatePath: form.clientCertPath.trim() || null,
-    clientCertificateKeyPath: form.clientKeyPath.trim() || null,
+    clientCertificatePath: certificate || null,
+    clientCertificateKeyPath: needsKey ? form.clientKeyPath.trim() || null : null,
     // Not trimmed: a password is whatever it is, spaces included.
-    clientCertificatePassword: form.clientCertPassword || null,
+    clientCertificatePassword: certificate === '' ? null : form.clientCertPassword || null,
     sniHost: form.sniHost.trim() || null,
     alpnProtocol: form.alpnProtocol.trim() || null,
   };
