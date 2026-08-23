@@ -20,6 +20,15 @@ by everyone on my network".
 To keep it to one machine, publish the port on the loopback address — `-p 127.0.0.1:5169:5169` —
 and accept that the QR panel stops working, since there is then no address for a phone to open.
 
+That recipe is only worth anything because the app answers to addresses rather than to names.
+`localhost`, any IP literal, and Bonjour names ending `.local` are served; a request naming
+anything else is refused before it reaches a controller. Without that, a page served from
+`http://evil.example:5169` and then re-resolved to `127.0.0.1` would be same-origin as far as the
+browser is concerned — no CORS check to fail — and would reach a server bound to loopback alone
+from anyone on the internet who could get that page in front of you. Setting `AllowedHosts` names
+the hosts yourself and hands the question to ASP.NET's own host filtering, which is the escape
+hatch if you are running behind a reverse proxy.
+
 The broker password is written to the settings file in plain text, unencrypted. The API never
 returns it — `GET /api/connection/settings` reports only whether one is set — so this is about
 the file on disk, not the endpoint. [README.md](README.md#keeping-your-settings) says where that

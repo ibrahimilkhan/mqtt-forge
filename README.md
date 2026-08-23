@@ -95,6 +95,17 @@ if the app starts and no window appears.
 > broker. Publishing the container's port as `-p 127.0.0.1:5169:5169` keeps it to this machine,
 > and gives up the QR panel along with it.
 
+It answers to addresses, not to names: `localhost`, any IP, and Bonjour names ending `.local`. A
+request naming anything else is refused before it is served. That is what keeps the loopback
+recipe above worth doing — a page from `http://evil.example:5169` whose own name has since been
+re-pointed at `127.0.0.1` is same-origin as far as the browser is concerned, so it would otherwise
+reach a server bound to loopback alone. If you do want a name of your own — behind a reverse
+proxy, say — set `AllowedHosts` to it and ASP.NET's own host filtering takes over:
+
+```
+docker run -d -p 5169:5169 -e AllowedHosts=mqtt.example.com ghcr.io/ibrahimilkhan/mqtt-forge
+```
+
 ## Running it with Docker
 
 **1. Start it.** One image covers amd64 and arm64, so this is the same line on an Intel box and
