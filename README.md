@@ -59,13 +59,16 @@ Every MQTT there is, over every way in:
   broker takes. It steps down for the two refusals that mean "wrong version" and stops for
   everything else, so a wrong password is still reported once rather than three times. The
   connection panel says which version the broker actually agreed to.
-- **`mqtt://`, `mqtts://`, `ws://`, `wss://`** — a socket of its own or a WebSocket, encrypted
-  or not. You are not asked which: the panel leads with the address, reads the scheme off what
-  you paste, and says in a sentence under it what that means. A port implies a scheme too, so
-  8883 typed into the port box moves the connection to TLS. All four are still there to press,
-  behind **How it connects**, along with the WebSocket path — a broker behind a reverse proxy
-  being the reason you are using one; empty means `/mqtt`, which is what nearly every broker
-  publishes.
+- **`mqtt://`, `mqtts://`, `ws://`, `wss://`** — asked as the two questions they are. A dropdown
+  at the head of the address picks `mqtt://` or `ws://`: a socket of its own, or a WebSocket for
+  a broker behind a reverse proxy, which is also where the WebSocket path appears (empty means
+  `/mqtt`, what nearly every broker publishes). Beside the port, one box for **Encrypted (TLS)**
+  — the same question the `s` asks, in the word people have for it.
+- **Three things tick that box for you.** A port that says so, since 8883 and 8084 are the ports
+  brokers listen for encrypted connections on; an address you paste, since `mqtts://` says it
+  outright; and naming a certificate, which is not a preference about encryption but encryption
+  itself. Most encrypted brokers need no certificate at all — a publicly trusted one is verified
+  the way a browser verifies it, with nothing configured.
 - **A connection that fails on the wrong one says so with a button.** A broker that refuses
   encryption, or a plain connection that gets nothing back from the port brokers listen for
   encrypted ones on, both offer the scheme they point at and retry on it.
@@ -148,9 +151,9 @@ docker run -d -p 5169:5169 --name mqtt-forge ghcr.io/ibrahimilkhan/mqtt-forge
 **2. Open http://localhost:5169.** It loads with the Broker panel already open.
 
 **3. Point it at your broker** — paste the address, then **Connect**. The one off your broker's
-own documentation goes in whole: `mqtts://host:8883` into **Broker address** and the scheme, the
-port and any WebSocket path sort themselves out. A bare hostname works too and is written back
-out as an address. Which host depends on where the broker runs:
+own documentation goes in whole: `mqtts://host:8883` into **Broker address**, and the way in, the
+port and any WebSocket path sort themselves out. A hostname on its own works too; the dropdown
+beside it and the box below say how it will connect. Which host depends on where the broker runs:
 
 | Your broker runs | Host to enter |
 |---|---|
