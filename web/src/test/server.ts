@@ -5,6 +5,7 @@ import { setupServer } from 'msw/node';
 const defaultHandlers = [
   http.get('/api/connection', () => HttpResponse.json({ state: 'Disconnected' })),
   http.get('/api/connection/settings', () => new HttpResponse(null, { status: 204 })),
+  http.get('/api/connection/profiles', () => HttpResponse.json([])),
   http.get('/api/subscriptions', () => HttpResponse.json([])),
   http.get('/api/colour-rules', () => HttpResponse.json({ rules: [] })),
   // A test host owns no window, so it offers no folder dialog — which is the browser's answer too.

@@ -1,0 +1,55 @@
+/* The chip borrows its face from the scheme picker's — same size, same border, same way of
+   saying which one is on — because they are the same gesture. Two ways of drawing a pickable
+   word in one panel is one too many. */
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* One chip, two buttons. The border belongs to the pair, so the seam between them is a rule
+   inside a single shape rather than two shapes touching. */
+.chip {
+  display: inline-flex;
+  align-items: stretch;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.chip:hover { border-color: var(--muted); }
+
+/* Stated by the border, not a fill: a filled block pulls the eye off the fields the chip is
+   about. The same call the preset chips made before these replaced them. */
+.chip[data-active] {
+  border-color: var(--signal);
+  box-shadow: inset 0 0 0 1px var(--signal);
+}
+
+.name,
+.forget {
+  font-family: var(--mono);
+  font-size: var(--t-small);
+  letter-spacing: 0.04em;
+  background: none;
+  border: 0;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+/* The reader's own capitalisation, against the global rule that shouts every button. A name
+   somebody typed is theirs — "Lab mosquitto" is not "LAB MOSQUITTO", and a list of brokers all
+   in capitals is a list you read letter by letter. */
+.name { padding: 5px 9px; text-transform: none; font-weight: 400; }
+
+/* Narrower, and behind a rule of its own: this one is destructive and a mis-hit on it takes the
+   only copy of something that was typed by hand. Muted until it is pointed at, so the eye going
+   down the list reads names rather than a column of crosses. */
+.forget {
+  padding: 5px 7px;
+  border-left: 1px solid var(--rule);
+  color: var(--muted);
+}
+
+.forget:hover { color: var(--fault); background: var(--paper); }
+
+.name:focus-visible,
+.forget:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }

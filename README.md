@@ -36,8 +36,9 @@ runs behind it, and the publish form](.github/assets/console.png)
   dropped.
 - **Publish** — text, JSON or hex, with QoS and the retained flag; any logged message reloads
   into the form for a resend.
-- **Filters** — connecting subscribes to `#` unless you clear the box, so the tree fills on its
-  own; narrow it to one filter or a list when a busy broker makes that too much.
+- **Filters** — connecting subscribes to `#` unless you untick the box, so the tree fills on its
+  own; narrow it to one filter or a list when a busy broker makes that too much. A broker that
+  refuses `#` outright — some public ones do — says so, and leaves a button that opens Filters.
 - **Colour rules** — MQTT filters you pick colours for, so a branch stands out in a tree of
   hundreds.
 - **Chart windows** — open a chart over the app, and pin it to keep it there: it holds the topic
@@ -72,12 +73,15 @@ Every MQTT there is, over every way in:
 - **A connection that fails on the wrong one says so with a button.** A broker that refuses
   encryption, or a plain connection that gets nothing back from the port brokers listen for
   encrypted ones on, both offer the scheme they point at and retry on it.
-- **Cloud brokers** — HiveMQ Cloud, EMQX Cloud, AWS IoT Core and Azure IoT Hub each have a chip
-  that fills in the port, the path and the shape of the credentials, and leaves the address for
-  you. What they need beyond a username and password is under Encryption: a **client
-  certificate** for the brokers that authenticate that way, an **extra CA** for the ones behind
-  a private one, a **server name** for anything routed by SNI, and an **ALPN protocol**, which
-  is what gets MQTT through a firewall that allows only 443.
+- **Brokers you keep** — press **Save this broker**, give it a name, and it becomes a chip at
+  the foot of the panel that fills the form back in. Saved to `saved-brokers.json` beside the
+  rest, so one mounted volume keeps them. Passwords are written but never sent back to the
+  browser, so you enter one again to connect.
+- **Cloud brokers** — what they need beyond a username and password is under **Encryption**: a
+  **client certificate** for the brokers that authenticate that way, an **extra CA** for the ones
+  behind a private one, a **server name** for anything routed by SNI, and an **ALPN protocol**,
+  which is what gets MQTT through a firewall that allows only 443. Most encrypted brokers need
+  none of it — a publicly trusted certificate is verified the way a browser verifies one.
 - **A broker of your own** — including one with a certificate it signed itself. Name its CA and
   the chain is still verified, just to a root you supplied; or accept any certificate, which is
   a box you have to tick.

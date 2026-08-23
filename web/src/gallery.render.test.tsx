@@ -865,7 +865,7 @@ ${document.head.innerHTML}
 }
 
 /**
- * The broker panel in the five states it is read in, at the width of the column it lives in.
+ * The broker panel in the six states it is read in, at the width of the column it lives in.
  *
  * Side by side, because the point of the layout is what each state puts first: nothing connected
  * and it is the address; connected and it is the link, with the form folded behind one line; a
@@ -923,6 +923,17 @@ function brokerStates() {
 
   const nothing = (client) => client.setQueryData(queryKeys.connection, { state: 'Disconnected' });
 
+  // Brokers the reader kept. The section is absent until there is one, so this is the only place
+  // the chips and the rule above them can be looked at.
+  const kept = (client) => {
+    nothing(client);
+    client.setQueryData(queryKeys.savedProfiles, [
+      { name: 'Lab mosquitto', connection: { host: 'localhost', port: 1883, clientId: 'mqttforge-console', username: null, hasPassword: false, useTls: false, transport: 'tcp', protocolVersion: 'auto', webSocketPath: null, cleanSession: true, sessionExpiryInterval: null, tls: null } },
+      { name: 'Staging over TLS', connection: { host: 'mqtt.staging.example', port: 8883, clientId: 'mqttforge-console', username: 'alice', hasPassword: true, useTls: true, transport: 'tcp', protocolVersion: 'auto', webSocketPath: null, cleanSession: true, sessionExpiryInterval: null, tls: null } },
+      { name: 'Gateway over wss', connection: { host: 'gw.example', port: 8084, clientId: 'mqttforge-console', username: null, hasPassword: false, useTls: true, transport: 'webSocket', protocolVersion: 'auto', webSocketPath: '/mqtt', cleanSession: true, sessionExpiryInterval: null, tls: null } },
+    ]);
+  };
+
   // A failure the panel can offer a way out of: plain MQTT aimed at the encrypted port. The
   // suggestion button exists in no other state, and a shut fold hides nothing from the DOM, so
   // this is the only place it can be looked at rather than reasoned about.
@@ -950,6 +961,7 @@ ${one('a failure with a way out', faulted, false, (box) => {
 ${one('a certificate, settling it', nothing, false, (box) => {
   fireEvent.change(box('clientCertPath'), { target: { value: '/etc/mqtt/client.pem' } });
 })}
+${one('brokers you kept', kept)}
 ${one('every fold opened', nothing, true)}
 </div>`;
 }

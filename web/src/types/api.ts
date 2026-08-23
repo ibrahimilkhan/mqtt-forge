@@ -48,6 +48,9 @@ export type ConnectionStateResponse = {
   alreadyConnected?: boolean;
 };
 
+/** A connection somebody kept, under the name they kept it under. */
+export type SavedProfile = { name: string; connection: SavedConnection };
+
 export type SavedConnection = {
   host: string;
   port: number;

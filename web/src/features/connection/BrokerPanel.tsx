@@ -1,8 +1,13 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
-import type { MqttTransport } from '../../types/api';
+import type { MqttTransport, SavedProfile } from '../../types/api';
 import type { PanelId } from '../panels';
-import { getSavedSettings } from '../../api/connection';
+import {
+  deleteProfile,
+  getSavedProfiles,
+  getSavedSettings,
+  saveProfile,
+} from '../../api/connection';
 import { queryKeys } from '../../api/queryKeys';
 import { Field } from '../../components/Field';
 import { PanelShell } from '../../components/PanelShell';
@@ -10,9 +15,11 @@ import { Segmented } from '../../components/Segmented';
 import styles from '../../styles/panel.module.css';
 import { useConnectionState } from '../../api/useConnectionState';
 import { ApiError, fieldError } from '../../lib/problemDetails';
+import { logFault } from '../../stores/logStore';
 import { useGuardedMutate } from '../../lib/useGuardedMutate';
 import { describeConnectFailure, describeFailureReason, suggestScheme } from './connectFailure';
 import { ConnectionSummary } from './ConnectionSummary';
+import { SavedBrokers } from './SavedBrokers';
 import { useConnectionActions } from './useConnectionActions';
 import {
   CLIENT_ID_LIMIT_310,
@@ -90,7 +97,42 @@ export function BrokerPanel({
   // what splitting on the way out of the box exists to avoid.
   const [addressText, setAddressText] = useState(DEFAULTS.host);
   const [autoSubscribe, setAutoSubscribe] = useState(true);
+  // The name box, and whether it is on screen at all. Null is "not saving"; a string is the name
+  // as far as it has been typed. Two states in one, because "empty box open" and "no box" are
+  // different things and a boolean beside a string would let them disagree.
+  const [naming, setNaming] = useState<string | null>(null);
+  // Which saved broker the form was last filled from, so its chip can say so. Cleared by every
+  // edit that moves the address, since after that the form is no longer that broker.
+  const [from, setFrom] = useState<string | null>(null);
   const { data: saved } = useQuery({ queryKey: queryKeys.savedSettings, queryFn: getSavedSettings });
+  const { data: profiles } = useQuery({
+    queryKey: queryKeys.savedProfiles,
+    queryFn: getSavedProfiles,
+  });
+
+  const queryClient = useQueryClient();
+  const refreshProfiles = () =>
+    void queryClient.invalidateQueries({ queryKey: queryKeys.savedProfiles });
+
+  const keepMutation = useMutation({
+    mutationFn: ({ name, form: kept }: { name: string; form: BrokerForm }) =>
+      saveProfile(name, buildConnectRequest(kept)),
+    onSuccess: (_result, { name }) => {
+      setNaming(null);
+      setFrom(name);
+      refreshProfiles();
+    },
+    onError: (error) => logFault('Save failed', error),
+  });
+
+  const forgetMutation = useMutation({
+    mutationFn: deleteProfile,
+    onSuccess: (_result, name) => {
+      setFrom((current) => (current === name ? null : current));
+      refreshProfiles();
+    },
+    onError: (error) => logFault('Forget failed', error),
+  });
   const { connectMutation, disconnectMutation, abortMutation } = useConnectionActions();
   const { isOnline, isConnecting, failure: faulted, answered } = useConnectionState();
   const guardedConnect = useGuardedMutate(connectMutation);
@@ -117,6 +159,33 @@ export function BrokerPanel({
   const settle = (next: BrokerForm) => {
     setForm(next);
     setAddressText(next.host);
+    // Whatever the form was filled from, it is not that any more — unless it still matches, and
+    // that is the chip's own question rather than this one's.
+    setFrom((current) => (current && matches(next, current) ? current : null));
+  };
+
+  /** Whether the form still holds what the named broker holds. */
+  const matches = (candidate: BrokerForm, name: string) => {
+    const profile = profiles?.find((one) => one.name === name);
+
+    return (
+      profile !== undefined &&
+      profile.connection.host === candidate.host &&
+      profile.connection.port === candidate.port &&
+      profile.connection.useTls === isEncrypted(candidate.scheme) &&
+      profile.connection.transport === choiceOf(candidate.scheme).transport
+    );
+  };
+
+  /**
+   * A saved broker back into the form.
+   *
+   * Everything but the passwords, which the API never sends back — the same rule the saved
+   * settings keep, and the form says so under the box that wants them.
+   */
+  const usePicked = (profile: SavedProfile) => {
+    settle(formFromSaved(profile.connection));
+    setFrom(profile.name);
   };
 
 
@@ -223,6 +292,21 @@ export function BrokerPanel({
     const resolved = applyAddress(form, addressText);
     settle(resolved);
     guardedConnect({ request: buildConnectRequest(resolved), autoSubscribe });
+  };
+
+  /**
+   * The form, kept under the name in the box.
+   *
+   * Through the same reconciliation Connect goes through, so a broker saved with the address box
+   * still focused is saved as the address that box shows.
+   */
+  const keep = () => {
+    const name = naming?.trim();
+    if (!name) return;
+
+    const resolved = applyAddress(form, addressText);
+    settle(resolved);
+    keepMutation.mutate({ name, form: resolved });
   };
 
   // The offer, taken. Mirrors submit exactly — the same reconciliation, the same request — with
@@ -607,8 +691,8 @@ export function BrokerPanel({
         </div>
       </details>
 
-      {/* One button, because there is one thing to do here. Disconnect stands with the link it
-          would end, which is the block above and only on screen when there is one. */}
+      {/* Two things to do with a form: use it, or keep it. Disconnect is neither and stands with
+          the link it would end, which is the block above and only on screen when there is one. */}
       <div className={styles.actions}>
         {attemptRunning ? (
           <button
@@ -626,13 +710,81 @@ export function BrokerPanel({
             Connect
           </button>
         )}
+
+        {/* Offered whatever is on screen, including over a live link: a broker worth keeping is
+            most obviously worth keeping once it has connected. The name defaults to the address,
+            which is what somebody with one broker would have typed anyway. */}
+        {naming === null && (
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => setNaming(from ?? `${form.host}:${form.port}`)}
+          >
+            Save this broker
+          </button>
+        )}
       </div>
+
+      {/* The name, asked for where the button was rather than in a dialog over the form: the
+          reader is naming what they are looking at, and a box that covers it is a box that makes
+          them remember it instead. */}
+      {naming !== null && (
+        <div className={styles.row}>
+          <Field label="Save as" htmlFor="profileName">
+            <input
+              id="profileName"
+              type="text"
+              value={naming}
+              placeholder="a name you will recognise"
+              autoFocus
+              onChange={(e) => setNaming(e.target.value)}
+              // Enter keeps it, Escape gives up. Neither is discoverable on its own, which is
+              // why both buttons are there too — these are for the hands already on the keys.
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') keep();
+                if (e.key === 'Escape') setNaming(null);
+              }}
+            />
+          </Field>
+          <div className={styles.namingActions}>
+            <button
+              type="button"
+              onClick={keep}
+              disabled={naming.trim() === '' || keepMutation.isPending}
+            >
+              Save
+            </button>
+            <button type="button" className="ghost" onClick={() => setNaming(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Said where the disabled button is, rather than left to be worked out. The fold above
           offers to connect somewhere else and the button under it will not, which is a loop
           with no way out of it written down anywhere. */}
       {isOnline && (
         <p className={styles.note}>Disconnect first — one link at a time.</p>
+      )}
+
+      {/* At the foot, and only once there is something to put here. It used to hold eleven
+          brokers somebody else runs; these are the ones the reader kept. */}
+      {profiles !== undefined && profiles.length > 0 && (
+        <div className={styles.saved}>
+          <h3 className={styles.savedTitle}>Saved brokers</h3>
+          <SavedBrokers
+            profiles={profiles}
+            active={from}
+            onPick={usePicked}
+            onForget={(name) => forgetMutation.mutate(name)}
+          />
+          {profiles.some((one) => one.connection.hasPassword) && (
+            <p className={styles.note}>
+              Passwords are kept but never sent back. Enter one again to connect.
+            </p>
+          )}
+        </div>
       )}
 
       {failure && (
