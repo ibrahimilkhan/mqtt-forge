@@ -11,7 +11,6 @@ import {
 import { queryKeys } from '../../api/queryKeys';
 import { Field } from '../../components/Field';
 import { PanelShell } from '../../components/PanelShell';
-import { Segmented } from '../../components/Segmented';
 import styles from '../../styles/panel.module.css';
 import { useConnectionState } from '../../api/useConnectionState';
 import { ApiError, fieldError } from '../../lib/problemDetails';
@@ -22,16 +21,12 @@ import { ConnectionSummary } from './ConnectionSummary';
 import { SavedBrokers } from './SavedBrokers';
 import { useConnectionActions } from './useConnectionActions';
 import {
-  CLIENT_ID_LIMIT_310,
-  VERSIONS,
   choiceOf,
   isEncrypted,
   isWebSocket,
-  mayBeV5,
   portFor,
   schemeForPort,
   schemeOf,
-  versionNote,
   type Scheme,
 } from './scheme';
 import {
@@ -50,7 +45,6 @@ const DEFAULTS: BrokerForm = {
   username: '',
   password: '',
   webSocketPath: '',
-  protocolVersion: 'auto',
   cleanSession: true,
   sessionExpiry: '',
   allowUntrusted: false,
@@ -61,8 +55,6 @@ const DEFAULTS: BrokerForm = {
   sniHost: '',
   alpnProtocol: '',
 };
-
-const VERSION_OPTIONS = VERSIONS.map((v) => ({ value: v.value, label: v.label }));
 
 /**
  * Where to point the console, and what is up right now.
@@ -262,7 +254,6 @@ export function BrokerPanel({
   // that this connection is encrypted, and there is nothing else it could mean.
   const certified = hasTlsMaterial(form);
   const sessionKept = !form.cleanSession;
-  const cleanLabel = form.protocolVersion === 'v500' ? 'Clean start' : 'Clean session';
 
   const set = <K extends keyof BrokerForm>(key: K, value: BrokerForm[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
@@ -494,88 +485,58 @@ export function BrokerPanel({
         </label>
       </div>
 
-      {/* Folded: three settings whose defaults are right for nearly every connection anyone
-          makes here — a client ID this console made up, a version negotiated with the broker,
-          and a session thrown away at the end. They were 216px of the form, above the button,
-          in front of everyone who never touches them. */}
-      <details className={styles.more}>
-        <summary>Client and session</summary>
+      {/* Plainly, not behind a line. It was folded with the version picker and the session, as
+          three settings nobody changes — but the version is not asked at all any more, and a
+          client ID is a thing brokers refuse connections over and log by. It is one field, and a
+          reader looking for why a broker turned them away should find it without opening
+          anything. */}
+      <div className={styles.row}>
+        <Field label="Client ID" htmlFor="clientId">
+          <input
+            id="clientId"
+            type="text"
+            value={form.clientId}
+            onChange={(e) => set('clientId', e.target.value)}
+          />
+          <FieldError error={connectMutation.error} field="ClientId" />
+        </Field>
+      </div>
 
-        <div className={styles.row}>
-          <Field label="Client ID" htmlFor="clientId">
-            <input
-              id="clientId"
-              type="text"
-              value={form.clientId}
-              onChange={(e) => set('clientId', e.target.value)}
-            />
-            <FieldError error={connectMutation.error} field="ClientId" />
-            {/* The specification's own limit, said before the broker says it: a 3.1 broker
-                answers a long ID with a refusal that names neither the length nor the
-                version. */}
-            {form.protocolVersion === 'v310' && form.clientId.length > CLIENT_ID_LIMIT_310 && (
-              <p className={styles.note}>
-                MQTT 3.1 allows {CLIENT_ID_LIMIT_310} characters; this is {form.clientId.length}.
-                Brokers do enforce it.
-              </p>
-            )}
-          </Field>
-        </div>
+      <div className={styles.checks}>
+        <label>
+          <input
+            type="checkbox"
+            checked={form.cleanSession}
+            onChange={(e) => set('cleanSession', e.target.checked)}
+          />
+          {' Clean session'}
+        </label>
+      </div>
 
-        <Segmented
-          label="MQTT version"
-          name="protocolVersion"
-          options={VERSION_OPTIONS}
-          value={form.protocolVersion}
-          onChange={(value) => set('protocolVersion', value)}
-          note={versionNote(form.protocolVersion)}
-        />
-
-        <div className={styles.checks}>
-          <label>
-            <input
-              type="checkbox"
-              checked={form.cleanSession}
-              onChange={(e) => set('cleanSession', e.target.checked)}
-            />
-            {` ${cleanLabel}`}
-          </label>
-        </div>
-
-        {/* Unticking the box is what makes session lifetime a question, and the two versions
-            answer it differently — which is the whole of the difference between them that this
-            form has to show. On 5.0 you say how long; on 3.x nobody does, and the broker keeps
-            it until it decides otherwise. */}
-        {sessionKept &&
-          (mayBeV5(form.protocolVersion) ? (
-            <>
-              <div className={styles.row}>
-                <Field label="Session expiry" htmlFor="sessionExpiry" narrow>
-                  <input
-                    id="sessionExpiry"
-                    type="number"
-                    min={0}
-                    placeholder="secs"
-                    value={form.sessionExpiry}
-                    onChange={(e) => set('sessionExpiry', e.target.value)}
-                  />
-                </Field>
-              </div>
-              {/* Under the field rather than beside it: a note in the column next to a box this
-                  narrow wraps to seven lines and makes the row taller than the whole of the
-                  rest of the form put together. Measured at the panel's default width. */}
-              <p className={styles.note}>
-                Seconds the broker keeps this session after the link goes. MQTT 5 only; an empty
-                box says nothing.
-              </p>
-            </>
-          ) : (
-            <p className={styles.note}>
-              On MQTT {form.protocolVersion === 'v310' ? '3.1' : '3.1.1'} a kept session has no
-              expiry to set: the broker holds it until it decides otherwise.
-            </p>
-          ))}
-      </details>
+      {/* Unticking the box is what makes session lifetime a question at all. Offered under Auto
+          because Auto tries 5.0 first and against nearly every broker in service that is what it
+          gets; a broker that steps down to 3.x ignores the number, which is the same outcome as
+          not sending one. */}
+      {sessionKept && (
+        <>
+          <div className={styles.row}>
+            <Field label="Session expiry" htmlFor="sessionExpiry" narrow>
+              <input
+                id="sessionExpiry"
+                type="number"
+                min={0}
+                placeholder="secs"
+                value={form.sessionExpiry}
+                onChange={(e) => set('sessionExpiry', e.target.value)}
+              />
+            </Field>
+          </div>
+          <p className={styles.note}>
+            Seconds the broker keeps this session after the link goes. MQTT 5 only; an empty box
+            says nothing.
+          </p>
+        </>
+      )}
 
       {/* Folded away, but always there. It used to appear only under an encrypted scheme, which
           made naming a certificate impossible until encryption was already on — and a
