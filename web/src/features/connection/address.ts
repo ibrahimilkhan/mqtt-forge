@@ -108,3 +108,28 @@ function splitPort(authority: string): { host: string; port?: number } {
   const port = Number(split[2]);
   return isPort(port) ? { host: split[1], port } : { host: split[1] };
 }
+
+/**
+ * A scheme and a host, written back out as the address they came from.
+ *
+ * The inverse of `parseBrokerAddress` for the half the Broker address box shows. The port is
+ * deliberately not in it: the panel keeps the port in a control of its own, where it can be
+ * stepped rather than edited in the middle of a string, and it is the part of an address people
+ * change on its own most often.
+ *
+ * An empty host leaves the scheme standing alone — `mqtts://` — which is what a cloud preset
+ * puts in the box, the port and the path being filled in and the address being yours.
+ */
+export function formatBrokerAddress(scheme: Scheme, host: string): string {
+  const trimmed = host.trim();
+  if (trimmed === '') return `${scheme}://`;
+
+  // An IPv6 literal goes back inside its brackets. `parseBrokerAddress` takes them off —
+  // `[::1]` comes out as a host of `::1` — and writing that back bare would produce an address
+  // that cannot be read again, since it is nothing but colons and `splitPort` would take the
+  // last one for a port. A host that still has its brackets keeps them rather than gaining a
+  // second pair.
+  const bracketed = trimmed.includes(':') && !trimmed.startsWith('[');
+
+  return `${scheme}://${bracketed ? `[${trimmed}]` : trimmed}`;
+}
