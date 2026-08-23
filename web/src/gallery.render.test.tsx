@@ -865,12 +865,12 @@ ${document.head.innerHTML}
 }
 
 /**
- * The broker panel in the three states it is read in, at the width of the column it lives in.
+ * The broker panel in the four states it is read in, at the width of the column it lives in.
  *
  * Side by side, because the point of the layout is what each state puts first: nothing connected
- * and it is the form; connected and it is the link, with the form folded behind one line; and
- * everything unfolded, which is the whole of what the panel can ask for and is what it used to
- * show on every visit.
+ * and it is the address; connected and it is the link, with the form folded behind one line; a
+ * failure and it is the sentence saying so, with the way out under it; and everything unfolded,
+ * which is the whole of what the panel can ask for and is what it used to show on every visit.
  */
 function brokerStates() {
   const one = (label, prime, unfold = false) => {
@@ -912,9 +912,27 @@ function brokerStates() {
 
   const nothing = (client) => client.setQueryData(queryKeys.connection, { state: 'Disconnected' });
 
+  // A failure the panel can offer a way out of: plain MQTT aimed at the encrypted port. The
+  // suggestion button exists in no other state, and a shut fold hides nothing from the DOM, so
+  // this is the only place it can be looked at rather than reasoned about.
+  const faulted = (client) =>
+    client.setQueryData(queryKeys.connection, {
+      state: 'Faulted',
+      failure: {
+        reason: 'timeout',
+        host: 'broker.example',
+        port: 8883,
+        clientId: 'mqttforge-console',
+        useTls: false,
+        transport: 'tcp',
+        protocolVersion: 'auto',
+      },
+    });
+
   return `<h2>The broker panel</h2><div class="gRow" style="align-items:flex-start">
 ${one('nothing connected', nothing)}
 ${one('a link up', link)}
+${one('a failure with a way out', faulted)}
 ${one('every fold opened', nothing, true)}
 </div>`;
 }
