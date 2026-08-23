@@ -32,7 +32,13 @@ public sealed class ExportController : ControllerBase
     {
         if (!_service.CanChoose) return StatusCode(StatusCodes.Status501NotImplemented);
 
-        await _service.ChooseAsync(ct);
+        // A dialog already open belongs to somebody — the second console this app is built to be
+        // opened on, most likely — and saying so is better than a second dialog on the same window
+        // or a request that hangs until the first is answered.
+        if (await _service.ChooseAsync(ct) == ExportService.Choice.AlreadyOpen)
+            return Problem(
+                "A folder dialog is already open on the host.",
+                statusCode: StatusCodes.Status409Conflict);
 
         return Ok(new ExportFolderDto(_service.Folder, _service.CanChoose));
     }
