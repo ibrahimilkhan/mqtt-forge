@@ -9,9 +9,17 @@ namespace MqttForge.Api.Controllers;
 [Route("api/connection")]
 public sealed class ConnectionController : ControllerBase
 {
-    private readonly ConnectionService _service;
+    /// <summary>The longest a chip can carry and still read as a name rather than a sentence.</summary>
+    private const int NameLimit = 60;
 
-    public ConnectionController(ConnectionService service) => _service = service;
+    private readonly ConnectionService _service;
+    private readonly SavedProfileService _profiles;
+
+    public ConnectionController(ConnectionService service, SavedProfileService profiles)
+    {
+        _service = service;
+        _profiles = profiles;
+    }
 
     [HttpGet]
     public IActionResult GetState() =>
@@ -27,26 +35,43 @@ public sealed class ConnectionController : ControllerBase
     public async Task<IActionResult> GetSavedSettings(CancellationToken ct)
     {
         var settings = await _service.GetSavedSettingsAsync(ct);
-        if (settings is null) return NoContent();
 
-        var tls = settings.Tls;
-
-        return Ok(new SavedConnectionDto(
-            settings.Host, settings.Port, settings.ClientId, settings.Username,
-            HasPassword: !string.IsNullOrEmpty(settings.Password), settings.UseTls,
-            settings.Transport, settings.ProtocolVersion, settings.WebSocketPath,
-            settings.CleanSession, settings.SessionExpiryInterval,
-            // Null rather than an object of defaults, so a console reading this can tell a
-            // connection that never touched the TLS section from one that set it all back.
-            tls is null ? null : new SavedTlsOptionsDto(
-                tls.AllowUntrustedCertificates,
-                tls.CertificateAuthorityPath,
-                tls.ClientCertificatePath,
-                tls.ClientCertificateKeyPath,
-                HasClientCertificatePassword: !string.IsNullOrEmpty(tls.ClientCertificatePassword),
-                tls.SniHost,
-                tls.AlpnProtocol)));
+        return settings is null ? NoContent() : Ok(SavedConnectionDto.Of(settings));
     }
+
+    // ---- brokers somebody chose to keep ----
+    //
+    // Apart from the settings above, which are a cache: those are overwritten after every
+    // connect that works, and these are written only when somebody presses Save.
+
+    [HttpGet("profiles")]
+    public async Task<IActionResult> GetProfiles(CancellationToken ct)
+    {
+        var profiles = await _profiles.GetAsync(ct);
+
+        return Ok(profiles.Select(one => new SavedProfileDto(one.Name, SavedConnectionDto.Of(one.Settings))));
+    }
+
+    // PUT rather than POST: the name is the identity, and saving one that is already here
+    // replaces it — which is what somebody correcting a port presses Save to do.
+    [HttpPut("profiles")]
+    public async Task<IActionResult> SaveProfile(SaveProfileRequestDto dto, CancellationToken ct)
+    {
+        var name = dto.Name?.Trim();
+
+        // A chip with no word on it is a chip nobody can press deliberately.
+        if (string.IsNullOrEmpty(name)) return ValidationProblem("A saved broker needs a name.");
+        if (name.Length > NameLimit)
+            return ValidationProblem($"A name may be at most {NameLimit} characters.");
+
+        await _profiles.SaveAsync(new SavedBrokerProfile(name, Settings(dto.Connection)), ct);
+
+        return NoContent();
+    }
+
+    [HttpDelete("profiles/{name}")]
+    public async Task<IActionResult> DeleteProfile(string name, CancellationToken ct) =>
+        await _profiles.DeleteAsync(name, ct) ? NoContent() : NotFound();
 
     [HttpPost]
     public async Task<IActionResult> Connect(ConnectRequestDto dto, CancellationToken ct)

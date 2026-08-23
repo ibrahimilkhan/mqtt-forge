@@ -28,8 +28,12 @@ public static class DependencyInjection
         services.AddSingleton<IColourRuleStore>(sp =>
             new JsonColourRuleStore(StorePaths.ColourRules(sp.GetRequiredService<IConfiguration>())));
 
+        services.AddSingleton<ISavedProfileStore>(sp =>
+            new JsonSavedProfileStore(StorePaths.SavedProfiles(sp.GetRequiredService<IConfiguration>())));
+
         services.AddSingleton<ConnectionService>();
         services.AddSingleton<ColourRuleService>();
+        services.AddSingleton<SavedProfileService>();
         services.AddSingleton<PublishService>();
         services.AddSingleton<SubscriptionService>();
         // The picker is registered by the host that owns a window, and by nothing else — a run
