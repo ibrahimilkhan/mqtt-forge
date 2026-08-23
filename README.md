@@ -51,8 +51,31 @@ runs behind it, and the publish form](.github/assets/console.png)
   spelled out.
 - **Settings** — the fonts and their size, and the line that says what the console is carrying.
 
-It speaks MQTT 5.0 only, over TCP or TLS, with a username and password if the broker wants them.
-A broker that speaks just 3.1.1 refuses the connection.
+## What it connects to
+
+Every MQTT there is, over every way in:
+
+- **MQTT 5.0, 3.1.1 and 3.1** — pick one to test a broker's behaviour on it, or leave the
+  version on **Auto**, which offers 5.0, then 3.1.1, then 3.1, and keeps the first one the
+  broker takes. It steps down for the two refusals that mean "wrong version" and stops for
+  everything else, so a wrong password is still reported once rather than three times. The
+  connection panel says which version the broker actually agreed to.
+- **`mqtt://`, `mqtts://`, `ws://`, `wss://`** — a socket of its own or a WebSocket, encrypted
+  or not. The WebSocket path is a field, because a broker behind a reverse proxy is the reason
+  you are using one; empty means `/mqtt`, which is what nearly every broker publishes.
+- **Cloud brokers** — HiveMQ Cloud, EMQX Cloud, AWS IoT Core and Azure IoT Hub each have a chip
+  that fills in the port, the path and the shape of the credentials, and leaves the address for
+  you. What they need beyond a username and password is under Encryption: a **client
+  certificate** for the brokers that authenticate that way, an **extra CA** for the ones behind
+  a private one, a **server name** for anything routed by SNI, and an **ALPN protocol**, which
+  is what gets MQTT through a firewall that allows only 443.
+- **A broker of your own** — including one with a certificate it signed itself. Name its CA and
+  the chain is still verified, just to a root you supplied; or accept any certificate, which is
+  a box you have to tick.
+
+When a connection does not come up, the panel says which of about thirty things went wrong and
+what to do about it — the path rather than the port when a WebSocket handshake was refused, the
+certificate at your end rather than the broker's when it wanted one and got none.
 
 ## Download
 
@@ -331,7 +354,6 @@ Planned, in rough order:
   replayed instead of clicked through.
 - **Recording** — capture a session's traffic to a file and play it back.
 - **Load testing** — many clients and sustained publish rates, to see how a broker holds up.
-- **MQTT 3.1.1** — a broker that only speaks 3.1.1 currently refuses the connection.
 
 ## How it is built
 

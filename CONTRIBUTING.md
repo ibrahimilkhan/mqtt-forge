@@ -28,6 +28,37 @@ running — that is several of the API tests, not only the ones under `Mqtt/`, a
 than skip without it. `dotnet test tests/MqttForge.UnitTests` is the part that runs without
 Docker. CI runs both suites on every push and pull request.
 
+One set is skipped by default: the tests that dial brokers out on the internet.
+
+```
+MQTTFORGE_LIVE=1 dotnet test --filter PublicBroker
+```
+
+They reach HiveMQ, EMQX and Helsinki transit's feed over all four transports, and they cover the
+one thing a container cannot — a certificate signed by a real CA, a WebSocket through somebody
+else's load balancer, and a broker configured by people who have never seen this code. They are
+skipped rather than run because a free public broker having a bad afternoon must not be able to
+fail a build.
+
+## The broker lab
+
+`scripts/brokers` stands up four brokers from three vendors, wearing every listener MQTTForge
+can dial:
+
+```
+./scripts/brokers/up.sh        # prints the table of endpoints
+./scripts/brokers/down.sh
+```
+
+Mosquitto 2 on eight listeners — plain, authenticated, TLS, mutual TLS, two certificates that
+are broken on purpose, and WebSockets both ways — plus Mosquitto 1.5, which predates MQTT 5 and
+is the only thing here that makes the version ladder do anything; EMQX 5; and HiveMQ CE. The
+certificates are generated on first run into `scripts/brokers/certs`, which is not tracked.
+
+This is for driving the console by hand against something real. The automated tests do not use
+it: they start their own containers and generate their own certificates, so a checkout with no
+lab running still passes.
+
 ## Looking at the interface
 
 `web/src/gallery.render.test.tsx` is a renderer rather than a test. It builds the states a
