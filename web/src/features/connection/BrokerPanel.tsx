@@ -7,10 +7,10 @@ import { PanelShell } from '../../components/PanelShell';
 import { Segmented } from '../../components/Segmented';
 import styles from '../../styles/panel.module.css';
 import { useConnectionState } from '../../api/useConnectionState';
-import { fieldError } from '../../lib/problemDetails';
+import { ApiError, fieldError } from '../../lib/problemDetails';
 import { useGuardedMutate } from '../../lib/useGuardedMutate';
 import { formatBrokerAddress } from './address';
-import { describeConnectFailure, describeFailureReason } from './connectFailure';
+import { describeConnectFailure, describeFailureReason, suggestScheme } from './connectFailure';
 import { ConnectionSummary } from './ConnectionSummary';
 import { useConnectionActions } from './useConnectionActions';
 import { BrokerPresets } from './BrokerPresets';
@@ -219,6 +219,18 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
     (attempted && describeConnectFailure(connectMutation.error, attempted)) ??
     (faulted && describeFailureReason(faulted.reason, faulted));
 
+  // Only ever beside the sentence it answers, and about the same attempt that sentence is about
+  // — never the form, which the reader may have edited since. An offer to switch to a scheme
+  // they have already switched to is worse than no offer.
+  //
+  // The gate on `failure` inherits everything describeConnectFailure refuses to speak about: a
+  // field error the inputs print themselves, and an attempt the reader called off.
+  const suggestion = failure
+    ? (attempted && suggestScheme(errorReason(connectMutation.error), attempted)) ||
+      (faulted && suggestScheme(faulted.reason, faulted)) ||
+      undefined
+    : undefined;
+
   const encrypted = isEncrypted(form.scheme);
   const overWebSocket = isWebSocket(form.scheme);
   const sessionKept = !form.cleanSession;
@@ -234,6 +246,15 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
     const resolved = applyAddress(form, addressText);
     settle(resolved);
     guardedConnect({ request: buildConnectRequest(resolved), autoSubscribe, onConnectFilter });
+  };
+
+  // The offer, taken. Mirrors submit exactly — the same reconciliation, the same request — with
+  // the scheme replaced and the port moved the way pressing the chip would move it.
+  const retryOn = (scheme: Scheme) => {
+    const current = applyAddress(form, addressText);
+    const next = { ...current, scheme, port: portFor(current.scheme, scheme, current.port) };
+    settle(next);
+    guardedConnect({ request: buildConnectRequest(next), autoSubscribe, onConnectFilter });
   };
 
   return (
@@ -632,6 +653,16 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
             {failure}
           </p>
         )}
+
+        {/* Under the sentence that explains the failure, not beside the button that caused it:
+            it is the answer to what just happened, and it only exists because of it. */}
+        {suggestion && !attemptRunning && (
+          <div className={styles.actions}>
+            <button type="button" className="ghost" onClick={() => retryOn(suggestion.scheme)}>
+              {`Try ${suggestion.scheme}:// instead`}
+            </button>
+          </div>
+        )}
       </details>
 
       {/* At the foot and behind one line. Eleven chips in three titled groups were 493px of the
@@ -673,6 +704,10 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
     </PanelShell>
   );
 }
+
+// The reason off an error that carries one. Anything else — a network error, a thrown string —
+// names no reason, and a suggestion needs one to be about.
+const errorReason = (error: unknown) => (error instanceof ApiError ? error.reason : undefined);
 
 function FieldError({ error, field }: { error: unknown; field: string }) {
   const message = fieldError(error, field);
