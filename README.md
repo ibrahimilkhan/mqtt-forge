@@ -55,11 +55,10 @@ runs behind it, and the publish form](.github/assets/console.png)
 
 Every MQTT there is, over every way in:
 
-- **MQTT 5.0, 3.1.1 and 3.1** — pick one to test a broker's behaviour on it, or leave the
-  version on **Auto**, which offers 5.0, then 3.1.1, then 3.1, and keeps the first one the
-  broker takes. It steps down for the two refusals that mean "wrong version" and stops for
-  everything else, so a wrong password is still reported once rather than three times. The
-  connection panel says which version the broker actually agreed to.
+- **MQTT 5.0, 3.1.1 and 3.1** — and you are never asked which. The console offers 5.0, then
+  3.1.1, then 3.1, and keeps the first one the broker takes; it steps down for the two refusals
+  that mean "wrong version" and stops for everything else, so a wrong password is still reported
+  once rather than three times. The connection panel says which one the broker agreed to.
 - **`mqtt://`, `mqtts://`, `ws://`, `wss://`** — asked as the two questions they are. A dropdown
   at the head of the address picks `mqtt://` or `ws://`: a socket of its own, or a WebSocket for
   a broker behind a reverse proxy, which is also where the WebSocket path appears (empty means
@@ -81,7 +80,10 @@ Every MQTT there is, over every way in:
   **client certificate** for the brokers that authenticate that way, an **extra CA** for the ones
   behind a private one, a **server name** for anything routed by SNI, and an **ALPN protocol**,
   which is what gets MQTT through a firewall that allows only 443. Most encrypted brokers need
-  none of it — a publicly trusted certificate is verified the way a browser verifies one.
+  none of it — a publicly trusted certificate is verified the way a browser verifies one — and
+  the section asks only as far as your answers go: a private key and a certificate password
+  appear once there is a certificate to belong to, and not at all beside a `.pfx`, which carries
+  its own key.
 - **A broker of your own** — including one with a certificate it signed itself. Name its CA and
   the chain is still verified, just to a root you supplied; or accept any certificate, which is
   a box you have to tick.
