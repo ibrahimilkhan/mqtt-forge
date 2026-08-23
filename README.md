@@ -143,6 +143,16 @@ on where the broker runs:
 special name. On Docker Desktop it works as-is; on Linux add
 `--add-host=host.docker.internal:host-gateway` to the run command above.
 
+The same reasoning applies to certificates. MQTTForge holds the broker connection server-side,
+so a client certificate or a CA is read where the server runs — inside the container. Mount the
+directory and give the panel the path it has in there:
+
+```
+docker run -d -p 5169:5169 -v ~/certs:/certs:ro ghcr.io/ibrahimilkhan/mqtt-forge
+```
+
+Then **Client certificate** is `/certs/device.pem.crt`, not the path on your own disk.
+
 <details>
 <summary>No broker to hand? Start one alongside it</summary>
 
