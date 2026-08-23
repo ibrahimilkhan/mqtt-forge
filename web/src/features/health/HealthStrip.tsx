@@ -14,6 +14,8 @@ type Reading = {
   weight: number;
   takingMs: number;
   fps: number;
+  /** What the server's queue had to drop because this console was behind. */
+  dropped: number;
 };
 
 /**
@@ -51,6 +53,7 @@ export function HealthStrip() {
         weight: heldWeight(log.byTopic),
         takingMs: arrived > 0 ? spentMs : 0,
         fps: drawn,
+        dropped: useHealthStore.getState().dropped,
       });
     }, EVERY_MS);
 
@@ -70,6 +73,12 @@ export function HealthStrip() {
           <Cell label="held" value={`${count(reading.held)} on ${count(reading.topics)} topics`} />
           <Cell label="payload" value={weigh(reading.weight)} />
           <Cell label="taking" value={`${reading.takingMs.toFixed(1)} ms/s`} />
+          {/* Only once there are any. A cell reading 'dropped 0' on every console that has never
+              dropped anything is four characters of reassurance nobody asked for; one that
+              appears is the line saying something went wrong. */}
+          {reading.dropped > 0 && (
+            <Cell label="dropped" value={count(reading.dropped)} tense />
+          )}
           {/* Last because it is the one that answers 'is this keeping up', and the eye should
               land on it after the numbers that explain it. */}
           <Cell label="drawing" value={`${reading.fps} fps`} tense={reading.fps < 20} />

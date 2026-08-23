@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { queryKeys } from '../api/queryKeys';
 import { MAX_LOG_ENTRIES, runFor, useLogStore } from '../stores/logStore';
+import { useHealthStore } from '../stores/healthStore';
 import { usePauseStore } from '../stores/pauseStore';
 import { useTopicTreeStore } from '../stores/topicTreeStore';
 import type { MqttMessage } from '../types/api';
@@ -26,6 +27,7 @@ beforeEach(() => {
   vi.stubGlobal('cancelAnimationFrame', () => {});
   useLogStore.getState().clear();
   useTopicTreeStore.getState().reset();
+  useHealthStore.setState({ arrived: 0, spentMs: 0, dropped: 0 });
 });
 
 afterEach(() => vi.unstubAllGlobals());
@@ -144,6 +146,49 @@ describe('useHubBridge', () => {
     runFrames();
 
     expect(arrivals()).toHaveLength(0);
+  });
+
+  // The loss nothing on this side can count: the messages never arrived. The server has always
+  // kept the figure and nothing ever asked for it, so a console quietly short of topics looked
+  // exactly like a quiet broker.
+  it('takes the count of what the server had to drop, and says so', () => {
+    const hub = createFakeHub();
+    renderBridge(hub);
+
+    hub.emit('messagesDropped', 12);
+
+    expect(useHealthStore.getState().dropped).toBe(12);
+
+    const said = useLogStore.getState().commands[0];
+    expect(said.kind).toBe('fault');
+    expect(said.verb).toBe('Messages dropped');
+    expect(said.body).toContain('12 messages');
+  });
+
+  // A console that is behind stays behind, so the total arrives on nearly every batch. The figure
+  // has to keep up; the log does not, or it fills with one sentence and buries the traffic.
+  it('keeps the figure current without writing a line for every batch', () => {
+    const hub = createFakeHub();
+    renderBridge(hub);
+
+    hub.emit('messagesDropped', 1);
+    hub.emit('messagesDropped', 2);
+    hub.emit('messagesDropped', 3);
+
+    expect(useHealthStore.getState().dropped).toBe(3);
+    expect(useLogStore.getState().commands).toHaveLength(1);
+  });
+
+  // A total that has not moved is the same total, and says nothing new.
+  it('says nothing when the count is unchanged', () => {
+    const hub = createFakeHub();
+    renderBridge(hub);
+
+    hub.emit('messagesDropped', 4);
+    useLogStore.getState().clear();
+    hub.emit('messagesDropped', 4);
+
+    expect(useLogStore.getState().commands).toHaveLength(0);
   });
 
   // The queue was not the only thing left holding another broker's traffic. The tree started
