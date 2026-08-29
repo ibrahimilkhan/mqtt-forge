@@ -81,19 +81,10 @@
   overflow-wrap: anywhere;
 }
 
-/* The same block standing first instead of last. Under a form it needs a rule to be set apart
-   from the controls above it; at the top of the panel there is nothing above it to be set apart
-   from, and a line under the close button drew a box around empty space. */
-.summaryLead {
-  margin-top: 0;
-  padding-top: 0;
-  border-top: none;
-}
-
-/* The live link and the one button that ends it, which stands first while there is one. The gap
-   under it is the gap between any two blocks here: the form below used to open on a fold line
-   that brought its own margin, and now opens on a heading that does not. */
-.live { margin-bottom: 18px; }
+/* The live link and the one button that ends it, at the foot of the panel. The gap above is the
+   one the kept brokers take, so the two blocks that report rather than ask sit off the form by
+   the same distance. `.summary` brings its own 16px, which collapses into this. */
+.live { margin-top: 22px; }
 
 /* What to listen to the moment the link is up, as one block: the box is what the checkbox
    means, and the two used to stand two blocks apart with a label of its own on the box. Ticking

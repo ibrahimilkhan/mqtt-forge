@@ -655,16 +655,21 @@ describe('what the panel shows first', () => {
     await waitFor(() => expect(sent).toMatchObject({ protocolVersion: 'auto' }));
   });
 
-  // Reopened over a working link, the question is what is up — not where to connect, which this
-  // reader has already answered.
-  it('leads with the live link when there is one', async () => {
+  // The link is not asked for, it is reported — so it reads last, under everything the reader
+  // could do about it. It led the panel for a release, which put a block of facts between the
+  // reader and the first field they came to type in.
+  it('closes with the live link when there is one', async () => {
     connected();
     renderPanel();
 
     const details = await screen.findByLabelText('Connection details');
     const address = screen.getByLabelText('Address');
 
-    expect(details.compareDocumentPosition(address)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(details.compareDocumentPosition(address)).toBe(Node.DOCUMENT_POSITION_PRECEDING);
+    // And the one button that ends the link stands with it, at the foot.
+    expect(
+      details.compareDocumentPosition(screen.getByRole('button', { name: 'Disconnect' })),
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   // A live link is the one thing this panel cannot connect over, so the button that would is
