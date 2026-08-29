@@ -48,10 +48,18 @@ export function MessageDetail({ entry }: { entry: LogEntry }) {
           {when(entry.at)}
         </time>
 
-        {(rest.length > 0 || rule) && (
+        {(rest.length > 0 || entry.retain === false || rule) && (
           <p className={styles.unsaid}>
-            {rest.join(' \u00b7 ')}
-            {rest.length > 0 && rule && ' \u00b7 '}
+            {/* The one thing on this line that is a state rather than a measurement, so it is
+                drawn as a state: the same box the chips upstairs are drawn in, standing where the
+                bar had nothing to put. A message that was retained wears its chip up there with
+                the others; one that was not has no chip up there at all, because the log stamps
+                nothing for it — and the answer to a question every other answer boxes should not
+                be the one that arrives as a loose word. */}
+            {entry.retain === false && <span className={styles.stamp}>not retained</span>}
+
+            {rest.length > 0 && <span>{rest.join(' \u00b7 ')}</span>}
+
             {/* The rule, named and painted, where the row can only carry it as a hover. No word
                 in front of it: it is drawn in the colour the topic two lines up is drawn in,
                 which is the whole of the answer, and a console that labels its own colours is a
@@ -140,14 +148,13 @@ const when = (at: Date) =>
  * What the chips in the bar cannot say.
  *
  * The bar wears the log's own stamps, and those are drawn to be glanced at in a scrolling run.
- * Three things are lost on the way up there: the weight is rounded past a kilobyte, so '2.0kB' is
- * 2048 bytes and 2099 bytes alike; a hex body is stamped 'BIN' and never reconciled with the
- * characters actually on screen; and 'RETAINED' is stamped when it is true and nothing whatever
- * is stamped when it is false.
+ * Two measurements are lost on the way up there: the weight is rounded past a kilobyte, so
+ * '2.0kB' is 2048 bytes and 2099 bytes alike, and a hex body is stamped 'BIN' and never
+ * reconciled with the characters actually on screen.
  *
- * That last one is not a rounding, it is a silence — the right silence in a run of twenty-five
- * rows and the wrong one here. A reader opens this window to find out whether the value in front
- * of them is live traffic or a leftover the broker kept, and no chip is not an answer to that.
+ * Words, both of them, because both are arithmetic. The third thing the bar cannot say is
+ * whether a message was retained, and that one is a state rather than a measurement — it is
+ * drawn beside these as a chip instead, in the summary itself.
  *
  * Each is said only where it is actually missing upstairs, which is what keeps this from being
  * the old table with two rows deleted: an ordinary small retained reading returns nothing at all
@@ -165,8 +172,6 @@ function unsaid(entry: LogEntry): string[] {
   // characters of dump beside a chip stamped '1.0kb' is owed the arithmetic rather than left to
   // do it. This is still the only place in the console that reconciles the two.
   if (entry.mode === 'hex') said.push(`${entry.body?.length ?? 0} characters of hex`);
-
-  if (entry.retain === false) said.push('not retained');
 
   return said;
 }

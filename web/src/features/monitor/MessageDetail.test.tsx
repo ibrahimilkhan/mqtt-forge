@@ -169,6 +169,21 @@ describe('what the window says about the message', () => {
     expect(summary()).toHaveTextContent('not retained');
   });
 
+  // And says it in the box the answer is said in upstairs. The two states of one fact were being
+  // drawn as two kinds of thing — a chip when it was true, a loose word when it was not.
+  it('draws that answer in the box the chips are drawn in', async () => {
+    landed(arrival());
+    render(<Console />);
+
+    await openIt();
+
+    const answer = within(summary()).getByText('not retained');
+    const chip = chips().firstElementChild!;
+    const shared = [...answer.classList].filter((name) => chip.classList.contains(name));
+
+    expect(shared).not.toHaveLength(0);
+  });
+
   // A retained clear carries nothing, which is the message.
   it('says nothing weighs nothing, and draws no payload', async () => {
     landed(arrival({ payload: '', size: 0 }));
