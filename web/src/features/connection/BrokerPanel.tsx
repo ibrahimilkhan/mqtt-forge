@@ -413,8 +413,19 @@ export function BrokerPanel({
       {/* First, and on its own, while there is a link. A panel reopened over a working
           connection was reopened to read it or to end it — not to fill in a form that would
           replace it — and the form underneath answers a question this reader has already
-          answered. */}
-      {isOnline && (
+          answered.
+
+          Not while the link is settling, which is the same beat the close waits out. Connecting
+          to a broker that hangs up on the subscribe put this block on screen and took it off
+          again inside 110ms — measured, 752px to 1077px to 874px — and a 325px block opening and
+          shutting under the reader's eyes is the whole of what that felt like. A link that is
+          not going to hold should move nothing at all. So through the settle the panel stays as
+          it was mid-attempt, and at the end of it either the panel goes (the link held) or the
+          failure appears where the block would have been (it did not).
+
+          Which means this block is on screen only in the case it was written for: a panel opened
+          over a link that was already up. That is not a transition, so nothing is settling. */}
+      {isOnline && !settling && (
         <div className={styles.live}>
           <ConnectionSummary lead />
           <div className={styles.actions}>
