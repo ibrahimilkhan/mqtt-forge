@@ -501,7 +501,7 @@ describe('the keyboard, which is what most of this is filled in with', () => {
     server.use(http.get('/api/connection', () => HttpResponse.json({ state: 'Connected' })));
     renderPanel();
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Connect' })).toBeDisabled());
+    await screen.findByRole('button', { name: 'Disconnect' });
     await userEvent.type(screen.getByLabelText('Port'), '{Enter}');
 
     expect(seen.request).toBeUndefined();

@@ -33,6 +33,10 @@
 .checks input { accent-color: var(--ink); }
 
 .actions { display: flex; gap: 8px; margin-top: 14px; }
+/* Every button in this row is conditional, and over a live link with a name being typed none of
+   them are on: Connect is not offered, Abort has nothing to abort, and Save is the box below.
+   An empty row still spends its margin, which reads as a gap somebody forgot to close. */
+.actions:empty { display: none; }
 
 /* For a button whose label swaps while its neighbours stay put: held to the longest word it
    can show, so the row doesn't shift under the pointer when the label changes. Measured in ch

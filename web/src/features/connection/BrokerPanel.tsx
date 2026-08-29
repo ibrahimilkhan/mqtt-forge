@@ -698,7 +698,7 @@ export function BrokerPanel({
       {/* Two things to do with a form: use it, or keep it. Disconnect is neither and stands with
           the link it would end, which is the block above and only on screen when there is one. */}
       <div className={styles.actions}>
-        {attemptRunning ? (
+        {attemptRunning && (
           <button
             type="button"
             className={styles.steadyWidth}
@@ -707,10 +707,16 @@ export function BrokerPanel({
           >
             Abort
           </button>
-        ) : (
-          // A live link is not something you connect over: the API would either report it
-          // unchanged or tear the session down, so Disconnect is the only way forward.
-          <button type="button" className={styles.steadyWidth} onClick={submit} disabled={isOnline}>
+        )}
+
+        {/* Absent over a live link rather than greyed. A live link is not something you connect
+            over — the API would either report it unchanged or tear the session down, so
+            Disconnect is the only way forward — and a button that cannot be pressed is a button
+            that has to say why. It said so, in a line under it, until that line went with every
+            other line on this panel. Nothing to explain is better than something to explain: the
+            one button on screen while a link is up is the one that ends it. */}
+        {!attemptRunning && !isOnline && (
+          <button type="button" className={styles.steadyWidth} onClick={submit}>
             Connect
           </button>
         )}
