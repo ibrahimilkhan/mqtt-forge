@@ -1,13 +1,14 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useLogStore } from '../../stores/logStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
+import { queryKeys } from '../../api/queryKeys';
 import { server } from '../../test/server';
-import { BrokerPanel } from './BrokerPanel';
+import { BrokerPanel, SETTLE } from './BrokerPanel';
 
 // A saved connection as the API sends one. Written here rather than inline in six places so a
 // test says only what it is about — the host, or the filter, or the password — and the rest of
@@ -125,7 +126,7 @@ describe('BrokerPanel', () => {
 
   // The panel is here to get a link up. Once one is up it is a form nobody is filling in, and
   // the column it holds is worth more to the traffic that has just started arriving.
-  it('closes itself the moment the link comes up', async () => {
+  it('closes itself once the link has held', async () => {
     let state = 'Disconnected';
     server.use(
       http.get('/api/connection', () => HttpResponse.json({ state })),
@@ -139,7 +140,60 @@ describe('BrokerPanel', () => {
     const { onClose } = renderPanel();
     await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
 
-    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    // Not on the announcement of a link — see the test under this one for why.
+    await screen.findByRole('button', { name: 'Disconnect' });
+    expect(onClose).not.toHaveBeenCalled();
+
+    await waitFor(() => expect(onClose).toHaveBeenCalled(), { timeout: SETTLE + 1000 });
+  });
+
+  // Why the close waits at all. Every topic is what this console asks for on connect, and a good
+  // many brokers answer by taking the connection and then hanging up — against mqtt.hsl.fi the
+  // whole of it lands inside 150ms. Closing on the announcement left the reader looking at a
+  // console with no panel and no sentence, having to reopen the panel to find out what had become
+  // of the connect they had just pressed.
+  it('stays open when the link comes up and then dies', async () => {
+    let state = 'Disconnected';
+    server.use(
+      http.get('/api/connection', () => HttpResponse.json({ state })),
+      http.post('/api/connection', () => {
+        state = 'Connected';
+        return HttpResponse.json({ state: 'Connected' });
+      }),
+      http.post('/api/subscriptions', () => new HttpResponse(null, { status: 202 })),
+    );
+
+    const client = newQueryClient();
+    const { onClose } = renderPanel(client);
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+
+    // The link is up and the close is armed.
+    await screen.findByRole('button', { name: 'Disconnect' });
+
+    // And the broker hangs up, which is how the hub delivers it.
+    state = 'Faulted';
+    act(() =>
+      client.setQueryData(queryKeys.connection, {
+        state: 'Faulted',
+        failure: {
+          reason: 'notPermitted',
+          host: 'broker.example',
+          port: 1883,
+          clientId: 'mqttforge-console',
+          useTls: false,
+          transport: 'tcp',
+          protocolVersion: 'auto',
+        },
+      }),
+    );
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+
+    await new Promise((resolve) => setTimeout(resolve, SETTLE + 300));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    // And the way out of this particular dead end is still under it.
+    expect(screen.getByRole('button', { name: 'Ask for less in Filters' })).toBeInTheDocument();
   });
 
   // Reopened over a link that is already up — to read the summary, or to disconnect — nothing
