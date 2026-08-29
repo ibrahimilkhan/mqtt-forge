@@ -18,38 +18,54 @@ import styles from './MessageDetail.module.css';
 export function MessageDetail({ entry }: { entry: LogEntry }) {
   const ruleOf = useRuleLookup();
   const rule = entry.topic ? ruleOf(entry.topic) : null;
+  const rest = unsaid(entry);
 
   return (
     // One wrapper. The window's body is a grid of a single row, so two children here would put
-    // the properties in a track of no height and lose them under the payload.
+    // the summary in a track of no height and lose it under the payload.
     <div className={styles.detail}>
-      <dl className={styles.rows}>
+      {/* What arrived and when, said the way the row says it rather than tabulated. The labels
+          went with the three facts that are chips in this window's own bar now: a topic looks
+          like a topic and a timestamp looks like a timestamp, and an 8ch column spelling 'topic'
+          and 'at' beside them was a third of the narrowest window a reader can drag this to,
+          spent on two words that are read once and looked past ever after.
+
+          The topic carries its rule's colour, the same as the row it was opened from. The window
+          used to be drawn in the console's plain ink while the row behind it was green, and the
+          two never read as one message. */}
+      <div className={styles.head} data-testid="summary">
         {entry.topic && (
-          <Row label="topic">
+          <div className={styles.topic} data-copy style={rule ? { color: rule.colour } : undefined}>
             <Topic topic={entry.topic} />
-          </Row>
+          </div>
         )}
-        <Row label="at">{when(entry.at)}</Row>
-        {entry.qos !== undefined && <Row label="qos">{entry.qos}</Row>}
-        {entry.retain !== undefined && <Row label="retained">{entry.retain ? 'yes' : 'no'}</Row>}
-        {entry.size !== undefined && <Row label="size">{weight(entry)}</Row>}
-        {rule && (
-          <Row label="colour">
-            <span style={{ color: rule.colour }}>{rule.filter}</span>
-          </Row>
+
+        {/* data-copy on both, because this console selects nothing by default and the exceptions
+            are listed one at a time — these were a dt/dd pair, which was on that list. A topic is
+            the most-copied string on the screen, and a window it could not be taken out of would
+            be a window that had quietly stopped being useful. */}
+        <time className={styles.at} dateTime={entry.at.toISOString()} data-copy>
+          {when(entry.at)}
+        </time>
+
+        {(rest.length > 0 || rule) && (
+          <p className={styles.unsaid}>
+            {rest.join(' \u00b7 ')}
+            {rest.length > 0 && rule && ' \u00b7 '}
+            {/* The rule, named and painted, where the row can only carry it as a hover. No word
+                in front of it: it is drawn in the colour the topic two lines up is drawn in,
+                which is the whole of the answer, and a console that labels its own colours is a
+                console explaining itself. */}
+            {rule && (
+              <span style={{ color: rule.colour }} title={`Coloured by ${rule.filter}`}>
+                {rule.filter}
+              </span>
+            )}
+          </p>
         )}
-      </dl>
+      </div>
 
       <Payload entry={entry} />
-    </div>
-  );
-}
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className={styles.row}>
-      <dt>{label}</dt>
-      <dd>{children}</dd>
     </div>
   );
 }
@@ -121,14 +137,36 @@ const when = (at: Date) =>
   `${at.toLocaleString('en-GB', { hour12: false })}.${String(at.getMilliseconds()).padStart(3, '0')}`;
 
 /**
- * What it weighed, and what that is in the characters on screen when the two differ.
+ * What the chips in the bar cannot say.
  *
- * A hex body is two characters and a space for every byte, so a reader looking at 3071 characters
- * of dump and a row stamped '1.0kB' is owed the arithmetic rather than left to do it.
+ * The bar wears the log's own stamps, and those are drawn to be glanced at in a scrolling run.
+ * Three things are lost on the way up there: the weight is rounded past a kilobyte, so '2.0kB' is
+ * 2048 bytes and 2099 bytes alike; a hex body is stamped 'BIN' and never reconciled with the
+ * characters actually on screen; and 'RETAINED' is stamped when it is true and nothing whatever
+ * is stamped when it is false.
+ *
+ * That last one is not a rounding, it is a silence — the right silence in a run of twenty-five
+ * rows and the wrong one here. A reader opens this window to find out whether the value in front
+ * of them is live traffic or a leftover the broker kept, and no chip is not an answer to that.
+ *
+ * Each is said only where it is actually missing upstairs, which is what keeps this from being
+ * the old table with two rows deleted: an ordinary small retained reading returns nothing at all
+ * and draws no line, because the chips already said the whole of it.
  */
-function weight(entry: LogEntry) {
-  const bytes = `${entry.size} bytes`;
-  const shown = entry.body?.length ?? 0;
+function unsaid(entry: LogEntry): string[] {
+  const said: string[] = [];
 
-  return entry.mode === 'hex' ? `${bytes}, ${shown} characters of hex` : bytes;
+  // Only where the stamp had to round. Under a kilobyte the chip already reads '214b', and
+  // '214 bytes' beside it is the same number in more words. `size` is on the entry for exactly
+  // this, so that reading 1024 bytes never means parsing it back out of a word like '1.0kB'.
+  if (entry.size !== undefined && entry.size >= 1024) said.push(`${entry.size} bytes`);
+
+  // A hex body is two characters and a space for every byte, so a reader looking at 3071
+  // characters of dump beside a chip stamped '1.0kb' is owed the arithmetic rather than left to
+  // do it. This is still the only place in the console that reconciles the two.
+  if (entry.mode === 'hex') said.push(`${entry.body?.length ?? 0} characters of hex`);
+
+  if (entry.retain === false) said.push('not retained');
+
+  return said;
 }
