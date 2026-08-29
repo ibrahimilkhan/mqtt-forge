@@ -78,7 +78,7 @@ public sealed class ConnectionController : ControllerBase
         // or a request that hangs until the first is answered.
         if (answer.Choice == CertificatePicker.Choice.AlreadyOpen)
             return Problem(
-                "A file dialog is already open on the host.",
+                "A file dialog is already open on the host. Answer that one first.",
                 statusCode: StatusCodes.Status409Conflict);
 
         return Ok(new CertificateFileDto(answer.Path));

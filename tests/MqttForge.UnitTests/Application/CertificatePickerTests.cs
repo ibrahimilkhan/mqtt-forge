@@ -154,6 +154,62 @@ public class CertificatePickerTests
         Assert.Equal(["*"], CertificatePicker.FiltersFor(kind)[^1].Extensions);
     }
 
+    // A request is not the dialog. A console whose reader closed the tab stops waiting for an
+    // answer — that much is right — but nothing takes the dialog off the window, because no host
+    // here offers a way to close one it has already put up. Released with the request, the gate
+    // let the next console stack a second dialog on top of the first, which is the one thing it
+    // exists to stop. Found by driving the real window: two dialogs, one on top of the other.
+    [Fact]
+    public async Task A_caller_that_gives_up_leaves_the_gate_shut_behind_it()
+    {
+        var opened = new TaskCompletionSource();
+        var answered = new TaskCompletionSource<string?>();
+        _picker
+            .PickAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<FileFilter>>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                opened.TrySetResult();
+                return answered.Task;
+            });
+        var sut = new CertificatePicker(_picker);
+        using var gaveUp = new CancellationTokenSource();
+
+        var first = sut.ChooseAsync(CertificatePicker.Kind.Certificate, gaveUp.Token);
+        await opened.Task;
+        await gaveUp.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
+
+        // The dialog is still up, so the next console is still turned away.
+        var second = await sut.ChooseAsync(CertificatePicker.Kind.Authority);
+        Assert.Equal(CertificatePicker.Choice.AlreadyOpen, second.Choice);
+        await _picker
+            .Received(1)
+            .PickAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<FileFilter>>(), Arg.Any<CancellationToken>());
+
+        // And the gate opens when that dialog is answered, which is the only thing that opens it.
+        answered.SetResult(null);
+        var third = await Eventually(() => sut.ChooseAsync(CertificatePicker.Kind.Authority));
+        Assert.Equal(CertificatePicker.Choice.Unchanged, third.Choice);
+    }
+
+    // The gate is given back by the dialog's own continuation, and the test runner's
+    // synchronisation context posts that rather than running it inline — so it lands a moment
+    // after SetResult returns rather than during it. Asking again is free: a gate still shut says
+    // so and opens nothing.
+    private static async Task<CertificatePicker.Answer> Eventually(
+        Func<Task<CertificatePicker.Answer>> ask)
+    {
+        for (var attempt = 0; attempt < 200; attempt++)
+        {
+            var answer = await ask();
+            if (answer.Choice != CertificatePicker.Choice.AlreadyOpen) return answer;
+
+            await Task.Delay(5);
+        }
+
+        throw new TimeoutException("The gate never opened.");
+    }
+
     private void Returning(string? path) =>
         _picker
             .PickAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<FileFilter>>(), Arg.Any<CancellationToken>())
