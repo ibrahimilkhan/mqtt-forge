@@ -469,13 +469,15 @@ describe('BrokerPanel', () => {
     expect(within(details).getByText('broker.example:8883')).toBeInTheDocument();
   });
 
-  it('refuses a second connect while one is already live', async () => {
+  it('offers no second connect while one is already live', async () => {
     server.use(http.get('/api/connection', () => HttpResponse.json({ state: 'Connected' })));
 
     renderPanel();
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Connect' })).toBeDisabled());
-    expect(screen.getByRole('button', { name: 'Disconnect' })).not.toBeDisabled();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Disconnect' })).not.toBeDisabled(),
+    );
+    expect(screen.queryByRole('button', { name: 'Connect' })).not.toBeInTheDocument();
   });
 
   it('leaves the form alone while nothing is connected', async () => {
@@ -576,15 +578,16 @@ describe('what the panel shows first', () => {
     expect(details.compareDocumentPosition(address)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
-  // A live link is the one thing this panel cannot connect over. Said, rather than left to be
-  // inferred from a greyed button.
-  it('will not fire Connect while a link is up', async () => {
+  // A live link is the one thing this panel cannot connect over, so the button that would is
+  // not on screen at all. Greyed, it was a control that had to say why it would not move.
+  it('takes Connect away while a link is up', async () => {
     connected();
     renderPanel();
 
     await screen.findByLabelText('Connection details');
 
-    expect(screen.getByRole('button', { name: 'Connect' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Connect' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Disconnect' })).toBeInTheDocument();
   });
 });
 
