@@ -190,15 +190,56 @@ describe('Workspace', () => {
     expect(screen.getByText('log pane')).toBeInTheDocument();
   });
 
-  // A seam between a shut region and its neighbour would move something the reader cannot see.
-  it('takes the seams beside a folded region out of reach', async () => {
+  // The complaint this is about: fold the chart and neither seam answered any more, so the log
+  // could not be shortened and the form could not be lengthened. A folded region is a header and
+  // nothing else, so what the seams either side of it divide is whatever lies beyond it — which
+  // is the log and the form, and a reader grabbing either edge of that strip means exactly that.
+  it('keeps both seams live when the region between them is folded away', async () => {
     render(<Workspace {...parts} />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Fold Chart' }));
 
-    expect(screen.getByLabelText('Log and chart boundary', { selector: '[role=separator]' })).toHaveAttribute(
+    expect(screen.getByRole('separator', { name: 'Log and chart boundary' })).toHaveAttribute(
       'tabindex',
-      '-1',
+      '0',
+    );
+    expect(screen.getByRole('separator', { name: 'Chart and publish boundary' })).toHaveAttribute(
+      'tabindex',
+      '0',
+    );
+  });
+
+  it('moves the log against the form when the chart is folded between them', async () => {
+    render(<Workspace {...parts} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Fold Chart' }));
+
+    const seam = screen.getByRole('separator', { name: 'Log and chart boundary' });
+    seam.focus();
+    await userEvent.keyboard('{ArrowUp}');
+
+    // Three tenths of the column each, so the pair is six tenths and the seam starts halfway; a
+    // step of two per cent of the pair puts the log at 48 of it and gives the form the rest. The
+    // chart's own share is untouched, waiting for it to be opened again.
+    const column = screen.getByTestId('right-column');
+    expect(column.style.gridTemplateRows).toContain('minmax(0, 48.00fr)');
+    expect(column.style.gridTemplateRows).toContain('minmax(0, 52.00fr)');
+  });
+
+  // A seam with nothing beyond it on one side would move something the reader cannot see.
+  it('takes a seam with nothing beyond it out of reach', async () => {
+    render(<Workspace {...parts} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Fold Log' }));
+
+    // By label rather than by role: a seam with nothing to divide is aria-hidden, so the role is
+    // gone from the tree along with it — which is the other half of what 'out of reach' means.
+    expect(
+      screen.getByLabelText('Log and chart boundary', { selector: '[role=separator]' }),
+    ).toHaveAttribute('tabindex', '-1');
+    // And the one below it still divides the two that are open.
+    expect(screen.getByRole('separator', { name: 'Chart and publish boundary' })).toHaveAttribute(
+      'tabindex',
+      '0',
     );
   });
 
@@ -223,10 +264,11 @@ describe('Workspace', () => {
     const seam = screen.getByRole('separator', { name: 'Chart and publish boundary' });
     await drag(seam, 830);
 
-    // 830 of the 200..1000 the pair occupies: the chart takes 78.75% of it, not the 75.71% that
-    // measuring against a column with a folded strip at the top of it would have given.
-    expect(column.style.gridTemplateRows).toContain('minmax(0, 78.75fr)');
-    expect(column.style.gridTemplateRows).toContain('minmax(0, 21.25fr)');
+    // The pair is the two boxes themselves — 630 of chart and 167 of form — and not the 800 from
+    // one end to the other, which counted the seam between them as if it belonged to somebody.
+    // The pointer is at the chart's own bottom edge, so the chart takes all 630 of the 797.
+    expect(column.style.gridTemplateRows).toContain('minmax(0, 79.05fr)');
+    expect(column.style.gridTemplateRows).toContain('minmax(0, 20.95fr)');
     done();
   });
 
