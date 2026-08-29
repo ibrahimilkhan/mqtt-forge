@@ -177,6 +177,17 @@
 .addressLine > input { flex: 1; min-width: 0; border-radius: 0 2px 2px 0; }
 .addressLine > select { flex: 0 0 auto; border-right: 0; border-radius: 2px 0 0 2px; }
 
+/* A path and the button that fills it in, on one line. The box keeps the room — a path is the
+   longest thing anyone types into this panel — and the button takes only the width of its word,
+   which is why it is a word rather than an icon: three unlabelled buttons down a column of paths
+   say nothing about which path each one is for.
+
+   Aligned to the box rather than to the field, so the button sits on the box's own line and not
+   under the label above it. */
+.pathLine { display: flex; align-items: stretch; gap: 6px; }
+.pathLine > input { flex: 1; min-width: 0; }
+.pathLine > button { flex: 0 0 auto; }
+
 /* The two buttons beside the name box. Aligned to its foot, since the box has a label above it
    and a button lined up with the word SAVE AS reads as a caption for it. */
 .namingActions { display: flex; align-items: flex-end; gap: 8px; flex: 0 0 auto; }

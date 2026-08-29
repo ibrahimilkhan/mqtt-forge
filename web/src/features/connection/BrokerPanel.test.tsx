@@ -989,6 +989,112 @@ describe('a certificate, which settles the question by itself', () => {
   });
 });
 
+// A path is the only thing these boxes can hold — the connection is held by the server, so a
+// certificate is opened where that server runs, and a file input would hand over the bytes with
+// the path hidden. Where the host owns a window it owns a dialog that can name one, and where it
+// does not there is nothing to press.
+describe('a certificate pointed at rather than typed', () => {
+  // The default handler in test/server.ts answers as a browser does: no window, no dialog.
+  const dialog = (answers: Array<string | null>) => {
+    const asked: string[] = [];
+    server.use(
+      http.get('/api/connection/certificate-file', () => HttpResponse.json({ canChoose: true })),
+      http.post('/api/connection/certificate-file', async ({ request }) => {
+        const { kind } = (await request.json()) as { kind: string };
+        asked.push(kind);
+        return HttpResponse.json({ path: answers.shift() ?? null });
+      }),
+    );
+
+    return asked;
+  };
+
+  it('offers nothing to press where the host has no dialog', async () => {
+    renderPanel();
+    await screen.findByLabelText('Client certificate');
+
+    expect(screen.queryByRole('button', { name: /^Choose /i })).not.toBeInTheDocument();
+  });
+
+  it('fills the box with the file the dialog named', async () => {
+    dialog(['/Users/me/certs/client.pfx']);
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Choose Client certificate' }));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Client certificate')).toHaveValue('/Users/me/certs/client.pfx'),
+    );
+    // Naming a certificate is a statement that this connection is encrypted, whichever way it
+    // was named.
+    expect(screen.getByLabelText('Encrypted (TLS)')).toBeChecked();
+  });
+
+  it('asks for the field the button stands beside', async () => {
+    const asked = dialog(['/tmp/ca.crt']);
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Choose Extra CA certificate' }));
+
+    await waitFor(() => expect(asked).toEqual(['authority']));
+  });
+
+  // The private key only exists once there is a certificate that does not carry its own, which
+  // is also the only state its button can be pressed in.
+  it('offers the key once a certificate that needs one is named', async () => {
+    const asked = dialog(['/tmp/client.pem', '/tmp/client.key']);
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Choose Client certificate' }));
+    await screen.findByLabelText('Private key');
+    await userEvent.click(screen.getByRole('button', { name: 'Choose Private key' }));
+
+    await waitFor(() => expect(screen.getByLabelText('Private key')).toHaveValue('/tmp/client.key'));
+    expect(asked).toEqual(['certificate', 'key']);
+  });
+
+  // Dismissing is 'not that one, then'. A reader who opened the dialog to look and thought better
+  // of it would otherwise find the box they never meant to touch emptied.
+  it('leaves the box alone when the dialog is dismissed', async () => {
+    dialog([null]);
+    renderPanel();
+    const box = await screen.findByLabelText('Client certificate');
+    await userEvent.type(box, '/tmp/already-here.pfx');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Choose Client certificate' }));
+
+    await waitFor(() => expect(box).toHaveValue('/tmp/already-here.pfx'));
+  });
+
+  // One dialog at a time is the host's rule — the other console this app exists to be opened on
+  // has one too — so the buttons say so rather than failing when they are pressed.
+  it('holds every button while a dialog is open', async () => {
+    server.use(
+      http.get('/api/connection/certificate-file', () => HttpResponse.json({ canChoose: true })),
+      http.post('/api/connection/certificate-file', async () => {
+        await delay('infinite');
+        return HttpResponse.json({ path: null });
+      }),
+    );
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Choose Client certificate' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Choose Extra CA certificate' })).toBeDisabled(),
+    );
+  });
+
+  // The dialog belongs to the machine holding the connection, which is not always the machine
+  // holding the keyboard. The panel has to keep saying so with the buttons on screen.
+  it('still says where the paths are read', async () => {
+    dialog([]);
+    renderPanel();
+
+    expect(await screen.findByText(/Read where MQTTForge runs/)).toBeInTheDocument();
+  });
+});
+
 // The box asks for every topic, and a good many brokers out on the internet will not give you
 // every topic — one of them by closing the session. That used to be guarded against with a
 // filter field beside the box. It is answered where it happens instead.

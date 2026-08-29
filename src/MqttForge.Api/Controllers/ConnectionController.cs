@@ -14,11 +14,14 @@ public sealed class ConnectionController : ControllerBase
 
     private readonly ConnectionService _service;
     private readonly SavedProfileService _profiles;
+    private readonly CertificatePicker _files;
 
-    public ConnectionController(ConnectionService service, SavedProfileService profiles)
+    public ConnectionController(
+        ConnectionService service, SavedProfileService profiles, CertificatePicker files)
     {
         _service = service;
         _profiles = profiles;
+        _files = files;
     }
 
     [HttpGet]
@@ -37,6 +40,48 @@ public sealed class ConnectionController : ControllerBase
         var settings = await _service.GetSavedSettingsAsync(ct);
 
         return settings is null ? NoContent() : Ok(SavedConnectionDto.Of(settings));
+    }
+
+    // ---- the three files an encrypted connection can be given ----
+    //
+    // The paths are read where the server runs, so naming one by typing it is naming a path on a
+    // machine the reader may not be sitting at. Where the host owns a window it also owns a file
+    // dialog, and that is the one place a path can be pointed at rather than remembered.
+
+    /// <summary>Whether this host can be asked for a certificate file at all.</summary>
+    [HttpGet("certificate-file")]
+    public IActionResult CanChooseCertificateFile() => Ok(new CertificateDialogDto(_files.CanChoose));
+
+    /// <summary>
+    /// Opens the host's own file dialog, and hands back the path it named.
+    /// </summary>
+    /// <remarks>
+    /// A dismissed dialog is not a failure — it is the answer 'not that one, then' — so it comes
+    /// back as no path rather than as an error the interface has to explain away. Nothing is
+    /// remembered here: the path's home is the box in the form that asked for it.
+    /// </remarks>
+    [HttpPost("certificate-file")]
+    public async Task<IActionResult> ChooseCertificateFile(PickCertificateFileDto dto, CancellationToken ct)
+    {
+        // Named and defined, both: a body with no kind in it must not fall through to whichever
+        // dialog happens to be first, and a number outside the enum reaches the switch that names
+        // the dialog and throws there.
+        if (dto.Kind is not { } kind || !Enum.IsDefined(kind))
+            return ValidationProblem("That is not a certificate field.");
+
+        if (!_files.CanChoose) return StatusCode(StatusCodes.Status501NotImplemented);
+
+        var answer = await _files.ChooseAsync(kind, ct);
+
+        // A dialog already open belongs to somebody — the second console this app is built to be
+        // opened on, most likely — and saying so is better than a second dialog on the same window
+        // or a request that hangs until the first is answered.
+        if (answer.Choice == CertificatePicker.Choice.AlreadyOpen)
+            return Problem(
+                "A file dialog is already open on the host.",
+                statusCode: StatusCodes.Status409Conflict);
+
+        return Ok(new CertificateFileDto(answer.Path));
     }
 
     // ---- brokers somebody chose to keep ----
