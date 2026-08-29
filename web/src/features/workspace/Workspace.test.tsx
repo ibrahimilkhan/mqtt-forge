@@ -123,9 +123,15 @@ function capturing() {
   };
 }
 
-/** A drag is a grab, a move and a release; the move only lands on the next animation frame. */
-async function drag(seam: HTMLElement, to: number) {
-  fireEvent.pointerDown(seam, { pointerId: 1, clientY: 0, clientX: 0 });
+/**
+ * A drag is a grab, a move and a release; the move only lands on the next animation frame.
+ *
+ * Where it was grabbed matters as much as where it was let go: the handle keeps the distance
+ * between the hand and the boundary for the whole drag, so a grab has to be somewhere a hand
+ * could really have landed.
+ */
+async function drag(seam: HTMLElement, from: number, to: number) {
+  fireEvent.pointerDown(seam, { pointerId: 1, clientY: from, clientX: from });
   fireEvent.pointerMove(seam, { pointerId: 1, clientY: to, clientX: to });
   await act(() => new Promise((frame) => requestAnimationFrame(() => frame(undefined))));
   fireEvent.pointerUp(seam, { pointerId: 1 });
@@ -327,13 +333,42 @@ describe('Workspace', () => {
     laidOut(publishRegion, 833, 1000);
 
     const seam = screen.getByRole('separator', { name: 'Chart and publish boundary' });
-    await drag(seam, 830);
+    // Grabbed on the bar itself, a pixel past the chart's edge, and taken up to 700.
+    await drag(seam, 831, 700);
 
-    // The pair is the two boxes themselves — 630 of chart and 167 of form — and not the 800 from
-    // one end to the other, which counted the seam between them as if it belonged to somebody.
-    // The pointer is at the chart's own bottom edge, so the chart takes all 630 of the 797.
-    expect(column.style.gridTemplateRows).toContain('minmax(0, 79.05fr)');
-    expect(column.style.gridTemplateRows).toContain('minmax(0, 20.95fr)');
+    // The boundary travels 797 — the 800 from one end to the other, less the 3 the bar between
+    // them takes with it — and the hand keeps the pixel it grabbed at, so it lands at 499 of 797.
+    expect(column.style.gridTemplateRows).toContain('minmax(0, 62.61fr)');
+    expect(column.style.gridTemplateRows).toContain('minmax(0, 37.39fr)');
+    done();
+  });
+
+  // The blink. The mapping was exact where the panes are and flat everywhere between them — and
+  // with a folded region beside it, the gap between the panes is thirty pixels, which is where
+  // the pointer spends the whole drag. A step of the pointer moved the boundary, and moving the
+  // boundary moved the flat band back under the pointer.
+  it('goes on answering the pointer between two panes with a strip between them', async () => {
+    const done = capturing();
+    render(<Workspace {...parts} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Fold Chart' }));
+
+    const column = screen.getByTestId('right-column');
+    const [logRegion, , chartStrip, , publishRegion] = [...column.children];
+    laidOut(column, 0, 1000);
+    laidOut(logRegion, 0, 500);
+    // The folded strip, with a bar either side of it: thirty pixels belonging to neither pane.
+    laidOut(chartStrip, 503, 529);
+    laidOut(publishRegion, 532, 1000);
+
+    const seam = screen.getByRole('separator', { name: 'Log and chart boundary' });
+
+    // 514 of the 968 the boundary can travel.
+    await drag(seam, 501, 515);
+    expect(column.style.gridTemplateRows).toContain('minmax(0, 53.10fr)');
+
+    // Ten pixels further down, still inside that gap, and it answers ten pixels further down.
+    await drag(seam, 501, 525);
+    expect(column.style.gridTemplateRows).toContain('minmax(0, 54.13fr)');
     done();
   });
 
