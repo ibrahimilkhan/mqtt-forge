@@ -57,10 +57,19 @@
   gap: 7px;
 }
 
-/* For a button whose label swaps while its neighbours stay put: held to the longest word it
-   can show, so the row doesn't shift under the pointer when the label changes. Measured in ch
-   so it follows the type scale, and on the content box so the padding isn't eating into it. */
-.steadyWidth { box-sizing: content-box; min-width: 8ch; }
+/* For a button whose label swaps while its neighbours stay put: held to the longest word it can
+   show, so the row doesn't shift under the pointer when the label changes. Measured in ch so it
+   follows the type scale.
+
+   On the label rather than on the button, which is where it used to be. The button carries a
+   mark and a gap now — the same mark's width in both states — and a floor on the whole button
+   would have to have those counted into it, which is a number that goes wrong the day the mark
+   changes size. Holding the word is what was ever meant. */
+.steadyLabel {
+  display: inline-block;
+  min-width: 8ch;
+  text-align: center;
+}
 
 .note {
   font-size: var(--t-small);
