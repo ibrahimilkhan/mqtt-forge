@@ -25,15 +25,18 @@ type Props = {
 };
 
 /**
- * The nearest thing on one side with a height to give.
+ * The nearest pane on one side with a height to give.
  *
- * A folded region marks itself, and this steps over it: with the chart folded the column is the
- * log, a strip, and the form, so the boundary above the strip divides the log from the form and
- * has to measure them rather than the strip it happens to sit against.
+ * Two things get stepped over. A folded region, which marks itself: with the chart folded the
+ * column is the log, a strip, and the form, so the boundary above the strip divides the log from
+ * the form and has to measure them rather than the strip it happens to sit against. And the other
+ * boundary beyond that strip, which is a bar three pixels wide and not a pane at all — measuring
+ * against that one made the far side of the pair three pixels of nothing.
  */
 function reach(from: Element | null | undefined, step: 'previousElementSibling' | 'nextElementSibling') {
   for (let node = from; node; node = node[step]) {
-    if (!node.hasAttribute('data-folded')) return node.getBoundingClientRect();
+    const skip = node.hasAttribute('data-folded') || node.getAttribute('role') === 'separator';
+    if (!skip) return node.getBoundingClientRect();
   }
 
   return null;
@@ -50,6 +53,13 @@ function reach(from: Element | null | undefined, step: 'previousElementSibling' 
 export function ResizeHandle({ axis, label, value, min, max, onChange, off = false }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
+  // Where in the gap between the two panes the drag began, measured from the near pane's edge.
+  //
+  // With a folded region beside it that gap is thirty pixels of strip and bars, not three, and a
+  // reader can take hold anywhere in it. Without this the near pane's edge jumps to the pointer
+  // on the first move — the whole strip snapping up past the hand that grabbed its lower seam.
+  const grabbedAt = useRef(0);
+
   const clamp = (share: number) => Math.min(max, Math.max(min, share));
 
   // A pointer reports far more often than the screen redraws, and every report relaid out a pane
@@ -61,37 +71,38 @@ export function ResizeHandle({ axis, label, value, min, max, onChange, off = fal
   const frame = useMemo(() => createFrameLatest<number>((share) => onChangeRef.current(share)), []);
   useEffect(() => frame.cancel, [frame]);
 
-  const dragTo = (event: PointerEvent<HTMLDivElement>) => {
+  /** The two panes this divides, and where the pointer is along them. */
+  const span = (event: PointerEvent<HTMLDivElement>) => {
     const bar = ref.current;
     const near = reach(bar?.previousElementSibling, 'previousElementSibling');
     const far = reach(bar?.nextElementSibling, 'nextElementSibling');
-    if (!near || !far) return;
+    if (!near || !far) return null;
 
-    const [nearStart, nearEnd, farStart, farEnd, along] =
-      axis === 'x'
-        ? [near.left, near.right, far.left, far.right, event.clientX]
-        : [near.top, near.bottom, far.top, far.bottom, event.clientY];
+    return axis === 'x'
+      ? { start: near.left, boundary: near.right, resumes: far.left, end: far.right, along: event.clientX }
+      : { start: near.top, boundary: near.bottom, resumes: far.top, end: far.bottom, along: event.clientY };
+  };
 
-    // An unmeasured layout reports zero size; there is nothing to divide yet.
-    const held = nearEnd - nearStart;
-    const pair = held + (farEnd - farStart);
-    if (pair <= 0) return;
+  const dragTo = (event: PointerEvent<HTMLDivElement>) => {
+    const at = span(event);
+    if (!at) return;
 
-    // How much of the pair lies behind the pointer.
+    // The room the boundary has to travel in: the two panes, less whatever sits between them.
     //
-    // Not the pointer's fraction of the distance from one end to the other, which is what this
-    // used to be: everything between the two — this bar, and any folded strip it stepped over to
-    // find them — belongs to neither pane, and counting it in made the seam trail the pointer by
-    // the width of whatever was in the way. Inside a pane the answer is how far into it the
-    // pointer has come; in the gap between them the pane simply ends where it ends.
-    const behind =
-      along <= nearStart ? 0
-      : along <= nearEnd ? along - nearStart
-      : along >= farEnd ? pair
-      : along >= farStart ? held + (along - farStart)
-      : held;
+    // That gap — this bar, and any folded strip it stepped over to find its panes — belongs to
+    // neither side and travels with the boundary rather than staying put, so it is taken out of
+    // the distance the pointer is measured against rather than charged to one of the panes.
+    //
+    // Written as one straight line from the near pane's start to where the boundary can go no
+    // further, on purpose. It was a three-way test — inside the near pane, inside the far one, or
+    // in the gap between them — which is exact where the panes are and flat where they are not:
+    // with a folded region beside it the pointer spends the whole drag inside that flat band,
+    // where a step of the pointer moved the boundary and moving the boundary moved the band back
+    // under the pointer. That is the blink. A line has nothing to oscillate about.
+    const travel = at.end - at.start - (at.resumes - at.boundary);
+    if (travel <= 0) return;
 
-    frame.offer(clamp(behind / pair));
+    frame.offer(clamp((at.along - grabbedAt.current - at.start) / travel));
   };
 
   const grab = (event: PointerEvent<HTMLDivElement>) => {
@@ -99,6 +110,11 @@ export function ResizeHandle({ axis, label, value, min, max, onChange, off = fal
     event.preventDefault();
     event.currentTarget.focus();
     event.currentTarget.setPointerCapture(event.pointerId);
+
+    // How far past the boundary the hand landed, so the boundary keeps that distance for the
+    // whole drag instead of leaping to meet the pointer on the first move.
+    const at = span(event);
+    grabbedAt.current = at ? at.along - at.boundary : 0;
   };
 
   const nudge = (event: KeyboardEvent<HTMLDivElement>) => {
