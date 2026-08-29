@@ -105,7 +105,15 @@ export function Workspace({ panel, wide = false, tree, log, logCount, chart, pub
 
   const columnRef = useRef<HTMLDivElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<HTMLDivElement>(null);
   const publishRef = useRef<HTMLDivElement>(null);
+  // By place, because everything below asks for a region by name and gets a box back. The chart
+  // has one now only so a seam can measure the pair it divides; nothing ever fits the chart.
+  const boxes: Record<RegionId, RefObject<HTMLDivElement | null>> = {
+    log: logRef,
+    chart: chartRef,
+    publish: publishRef,
+  };
 
   /**
    * The column follows the newest message until somebody asks it not to.
@@ -240,10 +248,21 @@ export function Workspace({ panel, wide = false, tree, log, logCount, chart, pub
     below: REGIONS.slice(boundary + 1).find(({ id }) => open(id))?.id,
   });
 
-  /** Where a boundary sits between the two it divides, or nothing to sit between. */
+  /**
+   * Where a boundary sits between the two it divides, or nothing to sit between.
+   *
+   * Measured in the shares the column is actually laid out in rather than the ones held in state,
+   * which are two different things the moment a region is folded: a shut region keeps its share
+   * in `rows`, waiting to be opened again, while the column divides itself between the ones left.
+   * The floor is what turns on the difference — a pair sharing six tenths of the state and the
+   * whole of the column was being told that a tenth of the column is a fifth of them, so with the
+   * chart folded neither the log nor the form could be brought down to where they are allowed to
+   * go. Divided through by what is open, the floor means the same fraction of the column in every
+   * fold state, and means nothing at all when none of them are folded.
+   */
   const seam = (above?: RegionId, below?: RegionId) =>
     above && below
-      ? { ...between(split[above], split[below]), off: false }
+      ? { ...between(split[above] / spread, split[below] / spread), off: false }
       : { value: 0.5, min: 0, max: 1, off: true };
 
   /** Height out of one of them and into the other, leaving every other region where it was. */
@@ -273,6 +292,83 @@ export function Workspace({ panel, wide = false, tree, log, logCount, chart, pub
       ) ?? split
     );
   };
+
+  /**
+   * How tall a region would stand if it were exactly what is inside it, measured where it is.
+   *
+   * Nothing in the DOM will answer this on its own. `scrollHeight` floors at the box it is read
+   * from, so it says 'the size you already are' every time the true answer is smaller — which is
+   * every time a reader asks for a region to be made shorter. And the region itself is
+   * `overflow: hidden` and never scrolls at all, so its own scrollHeight is its clientHeight in
+   * every regime the column has.
+   *
+   * So the column is asked instead, in the one language it answers questions about height in: the
+   * measured region's track is written `min-content` for the length of a single read, the other
+   * two left as the fractions they already were, and the region's height read back. It is the
+   * same question the stylesheet asks while the column is still sizing itself to its contents,
+   * put to one track rather than to both ends at once.
+   *
+   * The template is back before the frame ends, so nothing is ever painted at the probe's sizes.
+   * What would otherwise survive it is where the panes were scrolled to: a track that changes
+   * height clamps the scroller inside it, and the measured pane exactly fits its contents while
+   * it is being measured, which pins it to the top. All three are put back.
+   */
+  const contentHeight = (id: RegionId): number => {
+    const column = columnRef.current;
+    const region = boxes[id].current;
+    if (!column || !region) return 0;
+
+    const panes = REGIONS.map((one) => column.querySelector<HTMLElement>(`#region-${one.id}`));
+    const scrolled = panes.map((pane) => pane?.scrollTop ?? 0);
+    const held = column.style.gridTemplateRows;
+
+    column.style.gridTemplateRows = REGIONS.map((one) =>
+      one.id === id ? 'min-content' : track(open(one.id), weight(one.id) / spread),
+    ).join(' auto ');
+
+    const height = region.offsetHeight;
+
+    column.style.gridTemplateRows = held;
+    panes.forEach((pane, at) => {
+      if (pane) pane.scrollTop = scrolled[at];
+    });
+
+    return height;
+  };
+
+  /**
+   * Where a boundary has to sit for one named region to be exactly as tall as what is in it.
+   *
+   * Named by its place in the column rather than by whatever happens to lie against the seam at
+   * this moment: the boundary under the log fits the log and the one over the form fits the form,
+   * however many of the three are folded away — the same reasoning as the seams' own labels. The
+   * chart is never the region fitted. It is the one that stretches, and a line has no height of
+   * its own to snap to.
+   *
+   * Null wherever there is nothing to do. Chiefly while the column is still sizing itself to its
+   * contents: both ends are already standing at exactly their own height there, so the gesture
+   * would change nothing — and would spend the column's following of the log to do it, since any
+   * split written down is a split the reader owns from then on.
+   */
+  const fitting =
+    (id: RegionId) =>
+    (above?: RegionId, below?: RegionId) =>
+    (): number | null => {
+      if (rows === null || !above || !below) return null;
+      if (id !== above && id !== below) return null;
+
+      const near = boxes[above].current;
+      const far = boxes[below].current;
+      if (!near || !far) return null;
+
+      // The pair in pixels, against a want in pixels. Both regions are fractions of the same
+      // leftover height, so a share of the pair means the same thing in either currency.
+      const pair = near.offsetHeight + far.offsetHeight;
+      const want = contentHeight(id);
+      if (pair <= 0 || want <= 0) return null;
+
+      return id === above ? want / pair : 1 - want / pair;
+    };
 
   // The last one standing cannot be folded: a column of three shut headers is a column with
   // nothing in it, and nothing in the workspace would say what to do about that.
@@ -316,6 +412,10 @@ export function Workspace({ panel, wide = false, tree, log, logCount, chart, pub
 
       <div className={styles.pane}>{tree}</div>
 
+      {/* No fit on this boundary, nor on the panel's. A width would have to snap to the widest row
+          the tree is holding, which is whichever topic arrived last and is gone again when that
+          one is retired — a gesture that answers differently every minute is not one a reader can
+          learn. The regions below have heights their contents actually settle at. */}
       <ResizeHandle
         axis="x"
         label="Topics and log boundary"
@@ -353,8 +453,16 @@ export function Workspace({ panel, wide = false, tree, log, logCount, chart, pub
           label="Log and chart boundary"
           {...seam(logChart.above, logChart.below)}
           onChange={move(logChart.above, logChart.below)}
+          fit={{ title: 'Fit the log', share: fitting('log')(logChart.above, logChart.below) }}
         />
-        <Region id="chart" label="Chart" open={open('chart')} alone={alone} onFold={fold}>
+        <Region
+          id="chart"
+          label="Chart"
+          open={open('chart')}
+          alone={alone}
+          onFold={fold}
+          innerRef={chartRef}
+        >
           {chart}
         </Region>
         <ResizeHandle
@@ -362,6 +470,10 @@ export function Workspace({ panel, wide = false, tree, log, logCount, chart, pub
           label="Chart and publish boundary"
           {...seam(chartPublish.above, chartPublish.below)}
           onChange={move(chartPublish.above, chartPublish.below)}
+          fit={{
+            title: 'Fit the publish form',
+            share: fitting('publish')(chartPublish.above, chartPublish.below),
+          }}
         />
         <Region
           id="publish"
