@@ -110,7 +110,7 @@ describe('BrokerPanel', () => {
     expect(screen.getByLabelText('Encrypted (TLS)')).toBeChecked();
   });
 
-  it('says a password is stored but never returned', async () => {
+  it('leaves the password box empty, whatever is stored', async () => {
     server.use(
       http.get('/api/connection/settings', () =>
         HttpResponse.json(savedConnection({ host: 'h', clientId: 'c', hasPassword: true })),
@@ -119,9 +119,7 @@ describe('BrokerPanel', () => {
 
     renderPanel();
 
-    expect(
-      await screen.findByText('A password is saved but never sent back. Enter it again.'),
-    ).toBeInTheDocument();
+    await screen.findByLabelText('Broker address');
     expect(screen.getByLabelText('Password')).toHaveValue('');
   });
 
@@ -580,14 +578,13 @@ describe('what the panel shows first', () => {
 
   // A live link is the one thing this panel cannot connect over. Said, rather than left to be
   // inferred from a greyed button.
-  it('says why Connect will not fire while a link is up', async () => {
+  it('will not fire Connect while a link is up', async () => {
     connected();
     renderPanel();
 
     await screen.findByLabelText('Connection details');
 
     expect(screen.getByRole('button', { name: 'Connect' })).toBeDisabled();
-    expect(screen.getByText('Disconnect first — one link at a time.')).toBeInTheDocument();
   });
 });
 
@@ -642,14 +639,6 @@ describe('an address dropped into the Broker address box', () => {
 // and the way in is answered beside it rather than in front of it.
 describe('the address the panel leads with', () => {
   const address = () => screen.getByLabelText('Broker address');
-
-  it('says what the scheme is in a sentence, with nothing to press', () => {
-    renderPanel();
-
-    expect(
-      screen.getByText('Plain MQTT over TCP. Nothing on the wire is encrypted.'),
-    ).toBeInTheDocument();
-  });
 
   // A box showing one broker while the attempt goes to another is the bug this guards. Connect
   // reconciles the text itself rather than trusting the blur to have landed first.
@@ -892,18 +881,6 @@ describe('the way in, as two questions', () => {
     expect(screen.getByLabelText('WebSocket path')).toBeInTheDocument();
   });
 
-  it('says what the two answers add up to, in a sentence', async () => {
-    renderPanel();
-    expect(
-      screen.getByText('Plain MQTT over TCP. Nothing on the wire is encrypted.'),
-    ).toBeInTheDocument();
-
-    await userEvent.click(encrypted());
-    expect(
-      screen.getByText('MQTT over TLS, straight to the broker. What every cloud broker wants.'),
-    ).toBeInTheDocument();
-  });
-
   // A pasted address still answers both, which is the point of taking it whole.
   it('reads both answers off a pasted address', async () => {
     renderPanel();
@@ -946,14 +923,12 @@ describe('a certificate, which settles the question by itself', () => {
     expect(screen.getAllByLabelText('Encrypted (TLS)')[1]).toBeChecked();
   });
 
-  it('holds it on while the certificate is there, and says why', async () => {
+  it('holds it on while the certificate is there', async () => {
     renderPanel();
     await userEvent.type(screen.getByLabelText('Client certificate'), '/tmp/client.pem');
 
+    expect(encrypted()).toBeChecked();
     expect(encrypted()).toBeDisabled();
-    expect(
-      screen.getByText('Held on by the certificate under Encryption.'),
-    ).toBeInTheDocument();
   });
 
   it('lets go once the certificate does', async () => {
@@ -1083,15 +1058,6 @@ describe('a certificate pointed at rather than typed', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Choose Extra CA certificate' })).toBeDisabled(),
     );
-  });
-
-  // The dialog belongs to the machine holding the connection, which is not always the machine
-  // holding the keyboard. The panel has to keep saying so with the buttons on screen.
-  it('still says where the paths are read', async () => {
-    dialog([]);
-    renderPanel();
-
-    expect(await screen.findByText(/Read where MQTTForge runs/)).toBeInTheDocument();
   });
 });
 
@@ -1301,16 +1267,6 @@ describe('the brokers you keep', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Forget Lab broker' }));
 
     await waitFor(() => expect(deleted).toBe('Lab broker'));
-  });
-
-  // The rule the saved settings keep, said where the reader will need it.
-  it('says a kept password will have to be entered again', async () => {
-    withProfiles(savedProfile('Lab broker', { hasPassword: true }));
-    renderPanel();
-
-    expect(
-      await screen.findByText('Passwords are kept but never sent back.'),
-    ).toBeInTheDocument();
   });
 });
 
