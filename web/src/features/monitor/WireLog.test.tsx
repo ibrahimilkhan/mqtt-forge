@@ -95,7 +95,7 @@ describe('WireLog', () => {
     useSelectionStore.getState().select(chip);
 
     render(<Monitor />);
-    await userEvent.click(screen.getByRole('button', { name: '2 in history' }));
+    await userEvent.click(screen.getByRole('button', { name: '1 in history' }));
 
     const topics = screen.getAllByTestId('topic').map((topic) => topic.textContent);
     expect(topics).toEqual(['sensors/hall/temp', 'sensors/room/temp']);
@@ -131,7 +131,7 @@ describe('WireLog', () => {
 
     expect(screen.getAllByTestId('entry')).toHaveLength(1);
     expect(screen.getByTestId('topic')).toHaveTextContent('sensors/7');
-    expect(screen.getByRole('button', { name: '8 in history' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '7 in history' })).toBeInTheDocument();
   });
 
   // The count answers 'how much history is there on this topic', so what the log holds for other
@@ -142,7 +142,7 @@ describe('WireLog', () => {
 
     render(<Monitor />);
 
-    expect(screen.getByRole('button', { name: '2 in history' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '1 in history' })).toBeInTheDocument();
   });
 
   it('reveals the rest on demand and folds them back', async () => {
@@ -150,7 +150,7 @@ describe('WireLog', () => {
     useSelectionStore.getState().select(chip);
 
     render(<Monitor />);
-    await userEvent.click(screen.getByRole('button', { name: '8 in history' }));
+    await userEvent.click(screen.getByRole('button', { name: '7 in history' }));
 
     expect(screen.getAllByTestId('entry')).toHaveLength(8);
 
@@ -159,37 +159,28 @@ describe('WireLog', () => {
     expect(screen.getAllByTestId('entry')).toHaveLength(1);
   });
 
-  // Still counted, since 'how much is here' is worth an answer either way — but there is nothing
-  // behind it to reveal, so it is a readout rather than a handle.
-  it('states the count without offering to expand a lone entry', () => {
+  // A lone entry has nothing behind it, so the pane says nothing about it. It used to read
+  // '1 in history' — a count of the one message on screen, printed under that message.
+  it('says nothing about history when there is none behind the message', () => {
     received('sensors/a');
     useSelectionStore.getState().select(chip);
 
     render(<Monitor />);
 
-    expect(screen.getByText('1 in history')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '1 in history' })).not.toBeInTheDocument();
+    expect(screen.getAllByTestId('entry')).toHaveLength(1);
+    expect(screen.queryByText(/in history/)).not.toBeInTheDocument();
   });
 
-  // Which element carries the count depends on whether there is history behind it, and that is a
-  // fact about what it does, not about how it reads: one line of type either way.
-  it('sets the count in the same type whether or not it opens onto anything', () => {
-    const look = (element: HTMLElement) => {
-      const style = getComputedStyle(element);
-      return [style.fontFamily, style.fontSize, style.letterSpacing, style.textTransform, style.color]
-        .join(' ');
-    };
-
-    received('sensors/a');
+  // The count is what is held back, not what there is. The message being read is on screen and
+  // counting it made the line answer a question nobody asked.
+  it('counts what is behind the message rather than the whole run', () => {
+    received('sensors/a', 'sensors/b', 'sensors/c');
     useSelectionStore.getState().select(chip);
-    const lone = render(<Monitor />);
-    const readout = look(screen.getByText('1 in history'));
-    lone.unmount();
 
-    received('sensors/b');
     render(<Monitor />);
 
-    expect(look(screen.getByRole('button', { name: '2 in history' }))).toBe(readout);
+    expect(screen.getAllByTestId('entry')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: '2 in history' })).toBeInTheDocument();
   });
 
   it('folds the list back up when the selection changes', async () => {
@@ -198,7 +189,7 @@ describe('WireLog', () => {
     useSelectionStore.getState().select(chip);
 
     render(<Monitor />);
-    await userEvent.click(screen.getByRole('button', { name: '8 in history' }));
+    await userEvent.click(screen.getByRole('button', { name: '7 in history' }));
     act(() => useSelectionStore.getState().select({ label: 'actuators', filter: 'actuators/#' }));
 
     expect(screen.getAllByTestId('entry')).toHaveLength(1);
@@ -467,7 +458,7 @@ describe('opening the history', () => {
     const done = laidOut(200, 50);
 
     render(inRegion(<Monitor />));
-    await userEvent.click(screen.getByRole('button', { name: '6 in history' }));
+    await userEvent.click(screen.getByRole('button', { name: '5 in history' }));
 
     // Six rows of fifty in a region two hundred deep: four are on screen, two are not.
     expect(screen.getByRole('button', { name: '2 more below' })).toBeInTheDocument();
@@ -480,21 +471,23 @@ describe('opening the history', () => {
     const done = laidOut(400, 50);
 
     render(inRegion(<Monitor />));
-    await userEvent.click(screen.getByRole('button', { name: '3 in history' }));
+    await userEvent.click(screen.getByRole('button', { name: '2 in history' }));
 
     expect(screen.queryByRole('button', { name: /more below/ })).not.toBeInTheDocument();
     done();
   });
 
   // A screen of a list is only rarely a whole number of rows, and a step of a fixed distance
-  // leaves the last one cut in half at the fold.
-  it('scrolls on to where a row ends, not to a fixed distance', async () => {
+  // leaves the last one cut in half at the fold. It stops three pixels past the row's own end,
+  // so the row it lands on finishes just short of the edge rather than hard against it — a value
+  // sitting on the fold reads as a value that has been cut.
+  it('scrolls on to where a row ends, with room left under it', async () => {
     readings('sensors/temp', ...Array.from({ length: 6 }, (_, i) => `${i}`));
     useSelectionStore.getState().select(chip);
     const done = laidOut(200, 50);
 
     render(inRegion(<Monitor />));
-    await userEvent.click(screen.getByRole('button', { name: '6 in history' }));
+    await userEvent.click(screen.getByRole('button', { name: '5 in history' }));
 
     const region = screen.getByTestId('region');
     const scrolled: unknown[] = [];
@@ -504,8 +497,9 @@ describe('opening the history', () => {
     await userEvent.click(screen.getByRole('button', { name: '2 more below' }));
 
     // Six rows of fifty, the fold at two hundred: the furthest row ending within a screen of it
-    // is the last, and it ends a hundred below — so the screen it lands on ends where it does.
-    expect(scrolled).toEqual([{ top: 100, behavior: 'smooth' }]);
+    // is the last, and it ends a hundred below — so the screen it lands on ends where it does,
+    // plus the three pixels that keep the row off the edge rather than against it.
+    expect(scrolled).toEqual([{ top: 103, behavior: 'smooth' }]);
     done();
   });
 
@@ -516,7 +510,7 @@ describe('opening the history', () => {
     useSelectionStore.getState().select(chip);
 
     render(<Monitor />);
-    await userEvent.click(screen.getByRole('button', { name: '70 in history' }));
+    await userEvent.click(screen.getByRole('button', { name: '69 in history' }));
 
     expect(screen.getAllByTestId('entry')).toHaveLength(MIN_TOPIC_ENTRIES);
     expect(screen.getByRole('button', { name: `${MIN_TOPIC_ENTRIES} more` })).toBeInTheDocument();
@@ -527,7 +521,7 @@ describe('opening the history', () => {
     useSelectionStore.getState().select(chip);
 
     render(<Monitor />);
-    await userEvent.click(screen.getByRole('button', { name: '3 in history' }));
+    await userEvent.click(screen.getByRole('button', { name: '2 in history' }));
 
     expect(screen.getAllByTestId('entry')).toHaveLength(3);
     await userEvent.click(screen.getByRole('button', { name: 'Show fewer' }));
@@ -541,7 +535,7 @@ describe('opening the history', () => {
     useSelectionStore.getState().select(chip);
 
     render(<Monitor />);
-    await userEvent.click(screen.getByRole('button', { name: '3 in history' }));
+    await userEvent.click(screen.getByRole('button', { name: '2 in history' }));
 
     expect(screen.getAllByTestId('topic')).toHaveLength(1);
   });
@@ -553,7 +547,7 @@ describe('opening the history', () => {
     useSelectionStore.getState().select(chip);
 
     render(<Monitor />);
-    await userEvent.click(screen.getByRole('button', { name: '3 in history' }));
+    await userEvent.click(screen.getByRole('button', { name: '2 in history' }));
 
     expect(screen.getAllByTestId('topic')).toHaveLength(3);
   });
@@ -625,7 +619,7 @@ describe('holding the pane still', () => {
     act(() => readings('sensors/temp', '99'));
 
     expect(screen.getByTestId('body')).toHaveTextContent('22');
-    expect(screen.getByRole('button', { name: /2 in history/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /1 in history/ })).toBeInTheDocument();
   });
 
   it('says how many arrived while it was held', async () => {
@@ -1445,7 +1439,7 @@ describe('colour rules', () => {
     received('sensors/a/temp', 'sensors/a/hum');
 
     render(<Monitor />);
-    await userEvent.click(screen.getByRole('button', { name: '2 in history' }));
+    await userEvent.click(screen.getByRole('button', { name: '1 in history' }));
 
     await waitFor(() => expect(topicOf('sensors/a/temp')).toHaveStyle({ color: '#b45309' }));
     expect(topicOf('sensors/a/hum').style.color).toBe('');
@@ -1503,7 +1497,7 @@ describe('the entry wears its rule on the left edge', () => {
     received('sensors/a/temp', 'sensors/a/hum');
 
     render(<Monitor />);
-    await userEvent.click(screen.getByRole('button', { name: '2 in history' }));
+    await userEvent.click(screen.getByRole('button', { name: '1 in history' }));
 
     await waitFor(() => expect(edgeOf('sensors/a/temp')).toBe('#b45309'));
     expect(edgeOf('sensors/a/hum')).toBe('');

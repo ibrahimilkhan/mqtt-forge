@@ -7,6 +7,16 @@ import { useHoldStore, useTraffic } from './useTraffic';
 import styles from './WireLog.module.css';
 
 /**
+ * The room left under the last row a step lands on, in pixels.
+ *
+ * Landing a row exactly on the fold is right to the pixel and wrong to the eye: a value sitting
+ * hard against the edge of its region reads as a value that has been cut, and the reader looks
+ * for the rest of it. Three pixels is the channel the whole console is spaced by, and it is
+ * enough to say the row ends where it ends.
+ */
+const TAIL = 3;
+
+/**
  * The top of the right column: what arrived last, and the rest of it on request.
  *
  * The chart that reads this run sits under it in its own region, and the publish form under
@@ -77,10 +87,15 @@ function EntryList() {
   const list = useRef<HTMLDivElement>(null);
   const { below, onward } = useBelowFold(list, count);
 
-  // What the log still holds on this topic, which is what says whether there is history to open
-  // and how far back it goes. Not the whole log: the pane only ever answers for the selection.
-  const history = `${entries.length} in history`;
-  const more = Math.min(MIN_TOPIC_ENTRIES, entries.length - count);
+  // What the log is holding BACK on this topic — the run behind what is drawn, which is what says
+  // whether there is any history to open and how far it goes. Not the whole run: the newest
+  // message is on screen, and counting it made the line answer a question nobody asked. It also
+  // made the one-message case say '1 in history' about the message being read.
+  //
+  // Not the whole log either: the pane only ever answers for the selection.
+  const behind = entries.length - count;
+  const history = `${behind} in history`;
+  const more = Math.min(MIN_TOPIC_ENTRIES, behind);
 
   return (
     <>
@@ -104,10 +119,11 @@ function EntryList() {
         {loaded && `${loaded} loaded into publish`}
       </span>
 
-      <div className={styles.foot}>
-        {/* A lone entry is already all of them, so the count states itself rather than offering
-            to open onto nothing. */}
-        {entries.length > 1 ? (
+      {/* A lone entry has nothing behind it, so there is no foot at all. It used to carry a line
+          reading '1 in history' — a count of the one message the reader was looking at, under the
+          message, in a pane whose whole job is to show it. Nothing to say is nothing to draw. */}
+      {entries.length > 1 && (
+        <div className={styles.foot}>
           <button
             type="button"
             className={styles.history}
@@ -118,14 +134,12 @@ function EntryList() {
               setCount(all ? 1 : count === 1 ? MIN_TOPIC_ENTRIES : count + MIN_TOPIC_ENTRIES)
             }
           >
-            {/* Unopened it says how much there is; opened it says how much more it will draw;
+            {/* Unopened it says how much is held back; opened it says how much more it will draw;
                 exhausted it offers the way back. */}
             {all ? 'Show fewer' : count === 1 ? history : `${more} more`}
           </button>
-        ) : (
-          <p className={styles.history}>{history}</p>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Opened, the run is nearly always taller than the region it is drawn in, and the only
           thing saying so was a scrollbar — which on this platform is not drawn until the pointer
@@ -211,7 +225,8 @@ function useBelowFold(listRef: RefObject<HTMLDivElement | null>, drawn: number) 
   // rarely a whole number of rows, so a fixed step leaves the last one cut in half at the fold,
   // and the reader's eye has to decide whether the half-value it can see is worth scrolling for.
   // The step here is the furthest row that ends within a screen of where the fold is now, so the
-  // screen it lands on finishes exactly where that row does.
+  // screen it lands on finishes exactly where that row does — plus TAIL, so it finishes just
+  // short of the edge rather than against it.
   const onward = () => {
     const pane = region.current;
     const list = listRef.current;
@@ -226,7 +241,7 @@ function useBelowFold(listRef: RefObject<HTMLDivElement | null>, drawn: number) 
     }
 
     // Nothing ends inside the next screen: one row is taller than the region, so take the screen.
-    pane.scrollBy({ top: step || pane.clientHeight, behavior: 'smooth' });
+    pane.scrollBy({ top: (step || pane.clientHeight) + TAIL, behavior: 'smooth' });
   };
 
   return { below, onward };
