@@ -20,18 +20,33 @@ type Props = {
   min: number;
   max: number;
   onChange: (value: number) => void;
-  /** A region either side of it is shut, so there is no boundary here to move. */
+  /** Nothing left with a height on one side of it, so there is no boundary here to move. */
   off?: boolean;
 };
+
+/**
+ * The nearest thing on one side with a height to give.
+ *
+ * A folded region marks itself, and this steps over it: with the chart folded the column is the
+ * log, a strip, and the form, so the boundary above the strip divides the log from the form and
+ * has to measure them rather than the strip it happens to sit against.
+ */
+function reach(from: Element | null | undefined, step: 'previousElementSibling' | 'nextElementSibling') {
+  for (let node = from; node; node = node[step]) {
+    if (!node.hasAttribute('data-folded')) return node.getBoundingClientRect();
+  }
+
+  return null;
+}
 
 // Measures the two panes it sits between rather than taking refs to them, so neither is aware it
 // is being resized.
 //
-// The pair, not the box they share. Fold the log away and the right column is a header, a chart
+// The pair, not the box they share. Fold a region away and the right column is a header, a chart
 // and a form: the boundary the reader is dragging is no longer at any fixed fraction of the
 // column, because a folded region takes a header's worth of it and gives up the rest. The pair
-// either side of a seam is always contiguous and always laid out, so its own rect answers where
-// the seam is without anyone having to know what else is in the column, or what it is doing.
+// either side of a seam is always laid out, so their own rects answer where the seam is without
+// anyone having to know what else is in the column, or what it is doing.
 export function ResizeHandle({ axis, label, value, min, max, onChange, off = false }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -48,20 +63,35 @@ export function ResizeHandle({ axis, label, value, min, max, onChange, off = fal
 
   const dragTo = (event: PointerEvent<HTMLDivElement>) => {
     const bar = ref.current;
-    const near = bar?.previousElementSibling?.getBoundingClientRect();
-    const far = bar?.nextElementSibling?.getBoundingClientRect();
+    const near = reach(bar?.previousElementSibling, 'previousElementSibling');
+    const far = reach(bar?.nextElementSibling, 'nextElementSibling');
     if (!near || !far) return;
 
-    const [start, end, along] =
+    const [nearStart, nearEnd, farStart, farEnd, along] =
       axis === 'x'
-        ? [near.left, far.right, event.clientX]
-        : [near.top, far.bottom, event.clientY];
+        ? [near.left, near.right, far.left, far.right, event.clientX]
+        : [near.top, near.bottom, far.top, far.bottom, event.clientY];
 
     // An unmeasured layout reports zero size; there is nothing to divide yet.
-    const span = end - start;
-    if (span <= 0) return;
+    const held = nearEnd - nearStart;
+    const pair = held + (farEnd - farStart);
+    if (pair <= 0) return;
 
-    frame.offer(clamp((along - start) / span));
+    // How much of the pair lies behind the pointer.
+    //
+    // Not the pointer's fraction of the distance from one end to the other, which is what this
+    // used to be: everything between the two — this bar, and any folded strip it stepped over to
+    // find them — belongs to neither pane, and counting it in made the seam trail the pointer by
+    // the width of whatever was in the way. Inside a pane the answer is how far into it the
+    // pointer has come; in the gap between them the pane simply ends where it ends.
+    const behind =
+      along <= nearStart ? 0
+      : along <= nearEnd ? along - nearStart
+      : along >= farEnd ? pair
+      : along >= farStart ? held + (along - farStart)
+      : held;
+
+    frame.offer(clamp(behind / pair));
   };
 
   const grab = (event: PointerEvent<HTMLDivElement>) => {

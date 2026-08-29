@@ -181,16 +181,37 @@ export function Workspace({ panel, wide = false, tree, log, chart, publish }: Pr
     setWidths({ ...widths, tree: share * pair - spare, right: (1 - share) * pair - spare });
   };
 
-  const moveLogEdge = (share: number) => {
-    const now = measured();
-    const pair = now.log + now.chart;
-    setRows({ ...now, log: share * pair, chart: (1 - share) * pair });
-  };
+  /**
+   * The two regions a boundary in the column actually divides.
+   *
+   * Not simply the ones either side of it. A folded region is a header and nothing else, so a
+   * boundary drawn beside one divides whatever lies beyond it: fold the chart and the column is
+   * the log, a strip, and the form, and BOTH of the column's boundaries divide the log from the
+   * form. Which is what a reader grabbing either edge of that strip means — and until now neither
+   * of them did anything, so folding the chart took away the only way to shorten the log or
+   * lengthen the form.
+   *
+   * Undefined where there is nothing left with a height on that side, and then the boundary has
+   * nothing to divide and says so.
+   */
+  const divides = (boundary: number) => ({
+    above: [...REGIONS.slice(0, boundary + 1)].reverse().find(({ id }) => open(id))?.id,
+    below: REGIONS.slice(boundary + 1).find(({ id }) => open(id))?.id,
+  });
 
-  const moveChartEdge = (share: number) => {
+  /** Where a boundary sits between the two it divides, or nothing to sit between. */
+  const seam = (above?: RegionId, below?: RegionId) =>
+    above && below
+      ? { ...between(split[above], split[below]), off: false }
+      : { value: 0.5, min: 0, max: 1, off: true };
+
+  /** Height out of one of them and into the other, leaving every other region where it was. */
+  const move = (above?: RegionId, below?: RegionId) => (share: number) => {
+    if (!above || !below) return;
+
     const now = measured();
-    const pair = now.chart + now.publish;
-    setRows({ ...now, chart: share * pair, publish: (1 - share) * pair });
+    const pair = now[above] + now[below];
+    setRows({ ...now, [above]: share * pair, [below]: (1 - share) * pair });
   };
 
   // What the column is actually divided into right now. Until the log has grown, that is not the
@@ -218,6 +239,9 @@ export function Workspace({ panel, wide = false, tree, log, chart, publish }: Pr
 
   const fold = (id: RegionId) =>
     setShut((closed) => (closed.includes(id) ? closed.filter((one) => one !== id) : [...closed, id]));
+
+  const logChart = divides(0);
+  const chartPublish = divides(1);
 
   return (
     <div
@@ -263,12 +287,15 @@ export function Workspace({ panel, wide = false, tree, log, chart, publish }: Pr
         <Region id="log" label="Log" open={open('log')} alone={alone} onFold={fold} innerRef={logRef}>
           {log}
         </Region>
+        {/* Named for its place in the column rather than for what it divides at this moment: the
+            places are fixed and what they divide is not, and two boundaries that renamed
+            themselves to the same pair when the chart folded would be two controls a reader
+            cannot tell apart. What they divide right now is in the values. */}
         <ResizeHandle
           axis="y"
           label="Log and chart boundary"
-          {...between(split.log, split.chart)}
-          onChange={moveLogEdge}
-          off={!open('log') || !open('chart')}
+          {...seam(logChart.above, logChart.below)}
+          onChange={move(logChart.above, logChart.below)}
         />
         <Region id="chart" label="Chart" open={open('chart')} alone={alone} onFold={fold}>
           {chart}
@@ -276,9 +303,8 @@ export function Workspace({ panel, wide = false, tree, log, chart, publish }: Pr
         <ResizeHandle
           axis="y"
           label="Chart and publish boundary"
-          {...between(split.chart, split.publish)}
-          onChange={moveChartEdge}
-          off={!open('chart') || !open('publish')}
+          {...seam(chartPublish.above, chartPublish.below)}
+          onChange={move(chartPublish.above, chartPublish.below)}
         />
         <Region
           id="publish"
@@ -341,7 +367,15 @@ function Region({
   const locked = open && alone;
 
   return (
-    <div ref={innerRef} className={styles.region} data-region={id} data-open={open ? '' : undefined}>
+    <div
+      ref={innerRef}
+      className={styles.region}
+      data-region={id}
+      data-open={open ? '' : undefined}
+      // For the seams either side of it: a folded region has no height to give, so a drag steps
+      // over it to reach whatever does. See ResizeHandle's own measurement.
+      data-folded={open ? undefined : ''}
+    >
       <button
         type="button"
         className={styles.regionHead}
