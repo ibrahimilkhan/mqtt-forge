@@ -37,7 +37,7 @@ public sealed class ExportController : ControllerBase
         // or a request that hangs until the first is answered.
         if (await _service.ChooseAsync(ct) == ExportService.Choice.AlreadyOpen)
             return Problem(
-                "A folder dialog is already open on the host.",
+                "A folder dialog is already open on the host. Answer that one first.",
                 statusCode: StatusCodes.Status409Conflict);
 
         return Ok(new ExportFolderDto(_service.Folder, _service.CanChoose));

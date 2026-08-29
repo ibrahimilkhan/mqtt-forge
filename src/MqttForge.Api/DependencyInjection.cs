@@ -36,11 +36,15 @@ public static class DependencyInjection
         services.AddSingleton<SavedProfileService>();
         services.AddSingleton<PublishService>();
         services.AddSingleton<SubscriptionService>();
-        // Both pickers are registered by the host that owns a window, and by nothing else — a run
-        // with no window resolves null here and each interface says so its own way: the export
-        // falls back to a download, and the certificate boxes stay boxes you type a path into.
-        services.AddSingleton(sp => new ExportService(sp.GetService<IFolderPicker>()));
-        services.AddSingleton(sp => new CertificatePicker(sp.GetService<IFilePicker>()));
+        // One window, so one dialog on it — whichever of the two asked for it.
+        services.AddSingleton<HostDialogs>();
+        // Both pickers are registered by the host that owns that window, and by nothing else — a
+        // run with no window resolves null here and each interface says so its own way: the
+        // export falls back to a download, and the certificate boxes stay boxes you type into.
+        services.AddSingleton(sp => new ExportService(
+            sp.GetService<IFolderPicker>(), sp.GetRequiredService<HostDialogs>()));
+        services.AddSingleton(sp => new CertificatePicker(
+            sp.GetService<IFilePicker>(), sp.GetRequiredService<HostDialogs>()));
         return services;
     }
 }

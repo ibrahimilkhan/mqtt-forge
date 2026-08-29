@@ -15,7 +15,7 @@ namespace MqttForge.Application.Services;
 /// one window, each holding a request open until somebody answered it.
 /// </para>
 /// </remarks>
-public sealed class CertificatePicker : IDisposable
+public sealed class CertificatePicker
 {
     /// <summary>Which of the three fields is being filled in, which is what names the dialog.</summary>
     public enum Kind
@@ -61,10 +61,19 @@ public sealed class CertificatePicker : IDisposable
     // is turned away rather than queued behind it. Queued, its request would hang for as long as
     // the first went unanswered — up to the picker's own five minutes — and then open a dialog
     // nobody was waiting for any more.
-    private readonly SemaphoreSlim _choosing = new(1, 1);
+    //
+    // Not this service's own count: the export folder's dialog goes on the same window.
+    private readonly HostDialogs _window;
 
     // Null when the host has no window to hang a dialog on — a plain `dotnet run`, or a test.
-    public CertificatePicker(IFilePicker? picker = null) => _picker = picker;
+    public CertificatePicker(IFilePicker? picker = null, HostDialogs? window = null)
+    {
+        _picker = picker;
+        // A service standing on its own is the only thing that could put a dialog up, so a window
+        // of its own is the right default. A real host has one window and hands both services the
+        // same one.
+        _window = window ?? new HostDialogs();
+    }
 
     /// <summary>Whether this host can ask for a file at all.</summary>
     public bool CanChoose => _picker is not null;
@@ -122,26 +131,27 @@ public sealed class CertificatePicker : IDisposable
     /// A file that is not there is reported as nothing chosen rather than passed on. An open
     /// dialog should not be able to name one, but a path that cannot be read is a connect failure
     /// several steps later, and the box this fills in is the last place it would be looked for.
+    /// <para>
+    /// The token belongs to this call and not to the dialog. Giving up on the answer is allowed —
+    /// a console whose reader closed the tab is not owed one — but it does not take the dialog
+    /// off the window, because nothing can: no host here offers a way to close a dialog it has
+    /// already put up. So the gate stays shut until that dialog is answered, and a request that
+    /// walked away cannot leave the next one free to stack a second dialog on top of the first.
+    /// </para>
     /// </remarks>
     public async Task<Answer> ChooseAsync(Kind kind, CancellationToken token = default)
     {
         if (_picker is null) return new Answer(Choice.Unavailable, null);
 
-        if (!await _choosing.WaitAsync(0, token)) return new Answer(Choice.AlreadyOpen, null);
+        // No token passed on: the picker's own five minutes are what bound a dialog nobody
+        // answers, and they are about the dialog rather than about this call.
+        var dialog = _window.Show(() => _picker.PickAsync(TitleFor(kind), FiltersFor(kind)));
+        if (dialog is null) return new Answer(Choice.AlreadyOpen, null);
 
-        try
-        {
-            var chosen = await _picker.PickAsync(TitleFor(kind), FiltersFor(kind), token);
+        var chosen = await dialog.WaitAsync(token);
 
-            return string.IsNullOrWhiteSpace(chosen) || !File.Exists(chosen)
-                ? new Answer(Choice.Unchanged, null)
-                : new Answer(Choice.Chosen, chosen);
-        }
-        finally
-        {
-            _choosing.Release();
-        }
+        return string.IsNullOrWhiteSpace(chosen) || !File.Exists(chosen)
+            ? new Answer(Choice.Unchanged, null)
+            : new Answer(Choice.Chosen, chosen);
     }
-
-    public void Dispose() => _choosing.Dispose();
 }

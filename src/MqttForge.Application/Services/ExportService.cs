@@ -14,7 +14,7 @@ namespace MqttForge.Application.Services;
 /// folder its owner already opened, which is a great deal less than the publish endpoint already
 /// allows them.
 /// </remarks>
-public sealed class ExportService : IDisposable
+public sealed class ExportService
 {
     /// <summary>Enough for the longest run the chart can hold, and far short of a disk filler.</summary>
     public const int LargestExport = 8 * 1024 * 1024;
@@ -43,17 +43,26 @@ public sealed class ExportService : IDisposable
 
     private readonly IFolderPicker? _picker;
 
-    // One dialog at a time. Two consoles on one host is the ordinary case rather than the strange
-    // one — the QR panel exists to put a second on a phone — and without this both of them asking
-    // put two dialogs on one window, each holding a request open until somebody answered it.
-    private readonly SemaphoreSlim _choosing = new(1, 1);
+    // One dialog at a time, and the count is not this service's own: the file dialog under
+    // Encryption goes on the same window. Two consoles on one host is the ordinary case rather
+    // than the strange one — the QR panel exists to put a second on a phone — and without this
+    // both of them asking put two dialogs on one window, each holding a request open until
+    // somebody answered it.
+    private readonly HostDialogs _window;
 
-    // Written under the gate above and read by any request; through Volatile so a console that
-    // asks straight after choosing is not shown the folder from before.
+    // Written by whoever answered the dialog and read by any request; through Volatile so a
+    // console that asks straight after choosing is not shown the folder from before.
     private string? _folder;
 
     // Null when the host has no window to hang a dialog on — a plain `dotnet run`, or a test.
-    public ExportService(IFolderPicker? picker = null) => _picker = picker;
+    public ExportService(IFolderPicker? picker = null, HostDialogs? window = null)
+    {
+        _picker = picker;
+        // A service standing on its own is the only thing that could put a dialog up, so a window
+        // of its own is the right default. A real host has one window and hands both services the
+        // same one.
+        _window = window ?? new HostDialogs();
+    }
 
     /// <summary>Whether this host can ask for a folder at all.</summary>
     public bool CanChoose => _picker is not null;
@@ -72,29 +81,30 @@ public sealed class ExportService : IDisposable
     /// Queued, its request would hang for as long as the first dialog went unanswered — up to the
     /// picker's own five minutes — and then open a dialog nobody was waiting for any more.
     /// </para>
+    /// <para>
+    /// The token belongs to this call and not to the dialog. Giving up on the answer is allowed —
+    /// a console whose reader closed the tab is not owed one — but it does not take the dialog
+    /// off the window, because nothing can: no host here offers a way to close a dialog it has
+    /// already put up. So the gate stays shut until that dialog is answered, and a request that
+    /// walked away cannot leave the next one free to stack a second dialog on top of the first.
+    /// </para>
     /// </remarks>
     public async Task<Choice> ChooseAsync(CancellationToken token = default)
     {
         if (_picker is null) return Choice.Unavailable;
 
-        if (!await _choosing.WaitAsync(0, token)) return Choice.AlreadyOpen;
+        // No token passed on: the picker's own five minutes are what bound a dialog nobody
+        // answers, and they are about the dialog rather than about this call.
+        var dialog = _window.Show(() => _picker.PickAsync("Where to save the readings"));
+        if (dialog is null) return Choice.AlreadyOpen;
 
-        try
-        {
-            var chosen = await _picker.PickAsync("Where to save the readings", token);
-            if (string.IsNullOrWhiteSpace(chosen) || !Directory.Exists(chosen)) return Choice.Unchanged;
+        var chosen = await dialog.WaitAsync(token);
+        if (string.IsNullOrWhiteSpace(chosen) || !Directory.Exists(chosen)) return Choice.Unchanged;
 
-            Volatile.Write(ref _folder, chosen);
+        Volatile.Write(ref _folder, chosen);
 
-            return Choice.Chosen;
-        }
-        finally
-        {
-            _choosing.Release();
-        }
+        return Choice.Chosen;
     }
-
-    public void Dispose() => _choosing.Dispose();
 
     /// <summary>Writes one file into the chosen folder, and says where it landed.</summary>
     public async Task<string> SaveAsync(string name, string content, CancellationToken token = default)
