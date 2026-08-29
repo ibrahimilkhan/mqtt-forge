@@ -1,7 +1,13 @@
 /* Shared form styles; lives under styles/ since no single component owns it. */
 
-.row { display: flex; gap: 10px; margin-bottom: 10px; }
-.row > * { flex: 1; min-width: 0; }
+/* Two fields to a line where there is room for two, and one where there is not. The basis is
+   what a box has to keep to still be a box worth typing into — under it the second field drops
+   to its own line rather than both being squeezed. No breakpoint: the row answers the width it
+   is actually given, which on this panel is the window minus whatever the measure leaves. */
+.row { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+.row > * { flex: 1 1 200px; min-width: 0; }
+/* The port, which is four digits whatever the row does. Never the field that wraps: a port on a
+   line of its own beneath an address it belongs to reads as a second address. */
 .row .narrow { flex: 0 0 96px; }
 
 .checks {
@@ -80,9 +86,10 @@
   border-top: none;
 }
 
-/* The live link and the one button that ends it, which is the whole of the panel while there is
-   one. The form below is folded behind a line — see .formFold. */
-.live { margin-bottom: 4px; }
+/* The live link and the one button that ends it, which stands first while there is one. The gap
+   under it is the gap between any two blocks here: the form below used to open on a fold line
+   that brought its own margin, and now opens on a heading that does not. */
+.live { margin-bottom: 18px; }
 
 /* What to listen to the moment the link is up, as one block: the box is what the checkbox
    means, and the two used to stand two blocks apart with a label of its own on the box. Ticking
@@ -189,17 +196,65 @@
   margin: 0 0 8px;
 }
 
-/* The broker on the left, the client on the right. auto-fit rather than two fixed tracks: below
-   about 660px one column of fields stops being readable, and the pair becomes a stack without a
-   breakpoint written anywhere. */
-.pair {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 0 28px;
-  align-items: start;
+/* The three questions, one under another: where to point it, who it says it is, and how the
+   channel is secured.
+
+   This was two columns — the broker beside the client — and the pair only ever held at the two
+   widest windows. Under about 660px it stacked anyway, so the same panel read down one order on
+   a desktop and a different one on a laptop. One order, at every width. */
+.form { display: flex; flex-direction: column; }
+
+/* One of those three. Set apart by the same hairline the folds below it use, so a stack of
+   blocks and a stack of folds read as one list rather than two kinds of thing. */
+.group {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule);
+}
+/* The first has nothing above it to be set apart from, and a rule under the close button drew a
+   box around empty space. */
+.group:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+/* Names the block. Deliberately not the field label's own treatment, which is where this
+   started and where it failed: BROKER over BROKER ADDRESS in the same size, weight and grey read
+   as two labels for one box rather than a heading over a section. Bigger, bolder, and in ink —
+   the panel's own title, in the voice the region strips in the workspace already use. */
+.groupTitle {
+  font-family: var(--mono);
+  font-size: var(--t-small);
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink);
+  margin: 0 0 12px;
 }
 
 /* A box held on by something else still has to look like a box that is on. The platform greys
    the tick along with the rest of the control, and at this size a greyed tick reads as no tick —
    which is the opposite of what the box means. Grey the colour, keep the tick. */
 .checks input:disabled { accent-color: var(--muted); cursor: default; }
+
+/* The third of the three blocks, which is a fold. Written in the same voice as the two headings
+   above it: what sets it apart should be that it can be pressed — the marker says so — rather
+   than that it is lettered differently from its own neighbours. Only this one; the fold nested
+   inside it, and the folds in every other panel, stay the quiet line they were. */
+.groupFold {
+  composes: more;
+  margin-top: 18px;
+  padding-top: 14px;
+}
+.groupFold > summary {
+  font-size: var(--t-small);
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  /* Ink whether it is open or shut, unlike the quiet folds this composes: it is one of the three
+     headings, and a heading that greys out when its section is closed reads as disabled. The
+     marker beside it is what says it opens. */
+  color: var(--ink);
+}
+.groupFold[open] > summary { margin-bottom: 12px; }

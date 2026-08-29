@@ -157,6 +157,20 @@
 /* A form does not get better at 1400px. The panel takes the workspace so the reader is not
    answering it down a column, but the fields stop growing where a pasted broker address stops
    needing more room — `mqtts://abc-ats.iot.eu-west-1.amazonaws.com:8883` is fifty characters,
-   and the box holds seventy at this width. Left rather than centred: the label of the first
-   field is where the eye starts, and centring moves it somewhere different for every panel. */
-.grid[data-panel='full'] section > * { max-width: 900px; }
+   and the box holds about seventy at this measure.
+
+   Centred, now that the panel is one column of fields rather than two. Left was right while the
+   form was a pair: the label of the first field was where the eye started and centring moved it
+   somewhere different for every state the panel could be in. A single stack has no such anchor
+   to protect — every block in it starts at the same left edge whatever is open — and all the
+   spare width on one side left that stack pinned to the edge of a window it no longer fills.
+   The close button rides the same measure, so it stands over the column it closes.
+
+   This is also the whole of the responsive behaviour. Below the measure there is no spare width
+   to divide, `margin-inline: auto` does nothing, and the column is simply the panel: a phone
+   gets one full-width stack, a laptop the same stack with a margin, a desktop the same stack
+   again. The rows inside it wrap on their own — see .row. */
+.grid[data-panel='full'] section > * {
+  max-width: 640px;
+  margin-inline: auto;
+}
