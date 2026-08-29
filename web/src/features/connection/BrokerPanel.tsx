@@ -9,7 +9,7 @@ import {
   saveProfile,
 } from '../../api/connection';
 import { queryKeys } from '../../api/queryKeys';
-import { Save } from '../brand/icons';
+import { Cross, Link, Save, Unlink } from '../brand/icons';
 import { Field } from '../../components/Field';
 import { PanelShell } from '../../components/PanelShell';
 import styles from '../../styles/panel.module.css';
@@ -761,7 +761,11 @@ export function BrokerPanel({
             second button on a row that started at the left and had nothing to distinguish it but
             its own sentence. It is the left-hand button on its own row now, with a disk on it, in
             a panel whose every heading says Broker — so 'this broker' was the panel's name said a
-            fourth time. The name box it opens says what is being saved anyway. */}
+            fourth time. The name box it opens says what is being saved anyway.
+
+            Every button on this row wears a mark now, which is the rule rather than a decoration:
+            one marked button beside a bare one reads as the marked one being special, and none of
+            these is. */}
         {naming === null && (
           <button
             type="button"
@@ -776,11 +780,12 @@ export function BrokerPanel({
         {attemptRunning && (
           <button
             type="button"
-            className={`${styles.steadyWidth} ${styles.trailing}`}
+            className={`${styles.iconButton} ${styles.trailing}`}
             onClick={() => guardedAbort()}
             disabled={abortMutation.isPending}
           >
-            Abort
+            <Cross />
+            <span className={styles.steadyLabel}>Abort</span>
           </button>
         )}
 
@@ -793,10 +798,11 @@ export function BrokerPanel({
         {!attemptRunning && !isOnline && (
           <button
             type="button"
-            className={`${styles.steadyWidth} ${styles.trailing}`}
+            className={`${styles.iconButton} ${styles.trailing}`}
             onClick={submit}
           >
-            Connect
+            <Link />
+            <span className={styles.steadyLabel}>Connect</span>
           </button>
         )}
       </div>
@@ -904,12 +910,15 @@ export function BrokerPanel({
         <div className={styles.live}>
           <ConnectionSummary />
           <div className={styles.actions}>
+            {/* The same mark as Connect with the join taken out of it, which is the whole of
+                what this button does. */}
             <button
               type="button"
-              className="ghost"
+              className={`ghost ${styles.iconButton}`}
               onClick={() => guardedDisconnect()}
               disabled={disconnectMutation.isPending}
             >
+              <Unlink />
               Disconnect
             </button>
           </div>

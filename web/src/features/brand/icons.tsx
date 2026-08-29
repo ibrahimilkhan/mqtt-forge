@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react';
 
 /**
- * The six marks the panel menu wears, one per panel — and two more that are not panels.
+ * The six marks the panel menu wears, one per panel — and five more that are not panels.
  *
- * Drawn here rather than pulled from an icon set. Eight glyphs is not worth a dependency, and a
+ * Drawn here rather than pulled from an icon set. Eleven glyphs is not worth a dependency, and a
  * set drawn to its own rules would sit beside the mark in `marks.tsx` looking borrowed: the same
  * 24-unit square, one weight of stroke, round ends, no fill, current colour. That is the whole
  * drawing language of this console, and these follow it — the shapes are Lucide's `antenna`,
@@ -13,10 +13,13 @@ import type { ReactNode } from 'react';
  * drawn at. The one exception is the cog, which has enough going on at sixteen pixels that the
  * heavier stroke closes its teeth up; it keeps 1.5.
  *
- * `Warning` and `Save` are the two that wear no panel, and they are drawn to the same rules for
- * the same reason: each stands next to something already drawn this way — the warning beside
- * `Antenna` on the Broker row, the disk inside a button in the same mono the button is lettered
- * in — and a shape borrowed from somewhere else would look stuck on rather than part of it.
+ * `Warning` wears no panel: it stands on the Broker row beside `Antenna`, and a triangle
+ * borrowed from somewhere else would look stuck on rather than part of the rail.
+ *
+ * The last four wear no panel either — they go inside buttons, in the same mono the button is
+ * lettered in, at the size of one line of that type. Which is what they are drawn for: a mark in
+ * a button has one line of type's worth of room and has to be recognised in it, so each of them
+ * is the simplest shape that survives thirteen pixels.
  */
 const Glyph = ({ children, weight = 1.8 }: { children: ReactNode; weight?: number }) => (
   <svg
@@ -131,6 +134,59 @@ export const Save = () => (
       <path d="M4.2 3.4h10.6l4.8 4.8v11.4a1.2 1.2 0 0 1-1.2 1.2H4.2A1.2 1.2 0 0 1 3 19.6V4.6a1.2 1.2 0 0 1 1.2-1.2z" />
       <path d="M16.6 20.8v-6.4H7.4v6.4" />
       <path d="M7.4 3.4v4.4h6.2" />
+    </>
+  </Glyph>
+);
+
+/**
+ * The link, joined — and the link, broken.
+ *
+ * One shape and the same shape with a stroke taken out of it, which is what connecting and
+ * disconnecting are. This console calls the connection 'the link' in every line it has ever
+ * written about it, so a chain link is not a metaphor here, it is the word.
+ *
+ * Lucide's `link-2` and `unlink-2`, redrawn wider than Lucide draws them: theirs sits inside the
+ * middle ten units of the square and would read as a smaller mark than the disk beside it.
+ *
+ * `Unlink`'s tails are shorter than `Link`'s. They have to be — the break is the whole of the
+ * difference between the two, and at thirteen pixels a three-unit gap is a pixel and a half.
+ * The two are never on screen together, so what each has to do is read as the link on its own.
+ */
+export const Link = () => (
+  <Glyph>
+    <>
+      <path d="M10.5 17.5H8a5.5 5.5 0 0 1 0-11h2.5" />
+      <path d="M13.5 6.5H16a5.5 5.5 0 0 1 0 11h-2.5" />
+      <path d="M9.5 12h5" />
+    </>
+  </Glyph>
+);
+
+export const Unlink = () => (
+  <Glyph>
+    <>
+      <path d="M9.5 17.5H8a5.5 5.5 0 0 1 0-11h1.5" />
+      <path d="M14.5 6.5H16a5.5 5.5 0 0 1 0 11h-1.5" />
+    </>
+  </Glyph>
+);
+
+/**
+ * Call it off.
+ *
+ * A cross, which is the one mark that needs no explaining at any size — and the reason the panel
+ * draws its close button as a character rather than a glyph is the same reason this one is two
+ * strokes: there is nothing else it could be.
+ *
+ * It exists because Abort stands in Connect's place while an attempt runs, and a button that
+ * swapped a marked word for a bare one would change width in the reader's hand. See .steadyLabel
+ * for the other half of holding that still.
+ */
+export const Cross = () => (
+  <Glyph>
+    <>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
     </>
   </Glyph>
 );
