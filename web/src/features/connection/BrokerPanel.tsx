@@ -16,9 +16,11 @@ import { useConnectionState } from '../../api/useConnectionState';
 import { ApiError, fieldError } from '../../lib/problemDetails';
 import { logFault } from '../../stores/logStore';
 import { useGuardedMutate } from '../../lib/useGuardedMutate';
+import type { CertificateFileKind } from '../../api/connection';
 import { describeConnectFailure, describeFailureReason, suggestScheme } from './connectFailure';
 import { ConnectionSummary } from './ConnectionSummary';
 import { SavedBrokers } from './SavedBrokers';
+import { useCertificateFile } from './useCertificateFile';
 import { useConnectionActions } from './useConnectionActions';
 import {
   choiceOf,
@@ -132,6 +134,7 @@ export function BrokerPanel({
     },
     onError: (error) => logFault('Forget failed', error),
   });
+  const files = useCertificateFile();
   const { connectMutation, disconnectMutation, abortMutation } = useConnectionActions();
   const { isOnline, isConnecting, failure: faulted, answered } = useConnectionState();
   const guardedConnect = useGuardedMutate(connectMutation);
@@ -602,48 +605,42 @@ export function BrokerPanel({
             checking instead.
           </p>
 
-          <div className={styles.row}>
-            <Field label="Extra CA certificate" htmlFor="caPath">
-              <input
-                id="caPath"
-                type="text"
-                placeholder="/path/to/ca.crt"
-                value={form.caPath}
-                onChange={(e) => setTls('caPath', e.target.value)}
-              />
-            </Field>
-          </div>
+          <PathField
+            label="Extra CA certificate"
+            id="caPath"
+            kind="authority"
+            placeholder="/path/to/ca.crt"
+            value={form.caPath}
+            onPath={(path) => setTls('caPath', path)}
+            files={files}
+          />
 
           {/* A row each, rather than two to a row. Paths are the longest thing anyone types
               into this panel, and half a column shows about six characters of one — measured,
               after the two shared a row and 'Client certificate' wrapped to two lines while
               'Private key' did not, leaving their boxes at different heights. */}
-          <div className={styles.row}>
-            <Field label="Client certificate" htmlFor="clientCertPath">
-              <input
-                id="clientCertPath"
-                type="text"
-                placeholder="/path/to/client.pfx or .crt"
-                value={form.clientCertPath}
-                onChange={(e) => setTls('clientCertPath', e.target.value)}
-              />
-            </Field>
-          </div>
+          <PathField
+            label="Client certificate"
+            id="clientCertPath"
+            kind="certificate"
+            placeholder="/path/to/client.pfx or .crt"
+            value={form.clientCertPath}
+            onPath={(path) => setTls('clientCertPath', path)}
+            files={files}
+          />
 
           {/* Only where there is a certificate for it to belong to, and only where that
               certificate does not already carry it. */}
           {clientCert !== '' && !bundled && (
-            <div className={styles.row}>
-              <Field label="Private key" htmlFor="clientKeyPath">
-                <input
-                  id="clientKeyPath"
-                  type="text"
-                  placeholder="/path/to/client.key"
-                  value={form.clientKeyPath}
-                  onChange={(e) => setTls('clientKeyPath', e.target.value)}
-                />
-              </Field>
-            </div>
+            <PathField
+              label="Private key"
+              id="clientKeyPath"
+              kind="key"
+              placeholder="/path/to/client.key"
+              value={form.clientKeyPath}
+              onPath={(path) => setTls('clientKeyPath', path)}
+              files={files}
+            />
           )}
 
           {clientCert !== '' && (
@@ -670,7 +667,13 @@ export function BrokerPanel({
               "read by the server", and "the server" is a word this app spends no other line
               explaining — the console looks like a web page, so a path in it reads like a path
               on the machine holding the keyboard. It is, for the desktop app; naming both cases
-              is what makes that a fact rather than a guess. */}
+              is what makes that a fact rather than a guess.
+
+              It stays on screen with the dialog buttons rather than instead of them, and it is
+              the buttons that make it worth keeping: the dialog they open belongs to that same
+              machine, so a reader on a phone browsing the desktop app's console is picking a file
+              on the desktop. Which is the right file — and not at all what the dialog looks
+              like from there. */}
           <p className={styles.note}>
             Read where MQTTForge runs, not by this browser — this machine for the desktop app,
             inside the container for a container.
@@ -863,6 +866,71 @@ export function BrokerPanel({
 // The reason off an error that carries one. Anything else — a network error, a thrown string —
 // names no reason, and a suggestion needs one to be about.
 const errorReason = (error: unknown) => (error instanceof ApiError ? error.reason : undefined);
+
+/**
+ * A path, and the dialog that fills it in.
+ *
+ * The box is the field; the button beside it is a shortcut, and it is only there on a host that
+ * has a dialog to open. Nothing about the box changes when it is missing — a path typed in by
+ * hand is what these fields have always taken, and it is still what the API is sent.
+ *
+ * The dialog answers with a path or with nothing. Nothing is a dialog somebody dismissed, and the
+ * box is left exactly as it was: a reader who opened the dialog to look, thought better of it and
+ * found their field emptied would have lost something they never asked to change.
+ */
+function PathField({
+  label,
+  id,
+  kind,
+  placeholder,
+  value,
+  onPath,
+  files,
+}: {
+  label: string;
+  id: string;
+  kind: CertificateFileKind;
+  placeholder: string;
+  value: string;
+  onPath: (path: string) => void;
+  files: ReturnType<typeof useCertificateFile>;
+}) {
+  return (
+    <div className={styles.row}>
+      <Field label={label} htmlFor={id}>
+        <div className={styles.pathLine}>
+          <input
+            id={id}
+            type="text"
+            placeholder={placeholder}
+            value={value}
+            onChange={(e) => onPath(e.target.value)}
+          />
+          {files.canChoose && (
+            <button
+              type="button"
+              className="ghost"
+              // The word on it says which of the two things it does; the label says which of the
+              // three boxes it does it to, since three buttons reading Choose… are one button as
+              // far as anything reading them out is concerned. The field's own name, uncased:
+              // lowering it turned Extra CA certificate into 'extra ca certificate'.
+              aria-label={`Choose ${label}`}
+              // One dialog at a time — the host refuses a second — so the other two wait on the
+              // one that is open rather than failing when they are pressed.
+              disabled={files.choosing}
+              onClick={async () => {
+                const path = await files.choose(kind);
+                if (path) onPath(path);
+              }}
+            >
+              {value.trim() === '' ? 'Choose…' : 'Change…'}
+            </button>
+          )}
+        </div>
+      </Field>
+    </div>
+  );
+}
 
 function FieldError({ error, field }: { error: unknown; field: string }) {
   const message = fieldError(error, field);

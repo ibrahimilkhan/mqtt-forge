@@ -91,6 +91,12 @@ Every MQTT there is, over every way in:
 - **A broker of your own** — including one with a certificate it signed itself. Name its CA and
   the chain is still verified, just to a root you supplied; or accept any certificate, which is
   a box you have to tick.
+- **The certificates, pointed at rather than typed** — in the desktop app each of those three
+  paths has a **Choose…** button beside it that opens the system's own file dialog. The dialog
+  belongs to the machine MQTTForge is running on, which is exactly the point: that is where the
+  files are read. A browser pointed at the same server gets no button — a file input hands over
+  the bytes with the path hidden, and the bytes are no use to a process that has to open the
+  file itself.
 
 When a connection does not come up, the panel says which of about thirty things went wrong and
 what to do about it — the path rather than the port when a WebSocket handshake was refused, the

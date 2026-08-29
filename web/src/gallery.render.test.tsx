@@ -923,6 +923,13 @@ function brokerStates() {
 
   const nothing = (client) => client.setQueryData(queryKeys.connection, { state: 'Disconnected' });
 
+  // A host that owns a window owns a file dialog, so the three certificate boxes each get a
+  // button beside them. False is what a browser is told, and what every other state here shows.
+  const withDialog = (client) => {
+    nothing(client);
+    client.setQueryData(queryKeys.certificateDialog, { canChoose: true });
+  };
+
   // Brokers the reader kept. The section is absent until there is one, so this is the only place
   // the chips and the rule above them can be looked at.
   const kept = (client) => {
@@ -962,6 +969,6 @@ ${one('a certificate, settling it', nothing, false, (box) => {
   fireEvent.change(box('clientCertPath'), { target: { value: '/etc/mqtt/client.pem' } });
 })}
 ${one('brokers you kept', kept)}
-${one('every fold opened', nothing, true)}
+${one('every fold opened', withDialog, true)}
 </div>`;
 }

@@ -40,3 +40,30 @@ export const saveProfile = (name: string, connection: ConnectRequest) =>
 
 export const deleteProfile = (name: string) =>
   request<void>(`/api/connection/profiles/${encodeURIComponent(name)}`, { method: 'DELETE' });
+
+// ---- the three files an encrypted connection can be given ----
+//
+// The paths are read where the server runs, so typing one is naming a path on a machine the
+// reader may not be sitting at. Where the host owns a window it owns a file dialog too, and that
+// is the one place a path can be pointed at rather than remembered.
+
+/** Which of the three boxes is being filled in, which is what names the dialog. */
+export type CertificateFileKind = 'authority' | 'certificate' | 'key';
+
+/**
+ * Whether this host can be asked for a file at all.
+ *
+ * False in a browser and true in the desktop window, and the difference is not a setting: the
+ * dialog belongs to the host, and only a host that owns a window has one. A file input cannot
+ * stand in — it hands over the bytes and hides the path, and the bytes are no use to a server
+ * that has to open the file itself.
+ */
+export const getCertificateDialog = () =>
+  request<{ canChoose: boolean }>('/api/connection/certificate-file');
+
+/** Opens the host's dialog. A dismissed dialog comes back as no path. */
+export const pickCertificateFile = (kind: CertificateFileKind) =>
+  request<{ path: string | null }>('/api/connection/certificate-file', {
+    method: 'POST',
+    ...json({ kind }),
+  });

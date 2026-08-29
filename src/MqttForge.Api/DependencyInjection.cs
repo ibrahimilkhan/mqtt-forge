@@ -36,9 +36,11 @@ public static class DependencyInjection
         services.AddSingleton<SavedProfileService>();
         services.AddSingleton<PublishService>();
         services.AddSingleton<SubscriptionService>();
-        // The picker is registered by the host that owns a window, and by nothing else — a run
-        // with no window resolves null here and the interface falls back to a download.
+        // Both pickers are registered by the host that owns a window, and by nothing else — a run
+        // with no window resolves null here and each interface says so its own way: the export
+        // falls back to a download, and the certificate boxes stay boxes you type a path into.
         services.AddSingleton(sp => new ExportService(sp.GetService<IFolderPicker>()));
+        services.AddSingleton(sp => new CertificatePicker(sp.GetService<IFilePicker>()));
         return services;
     }
 }

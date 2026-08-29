@@ -26,7 +26,8 @@ public static class DesktopBind
         int candidatePort,
         IPAddress? lanBindAddress = null,
         IPAddress? loopbackBindAddress = null,
-        IFolderPicker? picker = null)
+        IFolderPicker? picker = null,
+        IFilePicker? files = null)
     {
         lanBindAddress ??= IPAddress.Any;
         loopbackBindAddress ??= IPAddress.Loopback;
@@ -35,7 +36,7 @@ public static class DesktopBind
         try
         {
             var lanPort = PortFinder.FirstFree(candidatePort, lanBindAddress);
-            lanApp = Build(args, settingsPath, $"http://{lanBindAddress}:{lanPort}", picker);
+            lanApp = Build(args, settingsPath, $"http://{lanBindAddress}:{lanPort}", picker, files);
             await lanApp.StartAsync();
             return (lanApp, Decide(lanBindSucceeded: true, loopbackBindSucceeded: false), lanPort);
         }
@@ -48,7 +49,7 @@ public static class DesktopBind
         try
         {
             var loopbackPort = PortFinder.FirstFree(candidatePort, loopbackBindAddress);
-            loopbackApp = Build(args, settingsPath, $"http://{loopbackBindAddress}:{loopbackPort}", picker);
+            loopbackApp = Build(args, settingsPath, $"http://{loopbackBindAddress}:{loopbackPort}", picker, files);
             await loopbackApp.StartAsync();
             return (loopbackApp, Decide(lanBindSucceeded: false, loopbackBindSucceeded: true), loopbackPort);
         }
@@ -57,19 +58,22 @@ public static class DesktopBind
             if (loopbackApp is not null) await loopbackApp.DisposeAsync();
 
             // Unstarted host only so App is never null; caller skips it on Unavailable
-            var fallback = Build(args, settingsPath, urls: null, picker);
+            var fallback = Build(args, settingsPath, urls: null, picker, files);
             return (fallback, Decide(lanBindSucceeded: false, loopbackBindSucceeded: false), candidatePort);
         }
     }
 
-    // The picker is the one thing the API cannot supply for itself: it belongs to the window,
-    // and only a host that has one registers it.
-    private static WebApplication Build(string[] args, string settingsPath, string? urls, IFolderPicker? picker) =>
+    // The dialogs are the one thing the API cannot supply for itself: they belong to the window,
+    // and only a host that has one registers them. Two of them, because they ask different
+    // questions — a folder to write readings into, and a file to read a certificate from.
+    private static WebApplication Build(
+        string[] args, string settingsPath, string? urls, IFolderPicker? picker, IFilePicker? files) =>
         MqttForgeHost.Build(
             [.. args, $"--MqttForge:SettingsPath={settingsPath}"],
             urls: urls,
             configure: services =>
             {
                 if (picker is not null) services.AddSingleton(picker);
+                if (files is not null) services.AddSingleton(files);
             });
 }
