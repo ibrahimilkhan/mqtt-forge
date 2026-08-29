@@ -39,6 +39,14 @@ import {
   type BrokerForm,
 } from './brokerForm';
 
+/**
+ * How long a link has to hold before this panel steps aside for it, in milliseconds.
+ *
+ * See the effect that uses it: the failure this exists for lands inside 150ms, and a reader
+ * watching a link come up can afford to see the summary of it before the panel goes.
+ */
+export const SETTLE = 1200;
+
 const DEFAULTS: BrokerForm = {
   scheme: 'mqtt',
   host: 'localhost',
@@ -217,20 +225,56 @@ export function BrokerPanel({
     settle({ ...form, scheme, port: portFor(form.scheme, scheme, form.port) });
   };
 
-  // This panel exists to get a link up, so a link coming up is the end of its job: it stands
-  // aside and hands its column back to the traffic it just started. The rail's lamp and the
-  // address under it carry the state from here, and the menu button reopens it.
-  //
-  // Only on the change, and only after the API has answered once. Opened over a link that is
-  // already up — to read the summary, or to disconnect — nothing has just happened, and a panel
-  // that shut itself the moment it was asked for would be unusable.
+  /**
+   * A link coming up is the end of this panel's job — once the link holds.
+   *
+   * It stands aside and hands its column back to the traffic it just started; the rail's lamp and
+   * the address under it carry the state from here, and the menu button reopens it.
+   *
+   * But it does not step aside on the announcement of a link. A broker that takes the connection
+   * and then closes it a moment later is the ordinary case out on the public internet rather than
+   * the strange one: every topic is what this console asks for on connect, and a broker that will
+   * not give you every topic answers by hanging up. Against mqtt.hsl.fi the whole of that —
+   * connected, subscribed, gone — lands inside 150ms, so the panel was already shut when the
+   * sentence explaining it arrived, and the reader had to reopen the panel to find out what had
+   * become of the connect they had just pressed.
+   *
+   * So the link coming up arms the close, and only a link still up a beat later fires it. Anything
+   * that takes it down in between disarms it and the panel stays exactly where it is, with the
+   * failure and its way out under the button. The beat is an order of magnitude above that 150ms,
+   * and it is not dead time: what is on screen through it is the summary of the link that just
+   * came up.
+   *
+   * Only on the change, and only after the API has answered once. Opened over a link that is
+   * already up — to read the summary, or to disconnect — nothing has just happened, and a panel
+   * that shut itself the moment it was asked for would be unusable.
+   */
   const wasOnline = useRef<boolean | null>(null);
+  const [settling, setSettling] = useState(false);
   useEffect(() => {
     if (!answered) return;
     const before = wasOnline.current;
     wasOnline.current = isOnline;
-    if (before === false && isOnline) onClose();
-  }, [answered, isOnline, onClose]);
+
+    if (before === false && isOnline) setSettling(true);
+    else if (!isOnline) setSettling(false);
+  }, [answered, isOnline]);
+
+  // onClose is rebuilt on every render of the console, so the timer below cannot depend on it
+  // without being restarted by renders that have nothing to do with the link — which is a timer
+  // that never fires.
+  const closer = useRef(onClose);
+  useEffect(() => {
+    closer.current = onClose;
+  });
+
+  useEffect(() => {
+    if (!settling) return;
+
+    const held = setTimeout(() => closer.current(), SETTLE);
+
+    return () => clearTimeout(held);
+  }, [settling]);
 
   // Arrives after first render; neither password is ever returned by the API.
   useEffect(() => {
