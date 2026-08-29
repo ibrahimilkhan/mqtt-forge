@@ -17,6 +17,12 @@
     font-size: var(--t-body);
     line-height: 1.55;
     -webkit-font-smoothing: antialiased;
+    /* The channel runs round the outside too, or the plates would be cut off by the window on
+       three sides and lie loose on the fourth. It has to be here rather than on the workspace:
+       the console opens with the broker panel taking the whole workspace, which is one track with
+       one child and no gaps at all, so without this the change would not exist until the reader
+       closed that panel. `box-sizing: border-box` above keeps `height: 100vh` exact. */
+    padding: var(--channel);
   }
 
   /* Passes body's flex column through; otherwise this collapses to its content. */
@@ -25,6 +31,9 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+    /* Between the workspace and the diagnostics strip under it, which is the one boundary in the
+       app that is neither a grid gap nor a border any more. */
+    gap: var(--channel);
   }
 
   label {
@@ -48,7 +57,7 @@
     color: var(--ink);
     background: var(--surface);
     border: 1px solid var(--rule);
-    border-radius: 2px;
+    border-radius: var(--r-control);
     padding: 8px 22px 8px 9px;
     cursor: pointer;
     background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
@@ -67,7 +76,7 @@
     color: var(--ink);
     background: var(--surface);
     border: 1px solid var(--rule);
-    border-radius: 2px;
+    border-radius: var(--r-control);
     padding: 8px 9px;
   }
   textarea { resize: vertical; min-height: 68px; }
@@ -85,7 +94,7 @@
     letter-spacing: 0.06em;
     text-transform: uppercase;
     padding: 10px 16px;
-    border-radius: 2px;
+    border-radius: var(--r-control);
     border: 1px solid var(--ink);
     background: var(--ink);
     color: var(--surface);

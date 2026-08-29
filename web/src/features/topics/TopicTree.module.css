@@ -20,7 +20,7 @@
   width: 18px;
   height: 18px;
   margin-block: -3px;
-  border-radius: 2px;
+  border-radius: var(--r-control);
   font-family: var(--mono);
   font-size: var(--t-body);
   line-height: 1;
@@ -38,7 +38,7 @@
   gap: 8px;
   /* Fixed indent step per level, so deep topics don't drift off to the right. */
   padding: 3px 6px 3px calc(var(--depth) * 14px + 6px);
-  border-radius: 2px;
+  border-radius: var(--r-control);
   position: relative;
   /* The pane can hold a thousand rows, and every drag of a boundary relaid out all of them.
      Rows outside the viewport skip layout and paint entirely; the intrinsic size keeps the

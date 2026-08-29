@@ -10,8 +10,12 @@
     minmax(0, var(--panel)) auto
     minmax(0, var(--tree)) auto
     minmax(0, var(--right));
-  gap: 1px;
-  background: var(--rule);
+  /* No gap and no ground. The seam was 1px of gap either side of a 1px track with the resize bar
+     pulled across all three by its own negative margins — 3px of --rule, painted by the bar. It
+     is 3px of channel now, and the bar is the channel: same arithmetic to the pixel (four gaps
+     and two tracks came to 6px; no gaps and two 3px tracks come to 6px), so not one fr value,
+     not one stored width and not one measured height moves. What changes is what fills it. */
+  gap: 0;
   flex: 1;
   /* Stops a tall pane from pushing the row past the viewport. */
   min-height: 0;
@@ -28,8 +32,7 @@
     minmax(0, var(--log)) auto
     minmax(0, var(--chart)) auto
     minmax(0, var(--publish));
-  gap: 1px;
-  background: var(--rule);
+  gap: 0;
   min-height: 0;
   min-width: 0;
 }
@@ -70,6 +73,13 @@
   min-height: 0;
   min-width: 0;
   background: var(--surface);
+  /* The plate is here rather than on the body inside it: a region is a strip and a body, and the
+     corner belongs to the two of them together. `overflow: hidden` is what makes the corner real
+     — the body is its own scrollport painting its own --surface, and a square-cornered child
+     paints straight over a rounded parent. It clips nothing else: the chart thrown open is
+     `position: fixed` with no transformed ancestor, so it leaves this box entirely. */
+  border-radius: var(--r-plate);
+  overflow: hidden;
 }
 /* Folded, there is no body to leave room for. */
 .region:not([data-open]) { grid-template-rows: auto; }
@@ -93,13 +103,17 @@
   border-bottom: 1px solid transparent;
 }
 .regionHead:hover { color: var(--ink); background: var(--paper); }
+/* Folded, the strip is the whole plate — so a hover fill in the channel's own colour made the
+   plate disappear into the channel. The ink the line above already brings is enough. */
+.region:not([data-open]) .regionHead:hover { background: none; }
 .regionHead:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
 /* The last region open. Still readable, but plainly not a control any more. */
 .regionHead:disabled { cursor: default; opacity: 0.55; }
 .regionHead:disabled:hover { color: var(--muted); background: none; }
-/* Folded, the strip is the only thing in the region, so it carries the rule that the body
-   would otherwise have drawn under it. */
-.region:not([data-open]) .regionHead { border-bottom-color: var(--rule); }
+/* The folded strip used to carry a rule under it, standing in for the body that was not there.
+   It has a channel under it now, like every other section, and a line as well would be the two
+   vocabularies at once. The transparent border above stays: it is 1px of the strip's height in
+   both states, and the column measures that height. */
 
 .regionChevron { font-size: var(--t-micro); line-height: 1; }
 .regionLabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -127,9 +141,12 @@
     width: min(380px, 62%);
     /* Over the chart windows and the chart thrown open: a panel is opened to be used. */
     z-index: 300;
-    /* Its own edge, since the seam that used to draw one is not in the row any more, and the
-       scrim behind it: without both, a form lying over a tree reads as part of the tree. */
-    border-right: 1px solid var(--rule);
+    /* The scrim behind it, without which a form lying over a tree reads as part of the tree. Its
+       own edge comes from .panel's border now — see PanelShell.
+       The corner is here as well as on .panel, and it is not decoration: box-shadow follows
+       border-radius, so this is what rounds the scrim. Without it the four corners of this square
+       box stay transparent and un-dimmed, and the tree shows through them as bright notches. */
+    border-radius: var(--r-plate);
     box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--ink) 12%, transparent);
   }
   /* Its seam divides a column that is no longer in the row. */
@@ -183,4 +200,10 @@
 .grid[data-panel='full'] section > *:not([data-head]) {
   max-width: 640px;
   margin-inline: auto;
+}
+
+/* Forced colours drop every background, and the boundary a region draws is a fill against a fill
+   now rather than a border. Its own edge, inside its own box so nothing shifts. */
+@media (forced-colors: active) {
+  .region { outline: 1px solid; outline-offset: -1px; }
 }

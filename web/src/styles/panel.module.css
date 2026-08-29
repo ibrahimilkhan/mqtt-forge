@@ -197,8 +197,8 @@
    `min-width: 0` on the box because a flex item's default is its content, and a long hostname
    would otherwise push the select off the panel rather than scroll inside its own field. */
 .addressLine { display: flex; align-items: stretch; gap: 0; }
-.addressLine > input { flex: 1; min-width: 0; border-radius: 0 2px 2px 0; }
-.addressLine > select { flex: 0 0 auto; border-right: 0; border-radius: 2px 0 0 2px; }
+.addressLine > input { flex: 1; min-width: 0; border-radius: 0 var(--r-control) var(--r-control) 0; }
+.addressLine > select { flex: 0 0 auto; border-right: 0; border-radius: var(--r-control) 0 0 var(--r-control); }
 
 /* A path and the button that fills it in, on one line. The box keeps the room — a path is the
    longest thing anyone types into this panel — and the button takes only the width of its word,

@@ -17,9 +17,20 @@
   width: 52px;
   flex: none;
   background: var(--surface);
-  border-right: 1px solid var(--rule);
+  /* A plate, not the wall the plates hang on. It was welded to the workspace with a border down
+     its right side; the channel divides them now, the same way it divides everything else that
+     is a section rather than a part of one. It was already a plate in every respect but the
+     corner: its own surface, its own scroll, and at 760px it leaves the row entirely and lies
+     over the workspace on its own scrim, which is not something a wall can do. */
+  border-radius: var(--r-plate);
   overflow: hidden auto;
 }
+/* Forced colours drop every background, and the boundary this plate draws is a fill against a
+   fill now rather than a border. Its own edge, inside its own box so nothing shifts. */
+@media (forced-colors: active) {
+  .rail { outline: 1px solid; outline-offset: -1px; }
+}
+
 .rail[data-open] { width: 196px; }
 
 /* Mark, name and the control that changes the width. Shut, the three stack instead. */
@@ -79,7 +90,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 2px;
+  border-radius: var(--r-control);
 }
 .rail:not([data-open]) .railToggle { margin-left: 0; }
 .railToggle:hover { color: var(--ink); background: var(--paper); }
@@ -144,7 +155,7 @@
   color: var(--muted);
   background: none;
   border: 1px solid transparent;
-  border-radius: 2px;
+  border-radius: var(--r-control);
   cursor: pointer;
 }
 /* The icons are drawn on a 24-unit square at 1em; the rail says how big that is, the same way it
@@ -235,6 +246,17 @@
   overflow-y: auto;
 }
 
+/* The tree is the only one of the three that is a plate in its own right; the log and the chart
+   are bodies inside a region, and the region turns the corner for them — see .region. Declaring
+   it on all three would put a corner on a box that already sits inside a clipped one. */
+.treePane { border-radius: var(--r-plate); }
+/* Forced colours drop every background, and the boundary this plate draws is a fill against a
+   fill now rather than a border. Its own edge, inside its own box so nothing shifts. */
+@media (forced-colors: active) {
+  .treePane { outline: 1px solid; outline-offset: -1px; }
+}
+
+
 /* The log is sized to hold one message and the line under it, so the breathing room the other
    panes keep at the end of a scroll would be dead space below the count — and the region is
    measured with it, so it would be dead space the chart paid for. */
@@ -284,7 +306,7 @@
   padding: 10px 22px 18px;
   /* Opaque, and lifted: the console shows around it, so it must plainly not be part of it. */
   background: var(--surface);
-  border-radius: 3px;
+  border-radius: var(--r-plate);
   box-shadow:
     0 0 0 1px var(--rule),
     0 16px 44px color-mix(in srgb, var(--ink) 20%, transparent),

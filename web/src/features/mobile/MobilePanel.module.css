@@ -2,7 +2,7 @@
 .plate {
   background: #fff;
   border: 1px solid var(--rule);
-  border-radius: 3px;
+  border-radius: var(--r-plate);
   padding: 10px;
   display: flex;
   justify-content: center;

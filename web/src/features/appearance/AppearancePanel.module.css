@@ -6,7 +6,7 @@
   color: var(--ink);
   background: var(--surface);
   border: 1px solid var(--rule);
-  border-radius: 2px;
+  border-radius: var(--r-control);
   padding: 8px 9px;
 }
 
@@ -56,7 +56,7 @@
   padding: 7px 6px 5px;
   min-width: 52px;
   border: 1px solid var(--rule);
-  border-radius: 2px;
+  border-radius: var(--r-control);
   color: var(--muted);
   background: var(--surface);
   font-size: var(--t-lead);
