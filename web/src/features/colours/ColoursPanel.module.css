@@ -24,7 +24,7 @@
   font-size: var(--t-code);
   line-height: 1;
   padding: 4px 6px;
-  border-radius: 2px;
+  border-radius: var(--r-control);
 }
 /* all: unset misses the global button:hover fill; :not(:disabled) matches its specificity so this wins. */
 .remove:hover:not(:disabled) { color: var(--fault); background: var(--surface); }
@@ -41,7 +41,7 @@
   cursor: pointer;
   padding: 4px;
   border: 1px solid var(--rule);
-  border-radius: 2px;
+  border-radius: var(--r-control);
 }
 .swatchButton:hover:not(:disabled) { border-color: var(--muted); background: none; }
 .swatchButton:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
@@ -49,7 +49,7 @@
 .swatch {
   width: 14px;
   height: 14px;
-  border-radius: 2px;
+  border-radius: var(--r-control);
   /* Against a pale swatch the edge of the chip would otherwise be guesswork. */
   box-shadow: inset 0 0 0 1px rgb(19 26 36 / 0.18);
 }
@@ -62,7 +62,7 @@
   padding: 8px;
   background: var(--surface);
   border: 1px solid var(--rule);
-  border-radius: 2px;
+  border-radius: var(--r-control);
   box-shadow: 0 4px 14px rgb(19 26 36 / 0.16);
 }
 
@@ -77,7 +77,7 @@
   all: unset;
   width: 20px;
   height: 20px;
-  border-radius: 2px;
+  border-radius: var(--r-control);
   cursor: pointer;
   box-shadow: inset 0 0 0 1px rgb(19 26 36 / 0.18);
 }
@@ -104,7 +104,7 @@
   height: 22px;
   padding: 0;
   border: 1px solid var(--rule);
-  border-radius: 2px;
+  border-radius: var(--r-control);
   background: none;
   cursor: pointer;
 }

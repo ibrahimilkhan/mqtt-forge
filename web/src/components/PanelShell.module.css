@@ -1,6 +1,7 @@
 /* Scrolls on its own rather than growing the row, so switching panels keeps layout height fixed. */
 .panel {
   background: var(--paper);
+  border-radius: var(--r-plate);
   /* In step with the tree and log panes beside it. */
   padding: 11px 20px 24px;
   min-height: 0;
@@ -13,6 +14,26 @@
 
 @media (max-width: 760px) {
   .panel { overflow-y: visible; }
+}
+
+/* The one plate the channel cannot draw an edge for.
+   Every other section is --surface on a --paper channel, and the step between the two is the
+   boundary. This one IS --paper, and it stays that way on purpose: every field inside it — the
+   boxes, the selects, the chips, the saved-broker plates — is --surface, and it is that step
+   that makes a field read as a field. Turn the panel white to match its neighbours and the whole
+   form goes white on white, held together by hairlines.
+   So it takes a hairline of its own instead. Only where it is a section: the same attribute the
+   sticky head above is scoped by, which is set by the workspace grid and carried by the broker
+   panel and the panel column alone. The publish region's PanelShell is deliberately not in it —
+   that one is a body inside a region, and the region turns its corner. */
+[data-panel='open'] .panel,
+[data-panel='full'] .panel {
+  border: 1px solid var(--rule);
+}
+
+/* Forced colours drop the fill this panel is told apart by. */
+@media (forced-colors: active) {
+  .panel { outline: 1px solid; outline-offset: -1px; }
 }
 
 /* Holds the close button alone now that the title is off screen. No rule under it: with nothing
@@ -50,7 +71,7 @@
   /* Overhangs the line rather than growing it, so the title sits as close to the pane's edge
      as the headings in the panes beside it. */
   margin-block: -3px;
-  border-radius: 2px;
+  border-radius: var(--r-control);
 }
 /* all: unset misses the global button:hover fill; :not(:disabled) matches its specificity so this wins. */
 .close:hover:not(:disabled) { color: var(--fault); background: var(--surface); }

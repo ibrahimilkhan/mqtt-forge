@@ -6,7 +6,9 @@
   gap: 18px;
   align-items: baseline;
   padding: 5px 14px;
-  border-top: 1px solid var(--rule);
+  /* Divided from the workspace by the channel above it rather than by a rule, like every other
+     section. See --channel. */
+  border-radius: var(--r-plate);
   background: var(--surface);
   font-family: var(--mono);
   font-size: var(--t-small);
@@ -29,3 +31,9 @@
 .cell[data-tense] .value { color: var(--fault); }
 
 .quiet { color: var(--muted); }
+
+/* Forced colours drop every background, and the boundary this plate draws is a fill against a
+   fill now rather than a border. Its own edge, inside its own box so nothing shifts. */
+@media (forced-colors: active) {
+  .strip { outline: 1px solid; outline-offset: -1px; }
+}

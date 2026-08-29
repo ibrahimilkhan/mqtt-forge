@@ -11,7 +11,7 @@
   align-items: stretch;
   background: var(--surface);
   border: 1px solid var(--rule);
-  border-radius: 2px;
+  border-radius: var(--r-control);
   overflow: hidden;
 }
 

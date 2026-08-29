@@ -50,7 +50,7 @@
   min-width: 24px;
   min-height: 24px;
   border: 1px solid transparent;
-  border-radius: 2px;
+  border-radius: var(--r-control);
   color: var(--muted);
   flex: none;
 }
@@ -82,7 +82,7 @@
   min-height: 24px;
   flex: none;
   border: 1px solid transparent;
-  border-radius: 2px;
+  border-radius: var(--r-control);
   font-family: var(--mono);
   font-size: var(--t-lead);
   line-height: 1;
@@ -127,7 +127,7 @@
   grid-template-rows: auto minmax(0, 1fr);
   padding: 10px 14px 14px;
   background: var(--surface);
-  border-radius: 3px;
+  border-radius: var(--r-plate);
   /* The same lift the thrown-open chart has, without its scrim: these stand over a console that
      goes on being used, so nothing behind them is dimmed. */
   box-shadow:

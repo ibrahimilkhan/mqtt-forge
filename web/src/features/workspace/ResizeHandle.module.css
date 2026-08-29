@@ -1,21 +1,24 @@
-/* The negative margins pull the bar over the 1px grid gaps on either side, so the seam reads as
-   one deliberate rule rather than three stacked hairlines. */
+/* The bar is the channel, and the channel is empty.
+   It used to be a 3px rule pulled across a 1px track and the 1px gap either side of it, so that
+   the seam read as one deliberate line rather than three stacked hairlines. The grid keeps no
+   gaps and paints no ground any more, so the track is the whole 3px and the bar is exactly it —
+   the same six pixels of non-fr space in both axes, so nothing in the layout's arithmetic moves.
+   No background: what shows between two plates is the page they lie on. It takes a fill only
+   when it is being reached for. */
 .handle {
   position: relative;
-  background: var(--rule);
+  border-radius: var(--r-control);
   touch-action: none;
   user-select: none;
 }
 
 .handle[data-axis='x'] {
-  width: 3px;
-  margin: 0 -1px;
+  width: var(--channel);
   cursor: col-resize;
 }
 
 .handle[data-axis='y'] {
-  height: 3px;
-  margin: -1px 0;
+  height: var(--channel);
   cursor: row-resize;
 }
 
@@ -36,14 +39,25 @@
    hiding every seam across a whole band of widths where the columns were still columns. The
    column that lost its seam then also lost its track, and the right column spread across it. */
 @media (max-width: 760px) {
-  .handle { display: none; }
+  /* Stacked, the panes are one under another and a vertical bar between two columns that are not
+     columns any more would be a bar lying across them. Hidden rather than removed, so the grid's
+     tracks still line up with its children — and turned on its side, so the track it holds is the
+     channel between two stacked panes rather than a column of nothing. */
+  .handle {
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .handle[data-axis='x'] {
+    width: auto;
+    height: var(--channel);
+  }
 }
 
-/* Nothing either side of it to divide. Kept in the grid rather than removed, so the column's
-   five tracks still line up with its five children — but with no height and no reach. */
+/* Nothing either side of it to divide. Kept in the grid rather than removed, so the column's five
+   tracks still line up with its five children — but with no reach.
+   It no longer has to be hidden or flattened: the bar paints nothing at rest, so a channel
+   dividing two things that are already touching is a channel nobody can see. It is out of the tab
+   order from the component, which sets tabIndex -1 and aria-hidden when it is off. */
 .handle[data-off] {
-  visibility: hidden;
-  height: 0;
-  min-height: 0;
   pointer-events: none;
 }

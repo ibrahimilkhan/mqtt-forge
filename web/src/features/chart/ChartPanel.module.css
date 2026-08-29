@@ -6,7 +6,7 @@
   color: var(--ink);
   background: var(--surface);
   border: 1px solid var(--rule);
-  border-radius: 2px;
+  border-radius: var(--r-control);
   padding: 8px 9px;
 }
 
@@ -106,7 +106,7 @@
   letter-spacing: 0.06em;
   color: var(--ink);
   border: 1px solid var(--rule);
-  border-radius: 2px;
+  border-radius: var(--r-control);
   padding: 1px 5px;
   white-space: nowrap;
 }

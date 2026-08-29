@@ -34,7 +34,7 @@
   padding: 5px 9px;
   background: var(--surface);
   border: 1px solid var(--rule);
-  border-radius: 2px;
+  border-radius: var(--r-control);
   color: var(--ink);
   cursor: pointer;
 }
