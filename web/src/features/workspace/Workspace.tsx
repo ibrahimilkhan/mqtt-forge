@@ -26,6 +26,15 @@ type Props = {
   wide?: boolean;
   tree: ReactNode;
   log: ReactNode;
+  /**
+   * A word beside the Log region's own name in its strip — its count, and the only thing the
+   * strip says while the region is folded and the pane is gone.
+   *
+   * A node rather than a number: the workspace knows nothing about the log's contents and should
+   * go on knowing nothing, so what is passed in subscribes for itself and an arrival re-renders
+   * that and not the console around it.
+   */
+  logCount?: ReactNode;
   chart: ReactNode;
   publish: ReactNode;
 };
@@ -79,7 +88,7 @@ const clamp = (value: number, low: number, high: number) => Math.min(high, Math.
  */
 const CEILING = 1 - 2 * MIN_SHARE;
 
-export function Workspace({ panel, wide = false, tree, log, chart, publish }: Props) {
+export function Workspace({ panel, wide = false, tree, log, logCount, chart, publish }: Props) {
   // Held as the row looks with a panel open, so closing and reopening one puts it back as it was.
   const [widths, setWidths] = useState<Widths>(START);
 
@@ -324,7 +333,15 @@ export function Workspace({ panel, wide = false, tree, log, chart, publish }: Pr
         data-fit={rows === null ? 'content' : 'split'}
         style={column}
       >
-        <Region id="log" label="Log" open={open('log')} alone={alone} onFold={fold} innerRef={logRef}>
+        <Region
+          id="log"
+          label="Log"
+          count={logCount}
+          open={open('log')}
+          alone={alone}
+          onFold={fold}
+          innerRef={logRef}
+        >
           {log}
         </Region>
         {/* Named for its place in the column rather than for what it divides at this moment: the
@@ -389,6 +406,7 @@ const track = (open: boolean, share: number) =>
 function Region({
   id,
   label,
+  count,
   open,
   alone,
   onFold,
@@ -397,6 +415,8 @@ function Region({
 }: {
   id: RegionId;
   label: string;
+  /** Beside the name, for a region that has a count to give. */
+  count?: ReactNode;
   open: boolean;
   /** Folding this one would leave the column empty, so the control says so rather than doing it. */
   alone: boolean;
@@ -434,6 +454,10 @@ function Region({
           {open ? '▾' : '▸'}
         </span>
         <span className={styles.regionLabel}>{label}</span>
+        {/* Outside the label rather than inside it: the label is the part that gets cut with an
+            ellipsis when the column is narrow, and a count that could be cut is a count that can
+            lie. */}
+        {count !== undefined && <span className={styles.regionCount}>{count}</span>}
       </button>
 
       {/* Unmounted rather than hidden: a folded log is a list of a thousand rows that no longer
