@@ -99,7 +99,13 @@ function EntryList() {
 
   return (
     <>
-      <div className={styles.log} ref={list}>
+      {/* `data-resting` is the log telling the workspace it is drawing the newest message and
+          nothing else, which is the one fact only this component has. While it is there the
+          column stays sized to its content, so the region is exactly as tall as the message —
+          every message, not just the first one that ever landed here. The workspace reads it off
+          the DOM rather than being handed it, the same way this pane finds its own scrollport by
+          walking up and a seam finds its neighbours by asking for them. */}
+      <div className={styles.log} ref={list} data-resting={count === 1 ? '' : undefined}>
         {shown.map((entry, index) => (
           <LogEntryRow
             key={entry.id}

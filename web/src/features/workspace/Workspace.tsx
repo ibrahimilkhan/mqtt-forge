@@ -62,13 +62,22 @@ export function fitRows(columnHeight: number, logHeight: number, publishHeight: 
 
   // Neither end may take so much that the other two are slivers, and the chart keeps its own
   // floor out of whatever the ends leave.
-  const log = clamp(logHeight / columnHeight, MIN_SHARE, 1 - 2 * MIN_SHARE);
+  const log = clamp(logHeight / columnHeight, MIN_SHARE, CEILING);
   const publish = clamp(publishHeight / columnHeight, MIN_SHARE, 1 - MIN_SHARE - log);
 
   return { log, chart: 1 - log - publish, publish };
 }
 
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
+
+/**
+ * The most of the column one region may take, leaving the other two their floor.
+ *
+ * Named because it is two answers to one question: the height a region is clamped to, and the
+ * height at which the column stops following the log's own content. A number that meant one and
+ * not the other would let the log follow itself up to a size it is then cut back from.
+ */
+const CEILING = 1 - 2 * MIN_SHARE;
 
 export function Workspace({ panel, wide = false, tree, log, chart, publish }: Props) {
   // Held as the row looks with a panel open, so closing and reopening one puts it back as it was.
@@ -89,14 +98,32 @@ export function Workspace({ panel, wide = false, tree, log, chart, publish }: Pr
   const logRef = useRef<HTMLDivElement>(null);
   const publishRef = useRef<HTMLDivElement>(null);
 
-  // Fixed the first time the log's own height changes, which is when its first message lands —
-  // not at mount, when the log is still showing the sentence asking the reader to pick a topic.
-  // Taken then, the share was the height of that sentence, and the message that replaced it did
-  // not fit: the count of what is behind it fell off the bottom of the region and had to be
-  // scrolled to. Taken now, the region is the height of one message and the line under it.
-  //
-  // Only the first change. Every later one is the reader opening the history, and a log region
-  // that grew to twenty-five rows would leave the chart its floor and nothing else.
+  /**
+   * The column follows the newest message until somebody asks it not to.
+   *
+   * Until this writes a split the column is content-sized — see `data-fit` below and the template
+   * it turns on — and content-sized means the log's track is `min-content`: the region is exactly
+   * as tall as the message in it, its heading, its padding and the line under it, and the chart
+   * takes what is left. That is already the answer to 'size the log so the message fits'. It just
+   * has to be allowed to go on being the answer.
+   *
+   * It was not. The split used to be fixed at the first change of the log's height, which is the
+   * first message that ever lands — so the region was cut to the size of THAT message and every
+   * later one was measured against it. A short reading followed by a JSON payload six lines deep
+   * left the reader scrolling a region shaped for a number.
+   *
+   * So the split is fixed at the first moment the log stops resting, and not before:
+   *
+   *  - the reader opens the history, which is a request for more rows than any region could hold,
+   *    and the pane's own 'N more below' is the answer to that rather than a taller region;
+   *  - or the message at rest is taller than a region is allowed to be, and following it further
+   *    would leave the chart and the form their floor and nothing else.
+   *
+   * Everything else is followed, in both directions: a quieter topic, a fault, a sentence, a
+   * payload that grows and shrinks again. And any gesture that arranges the column — a drag, a
+   * fold — writes a split of its own, which closes this for good: a reader who has arranged the
+   * column owns it, and no message arriving afterwards may take that back.
+   */
   useLayoutEffect(() => {
     if (rows !== null || typeof ResizeObserver === 'undefined') return;
 
@@ -105,22 +132,27 @@ export function Workspace({ panel, wide = false, tree, log, chart, publish }: Pr
     const pane = publishRef.current;
     if (!column || !top || !pane) return;
 
-    let mounted: number | null = null;
+    // The tallest the log has stood at while resting, which is what the column is divided at when
+    // it finally is. Not the height in the report that ends the following: by then the list has
+    // already been opened, and its rows arrive in the same commit as the marker leaving.
+    let resting: number | null = null;
+
     const watch = new ResizeObserver(([entry]) => {
       const height = entry.contentRect.height;
+      // The log marks the list it draws while it is showing one message and nothing else.
+      const atRest = top.querySelector('[data-resting]') !== null;
 
-      // The observer reports the size it is already at before it reports a change.
-      if (mounted === null) {
-        mounted = height;
-
+      if (atRest) {
+        resting = height;
+        // Still a height a region may be, so the track is already following it.
+        if (height <= column.clientHeight * CEILING) return;
+      } else if (resting === null || height <= resting) {
+        // No message has stood here yet, or the log got shorter — a quieter topic, a fault, a
+        // folded log. Nothing to divide the column around, and the track follows it down.
         return;
       }
 
-      if (Math.abs(height - mounted) < 1) return;
-
-      // scrollHeight, not clientHeight: content-sized now, but this still reads the full form
-      // if anything has already clipped it.
-      const measured = fitRows(column.clientHeight, top.scrollHeight, pane.scrollHeight);
+      const measured = fitRows(column.clientHeight, resting, pane.scrollHeight);
       if (measured !== null) setRows(measured);
     });
 
@@ -237,8 +269,16 @@ export function Workspace({ panel, wide = false, tree, log, chart, publish }: Pr
   // nothing in it, and nothing in the workspace would say what to do about that.
   const alone = shut.length === REGIONS.length - 1;
 
-  const fold = (id: RegionId) =>
+  const fold = (id: RegionId) => {
+    // Folding turns the inline template on, and the template is written from `rows` — so a fold
+    // taken before the column has a split of its own arranged it around the stand-in fractions
+    // rather than around what is on screen. Harmless while the split was fixed within a second of
+    // the first message; not harmless now that a column can follow the log for a whole session.
+    // So the fold takes the split it can see, and owns it from there like a drag does.
+    if (rows === null) setRows(measured());
+
     setShut((closed) => (closed.includes(id) ? closed.filter((one) => one !== id) : [...closed, id]));
+  };
 
   const logChart = divides(0);
   const chartPublish = divides(1);
