@@ -980,23 +980,61 @@ describe('a certificate, which settles the question by itself', () => {
     expect(screen.getAllByLabelText('Encrypted (TLS)')[1]).toBeChecked();
   });
 
-  it('holds it on while the certificate is there', async () => {
+  // Turns it on, and that is all it does. The box used to be held shut while anything under
+  // Encryption was filled in, which is true of the statement a certificate makes and wrong about
+  // the control.
+  it('turns it on without holding it shut', async () => {
     renderPanel();
     await userEvent.type(screen.getByLabelText('Client certificate'), '/tmp/client.pem');
 
     expect(encrypted()).toBeChecked();
-    expect(encrypted()).toBeDisabled();
+    expect(encrypted()).toBeEnabled();
   });
 
-  it('lets go once the certificate does', async () => {
+  // The dead end, in the three moves that reached it: tick Accept any certificate, name a CA
+  // under it, untick Accept any certificate. The thing that turned encryption on is off, and what
+  // was still holding the box shut was a path two fields down that the panel never mentioned.
+  it('gives the box back when Accept any certificate goes off again', async () => {
+    renderPanel();
+    await userEvent.click(await screen.findByLabelText('Accept any certificate'));
+    await userEvent.type(screen.getByLabelText('Extra CA certificate'), '/tmp/ca.crt');
+    await userEvent.click(screen.getByLabelText('Accept any certificate'));
+
+    expect(encrypted()).toBeEnabled();
+
+    await userEvent.click(encrypted());
+    expect(encrypted()).not.toBeChecked();
+  });
+
+  it('keeps encryption on when the certificate is cleared', async () => {
     renderPanel();
     const cert = screen.getByLabelText('Client certificate');
     await userEvent.type(cert, '/tmp/client.pem');
     await userEvent.clear(cert);
 
-    expect(encrypted()).toBeEnabled();
-    // Still on: turning encryption off by itself would be a surprise, and the reader can.
+    // Turning encryption off by itself would be a surprise, and the reader can.
     expect(encrypted()).toBeChecked();
+    expect(encrypted()).toBeEnabled();
+  });
+
+  // What makes the open box safe: a certificate left in a box under a plain connection is not
+  // sent rather than sent against a connection that could not use it.
+  it('sends no certificate at all once encryption is turned off', async () => {
+    let sent: Record<string, unknown> | undefined;
+    server.use(
+      http.post('/api/connection', async ({ request }) => {
+        sent = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ state: 'Connected' });
+      }),
+      http.post('/api/subscriptions', () => new HttpResponse(null, { status: 202 })),
+    );
+
+    renderPanel();
+    await userEvent.type(screen.getByLabelText('Client certificate'), '/tmp/client.pem');
+    await userEvent.click(encrypted());
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+
+    await waitFor(() => expect(sent).toMatchObject({ useTls: false, tls: null }));
   });
 
   it('sends the certificate it was turned on by', async () => {
