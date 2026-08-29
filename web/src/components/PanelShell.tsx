@@ -11,8 +11,12 @@ export function PanelShell({ title, onClose, children }: Props) {
           place to sit. A pane with a fixed place has neither, and an empty bordered row would
           leave a rule with nothing above it. */}
       <h2 className="srOnly">{title}</h2>
+      {/* data-head marks this row so the workspace can tell it from the content under it. A bare
+          attribute rather than the class, because the class name is hashed by CSS Modules and
+          Workspace.module.css cannot spell it — and the workspace is where the one panel that
+          takes the whole window decides what its measure applies to. */}
       {onClose && (
-        <div className={styles.panelHead}>
+        <div className={styles.panelHead} data-head>
           <button type="button" className={styles.close} onClick={onClose} aria-label={`Close ${title} panel`}>
             ×
           </button>

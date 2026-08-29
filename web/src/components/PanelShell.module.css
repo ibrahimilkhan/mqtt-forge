@@ -58,3 +58,29 @@
 
 .block { margin-bottom: 30px; }
 .block:last-child { margin-bottom: 0; }
+
+/* The one panel that takes the whole window keeps its × in the corner while the form scrolls
+   under it.
+
+   `[data-panel='full']` is written as a plain attribute so CSS Modules leaves it alone; it is set
+   by the workspace grid and only ever by the broker panel, so the five panels that live in a
+   column are unreachable from here.
+
+   Only above 1180px, because that is the only band where this pane is its own scrollport. From
+   1180 down the page scrolls instead (see global.css), so there is nothing for `sticky` to stick
+   to; at 760 and below `.panel` is `overflow-y: visible` and sticky would bind to the viewport
+   and float the × over the fields, which is worse than letting it scroll away.
+
+   The negative margin and the padding that answers it lift the row's box into the pane's own
+   11px of top padding, so the × does not shift the moment it detaches. They are that padding's
+   number — change one and change both. No background: the content under this is capped at 640px
+   and centred, so at every width this rule applies to there are at least 170px of empty gutter
+   beneath the ×, and nothing ever passes under it. */
+@media (min-width: 1181px) {
+  [data-panel='full'] .panelHead {
+    position: sticky;
+    top: 0;
+    margin-top: -11px;
+    padding-top: 11px;
+  }
+}
