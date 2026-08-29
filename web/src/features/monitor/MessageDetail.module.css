@@ -18,15 +18,48 @@
 /* ---- what arrived, and when ----
 
    No label column any more. The pair grid was right while there were five facts to line up in one
-   voice; three of them are chips in the window's own bar now, and what is left is a topic and a
-   timestamp. A topic looks like a topic and a timestamp looks like a timestamp, so an 8ch column
-   spelling 'topic' and 'at' beside them was spending a third of a 272px window — which is as
-   narrow as a window goes — on two words read once and looked past ever after. */
+   voice; three of them are chips in the window's own bar now, and what is left is a topic, the
+   moment it landed, and a remark under the two of them. One word survives the grid — see .label —
+   but a column eight characters wide was a third of a 272px window, which is as narrow as a
+   window goes, spent on lining up two labels that no longer have four siblings to line up with.
+
+   The rule under it is what the reader asked for, and it earns its keep: what is above it names
+   the message and what is below it is the message. It is drawn only while there is something
+   below — a retained clear carries no body at all, and Payload draws nothing for one, so the head
+   is the last child and a rule under it would be a line ruling off the bottom of the window. */
 .head {
   display: flex;
   flex-direction: column;
   gap: 3px;
   font-family: var(--mono);
+}
+.head:not(:last-child) {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--rule);
+}
+
+/* The topic line: a word, the topic, and the date against the far end.
+
+   It wraps rather than squeezing. The date is 24 characters and never breaks, and at the 272px
+   floor a long topic and a full timestamp cannot share a line — so they take two, and the auto
+   margin keeps the date on the right edge of whichever one it lands on. */
+.line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+/* The one label left. A path is not always obviously a path — a single segment with no slash in
+   it reads as a word — and the first line of a window has to stand on its own, without the run
+   behind it to be compared against. Quiet enough that the topic beside it is still what the eye
+   lands on. */
+.label {
+  flex: none;
+  font-size: var(--t-micro);
+  letter-spacing: 0.04em;
+  color: var(--muted);
 }
 
 /* The topic, at reading size and in its rule's colour, so a window opened off a green row is a
@@ -47,13 +80,19 @@
 .head .topic {
   margin-top: 0;
   font-size: var(--t-body);
+  /* A flex item's floor is its own content, and a topic's content is a path that would rather
+     push the date off the line than break. Zeroed so it wraps inside the room it is given, which
+     is what the log's own `overflow-wrap: anywhere` is there for. */
+  min-width: 0;
 }
 
-/* The moment it landed, under the topic and out of its way. Muted micro is this console's voice
-   for a fact that is there when it is wanted and quiet when it is not — and the whole date is
-   here rather than the row's bare time because a message opened an hour after it arrived is being
-   asked a different question than the row was. */
+/* The moment it landed, at the far end of the topic's line and out of its way. Muted micro is
+   this console's voice for a fact that is there when it is wanted and quiet when it is not — and
+   the whole date is here rather than the row's bare time because a message opened an hour after
+   it arrived is being asked a different question than the row was. */
 .at {
+  margin-left: auto;
+  flex: none;
   font-size: var(--t-micro);
   letter-spacing: 0.04em;
   color: var(--muted);
