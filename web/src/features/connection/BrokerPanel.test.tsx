@@ -137,14 +137,46 @@ describe('BrokerPanel', () => {
       http.post('/api/subscriptions', () => new HttpResponse(null, { status: 202 })),
     );
 
-    const { onClose } = renderPanel();
+    const client = newQueryClient();
+    const { onClose } = renderPanel(client);
     await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
 
-    // Not on the announcement of a link — see the test under this one for why.
-    await screen.findByRole('button', { name: 'Disconnect' });
+    // Not on the announcement of a link — see the two tests under this one for why. The cache is
+    // what says the link is up: nothing on screen does, which is the point.
+    await waitFor(() =>
+      expect(client.getQueryData(queryKeys.connection)).toMatchObject({ state: 'Connected' }),
+    );
     expect(onClose).not.toHaveBeenCalled();
 
     await waitFor(() => expect(onClose).toHaveBeenCalled(), { timeout: SETTLE + 1000 });
+  });
+
+  // The link coming up moves nothing on the panel until it has held. Connecting to a broker that
+  // hangs up on the subscribe used to put the whole live block on screen and take it off again
+  // inside 110ms — 752px to 1077px to 874px, measured — which is a 325px block opening and
+  // shutting under the reader's eyes for a connection that never happened.
+  it('moves nothing on the panel while the link is settling', async () => {
+    let state = 'Disconnected';
+    server.use(
+      http.get('/api/connection', () => HttpResponse.json({ state })),
+      http.post('/api/connection', () => {
+        state = 'Connected';
+        return HttpResponse.json({ state: 'Connected' });
+      }),
+      http.post('/api/subscriptions', () => new HttpResponse(null, { status: 202 })),
+    );
+
+    const client = newQueryClient();
+    renderPanel(client);
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+
+    await waitFor(() =>
+      expect(client.getQueryData(queryKeys.connection)).toMatchObject({ state: 'Connected' }),
+    );
+
+    // The link is up and the panel does not say so: no summary, no Disconnect.
+    expect(screen.queryByLabelText('Connection details')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Disconnect' })).not.toBeInTheDocument();
   });
 
   // Why the close waits at all. Every topic is what this console asks for on connect, and a good
@@ -167,8 +199,11 @@ describe('BrokerPanel', () => {
     const { onClose } = renderPanel(client);
     await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
 
-    // The link is up and the close is armed.
-    await screen.findByRole('button', { name: 'Disconnect' });
+    // The link is up and the close is armed. Read off the cache: through the settle the panel
+    // shows nothing about it.
+    await waitFor(() =>
+      expect(client.getQueryData(queryKeys.connection)).toMatchObject({ state: 'Connected' }),
+    );
 
     // And the broker hangs up, which is how the hub delivers it.
     state = 'Faulted';
