@@ -269,3 +269,30 @@
   color: var(--ink);
 }
 .groupFold[open] > summary { margin-bottom: 12px; }
+
+/* Everything the Encryption fold can be given, following the one box above it.
+
+   A fieldset because the rule is about all of them at once: under a plain scheme the server is
+   never shown any of this, so with encryption off every control in here does nothing whatever it
+   holds. `disabled` on the fieldset says that to the platform, to a keyboard and to a screen
+   reader in one word — none of them has to be told seven times.
+
+   Stripped of its own box: a fieldset arrives with a border, a margin and a min-width, and this
+   one is a rule rather than a frame.
+
+   The greying is written out because the app draws its own inputs — an explicit colour and
+   background beat the platform's disabled styling, so a disabled box would otherwise look exactly
+   like a live one. `summary` is left out of it on purpose: the folds inside still open, because
+   reading what a connection could be given is never blocked, only writing it. */
+.foldFields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.foldFields:disabled :is(input, select, button, label, p) {
+  opacity: 0.4;
+}
+.foldFields:disabled :is(input, select, button, label) {
+  cursor: default;
+}

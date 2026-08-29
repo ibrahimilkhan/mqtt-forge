@@ -101,7 +101,7 @@ describe('BrokerPanel', () => {
     // Defaults render first; filled once the query resolves. The scheme comes back written into
     // the address, since that is where it was saved from: this connection was over TLS.
     await waitFor(() =>
-      expect(screen.getByLabelText('Broker address')).toHaveValue('broker.example'),
+      expect(screen.getByLabelText('Address')).toHaveValue('broker.example'),
     );
     expect(screen.getByLabelText('Port')).toHaveValue(8883);
     expect(screen.getByLabelText('Client ID')).toHaveValue('saved-client');
@@ -120,7 +120,7 @@ describe('BrokerPanel', () => {
 
     renderPanel();
 
-    await screen.findByLabelText('Broker address');
+    await screen.findByLabelText('Address');
     expect(screen.getByLabelText('Password')).toHaveValue('');
   });
 
@@ -617,7 +617,7 @@ describe('what the panel shows first', () => {
     renderPanel();
 
     await screen.findByRole('button', { name: 'Connect' });
-    expect(screen.getByLabelText('Broker address')).toBeInTheDocument();
+    expect(screen.getByLabelText('Address')).toBeInTheDocument();
   });
 
   // Six fields the great majority of connections never need. The client ID is not among them
@@ -662,7 +662,7 @@ describe('what the panel shows first', () => {
     renderPanel();
 
     const details = await screen.findByLabelText('Connection details');
-    const address = screen.getByLabelText('Broker address');
+    const address = screen.getByLabelText('Address');
 
     expect(details.compareDocumentPosition(address)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
@@ -683,11 +683,11 @@ describe('what the panel shows first', () => {
 // Every broker's own documentation hands you one string. Taking it apart into a scheme, a host,
 // a port and a path is the first thing anyone does here and the easiest to get wrong, so the
 // box does it. The splitting itself is covered in address.test.ts; this is the wiring.
-describe('an address dropped into the Broker address box', () => {
+describe('an address dropped into the Address box', () => {
   it('fills the scheme, the port and the path from a pasted URL', async () => {
     renderPanel();
 
-    const address = await screen.findByLabelText('Broker address');
+    const address = await screen.findByLabelText('Address');
     await userEvent.clear(address);
     await userEvent.paste('wss://broker.emqx.io:8084/mqtt');
 
@@ -701,7 +701,7 @@ describe('an address dropped into the Broker address box', () => {
   it('splits a host and port typed by hand once the box is left', async () => {
     renderPanel();
 
-    const address = await screen.findByLabelText('Broker address');
+    const address = await screen.findByLabelText('Address');
     await userEvent.clear(address);
     await userEvent.type(address, 'broker.example:8883');
     fireEvent.blur(address);
@@ -716,7 +716,7 @@ describe('an address dropped into the Broker address box', () => {
   it('leaves a plain hostname exactly where it was typed', async () => {
     renderPanel();
 
-    const address = await screen.findByLabelText('Broker address');
+    const address = await screen.findByLabelText('Address');
     await userEvent.clear(address);
     await userEvent.type(address, 'broker.example');
     fireEvent.blur(address);
@@ -730,7 +730,7 @@ describe('an address dropped into the Broker address box', () => {
 // The panel's own question, in the order it now arrives: the address is what the reader has,
 // and the way in is answered beside it rather than in front of it.
 describe('the address the panel leads with', () => {
-  const address = () => screen.getByLabelText('Broker address');
+  const address = () => screen.getByLabelText('Address');
 
   // A box showing one broker while the attempt goes to another is the bug this guards. Connect
   // reconciles the text itself rather than trusting the blur to have landed first.
@@ -840,7 +840,7 @@ describe('a failure that names the scheme it should have been', () => {
   // afterwards drags the port to 1883 with it — the panel resists this state everywhere except
   // where the reader writes it down themselves.
   const writeAddress = async (text: string) => {
-    const address = screen.getByLabelText('Broker address');
+    const address = screen.getByLabelText('Address');
     await userEvent.clear(address);
     await userEvent.type(address, text);
     fireEvent.blur(address);
@@ -976,7 +976,7 @@ describe('the way in, as two questions', () => {
   // A pasted address still answers both, which is the point of taking it whole.
   it('reads both answers off a pasted address', async () => {
     renderPanel();
-    const address = screen.getByLabelText('Broker address');
+    const address = screen.getByLabelText('Address');
     await userEvent.clear(address);
     await userEvent.paste('wss://broker.emqx.io:8084/mqtt');
 
@@ -986,74 +986,84 @@ describe('the way in, as two questions', () => {
   });
 });
 
-// The rule the reader asked for, in the direction it is true. A certificate is a statement that
-// this connection is encrypted; the absence of one says nothing, since nine of the ten encrypted
-// brokers this console ships a preset for need no certificate at all.
-describe('a certificate, which settles the question by itself', () => {
+// One rule for the whole of Encryption: its fields follow the box above them. Under a plain
+// scheme the server is never shown any of this — buildConnectRequest sends tls: null and
+// ConfigureTls is only reached when UseTls — so with encryption off these controls do nothing
+// whatever they hold, and now they say so.
+describe('the encryption fold, which follows the box above it', () => {
   const encrypted = () => screen.getByLabelText('Encrypted (TLS)');
+  const encrypt = () => userEvent.click(encrypted());
+  const openFold = () => userEvent.click(screen.getByText('Encryption'));
 
-  it('offers the encryption fields whether or not encryption is on yet', () => {
+  it('offers the fold whether or not encryption is on yet', () => {
     renderPanel();
 
     expect(screen.getByText('Encryption')).toBeInTheDocument();
   });
 
-  it('turns encryption on when a certificate is named', async () => {
+  // Reading what a connection could be given is never blocked, only writing it. So the fold
+  // opens, the fold inside it opens, and every field in both is held.
+  it('opens with encryption off and holds every field in it', async () => {
     renderPanel();
+    await openFold();
+
+    expect(screen.getByLabelText('Accept any certificate')).toBeDisabled();
+    expect(screen.getByLabelText('Extra CA certificate')).toBeDisabled();
+    expect(screen.getByLabelText('Client certificate')).toBeDisabled();
+
+    await userEvent.click(screen.getByText('Server name and ALPN'));
+    expect(screen.getByLabelText('Server name')).toBeDisabled();
+    expect(screen.getByLabelText('ALPN protocol')).toBeDisabled();
+  });
+
+  it('gives every field back when the box goes on', async () => {
+    renderPanel();
+    await openFold();
+    await encrypt();
+
+    expect(screen.getByLabelText('Accept any certificate')).toBeEnabled();
+    expect(screen.getByLabelText('Extra CA certificate')).toBeEnabled();
+    expect(screen.getByLabelText('Client certificate')).toBeEnabled();
+  });
+
+  // The box is the way back on, so it is outside the rule it governs. It was inside once, held
+  // shut by the fields under it, and the dead end that made is what unlocked it.
+  it('never holds the box itself', async () => {
+    renderPanel();
+    expect(encrypted()).toBeEnabled();
+
+    await encrypt();
+    expect(encrypted()).toBeEnabled();
+
+    await encrypt();
+    expect(encrypted()).toBeEnabled();
+  });
+
+  it('sends the certificate it was given', async () => {
+    let sent: Record<string, unknown> | undefined;
+    server.use(
+      http.post('/api/connection', async ({ request }) => {
+        sent = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ state: 'Connected' });
+      }),
+      http.post('/api/subscriptions', () => new HttpResponse(null, { status: 202 })),
+    );
+
+    renderPanel();
+    await encrypt();
     await userEvent.type(screen.getByLabelText('Client certificate'), '/tmp/client.pem');
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
 
-    await waitFor(() => expect(encrypted()).toBeChecked());
+    await waitFor(() =>
+      expect(sent).toMatchObject({
+        useTls: true,
+        tls: expect.objectContaining({ clientCertificatePath: '/tmp/client.pem' }),
+      }),
+    );
   });
 
-  it('turns it on for a CA, and for accepting any certificate', async () => {
-    renderPanel();
-    await userEvent.type(screen.getByLabelText('Extra CA certificate'), '/tmp/ca.crt');
-    expect(encrypted()).toBeChecked();
-
-    renderPanel();
-    await userEvent.click(screen.getAllByLabelText('Accept any certificate')[1]);
-    expect(screen.getAllByLabelText('Encrypted (TLS)')[1]).toBeChecked();
-  });
-
-  // Turns it on, and that is all it does. The box used to be held shut while anything under
-  // Encryption was filled in, which is true of the statement a certificate makes and wrong about
-  // the control.
-  it('turns it on without holding it shut', async () => {
-    renderPanel();
-    await userEvent.type(screen.getByLabelText('Client certificate'), '/tmp/client.pem');
-
-    expect(encrypted()).toBeChecked();
-    expect(encrypted()).toBeEnabled();
-  });
-
-  // The dead end, in the three moves that reached it: tick Accept any certificate, name a CA
-  // under it, untick Accept any certificate. The thing that turned encryption on is off, and what
-  // was still holding the box shut was a path two fields down that the panel never mentioned.
-  it('gives the box back when Accept any certificate goes off again', async () => {
-    renderPanel();
-    await userEvent.click(await screen.findByLabelText('Accept any certificate'));
-    await userEvent.type(screen.getByLabelText('Extra CA certificate'), '/tmp/ca.crt');
-    await userEvent.click(screen.getByLabelText('Accept any certificate'));
-
-    expect(encrypted()).toBeEnabled();
-
-    await userEvent.click(encrypted());
-    expect(encrypted()).not.toBeChecked();
-  });
-
-  it('keeps encryption on when the certificate is cleared', async () => {
-    renderPanel();
-    const cert = screen.getByLabelText('Client certificate');
-    await userEvent.type(cert, '/tmp/client.pem');
-    await userEvent.clear(cert);
-
-    // Turning encryption off by itself would be a surprise, and the reader can.
-    expect(encrypted()).toBeChecked();
-    expect(encrypted()).toBeEnabled();
-  });
-
-  // What makes the open box safe: a certificate left in a box under a plain connection is not
-  // sent rather than sent against a connection that could not use it.
+  // What makes the rule safe in the other direction: a certificate left in a box under a plain
+  // connection is not sent rather than sent against a connection that could not use it.
   it('sends no certificate at all once encryption is turned off', async () => {
     let sent: Record<string, unknown> | undefined;
     server.use(
@@ -1065,32 +1075,12 @@ describe('a certificate, which settles the question by itself', () => {
     );
 
     renderPanel();
+    await encrypt();
     await userEvent.type(screen.getByLabelText('Client certificate'), '/tmp/client.pem');
-    await userEvent.click(encrypted());
+    await encrypt();
     await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
 
     await waitFor(() => expect(sent).toMatchObject({ useTls: false, tls: null }));
-  });
-
-  it('sends the certificate it was turned on by', async () => {
-    let sent: Record<string, unknown> | undefined;
-    server.use(
-      http.post('/api/connection', async ({ request }) => {
-        sent = (await request.json()) as Record<string, unknown>;
-        return HttpResponse.json({ state: 'Connected' });
-      }),
-    );
-
-    renderPanel();
-    await userEvent.type(screen.getByLabelText('Client certificate'), '/tmp/client.pem');
-    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
-
-    await waitFor(() =>
-      expect(sent).toMatchObject({
-        useTls: true,
-        tls: expect.objectContaining({ clientCertificatePath: '/tmp/client.pem' }),
-      }),
-    );
   });
 });
 
@@ -1114,6 +1104,10 @@ describe('a certificate pointed at rather than typed', () => {
     return asked;
   };
 
+  // The buttons stand beside the fields, inside the fold, so they follow the box above it like
+  // everything else in there.
+  const encrypt = async () => userEvent.click(await screen.findByLabelText('Encrypted (TLS)'));
+
   it('offers nothing to press where the host has no dialog', async () => {
     renderPanel();
     await screen.findByLabelText('Client certificate');
@@ -1124,6 +1118,7 @@ describe('a certificate pointed at rather than typed', () => {
   it('fills the box with the file the dialog named', async () => {
     dialog(['/Users/me/certs/client.pfx']);
     renderPanel();
+    await encrypt();
 
     await userEvent.click(await screen.findByRole('button', { name: 'Choose Client certificate' }));
 
@@ -1138,6 +1133,7 @@ describe('a certificate pointed at rather than typed', () => {
   it('asks for the field the button stands beside', async () => {
     const asked = dialog(['/tmp/ca.crt']);
     renderPanel();
+    await encrypt();
 
     await userEvent.click(await screen.findByRole('button', { name: 'Choose Extra CA certificate' }));
 
@@ -1149,6 +1145,7 @@ describe('a certificate pointed at rather than typed', () => {
   it('offers the key once a certificate that needs one is named', async () => {
     const asked = dialog(['/tmp/client.pem', '/tmp/client.key']);
     renderPanel();
+    await encrypt();
 
     await userEvent.click(await screen.findByRole('button', { name: 'Choose Client certificate' }));
     await screen.findByLabelText('Private key');
@@ -1163,6 +1160,7 @@ describe('a certificate pointed at rather than typed', () => {
   it('leaves the box alone when the dialog is dismissed', async () => {
     dialog([null]);
     renderPanel();
+    await encrypt();
     const box = await screen.findByLabelText('Client certificate');
     await userEvent.type(box, '/tmp/already-here.pfx');
 
@@ -1182,6 +1180,7 @@ describe('a certificate pointed at rather than typed', () => {
       }),
     );
     renderPanel();
+    await encrypt();
 
     await userEvent.click(await screen.findByRole('button', { name: 'Choose Client certificate' }));
 
@@ -1310,7 +1309,7 @@ describe('the brokers you keep', () => {
     );
     renderPanel();
 
-    const address = await screen.findByLabelText('Broker address');
+    const address = await screen.findByLabelText('Address');
     await userEvent.clear(address);
     await userEvent.type(address, 'mqtts://lab.example:8883');
     await userEvent.click(screen.getByRole('button', { name: 'Save this broker' }));
@@ -1361,7 +1360,7 @@ describe('the brokers you keep', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Lab broker' }));
 
-    expect(screen.getByLabelText('Broker address')).toHaveValue('lab.example');
+    expect(screen.getByLabelText('Address')).toHaveValue('lab.example');
     expect(screen.getByLabelText('Port')).toHaveValue(8883);
     expect(screen.getByLabelText('Encrypted (TLS)')).toBeChecked();
   });
@@ -1375,7 +1374,7 @@ describe('the brokers you keep', () => {
     await userEvent.click(chip);
     expect(chip.closest('span')).toHaveAttribute('data-active');
 
-    const address = screen.getByLabelText('Broker address');
+    const address = screen.getByLabelText('Address');
     await userEvent.clear(address);
     await userEvent.type(address, 'somewhere.else');
     fireEvent.blur(address);
@@ -1403,9 +1402,12 @@ describe('the brokers you keep', () => {
 // Seven fields, but not seven at once: a key and a password are for a certificate, and a
 // certificate in a .pfx carries its own key.
 describe('the encryption fields, as far as they apply', () => {
+  // With the box on: the fold's fields follow it, and a field that cannot be typed into cannot
+  // show what typing into it reveals.
   const openEncryption = async () => {
     renderPanel();
-    await userEvent.click(await screen.findByText('Encryption'));
+    await userEvent.click(await screen.findByLabelText('Encrypted (TLS)'));
+    await userEvent.click(screen.getByText('Encryption'));
   };
 
   it('asks for a certificate before asking anything about one', async () => {

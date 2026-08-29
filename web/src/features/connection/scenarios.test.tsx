@@ -46,7 +46,7 @@ function watchConnect() {
   return seen;
 }
 
-const address = () => screen.getByLabelText('Broker address');
+const address = () => screen.getByLabelText('Address');
 const port = () => screen.getByLabelText('Port');
 
 /** What a reader does with the one string their broker's documentation gave them. */
@@ -64,8 +64,19 @@ async function type(field: HTMLElement, text: string) {
 const connect = async () =>
   userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
 
-/** Opens the fold and returns nothing; the fields inside are found by label like any other. */
-const openEncryption = async () => userEvent.click(screen.getByText('Encryption'));
+/**
+ * Opens the fold, with the box above it on.
+ *
+ * The fold's fields follow that box — they are inert while encryption is off, which is the one
+ * rule that block has — so filling any of them starts by saying the connection is encrypted.
+ * Which is what a reader with a certificate is doing anyway: every broker whose documentation
+ * hands you one hands you `mqtts://` in the same paragraph.
+ */
+const openEncryption = async () => {
+  const box = screen.getByLabelText('Encrypted (TLS)') as HTMLInputElement;
+  if (!box.checked) await userEvent.click(box);
+  await userEvent.click(screen.getByText('Encryption'));
+};
 
 beforeEach(() => {
   useLogStore.getState().clear();
@@ -256,13 +267,20 @@ describe('a broker that knows you by certificate', () => {
     );
   });
 
-  // Naming a certificate is not a preference about encryption, it is encryption.
-  it('turns encryption on by itself when a certificate is named', async () => {
+  // Encryption is asked for before a certificate is, not by it. The fold's fields are inert while
+  // the box above them is off — which is the rule — so ticking it is the first move, and the port
+  // follows the tick without anyone typing one.
+  it('asks for encryption before it asks for a certificate', async () => {
     const seen = watchConnect();
     renderPanel();
 
     await type(address(), 'broker.example');
-    await openEncryption();
+    await userEvent.click(screen.getByText('Encryption'));
+
+    // Nothing in the fold can be filled in yet.
+    expect(screen.getByLabelText('Client certificate')).toBeDisabled();
+
+    await userEvent.click(screen.getByLabelText('Encrypted (TLS)'));
     await userEvent.type(screen.getByLabelText('Client certificate'), '/etc/client.pfx');
     await connect();
 

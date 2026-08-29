@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import { cancelConnect, connect, disconnect } from '../../api/connection';
 import { queryKeys } from '../../api/queryKeys';
 import { subscribe } from '../../api/subscriptions';
@@ -25,9 +26,24 @@ type ConnectVars = { request: ConnectRequest; autoSubscribe: boolean };
 export function useConnectionActions() {
   const queryClient = useQueryClient();
 
+  /**
+   * Whether the broker turned down the subscription this console asks for on connect.
+   *
+   * Its own state because there is nothing else to carry it. A broker that refuses every topic
+   * has two ways of saying so, and only one of them is a failure: it can close the session, which
+   * arrives as a fault with a reason on it, or it can answer the SUBACK with a refusal code and
+   * leave the link up. The second is the quiet one — the connect worked, the link is up, and the
+   * console is listening to nothing at all — and until now the only trace of it was a line in the
+   * log, on a panel that had already stepped aside because the link held.
+   */
+  const [everythingRefused, setEverythingRefused] = useState(false);
+
   const connectMutation = useMutation({
     // Success means the connection itself succeeded; auto-subscribe failure doesn't count against it.
     mutationFn: ({ request }: ConnectVars) => connect(request),
+
+    // A new attempt is not answered yet, whatever the last one was told.
+    onMutate: () => setEverythingRefused(false),
 
     onSuccess: async (result, { request, autoSubscribe }) => {
       // Refetch, don't write the response: the hub may have already pushed a newer state.
@@ -51,7 +67,7 @@ export function useConnectionActions() {
         body: `${endpoint(request)} · ${request.clientId}`,
       });
 
-      if (autoSubscribe) await subscribeOnConnect();
+      if (autoSubscribe) setEverythingRefused(await subscribeOnConnect());
 
       void queryClient.invalidateQueries({ queryKey: queryKeys.subscriptions });
       void queryClient.invalidateQueries({ queryKey: queryKeys.savedSettings });
@@ -82,6 +98,7 @@ export function useConnectionActions() {
   const disconnectMutation = useMutation({
     mutationFn: disconnect,
     onSuccess: () => {
+      setEverythingRefused(false);
       void queryClient.invalidateQueries({ queryKey: queryKeys.connection });
       void queryClient.invalidateQueries({ queryKey: queryKeys.subscriptions });
       useLogStore.getState().push({ kind: 'ok', verb: 'Disconnected' });
@@ -90,14 +107,14 @@ export function useConnectionActions() {
       logFault('Disconnect failed', error),
   });
 
-  return { connectMutation, disconnectMutation, abortMutation };
+  return { connectMutation, disconnectMutation, abortMutation, everythingRefused };
 }
 
 /** Everything, which is what the box beside Connect asks for. */
 const EVERYTHING = '#';
 
 /**
- * What to listen to the moment the link is up.
+ * What to listen to the moment the link is up, and whether the broker said no.
  *
  * Everything, or nothing at all. A good many brokers out on the internet refuse a bare '#' —
  * mqtt.hsl.fi by closing the session — and that used to be guarded against with a filter box in
@@ -105,16 +122,22 @@ const EVERYTHING = '#';
  * panel is one button away from it.
  *
  * Reported on its own log line, so a failure here reads as a subscribe failure, not a connect
- * failure: the link is a separate thing and may well still be up.
+ * failure: the link is a separate thing and may well still be up. The answer is returned as well
+ * as logged, because a link that is still up is exactly the case a log line on its own is not
+ * enough for — see everythingRefused above.
  */
-async function subscribeOnConnect() {
+async function subscribeOnConnect(): Promise<boolean> {
   try {
     await subscribe({ topicFilter: EVERYTHING, qos: 0 });
     useLogStore
       .getState()
       .push({ kind: 'ok', verb: 'Subscribed', topic: EVERYTHING, stamps: ['QoS 0'] });
+
+    return false;
   } catch (error) {
     logFault('Subscribe failed', error, EVERYTHING);
+
+    return true;
   }
 }
 
