@@ -62,14 +62,32 @@
 /* The line for whatever the chips in the bar could not say — see `unsaid` in MessageDetail.tsx
    for what goes on it and why every item of it is conditional. A remark rather than a third fact
    in the stack, so it takes 4px on top of the head's own gap to set it apart from the two lines
-   that are the message's own name. */
+   that are the message's own name.
+
+   A row rather than a sentence, because one of the things on it is a box. The items used to be
+   joined with middots, which reads as one remark while every item is words — and stops reading as
+   anything at all the moment a bordered chip is standing among them. The gap is the log head's
+   own 4px/6px, so a chip down here sits at the pitch the chips upstairs sit at. */
 .unsaid {
   margin: 4px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 6px;
   font-size: var(--t-micro);
   letter-spacing: 0.04em;
   color: var(--muted);
   overflow-wrap: anywhere;
 }
+
+/* Whether it was retained, said in the box the answer is said in everywhere else.
+
+   Composed from the bar's chip rather than from the log's, which is the only place in these three
+   files that composes twice. The bar's is the log's plus the two things the log's inherits from
+   the row it lives in and could not carry out of it — the mono face and --faint — and both are
+   just as absent down here. Chaining says 'the same chip this window's bar wears' in one line;
+   restating the pair would have put that colour mix in a third stylesheet, waiting to drift. */
+.stamp { composes: stamp from './Floating.module.css'; }
 
 /* Whole, wrapped, and selectable. The row it came from clamps to four lines because a pane full
    of one payload is a pane with nothing else in it; a window opened onto one message has no such
