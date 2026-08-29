@@ -1,7 +1,9 @@
 import { memo, useState, type CSSProperties } from 'react';
+import { Expand } from '../brand/icons';
 import type { ColourRule } from '../../lib/topicColour';
 import { useComposeStore } from '../../stores/composeStore';
 import type { LogEntry } from '../../stores/logStore';
+import { useWindows } from './useWindows';
 import styles from './WireLog.module.css';
 
 /**
@@ -38,6 +40,10 @@ export const LogEntryRow = memo(function LogEntryRow({
   onLoaded?: (topic: string) => void;
 }) {
   const load = useComposeStore((state) => state.load);
+  // Read off the store here rather than taken as a prop: this row is memoised so that an arrival
+  // re-renders one of them, and a handler built by the pane would be a new function on every
+  // arrival and would re-render all of them.
+  const openWindow = useWindows((state) => state.open);
   const [whole, setWhole] = useState(false);
 
   // A body is long when it has more characters than the clamp shows OR more lines than it has
@@ -45,6 +51,11 @@ export const LogEntryRow = memo(function LogEntryRow({
   // disagree in both directions: a pretty-printed three-hundred-character object is fifteen lines
   // and was cut with nothing offering to open it.
   const long = !!entry.body && (entry.body.length > SHOW || lines(entry.body) > CLAMP_LINES);
+
+  // What a window opened on this row is called. The topic on its own would give two arrivals a
+  // second the same name, and the time is what a reader comparing two of them is reading.
+  const at = entry.at.toLocaleTimeString('en-GB', { hour12: false });
+  const name = entry.topic ? `${at} ${entry.topic}` : at;
 
   // Only an arrival can be sent back. A command entry carries the filter it was aimed at, which
   // may be a wildcard, and an outcome rather than a payload — neither is publishable. The whole
@@ -149,6 +160,19 @@ export const LogEntryRow = memo(function LogEntryRow({
           className={styles.body}
           data-testid="body"
           data-clipped={long && !whole ? '' : undefined}
+          // Twice, on the payload, opens it in a window. Counted rather than listened for with
+          // onDoubleClick: the first click of the pair still reaches the row, and the row's own
+          // guard above already declines anything inside the body — so the two gestures do not
+          // have to be told apart afterwards, they never met.
+          //
+          // The selection is dropped because a double-click takes a word with it, and a word
+          // highlighted under a window that has just opened over it is a highlight nobody asked
+          // for and cannot see the end of.
+          onClick={(event) => {
+            if (event.detail === 0 || event.detail % 2 !== 0) return;
+            window.getSelection()?.removeAllRanges();
+            openWindow({ kind: 'message', entry }, name);
+          }}
         >
           {entry.body}
         </div>
@@ -177,12 +201,35 @@ export const LogEntryRow = memo(function LogEntryRow({
           {whole ? 'show less' : `show all ${entry.body!.length} characters`}
         </button>
       )}
+
+      {/* The same thing the double-click does, for a hand that has not learnt the gesture and for
+          a keyboard that cannot make it. In the row's own corner rather than on the head line:
+          measured, a control in the head lands beside the stamps and takes four and a half pixels
+          off every row in the pane — this one is out of the flow and costs nothing.
+
+          Only where there is a message to open. A row with no payload at all — a retained clear —
+          has no body to double-click either, so on that row this is the only way in. */}
+      {reload && (
+        <button
+          type="button"
+          className={styles.open}
+          data-testid="open"
+          aria-label={`Open the message on ${entry.topic} in a window`}
+          title="Open in a window"
+          onClick={(event) => {
+            event.stopPropagation();
+            openWindow({ kind: 'message', entry }, name);
+          }}
+        >
+          <Expand />
+        </button>
+      )}
     </div>
   );
 });
 
 // Splits into segments so the '/' separators can be dimmed.
-function Topic({ topic }: { topic: string }) {
+export function Topic({ topic }: { topic: string }) {
   return (
     <>
       {topic.split('/').map((segment, index) => (

@@ -64,6 +64,10 @@ export const TOPIC_BYTES = 256 * 1024;
  * and costs about 86 bytes each for something only ever rendered as a time, and the stamps are
  * built up front rather than when a row is drawn. Together they are more than a third of what
  * an entry weighs, measured. Worth having, and a different change from this one.
+ *
+ * `size` was added to that ledger deliberately: a number on every entry is about eight bytes,
+ * so four megabytes at the cap. It buys the one field a window opening a message cannot work
+ * out for itself, and the alternative was parsing it back out of a word like '1.2kB'.
  */
 export const MAX_LOG_ENTRIES = 500_000;
 
@@ -102,6 +106,14 @@ export type LogEntry = {
   retain?: boolean;
   /** How `body` is written. Absent means text, which is what every entry was before hex. */
   mode?: BodyMode;
+  /**
+   * What the payload weighed on the wire, in bytes.
+   *
+   * Kept because it cannot be recovered: a hex body is two characters and a space per byte, so
+   * measuring `body` doubles every binary arrival, and `stamps` holds it only as the words '4B'.
+   * A window that opens one message has to be able to say 1024 bytes.
+   */
+  size?: number;
 };
 
 type NewLogEntry = Omit<LogEntry, 'id' | 'at'>;
@@ -276,6 +288,8 @@ function toEntry(message: DecodedMessage): LogEntry {
     qos: message.qos,
     retain: message.retain,
     mode: message.mode,
+    // Counted where the bytes were still bytes — see payloadSize below, and `size` on the type.
+    size: message.size,
   };
 }
 

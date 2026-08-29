@@ -1,0 +1,76 @@
+/* One message, opened out.
+
+   The pair grid is the same shape the chart's reading card uses — a fixed label column and a
+   value that wraps — copied rather than imported, because the two are read in different places
+   and a shared rule would tie a window's layout to a card inside a plot. */
+
+/* One wrapper, and it is load-bearing: the window's body is a grid of a single row, so a second
+   child would be laid into a track of no height and the properties would disappear entirely. */
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rows {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 8ch minmax(0, 1fr);
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+}
+.row dt {
+  margin: 0;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+.row dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+/* Whole, wrapped, and selectable. The row it came from clamps to four lines because a pane full
+   of one payload is a pane with nothing else in it; a window opened onto one message has no such
+   problem, and showing it whole is what the window is for. */
+.payload {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--t-code);
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+/* The same box the row's own open-in-place control wears, so the two read as one control in two
+   places rather than as two different ideas about the same payload. */
+.toggle {
+  all: unset;
+  align-self: flex-start;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+  padding: 2px 5px;
+  cursor: pointer;
+}
+.toggle:hover { color: var(--ink); border-color: var(--muted); }
+.toggle:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+/* Why it is not being shown as JSON, in the colour the console reports faults in. */
+.fault {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  color: var(--fault);
+}
