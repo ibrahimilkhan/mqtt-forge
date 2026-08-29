@@ -58,9 +58,47 @@ describe('fitRows', () => {
   });
 });
 
+// jsdom lays nothing out, so a test that needs a height stubs one onto the prototype. Cleared
+// here rather than at the end of the test that set it: a test that fails before its own cleanup
+// used to leave the stub standing, and the next test measured against it.
 afterEach(() => {
   vi.unstubAllGlobals();
+  for (const name of ['clientHeight', 'scrollHeight']) Reflect.deleteProperty(HTMLElement.prototype, name);
 });
+
+const sized = (name: 'clientHeight' | 'scrollHeight', px: number) =>
+  Object.defineProperty(HTMLElement.prototype, name, { configurable: true, value: px });
+
+/** A ResizeObserver that hands back the report function, so a test can drive it. */
+function observing() {
+  const seen: Element[] = [];
+  const box = { report: null as ((entries: ResizeObserverEntry[]) => void) | null, seen };
+
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      constructor(ran: (entries: ResizeObserverEntry[]) => void) {
+        box.report = ran;
+      }
+      observe(target: Element) {
+        seen.push(target);
+        box.report?.([{ target, contentRect: { height: 60 } } as unknown as ResizeObserverEntry]);
+      }
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+
+  return {
+    ...box,
+    grows: (height: number) =>
+      act(() =>
+        box.report?.([
+          { target: seen[0], contentRect: { height } } as unknown as ResizeObserverEntry,
+        ]),
+      ),
+  };
+}
 
 // jsdom lays nothing out and knows nothing about pointer capture, so a drag has to be given
 // both: the rects the column would really have, and a capture that says the bar is holding the
@@ -125,44 +163,71 @@ describe('Workspace', () => {
   // reader to pick a topic. The message that replaced it did not fit, and the count of what was
   // behind it fell off the bottom of the region.
   it('waits for the log to have something in it before fixing the split', () => {
-    const seen: Element[] = [];
-    let report: ((entries: ResizeObserverEntry[]) => void) | null = null;
-    vi.stubGlobal(
-      'ResizeObserver',
-      class {
-        constructor(ran: (entries: ResizeObserverEntry[]) => void) {
-          report = ran;
-        }
-        observe(target: Element) {
-          seen.push(target);
-          report?.([{ target, contentRect: { height: 60 } } as unknown as ResizeObserverEntry]);
-        }
-        unobserve() {}
-        disconnect() {}
-      },
-    );
-
-    // jsdom lays nothing out, and a column of no height has no split to work out.
-    const sized = (name: 'clientHeight' | 'scrollHeight', px: number) =>
-      Object.defineProperty(HTMLElement.prototype, name, { configurable: true, value: px });
+    const watch = observing();
     sized('clientHeight', 800);
     sized('scrollHeight', 120);
 
-    render(<Workspace {...parts} />);
+    render(<Workspace {...parts} log={<div data-resting="">one message</div>} />);
 
     // Mounted, and told its own size — still content-fit, nothing fixed.
-    expect(seen).toHaveLength(1);
+    expect(watch.seen).toHaveLength(1);
+    expect(screen.getByTestId('right-column')).toHaveAttribute('data-fit', 'content');
+  });
+
+  // The complaint: the region was cut to the size of the FIRST message that ever landed in it, so
+  // a short reading followed by a payload six lines deep left the reader scrolling a region
+  // shaped for a number. Content-fit means the log's track is min-content, which is already the
+  // right answer for every message — it only had to be allowed to go on being the answer.
+  it('follows the message while the log is showing one, however tall it grows', () => {
+    const watch = observing();
+    sized('clientHeight', 800);
+    sized('scrollHeight', 120);
+
+    render(<Workspace {...parts} log={<div data-resting="">one message</div>} />);
+
+    watch.grows(185);
     expect(screen.getByTestId('right-column')).toHaveAttribute('data-fit', 'content');
 
-    // The first message lands and the log grows.
-    act(() =>
-      report?.([{ target: seen[0], contentRect: { height: 185 } } as unknown as ResizeObserverEntry]),
-    );
+    // A much taller message on the same topic, and the column still has not been divided.
+    watch.grows(320);
+    expect(screen.getByTestId('right-column')).toHaveAttribute('data-fit', 'content');
+  });
 
-    expect(screen.getByTestId('right-column')).toHaveAttribute('data-fit', 'split');
+  // Opening the history is a request for more rows than any region could hold, and the pane's own
+  // 'N more below' is the answer to that rather than a taller region. So that is where the
+  // following stops — and it stops at the height the log stood at while it was resting, not at
+  // the height of the opened list.
+  it('fixes the split when the reader opens the history, at the resting height', () => {
+    const watch = observing();
+    sized('clientHeight', 800);
+    sized('scrollHeight', 120);
 
-    Reflect.deleteProperty(HTMLElement.prototype, 'clientHeight');
-    Reflect.deleteProperty(HTMLElement.prototype, 'scrollHeight');
+    const { rerender } = render(<Workspace {...parts} log={<div data-resting="">one message</div>} />);
+    watch.grows(320);
+
+    // The list is no longer resting, and the region grew past what it stood at.
+    rerender(<Workspace {...parts} log={<div>twenty-five rows</div>} />);
+    watch.grows(700);
+
+    const column = screen.getByTestId('right-column');
+    expect(column).toHaveAttribute('data-fit', 'split');
+    // 320 of 800 is the message it was following, not the 700 the opened list asked for.
+    expect(column.style.gridTemplateRows).toContain('minmax(0, 40.00fr)');
+  });
+
+  // A quieter topic, a fault, a sentence: the log gets shorter and the column simply follows it
+  // down. Nothing to divide the column around.
+  it('follows the log back down without fixing anything', () => {
+    const watch = observing();
+    sized('clientHeight', 800);
+    sized('scrollHeight', 120);
+
+    render(<Workspace {...parts} log={<div data-resting="">one message</div>} />);
+
+    watch.grows(320);
+    watch.grows(90);
+
+    expect(screen.getByTestId('right-column')).toHaveAttribute('data-fit', 'content');
   });
 
   it('folds a region away to its own strip, and brings it back', async () => {
