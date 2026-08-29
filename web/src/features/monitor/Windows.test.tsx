@@ -5,9 +5,9 @@ import { renderWithClient as render } from '../../test/renderWithClient';
 import { useAppearanceStore } from '../../stores/appearanceStore';
 import { useLogStore } from '../../stores/logStore';
 import { useSelectionStore } from '../../stores/selectionStore';
-import { ChartWindows } from './ChartWindows';
+import { Windows } from './Windows';
 import { TrafficPane } from './TrafficPane';
-import { useChartWindows } from './useChartWindows';
+import { useWindows } from './useWindows';
 import { useHoldStore } from './useTraffic';
 import { useZoomStore } from './useZoom';
 
@@ -15,7 +15,7 @@ import { useZoomStore } from './useZoom';
 const Console = () => (
   <>
     <TrafficPane />
-    <ChartWindows />
+    <Windows />
   </>
 );
 
@@ -63,11 +63,11 @@ beforeEach(() => {
   useSelectionStore.getState().clear();
   useHoldStore.getState().release();
   useZoomStore.setState({ zoomed: false, box: null });
-  useChartWindows.setState({ windows: [] });
+  useWindows.setState({ windows: [] });
   useAppearanceStore.getState().reset();
 });
 
-afterEach(() => useChartWindows.setState({ windows: [] }));
+afterEach(() => useWindows.setState({ windows: [] }));
 
 describe('pinning a chart', () => {
   // The whole point: two runs on screen at once, rather than one run and the memory of another.
@@ -129,7 +129,7 @@ describe('pinning a chart', () => {
     act(() => useZoomStore.getState().place({ x: 40, y: 30, w: 420, h: 300 }));
     await userEvent.click(screen.getByRole('button', { name: /^Pin / }));
 
-    expect(useChartWindows.getState().windows[0].box).toMatchObject({ x: 40, y: 30, w: 420, h: 300 });
+    expect(useWindows.getState().windows[0].box).toMatchObject({ x: 40, y: 30, w: 420, h: 300 });
   });
 
   // Every one of these is the first one, as far as where it starts is concerned: not stepped
@@ -143,18 +143,18 @@ describe('pinning a chart', () => {
     render(<Console />);
     await openAndPin();
 
-    const opened = { ...useChartWindows.getState().windows[0].box };
+    const opened = { ...useWindows.getState().windows[0].box };
     // The first one is dragged off into a corner and made small.
     act(() =>
-      useChartWindows
+      useWindows
         .getState()
-        .place(useChartWindows.getState().windows[0].id, { x: 0, y: 0, w: 320, h: 240 }),
+        .place(useWindows.getState().windows[0].id, { x: 0, y: 0, w: 320, h: 240 }),
     );
 
     act(() => useSelectionStore.getState().select(room));
     await openAndPin();
 
-    expect(useChartWindows.getState().windows[1].box).toEqual(opened);
+    expect(useWindows.getState().windows[1].box).toEqual(opened);
     const [, second] = screen.getAllByTestId('chart-window');
     // And the newest is the one on top, so it is not hidden behind what it landed on.
     expect(second).toHaveAttribute('data-filter', 'sensors/room');
@@ -358,7 +358,7 @@ describe('placing a window', () => {
 
     const window_ = screen.getByTestId('chart-window');
     act(() => {
-      useChartWindows.getState().place(useChartWindows.getState().windows[0].id, {
+      useWindows.getState().place(useWindows.getState().windows[0].id, {
         x: 900,
         y: 600,
         w: 400,

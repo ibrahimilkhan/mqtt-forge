@@ -7,7 +7,7 @@ import { ColoursPanel } from './features/colours/ColoursPanel';
 import { BrokerPanel } from './features/connection/BrokerPanel';
 import { MobilePanel } from './features/mobile/MobilePanel';
 import { useBrokerAddress, useConnectionState } from './api/useConnectionState';
-import { ChartWindows } from './features/monitor/ChartWindows';
+import { Windows } from './features/monitor/Windows';
 import { StreamPause } from './features/monitor/StreamPause';
 import { HealthStrip } from './features/health/HealthStrip';
 import { useAppearanceStore } from './stores/appearanceStore';
@@ -251,7 +251,7 @@ export function App({ hub }: { hub: Hub }) {
       {/* Over everything, and outside the workspace: a chart window is placed against the
           viewport, and every ancestor inside the workspace is a grid track with a share of a
           height. */}
-      <ChartWindows />
+      <Windows />
       </div>
 
       {/* Outside the workspace and under it: the workspace is a grid with a share of the height,

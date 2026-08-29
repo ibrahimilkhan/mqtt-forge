@@ -83,6 +83,10 @@ button.history:focus-visible { outline: 2px solid var(--signal); outline-offset:
 /* Quiet while the pane is live, and marked while it is not: a frozen pane that looks like a
    live one is worse than no hold at all. */
 .entry {
+  /* For the control in its corner, which is out of the flow so that it costs the row no height.
+     That and the head's right padding below are one change and must stay one: the padding is
+     what keeps the head's own contents from running under it. */
+  position: relative;
   /* The traffic, which is the one thing on this screen a reader copies out of the console and
      into something else — a topic into a filter, a payload into a bug report. */
   user-select: text;
@@ -138,6 +142,9 @@ button.history:focus-visible { outline: 2px solid var(--signal); outline-offset:
 .entry { --faint: color-mix(in srgb, var(--ink) 70%, transparent); }
 
 .entryHead {
+  /* Room for the control in the corner. Measured: the head holds about 104px of a 288px line, so
+     nothing wraps for it. */
+  padding-right: 28px;
   display: flex;
   /* Wraps rather than squeezing: on a narrow pane the stamps drop under the verb instead of
      pushing the line out past the pane's edge. */
@@ -276,3 +283,30 @@ button.history:focus-visible { outline: 2px solid var(--signal); outline-offset:
   color: var(--faint);
 }
 
+/* Open this one in a window, in the row's own corner.
+
+   Out of the flow on purpose. Measured, a control in the head line lands beside the stamps —
+   which is not the corner — and adds four and a half pixels to every row in a pane that draws
+   twenty-five of them. This one changes no height at all, hovered or not.
+
+   Always drawn rather than on hover: a hover is a thing a touch and a keyboard do not have, the
+   gallery's static pages would never show it, and a control that changed size on pointer entry
+   would fire the observer the pane counts its own fold with. Quiet is enough. */
+.open {
+  all: unset;
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid transparent;
+  border-radius: var(--r-control);
+  font-size: var(--t-code);
+  color: var(--muted);
+  cursor: pointer;
+}
+.open:hover { color: var(--ink); border-color: var(--rule); }
+.open:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }

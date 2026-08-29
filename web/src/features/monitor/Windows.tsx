@@ -1,21 +1,24 @@
-import { useEffect, type CSSProperties } from 'react';
+import { useEffect, useRef, type CSSProperties } from 'react';
+import { MessageDetail } from './MessageDetail';
 import styles from './Floating.module.css';
 import { moved, sized, useFloating } from './floating';
 import { Pin } from './Pin';
 import { TrafficChart } from './TrafficChart';
-import { useChartWindows, type ChartWindow as Chart } from './useChartWindows';
+import { useWindows, type FloatWindow } from './useWindows';
 import { useRunsFor } from './useTraffic';
+import { useZoomStore } from './useZoom';
 
 /**
- * The chart windows a reader has opened, floating over the console.
+ * The windows a reader has opened, floating over the console — a chart taken off the selection,
+ * or one message taken out of the run.
  *
  * They are drawn here, at the top of the app, rather than anywhere near the pane they were
- * opened from: a window is placed against the viewport, and everything between the chart and the
+ * opened from: a window is placed against the viewport, and everything between the pane and the
  * viewport is a grid track holding a share of a height.
  */
-export function ChartWindows() {
-  const windows = useChartWindows((state) => state.windows);
-  const place = useChartWindows((state) => state.place);
+export function Windows() {
+  const windows = useWindows((state) => state.windows);
+  const place = useWindows((state) => state.place);
 
   // A window placed against one viewport and left there while the window got smaller can end up
   // with no bar on screen — and the bar is the only way to bring it back. Sizing and moving each
@@ -23,7 +26,7 @@ export function ChartWindows() {
   // since a window wider than the viewport keeps its close and its grip off the far edge.
   useEffect(() => {
     const settle = () => {
-      for (const chart of useChartWindows.getState().windows) {
+      for (const chart of useWindows.getState().windows) {
         const box = moved(sized(chart.box, 0, 0), 0, 0);
         if (box.x !== chart.box.x || box.y !== chart.box.y || box.w !== chart.box.w || box.h !== chart.box.h) {
           place(chart.id, box);
@@ -36,6 +39,26 @@ export function ChartWindows() {
     return () => window.removeEventListener('resize', settle);
   }, [place]);
 
+  // Escape shuts the one on top. Not the one with focus: a reader who pressed it is asking for
+  // the thing in front of them to go, and after it goes the next press asks the same of the next.
+  //
+  // Except while the chart is thrown open, which is drawn above every window and has its own
+  // Escape. Two listeners for one key is what this console already does — the reading card and
+  // the colour picker have theirs too — and this is the one pair that overlap on screen.
+  useEffect(() => {
+    const shut = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (useZoomStore.getState().zoomed) return;
+
+      const top = useWindows.getState().windows.at(-1);
+      if (top) useWindows.getState().close(top.id);
+    };
+
+    window.addEventListener('keydown', shut);
+
+    return () => window.removeEventListener('keydown', shut);
+  }, []);
+
   return (
     <>
       {windows.map((chart, index) => (
@@ -43,22 +66,37 @@ export function ChartWindows() {
         // the order they happen to be drawn in: the newest is on top, and touching one brings it
         // up. Two windows opening in the same place is ordinary here, so which is in front is
         // not a detail that can be left to work itself out.
-        <ChartFrame key={chart.id} chart={chart} depth={index} />
+        <Frame key={chart.id} pane={chart} depth={index} />
       ))}
     </>
   );
 }
 
-function ChartFrame({ chart, depth }: { chart: Chart; depth: number }) {
-  const close = useChartWindows((state) => state.close);
-  const place = useChartWindows((state) => state.place);
-  const fix = useChartWindows((state) => state.fix);
-  const raise = useChartWindows((state) => state.raise);
-  // Runs, not one merged sequence: a pinned window redraws on every batch for as long as it is
-  // open, and merging a branch of thousands of topics only for the chart to split it again was
-  // what made a pinned window cost two thirds of a second at a time.
-  const runs = useRunsFor(chart.filter);
+function Frame({ pane: chart, depth }: { pane: FloatWindow; depth: number }) {
+  const close = useWindows((state) => state.close);
+  const place = useWindows((state) => state.place);
+  const fix = useWindows((state) => state.fix);
+  const raise = useWindows((state) => state.raise);
   const { bar, grip } = useFloating(chart.box, (box) => place(chart.id, box));
+  const frame = useRef<HTMLElement>(null);
+  const message = chart.pane.kind === 'message';
+
+  // A window opened onto one message takes the focus, because it was opened by a keystroke or a
+  // press on a row and there is nothing else on screen it could mean. On the way out the focus
+  // goes back where it came from — and where it came from is usually gone: the pane draws one row
+  // at rest, keyed on the entry, so the next arrival unmounts the button that opened this. The
+  // region is the named fallback, which is where the reader was looking anyway.
+  useEffect(() => {
+    if (!message) return;
+
+    const opener = document.activeElement as HTMLElement | null;
+    frame.current?.focus();
+
+    return () => {
+      if (opener && document.contains(opener)) opener.focus();
+      else document.getElementById('region-log')?.focus();
+    };
+  }, [message]);
 
   const where: CSSProperties = {
     left: chart.box.x,
@@ -72,10 +110,13 @@ function ChartFrame({ chart, depth }: { chart: Chart; depth: number }) {
     <section
       className={styles.window}
       style={where}
-      data-testid="chart-window"
-      data-filter={chart.filter}
+      ref={frame}
+      data-testid={message ? 'message-window' : 'chart-window'}
+      data-filter={chart.pane.kind === 'chart' ? chart.pane.filter : undefined}
       data-fixed={chart.fixed ? '' : undefined}
-      aria-label={`${chart.label} chart`}
+      aria-label={message ? `${chart.label}, opened` : `${chart.label} chart`}
+      // Focusable only as a message: a chart window is read, and its own controls are the way in.
+      tabIndex={message ? -1 : undefined}
       // On the way down rather than on the click: a reader reaching for a control in a window
       // behind another one should have the window they are reaching into come forward first,
       // not after they have already pressed something on it. Focus counts as reaching in: a
@@ -129,12 +170,10 @@ function ChartFrame({ chart, depth }: { chart: Chart; depth: number }) {
       </div>
 
       <div className={styles.body}>
-        {runs.length > 0 ? (
-          // Keyed on the filter like the pane's own chart: this window only ever draws one, so
-          // the key is really a statement that it never changes run under the reader.
-          <TrafficChart key={chart.filter} runs={runs} />
+        {chart.pane.kind === 'chart' ? (
+          <ChartBody filter={chart.pane.filter} label={chart.label} />
         ) : (
-          <p className="empty">Nothing on {chart.label} to chart yet.</p>
+          <MessageDetail entry={chart.pane.entry} />
         )}
       </div>
 
@@ -151,4 +190,23 @@ function ChartFrame({ chart, depth }: { chart: Chart; depth: number }) {
       )}
     </section>
   );
+}
+
+/**
+ * The chart half of a window.
+ *
+ * Its own component because of the hook: a window draws one thing or the other, and a hook cannot
+ * be called for the half that is not being drawn.
+ */
+function ChartBody({ filter, label }: { filter: string; label: string }) {
+  // Runs, not one merged sequence: a pinned window redraws on every batch for as long as it is
+  // open, and merging a branch of thousands of topics only for the chart to split it again was
+  // what made a pinned window cost two thirds of a second at a time.
+  const runs = useRunsFor(filter);
+
+  if (runs.length === 0) return <p className="empty">Nothing on {label} to chart yet.</p>;
+
+  // Keyed on the filter like the pane's own chart: this window only ever draws one, so the key is
+  // really a statement that it never changes run under the reader.
+  return <TrafficChart key={filter} runs={runs} />;
 }

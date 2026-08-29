@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react';
 
 /**
- * The six marks the panel menu wears, one per panel — and five more that are not panels.
+ * The six marks the panel menu wears, one per panel — and six more that are not panels.
  *
- * Drawn here rather than pulled from an icon set. Eleven glyphs is not worth a dependency, and a
+ * Drawn here rather than pulled from an icon set. Twelve glyphs is not worth a dependency, and a
  * set drawn to its own rules would sit beside the mark in `marks.tsx` looking borrowed: the same
  * 24-unit square, one weight of stroke, round ends, no fill, current colour. That is the whole
  * drawing language of this console, and these follow it — the shapes are Lucide's `antenna`,
@@ -187,6 +187,25 @@ export const Cross = () => (
     <>
       <path d="M18 6 6 18" />
       <path d="m6 6 12 12" />
+    </>
+  </Glyph>
+);
+
+/**
+ * Open this one out.
+ *
+ * Lucide's `maximize-2` — two corners pushed apart, which is what enlarging is. No arrowheads:
+ * six strokes is what survives thirteen pixels, and the heads would be the first thing to close
+ * up. Pulled a unit inside the square the way Cross is, so it sits at the weight of the marks
+ * beside it rather than filling more of its box than they do.
+ */
+export const Expand = () => (
+  <Glyph>
+    <>
+      <path d="M14.5 4H20v5.5" />
+      <path d="M9.5 20H4v-5.5" />
+      <path d="M20 4l-6.5 6.5" />
+      <path d="M4 20l6.5-6.5" />
     </>
   </Glyph>
 );

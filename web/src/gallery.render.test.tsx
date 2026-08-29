@@ -29,12 +29,12 @@ import { TrafficLine } from './features/monitor/TrafficLine';
 import { queryKeys } from './api/queryKeys';
 import { createFakeHub } from './realtime/fakeHub';
 import { useAppearanceStore } from './stores/appearanceStore';
-import { runsOf, useLogStore } from './stores/logStore';
+import { runFor, runsOf, useLogStore } from './stores/logStore';
 import { useSelectionStore } from './stores/selectionStore';
 import { useHoldStore } from './features/monitor/useTraffic';
 import { useTopicTreeStore } from './stores/topicTreeStore';
 import { useZoomStore } from './features/monitor/useZoom';
-import { useChartWindows } from './features/monitor/useChartWindows';
+import { useWindows } from './features/monitor/useWindows';
 
 const OUT = '/Users/ilkhan/RiderProjects/MqttForge/src/MqttForge.Api/wwwroot';
 
@@ -350,6 +350,7 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
     'console-zoomed.html',
     'console-pinned.html',
     'console-shut.html',
+    'console-message.html',
   ]
     .map((href, i) => {
       const name =
@@ -377,6 +378,8 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
                     ? 'Charts pinned'
                     : href === 'console-shut.html'
                       ? 'Rail shut'
+                    : href === 'console-message.html'
+                      ? 'A message opened'
                       : `Charts ${i}`;
 
       return `<a href="${href}">${name}</a>`;
@@ -419,7 +422,10 @@ ${inner}
   // The rail narrowed to its strip, which is the other half of the rail's design and a click
   // away rather than a state the app can be started in.
   writeFileSync(`${OUT}/console-shut.html`, console_(client, { panel: null, rail: 'shut' }));
-  useChartWindows.setState({ windows: [] });
+  // One message taken out of the run and opened, which is the one state of the log a click makes
+  // and a static page cannot.
+  writeFileSync(`${OUT}/console-message.html`, console_(client, { opened: true, panel: null }));
+  useWindows.setState({ windows: [] });
 
   // Back to the defaults: the runs above set the range on the store to draw themselves both
   // ways, and a panel showing the last of those would be showing the renderer's state rather
@@ -734,7 +740,7 @@ function detail() {
  * a fake hub satisfies the bridge. What this writes is the real layout with real components in
  * it, at whatever size the window opens — which is what a screenshot of the console is.
  */
-function console_(client, { zoomed = false, pinned = false, panel = 'broker', rail = 'open' } = {}) {
+function console_(client, { zoomed = false, pinned = false, opened = false, panel = 'broker', rail = 'open' } = {}) {
   // Primed rather than fetched. Rendering here is one synchronous pass, so a query that has to
   // go and ask would still be pending when the HTML is taken — and the page would show a console
   // that had not connected to anything.
@@ -760,19 +766,19 @@ function console_(client, { zoomed = false, pinned = false, panel = 'broker', ra
   useZoomStore.setState({ zoomed, box: null });
   // Two runs on screen at once, which is the thing one chart in one column cannot do. Placed by
   // hand here; in the console they are placed by whoever dragged them there.
-  useChartWindows.setState({
+  useWindows.setState({
     windows: pinned
       ? [
           {
             id: 'chart-1',
-            filter: 'sensors/garage/temp',
+            pane: { kind: 'chart', filter: 'sensors/garage/temp' },
             label: 'sensors/garage/temp',
             box: { x: 300, y: 96, w: 470, h: 300 },
             fixed: true,
           },
           {
             id: 'chart-2',
-            filter: 'sensors/kitchen/humidity',
+            pane: { kind: 'chart', filter: 'sensors/kitchen/humidity' },
             label: 'sensors/kitchen/humidity',
             box: { x: 420, y: 330, w: 470, h: 300 },
             // One pinned and one loose, so the page shows both states of the bar at once.
@@ -827,6 +833,41 @@ function console_(client, { zoomed = false, pinned = false, panel = 'broker', ra
     filter: 'sensors/livingroom/temp/#',
     topic: 'sensors/livingroom/temp',
   });
+
+  // One message taken out of the run and opened. Seeded here rather than clicked, for the same
+  // reason the panel above is: a static page cannot carry a click, and this is the only state of
+  // the log that one makes.
+  if (opened) {
+    const configured = {
+      topic: 'devices/gateway/config',
+      payload: JSON.stringify({
+        firmware: '4.2.1-rc3',
+        uptime: 918273,
+        radios: [
+          { id: 'radio-0', channel: 11, dbm: -42, peers: 3 },
+          { id: 'radio-1', channel: 12, dbm: -43, peers: 4 },
+        ],
+      }),
+      mode: 'text',
+      size: 214,
+      qos: 1,
+      retain: true,
+      receivedAt: '2026-08-19T04:16:08.250Z',
+    };
+    useLogStore.getState().appendReceived([configured]);
+    const entry = runFor(useLogStore.getState().byTopic, 'devices/gateway/config')[0];
+    useWindows.setState({
+      windows: [
+        {
+          id: 'window-1',
+          pane: { kind: 'message', entry },
+          label: '04:16:08 devices/gateway/config',
+          box: { x: 250, y: 150, w: 470, h: 340 },
+          fixed: true,
+        },
+      ],
+    });
+  }
 
   const { container } = render(
     <QueryClientProvider client={client}>
