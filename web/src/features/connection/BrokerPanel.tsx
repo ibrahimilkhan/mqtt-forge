@@ -401,37 +401,6 @@ export function BrokerPanel({
 
   return (
     <PanelShell title="Broker" onClose={onClose}>
-      {/* First, and on its own, while there is a link. A panel reopened over a working
-          connection was reopened to read it or to end it — not to fill in a form that would
-          replace it — and the form underneath answers a question this reader has already
-          answered.
-
-          Not while the link is settling, which is the same beat the close waits out. Connecting
-          to a broker that hangs up on the subscribe put this block on screen and took it off
-          again inside 110ms — measured, 752px to 1077px to 874px — and a 325px block opening and
-          shutting under the reader's eyes is the whole of what that felt like. A link that is
-          not going to hold should move nothing at all. So through the settle the panel stays as
-          it was mid-attempt, and at the end of it either the panel goes (the link held) or the
-          failure appears where the block would have been (it did not).
-
-          Which means this block is on screen only in the case it was written for: a panel opened
-          over a link that was already up. That is not a transition, so nothing is settling. */}
-      {isOnline && !settling && (
-        <div className={styles.live}>
-          <ConnectionSummary lead />
-          <div className={styles.actions}>
-            <button
-              type="button"
-              className="ghost"
-              onClick={() => guardedDisconnect()}
-              disabled={disconnectMutation.isPending}
-            >
-              Disconnect
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* One column, in the order the questions arrive: where to point it, who it says it is
           when it gets there, and how the channel is secured.
 
@@ -883,6 +852,45 @@ export function BrokerPanel({
           <button type="button" className="ghost" onClick={() => open('subscribe')}>
             Ask for less in Filters
           </button>
+        </div>
+      )}
+
+      {/* What is up right now, at the foot of the panel, with the one button that ends it.
+
+          It stood first for a while, on the reasoning that a panel reopened over a working
+          connection was reopened to read it or to end it rather than to fill in a form. That is
+          still true of why the panel was opened, and it was the wrong conclusion about where the
+          block goes: the panel is read top to bottom as a form, and a block of facts in front of
+          the first field is a paragraph between the reader and the thing they came to type in.
+          The link is not asked for, it is reported — so it reads last, under everything the
+          reader could do about it, which is where a footer goes.
+
+          Not while the link is settling, which is the same beat the close waits out. Connecting
+          to a broker that hangs up on the subscribe put this block on screen and took it off
+          again inside 110ms — measured, 752px to 1077px to 874px — and a 325px block opening and
+          shutting under the reader's eyes is the whole of what that felt like. A link that is not
+          going to hold should move nothing at all. So through the settle the panel stays as it
+          was mid-attempt, and at the end of it either the panel goes (the link held) or the
+          failure appears (it did not).
+
+          Which means this block is on screen only in the case it was written for: a panel opened
+          over a link that was already up. That is not a transition, so nothing is settling.
+
+          No `lead`: the block draws its own rule now, because it has the whole panel above it to
+          be set apart from. */}
+      {isOnline && !settling && (
+        <div className={styles.live}>
+          <ConnectionSummary />
+          <div className={styles.actions}>
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => guardedDisconnect()}
+              disabled={disconnectMutation.isPending}
+            >
+              Disconnect
+            </button>
+          </div>
         </div>
       )}
     </PanelShell>
