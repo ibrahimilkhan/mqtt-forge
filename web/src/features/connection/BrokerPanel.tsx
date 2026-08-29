@@ -81,6 +81,13 @@ const DEFAULTS: BrokerForm = {
  * widest windows — under about 660px it stacked anyway — so the same panel read down one order
  * on a desktop and another on a laptop, and neither was the order anyone would say the questions
  * in. See .form and the measure in Workspace.module.css.
+ *
+ * Nothing here explains itself. Every grey line under a field — what the scheme meant, what an
+ * empty WebSocket path defaults to, what the seconds counted, what accepting any certificate
+ * gave up — has been taken out on purpose, and putting one back is a decision rather than an
+ * improvement. What is left says something that has happened: a field the API refused, and the
+ * sentence naming why a connect failed. Placeholders carry what a box wants; the README carries
+ * what the fields are for.
  */
 export function BrokerPanel({
   onClose,
@@ -465,16 +472,6 @@ export function BrokerPanel({
             </label>
           </div>
 
-          {/* Said where the box that will not move is, rather than left to be worked out. */}
-          {certified && (
-            <p className={styles.note}>Held on by the certificate under Encryption.</p>
-          )}
-
-          {/* What the two answers add up to. The four names are still the vocabulary — every
-              broker's documentation writes one of them — but here they are what the reader is told
-              rather than what they are asked. */}
-          <p className={styles.note}>{choiceOf(form.scheme).note}</p>
-
           {/* Only where it means something. On TCP there is no path, and an empty box asking for
               one reads as a field somebody forgot to fill in. */}
           {overWebSocket && (
@@ -489,7 +486,6 @@ export function BrokerPanel({
                 />
                 {/* No FieldError: the API refuses no path, deliberately. A wrong one comes back as
                     a refused upgrade, which says more than any rule here could. */}
-                <p className={styles.note}>Empty means /mqtt.</p>
               </Field>
             </div>
           )}
@@ -517,12 +513,6 @@ export function BrokerPanel({
               />
             </Field>
           </div>
-
-          {/* Beside the box it is about rather than at the foot of the panel: it is an
-              instruction to type into that box, and it used to stand nine fields away from it. */}
-          {saved?.hasPassword && (
-            <p className={styles.note}>A password is saved but never sent back. Enter it again.</p>
-          )}
 
           {/* Plainly, not behind a line. It was folded with the version picker and the session, as
               three settings nobody changes — but the version is not asked at all any more, and a
@@ -557,21 +547,18 @@ export function BrokerPanel({
               gets; a broker that steps down to 3.x ignores the number, which is the same outcome as
               not sending one. */}
           {sessionKept && (
-            <>
-              <div className={styles.row}>
-                <Field label="Session expiry" htmlFor="sessionExpiry" narrow>
-                  <input
-                    id="sessionExpiry"
-                    type="number"
-                    min={0}
-                    placeholder="secs"
-                    value={form.sessionExpiry}
-                    onChange={(e) => set('sessionExpiry', e.target.value)}
-                  />
-                </Field>
-              </div>
-              <p className={styles.note}>Seconds the broker keeps it after the link goes.</p>
-            </>
+            <div className={styles.row}>
+              <Field label="Session expiry" htmlFor="sessionExpiry" narrow>
+                <input
+                  id="sessionExpiry"
+                  type="number"
+                  min={0}
+                  placeholder="secs"
+                  value={form.sessionExpiry}
+                  onChange={(e) => set('sessionExpiry', e.target.value)}
+                />
+              </Field>
+            </div>
           )}
         </section>
 
@@ -600,11 +587,6 @@ export function BrokerPanel({
               {' Accept any certificate'}
             </label>
           </div>
-          <p className={styles.note}>
-            For your own broker with a certificate it signed itself. Naming its CA below keeps the
-            checking instead.
-          </p>
-
           <PathField
             label="Extra CA certificate"
             id="caPath"
@@ -656,28 +638,8 @@ export function BrokerPanel({
                   />
                 </Field>
               </div>
-
-              {saved?.tls?.hasClientCertificatePassword && (
-                <p className={styles.note}>Saved but never sent back. Enter it again.</p>
-              )}
             </>
           )}
-
-          {/* Files are read where the connection is held, which is the server. It said only
-              "read by the server", and "the server" is a word this app spends no other line
-              explaining — the console looks like a web page, so a path in it reads like a path
-              on the machine holding the keyboard. It is, for the desktop app; naming both cases
-              is what makes that a fact rather than a guess.
-
-              It stays on screen with the dialog buttons rather than instead of them, and it is
-              the buttons that make it worth keeping: the dialog they open belongs to that same
-              machine, so a reader on a phone browsing the desktop app's console is picking a file
-              on the desktop. Which is the right file — and not at all what the dialog looks
-              like from there. */}
-          <p className={styles.note}>
-            Read where MQTTForge runs, not by this browser — this machine for the desktop app,
-            inside the container for a container.
-          </p>
 
           {/* The other two, behind a line of their own: neither is about a certificate, and
               neither is asked for by any broker you reach at its own address on its own port.
@@ -697,10 +659,6 @@ export function BrokerPanel({
                 />
               </Field>
             </div>
-            <p className={styles.note}>
-              For a broker reached at an address its certificate does not carry.
-            </p>
-
             <div className={styles.row}>
               <Field label="ALPN protocol" htmlFor="alpnProtocol">
                 <input
@@ -713,9 +671,6 @@ export function BrokerPanel({
                 <FieldError error={connectMutation.error} field="Tls.AlpnProtocol" />
               </Field>
             </div>
-            <p className={styles.note}>
-              Gets MQTT through a firewall that allows only 443. AWS IoT Core wants x-amzn-mqtt-ca.
-            </p>
           </details>
         </details>
       </div>
@@ -810,13 +765,6 @@ export function BrokerPanel({
         </div>
       )}
 
-      {/* Said where the disabled button is, rather than left to be worked out. The fold above
-          offers to connect somewhere else and the button under it will not, which is a loop
-          with no way out of it written down anywhere. */}
-      {isOnline && (
-        <p className={styles.note}>Disconnect first — one link at a time.</p>
-      )}
-
       {/* At the foot, and only once there is something to put here. It used to hold eleven
           brokers somebody else runs; these are the ones the reader kept. */}
       {profiles !== undefined && profiles.length > 0 && (
@@ -827,11 +775,7 @@ export function BrokerPanel({
             active={from}
             onPick={usePicked}
             onForget={(name) => forgetMutation.mutate(name)}
-          />
-          {profiles.some((one) => one.connection.hasPassword) && (
-            <p className={styles.note}>Passwords are kept but never sent back.</p>
-          )}
-        </div>
+          />        </div>
       )}
 
       {failure && (

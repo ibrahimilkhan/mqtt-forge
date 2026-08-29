@@ -17,15 +17,6 @@ export type SchemeChoice = {
   useTls: boolean;
   /** What the broker almost certainly listens on, when nobody has said otherwise. */
   defaultPort: number;
-  /**
-   * Under the address: what this way in is, in the fewest words that distinguish it.
-   *
-   * Both halves, always — encrypted or not, and straight to the broker or inside a WebSocket.
-   * Under the four chips it only had to tell the chosen one from its neighbours, and the
-   * neighbours were on screen; standing alone under the address it is the only thing saying
-   * either. `mqtts` was the one that named the encryption without naming the transport.
-   */
-  note: string;
 };
 
 export const SCHEMES: readonly SchemeChoice[] = [
@@ -34,28 +25,24 @@ export const SCHEMES: readonly SchemeChoice[] = [
     transport: 'tcp',
     useTls: false,
     defaultPort: 1883,
-    note: 'Plain MQTT over TCP. Nothing on the wire is encrypted.',
   },
   {
     scheme: 'mqtts',
     transport: 'tcp',
     useTls: true,
     defaultPort: 8883,
-    note: 'MQTT over TLS, straight to the broker. What every cloud broker wants.',
   },
   {
     scheme: 'ws',
     transport: 'webSocket',
     useTls: false,
     defaultPort: 8083,
-    note: 'MQTT inside a plain WebSocket, for a broker behind an HTTP proxy.',
   },
   {
     scheme: 'wss',
     transport: 'webSocket',
     useTls: true,
     defaultPort: 8084,
-    note: 'MQTT inside an encrypted WebSocket. The way through a firewall that allows only HTTPS.',
   },
 ];
 
