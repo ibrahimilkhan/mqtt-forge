@@ -24,29 +24,39 @@ export function MessageDetail({ entry }: { entry: LogEntry }) {
     // One wrapper. The window's body is a grid of a single row, so two children here would put
     // the summary in a track of no height and lose it under the payload.
     <div className={styles.detail}>
-      {/* What arrived and when, said the way the row says it rather than tabulated. The labels
-          went with the three facts that are chips in this window's own bar now: a topic looks
-          like a topic and a timestamp looks like a timestamp, and an 8ch column spelling 'topic'
-          and 'at' beside them was a third of the narrowest window a reader can drag this to,
-          spent on two words that are read once and looked past ever after.
+      {/* One line for what this message is: the word 'topic', the topic itself at reading size,
+          and the moment it landed held against the far end.
+
+          The word stays. A path is not always obviously a path — 'front', 'meter', a single
+          segment with no slash in it at all — and the first line of a window has to be readable
+          without the run behind it to compare against. The date needs no word of its own: nothing
+          else on this screen looks like a timestamp.
+
+          Held apart rather than stacked, because they answer two different questions and a reader
+          opening a window an hour after the fact is asking the second one. They wrap together
+          when the window is too narrow to hold both, and the date keeps the right edge either
+          way.
 
           The topic carries its rule's colour, the same as the row it was opened from. The window
           used to be drawn in the console's plain ink while the row behind it was green, and the
           two never read as one message. */}
       <div className={styles.head} data-testid="summary">
-        {entry.topic && (
-          <div className={styles.topic} data-copy style={rule ? { color: rule.colour } : undefined}>
-            <Topic topic={entry.topic} />
-          </div>
-        )}
+        <div className={styles.line}>
+          {entry.topic && <span className={styles.label}>topic</span>}
+          {entry.topic && (
+            <div className={styles.topic} data-copy style={rule ? { color: rule.colour } : undefined}>
+              <Topic topic={entry.topic} />
+            </div>
+          )}
 
-        {/* data-copy on both, because this console selects nothing by default and the exceptions
-            are listed one at a time — these were a dt/dd pair, which was on that list. A topic is
-            the most-copied string on the screen, and a window it could not be taken out of would
-            be a window that had quietly stopped being useful. */}
-        <time className={styles.at} dateTime={entry.at.toISOString()} data-copy>
-          {when(entry.at)}
-        </time>
+          {/* data-copy on both, because this console selects nothing by default and the exceptions
+              are listed one at a time — these were a dt/dd pair, which was on that list. A topic is
+              the most-copied string on the screen, and a window it could not be taken out of would
+              be a window that had quietly stopped being useful. */}
+          <time className={styles.at} dateTime={entry.at.toISOString()} data-copy>
+            {when(entry.at)}
+          </time>
+        </div>
 
         {(rest.length > 0 || entry.retain === false || rule) && (
           <p className={styles.unsaid}>
@@ -148,25 +158,20 @@ const when = (at: Date) =>
  * What the chips in the bar cannot say.
  *
  * The bar wears the log's own stamps, and those are drawn to be glanced at in a scrolling run.
- * Two measurements are lost on the way up there: the weight is rounded past a kilobyte, so
- * '2.0kB' is 2048 bytes and 2099 bytes alike, and a hex body is stamped 'BIN' and never
- * reconciled with the characters actually on screen.
+ * The weight is one of them, and what a message weighed is not a second question owed a second
+ * answer: it is said once, in the chip, and saying it again underneath in more words was the old
+ * table refusing to be deleted.
  *
- * Words, both of them, because both are arithmetic. The third thing the bar cannot say is
- * whether a message was retained, and that one is a state rather than a measurement — it is
- * drawn beside these as a chip instead, in the summary itself.
+ * What the chip cannot say is a hex body's arithmetic — which is not the weight but the reason
+ * the weight and the screen disagree — and whether a message was retained, which is a state
+ * rather than a measurement and is drawn beside this as a chip of its own.
  *
- * Each is said only where it is actually missing upstairs, which is what keeps this from being
- * the old table with two rows deleted: an ordinary small retained reading returns nothing at all
- * and draws no line, because the chips already said the whole of it.
+ * Said only where it is actually missing upstairs, which is what keeps this from being a table:
+ * an ordinary retained reading returns nothing at all and draws no line, because the chips have
+ * already said the whole of it.
  */
 function unsaid(entry: LogEntry): string[] {
   const said: string[] = [];
-
-  // Only where the stamp had to round. Under a kilobyte the chip already reads '214b', and
-  // '214 bytes' beside it is the same number in more words. `size` is on the entry for exactly
-  // this, so that reading 1024 bytes never means parsing it back out of a word like '1.0kB'.
-  if (entry.size !== undefined && entry.size >= 1024) said.push(`${entry.size} bytes`);
 
   // A hex body is two characters and a space for every byte, so a reader looking at 3071
   // characters of dump beside a chip stamped '1.0kb' is owed the arithmetic rather than left to

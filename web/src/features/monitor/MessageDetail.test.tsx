@@ -195,9 +195,9 @@ describe('what the window says about the message', () => {
     expect(screen.queryByTestId('window-body')).not.toBeInTheDocument();
   });
 
-  // The chip rounds everything past a kilobyte, so 2048 and 2099 bytes stamp the same word. The
-  // window is where the number it was rounded from lives.
-  it('gives the exact count where the chip had to round it', async () => {
+  // What a message weighed is said once, in the chip upstairs. It was being answered a second
+  // time underneath in more words, which was the old table refusing to be deleted.
+  it('leaves the weight to the chip that already carries it', async () => {
     const payload = 'x'.repeat(2048);
     landed(arrival({ payload, size: byteLength(payload) }));
     render(<Console />);
@@ -205,18 +205,30 @@ describe('what the window says about the message', () => {
     await openIt();
 
     expect(chips()).toHaveTextContent('2.0kB');
-    expect(summary()).toHaveTextContent('2048 bytes');
+    expect(summary()).not.toHaveTextContent('bytes');
   });
 
-  // Under a kilobyte the chip is already the exact number, and saying it again in more words is
-  // the old table with two rows deleted.
-  it('leaves a small body to its chip alone', async () => {
-    landed(arrival({ payload: 'ok', size: byteLength('ok'), retain: true }));
+  // A path is not always obviously a path — a single segment with no slash in it reads as a word,
+  // and the first line of a window has to stand up without the run behind it to be read against.
+  it('says which of these lines is the topic', async () => {
+    landed(arrival());
     render(<Console />);
 
     await openIt();
 
-    expect(summary()).not.toHaveTextContent('bytes');
+    expect(within(summary()).getByText('topic')).toBeInTheDocument();
+  });
+
+  // Two questions on one line, and the second one held against the far end.
+  it('holds the moment it landed at the end of the topic line', async () => {
+    landed(arrival());
+    render(<Console />);
+
+    await openIt();
+
+    const landedAt = within(summary()).getByText(/^\d\d\/\d\d\/\d{4},/);
+    expect(landedAt.tagName).toBe('TIME');
+    expect(landedAt.previousElementSibling).toHaveTextContent('sensors/room/temp');
   });
 
   it('gives a hex body its bytes and its characters, since the two differ', async () => {
