@@ -70,9 +70,15 @@ const DEFAULTS: BrokerForm = {
  *
  *  - the live link, first and only while there is one, since a panel reopened over a working
  *    connection was opened to read it or to end it;
- *  - the form, which is the address, the credentials and what to listen to — with the client,
- *    the version, the session and the encryption folded away behind their own lines;
- *  - the brokers to start from, folded, at the foot.
+ *  - the form, which is one column of three named blocks — Broker, User, Encryption — with what
+ *    to listen to standing beside the button rather than among them;
+ *  - the brokers the reader kept, at the foot.
+ *
+ * The form is a single stack at every width, and centred in whatever the panel is given. It was
+ * two columns for one release: the broker beside the client. The pair only held at the two
+ * widest windows — under about 660px it stacked anyway — so the same panel read down one order
+ * on a desktop and another on a laptop, and neither was the order anyone would say the questions
+ * in. See .form and the measure in Workspace.module.css.
  */
 export function BrokerPanel({
   onClose,
@@ -371,347 +377,365 @@ export function BrokerPanel({
         </div>
       )}
 
-      {/* The form. Everything a connection needs, in the order the questions arrive:
-          where to point it, how it gets there, who it says it is, and what to listen to.
-          It used to be folded behind a line reading "Connect somewhere else" while a link
-          was up. The panel took a quarter of the window then; it takes the window now, and
-          a fold whose reason was width is a fold with no reason. */}
+      {/* One column, in the order the questions arrive: where to point it, who it says it is
+          when it gets there, and how the channel is secured.
 
-      {/* Two columns, because the panel has the window and a form does not get easier by
-          being taller. The broker on the left and the client on the right: where this is
-          going, and who it says it is when it gets there. Under about 660px they stack,
-          which is the width one column of fields stops being readable at. */}
+          It was two columns, the broker beside the client. The pair only ever held at the two
+          widest windows — under about 660px it stacked anyway — so the same panel read down one
+          order on a desktop and a different one on a laptop, and neither was the order anybody
+          would say the questions in. One order, at every width, is the whole of the change.
+
+          The column is capped and centred rather than let out to the window; see `.form`. */}
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
-      <div className={styles.pair} onKeyDown={onEnter}>
-        <div>
-        {/* The address, first, because it is the only thing the reader actually has. The way in
-            stands at the head of it, where a scheme stands in a URL — and it is two words rather
-            than four, because mqtt against mqtts was never one question. It was two, multiplied
-            together and asked in a letter nobody can see. */}
-        <div className={styles.row}>
-          <Field label="Broker address" htmlFor="address">
-            <div className={styles.addressLine}>
-              <select
-                id="transport"
-                aria-label="Transport"
-                value={choiceOf(form.scheme).transport}
-                onChange={(e) => pickWay(e.target.value as MqttTransport, encrypted)}
-              >
-                {/* Written with the `://` they carry in an address, this being where they stand
-                    and what they are standing in for. */}
-                <option value="tcp">mqtt://</option>
-                <option value="webSocket">ws://</option>
-              </select>
-              <input
-                id="address"
-                type="text"
-                ref={addressRef}
-                value={addressText}
-                placeholder="broker.example"
-                onChange={(e) => setAddressText(e.target.value)}
-                // On the paste and on the way out of the box, never on the keystroke. Splitting
-                // as it is typed takes the address apart at whatever it happens to be halfway
-                // through a hostname — `mqtts://b` is a complete address and would leave `b` in
-                // this box with the rest of the name typed after it. A paste arrives whole, and
-                // by the time the box is left the reader has finished writing in it.
-                onPaste={(e) => {
-                  e.preventDefault();
-                  settle(applyAddress(form, e.clipboardData.getData('text')));
-                }}
-                onBlur={(e) => settle(applyAddress(form, e.target.value))}
-              />
-            </div>
-            {/* Keyed on Host, which is what the API calls what this box holds. */}
-            <FieldError error={connectMutation.error} field="Host" />
-          </Field>
-          <Field label="Port" htmlFor="port" narrow>
-            <input
-              id="port"
-              type="number"
-              value={form.port}
-              onChange={(e) => set('port', Number(e.target.value))}
-              // On the way out, for the same reason the address box splits on the way out: a
-              // number halfway through being typed is not a number. See schemeForPort.
-              onBlur={() => settle({ ...form, scheme: schemeForPort(form.scheme, form.port) })}
-            />
-            <FieldError error={connectMutation.error} field="Port" />
-          </Field>
-        </div>
-
-        {/* The second question, in the word everybody has for it. The s in mqtts asks exactly this
-            and asks it in a letter nobody can see. Three things answer it — the port above, a
-            pasted address, and a certificate — and all three tick this box. */}
-        <div className={styles.checks}>
-          <label>
-            <input
-              type="checkbox"
-              checked={encrypted}
-              disabled={certified}
-              onChange={(e) => pickWay(choiceOf(form.scheme).transport, e.target.checked)}
-            />
-            {' Encrypted (TLS)'}
-          </label>
-        </div>
-
-        {/* Said where the box that will not move is, rather than left to be worked out. */}
-        {certified && (
-          <p className={styles.note}>Held on by the certificate under Encryption.</p>
-        )}
-
-        {/* What the two answers add up to. The four names are still the vocabulary — every
-            broker's documentation writes one of them — but here they are what the reader is told
-            rather than what they are asked. */}
-        <p className={styles.note}>{choiceOf(form.scheme).note}</p>
-
-        {/* Only where it means something. On TCP there is no path, and an empty box asking for
-            one reads as a field somebody forgot to fill in. */}
-        {overWebSocket && (
+      <div className={styles.form} onKeyDown={onEnter}>
+        <section className={styles.group}>
+          {/* Named, now that the three blocks stand one under another rather than in columns a
+              reader could take in at a glance. A heading each is what tells a scrolling eye which
+              question it has arrived at. */}
+          <h3 className={styles.groupTitle}>Broker</h3>
+          {/* The address, first, because it is the only thing the reader actually has. The way in
+              stands at the head of it, where a scheme stands in a URL — and it is two words rather
+              than four, because mqtt against mqtts was never one question. It was two, multiplied
+              together and asked in a letter nobody can see. */}
           <div className={styles.row}>
-            <Field label="WebSocket path" htmlFor="webSocketPath">
+            <Field label="Broker address" htmlFor="address">
+              <div className={styles.addressLine}>
+                <select
+                  id="transport"
+                  aria-label="Transport"
+                  value={choiceOf(form.scheme).transport}
+                  onChange={(e) => pickWay(e.target.value as MqttTransport, encrypted)}
+                >
+                  {/* Written with the `://` they carry in an address, this being where they stand
+                      and what they are standing in for. */}
+                  <option value="tcp">mqtt://</option>
+                  <option value="webSocket">ws://</option>
+                </select>
+                <input
+                  id="address"
+                  type="text"
+                  ref={addressRef}
+                  value={addressText}
+                  placeholder="broker.example"
+                  onChange={(e) => setAddressText(e.target.value)}
+                  // On the paste and on the way out of the box, never on the keystroke. Splitting
+                  // as it is typed takes the address apart at whatever it happens to be halfway
+                  // through a hostname — `mqtts://b` is a complete address and would leave `b` in
+                  // this box with the rest of the name typed after it. A paste arrives whole, and
+                  // by the time the box is left the reader has finished writing in it.
+                  onPaste={(e) => {
+                    e.preventDefault();
+                    settle(applyAddress(form, e.clipboardData.getData('text')));
+                  }}
+                  onBlur={(e) => settle(applyAddress(form, e.target.value))}
+                />
+              </div>
+              {/* Keyed on Host, which is what the API calls what this box holds. */}
+              <FieldError error={connectMutation.error} field="Host" />
+            </Field>
+            <Field label="Port" htmlFor="port" narrow>
               <input
-                id="webSocketPath"
-                type="text"
-                value={form.webSocketPath}
-                placeholder="/mqtt"
-                onChange={(e) => set('webSocketPath', e.target.value)}
+                id="port"
+                type="number"
+                value={form.port}
+                onChange={(e) => set('port', Number(e.target.value))}
+                // On the way out, for the same reason the address box splits on the way out: a
+                // number halfway through being typed is not a number. See schemeForPort.
+                onBlur={() => settle({ ...form, scheme: schemeForPort(form.scheme, form.port) })}
               />
-              {/* No FieldError: the API refuses no path, deliberately. A wrong one comes back as
-                  a refused upgrade, which says more than any rule here could. */}
-              <p className={styles.note}>Empty means /mqtt.</p>
+              <FieldError error={connectMutation.error} field="Port" />
             </Field>
           </div>
-        )}
-        </div>
 
-        <div>
-        <div className={styles.row}>
-          <Field label="Username" htmlFor="username">
-            <input
-              id="username"
-              type="text"
-              placeholder="optional"
-              value={form.username}
-              onChange={(e) => set('username', e.target.value)}
-            />
-          </Field>
-          <Field label="Password" htmlFor="password">
-            <input
-              id="password"
-              type="password"
-              placeholder="optional"
-              value={form.password}
-              onChange={(e) => set('password', e.target.value)}
-            />
-          </Field>
-        </div>
+          {/* The second question, in the word everybody has for it. The s in mqtts asks exactly this
+              and asks it in a letter nobody can see. Three things answer it — the port above, a
+              pasted address, and a certificate — and all three tick this box. */}
+          <div className={styles.checks}>
+            <label>
+              <input
+                type="checkbox"
+                checked={encrypted}
+                disabled={certified}
+                onChange={(e) => pickWay(choiceOf(form.scheme).transport, e.target.checked)}
+              />
+              {' Encrypted (TLS)'}
+            </label>
+          </div>
 
-        {/* Beside the box it is about rather than at the foot of the panel: it is an
-            instruction to type into that box, and it used to stand nine fields away from it. */}
-        {saved?.hasPassword && (
-          <p className={styles.note}>A password is saved but never sent back. Enter it again.</p>
-        )}
+          {/* Said where the box that will not move is, rather than left to be worked out. */}
+          {certified && (
+            <p className={styles.note}>Held on by the certificate under Encryption.</p>
+          )}
 
-        {/* Plainly, not behind a line. It was folded with the version picker and the session, as
-            three settings nobody changes — but the version is not asked at all any more, and a
-            client ID is a thing brokers refuse connections over and log by. It is one field, and a
-            reader looking for why a broker turned them away should find it without opening
-            anything. */}
-        <div className={styles.row}>
-          <Field label="Client ID" htmlFor="clientId">
-            <input
-              id="clientId"
-              type="text"
-              value={form.clientId}
-              onChange={(e) => set('clientId', e.target.value)}
-            />
-            <FieldError error={connectMutation.error} field="ClientId" />
-          </Field>
-        </div>
+          {/* What the two answers add up to. The four names are still the vocabulary — every
+              broker's documentation writes one of them — but here they are what the reader is told
+              rather than what they are asked. */}
+          <p className={styles.note}>{choiceOf(form.scheme).note}</p>
 
-        {/* One box, and what it asks for is everything. It used to carry a filter field beside it,
-            because a bare # is refused by a good many brokers out on the internet — one of them by
-            closing the session. That is now answered where it happens rather than guarded against
-            here: the refusal says so, and hands over a button to the panel that fixes it. */}
-        <div className={styles.checks}>
-          <label>
-            <input
-              type="checkbox"
-              checked={autoSubscribe}
-              onChange={(e) => setAutoSubscribe(e.target.checked)}
-            />
-            {' Listen to every topic on connect'}
-          </label>
-        </div>
-
-        <div className={styles.checks}>
-          <label>
-            <input
-              type="checkbox"
-              checked={form.cleanSession}
-              onChange={(e) => set('cleanSession', e.target.checked)}
-            />
-            {' Clean session'}
-          </label>
-        </div>
-
-        {/* Unticking the box is what makes session lifetime a question at all. Offered under Auto
-            because Auto tries 5.0 first and against nearly every broker in service that is what it
-            gets; a broker that steps down to 3.x ignores the number, which is the same outcome as
-            not sending one. */}
-        {sessionKept && (
-          <>
+          {/* Only where it means something. On TCP there is no path, and an empty box asking for
+              one reads as a field somebody forgot to fill in. */}
+          {overWebSocket && (
             <div className={styles.row}>
-              <Field label="Session expiry" htmlFor="sessionExpiry" narrow>
+              <Field label="WebSocket path" htmlFor="webSocketPath">
                 <input
-                  id="sessionExpiry"
-                  type="number"
-                  min={0}
-                  placeholder="secs"
-                  value={form.sessionExpiry}
-                  onChange={(e) => set('sessionExpiry', e.target.value)}
+                  id="webSocketPath"
+                  type="text"
+                  value={form.webSocketPath}
+                  placeholder="/mqtt"
+                  onChange={(e) => set('webSocketPath', e.target.value)}
+                />
+                {/* No FieldError: the API refuses no path, deliberately. A wrong one comes back as
+                    a refused upgrade, which says more than any rule here could. */}
+                <p className={styles.note}>Empty means /mqtt.</p>
+              </Field>
+            </div>
+          )}
+        </section>
+
+        <section className={styles.group}>
+          <h3 className={styles.groupTitle}>User</h3>
+          <div className={styles.row}>
+            <Field label="Username" htmlFor="username">
+              <input
+                id="username"
+                type="text"
+                placeholder="optional"
+                value={form.username}
+                onChange={(e) => set('username', e.target.value)}
+              />
+            </Field>
+            <Field label="Password" htmlFor="password">
+              <input
+                id="password"
+                type="password"
+                placeholder="optional"
+                value={form.password}
+                onChange={(e) => set('password', e.target.value)}
+              />
+            </Field>
+          </div>
+
+          {/* Beside the box it is about rather than at the foot of the panel: it is an
+              instruction to type into that box, and it used to stand nine fields away from it. */}
+          {saved?.hasPassword && (
+            <p className={styles.note}>A password is saved but never sent back. Enter it again.</p>
+          )}
+
+          {/* Plainly, not behind a line. It was folded with the version picker and the session, as
+              three settings nobody changes — but the version is not asked at all any more, and a
+              client ID is a thing brokers refuse connections over and log by. It is one field, and a
+              reader looking for why a broker turned them away should find it without opening
+              anything. */}
+          <div className={styles.row}>
+            <Field label="Client ID" htmlFor="clientId">
+              <input
+                id="clientId"
+                type="text"
+                value={form.clientId}
+                onChange={(e) => set('clientId', e.target.value)}
+              />
+              <FieldError error={connectMutation.error} field="ClientId" />
+            </Field>
+          </div>
+
+          <div className={styles.checks}>
+            <label>
+              <input
+                type="checkbox"
+                checked={form.cleanSession}
+                onChange={(e) => set('cleanSession', e.target.checked)}
+              />
+              {' Clean session'}
+            </label>
+          </div>
+
+          {/* Unticking the box is what makes session lifetime a question at all. Offered under Auto
+              because Auto tries 5.0 first and against nearly every broker in service that is what it
+              gets; a broker that steps down to 3.x ignores the number, which is the same outcome as
+              not sending one. */}
+          {sessionKept && (
+            <>
+              <div className={styles.row}>
+                <Field label="Session expiry" htmlFor="sessionExpiry" narrow>
+                  <input
+                    id="sessionExpiry"
+                    type="number"
+                    min={0}
+                    placeholder="secs"
+                    value={form.sessionExpiry}
+                    onChange={(e) => set('sessionExpiry', e.target.value)}
+                  />
+                </Field>
+              </div>
+              <p className={styles.note}>Seconds the broker keeps it after the link goes.</p>
+            </>
+          )}
+        </section>
+
+        {/* The third of the three, and a fold rather than a block: six fields the great majority
+            of connections never need would otherwise stand between the password and the button
+            that uses it. It stands in the stack with the other two — third, where it was asked
+            for — so Enter reaches a certificate path the same way it reaches an address.
+
+            It used to appear only under an encrypted scheme, which made naming a certificate
+            impossible until encryption was already on — and a certificate is not something you
+            want after deciding to encrypt, it is the reason you were encrypting. Filling any of
+            these in ticks the box above.
+
+            Inside, only what the answers so far make sense of: a key and a password are for a
+            certificate, and a certificate in a .pfx carries its own key. */}
+        <details className={styles.groupFold}>
+          <summary>Encryption</summary>
+
+          <div className={styles.checks}>
+            <label>
+              <input
+                type="checkbox"
+                checked={form.allowUntrusted}
+                onChange={(e) => setTls('allowUntrusted', e.target.checked)}
+              />
+              {' Accept any certificate'}
+            </label>
+          </div>
+          <p className={styles.note}>
+            For your own broker with a certificate it signed itself. Naming its CA below keeps the
+            checking instead.
+          </p>
+
+          <div className={styles.row}>
+            <Field label="Extra CA certificate" htmlFor="caPath">
+              <input
+                id="caPath"
+                type="text"
+                placeholder="/path/to/ca.crt"
+                value={form.caPath}
+                onChange={(e) => setTls('caPath', e.target.value)}
+              />
+            </Field>
+          </div>
+
+          {/* A row each, rather than two to a row. Paths are the longest thing anyone types
+              into this panel, and half a column shows about six characters of one — measured,
+              after the two shared a row and 'Client certificate' wrapped to two lines while
+              'Private key' did not, leaving their boxes at different heights. */}
+          <div className={styles.row}>
+            <Field label="Client certificate" htmlFor="clientCertPath">
+              <input
+                id="clientCertPath"
+                type="text"
+                placeholder="/path/to/client.pfx or .crt"
+                value={form.clientCertPath}
+                onChange={(e) => setTls('clientCertPath', e.target.value)}
+              />
+            </Field>
+          </div>
+
+          {/* Only where there is a certificate for it to belong to, and only where that
+              certificate does not already carry it. */}
+          {clientCert !== '' && !bundled && (
+            <div className={styles.row}>
+              <Field label="Private key" htmlFor="clientKeyPath">
+                <input
+                  id="clientKeyPath"
+                  type="text"
+                  placeholder="/path/to/client.key"
+                  value={form.clientKeyPath}
+                  onChange={(e) => setTls('clientKeyPath', e.target.value)}
                 />
               </Field>
             </div>
-            <p className={styles.note}>Seconds the broker keeps it after the link goes.</p>
-          </>
-        )}
-        </div>
+          )}
+
+          {clientCert !== '' && (
+            <>
+              <div className={styles.row}>
+                <Field label="Certificate password" htmlFor="clientCertPassword">
+                  <input
+                    id="clientCertPassword"
+                    type="password"
+                    placeholder="optional"
+                    value={form.clientCertPassword}
+                    onChange={(e) => setTls('clientCertPassword', e.target.value)}
+                  />
+                </Field>
+              </div>
+
+              {saved?.tls?.hasClientCertificatePassword && (
+                <p className={styles.note}>Saved but never sent back. Enter it again.</p>
+              )}
+            </>
+          )}
+
+          {/* Files are read where the connection is held, which is the server. It said only
+              "read by the server", and "the server" is a word this app spends no other line
+              explaining — the console looks like a web page, so a path in it reads like a path
+              on the machine holding the keyboard. It is, for the desktop app; naming both cases
+              is what makes that a fact rather than a guess. */}
+          <p className={styles.note}>
+            Read where MQTTForge runs, not by this browser — this machine for the desktop app,
+            inside the container for a container.
+          </p>
+
+          {/* The other two, behind a line of their own: neither is about a certificate, and
+              neither is asked for by any broker you reach at its own address on its own port.
+              Kept rather than dropped, because without ALPN there is no way to reach AWS IoT Core
+              on 443, which is the documented way through a firewall that allows only HTTPS. */}
+          <details className={styles.more}>
+            <summary>Server name and ALPN</summary>
+
+            <div className={styles.row}>
+              <Field label="Server name" htmlFor="sniHost">
+                <input
+                  id="sniHost"
+                  type="text"
+                  placeholder="defaults to the host"
+                  value={form.sniHost}
+                  onChange={(e) => setTls('sniHost', e.target.value)}
+                />
+              </Field>
+            </div>
+            <p className={styles.note}>
+              For a broker reached at an address its certificate does not carry.
+            </p>
+
+            <div className={styles.row}>
+              <Field label="ALPN protocol" htmlFor="alpnProtocol">
+                <input
+                  id="alpnProtocol"
+                  type="text"
+                  placeholder="e.g. x-amzn-mqtt-ca"
+                  value={form.alpnProtocol}
+                  onChange={(e) => setTls('alpnProtocol', e.target.value)}
+                />
+                <FieldError error={connectMutation.error} field="Tls.AlpnProtocol" />
+              </Field>
+            </div>
+            <p className={styles.note}>
+              Gets MQTT through a firewall that allows only 443. AWS IoT Core wants x-amzn-mqtt-ca.
+            </p>
+          </details>
+        </details>
       </div>
 
-      {/* Folded away, but always there. It used to appear only under an encrypted scheme, which
-          made naming a certificate impossible until encryption was already on — and a
-          certificate is not something you want after deciding to encrypt, it is the reason you
-          were encrypting. Filling any of these in ticks the box above.
+      {/* Not one of the three questions above — it is what happens the moment they are answered
+          — so it stands with the button that answers them rather than among the client's own
+          fields, where it used to sit between a client ID and a clean session and belonged to
+          neither.
 
-          Folded because six fields the great majority of connections never need would
-          otherwise sit between the password and the button that uses it. Inside, only what the
-          answers so far make sense of: a key and a password are for a certificate, and a
-          certificate in a .pfx carries its own key. */}
-      <details className={styles.more}>
-        <summary>Encryption</summary>
-
-        <div className={styles.checks}>
-          <label>
-            <input
-              type="checkbox"
-              checked={form.allowUntrusted}
-              onChange={(e) => setTls('allowUntrusted', e.target.checked)}
-            />
-            {' Accept any certificate'}
-          </label>
-        </div>
-        <p className={styles.note}>
-          For your own broker with a certificate it signed itself. Naming its CA below keeps the
-          checking instead.
-        </p>
-
-        <div className={styles.row}>
-          <Field label="Extra CA certificate" htmlFor="caPath">
-            <input
-              id="caPath"
-              type="text"
-              placeholder="/path/to/ca.crt"
-              value={form.caPath}
-              onChange={(e) => setTls('caPath', e.target.value)}
-            />
-          </Field>
-        </div>
-
-        {/* A row each, rather than two to a row. Paths are the longest thing anyone types
-            into this panel, and half a column shows about six characters of one — measured,
-            after the two shared a row and 'Client certificate' wrapped to two lines while
-            'Private key' did not, leaving their boxes at different heights. */}
-        <div className={styles.row}>
-          <Field label="Client certificate" htmlFor="clientCertPath">
-            <input
-              id="clientCertPath"
-              type="text"
-              placeholder="/path/to/client.pfx or .crt"
-              value={form.clientCertPath}
-              onChange={(e) => setTls('clientCertPath', e.target.value)}
-            />
-          </Field>
-        </div>
-
-        {/* Only where there is a certificate for it to belong to, and only where that
-            certificate does not already carry it. */}
-        {clientCert !== '' && !bundled && (
-          <div className={styles.row}>
-            <Field label="Private key" htmlFor="clientKeyPath">
-              <input
-                id="clientKeyPath"
-                type="text"
-                placeholder="/path/to/client.key"
-                value={form.clientKeyPath}
-                onChange={(e) => setTls('clientKeyPath', e.target.value)}
-              />
-            </Field>
-          </div>
-        )}
-
-        {clientCert !== '' && (
-          <>
-            <div className={styles.row}>
-              <Field label="Certificate password" htmlFor="clientCertPassword">
-                <input
-                  id="clientCertPassword"
-                  type="password"
-                  placeholder="optional"
-                  value={form.clientCertPassword}
-                  onChange={(e) => setTls('clientCertPassword', e.target.value)}
-                />
-              </Field>
-            </div>
-
-            {saved?.tls?.hasClientCertificatePassword && (
-              <p className={styles.note}>Saved but never sent back. Enter it again.</p>
-            )}
-          </>
-        )}
-
-        {/* Files are read where the connection is held, which is the server — the same machine
-            for a desktop app, and inside the container for a container. */}
-        <p className={styles.note}>Read by the server, not by this browser.</p>
-
-        {/* The other two, behind a line of their own: neither is about a certificate, and
-            neither is asked for by any broker you reach at its own address on its own port.
-            Kept rather than dropped, because without ALPN there is no way to reach AWS IoT Core
-            on 443, which is the documented way through a firewall that allows only HTTPS. */}
-        <details className={styles.more}>
-          <summary>Server name and ALPN</summary>
-
-          <div className={styles.row}>
-            <Field label="Server name" htmlFor="sniHost">
-              <input
-                id="sniHost"
-                type="text"
-                placeholder="defaults to the host"
-                value={form.sniHost}
-                onChange={(e) => setTls('sniHost', e.target.value)}
-              />
-            </Field>
-          </div>
-          <p className={styles.note}>
-            For a broker reached at an address its certificate does not carry.
-          </p>
-
-          <div className={styles.row}>
-            <Field label="ALPN protocol" htmlFor="alpnProtocol">
-              <input
-                id="alpnProtocol"
-                type="text"
-                placeholder="e.g. x-amzn-mqtt-ca"
-                value={form.alpnProtocol}
-                onChange={(e) => setTls('alpnProtocol', e.target.value)}
-              />
-              <FieldError error={connectMutation.error} field="Tls.AlpnProtocol" />
-            </Field>
-          </div>
-          <p className={styles.note}>
-            Gets MQTT through a firewall that allows only 443. AWS IoT Core wants x-amzn-mqtt-ca.
-          </p>
-        </details>
-      </details>
+          What it asks for is everything. It used to carry a filter box beside it, because a
+          bare # is refused by a good many brokers out on the internet — one of them by closing
+          the session. That is now answered where it happens rather than guarded against here:
+          the refusal says so, and hands over a button to the panel that fixes it. */}
+      <div className={styles.checks}>
+        <label>
+          <input
+            type="checkbox"
+            checked={autoSubscribe}
+            onChange={(e) => setAutoSubscribe(e.target.checked)}
+          />
+          {' Listen to every topic on connect'}
+        </label>
+      </div>
 
       {/* Two things to do with a form: use it, or keep it. Disconnect is neither and stands with
           the link it would end, which is the block above and only on screen when there is one. */}
