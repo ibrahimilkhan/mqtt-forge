@@ -145,6 +145,36 @@ export function useRunsFor(filter: string | undefined): LogEntry[][] {
 }
 
 /**
+ * How many entries the selection holds, and nothing else.
+ *
+ * The same reasoning as `useHoldControl` below: a number beside a region's name is a badge, and a
+ * badge must not put the log's whole run on the path of every arrival. `runsFor` hands the runs
+ * back as they are kept, so this is a sum of their lengths — where `useRunFor` above merges them
+ * into one sequence and sorts it, which is the work the pane needs and a count does not.
+ */
+export function useTrafficCount(): number {
+  const selected = useSelectionStore((state) => state.selected);
+  const byTopic = useLogStore((state) => state.byTopic);
+  const changed = useLogStore((state) => state.version);
+  const holding = useHoldStore((state) => state.held);
+
+  // Held, the count answers for what is on screen rather than for what has arrived behind it —
+  // the same rule the pane keeps, and the reason a hold reads as a hold.
+  const held = holding && holding.filter === selected?.filter ? holding.entries : null;
+
+  return useMemo(
+    () => {
+      if (held) return held.length;
+      if (!selected) return 0;
+
+      return runsFor(byTopic, selected.filter).reduce((total, run) => total + run.length, 0);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `changed` is the signal, see above
+    [held, selected, byTopic, changed],
+  );
+}
+
+/**
  * The pause, for a control that is not in the pane it pauses.
  *
  * It reads what it needs and nothing more. The run itself is only gathered while the pane is

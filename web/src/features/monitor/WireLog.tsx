@@ -3,7 +3,7 @@ import type { ColourRule } from '../../lib/topicColour';
 import { useRuleLookup } from '../../lib/useRuleLookup';
 import { MIN_TOPIC_ENTRIES, type LogEntry } from '../../stores/logStore';
 import { LogEntryRow } from './LogEntryRow';
-import { useHoldStore, useTraffic } from './useTraffic';
+import { useHoldStore, useTraffic, useTrafficCount } from './useTraffic';
 import styles from './WireLog.module.css';
 
 /**
@@ -59,6 +59,23 @@ export function WireLog() {
       {selected && entries.length > 0 && <EntryList key={selected.filter} />}
     </>
   );
+}
+
+/**
+ * How much traffic the selection holds, beside the Log region's own name.
+ *
+ * Its own component because of where it goes: the strip belongs to the workspace, which knows
+ * nothing about the log and should go on knowing nothing about it. This subscribes for itself, so
+ * an arrival re-renders a number rather than the console around it — and it is the only thing the
+ * strip says when the region is folded and the pane is gone.
+ *
+ * Nothing at all when there is nothing: an empty selection already says so in the pane, and a
+ * '(0)' beside the name is a fact about a question nobody asked.
+ */
+export function LogCount() {
+  const count = useTrafficCount();
+
+  return count > 0 ? <>({count})</> : null;
 }
 
 function EntryList() {

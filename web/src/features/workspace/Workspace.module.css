@@ -116,6 +116,9 @@
    both states, and the column measures that height. */
 
 .regionChevron { font-size: var(--t-micro); line-height: 1; }
+/* Tabular, because it changes under the eye on every arrival and a strip whose name shifts
+   sideways as the number gets a digit is a strip that flickers. */
+.regionCount { flex: none; font-variant-numeric: tabular-nums; }
 .regionLabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---- narrower than three columns ---- */

@@ -10,12 +10,12 @@ import { byteLength } from '../../lib/payload';
 import type { DecodedMessage } from '../../realtime/decodeIncoming';
 import { useAppearanceStore } from '../../stores/appearanceStore';
 import { useComposeStore } from '../../stores/composeStore';
-import { MAX_LOG_ENTRIES, MIN_TOPIC_ENTRIES, useLogStore } from '../../stores/logStore';
+import { MAX_LOG_ENTRIES, MIN_TOPIC_ENTRIES, runFor, useLogStore } from '../../stores/logStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { HoldButton } from './HoldButton';
 import { TrafficPane } from './TrafficPane';
 import { useHoldStore } from './useTraffic';
-import { WireLog } from './WireLog';
+import { LogCount, WireLog } from './WireLog';
 
 const chip = { label: 'sensors/#', filter: 'sensors/#' };
 
@@ -53,6 +53,54 @@ beforeEach(() => {
   useHoldStore.getState().release();
   // The chart's detail is a stored preference, so a test that changes it would leak into the next.
   useAppearanceStore.getState().reset();
+});
+
+describe('the count beside the region name', () => {
+  it('says how much traffic the selection holds', () => {
+    received('sensors/a', 'sensors/b', 'sensors/c');
+    useSelectionStore.getState().select(chip);
+
+    render(<LogCount />);
+
+    expect(screen.getByText('(3)')).toBeInTheDocument();
+  });
+
+  // A '(0)' beside the name is a fact about a question nobody asked; the pane already says the
+  // topic is quiet.
+  it('says nothing when the selection holds nothing', () => {
+    useSelectionStore.getState().select(chip);
+
+    const { container } = render(<LogCount />);
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('counts only what the selection matches', () => {
+    received('sensors/a', 'actuators/valve', 'sensors/b');
+    useSelectionStore.getState().select(chip);
+
+    render(<LogCount />);
+
+    expect(screen.getByText('(2)')).toBeInTheDocument();
+  });
+
+  // Held, the count answers for what is on screen rather than for what has arrived behind it —
+  // the same rule the pane keeps, and the reason a hold reads as a hold.
+  it('stops with the pane when the run is held', () => {
+    received('sensors/a', 'sensors/b');
+    useSelectionStore.getState().select(chip);
+    const { rerender } = render(<LogCount />);
+
+    act(() =>
+      useHoldStore
+        .getState()
+        .hold(chip.filter, runFor(useLogStore.getState().byTopic, chip.filter), new Map()),
+    );
+    act(() => received('sensors/c'));
+    rerender(<LogCount />);
+
+    expect(screen.queryByText('(3)')).not.toBeInTheDocument();
+  });
 });
 
 describe('WireLog', () => {
