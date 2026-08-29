@@ -326,9 +326,6 @@ export function BrokerPanel({
 
   const encrypted = isEncrypted(form.scheme);
   const overWebSocket = isWebSocket(form.scheme);
-  // Anything filled in under Encryption, which holds the box on: a certificate is a statement
-  // that this connection is encrypted, and there is nothing else it could mean.
-  const certified = hasTlsMaterial(form);
   // A certificate names the two fields that go with it. Until there is one, a key and a password
   // are fields for a file that does not exist.
   const clientCert = form.clientCertPath.trim();
@@ -505,13 +502,25 @@ export function BrokerPanel({
 
           {/* The second question, in the word everybody has for it. The s in mqtts asks exactly this
               and asks it in a letter nobody can see. Three things answer it — the port above, a
-              pasted address, and a certificate — and all three tick this box. */}
+              pasted address, and a certificate — and all three tick this box.
+
+              Tick it, is all they do. It used to be held shut while anything under Encryption was
+              filled in, on the reasoning that a certificate is a statement that this connection is
+              encrypted and can mean nothing else — which is true of the statement and wrong about
+              the box. It made a dead end that could be walked into in three moves: tick Accept any
+              certificate, name a CA under it, untick Accept any certificate. The thing you turned
+              on is off, the box is still shut, and what is holding it is a path two fields down
+              that nobody said anything about. Getting out meant knowing a rule the panel never
+              stated — and the line that stated it is gone, along with every other line here.
+
+              So the box opens. Unticking it is a real answer and the request already carries it:
+              buildConnectRequest sends no TLS block at all under a plain scheme, so a certificate
+              left in a box under an unencrypted connection is not sent rather than sent wrongly. */}
           <div className={styles.checks}>
             <label>
               <input
                 type="checkbox"
                 checked={encrypted}
-                disabled={certified}
                 onChange={(e) => pickWay(choiceOf(form.scheme).transport, e.target.checked)}
               />
               {' Encrypted (TLS)'}

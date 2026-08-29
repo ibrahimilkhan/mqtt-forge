@@ -248,10 +248,6 @@
   margin: 0 0 12px;
 }
 
-/* A box held on by something else still has to look like a box that is on. The platform greys
-   the tick along with the rest of the control, and at this size a greyed tick reads as no tick —
-   which is the opposite of what the box means. Grey the colour, keep the tick. */
-.checks input:disabled { accent-color: var(--muted); cursor: default; }
 
 /* The third of the three blocks, which is a fold. Written in the same voice as the two headings
    above it: what sets it apart should be that it can be pressed — the marker says so — rather
