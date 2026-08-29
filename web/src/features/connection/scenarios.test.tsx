@@ -507,7 +507,7 @@ describe('the keyboard, which is what most of this is filled in with', () => {
     );
     renderPanel();
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Save this broker' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Save' }));
     await userEvent.type(screen.getByLabelText('Save as'), '{Enter}');
 
     await waitFor(() => expect(saved).toMatchObject({ name: 'localhost:1883' }));

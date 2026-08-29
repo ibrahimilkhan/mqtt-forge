@@ -755,7 +755,13 @@ export function BrokerPanel({
             The one button here that wears a mark. It is the quieter of the two and the only one
             whose word is a verb somebody could miss on a row they are scanning for Connect; the
             disk finds it without being read. Connect needs no such help — it is the filled one,
-            and it is where the eye already went. */}
+            and it is where the eye already went.
+
+            One word, and the mark carries the rest. It read 'Save this broker' when it was the
+            second button on a row that started at the left and had nothing to distinguish it but
+            its own sentence. It is the left-hand button on its own row now, with a disk on it, in
+            a panel whose every heading says Broker — so 'this broker' was the panel's name said a
+            fourth time. The name box it opens says what is being saved anyway. */}
         {naming === null && (
           <button
             type="button"
@@ -763,7 +769,7 @@ export function BrokerPanel({
             onClick={() => setNaming(from ?? `${form.host}:${form.port}`)}
           >
             <Save />
-            Save this broker
+            Save
           </button>
         )}
 

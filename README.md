@@ -76,7 +76,7 @@ Every MQTT there is, over every way in:
   the rail answers "is this thing connected" without opening anything. Red with a warning mark
   when something is wrong, including the console losing its own link to the server. The address
   it is pointed at is in its tooltip.
-- **Brokers you keep** — press **Save this broker**, give it a name, and it becomes a chip at
+- **Brokers you keep** — press **Save**, give it a name, and it becomes a chip at
   the foot of the panel that fills the form back in. Saved to `saved-brokers.json` beside the
   rest, so one mounted volume keeps them. Passwords are written but never sent back to the
   browser, so you enter one again to connect.

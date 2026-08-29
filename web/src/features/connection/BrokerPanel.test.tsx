@@ -1317,7 +1317,7 @@ describe('the brokers you keep', () => {
     const address = await screen.findByLabelText('Address');
     await userEvent.clear(address);
     await userEvent.type(address, 'mqtts://lab.example:8883');
-    await userEvent.click(screen.getByRole('button', { name: 'Save this broker' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     const name = screen.getByLabelText('Save as');
     await userEvent.clear(name);
@@ -1335,7 +1335,7 @@ describe('the brokers you keep', () => {
   it('offers the address as the name', async () => {
     renderPanel();
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Save this broker' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Save' }));
 
     expect(screen.getByLabelText('Save as')).toHaveValue('localhost:1883');
   });
@@ -1343,17 +1343,17 @@ describe('the brokers you keep', () => {
   it('gives up on Cancel without asking anything', async () => {
     renderPanel();
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Save this broker' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Save' }));
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
     expect(screen.queryByLabelText('Save as')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Save this broker' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
   });
 
   it('will not keep one under no name at all', async () => {
     renderPanel();
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Save this broker' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Save' }));
     await userEvent.clear(screen.getByLabelText('Save as'));
 
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
