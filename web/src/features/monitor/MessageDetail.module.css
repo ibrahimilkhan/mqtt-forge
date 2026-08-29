@@ -1,8 +1,11 @@
 /* One message, opened out.
 
-   The pair grid is the same shape the chart's reading card uses — a fixed label column and a
-   value that wraps — copied rather than imported, because the two are read in different places
-   and a shared rule would tie a window's layout to a card inside a plot. */
+   Two things here are the log's own and are drawn with the log's own classes rather than with
+   copies of them: the chips in this window's bar, and the topic below them, which is composed for
+   its separators. That is the opposite of what the pair grid this file used to open with did —
+   that grid only happened to look like the chart's reading card, and sharing it would have tied a
+   window's layout to a card inside a plot. These two are not lookalikes. They are the same things
+   the row was wearing a moment before the reader opened it. */
 
 /* One wrapper, and it is load-bearing: the window's body is a grid of a single row, so a second
    child would be laid into a track of no height and the properties would disappear entirely. */
@@ -12,28 +15,59 @@
   gap: 12px;
 }
 
-.rows {
-  display: grid;
-  gap: 2px;
-  margin: 0;
+/* ---- what arrived, and when ----
+
+   No label column any more. The pair grid was right while there were five facts to line up in one
+   voice; three of them are chips in the window's own bar now, and what is left is a topic and a
+   timestamp. A topic looks like a topic and a timestamp looks like a timestamp, so an 8ch column
+   spelling 'topic' and 'at' beside them was spending a third of a 272px window — which is as
+   narrow as a window goes — on two words read once and looked past ever after. */
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-family: var(--mono);
 }
 
-.row {
-  display: grid;
-  grid-template-columns: 8ch minmax(0, 1fr);
-  gap: 8px;
-  font-family: var(--mono);
+/* The topic, at reading size and in its rule's colour, so a window opened off a green row is a
+   green window.
+
+   `composes` because of the separators, and that is a bug being fixed rather than a nicety. The
+   log's rule for them is written as a descendant — `.topic .sep` — and this component renders the
+   very same Topic that emits them. Without the log's class on the wrapper the slashes come out at
+   full ink with no margins, hard against the segments, which is precisely what that component
+   goes to the trouble of splitting the path to prevent. They had been drawing that way in this
+   window since it was written.
+
+   The size is overridden through `.head` rather than by composing and adding the way the bar's
+   chip does: two classes beat one whatever order the two stylesheets end up in, and this one
+   really is an override. The log draws a topic at --t-code because it is a line in a run; this
+   one is the first thing in a window and stands a step above the payload under it. */
+.topic { composes: topic from './WireLog.module.css'; }
+.head .topic {
+  margin-top: 0;
+  font-size: var(--t-body);
+}
+
+/* The moment it landed, under the topic and out of its way. Muted micro is this console's voice
+   for a fact that is there when it is wanted and quiet when it is not — and the whole date is
+   here rather than the row's bare time because a message opened an hour after it arrived is being
+   asked a different question than the row was. */
+.at {
   font-size: var(--t-micro);
-}
-.row dt {
-  margin: 0;
-  color: var(--muted);
   letter-spacing: 0.04em;
+  color: var(--muted);
 }
-.row dd {
-  margin: 0;
-  min-width: 0;
-  color: var(--ink);
+
+/* The line for whatever the chips in the bar could not say — see `unsaid` in MessageDetail.tsx
+   for what goes on it and why every item of it is conditional. A remark rather than a third fact
+   in the stack, so it takes 4px on top of the head's own gap to set it apart from the two lines
+   that are the message's own name. */
+.unsaid {
+  margin: 4px 0 0;
+  font-size: var(--t-micro);
+  letter-spacing: 0.04em;
+  color: var(--muted);
   overflow-wrap: anywhere;
 }
 

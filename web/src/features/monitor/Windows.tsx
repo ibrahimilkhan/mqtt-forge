@@ -156,7 +156,38 @@ function Frame({ pane: chart, depth }: { pane: FloatWindow; depth: number }) {
           <Pin />
         </button>
 
-        <span className={styles.name}>{chart.label}</span>
+        {/* Beside the pin, a message wears the same chips its row wears — qos, retained, the
+            weight, and 'bin' where the body is a byte dump. They are the row's own strings, taken
+            off the entry rather than built again here: 'the chips from the log' is a promise that
+            only holds while one place decides what a chip says, and a second opinion in this file
+            would agree with `toEntry` right up until the day somebody changed one of them.
+
+            They stand where the name stood, and the name goes with them. A message window's name
+            is 'HH:MM:SS topic', and the summary thirty pixels below now draws that topic at
+            reading size in its rule's colour with the whole timestamp under it — so keeping both
+            put one topic on screen twice, six pixels apart, at two sizes. Measured, the name had
+            three characters and an ellipsis left beside three chips in the narrowest window a
+            reader can drag this to. A chart window keeps its name: it has no summary under it,
+            and the name is the one thing telling two pinned charts of two topics apart.
+
+            Spans rather than buttons. The bar is the handle, and the only press it declines is one
+            with a button above it — a chip made into a control would cut a dead patch out of the
+            middle of the thing the window is dragged by.
+
+            Only where there are stamps to draw. An entry pushed into the store by hand carries
+            none, and a window over an empty group would be a bar with sixteen pixels of nothing
+            in the middle of it. */}
+        {chart.pane.kind === 'message' && chart.pane.entry.stamps?.length ? (
+          <span className={styles.stamps} data-testid="stamps">
+            {chart.pane.entry.stamps.map((stamp) => (
+              <span key={stamp} className={styles.stamp} data-stamp={stamp}>
+                {stamp}
+              </span>
+            ))}
+          </span>
+        ) : (
+          <span className={styles.name}>{chart.label}</span>
+        )}
 
         <button
           type="button"

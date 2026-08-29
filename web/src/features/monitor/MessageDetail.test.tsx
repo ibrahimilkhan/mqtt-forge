@@ -127,10 +127,10 @@ describe('opening one message', () => {
 });
 
 describe('what the window says about the message', () => {
-  const rowFor = (label: string) => {
-    const term = screen.getByText(label);
-    return term.parentElement!;
-  };
+  /** The window's own summary, which is a topic and a time and whatever the chips could not say. */
+  const summary = () => screen.getByTestId('summary');
+  /** The chips in the window's bar. Named apart from the row's, which carries the same strings. */
+  const chips = () => screen.getByTestId('stamps');
 
   it('answers the questions the row cannot', async () => {
     landed(arrival({ payload: 'ok', size: byteLength('ok'), qos: 2, retain: true }));
@@ -138,21 +138,35 @@ describe('what the window says about the message', () => {
 
     await openIt();
 
-    expect(rowFor('topic')).toHaveTextContent('sensors/room/temp');
-    expect(rowFor('qos')).toHaveTextContent('2');
-    expect(rowFor('retained')).toHaveTextContent('yes');
-    expect(rowFor('size')).toHaveTextContent('2 bytes');
+    expect(summary()).toHaveTextContent('sensors/room/temp');
+    expect(chips()).toHaveTextContent('QoS 2');
+    expect(chips()).toHaveTextContent('RETAINED');
+    expect(chips()).toHaveTextContent('2B');
     // To the millisecond, which is what a reader comparing two arrivals is reading.
-    expect(rowFor('at')).toHaveTextContent(/\.250$/);
+    expect(summary()).toHaveTextContent(/\.250/);
   });
 
+  // The row's own strings rather than a second opinion about them, which is the whole promise of
+  // the bar: a reader is meant to recognise the boxes they double-clicked a second before.
+  it('wears the chips the row it came from is wearing', async () => {
+    landed(arrival({ payload: 'ok', size: byteLength('ok'), qos: 2, retain: true }));
+    render(<Console />);
+
+    await openIt();
+
+    const worn = within(screen.getByTestId('head')).getByText('QoS 2').parentElement!;
+    expect(chips()).toHaveTextContent(worn.textContent!);
+  });
+
+  // The log stamps nothing when retain is false, which is the right silence in a run of
+  // twenty-five rows and the wrong one in a window opened to ask exactly this.
   it('says not retained rather than leaving it out', async () => {
     landed(arrival());
     render(<Console />);
 
     await openIt();
 
-    expect(rowFor('retained')).toHaveTextContent('no');
+    expect(summary()).toHaveTextContent('not retained');
   });
 
   // A retained clear carries nothing, which is the message.
@@ -162,8 +176,32 @@ describe('what the window says about the message', () => {
 
     await openIt();
 
-    expect(rowFor('size')).toHaveTextContent('0 bytes');
+    expect(chips()).toHaveTextContent('0B');
     expect(screen.queryByTestId('window-body')).not.toBeInTheDocument();
+  });
+
+  // The chip rounds everything past a kilobyte, so 2048 and 2099 bytes stamp the same word. The
+  // window is where the number it was rounded from lives.
+  it('gives the exact count where the chip had to round it', async () => {
+    const payload = 'x'.repeat(2048);
+    landed(arrival({ payload, size: byteLength(payload) }));
+    render(<Console />);
+
+    await openIt();
+
+    expect(chips()).toHaveTextContent('2.0kB');
+    expect(summary()).toHaveTextContent('2048 bytes');
+  });
+
+  // Under a kilobyte the chip is already the exact number, and saying it again in more words is
+  // the old table with two rows deleted.
+  it('leaves a small body to its chip alone', async () => {
+    landed(arrival({ payload: 'ok', size: byteLength('ok'), retain: true }));
+    render(<Console />);
+
+    await openIt();
+
+    expect(summary()).not.toHaveTextContent('bytes');
   });
 
   it('gives a hex body its bytes and its characters, since the two differ', async () => {
@@ -172,7 +210,8 @@ describe('what the window says about the message', () => {
 
     await openIt();
 
-    expect(rowFor('size')).toHaveTextContent('4 bytes, 11 characters of hex');
+    expect(chips()).toHaveTextContent('BIN');
+    expect(summary()).toHaveTextContent('11 characters of hex');
   });
 });
 
