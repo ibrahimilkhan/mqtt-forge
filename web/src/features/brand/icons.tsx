@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react';
 
 /**
- * The six marks the panel menu wears, one per panel — and one more that is not a panel.
+ * The six marks the panel menu wears, one per panel — and two more that are not panels.
  *
- * Drawn here rather than pulled from an icon set. Six glyphs is not worth a dependency, and a
+ * Drawn here rather than pulled from an icon set. Eight glyphs is not worth a dependency, and a
  * set drawn to its own rules would sit beside the mark in `marks.tsx` looking borrowed: the same
  * 24-unit square, one weight of stroke, round ends, no fill, current colour. That is the whole
  * drawing language of this console, and these follow it — the shapes are Lucide's `antenna`,
@@ -13,9 +13,10 @@ import type { ReactNode } from 'react';
  * drawn at. The one exception is the cog, which has enough going on at sixteen pixels that the
  * heavier stroke closes its teeth up; it keeps 1.5.
  *
- * `Warning` is the seventh, and it is drawn to the same rules for the same reason: it stands on
- * the Broker row beside `Antenna`, and a triangle borrowed from somewhere else would look stuck
- * on rather than part of the rail.
+ * `Warning` and `Save` are the two that wear no panel, and they are drawn to the same rules for
+ * the same reason: each stands next to something already drawn this way — the warning beside
+ * `Antenna` on the Broker row, the disk inside a button in the same mono the button is lettered
+ * in — and a shape borrowed from somewhere else would look stuck on rather than part of it.
  */
 const Glyph = ({ children, weight = 1.8 }: { children: ReactNode; weight?: number }) => (
   <svg
@@ -111,6 +112,25 @@ export const Warning = () => (
       <path d="M12 4.2 21 19.5H3z" />
       <path d="M12 10v4" />
       <path d="M12 16.6v.1" />
+    </>
+  </Glyph>
+);
+
+/**
+ * Keep this one.
+ *
+ * A disk, which is the mark for saving everywhere and has been since long after anybody last
+ * used one. Lucide's `save`, redrawn at this file's weight: the body with its cut corner, the
+ * label across the foot, the shutter at the head. Its one job is to be recognised at the size of
+ * a line of type, and the three shapes are what does that — a plain rounded square at 13px is a
+ * plain rounded square.
+ */
+export const Save = () => (
+  <Glyph>
+    <>
+      <path d="M4.2 3.4h10.6l4.8 4.8v11.4a1.2 1.2 0 0 1-1.2 1.2H4.2A1.2 1.2 0 0 1 3 19.6V4.6a1.2 1.2 0 0 1 1.2-1.2z" />
+      <path d="M16.6 20.8v-6.4H7.4v6.4" />
+      <path d="M7.4 3.4v4.4h6.2" />
     </>
   </Glyph>
 );

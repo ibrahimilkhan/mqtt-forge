@@ -9,6 +9,7 @@ import {
   saveProfile,
 } from '../../api/connection';
 import { queryKeys } from '../../api/queryKeys';
+import { Save } from '../brand/icons';
 import { Field } from '../../components/Field';
 import { PanelShell } from '../../components/PanelShell';
 import styles from '../../styles/panel.module.css';
@@ -739,13 +740,37 @@ export function BrokerPanel({
         </label>
       </div>
 
-      {/* Two things to do with a form: use it, or keep it. Disconnect is neither and stands with
-          the link it would end, which is the block above and only on screen when there is one. */}
+      {/* Two things to do with a form: keep it, or use it. Disconnect is neither and stands with
+          the link it would end, which is the block at the foot and only on screen when there is
+          one.
+
+          Keeping reads first and acting reads last, at the far end of the row. It was the other
+          way round, the two of them together at the left, which put the smaller claim in the
+          place a hand goes for the bigger one. */}
       <div className={styles.actions}>
+        {/* Offered whatever is on screen, including over a live link: a broker worth keeping is
+            most obviously worth keeping once it has connected. The name defaults to the address,
+            which is what somebody with one broker would have typed anyway.
+
+            The one button here that wears a mark. It is the quieter of the two and the only one
+            whose word is a verb somebody could miss on a row they are scanning for Connect; the
+            disk finds it without being read. Connect needs no such help — it is the filled one,
+            and it is where the eye already went. */}
+        {naming === null && (
+          <button
+            type="button"
+            className={`ghost ${styles.iconButton}`}
+            onClick={() => setNaming(from ?? `${form.host}:${form.port}`)}
+          >
+            <Save />
+            Save this broker
+          </button>
+        )}
+
         {attemptRunning && (
           <button
             type="button"
-            className={styles.steadyWidth}
+            className={`${styles.steadyWidth} ${styles.trailing}`}
             onClick={() => guardedAbort()}
             disabled={abortMutation.isPending}
           >
@@ -760,21 +785,12 @@ export function BrokerPanel({
             other line on this panel. Nothing to explain is better than something to explain: the
             one button on screen while a link is up is the one that ends it. */}
         {!attemptRunning && !isOnline && (
-          <button type="button" className={styles.steadyWidth} onClick={submit}>
-            Connect
-          </button>
-        )}
-
-        {/* Offered whatever is on screen, including over a live link: a broker worth keeping is
-            most obviously worth keeping once it has connected. The name defaults to the address,
-            which is what somebody with one broker would have typed anyway. */}
-        {naming === null && (
           <button
             type="button"
-            className="ghost"
-            onClick={() => setNaming(from ?? `${form.host}:${form.port}`)}
+            className={`${styles.steadyWidth} ${styles.trailing}`}
+            onClick={submit}
           >
-            Save this broker
+            Connect
           </button>
         )}
       </div>

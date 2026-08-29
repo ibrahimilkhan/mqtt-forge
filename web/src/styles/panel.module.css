@@ -38,6 +38,25 @@
    An empty row still spends its margin, which reads as a gap somebody forgot to close. */
 .actions:empty { display: none; }
 
+/* The button the panel exists for, held to the right-hand end of its row.
+
+   The other thing you can do with a form — keep it — reads first, because it is the smaller
+   claim and the one a reader passes on the way to the other. The one that acts sits where a hand
+   reaching for the primary action goes, which on a form's last row is the right.
+
+   `margin-left: auto` rather than `justify-content: space-between` on the row itself: the row is
+   not always two buttons, and only this one belongs at the edge whatever else is beside it. */
+.trailing { margin-left: auto; }
+
+/* A button with a mark in it. The mark leads, at the button's own type size — 1em, the same rule
+   every glyph in icons.tsx is drawn to — and the gap is smaller than the one between two
+   buttons, because a mark and its word are one control and two buttons are not. */
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
 /* For a button whose label swaps while its neighbours stay put: held to the longest word it
    can show, so the row doesn't shift under the pointer when the label changes. Measured in ch
    so it follows the type scale, and on the content box so the padding isn't eating into it. */
