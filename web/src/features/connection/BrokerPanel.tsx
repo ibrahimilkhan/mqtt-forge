@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { MqttTransport, SavedProfile } from '../../types/api';
 import type { PanelId } from '../panels';
 import {
@@ -31,13 +31,7 @@ import {
   schemeOf,
   type Scheme,
 } from './scheme';
-import {
-  applyAddress,
-  buildConnectRequest,
-  formFromSaved,
-  hasTlsMaterial,
-  type BrokerForm,
-} from './brokerForm';
+import { applyAddress, buildConnectRequest, formFromSaved, type BrokerForm } from './brokerForm';
 
 /**
  * How long a link has to hold before this panel steps aside for it, in milliseconds.
@@ -107,7 +101,7 @@ export function BrokerPanel({
   open: (id: PanelId) => void;
 }) {
   const [form, setForm] = useState(DEFAULTS);
-  // The Broker address box's own text. Normally the host, the way in being the control to its
+  // The Address box's own text. Normally the host, the way in being the control to its
   // left and the port the one to its right — but the box takes a whole address too, and while
   // one is being typed this holds however much of it has arrived. Separate from the form because
   // a box built from it directly would have to be re-parsed on every keystroke, which is exactly
@@ -152,7 +146,8 @@ export function BrokerPanel({
     onError: (error) => logFault('Forget failed', error),
   });
   const files = useCertificateFile();
-  const { connectMutation, disconnectMutation, abortMutation } = useConnectionActions();
+  const { connectMutation, disconnectMutation, abortMutation, everythingRefused } =
+    useConnectionActions();
   const { isOnline, isConnecting, failure: faulted, answered } = useConnectionState();
   const guardedConnect = useGuardedMutate(connectMutation);
   const guardedDisconnect = useGuardedMutate(disconnectMutation);
@@ -253,7 +248,10 @@ export function BrokerPanel({
    */
   const wasOnline = useRef<boolean | null>(null);
   const [settling, setSettling] = useState(false);
-  useEffect(() => {
+  // Before the paint, not after it. The live block is gated on this flag, and a plain effect runs
+  // once the browser has already drawn the frame the flag was meant to suppress — one frame of
+  // the very block this exists to keep off the screen.
+  useLayoutEffect(() => {
     if (!answered) return;
     const before = wasOnline.current;
     wasOnline.current = isOnline;
@@ -271,12 +269,16 @@ export function BrokerPanel({
   });
 
   useEffect(() => {
-    if (!settling) return;
+    // Not while the attempt is still running. The connect is not over when the broker says yes:
+    // the subscription this console asks for on connect goes out inside the same mutation, and
+    // the answer to it is the difference between a link worth stepping aside for and a link that
+    // is listening to nothing. Waiting here is what makes everythingRefused knowable in time.
+    if (!settling || attemptRunning || everythingRefused) return;
 
     const held = setTimeout(() => closer.current(), SETTLE);
 
     return () => clearTimeout(held);
-  }, [settling]);
+  }, [settling, attemptRunning, everythingRefused]);
 
   // Arrives after first render; neither password is ever returned by the API.
   useEffect(() => {
@@ -322,7 +324,13 @@ export function BrokerPanel({
   // The broker took the connection and then refused what was asked of it. Listening to every
   // topic is what this panel asks for, and a good many brokers out on the internet will not
   // allow it — so the dead end gets a way out rather than a sentence and nothing to press.
-  const filterRefused = faulted?.reason === 'filterRefused' || faulted?.reason === 'notPermitted';
+  //
+  // Two shapes, and the second is the quiet one. A broker can close the session, which arrives as
+  // a fault with a reason on it; or it can refuse the SUBACK and leave the link up, which is not a
+  // failure anywhere and used to leave the reader connected, listening to nothing, with the panel
+  // already gone because the link held. See everythingRefused in useConnectionActions.
+  const filterRefused =
+    faulted?.reason === 'filterRefused' || faulted?.reason === 'notPermitted' || everythingRefused;
 
   const encrypted = isEncrypted(form.scheme);
   const overWebSocket = isWebSocket(form.scheme);
@@ -336,23 +344,6 @@ export function BrokerPanel({
   const set = <K extends keyof BrokerForm>(key: K, value: BrokerForm[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
 
-  /**
-   * The same, for the fields under Encryption, which answer the encryption question by existing.
-   *
-   * Naming a certificate is not a preference about encryption, it is encryption — so the box
-   * comes on and the port moves with it, exactly as if the box had been ticked by hand. Only
-   * ever on: clearing the field again lets go of the box without turning anything off, an
-   * unticking nobody asked for being a surprise, and the box is right there.
-   */
-  const setTls = <K extends keyof BrokerForm>(key: K, value: BrokerForm[K]) =>
-    setForm((current) => {
-      const next = { ...current, [key]: value };
-      if (isEncrypted(next.scheme) || !hasTlsMaterial(next)) return next;
-
-      const scheme = schemeOf(choiceOf(next.scheme).transport, true);
-
-      return { ...next, scheme, port: portFor(next.scheme, scheme, next.port) };
-    });
 
   // The box's text is reconciled here rather than relied on to have been reconciled by the blur.
   // A pure function called from both places means there is no ordering of events in which the
@@ -457,12 +448,14 @@ export function BrokerPanel({
               reader could take in at a glance. A heading each is what tells a scrolling eye which
               question it has arrived at. */}
           <h3 className={styles.groupTitle}>Broker</h3>
-          {/* The address, first, because it is the only thing the reader actually has. The way in
-              stands at the head of it, where a scheme stands in a URL — and it is two words rather
+          {/* The address, first, because it is the only thing the reader actually has. Labelled
+              with the half of its name the heading above does not already say — BROKER over
+              BROKER ADDRESS put the same word on screen twice, in two different voices, one line
+              apart. The way in stands at the head of it, where a scheme stands in a URL — and it is two words rather
               than four, because mqtt against mqtts was never one question. It was two, multiplied
               together and asked in a letter nobody can see. */}
           <div className={styles.row}>
-            <Field label="Broker address" htmlFor="address">
+            <Field label="Address" htmlFor="address">
               <div className={styles.addressLine}>
                 <select
                   id="transport"
@@ -633,22 +626,37 @@ export function BrokerPanel({
             that uses it. It stands in the stack with the other two — third, where it was asked
             for — so Enter reaches a certificate path the same way it reaches an address.
 
-            It used to appear only under an encrypted scheme, which made naming a certificate
-            impossible until encryption was already on — and a certificate is not something you
-            want after deciding to encrypt, it is the reason you were encrypting. Filling any of
-            these in ticks the box above.
-
             Inside, only what the answers so far make sense of: a key and a password are for a
-            certificate, and a certificate in a .pfx carries its own key. */}
+            certificate, and a certificate in a .pfx carries its own key.
+
+            And all of it follows the box above, which is the one rule this block has. Every field
+            in here is TLS material; under a plain scheme the server is never even shown it —
+            buildConnectRequest sends tls: null, and ConfigureTls is only reached when UseTls — so
+            with encryption off these controls do nothing whatever they hold. They now look like
+            it. One fieldset carries that for all of them at once rather than seven expressions
+            that could drift apart.
+
+            The fold and both summaries stay pressable: reading what a connection could be given
+            is never blocked, only writing it. And the checkbox itself is deliberately outside —
+            it is the way back on, and a control that turns something on cannot be turned off by
+            the thing it turns on.
+
+            What this replaces is the affordance running the other way: filling a certificate used
+            to tick the box for you. It was there because the fold used to be reachable only under
+            an encrypted scheme, so a reader with a certificate and no encryption had nowhere to
+            start. That is not this panel any more — the box is one line above the fold, always on
+            screen, always operable — and a fold that cannot be typed into while encryption is off
+            cannot flip encryption on by being typed into. So setTls goes with it. */}
         <details className={styles.groupFold}>
           <summary>Encryption</summary>
 
+          <fieldset className={styles.foldFields} disabled={!encrypted}>
           <div className={styles.checks}>
             <label>
               <input
                 type="checkbox"
                 checked={form.allowUntrusted}
-                onChange={(e) => setTls('allowUntrusted', e.target.checked)}
+                onChange={(e) => set('allowUntrusted', e.target.checked)}
               />
               {' Accept any certificate'}
             </label>
@@ -659,7 +667,7 @@ export function BrokerPanel({
             kind="authority"
             placeholder="/path/to/ca.crt"
             value={form.caPath}
-            onPath={(path) => setTls('caPath', path)}
+            onPath={(path) => set('caPath', path)}
             files={files}
           />
 
@@ -673,7 +681,7 @@ export function BrokerPanel({
             kind="certificate"
             placeholder="/path/to/client.pfx or .crt"
             value={form.clientCertPath}
-            onPath={(path) => setTls('clientCertPath', path)}
+            onPath={(path) => set('clientCertPath', path)}
             files={files}
           />
 
@@ -686,7 +694,7 @@ export function BrokerPanel({
               kind="key"
               placeholder="/path/to/client.key"
               value={form.clientKeyPath}
-              onPath={(path) => setTls('clientKeyPath', path)}
+              onPath={(path) => set('clientKeyPath', path)}
               files={files}
             />
           )}
@@ -700,7 +708,7 @@ export function BrokerPanel({
                     type="password"
                     placeholder="optional"
                     value={form.clientCertPassword}
-                    onChange={(e) => setTls('clientCertPassword', e.target.value)}
+                    onChange={(e) => set('clientCertPassword', e.target.value)}
                   />
                 </Field>
               </div>
@@ -721,7 +729,7 @@ export function BrokerPanel({
                   type="text"
                   placeholder="defaults to the host"
                   value={form.sniHost}
-                  onChange={(e) => setTls('sniHost', e.target.value)}
+                  onChange={(e) => set('sniHost', e.target.value)}
                 />
               </Field>
             </div>
@@ -732,12 +740,13 @@ export function BrokerPanel({
                   type="text"
                   placeholder="e.g. x-amzn-mqtt-ca"
                   value={form.alpnProtocol}
-                  onChange={(e) => setTls('alpnProtocol', e.target.value)}
+                  onChange={(e) => set('alpnProtocol', e.target.value)}
                 />
                 <FieldError error={connectMutation.error} field="Tls.AlpnProtocol" />
               </Field>
             </div>
           </details>
+          </fieldset>
         </details>
       </div>
 

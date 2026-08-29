@@ -166,7 +166,7 @@ export function formFromSaved(saved: SavedConnection): BrokerForm {
 const SCHEMED = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
 
 /**
- * The Broker address box's text, reconciled with the form.
+ * The Address box's text, reconciled with the form.
  *
  * Pure, and that is the point of it. The panel calls this on the paste, on the way out of the
  * box, AND when Connect is pressed, using the returned form for the request directly — so there

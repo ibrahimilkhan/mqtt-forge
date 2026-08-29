@@ -112,7 +112,7 @@ function splitPort(authority: string): { host: string; port?: number } {
 /**
  * A scheme and a host, written back out as the address they came from.
  *
- * The inverse of `parseBrokerAddress` for the half the Broker address box shows. The port is
+ * The inverse of `parseBrokerAddress` for the half the Address box shows. The port is
  * deliberately not in it: the panel keeps the port in a control of its own, where it can be
  * stepped rather than edited in the middle of a string, and it is the part of an address people
  * change on its own most often.
