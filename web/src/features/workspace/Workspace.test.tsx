@@ -386,3 +386,216 @@ describe('Workspace', () => {
     expect(screen.queryByLabelText('Panel and topics boundary')).not.toBeInTheDocument();
   });
 });
+
+/**
+ * Double-clicking a boundary sizes the region it names to exactly what is inside it.
+ *
+ * jsdom lays nothing out, so what the measurement itself would answer cannot be asked here — the
+ * probe is a grid template written, a height read and the template put back, and every one of
+ * those reads is zero. What these do instead is give the two regions a height each and check the
+ * arithmetic on top of it: which region a seam names, which pair it divides that region against,
+ * whether it goes through the same floor a drag does, and when it declines to answer at all.
+ */
+describe('fitting a region to its contents', () => {
+  /** The height a region is standing at, on the one element rather than on every element. */
+  const standing = (region: Element, px: number) =>
+    Object.defineProperty(region, 'offsetHeight', { configurable: true, value: px });
+
+  /**
+   * The fit lands on the next frame, like a drag — it goes through the same throttle.
+   *
+   * `detail` is what says a double-click happened: a click carries the number of presses in the
+   * run it belongs to, so the second is 2 and the fourth is 4.
+   */
+  async function press(seam: HTMLElement, presses: number) {
+    fireEvent.click(seam, { detail: presses });
+    await act(() => new Promise((frame) => requestAnimationFrame(() => frame(undefined))));
+  }
+
+  /**
+   * A column the reader owns, with the three regions standing at heights of the test's choosing.
+   *
+   * Folded and opened again rather than dragged: both write a split, and this one writes the
+   * stand-in fractions exactly — three tenths, four tenths, three tenths — which is a column the
+   * arithmetic below can be read against by hand.
+   */
+  async function arranged(log: number, chart: number, publish: number) {
+    render(<Workspace {...parts} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Fold Chart' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Open Chart' }));
+
+    const column = screen.getByTestId('right-column');
+    const [logRegion, , chartRegion, , publishRegion] = [...column.children];
+    standing(logRegion, log);
+    standing(chartRegion, chart);
+    standing(publishRegion, publish);
+
+    return { column, logRegion };
+  }
+
+  // The column already sizes both its ends to their contents until somebody arranges it, so there
+  // is nothing here to fit — and writing a split down to say so would end the log's following of
+  // its own message for good, which is the arrangement this gesture was asked to restore.
+  it('leaves a column that is already sizing itself to its contents alone', async () => {
+    render(<Workspace {...parts} />);
+
+    await press(screen.getByRole('separator', { name: 'Log and chart boundary' }), 2);
+
+    const column = screen.getByTestId('right-column');
+    expect(column).toHaveAttribute('data-fit', 'content');
+    expect(column.style.gridTemplateRows).toBe('');
+  });
+
+  it('sizes the log to its own height from the boundary under it', async () => {
+    const { column } = await arranged(100, 400, 100);
+
+    await press(screen.getByRole('separator', { name: 'Log and chart boundary' }), 2);
+
+    // The log wants a hundred of the five hundred pixels it shares with the chart, and those two
+    // stand in seven tenths of the column: fourteen hundredths for the log, the rest of the pair
+    // to the chart. The form is not in that pair and does not move.
+    expect(column.style.gridTemplateRows).toBe(
+      'minmax(0, 14.00fr) auto minmax(0, 56.00fr) auto minmax(0, 30.00fr)',
+    );
+  });
+
+  it('sizes the publish form to its own height from the boundary over it', async () => {
+    const { column } = await arranged(100, 400, 100);
+
+    await press(screen.getByRole('separator', { name: 'Chart and publish boundary' }), 2);
+
+    expect(column.style.gridTemplateRows).toBe(
+      'minmax(0, 30.00fr) auto minmax(0, 56.00fr) auto minmax(0, 14.00fr)',
+    );
+  });
+
+  // A seam is named for its place in the column and fits the region in that place, not whichever
+  // one happens to lie against it: fold the chart and both boundaries divide the log from the
+  // form, but the one under the log still fits the log.
+  it('fits the region it names with the one beside it folded away', async () => {
+    render(<Workspace {...parts} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Fold Chart' }));
+
+    const column = screen.getByTestId('right-column');
+    const [logRegion, , , , publishRegion] = [...column.children];
+    standing(logRegion, 100);
+    standing(publishRegion, 300);
+
+    await press(screen.getByRole('separator', { name: 'Log and chart boundary' }), 2);
+
+    // A quarter of the four hundred the two of them hold, and the chart keeps the share it will
+    // stand in again when it is opened.
+    expect(column.style.gridTemplateRows).toBe(
+      'minmax(0, 25.00fr) auto min-content auto minmax(0, 75.00fr)',
+    );
+  });
+
+  // The floor is a share of the column, and a folded region still holds its share in state while
+  // giving up its place in the layout — so the pair either side of it was being told that a tenth
+  // of the column is a fifth of them, and the log stopped well above the height it was asked for.
+  it('lets a region reach its own height with another one folded away', async () => {
+    render(<Workspace {...parts} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Fold Chart' }));
+
+    const column = screen.getByTestId('right-column');
+    const [logRegion, , , , publishRegion] = [...column.children];
+    standing(logRegion, 60);
+    standing(publishRegion, 340);
+
+    await press(screen.getByRole('separator', { name: 'Log and chart boundary' }), 2);
+
+    // Fifteen hundredths of the four hundred the two of them hold. The old floor would have
+    // stopped it at a fifth, which is a third again taller than the log had anything to put in it.
+    expect(column.style.gridTemplateRows).toBe(
+      'minmax(0, 15.00fr) auto min-content auto minmax(0, 85.00fr)',
+    );
+  });
+
+  it('does nothing on a single press', async () => {
+    const { column } = await arranged(100, 400, 100);
+
+    await press(screen.getByRole('separator', { name: 'Log and chart boundary' }), 1);
+
+    expect(column.style.gridTemplateRows).toBe(
+      'minmax(0, 30.00fr) auto minmax(0, 40.00fr) auto minmax(0, 30.00fr)',
+    );
+  });
+
+  // `detail` counts the whole run of presses rather than starting over at each pair, so a reader
+  // who wants it again after the pane has changed under them presses again and gets it.
+  it('answers the fourth press as well as the second', async () => {
+    const { column, logRegion } = await arranged(100, 400, 100);
+    const seam = screen.getByRole('separator', { name: 'Log and chart boundary' });
+
+    await press(seam, 2);
+    standing(logRegion, 200);
+    await press(seam, 4);
+
+    // Two hundred of the six hundred the pair now stands at, of the seven tenths they divide.
+    expect(column.style.gridTemplateRows).toBe(
+      'minmax(0, 23.33fr) auto minmax(0, 46.67fr) auto minmax(0, 30.00fr)',
+    );
+  });
+
+  // Nothing beyond it on one side, so there is no pair to divide and nothing to fit into it.
+  it('declines on a boundary with nothing left to divide', async () => {
+    render(<Workspace {...parts} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Fold Publish' }));
+
+    const column = screen.getByTestId('right-column');
+    const held = column.style.gridTemplateRows;
+
+    // By label rather than by role: a seam with nothing to divide is aria-hidden.
+    await press(
+      screen.getByLabelText('Chart and publish boundary', { selector: '[role=separator]' }),
+      2,
+    );
+
+    expect(column.style.gridTemplateRows).toBe(held);
+  });
+
+  // The two boundaries between the columns have no gesture at all. A width would have to snap to
+  // the widest row the tree is holding, which is whichever topic arrived last.
+  it('gives the boundaries between the columns nothing to fit', async () => {
+    render(<Workspace {...parts} panel={<div>panel pane</div>} />);
+
+    const layout = screen.getByTestId('layout');
+    const held = layout.style.getPropertyValue('--tree');
+
+    for (const name of ['Panel and topics boundary', 'Topics and log boundary']) {
+      const seam = screen.getByRole('separator', { name });
+      expect(seam).not.toHaveAttribute('title');
+      await press(seam, 2);
+    }
+
+    expect(layout.style.getPropertyValue('--tree')).toBe(held);
+  });
+
+  it('says which region each boundary fits', () => {
+    render(<Workspace {...parts} />);
+
+    expect(screen.getByRole('separator', { name: 'Log and chart boundary' })).toHaveAttribute(
+      'title',
+      'Fit the log',
+    );
+    expect(screen.getByRole('separator', { name: 'Chart and publish boundary' })).toHaveAttribute(
+      'title',
+      'Fit the publish form',
+    );
+  });
+
+  // The same gesture for a reader who is not holding a pointer. The fold that Enter sometimes
+  // means on a splitter lives on the strip inside the region, which names what it shuts.
+  it('fits from the keyboard as well', async () => {
+    const { column } = await arranged(100, 400, 100);
+
+    const seam = screen.getByRole('separator', { name: 'Log and chart boundary' });
+    seam.focus();
+    await userEvent.keyboard('{Enter}');
+    await act(() => new Promise((frame) => requestAnimationFrame(() => frame(undefined))));
+
+    expect(column.style.gridTemplateRows).toBe(
+      'minmax(0, 14.00fr) auto minmax(0, 56.00fr) auto minmax(0, 30.00fr)',
+    );
+  });
+});

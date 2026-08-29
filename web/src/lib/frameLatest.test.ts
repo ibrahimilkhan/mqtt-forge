@@ -73,4 +73,20 @@ describe('createFrameLatest', () => {
     expect(frames).toHaveLength(0);
     expect(apply).not.toHaveBeenCalled();
   });
+
+  // React mounts an effect, tears it down and mounts it again in development, so a component
+  // whose cleanup cancels this cancels it for good — and every value it went on to offer was
+  // dropped. That is a whole gesture dead in the one build anybody debugs it in.
+  it('takes values again after a cancellation that was only a teardown', () => {
+    const frames = stubFrames();
+    const apply = vi.fn();
+    const latest = createFrameLatest<number>(apply);
+
+    latest.cancel();
+    latest.resume();
+    latest.offer(1);
+    frames[0]();
+
+    expect(apply).toHaveBeenCalledExactlyOnceWith(1);
+  });
 });
