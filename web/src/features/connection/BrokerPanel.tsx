@@ -42,10 +42,12 @@ import {
 /**
  * How long a link has to hold before this panel steps aside for it, in milliseconds.
  *
- * See the effect that uses it: the failure this exists for lands inside 150ms, and a reader
- * watching a link come up can afford to see the summary of it before the panel goes.
+ * See the effect that uses it. The failure this exists for lands inside 150ms — measured against
+ * mqtt.hsl.fi, which takes the connection and hangs up on the subscribe that follows — so this is
+ * twice the window it has to catch, and short enough that a link which holds is not made to look
+ * like one being thought about.
  */
-export const SETTLE = 1200;
+export const SETTLE = 300;
 
 const DEFAULTS: BrokerForm = {
   scheme: 'mqtt',
@@ -241,9 +243,9 @@ export function BrokerPanel({
    *
    * So the link coming up arms the close, and only a link still up a beat later fires it. Anything
    * that takes it down in between disarms it and the panel stays exactly where it is, with the
-   * failure and its way out under the button. The beat is an order of magnitude above that 150ms,
-   * and it is not dead time: what is on screen through it is the summary of the link that just
-   * came up.
+   * failure and its way out under the button. The beat is twice that 150ms and no more: long
+   * enough to catch the broker hanging up, short enough that a link which holds still reads as
+   * one the panel got out of the way of rather than one it stopped to think about.
    *
    * Only on the change, and only after the API has answered once. Opened over a link that is
    * already up — to read the summary, or to disconnect — nothing has just happened, and a panel
