@@ -94,6 +94,9 @@ export function TrafficLine({
   // The plot's width in real pixels, which is the only thing that says whether a dot per reading
   // would be a row of dots or a smear.
   const plotRef = useRef<HTMLDivElement>(null);
+  // The card is a sibling of the plot rather than a child of it — role="img" makes everything
+  // inside the plot presentational — so a press inside it has to be recognised on its own.
+  const cardRef = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ across: 0, down: 0 });
   // A reading the reader has clicked, which stays open while the pointer goes elsewhere. Held
   // apart from `hovered` so moving across the plot does not drag the opened one along with it.
@@ -188,17 +191,51 @@ export function TrafficLine({
     settle(next);
   };
 
-  // Escape closes it, wherever the focus has got to since.
+  /**
+   * The two ways out of an opened reading that are not the reading itself.
+   *
+   * Escape, wherever the focus has got to since — in the capture phase, and it stops there. The
+   * chart thrown open listens for Escape on the same window to put itself back, and one keypress
+   * that shut the card *and* threw the chart back into its column would be one gesture doing two
+   * things the reader asked for separately. Capture runs before the bubble the other listener is
+   * on, so the innermost thing goes first and a second press takes the chart.
+   *
+   * And a press anywhere that is neither the plot nor the card. On the way down rather than on
+   * the click, for the reason the windows raise on the way down: the card should be gone by the
+   * time the press lands on whatever it was aimed at, and a press that becomes a drag never
+   * produces a click at all.
+   *
+   * The plot is excluded along with the card. A press on the plot is the press that is about to
+   * shut this card or move it to another reading, and closing here would leave the click behind
+   * it to open the same reading straight back up — the gesture that closes would stop closing.
+   * The card is excluded because it is there to be read and swept up: pressing into it to select
+   * the value must not take the value away.
+   */
   useEffect(() => {
     if (opened === null) return;
 
     const listen = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') setOpened(null);
+      if (event.key !== 'Escape') return;
+
+      event.stopPropagation();
+      setOpened(null);
     };
 
-    window.addEventListener('keydown', listen);
+    const away = (event: globalThis.PointerEvent) => {
+      const on = event.target as Node | null;
+      if (!on) return;
+      if (plotRef.current?.contains(on) || cardRef.current?.contains(on)) return;
 
-    return () => window.removeEventListener('keydown', listen);
+      setOpened(null);
+    };
+
+    window.addEventListener('keydown', listen, true);
+    window.addEventListener('pointerdown', away, true);
+
+    return () => {
+      window.removeEventListener('keydown', listen, true);
+      window.removeEventListener('pointerdown', away, true);
+    };
   }, [opened]);
 
   useLayoutEffect(() => {
@@ -470,6 +507,7 @@ export function TrafficLine({
             never covers the thing that was clicked. */}
         {opened !== null && !compact && (
           <div
+            ref={cardRef}
             className={styles.detailSlot}
             data-side={opened > last / 2 ? 'left' : 'right'}
             data-half={positionIn(domain, readings[opened].value) > 0.5 ? 'low' : 'high'}

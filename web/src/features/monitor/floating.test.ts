@@ -54,8 +54,10 @@ describe('sizing a chart window', () => {
     expect(sized(box, 60, 40)).toMatchObject({ w: 460, h: 340 });
   });
 
+  // The floor is the chart's own arithmetic: the region a chart needs before it draws its
+  // readings, plus the bar and the padding a window spends before that region begins.
   it('keeps a chart above the size it stops being readable at', () => {
-    expect(sized(box, -4000, -4000)).toMatchObject({ w: 300, h: 260 });
+    expect(sized(box, -4000, -4000)).toMatchObject({ w: 300, h: 282 });
   });
 
   it('fills a corner exactly when its far edge is brought near one', () => {

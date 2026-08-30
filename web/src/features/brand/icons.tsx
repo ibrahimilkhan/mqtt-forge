@@ -305,3 +305,26 @@ export const Download = () => (
     </>
   </Glyph>
 );
+
+/**
+ * The corner a window is sized by.
+ *
+ * Three diagonals stacked into the bottom-right — the grow box every window manager has drawn
+ * since there were grow boxes, and the one mark here nobody has to be taught. They run square to
+ * the drag, and that is the whole difference: the corner used to be two hairlines lying along the
+ * window's own two edges, which say where the window ends. The frame was already saying that,
+ * which is why nobody found the handle. A comb across the pull says take hold.
+ *
+ * No arrowhead, for the reason Expand has none: at thirteen pixels a head is three pixels of
+ * mush. The taper does that work instead — three strokes shortening into a corner are a shape,
+ * where three of one length are a hatch.
+ */
+export const Corner = () => (
+  <Glyph>
+    <>
+      <path d="M20.5 7 7 20.5" />
+      <path d="M20.5 12.5 12.5 20.5" />
+      <path d="M20.5 18 18 20.5" />
+    </>
+  </Glyph>
+);

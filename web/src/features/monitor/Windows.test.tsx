@@ -110,9 +110,10 @@ describe('pinning a chart', () => {
     await userEvent.click(screen.getByTestId('zoom'));
     const opened = useZoomStore.getState().box;
 
-    // Dragged aside, shut, and thrown open again.
+    // Dragged aside, shut — by the close at the end of its own bar, which is the way back now —
+    // and thrown open again.
     act(() => useZoomStore.getState().place({ x: 4, y: 4, w: 380, h: 260 }));
-    await userEvent.click(screen.getByTestId('zoom'));
+    await userEvent.click(screen.getByTestId('zoom-close'));
     await userEvent.click(screen.getByTestId('zoom'));
 
     expect(useZoomStore.getState().box).toEqual(opened);
