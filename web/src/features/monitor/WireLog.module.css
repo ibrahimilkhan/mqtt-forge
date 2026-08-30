@@ -216,9 +216,17 @@ button.history:focus-visible { outline: 2px solid var(--signal); outline-offset:
 
 /* Breaks between segments rather than between any two characters. `break-all` filled to the box
    edge and cut mid-segment, across the very separators the row splits the path to show. */
+/* The topic is the row's name; the payload under it is the news. They were the same face at the
+   same size in the same ink, three pixels apart, and on a row whose body is one short line —
+   `lab/echo` over `sent-at-2-retained` — a reader has nothing to tell them apart by. Which is
+   which mattered on every row, and it was being worked out by reading the words.
+   Weight settles it, and it is the weight the topic tree already draws topics at, so it is one
+   thing learnt once rather than a new signal invented here. The payload keeps the plain weight:
+   it is the longest run of text in the row and the one nobody should have to lean into. */
 .topic {
   margin-top: 3px;
   font-size: var(--t-code);
+  font-weight: 600;
   word-break: normal;
   overflow-wrap: anywhere;
 }
@@ -227,7 +235,9 @@ button.history:focus-visible { outline: 2px solid var(--signal); outline-offset:
    darker than --muted, which clears 4.5:1 on the surface and on the hover fill both. */
 .topic .sep { color: color-mix(in srgb, var(--ink) 62%, transparent); margin: 0 1px; }
 
-.body { margin-top: 2px; color: var(--ink); word-break: break-word; }
+/* And a line's worth of air rather than two pixels, so the pair reads as a name with a message
+   under it instead of one paragraph that happens to wrap. */
+.body { margin-top: 5px; color: var(--ink); font-weight: 400; word-break: break-word; }
 .entry[data-kind="fault"] .body { color: var(--fault); }
 
 /* A payload too big for the pane, cut to a readable block with the rest one click away. Fading

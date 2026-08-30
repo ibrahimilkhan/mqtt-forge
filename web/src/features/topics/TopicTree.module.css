@@ -1,15 +1,21 @@
 /* The tree's own controls, parked at the right end of the broker row. The pick button beside
    them takes the slack, so they need no margin of their own to be pushed over. Centred rather
-   than on the row's baseline: a glyph in an 18px box has none worth aligning to. */
+   than on the row's baseline: a mark in an 18px box has none worth aligning to. */
 .rowActions {
   display: flex;
   gap: 4px;
   flex: none;
   align-self: center;
 }
-/* Square targets around a single glyph: the label is carried by aria-label and the tooltip, so
+/* Square targets around a single mark: the label is carried by aria-label and the tooltip, so
    nothing here has to make room for a word. The negative block margin keeps an 18px target from
-   setting the height of a row whose text is smaller than that. */
+   setting the height of a row whose text is smaller than that.
+
+   The mark is the chevron pair the message window uses over a folded document, drawn at 1em like
+   every mark in this console — so the size is set here, by the type size of the box it stands in.
+   --t-code, which is what that window draws them at: the same mark for the same gesture should
+   not be two sizes in one console, and it leaves a couple of pixels of air in an 18px box where
+   the --t-body a `≡` needed all but filled it. */
 .rowActions button {
   all: unset;
   display: flex;
@@ -22,7 +28,7 @@
   margin-block: -3px;
   border-radius: var(--r-control);
   font-family: var(--mono);
-  font-size: var(--t-body);
+  font-size: var(--t-code);
   line-height: 1;
 }
 /* all: unset misses the global button:hover fill; :not(:disabled) matches its specificity so this wins. */

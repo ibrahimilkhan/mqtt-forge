@@ -27,11 +27,11 @@
 
 /* ---- what arrived, and when ----
 
-   No label column any more. The pair grid was right while there were five facts to line up in one
-   voice; three of them are chips in the window's own bar now, and what is left is a topic, the
-   moment it landed, and a remark under the two of them. One word survives the grid — see .label —
-   but a column eight characters wide was a third of a 272px window, which is as narrow as a
-   window goes, spent on lining up two labels that no longer have four siblings to line up with.
+   No label column, and no label. The pair grid was right while there were five facts to line up in
+   one voice; three of them are chips in the window's own bar now, and what is left is a topic, the
+   moment it landed, and a remark under the two of them. The word 'topic' outlasted the grid by a
+   while and has gone the same way: it stood in front of a path drawn at reading size in its own
+   colour, on the first line of a window, which is a window naming its own parts.
 
    The rule under it is what the reader asked for, and it earns its keep: what is above it names
    the message and what is below it is the message. It is drawn only while there is something
@@ -48,7 +48,7 @@
   border-bottom: 1px solid var(--rule);
 }
 
-/* The topic line: a word, the topic, and the date against the far end.
+/* The topic line: the topic, and the date against the far end.
 
    It wraps rather than squeezing. The date is 24 characters and never breaks, and at the 272px
    floor a long topic and a full timestamp cannot share a line — so they take two, and the auto
@@ -59,17 +59,6 @@
   align-items: baseline;
   gap: 4px 8px;
   min-width: 0;
-}
-
-/* The one label left. A path is not always obviously a path — a single segment with no slash in
-   it reads as a word — and the first line of a window has to stand on its own, without the run
-   behind it to be compared against. Quiet enough that the topic beside it is still what the eye
-   lands on. */
-.label {
-  flex: none;
-  font-size: var(--t-micro);
-  letter-spacing: 0.04em;
-  color: var(--muted);
 }
 
 /* The topic, at reading size and in its rule's colour, so a window opened off a green row is a
@@ -130,15 +119,27 @@
 }
 
 
-/* The row of controls over the message: what to do with the document, and one mark in the corner
-   for taking a copy of it. Over rather than under, which is where the lone json toggle used to
-   stand — a control below a payload of forty thousand characters is a control nobody scrolls to,
-   and there are four of them now. */
+/* What to do with the document, floated into the top corner of it.
+
+   It was a row of its own standing over the payload, which on a narrow window is a whole line of
+   chrome above a message the reader opened the window to read — and four marks laid out across a
+   full width read as a caption on the document rather than as controls beside it. A float puts
+   them at the right-hand end of the document's first line and lets the document flow around them:
+   on a JSON body that first line is `{`, so the room costs nothing at all.
+
+   Not `position: absolute`, which would take the same corner and then have the document drawn
+   underneath it. A float is the one thing in CSS that shortens the line boxes it stands in and
+   gives the width back below. */
 .controls {
+  float: right;
   display: flex;
+  /* Only ever fires in a window narrower than the four marks come to. */
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+  /* The document never runs into them, and the marks are 24px boxes straddling a line of code
+     about eighteen high — so they sit up by the difference rather than pushing the line down. */
+  margin: -3px 0 0 8px;
 }
 
 /* Whole, wrapped, and selectable. The row it came from clamps to four lines because a pane full
@@ -178,12 +179,14 @@
 .mark:hover { color: var(--ink); border-color: var(--rule); }
 .mark:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
-/* The mark in the corner, and the corner is what makes it findable: everything else in this row
+/* The mark in the corner, and the corner is what makes it findable: everything else in this group
    is a word about the document, and this is the one thing that takes it somewhere else. Quiet
-   like the window's own close, and 24px square because that is what a finger needs. */
+   like the window's own close, and 24px square because that is what a finger needs.
+
+   No auto margin any more: the group is a float, shrink-to-fit, so there is no free space in it
+   for a margin to eat — and the corner it stands in is the window's own right edge. */
 .copy {
   all: unset;
-  margin-left: auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -242,7 +245,8 @@
   align-items: stretch;
   min-width: 0;
 }
-.document > .payload { flex: 1; min-width: 0; }
+/* Block, not flex: a float is ignored on a flex item, and this box exists to hold one. */
+.document > .scroller { flex: 1; min-width: 0; display: block; }
 
 /* Sixteen characters of its own type, which is the box: twelve are left after the rule and the
    gap, and `counters {6}` is twelve. Measured at thirteen and every second entry wrapped its
@@ -279,13 +283,16 @@
 .entry:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 /* Wide enough for a column, so the column stands still and the document scrolls under it. This is
-   the one place in this window where the scroll moves, and it moves for a reason: the head and
-   the controls stop leaving the top, which is what putting the controls above the payload was
-   for. It costs the head's own height off the reading area, and it is only ever spent where
-   there is an index to pay for it. */
+   the one place in this window where the scroll moves, and it moves for a reason: the head stops
+   leaving the top, and the index beside the document has something to stand still against. It
+   costs the head's own height off the reading area, and it is only ever spent where there is an
+   index to pay for it.
+
+   The controls scroll away with the document now that they stand in it — which is what they
+   already did in every window with no index, where the scroll is the window body's own. */
 @container detail (width >= 24rem) {
   .document[data-index] { flex: 1; min-height: 0; }
-  .document[data-index] > .payload {
+  .document[data-index] > .scroller {
     min-height: 0;
     overflow-y: auto;
     /* The end of the document is the end of the document, not a scroll of the console the window
