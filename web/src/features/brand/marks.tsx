@@ -1,63 +1,52 @@
+import { useId } from 'react';
+
 /**
  * The mark the tool wears, and the name beside it.
  *
- * Drawn on a 24-unit square, in one weight of stroke, in the current text colour with one part
- * in the signal colour. That is not a style choice so much as a constraint: the mark sits at the
- * top of a rail 52 pixels wide when the rail is shut, beside type at 15 pixels, over panes that
- * are white. Anything with a fill of its own, a second weight or a colour of its own would be a
- * sticker on the instrument rather than part of it.
+ * Drawn on a 24-unit square: a plate in petrol, the wildcard cut through it in paper, and the F
+ * of Forge picked out of the same crossing in grey. `#` is the filter a fresh connection
+ * subscribes to and the character MQTT actually uses — sheared hard, because at a gentler angle
+ * it stops being a diyez and reads as a window grid. The F is the half of the name that is not
+ * the protocol, and it is the same six pieces of the crossing every time.
  *
- * The mark is the wildcard — `#`, the filter a fresh connection subscribes to — and it is
- * slanted. Upright it is a hashtag or a grid; at 9.2 degrees it is the character MQTT actually
- * uses, and nothing else. The cell inside the crossing is filled, because a joker covering
- * hundreds of topics is still read one topic at a time.
+ * It carries its own ground, which the outline mark it replaces deliberately did not. That
+ * constraint existed so the mark could sit on white panes without becoming a sticker on the
+ * instrument, and it cost a second drawing: an outline for the rail, a solid cut for the favicon
+ * and the window list. One drawing that holds at every size beats two that drift apart, so the
+ * plate stays and the solid cut is gone.
  *
- * Under 16 pixels the filled cell closes and the outline thickens into a blot. `MarkSolid` is
- * the same drawing cut out of a block for those sizes; it keeps its silhouette anywhere.
+ * The three colours are literals rather than tokens on purpose. They are the icon's own, not the
+ * theme's: the plate has to look the same in the rail, in a browser tab and in the Dock, on
+ * whatever ground the host paints behind it.
+ *
+ * This is the same geometry the desktop icons are cut from, in web/public/favicon.svg. Change one
+ * and the other is wrong — edit the favicon, then run `node scripts/make-icons.mjs`.
  */
 export function Mark() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="1em"
-      height="1em"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.8}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      focusable="false"
-    >
-      {/* Four strokes. The verticals lean 2.4 units over their 14.8 of height; the horizontals
-          stay level, so the slant reads on its own rather than as a rotation of the whole mark.
-          The arms were a unit and a bit longer at each end, and standing on their own — with no
-          frame around them to reach towards — they read as a mark drawn past its own crossing.
-          Trimmed, the crossing is the shape and the arms are what hold it. */}
-      <path d="M10.2 4.6L7.8 19.4M16.2 4.6L13.8 19.4M4.4 9H19.6M4.4 15H19.6" />
-      {/* The cell inside the crossing. A parallelogram, since the verticals that bound it lean —
-          4.2 units across, which is the smallest shape that still holds a colour at 22 pixels. */}
-      <path d="M10.25 9.9H14.43L13.75 14.1H9.57Z" fill="var(--signal)" stroke="none" />
-    </svg>
-  );
-}
+  // The gallery draws this four times on one page, so the clip cannot have a fixed id.
+  const plate = useId();
 
-/**
- * The same diyez cut out of a solid block, for the sizes and grounds an outline cannot hold: a
- * favicon, a browser tab, a window list, anything under 16 pixels. The cuts stop short of the
- * block's edge, so what is left is one shape with lines through it rather than nine squares.
- */
-export function MarkSolid() {
   return (
     <svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" focusable="false">
-      <rect x="2" y="2" width="20" height="20" fill="var(--signal)" />
-      <path
-        d="M10.25 4.2L7.75 19.8M16.25 4.2L13.75 19.8M4.2 9H19.8M4.2 15H19.8"
-        fill="none"
-        stroke="var(--surface)"
-        strokeWidth={1.8}
-      />
-      <path d="M10.25 9.9H14.43L13.75 14.1H9.57Z" fill="var(--ink)" />
+      <defs>
+        <clipPath id={plate}>
+          <rect width="24" height="24" rx="5.4" ry="5.4" />
+        </clipPath>
+      </defs>
+      <rect width="24" height="24" rx="5.4" ry="5.4" fill="#0e4260" />
+      {/* The arms run past the square on every side and the clip trims them, so the crossing is
+          a detail cut from a grid that keeps going rather than a glyph centred in a box. Two of
+          the stems cross the rounded corners; without the clip they would poke out of them. */}
+      <g clipPath={`url(#${plate})`}>
+        <path
+          d="M10.91 -2L13.06 -2L11.05 7.2L8.9 7.2ZM17.51 -2L19.66 -2L17.65 7.2L15.5 7.2ZM-2 7.2L8.9 7.2L8.44 9.3L-2 9.3ZM8.9 7.2L11.05 7.2L10.59 9.3L8.44 9.3ZM11.05 7.2L15.5 7.2L15.04 9.3L10.59 9.3ZM8.44 9.3L10.59 9.3L9.41 14.7L7.26 14.7ZM-2 14.7L7.26 14.7L6.8 16.8L-2 16.8ZM7.26 14.7L9.41 14.7L8.95 16.8L6.8 16.8ZM9.41 14.7L13.86 14.7L13.4 16.8L8.95 16.8ZM6.8 16.8L8.95 16.8L6.94 26L4.79 26Z"
+          fill="#eaedf1"
+        />
+        <path
+          d="M15.5 7.2L17.65 7.2L17.19 9.3L15.04 9.3ZM17.65 7.2L26 7.2L26 9.3L17.19 9.3ZM15.04 9.3L17.19 9.3L16.01 14.7L13.86 14.7ZM13.86 14.7L16.01 14.7L15.55 16.8L13.4 16.8ZM16.01 14.7L26 14.7L26 16.8L15.55 16.8ZM13.4 16.8L15.55 16.8L13.54 26L11.39 26Z"
+          fill="#6b7480"
+        />
+      </g>
     </svg>
   );
 }

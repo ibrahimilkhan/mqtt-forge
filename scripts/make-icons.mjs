@@ -7,10 +7,10 @@
 // GTK window on Linux, and an .icns for the macOS bundle. The three are checked in — this runs
 // when the mark changes, not on every build.
 //
-// The rasteriser understands only the vocabulary the favicon uses: one full-bleed rect, one
-// stroked path of straight runs, one filled polygon, all on a 24-unit square. Anything else in
-// that file is an error rather than a silent omission — an icon that quietly lost half its
-// drawing is worse than a build that stopped.
+// The rasteriser understands only the vocabulary the favicon uses: one rounded rect for the
+// plate and two filled paths of straight-sided polygons — the rule and the F it carries — all on
+// a 24-unit square. Anything else in that file is an error rather than a silent omission — an
+// icon that quietly lost half its drawing is worse than a build that stopped.
 import { execFileSync } from 'node:child_process';
 import { deflateSync } from 'node:zlib';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -29,7 +29,12 @@ const UNITS = 24;
 const svg = readFileSync(SOURCE, 'utf8');
 
 const attr = (tag, name) => tag.match(new RegExp(`${name}="([^"]*)"`))?.[1];
-const tags = [...svg.matchAll(/<(rect|path)\b[^>]*>/g)].map(([tag]) => tag);
+// `defs` holds the clip path the browser needs to trim the drawing to the plate's corners, and
+// its rect is a copy of the plate rather than a shape of its own. This rasteriser cuts the same
+// corners itself, so the block is dropped before the shapes are read — left in, its rect would
+// be picked up as a second ground.
+const body = svg.replace(/<defs\b[\s\S]*?<\/defs>/g, '');
+const tags = [...body.matchAll(/<(rect|path)\b[^>]*>/g)].map(([tag]) => tag);
 
 /**
  * `M`, `L`, `H` and `Z` — the four the mark is written in. Returns one array of points per
@@ -66,37 +71,26 @@ function runs(d) {
 
 const shapes = tags.map((tag) => {
   if (tag.startsWith('<rect')) {
-    return { kind: 'ground', colour: attr(tag, 'fill') };
+    // `rx` is the plate's corner, in the drawing's own units. Absent, the plate is a square.
+    return { kind: 'ground', colour: attr(tag, 'fill'), radius: Number(attr(tag, 'rx') ?? 0) };
   }
 
-  const d = attr(tag, 'd');
-  const stroke = attr(tag, 'stroke');
-
-  return stroke && stroke !== 'none'
-    ? { kind: 'strokes', runs: runs(d), colour: stroke, width: Number(attr(tag, 'stroke-width')) }
-    : { kind: 'fill', runs: runs(d), colour: attr(tag, 'fill') };
+  return { kind: 'fill', runs: runs(attr(tag, 'd')), colour: attr(tag, 'fill') };
 });
 
-const expected = ['ground', 'strokes', 'fill'];
+const expected = ['ground', 'fill', 'fill'];
 if (shapes.map((shape) => shape.kind).join() !== expected.join()) {
   throw new Error(`${SOURCE} is no longer ${expected.join(' + ')}; the rasteriser needs updating`);
 }
+
+/** The plate's corner radius, as a share of the square, so it survives any output size. */
+const CORNER = shapes[0].radius / UNITS;
 
 const rgb = (hex) => [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16));
 
 // ---- the drawing, asked one point at a time ----
 
-/** Perpendicular distance to a segment, or Infinity past either end: butt caps, as drawn. */
-function toSegment(x, y, [ax, ay], [bx, by]) {
-  const dx = bx - ax;
-  const dy = by - ay;
-  const along = ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy);
-  if (along < 0 || along > 1) return Infinity;
-
-  return Math.abs((x - ax) * dy - (y - ay) * dx) / Math.hypot(dx, dy);
-}
-
-/** Crossing number, which is enough for the one convex cell this mark has. */
+/** Crossing number, which is enough for the convex quads this mark is cut into. */
 function inside(x, y, points) {
   let is = false;
   for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
@@ -108,24 +102,12 @@ function inside(x, y, points) {
   return is;
 }
 
-/**
- * The colour at a point in the drawing's own units, or null where the ground is not laid.
- *
- * `strokes` stands in for the drawing's stroked path, so a small icon can be drawn with the
- * hinted width without a second copy of the shape list.
- */
-function colourAt(x, y, strokes) {
+/** The colour at a point in the drawing's own units, or null where the ground is not laid. */
+function colourAt(x, y) {
   let colour = null;
 
-  for (const original of shapes) {
-    const shape = original.kind === 'strokes' ? strokes : original;
+  for (const shape of shapes) {
     if (shape.kind === 'ground') colour = shape.colour;
-    if (shape.kind === 'strokes') {
-      const on = shape.runs.some((run) =>
-        run.some((point, i) => i > 0 && toSegment(x, y, run[i - 1], point) <= shape.width / 2),
-      );
-      if (on) colour = shape.colour;
-    }
     if (shape.kind === 'fill' && shape.runs.some((run) => inside(x, y, run))) colour = shape.colour;
   }
 
@@ -134,28 +116,24 @@ function colourAt(x, y, strokes) {
 
 // ---- rasterising ----
 
-/** Sixteen samples a pixel. The mark is four straight strokes; nothing here needs more. */
+/** Sixteen samples a pixel. The mark is straight-sided polygons; nothing here needs more. */
 const GRID = 4;
 
 /**
  * One square icon.
  *
  * `inset` is the share of the canvas left empty around the drawing and `corner` the superellipse
- * exponent its ground is cut to — 0 and Infinity give the full-bleed square Windows and Linux
- * want, and macOS asks for the drawing in a rounded square inside a margin.
+ * exponent its ground is cut to. Windows and Linux take the drawing full bleed and it wears its
+ * own rounded corner; macOS asks for it in a rounded square inside a margin and cuts that corner
+ * itself, so the plate's radius is skipped wherever a superellipse is given — otherwise the same
+ * corner is rounded twice and the icon comes out gnawed.
  */
 function draw(size, { inset = 0, corner = Infinity } = {}) {
   const pixels = Buffer.alloc(size * size * 4);
   const edge = size * inset;
   const span = size - 2 * edge;
   const half = span / 2;
-  // Below 48 the strokes are a pixel and a half wide and land on nothing: two grey rows where
-  // the drawing says one white one. Rounded to whole pixels they are crisp, and the mark reads
-  // as a diyez in a window list rather than as a smudge. Above that the stroke is wide enough
-  // that its own edges do the work.
-  const scale = span / UNITS;
-  const hinted = size < 48 ? Math.max(1, Math.round(shapes[1].width * scale)) / scale : shapes[1].width;
-  const width = { ...shapes[1], width: hinted };
+  const radius = Number.isFinite(corner) ? 0 : CORNER * span;
 
   for (let py = 0; py < size; py++) {
     for (let px = 0; px < size; px++) {
@@ -169,15 +147,22 @@ function draw(size, { inset = 0, corner = Infinity } = {}) {
           const x = px + (sx + 0.5) / GRID;
           const y = py + (sy + 0.5) / GRID;
 
-          // Outside the ground's shape: the margin, and the corners the superellipse cuts off.
+          // Outside the ground's shape: the margin, and the corner it is cut to — Apple's
+          // superellipse where one is asked for, the plate's own radius otherwise.
           if (x < edge || x > size - edge || y < edge || y > size - edge) continue;
           if (Number.isFinite(corner)) {
             const u = Math.abs((x - edge - half) / half);
             const v = Math.abs((y - edge - half) / half);
             if (u ** corner + v ** corner > 1) continue;
+          } else if (radius > 0) {
+            const lx = x - edge;
+            const ly = y - edge;
+            const nx = Math.min(Math.max(lx, radius), span - radius);
+            const ny = Math.min(Math.max(ly, radius), span - radius);
+            if (Math.hypot(lx - nx, ly - ny) > radius) continue;
           }
 
-          const colour = colourAt(((x - edge) / span) * UNITS, ((y - edge) / span) * UNITS, width);
+          const colour = colourAt(((x - edge) / span) * UNITS, ((y - edge) / span) * UNITS);
           if (!colour) continue;
 
           const [cr, cg, cb] = rgb(colour);

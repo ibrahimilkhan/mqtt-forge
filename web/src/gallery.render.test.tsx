@@ -23,7 +23,7 @@ import { domainFor } from './lib/scale';
 import { numericSeries } from './lib/series';
 import { shapeOf } from './lib/shape';
 import { summarise } from './lib/stats';
-import { Mark, MarkSolid } from './features/brand/marks';
+import { Mark } from './features/brand/marks';
 import { TrafficChart } from './features/monitor/TrafficChart';
 import { TrafficLine } from './features/monitor/TrafficLine';
 import { queryKeys } from './api/queryKeys';
@@ -210,7 +210,8 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
   // One mark, at the three sizes it has to survive: the panel, the open rail, and the strip the
-  // rail shuts to — and beside it the solid cut, which is what a favicon and a window list get.
+  // rail shuts to. It carries its own plate, so the same drawing is what a favicon, a window
+  // list and the Dock get — there is no second cut to keep in step.
   const marks = (
     <div className="gMarks">
       <figure className="gMark">
@@ -236,31 +237,8 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
         <figcaption>
           <b>Diyez</b>
           <span>
-            the wildcard a fresh connection subscribes to, slanted so it is the character MQTT
-            uses rather than a hashtag or a grid
-          </span>
-        </figcaption>
-      </figure>
-      <figure className="gMark">
-        <div className="gMarkRow">
-          <span style={{ fontSize: 44, lineHeight: 0 }}>
-            <MarkSolid />
-          </span>
-          <span style={{ fontSize: 26, lineHeight: 0 }}>
-            <MarkSolid />
-          </span>
-          <span style={{ fontSize: 16, lineHeight: 0 }}>
-            <MarkSolid />
-          </span>
-          <span style={{ fontSize: 12, lineHeight: 0 }}>
-            <MarkSolid />
-          </span>
-        </div>
-        <figcaption>
-          <b>Diyez, solid</b>
-          <span>
-            the same drawing cut out of a block, for the sizes and grounds an outline cannot
-            hold: the favicon, a tab, a window list, the icon the app wears
+            the wildcard a fresh connection subscribes to, sheared so it is the character MQTT
+            uses rather than a hashtag or a grid, with the F of Forge picked out of the crossing
           </span>
         </figcaption>
       </figure>
