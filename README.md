@@ -1,3 +1,5 @@
+<img src=".github/assets/mark.png" alt="" width="72">
+
 # MQTTForge
 
 [![Release](https://img.shields.io/github/v/release/ibrahimilkhan/mqtt-forge?color=0e4260&label=release)](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest)
