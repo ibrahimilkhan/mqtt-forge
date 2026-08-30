@@ -160,6 +160,14 @@ public sealed class AlertEngineCore
         // Dropped and Suppressed have no writer yet: nothing in front of this core is counting
         // drops, and no ceiling has been installed for an alert to be refused by. Both arrive
         // with the ceilings task, which owns the numbers as well as the refusals.
+
+        // Sorted, because a dictionary's order is not a promise and the panel's list should not
+        // reshuffle itself between two snapshots that mean the same thing.
+        muted.Sort(static (a, b) =>
+        {
+            var byRule = string.CompareOrdinal(a.RuleId, b.RuleId);
+            return byRule != 0 ? byRule : string.CompareOrdinal(a.Topic, b.Topic);
+        });
         return new AlertSnapshot(active, [.. _history], muted, diagnostics, 0, 0, []);
     }
 
@@ -391,8 +399,10 @@ public sealed class AlertEngineCore
             return;
         }
 
-        if (Matured(rule, state, now) && !Withheld(state, now))
-            raised.Add(Raise(rule, state, now, ReasonFor(rule, context), context.Number, Sample(message)));
+if (Matured(rule, state, now) && !Withheld(state, now))
+            Announce(state,
+                Raise(rule, state, now, ReasonFor(rule, context), context.Number, Sample(message)),
+                raised, now);
     }
 
     /// <summary>A pair that is judged exactly as before but is not allowed to ring yet.</summary>
@@ -402,8 +412,12 @@ public sealed class AlertEngineCore
     // telling and not about watching — folding it in here would make 'stop telling me' quietly mean
     // 'stop watching'. It is spelt out in the shape Task 12 replaces so that the removal reads as the
     // decision it is, rather than as a line nobody ever wrote.
+// Cooldown only. A muted pair is judged, fires, and counts exactly as it would have — what a
+    // mute stops is the telling, and that is Announce's job. Folding the mute in here would make
+    // "stop telling me" mean "stop watching", and the alarm would silently not be there when the
+    // mute lapsed.
     private static bool Withheld(RuleState state, DateTimeOffset now)
-        => state.MutedUntil > now || state.CooldownUntil > now;
+        => state.CooldownUntil > now;
 
     /// <summary>
     /// How long a pair stays quiet after it has cleared.
@@ -441,6 +455,10 @@ public sealed class AlertEngineCore
 
     public EngineOutcome OnTick(DateTimeOffset now, bool connected)
     {
+        // A mute that expired at the top of this second is over for everything the tick does
+        // below, and for the arrivals that follow it.
+        SweepMutes(now);
+
         if (connected && !_linkWasUp)
             Resume(now);
         _linkWasUp = connected;
@@ -515,7 +533,7 @@ public sealed class AlertEngineCore
             state.TrueSince = null;
             state.CooldownUntil = now + Cooldown(rule);
             Remember(closed);
-            resolved.Add(closed);
+Announce(state, closed, resolved, now);
             return;
         }
 
@@ -523,7 +541,9 @@ public sealed class AlertEngineCore
         if (state.TrueSince is null) return;
         if (!Matured(rule, state, now) || Withheld(state, now)) return;
 
-        raised.Add(Raise(rule, state, now, ReasonFor(rule, Blank(state, now)), value: null, sample: null));
+Announce(state,
+            Raise(rule, state, now, ReasonFor(rule, Blank(state, now)), value: null, sample: null),
+            raised, now);
     }
 
     /// <summary>
@@ -597,4 +617,84 @@ public sealed class AlertEngineCore
             state.LastEvaluated = null;
         }
     }
+
+        // A mute longer than a day is disabling the rule, and the editor says so. The core clamps
+        // rather than trusts: the validator lives in Api, and a record can reach this method from a
+        // state file that has been through a text editor as well as from a panel that has not.
+        public const int MaxMuteMinutes = 1440;
+
+        /// <summary>
+        /// Silences one (rule, topic) pair for <paramref name="minutes"/> minutes.
+        /// Zero or less lifts an existing mute.
+        /// </summary>
+        public EngineOutcome Mute(string ruleId, string topic, int minutes, DateTimeOffset now)
+        {
+            // A pair the engine has never seen has nothing to silence, and this returns rather than
+            // throws: the console mutes from a row it drew a moment ago, and by the time the record
+            // has crossed the channel the rule may have been edited out from under it. Creating the
+            // pair here was considered and rejected outright — it would be a door straight past
+            // MaxTopicsPerRule, which the arrival path is careful to hold shut.
+            if (!_pairs.TryGetValue((ruleId, topic), out var state))
+                return EngineOutcome.Empty;
+
+            var until = minutes <= 0
+                ? (DateTimeOffset?)null
+                : now.AddMinutes(Math.Min(minutes, MaxMuteMinutes));
+
+            // The mute lives on the pair and never on the alert. That is the point of it: an alert
+            // that clears and fires again an hour later is a different Alert with a different Id, and
+            // a mute the user set on the boiler has to outlive that or it silences almost nothing.
+            state.MutedUntil = until;
+
+            // The alert carries a copy so the panel can fade the row and print "muted until 09:30"
+            // without having to join two lists to find out. It is a label, not the state.
+            if (state.Active is { } active)
+                state.Active = active with { MutedUntil = until };
+
+            // Muting raises and resolves nothing. The return type is here so the pump can treat every
+            // record on its channel the same way. Re-announcing a still-active alert when a mute is
+            // lifted was considered and rejected: it would push an hour-old FiredAt to the top of the
+            // console's list as though it had just happened, and the snapshot already carries the row.
+            return EngineOutcome.Empty;
+        }
+
+        // At exactly MutedUntil the pair speaks again. The panel's label reads "muted until 09:30",
+        // and 09:30 is when it is over; a <= here would make that label wrong by one tick, and every
+        // other deadline in this engine — Cooldown, For — is read the same way.
+        private static bool IsMuted(RuleState state, DateTimeOffset now)
+            => state.MutedUntil is { } until && now < until;
+
+        // The one door every raise and every resolve leaves by. Muting closes all four channels —
+        // screen, sound, webhook, publish — and the outcome is what feeds all four, so one choke
+        // point here is one place to be right; four scattered guards would be four places for the
+        // fifth channel to be forgotten when it arrives.
+        //
+        // Note what this deliberately does not do: the suppressed alert is still in the snapshot's
+        // Active list, and the snapshot is the authority for what the panel draws. The outcome is
+        // only ever the authority for what gets delivered.
+        private static void Announce(RuleState state, Alert alert, List<Alert> into, DateTimeOffset now)
+        {
+            if (IsMuted(state, now)) return;
+            into.Add(alert);
+        }
+
+        // Housekeeping for the snapshot's muted list, which has no clock of its own — Snapshot() is
+        // pure by construction and cannot ask whether a deadline has passed. So the tick clears
+        // deadlines that have, and an expired mute can linger in the list for at most one second.
+        //
+        // This walks every pair rather than a side list of muted ones: a side list is a second
+        // collection to keep in step with every pair removal, in exchange for skipping a null check
+        // per pair. The tick's round-robin cursor exists to bound condition *evaluation*, and reading
+        // one nullable field is not one.
+        private void SweepMutes(DateTimeOffset now)
+        {
+            foreach (var state in _pairs.Values)
+            {
+                if (state.MutedUntil is not { } until || now < until) continue;
+
+                state.MutedUntil = null;
+                if (state.Active is { } active)
+                    state.Active = active with { MutedUntil = null };
+            }
+        }
 }
