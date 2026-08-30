@@ -15,6 +15,15 @@ export function asReading(text: string | null | undefined): number | null {
   if (!text) return null;
 
   const body = text.trim();
+  if (!READING.test(body)) return null;
 
-  return READING.test(body) ? Number(body) : null;
+  // The pattern allows an exponent it cannot bound, so '1e400' passes it and Number() answers
+  // Infinity — the one value the comment above says this exists to keep out. The chart filters
+  // non-finite readings a second time on its JSON-field path (`numberAt` in series.ts) and not on
+  // its plain-body path, and the tree's sparklines do not filter at all: an unbounded exponent
+  // reached a plot and took the whole scale with it, since every mean and fence computed from an
+  // Infinity is a NaN. One gate here closes both ways in.
+  const value = Number(body);
+
+  return Number.isFinite(value) ? value : null;
 }

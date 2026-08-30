@@ -80,7 +80,7 @@ describe('numericSeries', () => {
 
   // Number() would take these, and each would be a lie: '0x10' is not sixteen on a wire that
   // wrote it as text, an empty body is not zero, and a chart cannot plot an infinity.
-  it.each(['0x10', '', '   ', 'Infinity', 'NaN', '1,5', '21.5 C'])('refuses %o as a reading', (body) => {
+  it.each(['0x10', '', '   ', 'Infinity', 'NaN', '1,5', '21.5 C', '1e400', '-1e400'])('refuses %o as a reading', (body) => {
     expect(values('sensors/temp', '1', '2', '3', body)).toEqual([1, 2, 3]);
   });
 
