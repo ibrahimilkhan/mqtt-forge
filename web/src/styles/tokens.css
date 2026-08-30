@@ -4,12 +4,17 @@
     --ink:     #131a24;
     --muted:   #67728a;
     --rule:    #d2d8e2;
-    /* Deep rather than electric. At #1e40af this was the loudest thing on a page whose whole
-       manner is quiet — it sat beside near-black type in the wordmark and read as a sticker on
-       the instrument. Twelve points of saturation and eleven of lightness off it, and the same
-       blue now says the same thing without shouting: still 10.5:1 on the surface, so a focus
-       ring drawn in it is no harder to find. */
-    --signal:  #1b3a7a;
+    /* The mark's own plate, so the chrome and the icon are one blue rather than two that nearly
+       agree. This was a navy at #1b3a7a until the mark was redrawn — deep and careful, but also
+       the default identity of every piece of infrastructure software of the last decade, and
+       beside a petrol icon it read as a second brand rather than the same one.
+
+       The swap is contrast-neutral, which is what makes it safe to spend in forty-odd places at
+       once: 10.7:1 on the surface against navy's 10.9, and 9.1:1 on the paper either way. Under
+       two tenths of a ratio, so nothing about what a focus ring costs to find has moved. The
+       wordmark's second half is drawn in this, which is the whole reason it has to be the
+       plate's colour and not merely near it. */
+    --signal:  #0e4260;
     --live:    #0d7a63;
     --fault:   #ab3520;
 

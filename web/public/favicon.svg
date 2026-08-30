@@ -1,5 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
-  <rect width="24" height="24" fill="#1b3a7a"></rect>
-  <path d="M9.9 2.64L6.9 21.36M17.1 2.64L14.1 21.36M2.64 8.4H21.36M2.64 15.6H21.36" fill="none" stroke="#ffffff" stroke-width="2.16"></path>
-  <path d="M9.9 9.48H14.92L14.1 14.52H9.08Z" fill="#131a24"></path>
+  <defs>
+    <clipPath id="plate"><rect width="24" height="24" rx="5.4" ry="5.4"></rect></clipPath>
+  </defs>
+  <rect width="24" height="24" rx="5.4" ry="5.4" fill="#0e4260"></rect>
+  <g clip-path="url(#plate)">
+    <path d="M10.91 -2L13.06 -2L11.05 7.2L8.9 7.2ZM17.51 -2L19.66 -2L17.65 7.2L15.5 7.2ZM-2 7.2L8.9 7.2L8.44 9.3L-2 9.3ZM8.9 7.2L11.05 7.2L10.59 9.3L8.44 9.3ZM11.05 7.2L15.5 7.2L15.04 9.3L10.59 9.3ZM8.44 9.3L10.59 9.3L9.41 14.7L7.26 14.7ZM-2 14.7L7.26 14.7L6.8 16.8L-2 16.8ZM7.26 14.7L9.41 14.7L8.95 16.8L6.8 16.8ZM9.41 14.7L13.86 14.7L13.4 16.8L8.95 16.8ZM6.8 16.8L8.95 16.8L6.94 26L4.79 26Z" fill="#eaedf1"></path>
+    <path d="M15.5 7.2L17.65 7.2L17.19 9.3L15.04 9.3ZM17.65 7.2L26 7.2L26 9.3L17.19 9.3ZM15.04 9.3L17.19 9.3L16.01 14.7L13.86 14.7ZM13.86 14.7L16.01 14.7L15.55 16.8L13.4 16.8ZM16.01 14.7L26 14.7L26 16.8L15.55 16.8ZM13.4 16.8L15.55 16.8L13.54 26L11.39 26Z" fill="#6b7480"></path>
+  </g>
 </svg>
