@@ -101,6 +101,17 @@ public static class DependencyInjection
             sp.GetService<IFolderPicker>(), sp.GetRequiredService<HostDialogs>()));
         services.AddSingleton(sp => new CertificatePicker(
             sp.GetService<IFilePicker>(), sp.GetRequiredService<HostDialogs>()));
+        // Two hosted services rather than one, because they answer to different things. The pump
+        // has to run whether or not a broker is reachable — the panel still has to be able to say
+        // why nothing is firing — and the link has to be supervised whether or not the pump is
+        // busy. Folding them together would make each one's failure the other's.
+        //
+        // Order matters, and only between these two: hosted services start in the order they were
+        // registered, so the engine's loop is already pumping before the supervisor dials a
+        // broker. Registered the other way round, the first seconds of traffic after a reconnect
+        // would land in a queue with nothing draining it.
+        services.AddHostedService<AlertEngineHost>();
+        services.AddHostedService<BrokerLinkSupervisor>();
         return services;
     }
 }
