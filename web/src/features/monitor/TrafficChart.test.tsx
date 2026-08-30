@@ -77,3 +77,78 @@ describe('a run that gets shorter under an opened reading', () => {
     expect(screen.queryByTestId('detail')).not.toBeInTheDocument();
   });
 });
+
+/**
+ * A device that reports its whole configuration in one message.
+ *
+ * The complaint this answers: forty chips reading `broker.session.expiryInterval` are the chart
+ * region full of somebody else's field names, with the chart itself pushed off the bottom of it.
+ */
+describe('a body with its numbers nested', () => {
+  let id = 0;
+  const nested = (): LogEntry[] =>
+    Array.from({ length: 20 }, (_, i) => ({
+      id: id++,
+      kind: 'recv' as const,
+      at: new Date(Date.parse('2026-08-21T00:00:00Z') - i * 1000),
+      topic: 'devices/gateway',
+      body: JSON.stringify({
+        uptime: 900 + i,
+        broker: { port: 1883, session: { expiryInterval: 3600 + i } },
+      }),
+    }));
+
+  it('offers the top of the body rather than every path in it', async () => {
+    render(<TrafficChart runs={asRuns(nested())} />);
+
+    expect(screen.getByRole('button', { name: 'Chart uptime' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open broker' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Chart broker.session.expiryInterval' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('opens a group onto what is under it, and comes back out again', async () => {
+    render(<TrafficChart runs={asRuns(nested())} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open broker' }));
+
+    expect(screen.getByRole('button', { name: 'Chart broker.port' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open broker.session' })).toBeInTheDocument();
+    // The way in is gone while you are in it, and the way out names where you are standing.
+    expect(screen.queryByRole('button', { name: 'Chart uptime' })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Back out of broker' }));
+
+    expect(screen.getByRole('button', { name: 'Chart uptime' })).toBeInTheDocument();
+  });
+
+  it('walks down as far as the fields go', async () => {
+    render(<TrafficChart runs={asRuns(nested())} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open broker' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Open broker.session' }));
+
+    expect(
+      screen.getByRole('button', { name: 'Chart broker.session.expiryInterval' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Back out of broker.session' })).toBeInTheDocument();
+  });
+
+  // The chips are a way in rather than a reading, and a way in that stays open has become
+  // furniture. What is left behind names what is charted, so nothing the row said is lost.
+  it('puts the chips away, and keeps the one that says what is drawn', async () => {
+    render(<TrafficChart runs={asRuns(nested())} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Chart uptime' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Put the field chips away' }));
+
+    expect(screen.queryByRole('button', { name: 'Open broker' })).not.toBeInTheDocument();
+    const left = screen.getByRole('button', { name: 'Show the field chips' });
+    expect(left).toHaveTextContent('uptime');
+
+    await userEvent.click(left);
+
+    expect(screen.getByRole('button', { name: 'Open broker' })).toBeInTheDocument();
+  });
+});
