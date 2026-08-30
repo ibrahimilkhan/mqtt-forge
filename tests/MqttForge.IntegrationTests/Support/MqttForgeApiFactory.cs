@@ -10,25 +10,39 @@ public sealed class MqttForgeApiFactory : WebApplicationFactory<Program>
     private readonly string _settingsPath;
     private readonly string _colourRulesPath;
     private readonly string _savedProfilesPath;
+    private readonly string _alertRulesPath;
+    private readonly string _alertStatePath;
     private readonly bool _ownsFiles;
 
     public MqttForgeApiFactory()
     {
-        _settingsPath = Path.Combine(Path.GetTempPath(), $"mqttforge-api-{Guid.NewGuid():N}.json");
+        _settingsPath = Temp("api");
         // Pinned as well as the settings path. Left unset it would default to the settings file's
         // directory — the temp directory — where every test class would share one list of rules.
-        _colourRulesPath = Path.Combine(Path.GetTempPath(), $"mqttforge-colours-{Guid.NewGuid():N}.json");
+        _colourRulesPath = Temp("colours");
         // And the saved brokers, for the same reason. This one bites harder: the rules are
         // replaced whole by every test that writes them, and these accumulate.
-        _savedProfilesPath = Path.Combine(Path.GetTempPath(), $"mqttforge-brokers-{Guid.NewGuid():N}.json");
+        _savedProfilesPath = Temp("brokers");
+        // The alert rules, for the same reason again, and this one bites hardest of the three: an
+        // enabled rule in a shared file would have every host this suite starts dial a broker on
+        // its own and subscribe, in test classes that are about something else entirely.
+        _alertRulesPath = Temp("alert-rules");
+        // The engine's own state. Not a preference and not a record — it is what a restart picks
+        // an alarm back up from — so a shared one would have one class's ringing alarm restored
+        // inside another's host.
+        _alertStatePath = Temp("alert-state");
         _ownsFiles = true;
     }
 
-    private MqttForgeApiFactory(string settingsPath, string colourRulesPath, string savedProfilesPath)
+    private MqttForgeApiFactory(
+        string settingsPath, string colourRulesPath, string savedProfilesPath,
+        string alertRulesPath, string alertStatePath)
     {
         _settingsPath = settingsPath;
         _colourRulesPath = colourRulesPath;
         _savedProfilesPath = savedProfilesPath;
+        _alertRulesPath = alertRulesPath;
+        _alertStatePath = alertStatePath;
         _ownsFiles = false;
     }
 
@@ -39,15 +53,25 @@ public sealed class MqttForgeApiFactory : WebApplicationFactory<Program>
     /// <remarks>
     /// A method rather than a second constructor: xUnit refuses to build a class fixture from a
     /// type with more than one public constructor, and most of these tests take this as one.
+    /// The three optional paths keep every existing caller compiling; each one a caller leaves
+    /// out still gets a private temp path rather than a shared default.
     /// </remarks>
     public static MqttForgeApiFactory PointedAt(
-        string settingsPath, string colourRulesPath, string? savedProfilesPath = null) =>
+        string settingsPath, string colourRulesPath, string? savedProfilesPath = null,
+        string? alertRulesPath = null, string? alertStatePath = null) =>
         new(settingsPath, colourRulesPath,
-            savedProfilesPath ?? Path.Combine(Path.GetTempPath(), $"mqttforge-brokers-{Guid.NewGuid():N}.json"));
+            savedProfilesPath ?? Temp("brokers"),
+            alertRulesPath ?? Temp("alert-rules"),
+            alertStatePath ?? Temp("alert-state"));
 
     public string SettingsPath => _settingsPath;
     public string ColourRulesPath => _colourRulesPath;
     public string SavedProfilesPath => _savedProfilesPath;
+    public string AlertRulesPath => _alertRulesPath;
+    public string AlertStatePath => _alertStatePath;
+
+    private static string Temp(string what) =>
+        Path.Combine(Path.GetTempPath(), $"mqttforge-{what}-{Guid.NewGuid():N}.json");
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -56,7 +80,17 @@ public sealed class MqttForgeApiFactory : WebApplicationFactory<Program>
             {
                 ["MqttForge:SettingsPath"] = _settingsPath,
                 ["MqttForge:ColourRulesPath"] = _colourRulesPath,
-                ["MqttForge:SavedProfilesPath"] = _savedProfilesPath
+                ["MqttForge:SavedProfilesPath"] = _savedProfilesPath,
+                ["MqttForge:AlertRulesPath"] = _alertRulesPath,
+                ["MqttForge:AlertStatePath"] = _alertStatePath,
+
+                // Off unless a test turns it back on. The product ships with webhooks enabled and
+                // deliberately does not block local addresses — so a rules file with a webhook in
+                // it would have the suite POST to an address on whichever machine is running it.
+                // Nothing reads this key until task 7 gives it a home on AlertEngineOptions; it is
+                // set here from the start so that the answer is already 'no' the first time
+                // anything asks.
+                ["MqttForge:AllowWebhooks"] = "false"
             }));
     }
 
@@ -65,8 +99,8 @@ public sealed class MqttForgeApiFactory : WebApplicationFactory<Program>
         base.Dispose(disposing);
         if (!disposing || !_ownsFiles) return;
 
-        if (File.Exists(_settingsPath)) File.Delete(_settingsPath);
-        if (File.Exists(_colourRulesPath)) File.Delete(_colourRulesPath);
-        if (File.Exists(_savedProfilesPath)) File.Delete(_savedProfilesPath);
+        foreach (var path in new[]
+                 { _settingsPath, _colourRulesPath, _savedProfilesPath, _alertRulesPath, _alertStatePath })
+            if (File.Exists(path)) File.Delete(path);
     }
 }
