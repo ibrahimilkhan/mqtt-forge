@@ -20,7 +20,10 @@
 /* What rows the chart has depends on how much of it the reader asked to be drawn, and the rows
    have to be named for the plot to be the one that stretches. The floor is the height the plot
    had when it lived inside the entries — below that a line is a smudge. */
-.chart[data-detail='plain'] { grid-template-rows: minmax(46px, 1fr); }
+/* A region too short for the readings: the way to choose what is charted, and the picture, which
+   takes everything the chips leave. The note, the range, the view and csv are what the chart
+   thrown open is for — and the control that throws it open is in this region's own corner. */
+.chart[data-detail='plain'] { grid-template-rows: auto minmax(46px, 1fr); }
 /* The controls, the plot and the note. A distribution is the same three, drawn as bars rather
    than as a line — it was left out of this list and got three even rows, which gave a histogram
    a third of the height and the note two thirds of it. */
@@ -41,9 +44,12 @@
 /* Hands the scale and the plot up to the grid above, so both plots share its columns. */
 .frame { display: contents; }
 
-/* Against the region's top-right corner rather than in the controls row: the row is not drawn at
-   the plainest detail level, and it is not drawn at all when no topic has been picked — and both
-   of those are panes a reader may well want bigger. */
+/* Against the region's top-right corner rather than in the controls row: the row carries only
+   the field chips at the plainest detail level, and is not drawn at all when no topic has been
+   picked — and both of those are panes a reader may well want bigger.
+
+   The way in only. Open, the chart wears a window's bar and the way back is the close at the end
+   of it, so nothing stands in this corner then. */
 .zoom {
   all: unset;
   position: absolute;
@@ -107,10 +113,97 @@
 .fields[data-deep] {
   flex: 1 0 100%;
   flex-wrap: nowrap;
-  overflow-x: auto;
-  scrollbar-width: none;
 }
-.fields[data-deep]::-webkit-scrollbar { display: none; }
+
+/* The row in three parts: what scrolls, and what must never scroll.
+
+   A flat body has neither — `display: contents` hands its chips straight back to the row above,
+   so a body with two numbers in it is laid out exactly as it always was. The deep row is where
+   the parts earn themselves: the shelf is the box the counts are placed against, the strip is the
+   only thing in here that scrolls, and the rule and the fold control stand outside both, at the
+   row's real right-hand end.
+
+   That last part is a fix rather than a tidy. Inside the scroller the fold control was scroll
+   content: `margin-left: auto` cannot hold anything at the end of a box whose free space has gone
+   negative, so it sat past the last chip, off the end of the row — and the fade, which is painted
+   on the scroller's own edge and stays there, took a bite out of whatever was under it. */
+.shelf,
+.strip { display: contents; }
+
+.fields[data-deep] .shelf {
+  display: block;
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.fields[data-deep] .strip {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  overflow-x: auto;
+  /* The bar is hidden because on the platforms that reserve room for one, its appearing is the
+     very shift this row exists to stop. What replaces it is the pair of counts. */
+  scrollbar-width: none;
+  /* A swipe along the chips stays on the chips rather than carrying the pane — or the browser's
+     back gesture — along with it. */
+  overscroll-behavior-inline: contain;
+  /* Tab lands a chip clear of a count rather than under one. */
+  scroll-padding-inline: 44px;
+  /* The focus ring is 2px at 1px offset and the strip clips at its own edge. */
+  padding-block: 3px;
+  margin-block: -3px;
+}
+.fields[data-deep] .strip::-webkit-scrollbar { display: none; }
+
+/* The end with more behind it fades; the end that is the end does not.
+
+   A chip cut by a soft edge reads as a chip with more behind it, where a chip cut by a hard one
+   reads as a chip that has been clipped — so the fade has to be an answer rather than an
+   ornament. Both ends were faded before, on a row that might well have fitted, which is how the
+   control at the right-hand end came to look cut in half on every message. */
+.fields[data-deep] .strip {
+  --head: #000;
+  --tail: #000;
+  -webkit-mask-image: linear-gradient(to right, var(--head), #000 16px, #000 calc(100% - 16px), var(--tail));
+  mask-image: linear-gradient(to right, var(--head), #000 16px, #000 calc(100% - 16px), var(--tail));
+}
+.strip[data-more~='start'] { --head: transparent; }
+.strip[data-more~='end'] { --tail: transparent; }
+
+/* How many chips are off the end, and the way onto them.
+
+   A pill lifted off the row rather than a chip in it — the same thing the log stands at its fold,
+   for the same reason: it belongs to the region rather than to the list, and a bare number lying
+   flat among field names reads as a field called 4. Out of the flow, so a count appearing neither
+   narrows the row nor moves a chip along it. */
+.along {
+  all: unset;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+  min-height: 22px;
+  padding: 0 5px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  /* The pane's own surface, so the chip it stands over stays a chip standing behind something
+     rather than two rows of type printed on each other. */
+  background: var(--surface);
+  box-shadow: 0 1px 7px color-mix(in srgb, var(--ink) 12%, transparent);
+}
+.along[data-side='start'] { left: 0; }
+.along[data-side='end'] { right: 0; }
+.along:hover { color: var(--ink); border-color: var(--muted); }
+.along:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 /* What range the plot is drawn in — the left-hand group, beside the fields it applies to. */
 .ranges {
@@ -200,15 +293,54 @@
 .chip:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 .chip[aria-pressed="true"] { color: var(--signal); border-color: var(--signal); }
 
+/* The walker's chips stand on a fill; nothing else in the row does.
+
+   They are the one group here that is a *place* rather than a setting — press one and the row
+   itself becomes a different row — and while they were drawn like the range and the view chips,
+   a reader arriving at `port session ends mid log` had no way to see that the first two are
+   doors and the last three are switches. The fill is also what lifts them off the plot: the pane
+   is one white sheet from the controls down through the picture, and a bare word on it a few
+   pixels above the line reads as a label belonging to the chart rather than a control over it.
+
+   --paper, which is the ground the panes themselves lie on, so this is the row sunk into the
+   page rather than a new colour. A hovered chip comes up to the surface — the movement is toward
+   the reader, which is the direction a thing being reached for should go. */
+.fields .chip { background: var(--paper); }
+.fields .chip:hover { background: var(--surface); }
+.fields .chosen { background: var(--paper); }
+
+/* A name longer than a chip holds is cut with two dots, in the chip itself, so the box stops at
+   a width the row can carry. The whole of it stays on the chip's title and in what a screen
+   reader is handed — nothing is lost, it is only not all drawn.
+
+   And every chip in this row keeps the width its own name needs.
+
+   A flex item shrinks by default, and a row of six that will not wrap has nowhere to shrink to
+   but into itself: the boxes squeezed under their own text, the names ran straight through their
+   borders and into the next name, and `broker counters gateway network radios sensors` came out
+   as one 38-character word. The row was never scrolling, because nothing was overflowing — the
+   chips were absorbing it. They hold their width now, the row overflows, and the overflow is the
+   scroll this row was always meant to have. The clip is the backstop for the one box narrower
+   than the pane itself. */
+.fields .chip,
+.chosen {
+  flex: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
 /* A group of fields rather than one of them, and the reader can see which is which without
    reading either: a group is a box at rest, where a field is a bare word until it is reached for.
    That is the whole of the hierarchy said in the one place a glance lands — these open, those
    draw. The arrows are not part of any name, so they are quieter than the names. */
 .chip[data-role='into'] { border-color: var(--rule); }
 .chip[data-role='into']:hover { color: var(--ink); border-color: var(--muted); }
-.chip[data-role='up'],
-.chip[data-role='aside'] { flex: none; }
-.mark { opacity: 0.55; padding: 0 3px; }
+/* A box rather than a run of text. The two arrows are glyphs and sit on the line's baseline
+   happily; the csv mark is an SVG, and a replaced element on a baseline hangs the line's descender
+   space underneath itself — four pixels of nothing under a ten-pixel icon, which the chip then
+   dutifully centres along with the icon, leaving the mark riding high. The line-height stays where
+   it is, so the arrows go on sharing a baseline with the names they stand beside. */
+.mark { display: inline-flex; align-items: center; opacity: 0.55; padding: 0 3px; }
 
 /* The range, at the height it belongs to: high at the top of the plot, low at the bottom. Muted
    micro type, the same faint voice the stamps use — the line is what the eye should land on. */

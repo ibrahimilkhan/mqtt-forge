@@ -17,6 +17,7 @@ export type ControlId =
   | 'field'
   | 'into'
   | 'up'
+  | 'along'
   | 'fewer'
   | 'auto'
   | 'time'
@@ -61,6 +62,12 @@ export const CONTROLS: Record<ControlId, Control & { group: ControlGroup }> = {
     group: 'what',
     what: 'Back out of a group. It names the one you are in.',
     when: 'After opening one.',
+  },
+  along: {
+    label: '3 →',
+    group: 'what',
+    what: 'How many field chips are off the end of the row. Steps onto them.',
+    when: 'When the row is wider than the pane.',
   },
   fewer: {
     label: '⌄',
