@@ -67,19 +67,13 @@ public sealed class AlertEngineCore
 
     public EngineOutcome OnMessage(MqttMessage message, DateTimeOffset now)
     {
-        // First, before anything else looks at it. Our own alarm lands back in our own
-        // subscription, and a rule covering that topic would have the alarm raise an alarm for
-        // ever. The rule editor refuses such a filter as well; that is the courtesy, this is the
-        // guard, and one of the two has to hold whatever the user typed.
         if (message.Topic.StartsWith(_options.TopicPrefix, StringComparison.Ordinal))
             return EngineOutcome.Empty;
 
-        // A replayed retained value is the broker repeating itself, not the plant speaking. It
-        // is not judged, not written to a ring, and does not count as having seen the topic —
-        // otherwise every subscribe and every reconnect starts an alarm storm out of old values,
-        // and a device that died an hour ago has its silence clock reset on the way past.
         if (message.Replay) return EngineOutcome.Empty;
 
+        // Allocated only once a rule actually matches, so the common case — a topic nobody wrote
+        // a rule for — still costs nothing and still returns the shared Empty.
         List<Alert>? raised = null;
 
         foreach (var rule in _rules)
@@ -101,78 +95,18 @@ public sealed class AlertEngineCore
             var found = PayloadValue.TryExtract(message.Payload, rule.Field, out var text);
             var number = found ? PayloadValue.AsReading(text) : null;
 
-            // The ring is filled by arrival, not by whichever condition happens to want it, so a
-            // condition never has to ask for history that was not kept.
+            // Filled by arrival rather than by whichever condition wants it, so a condition never
+            // has to ask for history that was not kept.
             if (state.Window is not null && number is { } reading)
                 state.Window.Add(new Reading(message.ReceivedAt.UtcTicks, reading));
 
             var context = new EvalContext(
                 message.Topic, found ? text : null, number, now, state.LastSeen, state.Window);
 
-            var verdict = _evaluator.Evaluate(rule.Condition, in context);
-
-            // Missing data is not judged and is not counted false. A rule saying '< 10' would
-            // otherwise fire on every message that does not carry the field at all, and a device
-            // saying 'warming up' is not a device below ten. Skips are counted, and the panel
-            // shows them: a rule passing over everything it sees looks exactly like a rule with
-            // nothing to report.
-            if (verdict == Verdict.Skipped)
-            {
-                state.Skipped++;
-                continue;
-            }
-
-            state.Evaluated++;
-            state.LastEvaluated = now;
-
-            if (verdict == Verdict.False)
-            {
-                // Recorded, not acted on. Resolution happens on the tick and only there: a late
-                // firing is a missed threshold, while a late resolution is only late — and
-                // taking the decision to the tick is what holds a flapping pair to one state
-                // change a second.
-                state.TrueSince = null;
-                continue;
-            }
-
-            state.TrueSince ??= now;
-
-            if (state.Active is { } active)
-            {
-                // The alarm belongs to the pair, so a second true reading is the same alarm
-                // seen again. The value stays the one that fired it: an alert that quietly
-                // rewrites 95 to 90.1 loses the reading that made someone get up.
-                state.Active = active with { LastSeenAt = now, Count = active.Count + 1 };
-                continue;
-            }
-
-            var alarm = new Alert(
-                Id: NextId(now),
-                RuleId: rule.Id,
-                RuleName: rule.Name,
-                Topic: message.Topic,
-                Severity: rule.Severity,
-                FiredAt: now,
-                LastSeenAt: now,
-                ResolvedAt: null,
-                ResolvedBy: null,
-                MutedUntil: state.MutedUntil,
-                Count: 1,
-                // The sentence someone reads at three in the morning, and the slice of payload
-                // under it, are both task 8's. Not because they are an afterthought but because
-                // task 8 is the one that rewrites this raise into Raise(…) and needs a Describe
-                // that answers with a number (an arrival) and without one (a tick); a narrower
-                // one written here would be a member two tasks own, and the two would drift.
-                Reason: string.Empty,
-                Value: number,
-                Sample: null,
-                Actions: rule.Actions);
-
-            state.Active = alarm;
-            (raised ??= []).Add(alarm);
+            OnArrival(rule, state, message, context, now, raised ??= []);
         }
 
-        return Outcome(raised, null);
+        return raised is null || raised.Count == 0 ? EngineOutcome.Empty : new EngineOutcome(raised, []);
     }
 
     // Every resolution in the engine happens here. 'connected' is not read on this path: a
@@ -181,22 +115,31 @@ public sealed class AlertEngineCore
     // down, because a broker that dropped is one event and not a hundred sensors going quiet.
     public EngineOutcome OnTick(DateTimeOffset now, bool connected)
     {
+        List<Alert>? raised = null;
         List<Alert>? resolved = null;
 
         foreach (var state in _pairs.Values)
         {
-            if (state.Active is null) continue;
-
             // A rule that is gone or switched off is dealt with when the rule set changes, not
             // here; this only skips it so a stale pair cannot be judged against a rule the
             // engine no longer has.
             if (!_byId.TryGetValue(state.RuleId, out var rule) || !rule.Enabled) continue;
 
-            if (state.TrueSince is null)
+            // A pair with nothing ringing may still have a 'for' running out with no message to
+            // notice it, which is the tick's own half of the arrival story.
+            if (state.Active is null)
+            {
+                OnPairTick(rule, state, now, raised ??= []);
+                continue;
+            }
+
+            // The way-out edge has been seen and nothing has interrupted it. Task 9 puts a 'for'
+            // and a Clear condition in front of this; at this point crossing it once is enough.
+            if (state.TrueSince is not null)
                 (resolved ??= []).Add(Close(state, "clear", now));
         }
 
-        return Outcome(null, resolved);
+        return Outcome(raised, resolved);
     }
 
     public void ClearHistory() => _history.Clear();
@@ -292,4 +235,202 @@ public sealed class AlertEngineCore
         raised is null && resolved is null
             ? EngineOutcome.Empty
             : new EngineOutcome(raised ?? None, resolved ?? None);
+
+    /// <summary>
+    /// One arrival, one pair. Judges the condition, moves the pair's clock, and rings if the clock
+    /// has run out.
+    /// </summary>
+    private void OnArrival(AlertRule rule, RuleState state, MqttMessage message,
+                           in EvalContext context, DateTimeOffset now, List<Alert> raised)
+    {
+        var verdict = _evaluator.Evaluate(rule.Condition, context);
+
+        if (verdict is Verdict.Skipped)
+        {
+            // Neither confirms nor breaks. A message that could not be judged leaves TrueSince and
+            // LastEvaluated exactly where they were: the run of truth is not interrupted by it, and
+            // the freshness gate below is not fed by it either. Counting a skip as false would ring
+            // every '< 10' rule on every message that does not carry the field; counting it as a
+            // judgement would let a stream of unjudgeable chatter mature a For nobody proved.
+            state.Skipped++;
+            return;
+        }
+
+        state.Evaluated++;
+        state.LastEvaluated = now;
+
+        // TrueSince measures whichever edge is pending, not 'the condition is true'. While nothing
+        // is ringing the pending edge is the way in, and a true verdict feeds it; once something is
+        // ringing the pending edge is the way out, and a FALSE verdict feeds it instead. Raise
+        // spends the clock precisely because the edge it was measuring has been crossed and the
+        // other one is now the interesting one.
+        //
+        // Task 9 gives this swap its name (PendingFor/Edge) and lets a rule name a separate Clear
+        // condition for the way out; here the way out is simply the fire condition going false.
+        // Without the swap, Raise nulling TrueSince would leave the tick's resolve rule reading a
+        // field nobody writes, and every alert would go out on the tick after it came on.
+        var pendingWantsTrue = state.Active is null;
+
+        // ??=, so a run that is already standing keeps its start.
+        if (verdict is Verdict.True == pendingWantsTrue) state.TrueSince ??= now;
+        else state.TrueSince = null;
+
+        if (state.Active is not null)
+        {
+            // One alert per (rule, topic). A topic pushing fifty messages a second past the line is
+            // one fault, not fifty — the record only gets louder. Whether it may stop is the tick's
+            // decision, never this one.
+            if (verdict is Verdict.True)
+                state.Active = state.Active with { LastSeenAt = now, Count = state.Active.Count + 1 };
+            return;
+        }
+
+        if (Matured(rule, state, now) && !Withheld(state, now))
+            raised.Add(Raise(rule, state, now, ReasonFor(rule, context), context.Number, Sample(message)));
+    }
+
+    /// <summary>
+    /// The tick's half of the same story: a For that ran out with no message to notice it.
+    /// </summary>
+    private void OnPairTick(AlertRule rule, RuleState state, DateTimeOffset now, List<Alert> raised)
+    {
+        if (state.Active is not null) return;     // Task 9 puts the way out here
+        if (state.TrueSince is null) return;
+        if (!Matured(rule, state, now) || Withheld(state, now)) return;
+
+        // Value and Sample stay null, and that is deliberate. The message that started this For may
+        // be half a minute old and has been replaced by every message since; quoting its body as
+        // this alert's sample would be quoting something that is no longer true. RuleState keeps no
+        // last payload on purpose — 4 kB per pair across the twenty thousand pairs the numbers table
+        // allows is eighty megabytes nobody budgeted for.
+        raised.Add(Raise(rule, state, now, ReasonFor(rule, Blank(state, now)), value: null, sample: null));
+    }
+
+    /// <summary>
+    /// Whether a pair whose condition is standing true has stood it long enough to ring.
+    /// </summary>
+    private bool Matured(AlertRule rule, RuleState state, DateTimeOffset now)
+    {
+        if (state.TrueSince is not { } since) return false;
+
+        // No For: the arrival that made it true is the alert.
+        if (rule.For is not { } seconds) return true;
+
+        // The boundary is inclusive. 'For thirty seconds' is satisfied by exactly thirty seconds; a
+        // strict comparison would want thirty-one, and someone who writes 30 beside a device that
+        // reports every ten seconds means the third reading, not the fourth.
+        if (now - since < TimeSpan.FromSeconds(seconds)) return false;
+
+        // The freshness gate. Maturation is a claim about the present — 'this has been true for the
+        // last thirty seconds' — and a pair whose last real judgement is minutes old cannot support
+        // it. Without this, a topic that stops sending mid-For matures its own half-finished timer
+        // on a tick and rings about a value nobody has seen since: silence would ring as a threshold
+        // breach, and silence has its own condition for saying so.
+        //
+        // An arrival passes it for free, because LastEvaluated is 'now' by the time we get here. The
+        // gate therefore only ever bites on a tick, which is the only place it could go wrong.
+        return state.LastEvaluated is { } last
+            && now - last <= TimeSpan.FromSeconds(_options.FreshnessSeconds);
+    }
+
+    /// <summary>A pair that is judged exactly as before but is not allowed to ring yet.</summary>
+    // Nothing withholds a pair until Task 9 gives it a cooldown; the method exists now so that the
+    // two raise sites have one gate between them rather than two that can drift.
+    private static bool Withheld(RuleState state, DateTimeOffset now) => false;
+
+    private Alert Raise(AlertRule rule, RuleState state, DateTimeOffset now,
+                        string reason, double? value, string? sample)
+    {
+        var alert = new Alert(
+            // Task 7's counter, not a Guid. The core is meant to be a function of its inputs: run the
+            // same messages through the same rules twice and the second run has to be the first one
+            // again, ids included, or a lifecycle test that fails on the build server cannot be read
+            // beside the one that passed here.
+            Id: NextId(now),
+            RuleId: rule.Id,
+            RuleName: rule.Name,
+            Topic: state.Topic,
+            Severity: rule.Severity,
+            FiredAt: now,
+            LastSeenAt: now,
+            ResolvedAt: null,
+            ResolvedBy: null,
+            MutedUntil: state.MutedUntil,
+            Count: 1,
+            Reason: reason,
+            Value: value,
+            Sample: sample,
+            Actions: rule.Actions);
+
+        state.Active = alert;
+
+        // The clock is spent. From here TrueSince belongs to the way out, and nothing is standing on
+        // it yet — Task 9 is what puts something there.
+        state.TrueSince = null;
+        return alert;
+    }
+
+    /// <summary>
+    /// The sentence the alert carries, written once at the moment it rings and never rewritten:
+    /// Reason says why this alert exists, not what the value is doing now.
+    /// </summary>
+    private static string ReasonFor(AlertRule rule, in EvalContext context)
+    {
+        var head = Describe(rule.Condition, context);
+        return rule.For is { } seconds ? $"{head} for {seconds}s" : head;
+    }
+
+    private static string Describe(AlertCondition condition, in EvalContext context) => condition switch
+    {
+        // Two shapes for every value condition: with the number when a message brought one ("94.2 >
+        // 90"), and without when a tick did the maturing and there is no number to name ("above 90").
+        ThresholdCondition t => context.Number is { } n
+            ? $"{Number(n)} {Symbol(t.Op)} {Number(t.Value)}"
+            : $"{Word(t.Op)} {Number(t.Value)}",
+        BandCondition b => context.Number is { } n
+            ? $"{Number(n)} {(b.Inside ? "inside" : "outside")} {Number(b.Low)}..{Number(b.High)}"
+            : $"{(b.Inside ? "inside" : "outside")} {Number(b.Low)}..{Number(b.High)}",
+        PatternCondition p => p.Negate ? $"no match for /{p.Regex}/" : $"matched /{p.Regex}/",
+        OneOfCondition o => o.Negate ? "not an accepted value" : "an accepted value",
+        SilenceCondition s => $"no message for {s.After}s",
+        AllCondition => "every condition held",
+        AnyCondition => "one of the conditions held",
+        _ => "the condition held",
+    };
+
+    // Invariant, and trimmed: this string goes into a webhook body and into an MQTT payload, and a
+    // Turkish decimal comma in either is a number the endpoint cannot parse.
+    private static string Number(double value)
+        => value.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string Symbol(ThresholdOp op) => op switch
+    {
+        ThresholdOp.Gt => ">",
+        ThresholdOp.Gte => ">=",
+        ThresholdOp.Lt => "<",
+        ThresholdOp.Lte => "<=",
+        ThresholdOp.Eq => "==",
+        _ => "!=",
+    };
+
+    private static string Word(ThresholdOp op) => op switch
+    {
+        ThresholdOp.Gt => "above",
+        ThresholdOp.Gte => "at or above",
+        ThresholdOp.Lt => "below",
+        ThresholdOp.Lte => "at or below",
+        ThresholdOp.Eq => "equal to",
+        _ => "not equal to",
+    };
+
+    /// <summary>A context with no message behind it: what a tick knows about a pair.</summary>
+    private static EvalContext Blank(RuleState state, DateTimeOffset now)
+        => new(state.Topic, Text: null, Number: null, now, state.LastSeen, state.Window);
+
+    // Four kilobytes, matching the spec's ceiling. The AlertDto cuts it to 256 bytes again on the
+    // way out; keeping the long one here is what makes a webhook body worth reading.
+    private const int SampleLimit = 4096;
+
+    private static string? Sample(MqttMessage message)
+        => message.Payload.Length <= SampleLimit ? message.Payload : message.Payload[..SampleLimit];
 }
