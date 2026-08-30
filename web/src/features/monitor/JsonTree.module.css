@@ -3,10 +3,11 @@
    The indent is padding rather than spaces in the text, so a fold can move a whole branch two
    characters to the right without anything having to be re-written — and so a reader who selects
    the lot and copies it gets JSON with no leading whitespace, which is still JSON. */
-.tree {
-  display: flex;
-  flex-direction: column;
-}
+/* Block rather than a column flexbox, which is what it was and what it drew identically as.
+   A flex container is its own formatting context and will not flow around a float, so the whole
+   document was shoved clear of the controls in the corner instead of the one line beside them.
+   Block rows avoid a float one line at a time, which is the whole point of a float. */
+.tree { display: block; }
 
 .row {
   display: flex;
