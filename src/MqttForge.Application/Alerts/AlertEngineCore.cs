@@ -50,41 +50,6 @@ public sealed class AlertEngineCore
 
     public AlertEngineCore(AlertEngineOptions options) => _options = options;
 
-    // Creates no pairs. A filter is not an inventory — until a message arrives there is no topic
-    // to pair it with, and a '#' rule would otherwise have to invent a broker's whole tree.
-    public EngineOutcome SetRules(IReadOnlyList<AlertRule> rules, DateTimeOffset now)
-    {
-        _rules = rules;
-        _byId.Clear();
-        foreach (var rule in rules) _byId[rule.Id] = rule;
-
-        // Compiled once with the rule set, never per message: a pattern is user input on the
-        // message path, and building a Regex fifty times a second to answer the same question is
-        // the cheapest thing in here to get wrong.
-        _evaluator = new ConditionEvaluator(CompiledPatterns.For(rules));
-
-        // The pair a wildcard could never open: a filter with no wildcard is the topic's own name.
-        // A save is the user's whole statement of what the rule set now is, so every rule gets a
-        // clean slate. A fault kept across a save leaves the rule dead until a restart — and the
-        // panel's fault row exists to send the user to the editor, which would then be the one
-        // thing that could not fix it. Faulting again costs a single throw, and says so again
-        // straight away.
-        _faults.Clear();
-
-        // The same fresh start for the run of timeouts, which is the other half of the same
-        // sentence. This is the only copy of this reset in the plan: when final task 15 rewrites
-        // SetRules it moves into the loop over the pairs that survived reconciliation, which is
-        // the same set of pairs by then — one line, in one place, at every point in the plan.
-        foreach (var state in _pairs.Values) state.PatternTimeouts = 0;
-
-        Arm(rules, now);
-
-        // Last, so it sees the rule set the pairs were just reconciled against.
-        ReconcileDiagnostics(rules);
-
-        return EngineOutcome.Empty;
-    }
-
     public EngineOutcome OnMessage(MqttMessage message, DateTimeOffset now)
     {
         if (message.Topic.StartsWith(_options.TopicPrefix, StringComparison.Ordinal))
@@ -106,7 +71,7 @@ public sealed class AlertEngineCore
             // on the eleventh — at fifty milliseconds of a single-threaded engine each time.
             if (IsFaulted(rule.Id)) continue;
 
-// Track is the only door a pair comes into being through, and it is allowed to say
+            // Track is the only door a pair comes into being through, and it is allowed to say
             // no. A refused topic is not evaluated at all — not cheaply, not partly. It is not a
             // pair.
             var state = Track(rule, message.Topic);
@@ -131,21 +96,6 @@ public sealed class AlertEngineCore
         }
 
         return raised is null || raised.Count == 0 ? EngineOutcome.Empty : new EngineOutcome(raised, []);
-    }
-
-    private Alert Close(RuleState state, string because, DateTimeOffset now)
-    {
-        var closed = state.Active! with { ResolvedAt = now, ResolvedBy = because };
-        state.Active = null;
-        state.TrueSince = null;
-
-        // Newest first, and trimmed in one call rather than one at a time: a save that drops a
-        // hundred ringing pairs at once would otherwise shift the tail a hundred times.
-        _history.Insert(0, closed);
-        if (_history.Count > _options.HistoryDepth)
-            _history.RemoveRange(_options.HistoryDepth, _history.Count - _options.HistoryDepth);
-
-        return closed;
     }
 
     private string NextId(DateTimeOffset now) =>
@@ -209,7 +159,7 @@ public sealed class AlertEngineCore
             Sample: sample,
             Actions: rule.Actions);
 
-// The only door an alert opens through. Null when the system ceiling is full: the pair
+        // The only door an alert opens through. Null when the system ceiling is full: the pair
         // goes on being judged exactly as before, and the refusal is counted rather than dropped.
         if (TryOpen(state, rule, alert, now) is null) return null;
 
@@ -307,15 +257,15 @@ public sealed class AlertEngineCore
     /// the evaluator would otherwise be a CS8604 waiting to happen.
     /// </summary>
     private static Edge PendingFor(AlertRule rule, RuleState state)
-        => state.Active is null    ? new Edge(rule.Condition, WantTrue: true)
-         : rule.Clear is not null  ? new Edge(rule.Clear, WantTrue: true)
-         :                           new Edge(rule.Condition, WantTrue: false);
+        => state.Active is null ? new Edge(rule.Condition, WantTrue: true)
+         : rule.Clear is not null ? new Edge(rule.Clear, WantTrue: true)
+         : new Edge(rule.Condition, WantTrue: false);
 
     private void OnArrival(AlertRule rule, RuleState state, MqttMessage message,
                            in EvalContext context, DateTimeOffset now, List<Alert> raised)
     {
         var edge = PendingFor(rule, state);
-var verdict = EvaluateGuarded(rule, state, edge.Condition, context);
+        var verdict = EvaluateGuarded(rule, state, edge.Condition, context);
 
         if (verdict is Verdict.Skipped)
         {
@@ -357,7 +307,7 @@ var verdict = EvaluateGuarded(rule, state, edge.Condition, context);
     // telling and not about watching — folding it in here would make 'stop telling me' quietly mean
     // 'stop watching'. It is spelt out in the shape Task 12 replaces so that the removal reads as the
     // decision it is, rather than as a line nobody ever wrote.
-// Cooldown only. A muted pair is judged, fires, and counts exactly as it would have — what a
+    // Cooldown only. A muted pair is judged, fires, and counts exactly as it would have — what a
     // mute stops is the telling, and that is Announce's job. Folding the mute in here would make
     // "stop telling me" mean "stop watching", and the alarm would silently not be there when the
     // mute lapsed.
@@ -420,10 +370,10 @@ var verdict = EvaluateGuarded(rule, state, edge.Condition, context);
             // dictionary's question. _rules is the file's order and answers the panel's.
             if (!_byId.TryGetValue(key.RuleId, out var rule) || !rule.Enabled) continue;
 
-        // Set aside for this session. A condition that threw once will throw on the next
-        // thousand messages, and a pattern that has timed out ten times running will time out
-        // on the eleventh — at fifty milliseconds of a single-threaded engine each time.
-        if (IsFaulted(rule.Id)) continue;
+            // Set aside for this session. A condition that threw once will throw on the next
+            // thousand messages, and a pattern that has timed out ten times running will time out
+            // on the eleventh — at fifty milliseconds of a single-threaded engine each time.
+            if (IsFaulted(rule.Id)) continue;
 
             // While the link is down a tick brings no news, so nothing is judged and nothing matures.
             // Without this, the instant the broker drops every silence rule in the set goes true
@@ -452,7 +402,7 @@ var verdict = EvaluateGuarded(rule, state, edge.Condition, context);
     private void JudgeOnTick(AlertRule rule, RuleState state, DateTimeOffset now)
     {
         var edge = PendingFor(rule, state);
-var verdict = EvaluateGuarded(rule, state, edge.Condition, Blank(state, now));
+        var verdict = EvaluateGuarded(rule, state, edge.Condition, Blank(state, now));
 
         // Not counted as a skip. The Skipped counter is a count of messages the rule could not read,
         // and the panel would be telling the user something untrue if a quiet second went into it.
@@ -524,7 +474,7 @@ var verdict = EvaluateGuarded(rule, state, edge.Condition, Blank(state, now));
             // A rule left alone keeps its clock. Saving the whole list must not restart the silence
             // timer of a rule nobody touched — the same promise the reconciliation makes for
             // cooldowns.
-// Through the same door as an arrival, so the ceilings count an armed pair exactly as
+            // Through the same door as an arrival, so the ceilings count an armed pair exactly as
             // they count one a message opened. A refusal here is the same refusal: the rule keeps
             // what it holds and the panel says how much it had to leave out.
             var armed = Track(rule, rule.Filter);
@@ -571,85 +521,85 @@ var verdict = EvaluateGuarded(rule, state, edge.Condition, Blank(state, now));
         }
     }
 
-        // A mute longer than a day is disabling the rule, and the editor says so. The core clamps
-        // rather than trusts: the validator lives in Api, and a record can reach this method from a
-        // state file that has been through a text editor as well as from a panel that has not.
-        public const int MaxMuteMinutes = 1440;
+    // A mute longer than a day is disabling the rule, and the editor says so. The core clamps
+    // rather than trusts: the validator lives in Api, and a record can reach this method from a
+    // state file that has been through a text editor as well as from a panel that has not.
+    public const int MaxMuteMinutes = 1440;
 
-        /// <summary>
-        /// Silences one (rule, topic) pair for <paramref name="minutes"/> minutes.
-        /// Zero or less lifts an existing mute.
-        /// </summary>
-        public EngineOutcome Mute(string ruleId, string topic, int minutes, DateTimeOffset now)
-        {
-            // A pair the engine has never seen has nothing to silence, and this returns rather than
-            // throws: the console mutes from a row it drew a moment ago, and by the time the record
-            // has crossed the channel the rule may have been edited out from under it. Creating the
-            // pair here was considered and rejected outright — it would be a door straight past
-            // MaxTopicsPerRule, which the arrival path is careful to hold shut.
-            if (!_pairs.TryGetValue((ruleId, topic), out var state))
-                return EngineOutcome.Empty;
-
-            var until = minutes <= 0
-                ? (DateTimeOffset?)null
-                : now.AddMinutes(Math.Min(minutes, MaxMuteMinutes));
-
-            // The mute lives on the pair and never on the alert. That is the point of it: an alert
-            // that clears and fires again an hour later is a different Alert with a different Id, and
-            // a mute the user set on the boiler has to outlive that or it silences almost nothing.
-            state.MutedUntil = until;
-
-            // The alert carries a copy so the panel can fade the row and print "muted until 09:30"
-            // without having to join two lists to find out. It is a label, not the state.
-            if (state.Active is { } active)
-                state.Active = active with { MutedUntil = until };
-
-            // Muting raises and resolves nothing. The return type is here so the pump can treat every
-            // record on its channel the same way. Re-announcing a still-active alert when a mute is
-            // lifted was considered and rejected: it would push an hour-old FiredAt to the top of the
-            // console's list as though it had just happened, and the snapshot already carries the row.
+    /// <summary>
+    /// Silences one (rule, topic) pair for <paramref name="minutes"/> minutes.
+    /// Zero or less lifts an existing mute.
+    /// </summary>
+    public EngineOutcome Mute(string ruleId, string topic, int minutes, DateTimeOffset now)
+    {
+        // A pair the engine has never seen has nothing to silence, and this returns rather than
+        // throws: the console mutes from a row it drew a moment ago, and by the time the record
+        // has crossed the channel the rule may have been edited out from under it. Creating the
+        // pair here was considered and rejected outright — it would be a door straight past
+        // MaxTopicsPerRule, which the arrival path is careful to hold shut.
+        if (!_pairs.TryGetValue((ruleId, topic), out var state))
             return EngineOutcome.Empty;
-        }
 
-        // At exactly MutedUntil the pair speaks again. The panel's label reads "muted until 09:30",
-        // and 09:30 is when it is over; a <= here would make that label wrong by one tick, and every
-        // other deadline in this engine — Cooldown, For — is read the same way.
-        private static bool IsMuted(RuleState state, DateTimeOffset now)
-            => state.MutedUntil is { } until && now < until;
+        var until = minutes <= 0
+            ? (DateTimeOffset?)null
+            : now.AddMinutes(Math.Min(minutes, MaxMuteMinutes));
 
-        // The one door every raise and every resolve leaves by. Muting closes all four channels —
-        // screen, sound, webhook, publish — and the outcome is what feeds all four, so one choke
-        // point here is one place to be right; four scattered guards would be four places for the
-        // fifth channel to be forgotten when it arrives.
-        //
-        // Note what this deliberately does not do: the suppressed alert is still in the snapshot's
-        // Active list, and the snapshot is the authority for what the panel draws. The outcome is
-        // only ever the authority for what gets delivered.
-        private static void Announce(RuleState state, Alert alert, List<Alert> into, DateTimeOffset now)
+        // The mute lives on the pair and never on the alert. That is the point of it: an alert
+        // that clears and fires again an hour later is a different Alert with a different Id, and
+        // a mute the user set on the boiler has to outlive that or it silences almost nothing.
+        state.MutedUntil = until;
+
+        // The alert carries a copy so the panel can fade the row and print "muted until 09:30"
+        // without having to join two lists to find out. It is a label, not the state.
+        if (state.Active is { } active)
+            state.Active = active with { MutedUntil = until };
+
+        // Muting raises and resolves nothing. The return type is here so the pump can treat every
+        // record on its channel the same way. Re-announcing a still-active alert when a mute is
+        // lifted was considered and rejected: it would push an hour-old FiredAt to the top of the
+        // console's list as though it had just happened, and the snapshot already carries the row.
+        return EngineOutcome.Empty;
+    }
+
+    // At exactly MutedUntil the pair speaks again. The panel's label reads "muted until 09:30",
+    // and 09:30 is when it is over; a <= here would make that label wrong by one tick, and every
+    // other deadline in this engine — Cooldown, For — is read the same way.
+    private static bool IsMuted(RuleState state, DateTimeOffset now)
+        => state.MutedUntil is { } until && now < until;
+
+    // The one door every raise and every resolve leaves by. Muting closes all four channels —
+    // screen, sound, webhook, publish — and the outcome is what feeds all four, so one choke
+    // point here is one place to be right; four scattered guards would be four places for the
+    // fifth channel to be forgotten when it arrives.
+    //
+    // Note what this deliberately does not do: the suppressed alert is still in the snapshot's
+    // Active list, and the snapshot is the authority for what the panel draws. The outcome is
+    // only ever the authority for what gets delivered.
+    private static void Announce(RuleState state, Alert alert, List<Alert> into, DateTimeOffset now)
+    {
+        if (IsMuted(state, now)) return;
+        into.Add(alert);
+    }
+
+    // Housekeeping for the snapshot's muted list, which has no clock of its own — Snapshot() is
+    // pure by construction and cannot ask whether a deadline has passed. So the tick clears
+    // deadlines that have, and an expired mute can linger in the list for at most one second.
+    //
+    // This walks every pair rather than a side list of muted ones: a side list is a second
+    // collection to keep in step with every pair removal, in exchange for skipping a null check
+    // per pair. The tick's round-robin cursor exists to bound condition *evaluation*, and reading
+    // one nullable field is not one.
+    private void SweepMutes(DateTimeOffset now)
+    {
+        foreach (var state in _pairs.Values)
         {
-            if (IsMuted(state, now)) return;
-            into.Add(alert);
-        }
+            if (state.MutedUntil is not { } until || now < until) continue;
 
-        // Housekeeping for the snapshot's muted list, which has no clock of its own — Snapshot() is
-        // pure by construction and cannot ask whether a deadline has passed. So the tick clears
-        // deadlines that have, and an expired mute can linger in the list for at most one second.
-        //
-        // This walks every pair rather than a side list of muted ones: a side list is a second
-        // collection to keep in step with every pair removal, in exchange for skipping a null check
-        // per pair. The tick's round-robin cursor exists to bound condition *evaluation*, and reading
-        // one nullable field is not one.
-        private void SweepMutes(DateTimeOffset now)
-        {
-            foreach (var state in _pairs.Values)
-            {
-                if (state.MutedUntil is not { } until || now < until) continue;
-
-                state.MutedUntil = null;
-                if (state.Active is { } active)
-                    state.Active = active with { MutedUntil = null };
-            }
+            state.MutedUntil = null;
+            if (state.Active is { } active)
+                state.Active = active with { MutedUntil = null };
         }
+    }
 
     public AlertSnapshot Snapshot()
     {
@@ -705,8 +655,8 @@ var verdict = EvaluateGuarded(rule, state, edge.Condition, Blank(state, now));
                 row.Evaluated,
                 row.Skipped,
                 tally?.LastFiredAt,
-                // Faulted has no writer until the fault-containment task; a rule that has not
-                // thrown reports false, which is every rule until then.
+// Faulted has no writer until the fault-containment task; a rule that has not
+// thrown reports false, which is every rule until then.
 Faulted: _faults.ContainsKey(rule.Id),
                 FaultReason: _faults.GetValueOrDefault(rule.Id)));
 
@@ -721,276 +671,400 @@ Faulted: _faults.ContainsKey(rule.Id),
     // a list of things that finished should not find the thing still happening has gone with them.
     public void ClearHistory() => _history.Clear();
 
-        // Sum of every allocated ring's capacity, in readings. Capacity and not fill: the budget is
-        // about the sixty-four megabytes the rings occupy, and a ring occupies them from the moment
-        // it is made.
-        private int _readings;
+    // Sum of every allocated ring's capacity, in readings. Capacity and not fill: the budget is
+    // about the sixty-four megabytes the rings occupy, and a ring occupies them from the moment
+    // it is made.
+    private int _readings;
 
-        // Alerts the active ceiling would not let open. Counted rather than dropped in silence — the
-        // same bargain messagesDropped struck, for the same reason: an engine that quietly stops
-        // alarming at a thousand is indistinguishable from a plant that quietly went quiet. This is
-        // the only declaration of the field; Task 7 passed a literal 0 in its place because there was
-        // nothing yet to refuse an alert.
-        private int _suppressed;
+    // Alerts the active ceiling would not let open. Counted rather than dropped in silence — the
+    // same bargain messagesDropped struck, for the same reason: an engine that quietly stops
+    // alarming at a thousand is indistinguishable from a plant that quietly went quiet. This is
+    // the only declaration of the field; Task 7 passed a literal 0 in its place because there was
+    // nothing yet to refuse an alert.
+    private int _suppressed;
 
-        // How many pairs currently hold an open alert. Kept as a running count because the fire path
-        // asks on every arrival, and answering by walking twenty thousand pairs each time would make
-        // the ceiling more expensive than the thing it protects against.
-        private int _active;
+    // How many pairs currently hold an open alert. Kept as a running count because the fire path
+    // asks on every arrival, and answering by walking twenty thousand pairs each time would make
+    // the ceiling more expensive than the thing it protects against.
+    private int _active;
 
-        // The queue in front of the core drops messages under load; the core is pure and holds no
-        // queue, so it cannot see that happen. The transport hands it the running total and the
-        // snapshot carries it out again.
-        private int _dropped;
+    // The queue in front of the core drops messages under load; the core is pure and holds no
+    // queue, so it cannot see that happen. The transport hands it the running total and the
+    // snapshot carries it out again.
+    private int _dropped;
 
-        /// <summary>The transport's running count of messages the queue in front of this engine dropped.</summary>
-        public void SetDropped(int dropped) => _dropped = dropped;
+    /// <summary>The transport's running count of messages the queue in front of this engine dropped.</summary>
+    public void SetDropped(int dropped) => _dropped = dropped;
 
-        private readonly Dictionary<string, RuleTally> _tallies = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, RuleTally> _tallies = new(StringComparer.Ordinal);
 
-        // What each rule's fingerprint was at the last save. Declared here because this is the first
-        // task that reads it; Task 15's rewritten SetRules is what fills it once reconciliation
-        // exists, and it must consume this declaration rather than write a second one (CS0102).
-        // Until then the fill at the end of ReconcileDiagnostics below keeps it true.
-        private readonly Dictionary<string, string> _hashes = new(StringComparer.Ordinal);
+    // What each rule's fingerprint was at the last save. Declared here because this is the first
+    // task that reads it; Task 15's rewritten SetRules is what fills it once reconciliation
+    // exists, and it must consume this declaration rather than write a second one (CS0102).
+    // Until then the fill at the end of ReconcileDiagnostics below keeps it true.
+    private readonly Dictionary<string, string> _hashes = new(StringComparer.Ordinal);
 
-        // What a rule has seen, as against what one of its pairs has seen. Topics, evaluations and
-        // skips live on the pairs and are summed at snapshot time; these cannot, because no single
-        // pair owns them — and because a pair that was refused never existed to own anything.
-        private sealed class RuleTally
+    // What a rule has seen, as against what one of its pairs has seen. Topics, evaluations and
+    // skips live on the pairs and are summed at snapshot time; these cannot, because no single
+    // pair owns them — and because a pair that was refused never existed to own anything.
+    private sealed class RuleTally
+    {
+        public int Topics;
+        public DateTimeOffset? LastFiredAt;
+
+        // Whether the rule was switched on at the last save. The one bit of a rule that matters
+        // to the counters and is deliberately outside ConfigHash, and the one bit nothing else
+        // survives a save holding: _byId has already been rebuilt from the rules that just
+        // arrived by the time the diagnostics are reconciled.
+        public bool Enabled = true;
+
+        // Distinct topics a ceiling refused, not refusals. Bounded by the same number as the
+        // topics themselves: a '#' rule on a six-thousand-topic broker would otherwise grow the
+        // very memory the ceiling exists to bound, one name at a time. Past that the count stops
+        // climbing and understates — a rule this far over its ceiling needs to be told, not
+        // measured.
+        public readonly HashSet<string> Refused = new(StringComparer.Ordinal);
+
+        // Topics is deliberately untouched: it is a live count of pairs, not a tally of things
+        // that happened, and an edit that keeps the pairs has to keep the number that says so.
+        // Enabled is untouched for the opposite reason — it is not a count at all, it is the
+        // memory that decides whether there is anything to reset next time.
+        public void Reset()
         {
-            public int Topics;
-            public DateTimeOffset? LastFiredAt;
-
-            // Whether the rule was switched on at the last save. The one bit of a rule that matters
-            // to the counters and is deliberately outside ConfigHash, and the one bit nothing else
-            // survives a save holding: _byId has already been rebuilt from the rules that just
-            // arrived by the time the diagnostics are reconciled.
-            public bool Enabled = true;
-
-            // Distinct topics a ceiling refused, not refusals. Bounded by the same number as the
-            // topics themselves: a '#' rule on a six-thousand-topic broker would otherwise grow the
-            // very memory the ceiling exists to bound, one name at a time. Past that the count stops
-            // climbing and understates — a rule this far over its ceiling needs to be told, not
-            // measured.
-            public readonly HashSet<string> Refused = new(StringComparer.Ordinal);
-
-            // Topics is deliberately untouched: it is a live count of pairs, not a tally of things
-            // that happened, and an edit that keeps the pairs has to keep the number that says so.
-            // Enabled is untouched for the opposite reason — it is not a count at all, it is the
-            // memory that decides whether there is anything to reset next time.
-            public void Reset()
-            {
-                LastFiredAt = null;
-                Refused.Clear();
-            }
+            LastFiredAt = null;
+            Refused.Clear();
         }
+    }
 
-        private RuleTally TallyOf(string ruleId)
-        {
-            if (!_tallies.TryGetValue(ruleId, out var tally))
-                _tallies[ruleId] = tally = new RuleTally();
-            return tally;
-        }
+    private RuleTally TallyOf(string ruleId)
+    {
+        if (!_tallies.TryGetValue(ruleId, out var tally))
+            _tallies[ruleId] = tally = new RuleTally();
+        return tally;
+    }
 
-        /// <summary>The only way a (rule, topic) pair comes into being. Null when a ceiling said no.</summary>
-        private RuleState? Track(AlertRule rule, string topic)
-        {
-            var key = (rule.Id, topic);
-            if (_pairs.TryGetValue(key, out var state))
-                return state;
-
-            var tally = TallyOf(rule.Id);
-
-            // Three ceilings, and the order matters only for which one gets the credit. The per-rule
-            // one stops a single '#' rule eating a whole broker; the system one stops thirty
-            // well-behaved rules doing together what none of them could do alone; the ring budget
-            // stops the memory regardless of how the pairs are distributed.
-            if (tally.Topics >= _options.MaxTopicsPerRule) return Refuse(tally, topic);
-            if (_pairs.Count >= _options.MaxPairs) return Refuse(tally, topic);
-            if (_readings + _options.DefaultWindow > _options.MaxReadings) return Refuse(tally, topic);
-
-            // Every pair gets a ring, unconditionally. Handing one out only to the rules whose
-            // conditions read history was considered and is now deleted: it made the ring budget a
-            // ceiling on a thing that was almost never allocated, and it made a pair that half works
-            // — answering thresholds while silently never answering anything windowed. One ceiling
-            // with one meaning is worth more than a pair nobody can explain.
-            var window = new TopicWindow(_options.DefaultWindow);
-            _readings += window.Capacity;
-            tally.Topics++;
-
-            state = new RuleState(rule.Id, topic, window);
-            _pairs[key] = state;
+    /// <summary>The only way a (rule, topic) pair comes into being. Null when a ceiling said no.</summary>
+    private RuleState? Track(AlertRule rule, string topic)
+    {
+        var key = (rule.Id, topic);
+        if (_pairs.TryGetValue(key, out var state))
             return state;
-        }
 
-        private static RuleState? Refuse(RuleTally tally, string topic)
+        var tally = TallyOf(rule.Id);
+
+        // Three ceilings, and the order matters only for which one gets the credit. The per-rule
+        // one stops a single '#' rule eating a whole broker; the system one stops thirty
+        // well-behaved rules doing together what none of them could do alone; the ring budget
+        // stops the memory regardless of how the pairs are distributed.
+        if (tally.Topics >= _options.MaxTopicsPerRule) return Refuse(tally, topic);
+        if (_pairs.Count >= _options.MaxPairs) return Refuse(tally, topic);
+        if (_readings + _options.DefaultWindow > _options.MaxReadings) return Refuse(tally, topic);
+
+        // Every pair gets a ring, unconditionally. Handing one out only to the rules whose
+        // conditions read history was considered and is now deleted: it made the ring budget a
+        // ceiling on a thing that was almost never allocated, and it made a pair that half works
+        // — answering thresholds while silently never answering anything windowed. One ceiling
+        // with one meaning is worth more than a pair nobody can explain.
+        var window = new TopicWindow(_options.DefaultWindow);
+        _readings += window.Capacity;
+        tally.Topics++;
+
+        state = new RuleState(rule.Id, topic, window);
+        _pairs[key] = state;
+        return state;
+    }
+
+    private static RuleState? Refuse(RuleTally tally, string topic)
+    {
+        if (tally.Refused.Count < 1_000)
+            tally.Refused.Add(topic);
+        return null;
+    }
+
+    /// <summary>The only way an alert becomes active. Null when the ceiling is full.</summary>
+    private Alert? TryOpen(RuleState state, AlertRule rule, Alert alert, DateTimeOffset now)
+    {
+        if (_active >= _options.MaxActiveAlerts)
         {
-            if (tally.Refused.Count < 1_000)
-                tally.Refused.Add(topic);
+            _suppressed++;
+
+            // The cooldown is borrowed as a retry damper. Without it, a line stuck at 20 mA and
+            // publishing fifty times a second turns 'suppressed' into a message counter, and the
+            // panel reports the plant's message rate as a number of alarms it could not raise.
+            // The engine's default and not the rule's own Cooldown, deliberately: the ceiling is
+            // a property of the system, and a rule that set Cooldown 0 to catch every edge should
+            // not get to decide how often the system counts its own refusals.
+            state.CooldownUntil = now.AddSeconds(_options.DefaultCooldownSeconds);
             return null;
         }
 
-        /// <summary>The only way an alert becomes active. Null when the ceiling is full.</summary>
-        private Alert? TryOpen(RuleState state, AlertRule rule, Alert alert, DateTimeOffset now)
+        _active++;
+        state.Active = alert;
+        TallyOf(rule.Id).LastFiredAt = now;
+        return alert;
+    }
+
+    /// <summary>The only way an alert stops being active, whatever resolved it.</summary>
+    // Remember does the insertion and the trim; this method exists for the one thing Remember
+    // cannot know about — that a slot under the active ceiling has just come free. Task 15's
+    // reconciliation must close through here too, or a save that drops a ringing pair leaves the
+    // count of open alerts permanently one too high and the ceiling shuts early for ever after.
+    private void Close(RuleState state, Alert resolved)
+    {
+        state.Active = null;
+        _active--;
+        Remember(resolved);
+    }
+
+    /// <summary>Last statement of SetRules, after the rule set and the pairs have been reconciled.</summary>
+    private void ReconcileDiagnostics(IReadOnlyList<AlertRule> rules)
+    {
+        foreach (var rule in rules)
         {
-            if (_active >= _options.MaxActiveAlerts)
-            {
-                _suppressed++;
+            var tally = TallyOf(rule.Id);
+            var hash = ConfigHash.Of(rule);
 
-                // The cooldown is borrowed as a retry damper. Without it, a line stuck at 20 mA and
-                // publishing fifty times a second turns 'suppressed' into a message counter, and the
-                // panel reports the plant's message rate as a number of alarms it could not raise.
-                // The engine's default and not the rule's own Cooldown, deliberately: the ceiling is
-                // a property of the system, and a rule that set Cooldown 0 to catch every edge should
-                // not get to decide how often the system counts its own refusals.
-                state.CooldownUntil = now.AddSeconds(_options.DefaultCooldownSeconds);
-                return null;
-            }
+            // _hashes still holds the previous save's fingerprints at this point, which is the
+            // whole reason this runs before SetRules overwrites them.
+            var edited = !_hashes.TryGetValue(rule.Id, out var was)
+                         || !string.Equals(was, hash, StringComparison.Ordinal)
+                         || tally.Enabled != rule.Enabled;
+            tally.Enabled = rule.Enabled;
+            if (!edited) continue;
 
-            _active++;
-            state.Active = alert;
-            TallyOf(rule.Id).LastFiredAt = now;
-            return alert;
-        }
-
-        /// <summary>The only way an alert stops being active, whatever resolved it.</summary>
-        // Remember does the insertion and the trim; this method exists for the one thing Remember
-        // cannot know about — that a slot under the active ceiling has just come free. Task 15's
-        // reconciliation must close through here too, or a save that drops a ringing pair leaves the
-        // count of open alerts permanently one too high and the ceiling shuts early for ever after.
-        private void Close(RuleState state, Alert resolved)
-        {
-            state.Active = null;
-            _active--;
-            Remember(resolved);
-        }
-
-        /// <summary>Last statement of SetRules, after the rule set and the pairs have been reconciled.</summary>
-        private void ReconcileDiagnostics(IReadOnlyList<AlertRule> rules)
-        {
-            foreach (var rule in rules)
-            {
-                var tally = TallyOf(rule.Id);
-                var hash = ConfigHash.Of(rule);
-
-                // _hashes still holds the previous save's fingerprints at this point, which is the
-                // whole reason this runs before SetRules overwrites them.
-                var edited = !_hashes.TryGetValue(rule.Id, out var was)
-                             || !string.Equals(was, hash, StringComparison.Ordinal)
-                             || tally.Enabled != rule.Enabled;
-                tally.Enabled = rule.Enabled;
-                if (!edited) continue;
-
-                // Enabled is not in the hash, so a toggle keeps the pairs and their rings — and the
-                // counters still have to go, because a count that spans a period the rule was not
-                // running answers a question nobody asked.
-                tally.Reset();
-                foreach (var state in _pairs.Values)
-                {
-                    if (!string.Equals(state.RuleId, rule.Id, StringComparison.Ordinal)) continue;
-                    state.Evaluated = 0;
-                    state.Skipped = 0;
-                }
-            }
-
-            var living = rules.Select(r => r.Id).ToHashSet(StringComparer.Ordinal);
-            foreach (var id in _tallies.Keys.Where(id => !living.Contains(id)).ToList())
-                _tallies.Remove(id);
-
-            // Recount rather than adjust. Reconciliation above may have dropped any number of pairs,
-            // each carrying a ring and possibly an open alert, and three counters kept by hand across
-            // that would drift the first time a path forgot one. Once per PUT, one pass, no drift.
-            foreach (var tally in _tallies.Values) tally.Topics = 0;
-            _readings = 0;
-            _active = 0;
+            // Enabled is not in the hash, so a toggle keeps the pairs and their rings — and the
+            // counters still have to go, because a count that spans a period the rule was not
+            // running answers a question nobody asked.
+            tally.Reset();
             foreach (var state in _pairs.Values)
             {
-                if (_tallies.TryGetValue(state.RuleId, out var tally)) tally.Topics++;
-                _readings += state.Window?.Capacity ?? 0;
-                if (state.Active is not null) _active++;
+                if (!string.Equals(state.RuleId, rule.Id, StringComparison.Ordinal)) continue;
+                state.Evaluated = 0;
+                state.Skipped = 0;
             }
-
-            // The last use of the previous save's fingerprints is above, so this is the moment they
-            // can be replaced. Task 15 writes the same map again from SetRules, immediately after
-            // calling this method, and from the same ConfigHash.Of over the same rules — identical
-            // values, so the two cannot disagree, and this loop can go the day that one lands.
-            _hashes.Clear();
-            foreach (var rule in rules)
-                _hashes[rule.Id] = ConfigHash.Of(rule);
         }
 
-        // ── Fault containment ────────────────────────────────────────────────────────────────────
-        //
-        // Rule id → why that rule stopped being evaluated this session. Empty on a healthy engine,
-        // so the ordinary path pays one dictionary lookup per (rule, message) and nothing else.
-        //
-        // This is the one place where SignalRMessageNotifier's shape is deliberately not copied. Its
-        // pump (SignalRMessageNotifier.cs:71-93) wraps the whole loop in a single catch for
-        // OperationCanceledException and nothing else, and DependencyInjection.cs:20 registers it
-        // with AddHostedService. Nothing in this repository sets BackgroundServiceExceptionBehavior,
-        // so the host default stands, and that default is StopHost: one exception out of that
-        // ExecuteAsync takes the whole application down. There it is nearly harmless — everything
-        // inside that loop is ours. Here it would not be. This loop runs a regular expression the
-        // user typed into a form, walks a JSON document a stranger's broker sent, and ends in a
-        // publish that throws NotConnectedException the instant the link drops. Copying that shape
-        // would mean the console dies because somebody saved a bad rule.
-        //
-        // So the exception is caught here, named here, and the rule carrying it is set aside. The
-        // pump above stays exactly the shape it borrowed, because nothing reaches it.
-        private readonly Dictionary<string, string> _faults = new(StringComparer.Ordinal);
+        var living = rules.Select(r => r.Id).ToHashSet(StringComparer.Ordinal);
+        foreach (var id in _tallies.Keys.Where(id => !living.Contains(id)).ToList())
+            _tallies.Remove(id);
 
-        // The reason is drawn on the panel in a row beside the rule's name. An exception message
-        // that quoted a whole payload back would push the rule's name off the line, and the first
-        // sentence is always the useful one.
-        private const int MaxFaultReason = 200;
-
-        private bool IsFaulted(string ruleId) => _faults.ContainsKey(ruleId);
-
-        private void Fault(AlertRule rule, string reason) =>
-            _faults[rule.Id] = reason.Length <= MaxFaultReason ? reason : reason[..MaxFaultReason];
-
-        /// <summary>
-        /// Evaluates one condition for one pair and never lets anything past. Returns Skipped for
-        /// everything it swallows: a condition that could not be evaluated is not false, and the
-        /// three-valued Verdict exists so that this distinction survives the journey back.
-        /// </summary>
-        private Verdict EvaluateGuarded(
-            AlertRule rule, RuleState state, AlertCondition condition, in EvalContext context)
+        // Recount rather than adjust. Reconciliation above may have dropped any number of pairs,
+        // each carrying a ring and possibly an open alert, and three counters kept by hand across
+        // that would drift the first time a path forgot one. Once per PUT, one pass, no drift.
+        foreach (var tally in _tallies.Values) tally.Topics = 0;
+        _readings = 0;
+        _active = 0;
+        foreach (var state in _pairs.Values)
         {
-            try
-            {
-                var verdict = _evaluator.Evaluate(condition, context);
-
-                // Any answer at all, from any condition on this pair, ends the run. The counter is
-                // consecutive timeouts, and a pattern that has just answered inside its budget is by
-                // definition not the pattern that is wedging the engine. Resetting on every success
-                // rather than only on a pattern's success costs nothing — only a pattern can raise
-                // the exception that increments it — and keeps this the one line that has to be got
-                // right.
-                state.PatternTimeouts = 0;
-                return verdict;
-            }
-            catch (RegexMatchTimeoutException)
-            {
-                // Not a fault, a skip: the pattern was cut off at 50 ms, so nobody found out whether
-                // it matched. This is the catch the evaluator no longer has, and the reason it no
-                // longer has it — up there the timeout could only have become Skipped, which reads
-                // as "the field was missing"; down here it is a countable event on a named pair.
-                // The caller's own accounting puts the return value in the skipped bucket.
-                if (++state.PatternTimeouts >= _options.PatternTimeoutsBeforeDisable)
-                    Fault(rule, $"a pattern timed out {state.PatternTimeouts} times in a row " +
-                                $"on '{state.Topic}'");
-
-                return Verdict.Skipped;
-            }
-            catch (Exception ex)
-            {
-                // Deliberately every exception. Narrowing this to the ones thought of today is how
-                // the eleventh kind reaches the pump and StopHost, and the whole point of the field
-                // above is that no exception from a rule's own evaluation may leave this method.
-                Fault(rule, $"{ex.GetType().Name}: {ex.Message}");
-                return Verdict.Skipped;
-            }
+            if (_tallies.TryGetValue(state.RuleId, out var tally)) tally.Topics++;
+            _readings += state.Window?.Capacity ?? 0;
+            if (state.Active is not null) _active++;
         }
+
+        // The last use of the previous save's fingerprints is above, so this is the moment they
+        // can be replaced. Task 15 writes the same map again from SetRules, immediately after
+        // calling this method, and from the same ConfigHash.Of over the same rules — identical
+        // values, so the two cannot disagree, and this loop can go the day that one lands.
+        _hashes.Clear();
+        foreach (var rule in rules)
+            _hashes[rule.Id] = ConfigHash.Of(rule);
+    }
+
+    // ── Fault containment ────────────────────────────────────────────────────────────────────
+    //
+    // Rule id → why that rule stopped being evaluated this session. Empty on a healthy engine,
+    // so the ordinary path pays one dictionary lookup per (rule, message) and nothing else.
+    //
+    // This is the one place where SignalRMessageNotifier's shape is deliberately not copied. Its
+    // pump (SignalRMessageNotifier.cs:71-93) wraps the whole loop in a single catch for
+    // OperationCanceledException and nothing else, and DependencyInjection.cs:20 registers it
+    // with AddHostedService. Nothing in this repository sets BackgroundServiceExceptionBehavior,
+    // so the host default stands, and that default is StopHost: one exception out of that
+    // ExecuteAsync takes the whole application down. There it is nearly harmless — everything
+    // inside that loop is ours. Here it would not be. This loop runs a regular expression the
+    // user typed into a form, walks a JSON document a stranger's broker sent, and ends in a
+    // publish that throws NotConnectedException the instant the link drops. Copying that shape
+    // would mean the console dies because somebody saved a bad rule.
+    //
+    // So the exception is caught here, named here, and the rule carrying it is set aside. The
+    // pump above stays exactly the shape it borrowed, because nothing reaches it.
+    private readonly Dictionary<string, string> _faults = new(StringComparer.Ordinal);
+
+    // The reason is drawn on the panel in a row beside the rule's name. An exception message
+    // that quoted a whole payload back would push the rule's name off the line, and the first
+    // sentence is always the useful one.
+    private const int MaxFaultReason = 200;
+
+    private bool IsFaulted(string ruleId) => _faults.ContainsKey(ruleId);
+
+    private void Fault(AlertRule rule, string reason) =>
+        _faults[rule.Id] = reason.Length <= MaxFaultReason ? reason : reason[..MaxFaultReason];
+
+    /// <summary>
+    /// Evaluates one condition for one pair and never lets anything past. Returns Skipped for
+    /// everything it swallows: a condition that could not be evaluated is not false, and the
+    /// three-valued Verdict exists so that this distinction survives the journey back.
+    /// </summary>
+    private Verdict EvaluateGuarded(
+        AlertRule rule, RuleState state, AlertCondition condition, in EvalContext context)
+    {
+        try
+        {
+            var verdict = _evaluator.Evaluate(condition, context);
+
+            // Any answer at all, from any condition on this pair, ends the run. The counter is
+            // consecutive timeouts, and a pattern that has just answered inside its budget is by
+            // definition not the pattern that is wedging the engine. Resetting on every success
+            // rather than only on a pattern's success costs nothing — only a pattern can raise
+            // the exception that increments it — and keeps this the one line that has to be got
+            // right.
+            state.PatternTimeouts = 0;
+            return verdict;
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            // Not a fault, a skip: the pattern was cut off at 50 ms, so nobody found out whether
+            // it matched. This is the catch the evaluator no longer has, and the reason it no
+            // longer has it — up there the timeout could only have become Skipped, which reads
+            // as "the field was missing"; down here it is a countable event on a named pair.
+            // The caller's own accounting puts the return value in the skipped bucket.
+            if (++state.PatternTimeouts >= _options.PatternTimeoutsBeforeDisable)
+                Fault(rule, $"a pattern timed out {state.PatternTimeouts} times in a row " +
+                            $"on '{state.Topic}'");
+
+            return Verdict.Skipped;
+        }
+        catch (Exception ex)
+        {
+            // Deliberately every exception. Narrowing this to the ones thought of today is how
+            // the eleventh kind reaches the pump and StopHost, and the whole point of the field
+            // above is that no exception from a rule's own evaluation may leave this method.
+            Fault(rule, $"{ex.GetType().Name}: {ex.Message}");
+            return Verdict.Skipped;
+        }
+    }
+
+    /// <summary>
+    /// Takes the new rule set and reconciles the live state against it. Returns every alert the
+    /// save ended, because nothing else will: SetRules is not on the message path, no tick
+    /// follows it, and the webhook and MQTT dispatchers learn that an alarm is over only from
+    /// this list. See the spec's "Kaydetme motoru da uzlaştırır".
+    /// </summary>
+    public EngineOutcome SetRules(IReadOnlyList<AlertRule> rules, DateTimeOffset now)
+    {
+        // The incoming set, indexed twice, because two separate questions are asked of it below:
+        // what each rule now hashes to, and which rules are actually live. Enabled is not in the
+        // hash — a rule switched off and back on with nothing else touched is the same rule that
+        // was asleep — so the two cannot be one lookup.
+        var hashes = new Dictionary<string, string>(StringComparer.Ordinal);
+        var live = new Dictionary<string, AlertRule>(StringComparer.Ordinal);
+
+        foreach (var rule in rules)
+        {
+            hashes[rule.Id] = ConfigHash.Of(rule);
+            if (rule.Enabled) live[rule.Id] = rule;
+        }
+
+        var resolved = new List<Alert>();
+
+        // Walked over the pairs rather than over the rules, because the commonest reason to drop
+        // one is that its rule is not in the new list at all — there would be no rule left to
+        // walk from. ToArray so the dictionary can be written to inside the loop.
+        foreach (var key in _pairs.Keys.ToArray())
+        {
+            var reason = WhyDropped(key.RuleId, hashes, live);
+            if (reason is null) continue;
+
+            var state = _pairs[key];
+            if (state.Active is { } active)
+            {
+                // The resolved body goes out. This is the entire reason the first outcome
+                // exists: Clear runs only on arrival and only while an alert is active, so a
+                // pair that will never receive another message would otherwise leave the
+                // endpoint holding an alarm that never ends.
+                //
+                // Through the same two doors as every other resolution in this engine, and not
+                // through a shortcut of its own. Close puts it in the history and gives the
+                // system ceiling back the slot the alert was holding — a save that dropped a
+                // ringing pair without that would leak a slot per save until the ceiling refused
+                // alerts nobody was looking at. Announce is the only place that decides whether
+                // the user is told, so a muted pair stays muted through a save as well.
+                var ended = active with { ResolvedAt = now, ResolvedBy = reason };
+                Close(state, ended);
+                Announce(state, ended, resolved, now);
+            }
+
+            _pairs.Remove(key);
+        }
+
+        // What survived keeps all of it: the window, LastSeen, TrueSince, the live alert and its
+        // cooldown. Only the two fields that say how an alert reads are refreshed, and they are
+        // refreshed on the live alert too — a rule renamed while it is ringing should ring under
+        // its new name, not under the one it happened to be saved with.
+        foreach (var (key, state) in _pairs)
+        {
+            var rule = live[key.RuleId];
+
+            // The reset the fault-containment task put beside _faults.Clear(), now that there is
+            // a narrower set to apply it to. Same line, same reason — a save is a fresh start
+            // for the run of timeouts as well as for the fault — and still exactly one copy: the
+            // pairs left in _pairs at this point are the pairs the save decided to keep.
+            state.PatternTimeouts = 0;
+
+            if (state.Active is { } active)
+                state.Active = active with { RuleName = rule.Name, Severity = rule.Severity };
+        }
+
+        // The list is the file's own order, because the panel's diagnostics have to line up with
+        // the editor's list. The dictionary is the same set indexed for the message path.
+        _rules = rules;
+        _byId.Clear();
+        foreach (var (id, rule) in live) _byId[id] = rule;
+
+        // Before _hashes is overwritten: the diagnostics reconciliation asks what each rule
+        // looked like last time, and this is the last moment that answer exists.
+        ReconcileDiagnostics(rules);
+
+        _hashes.Clear();
+        foreach (var (id, hash) in hashes) _hashes[id] = hash;
+
+        // A save is the user's whole statement of what the rule set now is, so every rule gets a
+        // clean slate. A fault kept across a save leaves the rule dead until a restart — and the
+        // panel's fault row exists to send the user to the editor, which would then be the one
+        // thing that could not fix it.
+        _faults.Clear();
+
+        // The pair a silence rule could never open for itself: a filter with no wildcard is the
+        // topic's own name, so 'this device has never spoken' is checkable without a message.
+        Arm(rules, now);
+
+        // Compiled once per rule set and never per message. Disabled rules are compiled too, so
+        // that switching one on costs nothing on the message path.
+        _evaluator = new ConditionEvaluator(CompiledPatterns.For(rules));
+
+        return resolved.Count == 0 ? EngineOutcome.Empty : new EngineOutcome([], resolved);
+    }
+
+    /// <summary>
+    /// The three outcomes, in the order the spec names them, and null for the pair that is left
+    /// alone. Order matters where they overlap: a rule that is both absent from the list and was
+    /// disabled last time can only be reported once, and "rule removed" is the truer sentence —
+    /// the user's last act on it was to delete it.
+    /// </summary>
+    private string? WhyDropped(
+        string ruleId,
+        Dictionary<string, string> hashes,
+        Dictionary<string, AlertRule> live)
+    {
+        if (!hashes.TryGetValue(ruleId, out var hash)) return "rule removed";
+        if (!live.ContainsKey(ruleId)) return "rule disabled";
+
+        // A pair whose rule the engine holds no hash for cannot be shown to be the same rule,
+        // and "cannot be shown" has to read as changed: state restored from alert-state.json
+        // arrives that way, and keeping it on a guess is precisely the mistake this hash was
+        // written to stop.
+        return _hashes.TryGetValue(ruleId, out var previous) && previous == hash
+            ? null
+            : "rule changed";
+    }
 }
