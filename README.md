@@ -7,10 +7,9 @@
 [![Image](https://img.shields.io/badge/ghcr.io-mqtt--forge-0e4260?logo=docker&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/pkgs/container/mqtt-forge)
 [![Licence](https://img.shields.io/github/license/ibrahimilkhan/mqtt-forge?color=0e4260)](LICENSE)
 
-An open source MQTT test tool. Connect to a broker, watch what it carries, chart it, and publish
-back. It is small and fast, and it runs on macOS, Windows, Linux and Docker.
+An MQTT test tool: connect to a broker, watch the traffic, chart it, publish back.
 
-MQTTForge talks to a broker you already run. It is not a broker itself.
+Open source, small and fast. It runs on macOS, Windows, Linux and Docker.
 
 ![The console watching a home broker: the topic tree in the middle with the latest value on every
 topic, the newest message and its chart on the right, and the publish form under
@@ -34,10 +33,11 @@ them](.github/assets/console.png)
 
 ## Get it
 
-[![macOS Apple Silicon](https://img.shields.io/badge/macOS-Apple_Silicon-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-macos-arm64.dmg)
-[![macOS Intel](https://img.shields.io/badge/macOS-Intel-555555?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-macos-x64.dmg)
-[![Windows x64](https://img.shields.io/badge/Windows-x64-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-windows-x64.zip)
-[![Linux x64](https://img.shields.io/badge/Linux-x64-0e4260?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-linux-x64.tar.gz)
+[![Windows x64](https://img.shields.io/badge/x64-0e4260?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2ZmZiI%2BPHBhdGggZD0iTTAgMy40IDkuOCAydjkuNUgwek0xMSAxLjggMjQgMHYxMS40SDExek0wIDEyLjVoOS44VjIyTDAgMjAuNnpNMTEgMTIuNWgxM1YyNGwtMTMtMS44eiIvPjwvc3ZnPg%3D%3D)](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-windows-x64.zip)
+[![Linux x64](https://img.shields.io/badge/x64-0e4260?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-linux-x64.tar.gz)
+[![macOS Apple Silicon (arm64)](https://img.shields.io/badge/arm64-0e4260?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-macos-arm64.dmg)
+[![macOS Intel (x64)](https://img.shields.io/badge/x64-0e4260?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest/download/MQTTForge-macos-x64.dmg)
+[![Docker image on ghcr.io](https://img.shields.io/badge/docker-0e4260?style=for-the-badge&logo=docker&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/pkgs/container/mqtt-forge)
 
 Or run it as a container and open http://localhost:5169:
 
