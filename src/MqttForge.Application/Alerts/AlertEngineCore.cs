@@ -1067,4 +1067,203 @@ Faulted: _faults.ContainsKey(rule.Id),
             ? null
             : "rule changed";
     }
+
+    // ── The handover across a restart ────────────────────────────────────────────────────────
+    //
+    // A process that dies with an alarm ringing never sends the resolved body: Clear runs on
+    // arrival and only while an alert is active, so the pair that would have cleared it is gone
+    // with the process. The endpoint is left holding an alarm that never ends. These two methods
+    // are the whole of the fix — one writes the promise down, the other honours or closes it.
+
+    /// <summary>
+    /// The three things a restart must not lose, and the fingerprints they were held under.
+    /// </summary>
+    // History is deliberately not here. It is a record, and records belong at the endpoint the
+    // webhook posts to; this is a session's tail. An active alert is the opposite — not a record
+    // but an open promise — and that is the whole basis on which one is written and the other is
+    // not. Spec: "Alarm geçmişi bu dosyada değil."
+    //
+    // Sorted before it goes out, so that an engine whose state has not moved writes a file
+    // identical to the last one. This is written once a second over a mounted volume; a document
+    // whose lines reshuffle with a dictionary's internals would look like a change every time to
+    // anything watching the file, and would make a diff useless to the person reading it.
+    public AlertState Capture()
+    {
+        var active = new List<Alert>();
+        var muted = new List<MutedPair>();
+        var cooldowns = new List<CooldownEntry>();
+        var named = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var state in _pairs.Values)
+        {
+            if (state.Active is { } alert)
+            {
+                active.Add(alert);
+                named.Add(state.RuleId);
+            }
+
+            if (state.MutedUntil is { } until)
+            {
+                muted.Add(new MutedPair(state.RuleId, state.Topic, until));
+                named.Add(state.RuleId);
+            }
+
+            // Captured whether or not it has run out. A cooldown that lapses while the process is
+            // down is dropped on the way back in, where 'now' is known; the alternative is a
+            // clock in here, and there is not one on purpose.
+            if (state.CooldownUntil is { } cooling)
+            {
+                cooldowns.Add(new CooldownEntry(state.RuleId, state.Topic, cooling));
+                named.Add(state.RuleId);
+            }
+        }
+
+        active.Sort(static (a, b) => Pair(a.RuleId, a.Topic, b.RuleId, b.Topic));
+        muted.Sort(static (a, b) => Pair(a.RuleId, a.Topic, b.RuleId, b.Topic));
+        cooldowns.Sort(static (a, b) => Pair(a.RuleId, a.Topic, b.RuleId, b.Topic));
+
+        // Walked over the rule list rather than over the set of names, because _rules is the
+        // file's own order and a HashSet has none. Only the rules something above actually
+        // mentions are fingerprinted: the file is a handover for what is open, not a copy of the
+        // rule set, which is in alert-rules.json next to it.
+        var fingerprints = new List<RuleFingerprint>();
+        foreach (var rule in _rules)
+            if (named.Contains(rule.Id) && _hashes.TryGetValue(rule.Id, out var hash))
+                fingerprints.Add(new RuleFingerprint(rule.Id, hash));
+
+        return new AlertState(active, muted, cooldowns, fingerprints);
+    }
+
+    private static int Pair(string ruleA, string topicA, string ruleB, string topicB)
+    {
+        var byRule = string.CompareOrdinal(ruleA, ruleB);
+        return byRule != 0 ? byRule : string.CompareOrdinal(topicA, topicB);
+    }
+
+    /// <summary>
+    /// Puts a captured state back, reconciled against the rules this engine is already holding.
+    /// </summary>
+    // Called after SetRules and never before it, because every question this method asks is about
+    // the rule set: is the rule still there, is it still switched on, does it still mean what it
+    // meant when the state was written. An engine that has not been given its rules answers
+    // "removed" to all three, which is the safe answer and not an accident.
+    //
+    // The resolutions come back in the outcome for the same reason SetRules' do: the webhook and
+    // MQTT dispatchers learn that an alarm is over from that list and from nowhere else, and an
+    // alarm dropped here is one nothing else will ever close. Spec: "Açılışta mevcut kural
+    // listesine karşı uzlaştırılır."
+    public EngineOutcome Restore(AlertState state, DateTimeOffset now)
+    {
+        var fingerprints = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var fingerprint in state.Fingerprints ?? []) fingerprints[fingerprint.RuleId] = fingerprint.Hash;
+
+        // Mutes and cooldowns first, so that a pair is already carrying them by the time its
+        // alert arrives and the alert's own label can be taken from the pair rather than from the
+        // file. One authority for 'is this silenced', which is what Mute() is careful about too.
+        foreach (var pair in state.Muted)
+        {
+            // A mute that ran out while the process was down is over. Restoring it would silence
+            // a pair the user silenced until nine o'clock at half past ten.
+            if (now >= pair.Until) continue;
+            if (Reopen(pair.RuleId, pair.Topic, fingerprints) is not { } muted) continue;
+
+            // Clamped for the reason MaxMuteMinutes gives: this record has been through a text
+            // editor as easily as through a panel, and a day is the point past which muting is
+            // disabling the rule without saying so.
+            var ceiling = now.AddMinutes(MaxMuteMinutes);
+            muted.MutedUntil = pair.Until > ceiling ? ceiling : pair.Until;
+        }
+
+        foreach (var entry in state.Cooldowns)
+        {
+            if (now >= entry.Until) continue;
+            if (Reopen(entry.RuleId, entry.Topic, fingerprints) is { } cooling)
+                cooling.CooldownUntil = entry.Until;
+        }
+
+        List<Alert>? resolved = null;
+
+        foreach (var alert in state.Active)
+        {
+            if (WhyStale(alert.RuleId, fingerprints) is { } reason)
+            {
+                // Through Remember rather than Close, and that is not an oversight: Close gives
+                // back a slot under the active ceiling, and this alert never took one — it comes
+                // from a file, and the engine it belonged to is gone.
+                var ended = alert with { ResolvedAt = now, ResolvedBy = reason };
+                Remember(ended);
+
+                // Announce's decision, made without a pair to ask. The alert's own MutedUntil is
+                // the only record left of the silence somebody asked for, and a mute that has not
+                // yet run out still means what it meant: stop telling me about this.
+                if (ended.MutedUntil is not { } until || now >= until) (resolved ??= []).Add(ended);
+                continue;
+            }
+
+            var rule = _byId[alert.RuleId];
+
+            // Through Track, so a restored pair meets every ceiling a live one does. A state file
+            // written by a build with a larger MaxPairs must not be able to talk this engine past
+            // its own limits.
+            var pair = Track(rule, alert.Topic);
+            if (pair is null) continue;
+
+            // A file naming the same pair twice — hand-edited, or written by something else —
+            // gets one alert. The first wins; the second would need a second slot for a pair that
+            // by definition has one alarm.
+            if (pair.Active is not null) continue;
+
+            // The alert comes back as it was — same id, same FiredAt, same Count, so the endpoint
+            // sees the alarm it was already told about rather than a new one — wearing the rule's
+            // current wording. Name, severity and actions are outside ConfigHash precisely
+            // because editing them does not end an alarm, so the alarm has to pick them up.
+            var restored = alert with
+            {
+                RuleName = rule.Name,
+                Severity = rule.Severity,
+                Actions = rule.Actions,
+                MutedUntil = pair.MutedUntil,
+            };
+
+            if (TryOpen(pair, rule, restored, now) is null) continue;
+
+            // TryOpen stamps the tally with 'now', which is right for an alarm that has just gone
+            // off and wrong for one that went off before the restart. The panel's "last fired"
+            // column is a statement about the plant, not about this process's uptime.
+            TallyOf(rule.Id).LastFiredAt = alert.FiredAt;
+
+            // The restart is a gap nobody watched, so the pair starts listening from now — the
+            // same decision Resume makes for an outage and Arm makes for a rule that has just
+            // been saved. Carrying the file's own LastSeenAt across would let a silence rule ring
+            // the instant the console came back for a device that had been quiet for a week
+            // — about a week nobody was watching.
+            pair.LastSeen ??= now;
+        }
+
+        return resolved is null ? EngineOutcome.Empty : new EngineOutcome([], resolved);
+    }
+
+    /// <summary>The pair a restored mute or cooldown belongs to, or null when its rule has moved on.</summary>
+    private RuleState? Reopen(string ruleId, string topic, Dictionary<string, string> fingerprints) =>
+        WhyStale(ruleId, fingerprints) is null ? Track(_byId[ruleId], topic) : null;
+
+    /// <summary>
+    /// Whether a restored record still belongs to the rule it was written under, and if not, what
+    /// to say about it.
+    /// </summary>
+    // WhyDropped's three answers, in WhyDropped's order, asked the other way round: there the
+    // engine holds the old fingerprints and the save brings the new ones, here the engine holds
+    // the new ones and the file brings the old. The strings are the same strings on purpose —
+    // "rule changed" means one thing to the person reading the console, whether their rule
+    // changed while the app was running or while it was off.
+    private string? WhyStale(string ruleId, Dictionary<string, string> fingerprints)
+    {
+        if (!_hashes.TryGetValue(ruleId, out var hash)) return "rule removed";
+        if (!_byId.ContainsKey(ruleId)) return "rule disabled";
+
+        // A record with no fingerprint cannot be shown to be the same rule, and "cannot be shown"
+        // reads as changed — the position WhyDropped already takes for exactly this case. Keeping
+        // an alarm on a guess is the mistake the hash was written to stop.
+        return fingerprints.TryGetValue(ruleId, out var was) && was == hash ? null : "rule changed";
+    }
 }
