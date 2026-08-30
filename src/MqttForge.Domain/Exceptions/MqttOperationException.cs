@@ -60,3 +60,18 @@ public sealed class AlertRulesNotSavedException : MqttOperationException
     public AlertRulesNotSavedException(string message, Exception? inner = null)
         : base(message, inner) { }
 }
+
+// The alert rules file on disk could not be read, and the caller asked to write over it anyway
+// without saying so. Its own type rather than a reused one because the answer the user needs is
+// a specific one — "your file is damaged, and this save would have deleted it; say so explicitly
+// or repair it first" — and it is the only exception in this file that describes something the
+// user is being protected from rather than something that went wrong.
+//
+// Deliberately not derived from AlertRulesNotSavedException: nothing was attempted, so a handler
+// ordering the two by type would report a failed write for a write that never started. Api maps
+// this one to 409 + "rulesUnreadable" and that one to its own reason.
+public sealed class AlertRulesUnreadableException : MqttOperationException
+{
+    public AlertRulesUnreadableException(string message, Exception? inner = null)
+        : base(message, inner) { }
+}
