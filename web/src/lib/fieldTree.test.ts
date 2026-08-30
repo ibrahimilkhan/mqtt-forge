@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { above, branchesUnder, named } from './fieldTree';
+import { above, branchesUnder, clip, MOST_CHARS, named } from './fieldTree';
 
 const fields = [
   'uptime',
@@ -74,5 +74,25 @@ describe('above', () => {
 describe('named', () => {
   it('says a prefix without the dot that makes it one', () => {
     expect(named('broker.session.')).toBe('broker.session');
+  });
+});
+
+describe('clip', () => {
+  it('leaves a name a chip can hold alone', () => {
+    expect(clip('uptime')).toBe('uptime');
+    expect(clip('a'.repeat(MOST_CHARS))).toBe('a'.repeat(MOST_CHARS));
+  });
+
+  // The two dots are part of the width rather than added past it: a chip that grew by two
+  // characters to say it had been cut would be the shift this exists to stop.
+  it('cuts a longer one to the width, dots included', () => {
+    const cut = clip('expiryIntervalSeconds');
+
+    expect(cut).toBe('expiryInterval..');
+    expect(cut).toHaveLength(MOST_CHARS);
+  });
+
+  it('takes a width of its own', () => {
+    expect(clip('expiryInterval', 8)).toBe('expiry..');
   });
 });

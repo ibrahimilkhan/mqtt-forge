@@ -75,3 +75,25 @@ export function above(prefix: string): string {
 
 /** A prefix as it is said out loud — without the trailing dot that makes it a prefix. */
 export const named = (prefix: string): string => prefix.slice(0, -1);
+
+/**
+ * How many characters of a name a chip will hold.
+ *
+ * The row is drawn in mono type, so a count of characters *is* a width — 16 of them is about
+ * eleven ems, which is a long segment and nowhere near a chart region full of one. The names a
+ * message carries are the author's, not ours: `expiryIntervalSeconds`, `lastWillRetainFlag`, and
+ * one of those in a chip is a chip as wide as the plot under it.
+ */
+export const MOST_CHARS = 16;
+
+/**
+ * As much of a name as fits, and two dots for the rest.
+ *
+ * Two dots rather than an ellipsis: the row is mono, and a `…` in a mono face is one cell doing
+ * the work of three, which at micro size is a smudge. `..` is two cells that read as two dots.
+ * Nothing here changes what the chip *is* — the whole name stays in its accessible name and in
+ * its title, so both a screen reader and a pointer still get all of it.
+ */
+export function clip(name: string, most: number = MOST_CHARS): string {
+  return name.length <= most ? name : `${name.slice(0, most - 2)}..`;
+}

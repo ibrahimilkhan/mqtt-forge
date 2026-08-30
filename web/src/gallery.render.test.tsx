@@ -50,6 +50,16 @@ const PLOT_ACROSS = 380;
 /** Reset per render, so a page can show the same run drawn at several plot heights. */
 let plotDown = 150;
 
+/**
+ * The height of the region the whole chart stands in, which is a different question.
+ *
+ * The chart measures itself as well as its plot: above about 300px it draws the readings, the
+ * range, the view and csv, and below that it draws the picture and the chips that choose what is
+ * in it and stops. Two elements ask, so the answer depends on which is asking — handing the plot's
+ * 150px to both would show every chart on these pages in its small form.
+ */
+let regionDown = 420;
+
 class MeasuredTo {
   ran: ResizeObserverCallback;
 
@@ -57,9 +67,15 @@ class MeasuredTo {
     this.ran = ran;
   }
 
-  observe() {
+  observe(target?: Element) {
+    const region = (target as HTMLElement | undefined)?.dataset?.testid === 'chart';
+
     this.ran(
-      [{ contentRect: { width: PLOT_ACROSS, height: plotDown } } as ResizeObserverEntry],
+      [
+        {
+          contentRect: { width: PLOT_ACROSS, height: region ? regionDown : plotDown },
+        } as ResizeObserverEntry,
+      ],
       this as never,
     );
   }
@@ -160,6 +176,25 @@ const RUNS = [
     ],
   },
   {
+    name: 'A body that nests its numbers',
+    small: true,
+    note: "A device reporting its configuration: the chips walk it a level at a time rather than listing forty dotted paths. They stand on a fill, because pressing one changes the row itself — the range and the view chips beside them only change the picture. A name longer than a chip holds is cut with two dots, so the row stays one line high and nothing below it moves. Beside it, the same run in a region the height of the console's own column: the picture and the way to choose what is in it, and the readings left to the chart thrown open.",
+    log: entries(
+      'devices/gateway/status',
+      wobble(40, 21.5, 1.2).map((temp, i) =>
+        JSON.stringify({
+          uptimeSecondsSinceBoot: 918_273 + i,
+          gateway: { probe: { temperatureCelsius: Number(temp), humidityPercent: 54 + (i % 4) } },
+          broker: { port: 1883, session: { expiryIntervalSeconds: 3600 + i } },
+          network: { rssi: -42 - (i % 6), latencyMs: 12 + (i % 9) },
+          radios: [{ channel: 11, dbm: -42 - (i % 5) }, { channel: 6, dbm: -55 + (i % 4) }],
+          sensors: { door: i % 2, flow: 3 + (i % 7) },
+          counters: { published: 1200 + i * 3, dropped: i % 2 },
+        }),
+      ),
+    ),
+  },
+  {
     name: 'Nothing to draw: the bodies are not numbers',
     note: "It used to say 'a line needs one topic sending numbers' for this and for three other situations. Now it names the reason and puts the topic's own newest message under it as evidence.",
     log: entries('sensors/door/state', ['{"state":"OPEN","by":"kitchen"}', '{"state":"SHUT","by":"kitchen"}']),
@@ -253,7 +288,8 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
       .map((run) => {
         useLogStore.getState().clear();
 
-        const draw = (scale) => {
+        const draw = (scale, region = 420) => {
+          regionDown = region;
           useAppearanceStore.setState({ scale, grid: run.grid ?? 'frame' });
           const { container, unmount } = render(
             <QueryClientProvider client={client}>
@@ -275,6 +311,7 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
         <div class="gRow">
           ${run.both ? `<div class="gCell"><span class="gTag">ends</span>${draw('extremes')}</div>` : ''}
           <div class="gCell"><span class="gTag">${run.both ? 'mid' : 'default'}</span>${draw('typical')}</div>
+          ${run.small ? `<div class="gCell"><span class="gTag">in its column</span>${draw('typical', 200)}</div>` : ''}
         </div>
       </section>`;
       })
