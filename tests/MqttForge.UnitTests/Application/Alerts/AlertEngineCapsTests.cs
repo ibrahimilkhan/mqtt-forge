@@ -317,7 +317,7 @@ public class AlertEngineCapsTests
     }
 
     [Fact]
-    public void Toggling_a_rule_off_and_on_resets_its_diagnostics_and_keeps_its_pairs()
+    public void Toggling_a_rule_off_and_on_drops_its_pairs_with_its_state()
     {
         var engine = Engine(new AlertEngineOptions(), Rule("r1", "line/+/mA"));
         engine.OnMessage(Msg("line/0/mA", 4.0, T0), T0);
@@ -327,10 +327,22 @@ public class AlertEngineCapsTests
 
         var row = engine.Snapshot().Rules.Single();
         Assert.Equal(0L, row.Evaluated);
-        // Enabled is outside ConfigHash, so the pair — and the ring behind it — outlives a brief
-        // disable. Only the counters go, because a count that spans a period the rule was not
-        // running is a count of nothing in particular.
-        Assert.Equal(1, row.Topics);
+
+        // The pair goes with the disable, ring and all — not only the counters. While the rule was
+        // off nothing was recorded, so a ring kept across the gap would hold readings from before
+        // it and readings from after it with nothing to say the gap was ever there, and every
+        // fence and every fit computed from it would describe a run that never happened. Resolving
+        // the rule's alerts is the same decision from the other side: an alarm left standing on a
+        // rule that is not running is an alarm nobody can clear.
+        //
+        // Enabled is still outside ConfigHash, and that is not a contradiction: the fingerprint
+        // answers "would this rule fire on something different", which is what decides whether a
+        // SAVE disturbs a rule nobody touched. Being switched off is its own reason to let go.
+        Assert.Equal(0, row.Topics);
+
+        // And the next message opens it again, from cold.
+        engine.OnMessage(Msg("line/0/mA", 4.0, T0.AddSeconds(3)), T0.AddSeconds(3));
+        Assert.Equal(1, engine.Snapshot().Rules.Single().Topics);
     }
 
     [Fact]
