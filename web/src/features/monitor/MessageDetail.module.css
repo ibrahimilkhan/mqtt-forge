@@ -155,6 +155,27 @@
 }
 .payload[data-mode='text'] { white-space: pre-wrap; }
 
+/* The two marks that open and shut every branch. Drawn like the copy in the corner rather than
+   like the chip beside them: they do something to the document rather than say something about
+   it, and the console draws that difference as a mark against a boxed word. */
+.mark {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: 24px;
+  min-height: 24px;
+  border: 1px solid transparent;
+  border-radius: var(--r-control);
+  font-size: var(--t-code);
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+}
+.mark:hover { color: var(--ink); border-color: var(--rule); }
+.mark:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
 /* The mark in the corner, and the corner is what makes it findable: everything else in this row
    is a word about the document, and this is the one thing that takes it somewhere else. Quiet
    like the window's own close, and 24px square because that is what a finger needs. */
@@ -193,6 +214,16 @@
 }
 .toggle:hover { color: var(--ink); border-color: var(--muted); }
 .toggle:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+/* Pressed, it is filled rather than outlined — the same answer the window's pin gives to the
+   same question, and for the same reason: this is the one control here whose state decides what
+   the whole panel below it is, and a chip that merely looked available is a chip that gets
+   pressed to find out. */
+.toggle[aria-pressed='true'] {
+  color: var(--surface);
+  background: var(--ink);
+  border-color: var(--ink);
+}
+.toggle[aria-pressed='true']:hover { background: var(--muted); border-color: var(--muted); }
 
 /* Why it is not being shown as JSON, in the colour the console reports faults in. */
 .fault {

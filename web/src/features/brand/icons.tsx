@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 /**
- * The six marks the panel menu wears, one per panel — and nine more that are not panels.
+ * The six marks the panel menu wears, one per panel — and eleven more that are not panels.
  *
  * Drawn here rather than pulled from an icon set. Twelve glyphs is not worth a dependency, and a
  * set drawn to its own rules would sit beside the mark in `marks.tsx` looking borrowed: the same
@@ -16,7 +16,7 @@ import type { ReactNode } from 'react';
  * `Warning` wears no panel: it stands on the Broker row beside `Antenna`, and a triangle
  * borrowed from somewhere else would look stuck on rather than part of the rail.
  *
- * The last seven wear no panel either — they go inside buttons, in the same mono the button is
+ * The last nine wear no panel either — they go inside buttons, in the same mono the button is
  * lettered in, at the size of one line of that type. Which is what they are drawn for: a mark in
  * a button has one line of type's worth of room and has to be recognised in it, so each of them
  * is the simplest shape that survives thirteen pixels.
@@ -256,6 +256,35 @@ export const Shrink = () => (
       <path d="M4 14.5h5.5V20" />
       <path d="M20 4l-5.5 5.5" />
       <path d="M4 20l5.5-5.5" />
+    </>
+  </Glyph>
+);
+
+/**
+ * Open every branch of it, and shut every branch of it.
+ *
+ * Lucide's `chevrons-up-down` and `chevrons-down-up`, and they are a pair in the strictest sense:
+ * the same two chevrons, one set pointing away from the middle and one pointing into it. Which is
+ * what the two gestures are — everything out, everything in — and it is the only pair of marks in
+ * here a reader has to tell apart at a glance while their eye is on something else.
+ *
+ * They stand where 'expand all' and 'collapse all' stood in words. Two words of eleven characters
+ * over a document is a caption on the document rather than a control beside it.
+ */
+export const Unfold = () => (
+  <Glyph>
+    <>
+      <path d="M8 9.5 12 5.5 16 9.5" />
+      <path d="M8 14.5 12 18.5 16 14.5" />
+    </>
+  </Glyph>
+);
+
+export const Fold = () => (
+  <Glyph>
+    <>
+      <path d="M8 5.5 12 9.5 16 5.5" />
+      <path d="M8 18.5 12 14.5 16 18.5" />
     </>
   </Glyph>
 );

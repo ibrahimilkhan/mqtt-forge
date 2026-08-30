@@ -308,10 +308,10 @@ describe('the payload, formatted where formatting is what it is', () => {
     render(<Console />);
     await openIt();
 
-    await userEvent.click(screen.getByRole('button', { name: 'collapse all' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Fold every branch' }));
     expect(body()).not.toHaveTextContent('"a": 1');
 
-    await userEvent.click(screen.getByRole('button', { name: 'expand all' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Open every branch' }));
     expect(body()).toHaveTextContent('"radio-0"');
   });
 
@@ -330,7 +330,7 @@ describe('the payload, formatted where formatting is what it is', () => {
     landed(arrival({ payload, size: byteLength(payload) }));
     render(<Console />);
     await openIt();
-    await userEvent.click(screen.getByRole('button', { name: 'collapse all' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Fold every branch' }));
 
     await userEvent.click(screen.getByTestId('copy'));
 

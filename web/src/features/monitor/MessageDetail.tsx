@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, Copy } from '../brand/icons';
+import { Check, Copy, Fold, Unfold } from '../brand/icons';
 import { copyText } from '../../lib/copyText';
 import { checkJson, formatJson } from '../../lib/payload';
 import { useRuleLookup } from '../../lib/useRuleLookup';
@@ -159,17 +159,29 @@ function Payload({ entry }: { entry: LogEntry }) {
       {read.why && <p className={styles.fault}>{read.why}</p>}
 
       <div className={styles.controls}>
+        {/* Marks rather than the two words they were. 'expand all' and 'collapse all' come to
+            twenty-two characters standing over a document, which reads as a caption on it rather
+            than as a pair of controls beside it — and the two are a strict pair, so a pair of
+            marks says what they are to each other in a way two phrases cannot. */}
         {folding && (
           <>
-            <button type="button" className={styles.toggle} onClick={() => setShut(new Set())}>
-              expand all
+            <button
+              type="button"
+              className={styles.mark}
+              aria-label="Open every branch"
+              title="Open every branch"
+              onClick={() => setShut(new Set())}
+            >
+              <Unfold />
             </button>
             <button
               type="button"
-              className={styles.toggle}
+              className={styles.mark}
+              aria-label="Fold every branch"
+              title="Fold every branch"
               onClick={() => setShut(new Set(branches(read.tree!)))}
             >
-              collapse all
+              <Fold />
             </button>
           </>
         )}
