@@ -40,7 +40,19 @@ public sealed class ConditionEvaluator
         // Not a silent default. A condition type this build does not evaluate has to reach the
         // engine's per-pair catch, so the rule is marked Faulted and the panel names it — the
         // alternative is a rule that looks fine and never fires.
-        _ => throw new NotSupportedException($"No evaluator for {condition.GetType().Name}.")
+        // Every type in AlertCondition's [JsonDerivedType] list has an arm above, so getting
+        // here means a condition exists that this switch was never taught. The two possible
+        // answers are Skipped and throw, and Skipped is the wrong one: it reads as "this
+        // message could not be judged", which is a sentence about the message, and the rule
+        // would then sit there for ever, never firing, never saying why, and looking exactly
+        // like a rule whose topic is simply quiet. Throwing puts the rule's name and this
+        // type's name in front of the user once, through the Faulted diagnostic, and stops
+        // the engine paying for it. Nothing a user can type reaches here — the store already
+        // drops rules it cannot bind when it loads them — so this is a fault in our own
+        // code, and faults in our own code should be loud in one place and silent everywhere
+        // else.
+        _ => throw new NotSupportedException(
+            $"No arm for condition type '{condition.GetType().Name}'."),
     };
 
     private static Verdict Threshold(ThresholdCondition condition, double? number)
