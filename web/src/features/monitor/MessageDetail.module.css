@@ -128,24 +128,60 @@
    restating the pair would have put that colour mix in a third stylesheet, waiting to drift. */
 .stamp { composes: stamp from './Floating.module.css'; }
 
+/* The row of controls over the message: what to do with the document, and one mark in the corner
+   for taking a copy of it. Over rather than under, which is where the lone json toggle used to
+   stand — a control below a payload of forty thousand characters is a control nobody scrolls to,
+   and there are four of them now. */
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
 /* Whole, wrapped, and selectable. The row it came from clamps to four lines because a pane full
    of one payload is a pane with nothing else in it; a window opened onto one message has no such
-   problem, and showing it whole is what the window is for. */
+   problem, and showing it whole is what the window is for.
+
+   `pre-wrap` only where the body is text. A folded document is elements rather than characters,
+   and pre-wrap over those turns every line break in the markup into a blank line on screen. */
 .payload {
   margin: 0;
   font-family: var(--mono);
   font-size: var(--t-code);
   color: var(--ink);
-  white-space: pre-wrap;
   word-break: break-word;
   user-select: text;
 }
+.payload[data-mode='text'] { white-space: pre-wrap; }
+
+/* The mark in the corner, and the corner is what makes it findable: everything else in this row
+   is a word about the document, and this is the one thing that takes it somewhere else. Quiet
+   like the window's own close, and 24px square because that is what a finger needs. */
+.copy {
+  all: unset;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: 24px;
+  min-height: 24px;
+  border: 1px solid transparent;
+  border-radius: var(--r-control);
+  font-size: var(--t-code);
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+}
+.copy:hover { color: var(--ink); border-color: var(--rule); }
+.copy:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 /* The same box the row's own open-in-place control wears, so the two read as one control in two
    places rather than as two different ideas about the same payload. */
 .toggle {
   all: unset;
-  align-self: flex-start;
+  flex: none;
   font-family: var(--mono);
   font-size: var(--t-micro);
   letter-spacing: 0.04em;

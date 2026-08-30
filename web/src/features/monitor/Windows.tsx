@@ -1,4 +1,4 @@
-import { useEffect, useRef, type CSSProperties } from 'react';
+import { useEffect, useRef, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { MessageDetail } from './MessageDetail';
 import styles from './Floating.module.css';
 import { moved, sized, useFloating } from './floating';
@@ -98,6 +98,36 @@ function Frame({ pane: chart, depth }: { pane: FloatWindow; depth: number }) {
     };
   }, [message]);
 
+  /**
+   * Select all, in a window, means the message in it.
+   *
+   * The browser's own answer is the whole document — the tree, the log, the publish form and the
+   * message together — which on this screen is never what anybody meant. A window opened onto one
+   * arrival exists to be read and taken away, and the reader who presses this is two keys from
+   * having the payload in their clipboard.
+   *
+   * Caught here rather than in the detail below, because the focus is here: the section is what
+   * takes focus when a window opens, and what a click on anything unfocusable inside it falls
+   * back to, so a handler further down would never see the key at all.
+   *
+   * Nothing to select in a chart, so a chart window leaves the browser to it.
+   */
+  const selectMessage = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'a') return;
+
+    const body = frame.current?.querySelector('[data-message]');
+    if (!body) return;
+
+    event.preventDefault();
+
+    const range = document.createRange();
+    range.selectNodeContents(body);
+
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  };
+
   const where: CSSProperties = {
     left: chart.box.x,
     top: chart.box.y,
@@ -124,6 +154,7 @@ function Frame({ pane: chart, depth }: { pane: FloatWindow; depth: number }) {
       // window they cannot see.
       onPointerDownCapture={() => raise(chart.id)}
       onFocusCapture={() => raise(chart.id)}
+      onKeyDown={message ? selectMessage : undefined}
     >
       <div
         className={styles.bar}

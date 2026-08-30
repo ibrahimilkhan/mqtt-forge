@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithClient as render } from '../../test/renderWithClient';
 import { byteLength } from '../../lib/payload';
 import type { DecodedMessage } from '../../realtime/decodeIncoming';
@@ -45,6 +45,12 @@ beforeEach(() => {
   useWindows.setState({ windows: [] });
   useZoomStore.setState({ zoomed: false, box: null });
   useSelectionStore.getState().select(chip);
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  Reflect.deleteProperty(navigator, 'clipboard');
+  window.getSelection()?.removeAllRanges();
 });
 
 describe('opening one message', () => {
@@ -278,6 +284,87 @@ describe('the payload, formatted where formatting is what it is', () => {
 
     expect(body().textContent).toBe('21.5');
     expect(screen.queryByRole('button', { name: 'json' })).not.toBeInTheDocument();
+  });
+
+  // Every branch of it folds, and the fold says how many things went away with it — 'radios'
+  // with nothing after it is a question rather than an answer.
+  it('folds a branch of a document away, and says what is inside it', async () => {
+    const payload = '{"a":1,"radios":[{"id":"radio-0"},{"id":"radio-1"}]}';
+    landed(arrival({ payload, size: byteLength(payload) }));
+    render(<Console />);
+    await openIt();
+
+    expect(body()).toHaveTextContent('"radio-0"');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Fold radios' }));
+
+    expect(body()).not.toHaveTextContent('"radio-0"');
+    expect(body()).toHaveTextContent('"radios": [ … 2 ]');
+  });
+
+  it('shuts and opens the whole document at once', async () => {
+    const payload = '{"a":1,"radios":[{"id":"radio-0"}]}';
+    landed(arrival({ payload, size: byteLength(payload) }));
+    render(<Console />);
+    await openIt();
+
+    await userEvent.click(screen.getByRole('button', { name: 'collapse all' }));
+    expect(body()).not.toHaveTextContent('"a": 1');
+
+    await userEvent.click(screen.getByRole('button', { name: 'expand all' }));
+    expect(body()).toHaveTextContent('"radio-0"');
+  });
+
+  // A folded branch on screen is a summary, and a summary pasted into a bug report is a message
+  // that never existed. The mark in the corner hands over what arrived.
+  it('copies exactly what arrived, whatever is folded away', async () => {
+    const payload = '{"a":1,"radios":[{"id":"radio-0"}]}';
+    // Defined rather than spied on: jsdom carries no clipboard at all, and there is nothing on
+    // navigator to put a getter over.
+    const written: string[] = [];
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async (text: string) => void written.push(text) },
+    });
+
+    landed(arrival({ payload, size: byteLength(payload) }));
+    render(<Console />);
+    await openIt();
+    await userEvent.click(screen.getByRole('button', { name: 'collapse all' }));
+
+    await userEvent.click(screen.getByTestId('copy'));
+
+    expect(written).toEqual([payload]);
+    expect(screen.getByTestId('copy')).toHaveAccessibleName('Copied');
+  });
+
+  // The browser's own answer to this is the whole console behind the window, which is never what
+  // anybody meant by it here.
+  it('selects the message on ctrl-A rather than the console behind it', async () => {
+    landed(arrival());
+    render(<Console />);
+    await openIt();
+
+    await userEvent.keyboard('{Control>}a{/Control}');
+
+    const selection = window.getSelection()!;
+    expect(selection.rangeCount).toBe(1);
+    expect(selection.getRangeAt(0).commonAncestorContainer).toBe(body());
+  });
+
+  // And what comes back is the document, not the furniture around it. The chevrons were written
+  // into the buttons at first, which put a '▾' at the head of every branch in the copy — JSON
+  // that no longer parses, out of the window whose job is handing over what arrived.
+  it('gives back JSON that still parses when the whole of it is taken', async () => {
+    const payload = '{"a":1,"radios":[{"id":"radio-0"},{"id":"radio-1"}]}';
+    landed(arrival({ payload, size: byteLength(payload) }));
+    render(<Console />);
+    await openIt();
+
+    await userEvent.keyboard('{Control>}a{/Control}');
+
+    const taken = window.getSelection()!.getRangeAt(0).toString();
+    expect(JSON.parse(taken)).toEqual(JSON.parse(payload));
   });
 
   it('leaves a byte dump alone', async () => {

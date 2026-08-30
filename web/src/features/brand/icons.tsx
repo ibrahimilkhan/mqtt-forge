@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 /**
- * The six marks the panel menu wears, one per panel — and six more that are not panels.
+ * The six marks the panel menu wears, one per panel — and eight more that are not panels.
  *
  * Drawn here rather than pulled from an icon set. Twelve glyphs is not worth a dependency, and a
  * set drawn to its own rules would sit beside the mark in `marks.tsx` looking borrowed: the same
@@ -16,7 +16,7 @@ import type { ReactNode } from 'react';
  * `Warning` wears no panel: it stands on the Broker row beside `Antenna`, and a triangle
  * borrowed from somewhere else would look stuck on rather than part of the rail.
  *
- * The last four wear no panel either — they go inside buttons, in the same mono the button is
+ * The last six wear no panel either — they go inside buttons, in the same mono the button is
  * lettered in, at the size of one line of that type. Which is what they are drawn for: a mark in
  * a button has one line of type's worth of room and has to be recognised in it, so each of them
  * is the simplest shape that survives thirteen pixels.
@@ -207,5 +207,35 @@ export const Expand = () => (
       <path d="M20 4l-6.5 6.5" />
       <path d="M4 20l6.5-6.5" />
     </>
+  </Glyph>
+);
+
+/**
+ * Take a copy of this.
+ *
+ * Lucide's `copy` — one sheet behind another, which is the oldest picture of it there is and the
+ * only one that reads at thirteen pixels without a caption. Drawn at the square's own weight; the
+ * back sheet is an open path rather than a second rectangle, because two closed boxes overlapping
+ * put four corners in the same few pixels and closed them into a blot.
+ */
+export const Copy = () => (
+  <Glyph>
+    <>
+      <rect x="8" y="8" width="13" height="13" rx="2" />
+      <path d="M5 16H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1" />
+    </>
+  </Glyph>
+);
+
+/**
+ * It worked.
+ *
+ * Two strokes, and it stands in the copy mark's place for a moment after a copy. A word would
+ * have changed the button's width in the hand that had just pressed it — see Cross and
+ * .steadyLabel for the same problem solved the same way one panel over.
+ */
+export const Check = () => (
+  <Glyph>
+    <path d="M4.5 12.5 9.5 17.5 19.5 6.5" />
   </Glyph>
 );
