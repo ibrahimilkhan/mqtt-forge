@@ -1,11 +1,12 @@
 import floating from './Floating.module.css';
 import { useFloating } from './floating';
+import { Corner, Expand, Shrink } from '../brand/icons';
 import { Pin } from './Pin';
 import { TrafficChart } from './TrafficChart';
 import styles from './TrafficChart.module.css';
 import { useWindows } from './useWindows';
 import { useTraffic } from './useTraffic';
-import { useEscapeFromZoom, useZoomStore } from './useZoom';
+import { useEscapeFromZoom, useFullFollowsScreen, useZoomStore } from './useZoom';
 
 /**
  * The middle of the right column: the shape of the run whose newest reading is above it.
@@ -20,14 +21,19 @@ export function TrafficPane() {
   const { selected, entries, runs, held } = useTraffic();
   const zoomed = useZoomStore((state) => state.zoomed);
   useEscapeFromZoom();
+  useFullFollowsScreen();
 
   return (
     <>
       <h2 className="srOnly">Chart</h2>
 
       {/* On the region rather than on the chart: the region is what grows, and it is still there
-          — with something to say — when no topic has been picked and there is no chart at all. */}
-      <Zoom />
+          — with something to say — when no topic has been picked and there is no chart at all.
+
+          The way in only. Open, the way back is the close at the end of the window bar, where a
+          window's close has always been — and two controls for one gesture is one of them being
+          guessed at. */}
+      {!zoomed && <Zoom />}
 
       {/* Thrown open, the region is a window: it says what it is a chart of, it is moved by that
           line and sized by its corner, and the pin is where it stops following the selection and
@@ -62,6 +68,8 @@ function WindowBar({ label, filter }: { label?: string; filter?: string }) {
   const box = useZoomStore((state) => state.box);
   const place = useZoomStore((state) => state.place);
   const close = useZoomStore((state) => state.close);
+  const full = useZoomStore((state) => state.full);
+  const swell = useZoomStore((state) => state.swell);
   const open = useWindows((state) => state.open);
   const { bar, grip } = useFloating(box ?? { x: 0, y: 0, w: 0, h: 0 }, place);
 
@@ -80,10 +88,16 @@ function WindowBar({ label, filter }: { label?: string; filter?: string }) {
     <>
       <div
         className={`${floating.bar} ${floating.overChart}`}
-        {...bar}
-        title="Drag to move — the corner sizes it"
+        // Filling the screen holds it still as surely as a pin does, and for a plainer reason:
+        // there is nowhere left to move it to.
+        {...(full ? {} : bar)}
+        title={full ? 'Filling the screen — put it back to move it' : 'Drag to move — the corner sizes it'}
       >
-        <span className={floating.name}>{label ?? 'Chart'}</span>
+        {/* First in the bar, which is where a window's pin stands — and this bar becomes one of
+            those windows the moment it is pressed. It used to sit at the far end, from when it
+            was the only control here; with a close and a swell to its right, the far end is
+            where the controls that dismiss the chart live, and a pin among them is a pin pressed
+            by a reader reaching for the close. */}
         {filter && (
           <button
             type="button"
@@ -95,15 +109,48 @@ function WindowBar({ label, filter }: { label?: string; filter?: string }) {
             <Pin />
           </button>
         )}
+
+        <span className={floating.name}>{label ?? 'Chart'}</span>
+
+        {/* The two that dismiss it, in the order every window on this console puts them: out to
+            the whole screen, and away. */}
+        <button
+          type="button"
+          className={floating.swell}
+          data-testid="swell-chart"
+          aria-pressed={full}
+          aria-label={full ? 'Put the chart back to its size' : 'Fill the screen with the chart'}
+          title={full ? 'Put it back' : 'Fill the screen'}
+          onClick={() => swell(!full)}
+        >
+          {full ? <Shrink /> : <Expand />}
+        </button>
+
+        <button
+          type="button"
+          className={floating.close}
+          data-testid="zoom-close"
+          aria-label="Put the chart back"
+          title="Put the chart back — Escape"
+          onClick={close}
+        >
+          ×
+        </button>
       </div>
 
-      <button
-        type="button"
-        className={floating.grip}
-        aria-label="Resize the chart window"
-        title="Drag to size"
-        {...grip}
-      />
+      {/* Gone while it fills the screen: a corner that can be taken hold of and does nothing is
+          a broken window. */}
+      {!full && (
+        <button
+          type="button"
+          className={floating.grip}
+          aria-label="Resize the chart window"
+          title="Drag to size"
+          {...grip}
+        >
+          <Corner />
+        </button>
+      )}
     </>
   );
 }

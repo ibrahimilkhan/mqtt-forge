@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { create } from 'zustand';
-import { openingBox, type Box } from './floating';
+import { fullBox, openingBox, type Box } from './floating';
 
 /**
  * Whether the chart has been lifted out of its column.
@@ -20,14 +20,21 @@ type ZoomState = {
   zoomed: boolean;
   /** Where it stands, once it has been opened at least once. Null until then. */
   box: Box | null;
+  /** Filling the screen, which is a state rather than a size: it follows the window. */
+  full: boolean;
+  /** Where it stood before it filled the screen, so putting it back has somewhere to go. */
+  wasAt: Box | null;
   toggle: () => void;
   close: () => void;
   place: (box: Box) => void;
+  swell: (full: boolean) => void;
 };
 
 export const useZoomStore = create<ZoomState>((set) => ({
   zoomed: false,
   box: null,
+  full: false,
+  wasAt: null,
 
   // Always the standard place: the middle of the screen, at three fifths of it.
   //
@@ -36,10 +43,29 @@ export const useZoomStore = create<ZoomState>((set) => ({
   // aside; the window its pin then opened came up in the middle, where windows open — so
   // pressing the pin moved the chart across the screen, and it was the remembering that moved
   // it, not the pin. Opened in the same place every time, the pin has nothing to move.
-  toggle: () => set((state) => (state.zoomed ? { zoomed: false } : { zoomed: true, box: openingBox() })),
+  toggle: () =>
+    set((state) =>
+      state.zoomed
+        ? { zoomed: false, full: false, wasAt: null }
+        : { zoomed: true, box: openingBox(), full: false, wasAt: null },
+    ),
 
-  close: () => set({ zoomed: false }),
+  close: () => set({ zoomed: false, full: false, wasAt: null }),
   place: (box) => set({ box }),
+
+  /**
+   * Out to the whole screen and back, the same gesture a pinned window has.
+   *
+   * Where it stood is kept rather than recomputed, because 'back' means back where the reader
+   * put it: a chart dragged into a corner and swelled must not come back in the middle, which is
+   * the one thing a reader who presses this twice is checking for.
+   */
+  swell: (full) =>
+    set((state) =>
+      full
+        ? { full: true, wasAt: state.box, box: fullBox() }
+        : { full: false, box: state.wasAt ?? state.box, wasAt: null },
+    ),
 }));
 
 /**
@@ -63,4 +89,26 @@ export function useEscapeFromZoom() {
 
     return () => window.removeEventListener('keydown', listen);
   }, [zoomed, close]);
+}
+
+/**
+ * A chart filling the screen follows the screen.
+ *
+ * Held as a state rather than as the size it happens to have: a window resized while this is on
+ * would otherwise leave the chart at the old viewport's measurements — a chart that filled the
+ * screen until the reader touched the edge of theirs.
+ */
+export function useFullFollowsScreen() {
+  const full = useZoomStore((state) => state.full);
+  const place = useZoomStore((state) => state.place);
+
+  useEffect(() => {
+    if (!full) return;
+
+    const settle = () => place(fullBox());
+
+    window.addEventListener('resize', settle);
+
+    return () => window.removeEventListener('resize', settle);
+  }, [full, place]);
 }

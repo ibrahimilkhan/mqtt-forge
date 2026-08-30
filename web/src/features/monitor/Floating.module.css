@@ -4,8 +4,8 @@
    be one. */
 
 /* The bar. Quiet, and the height of a label rather than of a title: this is a handle with a name
-   on it, not a heading over the chart. The right end is left clear of the corner control that
-   puts the chart back, which stands over the pane rather than in this row. */
+   on it, not a heading over the chart. Both bars now carry the same three controls in the same
+   order — the pin at the near end, and out at the far end the swell and the close. */
 .bar {
   display: flex;
   align-items: center;
@@ -16,10 +16,9 @@
   padding: 2px 0 6px;
   min-width: 0;
 }
-/* Over the thrown-open chart the far corner is taken by the control that puts it back, so the
-   bar stops short of it. A window has no such corner, and a bar that changed its padding with
-   the pin would move the close out from under the hand that had just used it. */
-.bar.overChart { padding-right: 34px; }
+/* The thrown-open chart used to keep its right end clear of the corner control that put it back.
+   That control is not there while it is open any more — the bar's own close does it, where a
+   window's close has always been — so the bar keeps its whole width. */
 /* Pinned, the bar is a label with controls on it. Nothing about it should invite a drag that
    the pin is going to refuse. */
 .window[data-fixed] .bar { cursor: default; }
@@ -87,8 +86,7 @@
   flex: 0 1 auto;
 }
 
-/* Pushed against the far end of the bar, away from the name — unless it is the first thing in
-   the bar, which is where a pinned window keeps it. */
+/* First in the bar, before the name, in both of the bars that carry one. */
 .pin {
   all: unset;
   display: inline-flex;
@@ -105,9 +103,6 @@
 }
 .pin:hover { color: var(--ink); border-color: var(--rule); }
 .pin:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
-/* In the chart's own bar the pin is the only control and stands at the far end; in a window's
-   bar it comes first, and the name takes the room between it and the close. */
-.bar > .pin:last-child { margin-left: auto; }
 /* Pinned. The window only exists because this is pressed, so it says so plainly — filled rather
    than outlined, since what it has to be is unmistakable from across the console: a pin that
    merely looked available is a pin that gets pressed again. */
@@ -176,23 +171,45 @@
 
 /* The corner that sizes it. Two hairlines rather than a hatched box: at this size a texture
    reads as dirt on the corner, and two rules read as a corner. */
+/* The corner that sizes it, with the grow box drawn in it.
+
+   It was two 1px rules at a quarter of the ink, meeting four pixels in from each edge. The
+   reasoning was that at this size a texture reads as dirt and two rules read as a corner — and
+   two rules do read as a corner, which turned out to be the fault rather than the argument for
+   it. They lay along the two window edges they sat on, saying where the window ends, which the
+   frame says already. The strokes here run across the drag instead, at the grey the bar's own
+   controls sit at, and take the full ink when they are reached for.
+
+   Drawn rather than painted, which is the other half of it: a background is the first thing a
+   forced-colours mode throws away, and it used to take the whole handle with it.
+
+   24px, the target a finger needs and the one every control in the bar above already meets — it
+   was 20, which made the one control here that is operated by dragging the one control here that
+   never met it. The mark inside is sized on the element rather than by type size, and that is
+   deliberate: every glyph in this console is 1em and grows when the reader turns the type up, and
+   at the panel's smallest step three strokes two pixels apart stop being three strokes. A corner
+   is furniture. It holds still. */
 .grip {
   all: unset;
   position: absolute;
   right: 0;
   bottom: 0;
-  width: 20px;
-  height: 20px;
+  /* `all: unset` takes the global border-box with it, and there is padding below. */
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 0 1px 1px 0;
   cursor: nwse-resize;
   touch-action: none;
-  /* --rule is the colour of a hairline nobody is meant to notice, and this one has to be found.
-     A quarter of the ink reads as a mark on the corner and still sits under everything else. */
-  --corner: color-mix(in srgb, var(--ink) 26%, transparent);
-  background:
-    linear-gradient(to right, var(--corner) 0 100%) no-repeat right 4px bottom 4px / 13px 1px,
-    linear-gradient(to bottom, var(--corner) 0 100%) no-repeat right 4px bottom 4px / 1px 13px;
+  color: var(--muted);
 }
-.grip:hover { --corner: var(--ink); }
+/* The mark, at the one size it reads at, and not a target of its own: the press has to reach the
+   button for the drag to take hold of it. */
+.grip > svg { width: 16px; height: 16px; }
+.grip:hover { color: var(--ink); }
 .grip:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
 
 /* ---- a pinned chart's own window ---- */

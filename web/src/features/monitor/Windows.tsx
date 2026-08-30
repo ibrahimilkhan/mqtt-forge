@@ -1,11 +1,11 @@
 import { useEffect, useRef, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { Expand, Shrink } from '../brand/icons';
+import { Corner, Expand, Shrink } from '../brand/icons';
 import { MessageDetail } from './MessageDetail';
 import styles from './Floating.module.css';
 import { fullBox, moved, sized, useFloating } from './floating';
 import { Pin } from './Pin';
 import { TrafficChart } from './TrafficChart';
-import type { LogEntry } from '../../stores/logStore';
+import { stampMeaning, type LogEntry } from '../../stores/logStore';
 import { useWindows, type FloatWindow } from './useWindows';
 import { useRunsFor } from './useTraffic';
 import { useZoomStore } from './useZoom';
@@ -232,7 +232,14 @@ function Frame({ pane: chart, depth }: { pane: FloatWindow; depth: number }) {
         {chart.pane.kind === 'message' && chart.pane.entry.stamps?.length ? (
           <span className={styles.stamps} data-testid="stamps">
             {chipsFor(chart.pane.entry).map((stamp) => (
-              <span key={stamp} className={styles.stamp} data-stamp={stamp}>
+              <span
+                key={stamp}
+                className={styles.stamp}
+                data-stamp={stamp}
+                // The same meanings the log row's chips carry, from the same place: 'qos 0' and
+                // 'not retained' are about this delivery, not about the publish behind it.
+                title={stampMeaning(stamp)}
+              >
                 {stamp}
               </span>
             ))}
@@ -285,7 +292,9 @@ function Frame({ pane: chart, depth }: { pane: FloatWindow; depth: number }) {
           aria-label={`Resize the ${chart.label} chart`}
           title="Drag to size"
           {...grip}
-        />
+        >
+          <Corner />
+        </button>
       )}
     </section>
   );

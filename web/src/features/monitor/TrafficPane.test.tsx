@@ -1,4 +1,4 @@
-import { act, cleanup, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithClient as render } from '../../test/renderWithClient';
@@ -124,6 +124,70 @@ describe('throwing the chart open', () => {
 
     expect(screen.getByTestId('zoom')).toBeInTheDocument();
   });
+
+  // The way in only. Open, the chart wears a window's bar, and the way back is the close at the
+  // end of it — where a window's close has always been. Two controls for one gesture is one of
+  // them being guessed at.
+  it('leaves the corner once the chart is open, and the bar carries the way back', async () => {
+    run();
+    show();
+
+    await userEvent.click(screen.getByTestId('zoom'));
+
+    expect(screen.queryByTestId('zoom')).not.toBeInTheDocument();
+    expect(screen.getByTestId('zoom-close')).toBeInTheDocument();
+  });
+
+  // The same three controls a pinned window's bar carries, in the same places: the pin at the
+  // near end, and out at the far end the swell and the close.
+  it('carries the pin at the near end of its bar, before the name', async () => {
+    run();
+    show();
+
+    await userEvent.click(screen.getByTestId('zoom'));
+
+    const bar = screen.getByTestId('zoom-close').parentElement!;
+    expect(bar.firstElementChild).toHaveAccessibleName(/^Pin /);
+    expect(bar.lastElementChild).toBe(screen.getByTestId('zoom-close'));
+    expect(screen.getByTestId('zoom-close').previousElementSibling).toBe(
+      screen.getByTestId('swell-chart'),
+    );
+  });
+
+  it('fills the screen and comes back to where the reader had put it', async () => {
+    run();
+    show();
+
+    await userEvent.click(screen.getByTestId('zoom'));
+    act(() => useZoomStore.getState().place({ x: 40, y: 30, w: 420, h: 300 }));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Fill the screen with the chart' }));
+    expect(useZoomStore.getState().full).toBe(true);
+    expect(useZoomStore.getState().box).toEqual({
+      x: 0,
+      y: 0,
+      w: window.innerWidth,
+      h: window.innerHeight,
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Put the chart back to its size' }));
+    expect(useZoomStore.getState().full).toBe(false);
+    expect(useZoomStore.getState().box).toEqual({ x: 40, y: 30, w: 420, h: 300 });
+  });
+
+  // Filling the screen holds it still as surely as a pin does, and for a plainer reason: there is
+  // nowhere left to move it to.
+  it('takes away the corner that sizes it while it fills the screen', async () => {
+    run();
+    show();
+
+    await userEvent.click(screen.getByTestId('zoom'));
+    expect(screen.getByRole('button', { name: 'Resize the chart window' })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Fill the screen with the chart' }));
+
+    expect(screen.queryByRole('button', { name: 'Resize the chart window' })).not.toBeInTheDocument();
+  });
 });
 
 describe('opening one reading', () => {
@@ -173,6 +237,57 @@ describe('opening one reading', () => {
     await userEvent.click(plot());
     await userEvent.keyboard('{Escape}');
     expect(screen.queryByTestId('detail')).not.toBeInTheDocument();
+
+    // The same reading again, which is the toggle: the press that opened it closes it, and the
+    // dismissal below must not take that path over.
+    await userEvent.click(plot());
+    await userEvent.click(plot());
+    expect(screen.queryByTestId('detail')).not.toBeInTheDocument();
+  });
+
+  // A card that stays open while the reader has plainly moved on is a card the reader has to
+  // dismiss before doing anything else — which is not a card, it is a dialog nobody asked for.
+  it('closes when the reader presses anywhere else on the page', async () => {
+    run();
+    show();
+
+    await userEvent.click(plot());
+    expect(screen.getByTestId('detail')).toBeInTheDocument();
+
+    fireEvent.pointerDown(document.body);
+
+    expect(screen.queryByTestId('detail')).not.toBeInTheDocument();
+  });
+
+  // It is there to be read and swept up: pressing into it to select the value must not take the
+  // value away.
+  it('stays open when the press lands in the card itself', async () => {
+    run();
+    show();
+
+    await userEvent.click(plot());
+    fireEvent.pointerDown(screen.getByTestId('detail'));
+
+    expect(screen.getByTestId('detail')).toBeInTheDocument();
+  });
+
+  // Two things listen for Escape over one chart: this card, and the chart thrown open putting
+  // itself back. One press doing both would be one keystroke answering two questions the reader
+  // asked separately — so the innermost goes first, and the next press takes the chart.
+  it('gives Escape to the card first, and the chart on the press after', async () => {
+    run();
+    show();
+
+    await userEvent.click(screen.getByTestId('zoom'));
+    await userEvent.click(plot());
+    expect(screen.getByTestId('detail')).toBeInTheDocument();
+
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByTestId('detail')).not.toBeInTheDocument();
+    expect(useZoomStore.getState().zoomed).toBe(true);
+
+    await userEvent.keyboard('{Escape}');
+    expect(useZoomStore.getState().zoomed).toBe(false);
   });
 
   // A detail only a mouse can reach is the readout's oldest failing.

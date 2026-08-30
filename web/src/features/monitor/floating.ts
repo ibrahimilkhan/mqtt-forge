@@ -10,10 +10,18 @@ import { createFrameLatest } from '../../lib/frameLatest';
  */
 export type Box = { x: number; y: number; w: number; h: number };
 
-/** Below this a chart is a smudge with chips over it, whatever the reader drags. The height is
- *  what the plot's own floor, the controls over it and a line or two of the note come to. */
+/**
+ * Below this a chart is a smudge with chips over it, whatever the reader drags.
+ *
+ * The height is what the plot's own floor, the controls over it and the note come to, and it is
+ * now that arithmetic rather than a number near it: ROOM_FOR_MORE (220) is what the chart asks of
+ * its own region before it will draw the readings, and a window spends 62px on its bar and its
+ * padding before the region begins. At 260 the comment above claimed a line or two of the note
+ * and the window delivered none — the chart measured 198px of region and drew the picture alone.
+ * Set from the two, so a window that can exist is a window with its readings in it.
+ */
 const MIN_W = 300;
-const MIN_H = 260;
+const MIN_H = 282;
 
 /** How much of a window must stay on screen: enough to get hold of the bar again. */
 const HELD = 64;
@@ -133,8 +141,14 @@ export function useFloating(box: Box, onChange: (next: Box) => void) {
     // The bar is the handle; the controls standing in it are not. Without this, pressing the pin
     // takes hold of the window, and the press reads as the start of a drag that never moves.
     // The handle itself is exempt — the grip is a button, and pressing it is the whole point.
+    //
+    // Which button the press is in, rather than whether the press is on the handle itself: the
+    // grip carries a mark now, so the thing under the pointer there is an svg rather than the
+    // button, and a test of the element alone threw the resize away the moment the corner grew
+    // something to look at.
     const on = event.target as Element;
-    if (on !== event.currentTarget && on.closest('button')) return;
+    const pressed = on.closest('button');
+    if (pressed && pressed !== event.currentTarget) return;
 
     // One pointer at a time. A second finger landing on the bar would otherwise take the drag
     // over from where IT went down, and the window would jump by the distance between the two.
