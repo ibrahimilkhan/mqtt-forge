@@ -11,7 +11,7 @@
 }
 
 .slider { display: flex; align-items: center; gap: 10px; }
-.slider input { flex: 1; min-width: 0; accent-color: var(--ink); }
+.slider input { flex: 1; min-width: 0; accent-color: var(--signal); }
 
 /* Fixed width so the row doesn't jump as the reading goes from 12px to 20px. */
 .reading {
@@ -66,8 +66,8 @@
 .markBtn:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 /* The one in force wears the ink, the way a pressed chip on the chart does. */
 .markBtn[aria-pressed='true'] {
-  color: var(--ink);
-  border-color: var(--ink);
+  color: var(--signal);
+  border-color: var(--signal);
   background: var(--paper);
 }
 

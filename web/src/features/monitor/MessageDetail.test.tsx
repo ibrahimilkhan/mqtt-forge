@@ -172,22 +172,19 @@ describe('what the window says about the message', () => {
 
     await openIt();
 
-    expect(summary()).toHaveTextContent('not retained');
+    expect(chips()).toHaveTextContent('not retained');
   });
 
-  // And says it in the box the answer is said in upstairs. The two states of one fact were being
-  // drawn as two kinds of thing — a chip when it was true, a loose word when it was not.
-  it('draws that answer in the box the chips are drawn in', async () => {
+  // Both answers in the same place, so the reader looks once. It went where RETAINED stands:
+  // second, straight after the QoS chip.
+  it('puts either answer where the other one would have been', async () => {
     landed(arrival());
     render(<Console />);
-
     await openIt();
 
-    const answer = within(summary()).getByText('not retained');
-    const chip = chips().firstElementChild!;
-    const shared = [...answer.classList].filter((name) => chip.classList.contains(name));
+    const said = [...chips().children].map((chip) => chip.textContent);
 
-    expect(shared).not.toHaveLength(0);
+    expect(said).toEqual(['QoS 1', 'not retained', '4B']);
   });
 
   // A retained clear carries nothing, which is the message.

@@ -113,8 +113,8 @@
    merely looked available is a pin that gets pressed again. */
 .pin[aria-pressed='true'] {
   color: var(--surface);
-  background: var(--ink);
-  border-color: var(--ink);
+  background: var(--signal);
+  border-color: var(--signal);
 }
 .pin[aria-pressed='true']:hover { background: var(--muted); border-color: var(--muted); }
 

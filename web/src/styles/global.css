@@ -125,7 +125,7 @@
 
   button:hover:not(:disabled) { background: var(--muted); border-color: var(--muted); }
   button.ghost { background: transparent; color: var(--ink); }
-  button.ghost:hover:not(:disabled) { background: var(--ink); color: var(--surface); }
+  button.ghost:hover:not(:disabled) { background: var(--muted); border-color: var(--muted); color: var(--surface); }
   button:disabled { opacity: 0.35; cursor: not-allowed; }
 
   /* .note lives in styles/panel.module.css: every consumer is inside a panel. */

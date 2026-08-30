@@ -38,54 +38,51 @@ export const CONTROL_GROUPS = ['what', 'range', 'view'] as const;
 export type ControlGroup = (typeof CONTROL_GROUPS)[number];
 
 export const CONTROL_GROUP_TITLES: Record<ControlGroup, { title: string; about: string }> = {
-  what: { title: 'What is drawn', about: 'Which readings the plot is of, and how much room it gets.' },
-  range: {
-    title: 'The range',
-    about: 'How much of the plot’s height goes on the run’s range.',
-  },
-  view: { title: 'The view, and taking it away', about: 'How the run is drawn, and how to get it out.' },
+  what: { title: 'What is drawn', about: 'Which readings the plot is of.' },
+  range: { title: 'The range', about: 'How much height the run gets.' },
+  view: { title: 'The view', about: 'How the run is drawn, and how to save it.' },
 };
 
 export const CONTROLS: Record<ControlId, Control & { group: ControlGroup }> = {
   field: {
     label: 'temp, hum, …',
     group: 'what',
-    what: 'Each numeric field of a JSON body, by name. It opens on the busiest.',
-    when: 'Only when the bodies carry more than one number.',
+    what: 'Each number in a JSON body, by name. Opens on the busiest.',
+    when: 'When a body carries more than one number.',
   },
   into: {
     label: 'radios ›',
     group: 'what',
-    what: 'A group of fields rather than one of them. It opens the group; its title says how many are inside.',
-    when: 'Only when a body nests its numbers.',
+    what: 'A group of fields. Opens it; the title says how many.',
+    when: 'When a body nests its numbers.',
   },
   up: {
     label: '← radios',
     group: 'what',
-    what: 'Back out of a group of fields. It names the group you are standing in.',
-    when: 'Only after opening one.',
+    what: 'Back out of a group. It names the one you are in.',
+    when: 'After opening one.',
   },
   fewer: {
     label: '⌄',
     group: 'what',
-    what: 'Puts the field chips away, and brings them back. What is left behind names the field being charted.',
-    when: 'Only when the bodies carry more than one number.',
+    what: 'Puts the field chips away, and brings them back.',
+    when: 'When a body carries more than one number.',
   },
   branch: {
     label: '← all',
     group: 'what',
-    what: 'Back out to every topic under the branch.',
-    when: 'Only after clicking into one of a branch’s small plots.',
+    what: 'Back to every topic in the branch.',
+    when: 'After clicking into one of its plots.',
   },
   open: {
     label: '⤢',
     group: 'what',
-    what: 'Floats the chart over the console, still live around it. Escape puts it back.',
+    what: 'Floats the chart over the console. Escape puts it back.',
   },
   auto: {
     label: 'auto',
     group: 'range',
-    what: 'Measurements take Range above; pulses always take their extremes.',
+    what: 'Measurements take Range above; pulses take their extremes.',
   },
   time: {
     label: 'time',
@@ -95,12 +92,12 @@ export const CONTROLS: Record<ControlId, Control & { group: ControlGroup }> = {
   dist: {
     label: 'dist',
     group: 'view',
-    what: 'The same readings as a distribution — what the run usually does.',
+    what: 'The same readings as a distribution.',
   },
   csv: {
     label: 'csv',
     group: 'view',
-    what: 'Saves the charted readings as CSV, into the folder set below.',
+    what: 'Saves the charted readings as CSV.',
   },
 };
 

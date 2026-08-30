@@ -166,8 +166,8 @@
   font-family: var(--mono);
   font-size: var(--t-micro);
   letter-spacing: 0.06em;
-  color: var(--ink);
-  border: 1px solid var(--ink);
+  color: var(--signal);
+  border: 1px solid var(--signal);
   border-radius: var(--r-control);
   padding: 2px 6px;
   min-height: 24px;
@@ -198,7 +198,7 @@
 }
 .chip:hover { color: var(--ink); border-color: var(--rule); }
 .chip:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
-.chip[aria-pressed="true"] { color: var(--ink); border-color: var(--ink); }
+.chip[aria-pressed="true"] { color: var(--signal); border-color: var(--signal); }
 
 /* A group of fields rather than one of them, and the reader can see which is which without
    reading either: a group is a box at rest, where a field is a bare word until it is reached for.

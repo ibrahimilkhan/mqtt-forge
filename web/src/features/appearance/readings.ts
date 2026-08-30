@@ -57,7 +57,7 @@ export const READING_GROUPS: Record<ReadingGroup, { title: string; about: string
   },
   events: {
     title: 'A switch or a pulse',
-    about: 'A run that rests somewhere and leaves it. Counted, never averaged.',
+    about: 'A run that rests somewhere and leaves it. Counted, not averaged.',
   },
   run: { title: 'Any run', about: 'True of every chart, whatever the readings are.' },
 };
@@ -94,7 +94,7 @@ export const READINGS: Record<ReadingId, Reading> = {
   },
   shape: {
     label: 'shape',
-    what: 'Which distribution the readings resemble, if any.',
+    what: 'Which distribution the readings resemble.',
     group: 'quantity',
   },
   trend: {
@@ -114,7 +114,7 @@ export const READINGS: Record<ReadingId, Reading> = {
   },
   outliers: {
     label: 'outliers',
-    what: 'Readings outside the fences, each ringed on the line.',
+    what: 'Readings outside the fences, ringed on the line.',
     group: 'quantity',
   },
   levels: { label: 'levels', what: 'The level it rests at, and the one it goes to.', group: 'events' },
@@ -122,7 +122,7 @@ export const READINGS: Record<ReadingId, Reading> = {
   duty: { label: 'duty', what: 'What share of the readings sat away from rest.', group: 'events' },
   width: { label: 'width', what: 'How long one excursion lasts.', group: 'events' },
   period: { label: 'period', what: 'From one excursion to the next.', group: 'events' },
-  every: { label: 'every', what: 'The middle gap between arrivals, and its jitter.', group: 'run' },
+  every: { label: 'every', what: 'The usual gap between arrivals, and its jitter.', group: 'run' },
   offScale: {
     label: 'off scale',
     what: "Readings past the plot's range, drawn on its edge.",

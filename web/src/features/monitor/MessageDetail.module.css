@@ -119,14 +119,6 @@
   overflow-wrap: anywhere;
 }
 
-/* Whether it was retained, said in the box the answer is said in everywhere else.
-
-   Composed from the bar's chip rather than from the log's, which is the only place in these three
-   files that composes twice. The bar's is the log's plus the two things the log's inherits from
-   the row it lives in and could not carry out of it — the mono face and --faint — and both are
-   just as absent down here. Chaining says 'the same chip this window's bar wears' in one line;
-   restating the pair would have put that colour mix in a third stylesheet, waiting to drift. */
-.stamp { composes: stamp from './Floating.module.css'; }
 
 /* The row of controls over the message: what to do with the document, and one mark in the corner
    for taking a copy of it. Over rather than under, which is where the lone json toggle used to
@@ -220,8 +212,8 @@
    pressed to find out. */
 .toggle[aria-pressed='true'] {
   color: var(--surface);
-  background: var(--ink);
-  border-color: var(--ink);
+  background: var(--signal);
+  border-color: var(--signal);
 }
 .toggle[aria-pressed='true']:hover { background: var(--muted); border-color: var(--muted); }
 
