@@ -312,6 +312,72 @@ describe('the payload, formatted where formatting is what it is', () => {
     expect(body()).toHaveTextContent('"radio-0"');
   });
 
+  /**
+   * A long document gets a map of its own top level, down the side.
+   *
+   * Fully unfolded, a gateway's first key is on line two and its last on line forty, and the only
+   * gesture that put them together folded the whole thing to one line.
+   */
+  describe('what is in the message', () => {
+    // Real shape, real names: a gateway reporting itself on connect.
+    const gateway = JSON.stringify({
+      gateway: { id: 'gw-forge-01', firmware: '4.2.1-rc3', uptime: 918273, bootCount: 42 },
+      network: { uplink: 'ethernet', ip: '10.4.18.22', rssi: -54 },
+      radios: [
+        { id: 'radio-0', channel: 11, dbm: -42 },
+        { id: 'radio-1', channel: 12, dbm: -43 },
+      ],
+      counters: { published: 184392, delivered: 184388, dropped: 4 },
+    });
+
+    it('says what is at the top of a document too long to show it', async () => {
+      landed(arrival({ payload: gateway, size: byteLength(gateway) }));
+      render(<Console />);
+      await openIt();
+
+      const index = screen.getByTestId('index');
+      expect(within(index).getByRole('button', { name: 'Go to radios, 2 inside' })).toBeInTheDocument();
+      expect(within(index).getByRole('button', { name: 'Go to counters, 3 inside' })).toBeInTheDocument();
+    });
+
+    // A message of three keys and eighteen lines is entirely on screen in any window worth
+    // opening one in, and a ruled strip beside it is a map of a room you are standing in.
+    it('draws none beside a document you can see all of', async () => {
+      const small = '{"a":1,"radios":[{"id":"radio-0"}]}';
+      landed(arrival({ payload: small, size: byteLength(small) }));
+      render(<Console />);
+      await openIt();
+
+      expect(screen.queryByTestId('index')).not.toBeInTheDocument();
+    });
+
+    // Folded, a branch has no row to go to — so the way to it is opened first. Only that one:
+    // the reader's other folds are theirs.
+    it('opens the branch it is sent to, and leaves the rest folded', async () => {
+      landed(arrival({ payload: gateway, size: byteLength(gateway) }));
+      render(<Console />);
+      await openIt();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Fold every branch' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Go to radios, 2 inside' }));
+
+      expect(screen.getByRole('button', { name: 'Fold radios' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Open counters' })).toBeInTheDocument();
+    });
+
+    // The whole reason it is a sibling of the payload rather than a child of it.
+    it('stays out of the message when the whole message is taken', async () => {
+      landed(arrival({ payload: gateway, size: byteLength(gateway) }));
+      render(<Console />);
+      await openIt();
+
+      await userEvent.keyboard('{Control>}a{/Control}');
+
+      const taken = window.getSelection()!.getRangeAt(0).toString();
+      expect(JSON.parse(taken)).toEqual(JSON.parse(gateway));
+    });
+  });
+
   // A folded branch on screen is a summary, and a summary pasted into a bug report is a message
   // that never existed. The mark in the corner hands over what arrived.
   it('copies exactly what arrived, whatever is folded away', async () => {
