@@ -180,29 +180,40 @@ export function TopicTree({ broker }: { broker?: string }) {
    */
   const hold = useMemo(() => <HoldButton />, []);
 
-  const treeActions = useMemo(
-    () => (
+  /**
+   * Expand and collapse, over whatever the reader is actually looking at.
+   *
+   * With a branch picked, these two mean that branch. On a broker carrying thousands of topics
+   * the whole-tree answer buries the thing they were looking at in everything they were not —
+   * and the pair sits on the picked row itself, which is where a reader reads them as being about
+   * it. With nothing picked there is nothing to scope to, and they mean the tree.
+   */
+  const treeActions = useMemo(() => {
+    const of = selectedPath ? ` ${selectedPath}` : ' all';
+
+    return (
       <div className={styles.rowActions}>
         <button
           type="button"
-          onClick={() => setAllOpen(true)}
-          aria-label="Expand all"
-          title="Expand every branch"
+          onClick={() => setAllOpen(true, selectedPath)}
+          aria-label={`Expand${of}`}
+          title={selectedPath ? `Expand every branch under ${selectedPath}` : 'Expand every branch'}
         >
           ≡
         </button>
         <button
           type="button"
-          onClick={() => setAllOpen(false)}
-          aria-label="Collapse all"
-          title="Collapse every branch"
+          onClick={() => setAllOpen(false, selectedPath)}
+          aria-label={`Collapse${of}`}
+          title={
+            selectedPath ? `Collapse every branch under ${selectedPath}` : 'Collapse every branch'
+          }
         >
           =
         </button>
       </div>
-    ),
-    [setAllOpen],
-  );
+    );
+  }, [setAllOpen, selectedPath]);
 
   // The broker's row keeps the two tree glyphs at its end whether it is picked or not, and takes
   // the pause in front of them when it is: picking it focuses the log on everything, which is a

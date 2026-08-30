@@ -82,7 +82,7 @@
   box-shadow: inset 0 0 0 1px rgb(19 26 36 / 0.18);
 }
 .suggestion:hover { box-shadow: inset 0 0 0 1px rgb(19 26 36 / 0.45); }
-.suggestion[aria-pressed='true'] { box-shadow: inset 0 0 0 2px var(--ink); }
+.suggestion[aria-pressed='true'] { box-shadow: inset 0 0 0 2px var(--signal); }
 .suggestion:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 .custom {

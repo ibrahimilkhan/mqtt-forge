@@ -5,6 +5,7 @@ import styles from './Floating.module.css';
 import { fullBox, moved, sized, useFloating } from './floating';
 import { Pin } from './Pin';
 import { TrafficChart } from './TrafficChart';
+import type { LogEntry } from '../../stores/logStore';
 import { useWindows, type FloatWindow } from './useWindows';
 import { useRunsFor } from './useTraffic';
 import { useZoomStore } from './useZoom';
@@ -230,7 +231,7 @@ function Frame({ pane: chart, depth }: { pane: FloatWindow; depth: number }) {
             in the middle of it. */}
         {chart.pane.kind === 'message' && chart.pane.entry.stamps?.length ? (
           <span className={styles.stamps} data-testid="stamps">
-            {chart.pane.entry.stamps.map((stamp) => (
+            {chipsFor(chart.pane.entry).map((stamp) => (
               <span key={stamp} className={styles.stamp} data-stamp={stamp}>
                 {stamp}
               </span>
@@ -288,6 +289,30 @@ function Frame({ pane: chart, depth }: { pane: FloatWindow; depth: number }) {
       )}
     </section>
   );
+}
+
+/**
+ * The chips a message window's bar wears.
+ *
+ * The row's own stamps, with the one answer the row leaves out. The log stamps RETAINED when a
+ * message was and nothing at all when it was not, which is the right silence in a run of
+ * twenty-five rows and the wrong one in a window opened to ask about one message — a reader opens
+ * this to find out whether the value in front of them is live traffic or a leftover the broker
+ * kept, and no chip is not an answer to that.
+ *
+ * It goes where RETAINED would have stood, so the two answers to one question are read in the
+ * same spot rather than at opposite ends of the row. Everything else is `toEntry`'s, unread and
+ * unrebuilt: 'the chips from the log' is a promise that only holds while one place decides what a
+ * chip says.
+ */
+function chipsFor(entry: LogEntry): string[] {
+  const worn = entry.stamps ?? [];
+  if (entry.retain !== false) return worn;
+
+  // Straight after the QoS stamp, and in front of everything if there is not one.
+  const at = worn.findIndex((stamp) => stamp.startsWith('QoS')) + 1;
+
+  return [...worn.slice(0, at), 'not retained', ...worn.slice(at)];
 }
 
 /**

@@ -69,30 +69,60 @@ export function HealthStrip() {
         <span className={styles.quiet}>measuring…</span>
       ) : (
         <>
-          <Cell label="in" value={`${count(reading.arriving)}/s`} />
-          <Cell label="held" value={`${count(reading.held)} on ${count(reading.topics)} topics`} />
-          <Cell label="payload" value={weigh(reading.weight)} />
-          <Cell label="taking" value={`${reading.takingMs.toFixed(1)} ms/s`} />
+          {/* Every value is given the room its widest reading needs — see Cell. A line whose
+              cells are laid out by the length of the numbers in them is a line that rearranges
+              itself under the eye reading it, and this one is read by glancing at the same place
+              twice. */}
+          <Cell label="in" slot={7} value={`${count(reading.arriving)}/s`} />
+          <Cell
+            label="held"
+            slot={18}
+            value={`${count(reading.held)} on ${count(reading.topics)} topics`}
+          />
+          <Cell label="payload" slot={7} value={weigh(reading.weight)} />
+          <Cell label="taking" slot={9} value={`${reading.takingMs.toFixed(1)} ms/s`} />
           {/* Only once there are any. A cell reading 'dropped 0' on every console that has never
               dropped anything is four characters of reassurance nobody asked for; one that
               appears is the line saying something went wrong. */}
           {reading.dropped > 0 && (
-            <Cell label="dropped" value={count(reading.dropped)} tense />
+            <Cell label="dropped" slot={5} value={count(reading.dropped)} tense />
           )}
           {/* Last because it is the one that answers 'is this keeping up', and the eye should
               land on it after the numbers that explain it. */}
-          <Cell label="drawing" value={`${reading.fps} fps`} tense={reading.fps < 20} />
+          <Cell label="drawing" slot={7} value={`${reading.fps} fps`} tense={reading.fps < 20} />
         </>
       )}
     </div>
   );
 }
 
-function Cell({ label, value, tense = false }: { label: string; value: string; tense?: boolean }) {
+/**
+ * One reading, in a slot the size of its own widest answer.
+ *
+ * `tabular-nums` holds the digits still and does nothing about the rest: '184' becomes '1.8k'
+ * becomes '1.8M', 'B' becomes 'kB', and every one of those changes the width of the cell and
+ * slides the four cells after it along. The slot is in `ch` — the width of a digit in this face —
+ * so it grows with the reader's own type size rather than sitting still while the line around it
+ * scales.
+ */
+function Cell({
+  label,
+  value,
+  slot,
+  tense = false,
+}: {
+  label: string;
+  value: string;
+  /** Characters of room for the value, at its longest. */
+  slot: number;
+  tense?: boolean;
+}) {
   return (
     <span className={styles.cell} data-tense={tense ? '' : undefined}>
       <span className={styles.label}>{label}</span>
-      <span className={styles.value}>{value}</span>
+      <span className={styles.value} style={{ minWidth: `${slot}ch` }}>
+        {value}
+      </span>
     </span>
   );
 }

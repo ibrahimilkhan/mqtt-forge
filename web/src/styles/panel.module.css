@@ -30,7 +30,7 @@
   color: var(--ink);
   cursor: pointer;
 }
-.checks input { accent-color: var(--ink); }
+.checks input { accent-color: var(--signal); }
 
 .actions { display: flex; gap: 8px; margin-top: 14px; }
 /* Every button in this row is conditional, and over a live link with a name being typed none of
@@ -131,7 +131,7 @@
   color: var(--ink);
   cursor: pointer;
 }
-.subscribe input[type='checkbox'] { accent-color: var(--ink); }
+.subscribe input[type='checkbox'] { accent-color: var(--signal); }
 /* Indented to the width of the box above it, so it reads as belonging to that line. */
 .subscribe > input[type='text'] {
   width: calc(100% - 20px);

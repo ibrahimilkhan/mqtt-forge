@@ -182,10 +182,20 @@
   padding: 0;
 }
 .menuBtn:hover { color: var(--ink); background: var(--paper); }
+/* The one that is open, in the console's own blue rather than in its ink.
+   The segmented control has picked its selection out in --signal since it was written, and this
+   was the last selected thing on the screen still painting itself black — two answers to one
+   question, in a console with one accent. Hovered it goes grey, which is what everything else
+   here does when it is already on: a pressed control under the pointer should say 'yes, this
+   one' and not offer a second colour to think about. */
 .menuBtn[aria-expanded="true"] {
   color: var(--surface);
-  background: var(--ink);
-  border-color: var(--ink);
+  background: var(--signal);
+  border-color: var(--signal);
+}
+.menuBtn[aria-expanded="true"]:hover {
+  background: var(--muted);
+  border-color: var(--muted);
 }
 /* Waiting on the user to pick a column, so the button reads as armed rather than open. */
 .menuBtn[data-pending] {
@@ -369,7 +379,7 @@
 .menuBtn[aria-expanded='true'][data-link='Faulted'] svg,
 .menuBtn[aria-expanded='true'][data-link='Reconnecting'] svg { color: var(--fault); }
 .menuBtn[aria-expanded='true'][data-link='Faulted'],
-.menuBtn[aria-expanded='true'][data-link='Reconnecting'] { background: var(--ink); }
+.menuBtn[aria-expanded='true'][data-link='Reconnecting'] { background: var(--signal); }
 
 /* Alive, and saying so. A breath rather than a blink: this is the state the console is in nearly
    all the time, and something flashing in the corner of a room all day is something people turn
@@ -398,13 +408,23 @@
      around it grew. */
   font-size: var(--t-code);
 }
+/* Shut, the button is a 34px square with the glyph centred and there is no row to sit at the end
+   of, so the mark goes in the corner of it.
+
+   Inside the corner, not straddling it, and with nothing behind it. It used to hang two pixels
+   outside the button on a --paper disc, which was two faults in one: a filled circle lapping over
+   the edge of a filled button reads as a box inside a box, and the disc was the same colour as
+   the button's own hover — so moving the pointer onto the row made the mark's ground appear and
+   the antenna's stay put, and the pair looked like it had shifted. No ground at all cannot
+   disagree with the ground under it. Smaller, too: at --t-micro the triangle was competing with
+   the glyph it is a note on. */
 .rail:not([data-open]) .menuWarn {
   position: absolute;
-  inset: -2px -2px auto auto;
+  inset: 2px 2px auto auto;
   margin: 0;
-  font-size: var(--t-micro);
-  /* Against the rail rather than the row, so the triangle stays legible at that size. */
-  background: var(--paper);
-  border-radius: 50%;
+  font-size: var(--t-nano);
 }
+/* On the ink the red would be reading against a fill it has no contrast on, so it takes the
+   light instead. The state is the panel being open, and the mark is still a triangle. */
+.rail:not([data-open]) .menuBtn[aria-expanded='true'] .menuWarn { color: var(--paper); }
 .rail:not([data-open]) .menuBtn { position: relative; }

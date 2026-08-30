@@ -61,16 +61,8 @@ export function MessageDetail({ entry }: { entry: LogEntry }) {
           </time>
         </div>
 
-        {(rest.length > 0 || entry.retain === false || rule) && (
+        {(rest.length > 0 || rule) && (
           <p className={styles.unsaid}>
-            {/* The one thing on this line that is a state rather than a measurement, so it is
-                drawn as a state: the same box the chips upstairs are drawn in, standing where the
-                bar had nothing to put. A message that was retained wears its chip up there with
-                the others; one that was not has no chip up there at all, because the log stamps
-                nothing for it — and the answer to a question every other answer boxes should not
-                be the one that arrives as a loose word. */}
-            {entry.retain === false && <span className={styles.stamp}>not retained</span>}
-
             {rest.length > 0 && <span>{rest.join(' \u00b7 ')}</span>}
 
             {/* The rule, named and painted, where the row can only carry it as a hover. No word
