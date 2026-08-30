@@ -1,0 +1,30 @@
+<!doctype html>
+<!--
+  The mark beside the Download heading in the README.
+
+  The console's own download glyph — the one the chart's csv button wears, drawn in
+  web/src/features/brand/icons.tsx — cut to a PNG, because GitHub strips inline SVG out of a
+  markdown file and there is no other way to put a drawing in a heading.
+
+  In --muted rather than the console's blue: this sits on a white README and a near-black one,
+  and a mark that needed a second cut for the second theme would be two files for a decoration.
+  The word beside it carries the meaning, so its alt text is empty and it is the one drawing here
+  that a reader loses nothing by not seeing.
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu \
+      --default-background-color=00000000 --screenshot=.github/assets/download.png \
+      --window-size=96,96 --force-device-scale-factor=2 scripts/download-icon.html
+-->
+<html><head><meta charset="utf-8"><style>
+html, body { margin: 0; padding: 0; background: transparent; }
+body { width: 96px; height: 96px; }
+svg { width: 96px; height: 96px; display: block; }
+</style></head>
+<body>
+  <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none"
+       stroke="#67728a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 3.5v11" />
+    <path d="M7.5 10 12 14.5 16.5 10" />
+    <path d="M4 16v2.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V16" />
+  </svg>
+</body></html>
