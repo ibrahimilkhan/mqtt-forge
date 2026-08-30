@@ -7,11 +7,14 @@
   1280x640 is GitHub's own size, and it crops the edges on some surfaces, so nothing that matters
   comes within 40pt of one. The lockup is centred and nowhere near.
 
-  Cut at twice the size, so it stays sharp where the card is shown large:
+  Cut at 1280x640 exactly, which is the size GitHub asks for. It was cut at twice that first, on
+  the reasoning that a denser file is sharper on a dense screen — but the size in the guidance is
+  the size, every surface that shows this scales it to fit anyway, and a card that is the stated
+  size cannot be scaled wrongly by anything:
 
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu \
       --screenshot=.github/assets/social.png --window-size=1280,640 \
-      --force-device-scale-factor=2 scripts/social-card.html
+      --force-device-scale-factor=1 scripts/social-card.html
 
   The mark is web/public/favicon.svg, pasted in rather than linked so this file renders from
   anywhere. Change the favicon and this has to be pasted again — the same rule the desktop icons
