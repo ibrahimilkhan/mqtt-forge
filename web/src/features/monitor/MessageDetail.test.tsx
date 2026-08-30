@@ -211,15 +211,17 @@ describe('what the window says about the message', () => {
     expect(summary()).not.toHaveTextContent('bytes');
   });
 
-  // A path is not always obviously a path — a single segment with no slash in it reads as a word,
-  // and the first line of a window has to stand up without the run behind it to be read against.
-  it('says which of these lines is the topic', async () => {
+  // The topic is the first line, at reading size and in its rule's colour, and it says what it is
+  // by being that. The word 'topic' stood in front of it until it was read out loud: a window
+  // opened from a row that was already showing the path, with a label naming the path.
+  it('names the topic by drawing it, not by labelling it', async () => {
     landed(arrival());
     render(<Console />);
 
     await openIt();
 
-    expect(within(summary()).getByText('topic')).toBeInTheDocument();
+    expect(summary()).toHaveTextContent('sensors/room/temp');
+    expect(within(summary()).queryByText('topic')).not.toBeInTheDocument();
   });
 
   // Two questions on one line, and the second one held against the far end.
@@ -232,6 +234,54 @@ describe('what the window says about the message', () => {
     const landedAt = within(summary()).getByText(/^\d\d\/\d\d\/\d{4},/);
     expect(landedAt.tagName).toBe('TIME');
     expect(landedAt.previousElementSibling).toHaveTextContent('sensors/room/temp');
+  });
+
+  /*
+   * The chips answer a question about the delivery and were being read as a verdict on the
+   * publish behind it.
+   *
+   * 'I ticked Retain and the log says not retained' is a reasonable thing to think and was, for
+   * one real fault, true. The rest of the time it is MQTT: a broker clears the retain bit on
+   * every copy it forwards to a subscription that was already up, and sets it only on the copy it
+   * sends because a subscription has just been made. The window is where that sentence goes —
+   * this is the line built for what the chips cannot say.
+   */
+  it('says whose fact "not retained" is', async () => {
+    landed(arrival());
+    render(<Console />);
+
+    await openIt();
+
+    expect(summary()).toHaveTextContent('as delivered — a live copy always has retain cleared');
+  });
+
+  // A retained arrival's chip is already the whole answer; the line exists for what is missing.
+  it('says nothing of the kind about a message that did arrive retained', async () => {
+    landed(arrival({ retain: true }));
+    render(<Console />);
+
+    await openIt();
+
+    expect(summary()).not.toHaveTextContent('as delivered');
+  });
+
+  // The QoS number has the same shape of lie and cannot be qualified in words on every row, so it
+  // is qualified where a title costs nothing. One place decides what a chip says; the same place
+  // says what it means.
+  it('explains the delivered QoS and the retain flag on the chips themselves', async () => {
+    landed(arrival());
+    render(<Console />);
+
+    await openIt();
+
+    expect(within(chips()).getByText('QoS 1')).toHaveAttribute(
+      'title',
+      expect.stringContaining('A subscription caps the QoS of every copy sent under it'),
+    );
+    expect(within(chips()).getByText('not retained')).toHaveAttribute(
+      'title',
+      expect.stringContaining('clears that flag on every message it forwards'),
+    );
   });
 
   it('gives a hex body its bytes and its characters, since the two differ', async () => {
@@ -247,6 +297,31 @@ describe('what the window says about the message', () => {
 
 describe('the payload, formatted where formatting is what it is', () => {
   const body = () => screen.getByTestId('window-body');
+
+  /*
+   * The controls stand in the document's corner rather than on a row of their own.
+   *
+   * Four marks laid out across a full width read as a caption on the message; the same four in
+   * the corner read as things you do to what is beside them — and on a narrow window the row they
+   * used to take was a whole line of chrome above the message the window was opened to read. What
+   * must not change is which box is the message: Ctrl+A and the copy mark both take
+   * [data-message], and a control swept into that box would be pasted into a bug report as part
+   * of a message that never carried it.
+   */
+  it('keeps the controls beside the document rather than above it, and out of the message', async () => {
+    const payload = '{"a":1,"b":[2]}';
+    landed(arrival({ payload, size: byteLength(payload) }));
+    render(<Console />);
+    await openIt();
+
+    const away = screen.getByRole('button', { name: 'Fold every branch' });
+    const copy = screen.getByTestId('copy');
+
+    expect(body()).not.toContainElement(away);
+    expect(body()).not.toContainElement(copy);
+    // The same box holds both, and it is the box the document is drawn in.
+    expect(away.parentElement?.parentElement).toContainElement(body());
+  });
 
   it('lays out a JSON document, and hands back exactly what arrived', async () => {
     const payload = '{"a":1,"b":[2]}';

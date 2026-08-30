@@ -4,6 +4,7 @@ using MqttForge.Domain.Exceptions;
 using MqttForge.Domain.Models;
 using MQTTnet;
 using MQTTnet.Exceptions;
+using MQTTnet.Formatter;
 using MQTTnet.Protocol;
 
 namespace MqttForge.Infrastructure.Mqtt;
@@ -33,13 +34,31 @@ public sealed class MqttnetSubscriber : IMqttSubscriber
 
         if (requests.Count == 0) return;
 
+        // Retain as published, where the link can carry it.
+        //
+        // Without it a broker clears the retain bit on every copy it forwards to a subscription
+        // that was already up, and sets it only on the copy it replays because a subscription has
+        // just been made. That is the protocol working as written, and it made this console
+        // unable to answer a fair question about itself: a reader publishing with Retain ticked
+        // got their own message back stamped 'not retained' and concluded the flag had been
+        // dropped. With this on, the flag on the copy is the flag the publisher set.
+        //
+        // MQTT 5 only — it is a subscription option that does not exist in 3.1.1, and MQTTnet
+        // validates its features before it sends, so asking for it on an older link would turn
+        // every subscribe into a protocol violation. The client's own options carry the version
+        // that was accepted, which on `auto` is whatever the ladder settled on.
+        var asPublished = _client.Options?.ProtocolVersion == MqttProtocolVersion.V500;
+
         var options = new MqttClientSubscribeOptionsBuilder();
         foreach (var request in requests)
         {
-            options.WithTopicFilter(new MqttTopicFilterBuilder()
+            var filter = new MqttTopicFilterBuilder()
                 .WithTopic(request.TopicFilter)
-                .WithQualityOfServiceLevel((MqttQualityOfServiceLevel)request.Qos)
-                .Build());
+                .WithQualityOfServiceLevel((MqttQualityOfServiceLevel)request.Qos);
+
+            if (asPublished) filter.WithRetainAsPublished(true);
+
+            options.WithTopicFilter(filter.Build());
         }
 
         var named = string.Join("', '", requests.Select(r => r.TopicFilter));

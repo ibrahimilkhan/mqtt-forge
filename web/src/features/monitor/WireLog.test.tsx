@@ -323,7 +323,10 @@ describe('WireLog', () => {
     expect(screen.getByTestId('entry')).toHaveAttribute('data-kind', 'recv');
   });
 
-  it('sends a logged message back to publish, settings and all', async () => {
+  // The whole message, flags included. They are worth carrying now that the console listens at
+  // the ceiling and asks for retain as published: what a row shows is what the publisher chose,
+  // so 'send this one again' can mean sending it as it was sent.
+  it('sends a logged message back to publish, as it was sent', async () => {
     useLogStore.getState().push({
       kind: 'recv',
       topic: 'sensors/temp',
