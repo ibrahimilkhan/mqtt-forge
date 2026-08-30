@@ -268,6 +268,32 @@ function evictQuietest(byTopic: Map<string, TopicRing>, held: number, ceiling: n
 export const logFault = (verb: string, error: unknown, topic?: string) =>
   useLogStore.getState().push({ kind: 'fault', verb, topic, body: describeError(error) });
 
+/**
+ * What a chip means, where the word alone reads as an answer to a different question.
+ *
+ * Two of the stamps on an arrival are facts about the *delivery* and are read as verdicts on the
+ * publish behind it. A reader who publishes at QoS 2 with Retain ticked, and is subscribed to
+ * what they sent, gets a row back stamped `QoS 0` and a window stamped `not retained` — both true
+ * of the copy in front of them, neither true of what went out. The rules are MQTT's: a
+ * subscription caps the QoS of every copy sent under it, and a broker clears the retain bit on
+ * every copy it forwards to a subscription that was already up.
+ *
+ * One place decides what a chip says, so one place says what it means: the log row and the
+ * window bar both read from here.
+ */
+export function stampMeaning(stamp: string): string | undefined {
+  if (stamp.startsWith('QoS'))
+    return 'The QoS this copy was delivered at. A subscription caps the QoS of every copy sent under it, so a QoS 2 publish arrives at QoS 0 on a QoS 0 subscription — and this console listens to everything at QoS 0.';
+
+  if (stamp === 'RETAINED')
+    return 'The broker sent this copy out of the message it had stored, because a subscription had just been made.';
+
+  if (stamp === 'not retained')
+    return 'This copy was not marked retained. A broker clears that flag on every message it forwards to a subscription that was already up, whatever the publisher asked for.';
+
+  return undefined;
+}
+
 function toEntry(message: DecodedMessage): LogEntry {
   const stamps = [`QoS ${message.qos}`];
   if (message.retain) stamps.push('RETAINED');

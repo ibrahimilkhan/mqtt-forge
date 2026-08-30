@@ -255,7 +255,9 @@ describe('BrokerPanel', () => {
     renderPanel();
     await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
 
-    await waitFor(() => expect(subscribed).toEqual({ topicFilter: '#', qos: 0 }));
+    // At the ceiling, so an arrival's QoS stamp is the publisher's answer rather than this
+    // console's own cap. See EVERYTHING_QOS.
+    await waitFor(() => expect(subscribed).toEqual({ topicFilter: '#', qos: 2 }));
   });
 
   it('clears the tree on a fresh connect, because retained messages refill it', async () => {
@@ -1237,7 +1239,7 @@ describe('a broker that will not give you everything', () => {
     renderPanel();
     await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
 
-    await waitFor(() => expect(asked).toEqual({ topicFilter: '#', qos: 0 }));
+    await waitFor(() => expect(asked).toEqual({ topicFilter: '#', qos: 2 }));
   });
 
   it('asks for nothing when it is not', async () => {

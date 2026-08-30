@@ -114,6 +114,23 @@ export function useConnectionActions() {
 const EVERYTHING = '#';
 
 /**
+ * And at the highest ceiling, which is what makes the log's QoS mean anything.
+ *
+ * A subscription's QoS is a cap, not a demand: a broker delivers every copy at the lower of the
+ * published and the subscribed level. Listening at 0 — which this did — capped every arrival at
+ * 0, so the QoS stamp on a row was a constant this console had written itself, and a reader who
+ * published at QoS 2 read their own message back as 'qos 0' and concluded the level had been
+ * dropped. At 2 the stamp is the publisher's own answer: a QoS 0 publish still arrives at 0.
+ *
+ * It is not free. Every QoS 1 arrival is acknowledged and every QoS 2 arrival takes a four-packet
+ * handshake, which on a firehose of QoS 2 traffic is real work — but a firehose of QoS 2 is
+ * already the broker doing that work with every subscriber, and a console that cannot report the
+ * level it is monitoring is not much of a monitor. A reader who wants the cheap read can add a
+ * narrower filter at QoS 0 in the Filters panel.
+ */
+const EVERYTHING_QOS = 2;
+
+/**
  * What to listen to the moment the link is up, and whether the broker said no.
  *
  * Everything, or nothing at all. A good many brokers out on the internet refuse a bare '#' —
@@ -128,10 +145,10 @@ const EVERYTHING = '#';
  */
 async function subscribeOnConnect(): Promise<boolean> {
   try {
-    await subscribe({ topicFilter: EVERYTHING, qos: 0 });
+    await subscribe({ topicFilter: EVERYTHING, qos: EVERYTHING_QOS });
     useLogStore
       .getState()
-      .push({ kind: 'ok', verb: 'Subscribed', topic: EVERYTHING, stamps: ['QoS 0'] });
+      .push({ kind: 'ok', verb: 'Subscribed', topic: EVERYTHING, stamps: [`QoS ${EVERYTHING_QOS}`] });
 
     return false;
   } catch (error) {

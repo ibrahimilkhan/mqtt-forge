@@ -22,7 +22,9 @@ function renderPanel() {
 
 beforeEach(() => {
   useLogStore.getState().clear();
-  useComposeStore.setState({ draft: null });
+  // How a message goes out lives in the store now, so it outlives a panel that has been unmounted
+  // — which means it outlives a test too unless it is put back.
+  useComposeStore.setState({ draft: null, qos: 0, retain: false });
 });
 
 describe('PublishPanel', () => {
@@ -91,6 +93,21 @@ describe('PublishPanel', () => {
 
     await waitFor(() => expect(button).not.toBeDisabled());
     expect(calls).toBe(1);
+  });
+
+  // Folding the Publish region unmounts the panel — 'unmounted rather than hidden' is the
+  // workspace's own rule — and a setting held in an unmounted component is a setting that goes
+  // quietly back to nought while the reader is looking at something else.
+  it('keeps the QoS and the retain flag across a fold and a reopen', async () => {
+    const first = renderPanel();
+    await userEvent.click(screen.getByRole('radio', { name: 'QoS 2' }));
+    await userEvent.click(screen.getByLabelText('Retain'));
+
+    first.unmount();
+    renderPanel();
+
+    expect(screen.getByRole('radio', { name: 'QoS 2' })).toBeChecked();
+    expect(screen.getByLabelText('Retain')).toBeChecked();
   });
 
   it('logs a fault when publishing is refused', async () => {
@@ -229,15 +246,50 @@ describe('PublishPanel', () => {
     const topic = () => screen.getByLabelText('Topic') as HTMLInputElement;
     const payload = () => screen.getByLabelText('Payload') as HTMLTextAreaElement;
 
-    it('takes the topic, payload, QoS and retain flag off the draft', async () => {
+    it('takes the topic and the payload off the draft', async () => {
       renderPanel();
 
-      act(() =>
-        useComposeStore.getState().load({ topic: 'lab/oven', payload: '180', qos: 2, retain: true }),
-      );
+      act(() => useComposeStore.getState().load({ topic: 'lab/oven', payload: '180' }));
 
       await waitFor(() => expect(topic().value).toBe('lab/oven'));
       expect(payload().value).toBe('180');
+    });
+
+    // A row in the log is a message somebody sent, and the console now sees it as it was sent —
+    // it listens at the QoS ceiling and asks for retain as published. So loading one aims the
+    // form at the whole message, and pressing Publish sends the same message again.
+    it('takes the QoS and the retain flag off a draft that is a message', async () => {
+      renderPanel();
+
+      act(() =>
+        useComposeStore
+          .getState()
+          .load({ topic: 'lab/oven', payload: '180', qos: 2, retain: true }),
+      );
+
+      await waitFor(() => expect(topic().value).toBe('lab/oven'));
+      expect(screen.getByRole('radio', { name: 'QoS 2' })).toBeChecked();
+      expect(screen.getByLabelText('Retain')).toBeChecked();
+    });
+
+    /*
+     * The reported fault, and it was not the publish path at all.
+     *
+     * A branch of the tree has no message of its own, only the placeholders every node starts
+     * with — and those used to be written into the form unconditionally. So ticking QoS 2 and
+     * Retain and then clicking the tree to aim the form put both back to nought on the way past,
+     * silently, before Publish was pressed. The message then went out at QoS 0 exactly as the log
+     * said it had.
+     */
+    it('leaves the ticks alone for a draft that is a place rather than a message', async () => {
+      renderPanel();
+
+      await userEvent.click(screen.getByRole('radio', { name: 'QoS 2' }));
+      await userEvent.click(screen.getByLabelText('Retain'));
+
+      act(() => useComposeStore.getState().load({ topic: 'lab/oven', payload: '180' }));
+
+      await waitFor(() => expect(topic().value).toBe('lab/oven'));
       expect(screen.getByRole('radio', { name: 'QoS 2' })).toBeChecked();
       expect(screen.getByLabelText('Retain')).toBeChecked();
     });
@@ -249,7 +301,7 @@ describe('PublishPanel', () => {
       await userEvent.clear(payload());
       await userEvent.type(payload(), 'mine');
 
-      act(() => useComposeStore.getState().load({ topic: 'lab', qos: 0, retain: false }));
+      act(() => useComposeStore.getState().load({ topic: 'lab' }));
 
       await waitFor(() => expect(topic().value).toBe('lab'));
       expect(payload().value).toBe('mine');
@@ -257,7 +309,7 @@ describe('PublishPanel', () => {
 
     it('reloads on a second click of the same topic, after the form was edited', async () => {
       renderPanel();
-      const draft = { topic: 'lab/oven', payload: '180', qos: 0, retain: false };
+      const draft = { topic: 'lab/oven', payload: '180' };
       act(() => useComposeStore.getState().load(draft));
       await waitFor(() => expect(topic().value).toBe('lab/oven'));
 
@@ -279,13 +331,7 @@ describe('PublishPanel', () => {
 
       renderPanel();
       act(() =>
-        useComposeStore.getState().load({
-          topic: 'device/cmd',
-          payload: '01 A4 FF',
-          mode: 'hex',
-          qos: 0,
-          retain: false,
-        }),
+        useComposeStore.getState().load({ topic: 'device/cmd', payload: '01 A4 FF', mode: 'hex' }),
       );
 
       expect(await screen.findByRole('radio', { name: 'Hex' })).toBeChecked();
@@ -301,9 +347,7 @@ describe('PublishPanel', () => {
       renderPanel();
       await userEvent.click(screen.getByRole('radio', { name: 'Hex' }));
 
-      act(() =>
-        useComposeStore.getState().load({ topic: 'sensors/temp', qos: 0, retain: false }),
-      );
+      act(() => useComposeStore.getState().load({ topic: 'sensors/temp' }));
 
       await waitFor(() => expect(screen.getByRole('radio', { name: 'Hex' })).toBeChecked());
     });

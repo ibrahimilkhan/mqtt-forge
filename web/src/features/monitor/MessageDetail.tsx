@@ -27,13 +27,14 @@ export function MessageDetail({ entry }: { entry: LogEntry }) {
     // One wrapper. The window's body is a grid of a single row, so two children here would put
     // the summary in a track of no height and lose it under the payload.
     <div className={styles.detail}>
-      {/* One line for what this message is: the word 'topic', the topic itself at reading size,
-          and the moment it landed held against the far end.
+      {/* One line for what this message is: the topic itself at reading size, and the moment it
+          landed held against the far end.
 
-          The word stays. A path is not always obviously a path — 'front', 'meter', a single
-          segment with no slash in it at all — and the first line of a window has to be readable
-          without the run behind it to compare against. The date needs no word of its own: nothing
-          else on this screen looks like a timestamp.
+          No word in front of it any more. It was there because a path is not always obviously a
+          path — 'front', 'meter', a single segment with no slash in it at all — but this one is
+          drawn at reading size, in its rule's colour, on the first line of a window opened from a
+          row that was already showing it. A label in front of that is a window naming its own
+          parts. The date needs no word either: nothing else on this screen looks like a timestamp.
 
           Held apart rather than stacked, because they answer two different questions and a reader
           opening a window an hour after the fact is asking the second one. They wrap together
@@ -45,7 +46,6 @@ export function MessageDetail({ entry }: { entry: LogEntry }) {
           two never read as one message. */}
       <div className={styles.head} data-testid="summary">
         <div className={styles.line}>
-          {entry.topic && <span className={styles.label}>topic</span>}
           {entry.topic && (
             <div className={styles.topic} data-copy style={rule ? { color: rule.colour } : undefined}>
               <Topic topic={entry.topic} />
@@ -216,105 +216,113 @@ function Payload({ entry }: { entry: LogEntry }) {
     <>
       {read.why && <p className={styles.fault}>{read.why}</p>}
 
-      <div className={styles.controls}>
-        {/* Marks rather than the two words they were. 'expand all' and 'collapse all' come to
-            twenty-two characters standing over a document, which reads as a caption on it rather
-            than as a pair of controls beside it — and the two are a strict pair, so a pair of
-            marks says what they are to each other in a way two phrases cannot. */}
-        {folding && (
-          <>
-            <button
-              type="button"
-              className={styles.mark}
-              aria-label="Open every branch"
-              title="Open every branch"
-              onClick={() => setShut(new Set())}
-            >
-              <Unfold />
-            </button>
-            <button
-              type="button"
-              className={styles.mark}
-              aria-label="Fold every branch"
-              title="Fold every branch"
-              onClick={() => setShut(new Set(branches(read.tree!)))}
-            >
-              <Fold />
-            </button>
-          </>
-        )}
-
-        {read.other && (
-          <button
-            type="button"
-            className={styles.toggle}
-            aria-pressed={!raw}
-            title={raw ? (read.tree ? 'Show it as a document' : 'Show it formatted') : 'Show exactly what arrived'}
-            onClick={() => setRaw(!raw)}
-          >
-            json
-          </button>
-        )}
-
-        {/* The far corner, and a mark rather than a word: it is the one control here a reader
-            reaches for without reading, and 'copy' spelled out beside three other lowercase
-            words would be the fourth of a kind rather than the thing in the corner.
-
-            It hands over exactly what arrived, never what is on screen. A folded branch on screen
-            is a summary, and a summary pasted into a bug report is a message that never existed. */}
-        <button
-          type="button"
-          className={styles.copy}
-          data-testid="copy"
-          aria-label={{ no: 'Copy the message', yes: 'Copied', failed: 'Copy failed' }[copied]}
-          title={{ no: 'Copy the message', yes: 'Copied', failed: 'Copy failed' }[copied]}
-          onClick={copy}
-        >
-          {copied === 'yes' ? <Check /> : <Copy />}
-        </button>
-      </div>
-
-      {/* The index is a sibling of the payload and never a child of it, which is not a tidiness
-          preference: Ctrl+A takes the contents of the first [data-message] in the window, and the
-          copy mark hands over the bytes that arrived. A column of key names inside that box would
-          be pasted into a bug report as part of the message. Divs rather than a list, for the
-          other half of the same reason — this console makes p, li, dt and dd selectable by name,
-          so an index built out of them could be swept into a drag. */}
       <div className={styles.document} data-index={listed ? '' : undefined}>
         {listed && <Index top={index} onGo={goTo} />}
 
-        {/* A div rather than a p: a double-click inside a paragraph is claimed by the console's
-            own prose selection, and this is a payload somebody may well want to take a word out
-            of.
+        {/* The box that scrolls, and it holds the controls as well as the message rather than
+            being the message. They float into its top corner and the document flows around them,
+            so what was a row of its own standing over the payload is now the right-hand end of
+            the payload's first line — and on a JSON body that line is `{`.
 
-            data-message is what Ctrl+A reaches for. The window catches the key and selects this,
-            rather than letting the browser select the console behind it. */}
-        <div
-          ref={pane}
-          className={styles.payload}
-          data-mode={folding ? 'tree' : 'text'}
-          data-testid="window-body"
-          data-message
-          data-copy
-        >
-          {folding ? (
-            <JsonTree
-              value={read.tree!}
-              shut={shut}
-              onFold={(path) =>
-                setShut((closed) => {
-                  const next = new Set(closed);
-                  if (!next.delete(path)) next.add(path);
+            Four marks over a document read as a caption on it; the same four in the corner read
+            as what they are, which is a thing you do to what is beside them. The scroll moves
+            here rather than on the payload because the index beside it must stand still, and the
+            ref goes with it: 'go to a branch' scrolls the box that scrolls.
 
-                  return next;
-                })
-              }
-            />
-          ) : raw ? (
-            entry.body
-          ) : (
-            read.text
-          )}
+            [data-message] is untouched, and that is load-bearing: Ctrl+A and the copy mark both
+            reach for it, and a control swept into that box would be pasted into a bug report as
+            part of a message that never carried it. */}
+        <div ref={pane} className={styles.scroller}>
+          <div className={styles.controls}>
+            {/* Marks rather than the two words they were. 'expand all' and 'collapse all' come to
+                twenty-two characters standing over a document, which reads as a caption on it rather
+                than as a pair of controls beside it — and the two are a strict pair, so a pair of
+                marks says what they are to each other in a way two phrases cannot. */}
+            {folding && (
+              <>
+                <button
+                  type="button"
+                  className={styles.mark}
+                  aria-label="Open every branch"
+                  title="Open every branch"
+                  onClick={() => setShut(new Set())}
+                >
+                  <Unfold />
+                </button>
+                <button
+                  type="button"
+                  className={styles.mark}
+                  aria-label="Fold every branch"
+                  title="Fold every branch"
+                  onClick={() => setShut(new Set(branches(read.tree!)))}
+                >
+                  <Fold />
+                </button>
+              </>
+            )}
+
+            {read.other && (
+              <button
+                type="button"
+                className={styles.toggle}
+                aria-pressed={!raw}
+                title={raw ? (read.tree ? 'Show it as a document' : 'Show it formatted') : 'Show exactly what arrived'}
+                onClick={() => setRaw(!raw)}
+              >
+                json
+              </button>
+            )}
+
+            {/* The far corner, and a mark rather than a word: it is the one control here a reader
+                reaches for without reading, and 'copy' spelled out beside three other lowercase
+                words would be the fourth of a kind rather than the thing in the corner.
+
+                It hands over exactly what arrived, never what is on screen. A folded branch on screen
+                is a summary, and a summary pasted into a bug report is a message that never existed. */}
+            <button
+              type="button"
+              className={styles.copy}
+              data-testid="copy"
+              aria-label={{ no: 'Copy the message', yes: 'Copied', failed: 'Copy failed' }[copied]}
+              title={{ no: 'Copy the message', yes: 'Copied', failed: 'Copy failed' }[copied]}
+              onClick={copy}
+            >
+              {copied === 'yes' ? <Check /> : <Copy />}
+            </button>
+          </div>
+
+          {/* A div rather than a p: a double-click inside a paragraph is claimed by the console's
+              own prose selection, and this is a payload somebody may well want to take a word out
+              of.
+
+              data-message is what Ctrl+A reaches for. The window catches the key and selects this,
+              rather than letting the browser select the console behind it. */}
+          <div
+            className={styles.payload}
+            data-mode={folding ? 'tree' : 'text'}
+            data-testid="window-body"
+            data-message
+            data-copy
+          >
+            {folding ? (
+              <JsonTree
+                value={read.tree!}
+                shut={shut}
+                onFold={(path) =>
+                  setShut((closed) => {
+                    const next = new Set(closed);
+                    if (!next.delete(path)) next.add(path);
+
+                    return next;
+                  })
+                }
+              />
+            ) : raw ? (
+              entry.body
+            ) : (
+              read.text
+            )}
+          </div>
         </div>
       </div>
     </>
@@ -389,6 +397,17 @@ function unsaid(entry: LogEntry): string[] {
   // characters of dump beside a chip stamped '1.0kb' is owed the arithmetic rather than left to
   // do it. This is still the only place in the console that reconciles the two.
   if (entry.mode === 'hex') said.push(`${entry.body?.length ?? 0} characters of hex`);
+
+  // 'not retained' is the chip beside this, and it is a fact about this delivery rather than
+  // about the publish behind it: a broker clears the retain bit on every copy it forwards to a
+  // subscription that was already up, and sets it only on the copy it sends *because* a
+  // subscription has just been made. So a reader who ticked Retain and is reading 'not retained'
+  // is reading something true about the copy in front of them and false about what they sent —
+  // which is a reasonable way to conclude the console had ignored them, and did.
+  //
+  // Only where the chip says 'not retained': a retained arrival's chip is already the whole
+  // answer, and this line exists for what the chips cannot say.
+  if (entry.retain === false) said.push('as delivered — a live copy always has retain cleared');
 
   return said;
 }

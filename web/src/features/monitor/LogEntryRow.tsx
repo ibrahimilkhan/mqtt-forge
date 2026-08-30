@@ -2,7 +2,7 @@ import { memo, useState, type CSSProperties } from 'react';
 import { Expand } from '../brand/icons';
 import type { ColourRule } from '../../lib/topicColour';
 import { useComposeStore } from '../../stores/composeStore';
-import type { LogEntry } from '../../stores/logStore';
+import { stampMeaning, type LogEntry } from '../../stores/logStore';
 import { useWindows } from './useWindows';
 import styles from './WireLog.module.css';
 
@@ -64,12 +64,19 @@ export const LogEntryRow = memo(function LogEntryRow({
   const reload =
     entry.topic && entry.kind === 'recv'
       ? () =>
+          // The whole message: where, what, and how it was sent.
+          //
+          // The two flags are worth carrying again. They were facts about the delivery rather
+          // than about the publish — a subscription caps the QoS of every copy under it and a
+          // broker clears the retain bit on a live forward — but this console now listens at the
+          // ceiling and asks for retain as published, so what a row shows is what the publisher
+          // chose. Sending it again means sending it as it was sent.
           load({
             topic: entry.topic!,
             payload: entry.body,
             mode: entry.mode,
-            qos: entry.qos ?? 0,
-            retain: entry.retain ?? false,
+            qos: entry.qos,
+            retain: entry.retain,
           })
       : undefined;
 
@@ -114,7 +121,14 @@ export const LogEntryRow = memo(function LogEntryRow({
         {entry.stamps && (
           <span className={styles.stamps}>
             {entry.stamps.map((stamp) => (
-              <span key={stamp} className={styles.stamp} data-stamp={stamp}>
+              <span
+                key={stamp}
+                className={styles.stamp}
+                data-stamp={stamp}
+                // Two of these are facts about the delivery and are read as verdicts on the
+                // publish that caused it. The words are the chip's; the meaning is the store's.
+                title={stampMeaning(stamp)}
+              >
                 {stamp}
               </span>
             ))}

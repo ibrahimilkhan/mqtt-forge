@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer } from 'react';
+import { Fold, Unfold } from '../brand/icons';
 import { useRuleLookup } from '../../lib/useRuleLookup';
 import { matchesFilter, treeFilter } from '../../lib/topicMatch';
 import {
@@ -143,12 +144,19 @@ export function TopicTree({ broker }: { broker?: string }) {
       const topic = node.children.size > 0 ? treeFilter(path) : path;
 
       select({ label: path, filter: treeFilter(path), topic });
+      // A node that holds a message of its own hands over the whole of it — the body, and the QoS
+      // and retain flag it was sent with — so that publishing it again publishes the same message.
+      // A node that holds none hands over its path and nothing else: its flags are the placeholders
+      // `leaf()` starts every node with, and writing those in would put a reader's ticked QoS 2
+      // back to nought on the way past, which is exactly what it used to do.
+      const held = node.latestMode !== null;
+
       load({
         topic: path,
         payload: node.latestPayload ?? undefined,
         mode: node.latestMode ?? undefined,
-        qos: node.latestQos,
-        retain: node.latestRetain,
+        qos: held ? node.latestQos : undefined,
+        retain: held ? node.latestRetain : undefined,
       });
     },
     [select, load],
@@ -187,6 +195,12 @@ export function TopicTree({ broker }: { broker?: string }) {
    * the whole-tree answer buries the thing they were looking at in everything they were not —
    * and the pair sits on the picked row itself, which is where a reader reads them as being about
    * it. With nothing picked there is nothing to scope to, and they mean the tree.
+   *
+   * The same two marks the message window puts over a folded document, because it is the same
+   * gesture on the same kind of thing: everything out, everything in. They were `≡` and `=`,
+   * which are two typographic characters that differ by one stroke and mean neither of those
+   * things — a reader had to learn them here and could not carry what they learnt anywhere. The
+   * chevron pair is one idea drawn once, and this console now draws it in both places it happens.
    */
   const treeActions = useMemo(() => {
     const of = selectedPath ? ` ${selectedPath}` : ' all';
@@ -199,7 +213,7 @@ export function TopicTree({ broker }: { broker?: string }) {
           aria-label={`Expand${of}`}
           title={selectedPath ? `Expand every branch under ${selectedPath}` : 'Expand every branch'}
         >
-          ≡
+          <Unfold />
         </button>
         <button
           type="button"
@@ -209,13 +223,13 @@ export function TopicTree({ broker }: { broker?: string }) {
             selectedPath ? `Collapse every branch under ${selectedPath}` : 'Collapse every branch'
           }
         >
-          =
+          <Fold />
         </button>
       </div>
     );
   }, [setAllOpen, selectedPath]);
 
-  // The broker's row keeps the two tree glyphs at its end whether it is picked or not, and takes
+  // The broker's row keeps the two tree marks at its end whether it is picked or not, and takes
   // the pause in front of them when it is: picking it focuses the log on everything, which is a
   // run like any other and can be held like one.
   const brokerActions = useMemo(

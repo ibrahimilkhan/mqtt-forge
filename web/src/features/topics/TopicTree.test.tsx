@@ -397,7 +397,9 @@ describe('TopicTree', () => {
     expect(useSelectionStore.getState().selected).toEqual({ label: 'sensors', filter: 'sensors/#', topic: 'sensors/#' });
   });
 
-  it('loads the clicked topic into publish, settings and all', async () => {
+  // A leaf holds a message, so it hands over the whole of it: the body, and the QoS and retain
+  // flag it was sent with. Publishing it again publishes the same message.
+  it('loads the clicked topic into publish, with the message it holds', async () => {
     const retained: DecodedMessage = { ...message('sensors/temp', '21.5'), qos: 2, retain: true };
     useTopicTreeStore.getState().apply([retained]);
     render(<TopicTree broker="broker:1883" />);
@@ -412,6 +414,20 @@ describe('TopicTree', () => {
       qos: 2,
       retain: true,
     });
+  });
+
+  // A branch holds no message of its own — its flags are the placeholders every node starts with,
+  // and writing those into the form is a reader's ticked QoS 2 going back to nought on the way
+  // past, which is the fault this had.
+  it('sends a branch topic to publish with no answer about how to send it', async () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    await userEvent.click(screen.getByText('sensors'));
+
+    expect(useComposeStore.getState().draft).toMatchObject({ topic: 'sensors' });
+    expect(useComposeStore.getState().draft?.qos).toBeUndefined();
+    expect(useComposeStore.getState().draft?.retain).toBeUndefined();
   });
 
   // A branch that has never carried a message of its own has no payload to offer.
@@ -510,9 +526,11 @@ describe('TopicTree', () => {
     expect(screen.getAllByRole('button', { name: 'Expand all' })).toHaveLength(1);
   });
 
-  // Glyphs on screen, words everywhere a name is asked for: the accessible name and the tooltip
-  // both spell them out, so neither a screen reader nor a hovering pointer is left guessing.
-  it('names the expand and collapse controls in words even though it draws glyphs', () => {
+  // Marks on screen, words everywhere a name is asked for: the accessible name and the tooltip
+  // both spell them out, so neither a screen reader nor a hovering pointer is left guessing. The
+  // marks are the pair the message window draws over a folded document — the same gesture on the
+  // same kind of thing, so it is the same drawing.
+  it('names the expand and collapse controls in words even though it draws marks', () => {
     useTopicTreeStore.getState().apply([message('a/x')]);
     render(<TopicTree broker="broker:1883" />);
 
@@ -523,6 +541,10 @@ describe('TopicTree', () => {
     expect(collapse).toHaveAttribute('title', 'Collapse every branch');
     expect(expand).not.toHaveTextContent(/expand/i);
     expect(collapse).not.toHaveTextContent(/collapse/i);
+    // Drawn rather than typed: the two characters that stood here differed by one stroke and
+    // meant neither gesture, and a reader could not carry what they learnt anywhere else.
+    expect(expand.querySelector('svg')).toBeInTheDocument();
+    expect(collapse.querySelector('svg')).toBeInTheDocument();
   });
 
   // Already safe: synchronous store writes, no network call, so no guard needed here.
