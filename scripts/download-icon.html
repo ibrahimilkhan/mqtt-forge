@@ -6,22 +6,30 @@
   web/src/features/brand/icons.tsx — cut to a PNG, because GitHub strips inline SVG out of a
   markdown file and there is no other way to put a drawing in a heading.
 
-  In --muted rather than the console's blue: this sits on a white README and a near-black one,
-  and a mark that needed a second cut for the second theme would be two files for a decoration.
-  The word beside it carries the meaning, so its alt text is empty and it is the one drawing here
-  that a reader loses nothing by not seeing.
+  In --muted rather than the console's blue: this sits on a white README and a near-black one, and
+  a mark that needed a second cut for the second theme would be two files for a decoration. The
+  word beside it carries the meaning, so its alt text is empty.
+
+  THE VIEWBOX IS THE ALIGNMENT, and it is the whole reason this file is not a plain 24-square.
+  `align="middle"` is the only lever GitHub leaves — it strips inline style from a README — and
+  what it does is centre the image on the text's x-height. The eye reads a heading off its cap
+  height, so a mark centred that way sits visibly low, which is what it did. There is nowhere to
+  put the offset except inside the drawing: the box is cropped to the glyph's own ink and then
+  given 30% of that height back as empty space underneath, so the glyph rides up its own box by
+  half of it. Measured against GitHub's h2 at height="24", the arrow's top lands on the cap and
+  the tray's bottom on the baseline.
 
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu \
       --default-background-color=00000000 --screenshot=.github/assets/download.png \
-      --window-size=96,96 --force-device-scale-factor=2 scripts/download-icon.html
+      --window-size=178,238 --force-device-scale-factor=2 scripts/download-icon.html
 -->
 <html><head><meta charset="utf-8"><style>
 html, body { margin: 0; padding: 0; background: transparent; }
-body { width: 96px; height: 96px; }
-svg { width: 96px; height: 96px; display: block; }
+body { width: 178px; height: 238px; }
+svg { width: 178px; height: 238px; display: block; }
 </style></head>
 <body>
-  <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none"
+  <svg viewBox="3.1 2.6 17.8 23.79" xmlns="http://www.w3.org/2000/svg" fill="none"
        stroke="#67728a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
     <path d="M12 3.5v11" />
     <path d="M7.5 10 12 14.5 16.5 10" />

@@ -26,7 +26,7 @@ Open source, small and fast. It runs on macOS, Windows, Linux and Docker.
 - **Filters, QR, settings** — subscribe to a list of filters, open the session on your phone, set
   the fonts.
 
-## <img src=".github/assets/download.png" alt="" height="20" align="center"> Download
+## <img src=".github/assets/download.png" alt="" height="24" align="middle"> Download
 
 ### Desktop
 
