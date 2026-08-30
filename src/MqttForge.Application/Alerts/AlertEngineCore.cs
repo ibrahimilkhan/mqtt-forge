@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using System.Globalization;
 using MqttForge.Application.Alerts.Conditions;
 using MqttForge.Domain;
@@ -63,6 +64,19 @@ public sealed class AlertEngineCore
         _evaluator = new ConditionEvaluator(CompiledPatterns.For(rules));
 
         // The pair a wildcard could never open: a filter with no wildcard is the topic's own name.
+        // A save is the user's whole statement of what the rule set now is, so every rule gets a
+        // clean slate. A fault kept across a save leaves the rule dead until a restart — and the
+        // panel's fault row exists to send the user to the editor, which would then be the one
+        // thing that could not fix it. Faulting again costs a single throw, and says so again
+        // straight away.
+        _faults.Clear();
+
+        // The same fresh start for the run of timeouts, which is the other half of the same
+        // sentence. This is the only copy of this reset in the plan: when final task 15 rewrites
+        // SetRules it moves into the loop over the pairs that survived reconciliation, which is
+        // the same set of pairs by then — one line, in one place, at every point in the plan.
+        foreach (var state in _pairs.Values) state.PatternTimeouts = 0;
+
         Arm(rules, now);
 
         // Last, so it sees the rule set the pairs were just reconciled against.
@@ -86,6 +100,11 @@ public sealed class AlertEngineCore
         {
             if (!rule.Enabled) continue;
             if (!TopicFilterMatch.Matches(rule.Filter, message.Topic)) continue;
+
+            // Set aside for this session. A condition that threw once will throw on the next
+            // thousand messages, and a pattern that has timed out ten times running will time out
+            // on the eleventh — at fifty milliseconds of a single-threaded engine each time.
+            if (IsFaulted(rule.Id)) continue;
 
 // Track is the only door a pair comes into being through, and it is allowed to say
             // no. A refused topic is not evaluated at all — not cheaply, not partly. It is not a
@@ -296,7 +315,7 @@ public sealed class AlertEngineCore
                            in EvalContext context, DateTimeOffset now, List<Alert> raised)
     {
         var edge = PendingFor(rule, state);
-        var verdict = _evaluator.Evaluate(edge.Condition, context);
+var verdict = EvaluateGuarded(rule, state, edge.Condition, context);
 
         if (verdict is Verdict.Skipped)
         {
@@ -401,6 +420,11 @@ public sealed class AlertEngineCore
             // dictionary's question. _rules is the file's order and answers the panel's.
             if (!_byId.TryGetValue(key.RuleId, out var rule) || !rule.Enabled) continue;
 
+        // Set aside for this session. A condition that threw once will throw on the next
+        // thousand messages, and a pattern that has timed out ten times running will time out
+        // on the eleventh — at fifty milliseconds of a single-threaded engine each time.
+        if (IsFaulted(rule.Id)) continue;
+
             // While the link is down a tick brings no news, so nothing is judged and nothing matures.
             // Without this, the instant the broker drops every silence rule in the set goes true
             // together and the user gets a hundred webhooks, all describing one event that is already
@@ -428,7 +452,7 @@ public sealed class AlertEngineCore
     private void JudgeOnTick(AlertRule rule, RuleState state, DateTimeOffset now)
     {
         var edge = PendingFor(rule, state);
-        var verdict = _evaluator.Evaluate(edge.Condition, Blank(state, now));
+var verdict = EvaluateGuarded(rule, state, edge.Condition, Blank(state, now));
 
         // Not counted as a skip. The Skipped counter is a count of messages the rule could not read,
         // and the panel would be telling the user something untrue if a quiet second went into it.
@@ -683,8 +707,8 @@ public sealed class AlertEngineCore
                 tally?.LastFiredAt,
                 // Faulted has no writer until the fault-containment task; a rule that has not
                 // thrown reports false, which is every rule until then.
-                Faulted: false,
-                FaultReason: null));
+Faulted: _faults.ContainsKey(rule.Id),
+                FaultReason: _faults.GetValueOrDefault(rule.Id)));
 
             if (tally is { Refused.Count: > 0 })
                 capped.Add(new CappedRule(rule.Id, tally.Refused.Count));
@@ -894,5 +918,79 @@ public sealed class AlertEngineCore
             _hashes.Clear();
             foreach (var rule in rules)
                 _hashes[rule.Id] = ConfigHash.Of(rule);
+        }
+
+        // ── Fault containment ────────────────────────────────────────────────────────────────────
+        //
+        // Rule id → why that rule stopped being evaluated this session. Empty on a healthy engine,
+        // so the ordinary path pays one dictionary lookup per (rule, message) and nothing else.
+        //
+        // This is the one place where SignalRMessageNotifier's shape is deliberately not copied. Its
+        // pump (SignalRMessageNotifier.cs:71-93) wraps the whole loop in a single catch for
+        // OperationCanceledException and nothing else, and DependencyInjection.cs:20 registers it
+        // with AddHostedService. Nothing in this repository sets BackgroundServiceExceptionBehavior,
+        // so the host default stands, and that default is StopHost: one exception out of that
+        // ExecuteAsync takes the whole application down. There it is nearly harmless — everything
+        // inside that loop is ours. Here it would not be. This loop runs a regular expression the
+        // user typed into a form, walks a JSON document a stranger's broker sent, and ends in a
+        // publish that throws NotConnectedException the instant the link drops. Copying that shape
+        // would mean the console dies because somebody saved a bad rule.
+        //
+        // So the exception is caught here, named here, and the rule carrying it is set aside. The
+        // pump above stays exactly the shape it borrowed, because nothing reaches it.
+        private readonly Dictionary<string, string> _faults = new(StringComparer.Ordinal);
+
+        // The reason is drawn on the panel in a row beside the rule's name. An exception message
+        // that quoted a whole payload back would push the rule's name off the line, and the first
+        // sentence is always the useful one.
+        private const int MaxFaultReason = 200;
+
+        private bool IsFaulted(string ruleId) => _faults.ContainsKey(ruleId);
+
+        private void Fault(AlertRule rule, string reason) =>
+            _faults[rule.Id] = reason.Length <= MaxFaultReason ? reason : reason[..MaxFaultReason];
+
+        /// <summary>
+        /// Evaluates one condition for one pair and never lets anything past. Returns Skipped for
+        /// everything it swallows: a condition that could not be evaluated is not false, and the
+        /// three-valued Verdict exists so that this distinction survives the journey back.
+        /// </summary>
+        private Verdict EvaluateGuarded(
+            AlertRule rule, RuleState state, AlertCondition condition, in EvalContext context)
+        {
+            try
+            {
+                var verdict = _evaluator.Evaluate(condition, context);
+
+                // Any answer at all, from any condition on this pair, ends the run. The counter is
+                // consecutive timeouts, and a pattern that has just answered inside its budget is by
+                // definition not the pattern that is wedging the engine. Resetting on every success
+                // rather than only on a pattern's success costs nothing — only a pattern can raise
+                // the exception that increments it — and keeps this the one line that has to be got
+                // right.
+                state.PatternTimeouts = 0;
+                return verdict;
+            }
+            catch (RegexMatchTimeoutException)
+            {
+                // Not a fault, a skip: the pattern was cut off at 50 ms, so nobody found out whether
+                // it matched. This is the catch the evaluator no longer has, and the reason it no
+                // longer has it — up there the timeout could only have become Skipped, which reads
+                // as "the field was missing"; down here it is a countable event on a named pair.
+                // The caller's own accounting puts the return value in the skipped bucket.
+                if (++state.PatternTimeouts >= _options.PatternTimeoutsBeforeDisable)
+                    Fault(rule, $"a pattern timed out {state.PatternTimeouts} times in a row " +
+                                $"on '{state.Topic}'");
+
+                return Verdict.Skipped;
+            }
+            catch (Exception ex)
+            {
+                // Deliberately every exception. Narrowing this to the ones thought of today is how
+                // the eleventh kind reaches the pump and StopHost, and the whole point of the field
+                // above is that no exception from a rule's own evaluation may leave this method.
+                Fault(rule, $"{ex.GetType().Name}: {ex.Message}");
+                return Verdict.Skipped;
+            }
         }
 }
