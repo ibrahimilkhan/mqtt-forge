@@ -49,3 +49,14 @@ public sealed class RulesNotSavedException : MqttOperationException
     public RulesNotSavedException(string message, Exception? inner = null)
         : base(message, inner) { }
 }
+
+// The alert rules could not be written down. Not RulesNotSavedException: that one is mapped to
+// the words "Could not save the colour rules", and a user who was editing an alert would be told
+// about a panel they never opened. Same failure, different sentence, so a different type — and
+// because this one is sealed and separate rather than derived, the switch in MqttExceptionHandler
+// has no ordering trap either.
+public sealed class AlertRulesNotSavedException : MqttOperationException
+{
+    public AlertRulesNotSavedException(string message, Exception? inner = null)
+        : base(message, inner) { }
+}
