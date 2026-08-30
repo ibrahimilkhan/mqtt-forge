@@ -76,5 +76,59 @@ public class TlsCertificateInspectorTests
         Assert.Null(inspector.Problem);
     }
 
+    /// <summary>
+    /// The fact that separates a broker refusing our client certificate from a port that does not
+    /// speak TLS at all.
+    /// </summary>
+    // Both arrive as a bare IOException on Linux, and nothing in the exception tells them apart.
+    // How far the handshake got does: a broker that presented a certificate speaks TLS, whatever
+    // it went on to do about ours.
+    [Fact]
+    public void Nothing_is_answered_until_a_certificate_has_been_seen()
+    {
+        var inspector = new TlsCertificateInspector();
+
+        Assert.False(inspector.Answered);
+
+        inspector.Validate(SslPolicyErrors.None, []);
+
+        Assert.True(inspector.Answered);
+    }
+
+    // A certificate we refused is still a certificate we were shown.
+    [Fact]
+    public void A_refused_certificate_was_answered_all_the_same()
+    {
+        var inspector = new TlsCertificateInspector();
+
+        inspector.Validate(SslPolicyErrors.RemoteCertificateNameMismatch, []);
+
+        Assert.True(inspector.Answered);
+    }
+
+    // And so is one the reader told us to accept anyway.
+    [Fact]
+    public void An_overlooked_certificate_was_answered_too()
+    {
+        var inspector = new TlsCertificateInspector();
+
+        inspector.Overlook(SslPolicyErrors.RemoteCertificateChainErrors, []);
+
+        Assert.True(inspector.Answered);
+    }
+
+    // One inspector serves every attempt on the ladder, so what the last one saw must not be
+    // read as what this one is seeing.
+    [Fact]
+    public void A_reset_forgets_that_anything_answered()
+    {
+        var inspector = new TlsCertificateInspector();
+
+        inspector.Validate(SslPolicyErrors.None, []);
+        inspector.Reset();
+
+        Assert.False(inspector.Answered);
+    }
+
     private static X509ChainStatus Status(X509ChainStatusFlags flag) => new() { Status = flag };
 }

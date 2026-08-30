@@ -18,6 +18,16 @@ public sealed class TlsCertificateInspector
     public BrokerFailureReason? Problem { get; private set; }
 
     /// <summary>
+    /// Whether the broker got as far as presenting a certificate.
+    /// </summary>
+    /// <remarks>
+    /// Proof that whatever is on that port speaks TLS, which is a different question from whether
+    /// the handshake then succeeded — and the only way to tell the two failures apart on a
+    /// platform that words them the same. See the manager's Explain.
+    /// </remarks>
+    public bool Answered { get; private set; }
+
+    /// <summary>
     /// What was wrong with a certificate we accepted anyway, because the reader ticked the box
     /// that says to. A connection that only worked for that reason should be able to say so.
     /// </summary>
@@ -27,6 +37,7 @@ public sealed class TlsCertificateInspector
     {
         Problem = null;
         Overlooked = null;
+        Answered = false;
     }
 
     public bool Validate(SslPolicyErrors errors, X509ChainStatus[] chainStatus) =>
@@ -38,6 +49,10 @@ public sealed class TlsCertificateInspector
         X509Certificate? certificate,
         X509Certificate2Collection? extraRoots)
     {
+        // Set before anything is decided, and never unset: whether we go on to accept or refuse
+        // the certificate, being asked about one at all is the fact this records.
+        Answered = true;
+
         if (errors == SslPolicyErrors.None)
         {
             Problem = null;
@@ -67,6 +82,7 @@ public sealed class TlsCertificateInspector
     // tell apart from a certificate we objected to.
     public void Overlook(SslPolicyErrors errors, X509ChainStatus[] chainStatus)
     {
+        Answered = true;
         Problem = null;
         Overlooked = Describe(errors, chainStatus);
     }

@@ -284,6 +284,18 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
     {
         var reason = BrokerFailureClassifier.Classify(exception, settings.UseTls, settings.Transport);
 
+        // A handshake the broker answered with a certificate cannot be a port that does not speak
+        // TLS, whatever shape the failure arrived in.
+        //
+        // The classifier reads a bare IOException over TLS as a plaintext listener closing on a
+        // hello, which is what it is on macOS. On Linux the same exception is what OpenSSL makes
+        // of a broker ending the handshake over our client certificate — so a Docker user asking
+        // for mutual TLS was told the broker does not accept encrypted connections, and went and
+        // changed the one setting that was already right. Nothing in the exception separates the
+        // two; how far the handshake got does, and the inspector was standing inside it.
+        if (reason == BrokerFailureReason.TlsNotOffered && _tls.Answered)
+            reason = BrokerFailureReason.TlsFailed;
+
         if (reason != BrokerFailureReason.TlsFailed) return reason;
 
         // Something was wrong with the broker's certificate, and the inspector knows which rule
