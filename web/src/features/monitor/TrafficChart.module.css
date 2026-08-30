@@ -91,6 +91,27 @@
    four. */
 .fields { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
 
+/* A body that nests its numbers gets the line to itself, and keeps it.
+
+   Its chip row is a thing that changes as it is used — six segments, then two, then five, as the
+   reader walks down — and while it shared a line with the range and the view, every one of those
+   steps slid them along and shunted the plot up or down under the hand that was stepping. Its own
+   row, one line high whatever it is holding, and nothing below it moves again.
+
+   A body whose numbers are flat has a row that never changes, so it keeps the line it has always
+   shared: the fix is for the case that has the problem, and costs the other case nothing.
+
+   Scrolled rather than wrapped, for the same reason — a second line of chips is the plot moving.
+   The bar itself is hidden because on the platforms that reserve room for one, its appearing is
+   the very shift this rule exists to stop. */
+.fields[data-deep] {
+  flex: 1 0 100%;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.fields[data-deep]::-webkit-scrollbar { display: none; }
+
 /* What range the plot is drawn in — the left-hand group, beside the fields it applies to. */
 .ranges {
   display: flex;
@@ -120,6 +141,38 @@
   border-left: 1px solid var(--rule);
 }
 
+/* A rule rather than a gap, the same answer the ranges group gives one group over: what stands
+   on one side of it is not the same kind of thing as what stands on the other. The way out of a
+   group is not one of the things in it, and the control that puts the whole row away is not a
+   field at all. */
+.split {
+  flex: none;
+  align-self: stretch;
+  width: 1px;
+  margin: 3px 0;
+  background: var(--rule);
+}
+/* The far end, so what it separates cannot be read as the last of the list. */
+.split[data-end] { margin-left: auto; }
+
+/* The field being charted, while the chips that chose it are away. A box like the pressed chip it
+   replaces, because that is what it is saying — this one, of all of them — but not a control:
+   the way back is the mark beside it, and two controls for one gesture is one of them being
+   guessed at. */
+.chosen {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  border-radius: var(--r-control);
+  padding: 2px 6px;
+  min-height: 24px;
+}
+
 /* Quiet until it is either the one in force or the one under the pointer. A pressed chip wears
    the ink rather than a fill: the pane has one fill already, and it belongs to a hovered row. */
 .chip {
@@ -146,6 +199,16 @@
 .chip:hover { color: var(--ink); border-color: var(--rule); }
 .chip:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 .chip[aria-pressed="true"] { color: var(--ink); border-color: var(--ink); }
+
+/* A group of fields rather than one of them, and the reader can see which is which without
+   reading either: a group is a box at rest, where a field is a bare word until it is reached for.
+   That is the whole of the hierarchy said in the one place a glance lands — these open, those
+   draw. The arrows are not part of any name, so they are quieter than the names. */
+.chip[data-role='into'] { border-color: var(--rule); }
+.chip[data-role='into']:hover { color: var(--ink); border-color: var(--muted); }
+.chip[data-role='up'],
+.chip[data-role='aside'] { flex: none; }
+.mark { opacity: 0.55; padding: 0 3px; }
 
 /* The range, at the height it belongs to: high at the top of the plot, low at the bottom. Muted
    micro type, the same faint voice the stamps use — the line is what the eye should land on. */
