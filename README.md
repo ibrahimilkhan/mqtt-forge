@@ -1,6 +1,7 @@
-<img src=".github/assets/mark.png" alt="" width="72">
-
-# MQTTForge
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/lockup-dark.png">
+  <img src=".github/assets/lockup.png" alt="MQTTForge" width="300">
+</picture>
 
 [![Release](https://img.shields.io/github/v/release/ibrahimilkhan/mqtt-forge?color=0e4260&label=release)](https://github.com/ibrahimilkhan/mqtt-forge/releases/latest)
 [![Image](https://img.shields.io/badge/ghcr.io-mqtt--forge-0e4260?logo=docker&logoColor=white)](https://github.com/ibrahimilkhan/mqtt-forge/pkgs/container/mqtt-forge)
