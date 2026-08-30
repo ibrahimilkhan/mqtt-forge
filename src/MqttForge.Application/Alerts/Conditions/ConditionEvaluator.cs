@@ -35,7 +35,7 @@ public sealed class ConditionEvaluator
         // yet. Skipped rather than a throw, so a rule set carrying one is loadable now and the
         // rule is merely quiet rather than Faulted. Final task 10 replaces this arm with one that
         // measures the gap between context.Now and context.LastSeen.
-        SilenceCondition => Verdict.Skipped,
+        SilenceCondition c => Silence(c, context.Now, context.LastSeen),
 
         // Not a silent default. A condition type this build does not evaluate has to reach the
         // engine's per-pair catch, so the rule is marked Faulted and the panel names it — the
@@ -149,5 +149,19 @@ public sealed class ConditionEvaluator
 
         // An empty disjunction is false, as it is everywhere else.
         return skipped ? Verdict.Skipped : Verdict.False;
+    }
+
+    // The only condition whose truth is about time passing rather than about a message. A pair
+    // that has never been heard from and was never armed answers Skipped rather than True: with a
+    // wildcard filter the engine has no inventory of the topics that ought to exist, so it can
+    // only miss what it has met. An armed pair (a filter with no wildcard) carries the arming
+    // moment in LastSeen, which is what makes 'this device has never spoken' checkable at all.
+    private static Verdict Silence(SilenceCondition condition, DateTimeOffset now, DateTimeOffset? lastSeen)
+    {
+        if (lastSeen is not { } seen) return Verdict.Skipped;
+
+        // Inclusive, like every other deadline in this engine: 'quiet for 60s' is satisfied by
+        // exactly sixty seconds.
+        return now - seen >= TimeSpan.FromSeconds(condition.After) ? Verdict.True : Verdict.False;
     }
 }

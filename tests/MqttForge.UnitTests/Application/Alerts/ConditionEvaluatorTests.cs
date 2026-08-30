@@ -345,9 +345,21 @@ public class ConditionEvaluatorTests
     // Skipped rather than a throw so a rule set carrying one is loadable now and the rule is merely
     // quiet rather than Faulted. Final task 10 replaces both the arm and this test, with one that
     // measures the gap from LastSeen and one that keeps a never-heard-from pair Skipped.
-    [Fact]
-    public void Silence_is_not_answered_on_the_arrival_path()
-    {
-        Assert.Equal(Verdict.Skipped, NoPatterns.Evaluate(new SilenceCondition(300), Arrival("x", null)));
-    }
+
+        [Theory]
+        [InlineData(59, Verdict.False)]
+        [InlineData(60, Verdict.True)]
+        public void Silence_is_measured_from_when_the_topic_last_spoke(int seconds, Verdict expected)
+        {
+            var context = new EvalContext("plant/boiler/temp", null, null, Now,
+                LastSeen: Now.AddSeconds(-seconds), Window: null);
+
+            Assert.Equal(expected, NoPatterns.Evaluate(new SilenceCondition(60), context));
+        }
+
+        [Fact]
+        public void A_topic_that_has_never_been_heard_from_is_skipped_rather_than_called_silent()
+        {
+            Assert.Equal(Verdict.Skipped, NoPatterns.Evaluate(new SilenceCondition(60), Arrival("x", null)));
+        }
 }
