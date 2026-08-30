@@ -389,7 +389,7 @@ ${inner}
   );
 
   writeFileSync(`${OUT}/console.html`, console_(client, { panel: null }));
-  writeFileSync(`${OUT}/console-colours.html`, console_(client, { panel: 'colours' }));
+  writeFileSync(`${OUT}/console-colours.html`, console_(client, { panel: 'colours', colours: true }));
   // The panel the console opens on, which is the one page that shows the broker form whole.
   writeFileSync(`${OUT}/console-broker.html`, console_(client, { panel: 'broker' }));
   // The same console with the chart thrown open, which is the state a static page can show and
@@ -718,7 +718,7 @@ function detail() {
  * a fake hub satisfies the bridge. What this writes is the real layout with real components in
  * it, at whatever size the window opens — which is what a screenshot of the console is.
  */
-function console_(client, { zoomed = false, pinned = false, opened = false, panel = 'broker', rail = 'open' } = {}) {
+function console_(client, { zoomed = false, pinned = false, opened = false, panel = 'broker', rail = 'open', colours = false } = {}) {
   // Primed rather than fetched. Rendering here is one synchronous pass, so a query that has to
   // go and ask would still be pending when the HTML is taken — and the page would show a console
   // that had not connected to anything.
@@ -734,10 +734,17 @@ function console_(client, { zoomed = false, pinned = false, opened = false, pane
       sessionPresent: false,
     },
   });
-  client.setQueryData(queryKeys.colourRules, [
-    { filter: 'sensors/+/temp', colour: '#8161b3' },
-    { filter: 'alerts/#', colour: '#b7514e' },
-  ]);
+  // Only on the page that is about them. Every other picture of this console is of the console,
+  // and a tree painted in three colours in a shot meant to show the tree is a shot about colour.
+  client.setQueryData(
+    queryKeys.colourRules,
+    colours
+      ? [
+          { filter: 'sensors/+/temp', colour: '#8161b3' },
+          { filter: 'alerts/#', colour: '#b7514e' },
+        ]
+      : [],
+  );
 
   useLogStore.getState().clear();
   useTopicTreeStore.getState().reset();
@@ -816,18 +823,148 @@ function console_(client, { zoomed = false, pinned = false, opened = false, pane
   // reason the panel above is: a static page cannot carry a click, and this is the only state of
   // the log that one makes.
   if (opened) {
+    // What a gateway actually sends when it comes up: seven things about itself, a hundred and
+    // thirty lines of them. Long enough that the window draws the index down its side, which is
+    // the state of this page worth having a picture of.
+    const gateway = {
+          "gateway": {
+                "id": "gw-forge-01",
+                "model": "ForgeLink 4200",
+                "firmware": "4.2.1-rc3",
+                "serial": "FL42-0007-2291",
+                "uptime": 918273,
+                "bootCount": 42,
+                "timezone": "Europe/Istanbul",
+                "reportedAt": "2026-08-30T00:41:12.250Z"
+          },
+          "network": {
+                "uplink": "ethernet",
+                "ip": "10.4.18.22",
+                "mac": "b8:27:eb:41:9c:07",
+                "gateway": "10.4.18.1",
+                "dns": [
+                      "10.4.18.1",
+                      "1.1.1.1"
+                ],
+                "fallback": {
+                      "kind": "lte",
+                      "apn": "internet",
+                      "signal": -91,
+                      "roaming": false
+                }
+          },
+          "broker": {
+                "host": "localhost",
+                "port": 1883,
+                "protocol": "mqtt5",
+                "tls": false,
+                "clientId": "gw-forge-01",
+                "keepAlive": 60,
+                "session": {
+                      "clean": false,
+                      "expiryInterval": 3600
+                },
+                "lastWill": {
+                      "topic": "devices/gateway/status",
+                      "payload": "offline",
+                      "qos": 1,
+                      "retain": true
+                }
+          },
+          "radios": [
+                {
+                      "id": "radio-0",
+                      "band": "2.4GHz",
+                      "channel": 11,
+                      "txPower": 14,
+                      "dbm": -42,
+                      "peers": 3,
+                      "errors": {
+                            "crc": 12,
+                            "timeout": 1,
+                            "dropped": 0
+                      }
+                },
+                {
+                      "id": "radio-1",
+                      "band": "868MHz",
+                      "channel": 12,
+                      "txPower": 20,
+                      "dbm": -43,
+                      "peers": 4,
+                      "errors": {
+                            "crc": 0,
+                            "timeout": 0,
+                            "dropped": 2
+                      }
+                }
+          ],
+          "sensors": [
+                {
+                      "topic": "sensors/room/temp",
+                      "kind": "temperature",
+                      "unit": "C",
+                      "value": 22.7,
+                      "qos": 0,
+                      "retain": false,
+                      "interval": 5
+                },
+                {
+                      "topic": "sensors/room/humidity",
+                      "kind": "humidity",
+                      "unit": "%",
+                      "value": 55.2,
+                      "qos": 0,
+                      "retain": false,
+                      "interval": 5
+                },
+                {
+                      "topic": "sensors/kiln/temp",
+                      "kind": "temperature",
+                      "unit": "C",
+                      "value": 918.4,
+                      "qos": 1,
+                      "retain": true,
+                      "interval": 1
+                },
+                {
+                      "topic": "sensors/garage/door",
+                      "kind": "contact",
+                      "unit": null,
+                      "value": "closed",
+                      "qos": 1,
+                      "retain": true,
+                      "interval": 0
+                }
+          ],
+          "counters": {
+                "published": 184392,
+                "delivered": 184388,
+                "dropped": 4,
+                "reconnects": 2,
+                "bytesOut": 41857320,
+                "bytesIn": 118204
+          },
+          "alerts": [
+                {
+                      "at": "2026-08-29T21:02:44Z",
+                      "level": "warn",
+                      "code": "RADIO_CRC",
+                      "text": "radio-0 crc errors above threshold"
+                },
+                {
+                      "at": "2026-08-30T00:12:09Z",
+                      "level": "error",
+                      "code": "BROKER_RESUB",
+                      "text": "subscription refused on sensors/kiln/#"
+                }
+          ]
+    };
     const configured = {
       topic: 'devices/gateway/config',
-      payload: JSON.stringify({
-        firmware: '4.2.1-rc3',
-        uptime: 918273,
-        radios: [
-          { id: 'radio-0', channel: 11, dbm: -42, peers: 3 },
-          { id: 'radio-1', channel: 12, dbm: -43, peers: 4 },
-        ],
-      }),
+      payload: JSON.stringify(gateway),
       mode: 'text',
-      size: 214,
+      size: 1720,
       qos: 1,
       retain: true,
       receivedAt: '2026-08-19T04:16:08.250Z',
@@ -840,7 +977,7 @@ function console_(client, { zoomed = false, pinned = false, opened = false, pane
           id: 'window-1',
           pane: { kind: 'message', entry },
           label: '04:16:08 devices/gateway/config',
-          box: { x: 250, y: 150, w: 470, h: 340 },
+          box: { x: 250, y: 130, w: 620, h: 430 },
           fixed: true,
         },
       ],
