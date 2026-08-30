@@ -62,6 +62,9 @@ public sealed class AlertEngineCore
         // the cheapest thing in here to get wrong.
         _evaluator = new ConditionEvaluator(CompiledPatterns.For(rules));
 
+        // The pair a wildcard could never open: a filter with no wildcard is the topic's own name.
+        Arm(rules, now);
+
         return EngineOutcome.Empty;
     }
 
@@ -107,30 +110,6 @@ public sealed class AlertEngineCore
         }
 
         return raised is null || raised.Count == 0 ? EngineOutcome.Empty : new EngineOutcome(raised, []);
-    }
-
-    // Every resolution in the engine happens here. 'connected' is not read on this path: a
-    // resolution is a decision arrival already made, and it should land whether or not the link
-    // came back. It is the silence clock and the maturing 'for' that stop while the link is
-    // down, because a broker that dropped is one event and not a hundred sensors going quiet.
-    public EngineOutcome OnTick(DateTimeOffset now, bool connected)
-    {
-        List<Alert>? raised = null;
-        List<Alert>? resolved = null;
-
-        foreach (var state in _pairs.Values)
-        {
-            // A rule that is gone or switched off is dealt with when the rule set changes, not
-            // here; this only skips it so a stale pair cannot be judged against a rule the
-            // engine no longer has.
-            if (!_byId.TryGetValue(state.RuleId, out var rule) || !rule.Enabled) continue;
-
-            // Both halves of the tick's story live in there now: a 'for' running out with no
-            // message to notice it, and a way out that has been standing long enough to take.
-            OnPairTick(rule, state, now, raised ??= [], resolved ??= []);
-        }
-
-        return Outcome(raised, resolved);
     }
 
     public void ClearHistory() => _history.Clear();
@@ -416,33 +395,6 @@ public sealed class AlertEngineCore
             raised.Add(Raise(rule, state, now, ReasonFor(rule, context), context.Number, Sample(message)));
     }
 
-    private void OnPairTick(AlertRule rule, RuleState state, DateTimeOffset now,
-                            List<Alert> raised, List<Alert> resolved)
-    {
-        if (state.Active is { } active)
-        {
-            if (state.TrueSince is null) return;
-
-            // Resolving is the tick's alone. A late ring is a missed breach and has to happen at the
-            // arrival; a late resolve is only a late resolve. Putting the decision here is what caps
-            // a flapping pair at one state change a second however fast it is judged — and the spec
-            // rejected a symmetric For on this edge for exactly that reason: the ceiling is already
-            // one a second, and a second mechanism would only be a second thing to explain.
-            var closed = active with { ResolvedAt = now, ResolvedBy = "clear" };
-            state.Active = null;
-            state.TrueSince = null;
-            state.CooldownUntil = now + Cooldown(rule);
-            Remember(closed);
-            resolved.Add(closed);
-            return;
-        }
-
-        if (state.TrueSince is null) return;
-        if (!Matured(rule, state, now) || Withheld(state, now)) return;
-
-        raised.Add(Raise(rule, state, now, ReasonFor(rule, Blank(state, now)), value: null, sample: null));
-    }
-
     /// <summary>A pair that is judged exactly as before but is not allowed to ring yet.</summary>
     // Both terms are nullable on the left, so a pair that is neither muted nor cooling compares false
     // and is free to ring. The mute term is written here and does not survive: Task 12, which is what
@@ -478,5 +430,171 @@ public sealed class AlertEngineCore
         _history.Insert(0, alert);
         if (_history.Count > _options.HistoryDepth)
             _history.RemoveRange(_options.HistoryDepth, _history.Count - _options.HistoryDepth);
+    }
+
+    // Whether the last tick found the link up. Starts true, which is the awkward-looking half of
+    // this: an engine that has just been built has nothing an outage could have stopped, and treating
+    // its first tick as a return would pull every pair's clock forward — wiping a For that an arrival
+    // a moment earlier had already started. Resume is for coming back, and you cannot come back
+    // before you have been anywhere.
+    private bool _linkWasUp = true;
+
+    public EngineOutcome OnTick(DateTimeOffset now, bool connected)
+    {
+        if (connected && !_linkWasUp)
+            Resume(now);
+        _linkWasUp = connected;
+
+        var raised = new List<Alert>();
+        var resolved = new List<Alert>();
+
+        // A flat walk. The round-robin cursor and the 200 ms budget belong to the ceilings task; both
+        // of them replace this loop without touching anything below it. Two lists a second is nothing
+        // — the message path is where allocation has to be counted.
+        foreach (var (key, state) in _pairs)
+        {
+            // _byId, not _rules: this asks "which rule is this pair's, and is it live", which is the
+            // dictionary's question. _rules is the file's order and answers the panel's.
+            if (!_byId.TryGetValue(key.RuleId, out var rule) || !rule.Enabled) continue;
+
+            // While the link is down a tick brings no news, so nothing is judged and nothing matures.
+            // Without this, the instant the broker drops every silence rule in the set goes true
+            // together and the user gets a hundred webhooks, all describing one event that is already
+            // reported on its own.
+            if (connected)
+                JudgeOnTick(rule, state, now);
+
+            OnPairTick(rule, state, now, connected, raised, resolved);
+        }
+
+        return raised.Count == 0 && resolved.Count == 0
+            ? EngineOutcome.Empty
+            : new EngineOutcome(raised, resolved);
+    }
+
+    /// <summary>
+    /// What a tick can judge on its own: a condition that needs no message.
+    ///
+    /// The pending edge is evaluated against a context with no text and no number, which makes this
+    /// one method serve every condition type without a special case for silence. A threshold or a
+    /// pattern comes back Skipped — it has nothing to read — and Skipped neither confirms nor breaks,
+    /// so a tick leaves value rules exactly as the last arrival left them. A silence condition reads
+    /// LastSeen and Now, both of which a tick has, and answers properly.
+    /// </summary>
+    private void JudgeOnTick(AlertRule rule, RuleState state, DateTimeOffset now)
+    {
+        var edge = PendingFor(rule, state);
+        var verdict = _evaluator.Evaluate(edge.Condition, Blank(state, now));
+
+        // Not counted as a skip. The Skipped counter is a count of messages the rule could not read,
+        // and the panel would be telling the user something untrue if a quiet second went into it.
+        if (verdict is Verdict.Skipped) return;
+
+        var holds = (verdict is Verdict.True) == edge.WantTrue;
+        if (holds)
+            state.TrueSince ??= now;
+        else
+            state.TrueSince = null;
+
+        state.LastEvaluated = now;
+    }
+
+    private void OnPairTick(AlertRule rule, RuleState state, DateTimeOffset now, bool connected,
+                            List<Alert> raised, List<Alert> resolved)
+    {
+        if (state.Active is { } active)
+        {
+            if (state.TrueSince is null) return;
+
+            // Resolving is allowed even while the link is down. An edge decided by real data before
+            // the drop is not made doubtful by the drop, and holding the resolve back would leave an
+            // endpoint waiting on a 'resolved' the outage has no business delaying. It is the
+            // deciding that needs a live link, not the reporting.
+            var closed = active with { ResolvedAt = now, ResolvedBy = "clear" };
+            state.Active = null;
+            state.TrueSince = null;
+            state.CooldownUntil = now + Cooldown(rule);
+            Remember(closed);
+            resolved.Add(closed);
+            return;
+        }
+
+        if (!connected) return;
+        if (state.TrueSince is null) return;
+        if (!Matured(rule, state, now) || Withheld(state, now)) return;
+
+        raised.Add(Raise(rule, state, now, ReasonFor(rule, Blank(state, now)), value: null, sample: null));
+    }
+
+    /// <summary>
+    /// Opens the pair a wildcard could never open.
+    ///
+    /// A silence rule can normally only miss a topic it has heard from: with 'sensors/+/temp' the
+    /// engine does not know which sensors are supposed to exist, and this tool keeps no inventory.
+    /// But a filter with no '+' and no '#' is not a filter — it is the topic's own name, and the rule
+    /// then says something checkable without a single message ever arriving: this device has not
+    /// spoken. That is the most-wanted alert of the lot and it comes free.
+    ///
+    /// The pair's clock starts now rather than at nothing, so a rule saved a moment ago gives the
+    /// device its 'after' seconds to speak before calling it dead; Resume pulls it forward with all
+    /// the others when the link returns. LastSeen therefore holds an arming moment rather than an
+    /// arrival for these pairs, which is the one place its name is generous — and the right generous:
+    /// it is the moment from which this rule has been listening.
+    /// </summary>
+    private void Arm(IReadOnlyList<AlertRule> rules, DateTimeOffset now)
+    {
+        foreach (var rule in rules)
+        {
+            if (!rule.Enabled) continue;
+            if (TopicFilterMatch.HasWildcard(rule.Filter)) continue;
+            if (!CanRingWithoutData(rule.Condition)) continue;
+
+            var key = (rule.Id, rule.Filter);
+
+            // A rule left alone keeps its clock. Saving the whole list must not restart the silence
+            // timer of a rule nobody touched — the same promise the reconciliation makes for
+            // cooldowns.
+            if (_pairs.ContainsKey(key)) continue;
+
+            _pairs[key] = new RuleState(rule.Id, rule.Filter, WindowFor(rule)) { LastSeen = now };
+        }
+    }
+
+    /// <summary>
+    /// Whether a tick alone could ever make this condition true — that is, whether silence is in it.
+    /// Generous on purpose inside 'all': arming a pair whose composite will only ever come back
+    /// Skipped costs one dictionary entry and rings nothing, while being strict here would silently
+    /// drop the case the user was writing the rule for.
+    /// </summary>
+    private static bool CanRingWithoutData(AlertCondition condition) => condition switch
+    {
+        SilenceCondition => true,
+        AllCondition all => all.Of.Any(CanRingWithoutData),
+        AnyCondition any => any.Of.Any(CanRingWithoutData),
+        _ => false,
+    };
+
+    /// <summary>
+    /// The link is back at the same endpoint. Every clock the outage stopped is pulled to this moment.
+    /// </summary>
+    private void Resume(DateTimeOffset now)
+    {
+        foreach (var state in _pairs.Values)
+        {
+            // So the outage itself never reads as silence.
+            state.LastSeen = now;
+
+            // A For that was half-finished when the link dropped starts over: 'true for the last
+            // thirty seconds' cannot be claimed across a gap nobody watched. An alarm that is already
+            // ringing keeps its TrueSince — that one belongs to the way out, and dropping it would
+            // hold open an alarm the data had already cleared.
+            if (state.Active is null)
+                state.TrueSince = null;
+
+            // And the freshness gate starts from nothing rather than from a judgement made before the
+            // gap. Windows, active alarms, mutes and cooldowns are all left alone: a sensor's history
+            // does not become meaningless because a socket blinked.
+            state.LastEvaluated = null;
+        }
     }
 }
