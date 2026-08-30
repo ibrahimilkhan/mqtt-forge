@@ -46,6 +46,16 @@ export function openingBox(): Box {
   };
 }
 
+/**
+ * Every pixel of the viewport.
+ *
+ * No inset, and no floor either. The floors above are about a window a reader is dragging — a
+ * chart nobody can read is a chart nobody meant to make — and this is the opposite gesture: it is
+ * asked for by name, it is one press to undo, and a viewport too small to hold the floor is still
+ * a viewport this should fill rather than hang off.
+ */
+export const fullBox = (): Box => ({ x: 0, y: 0, w: window.innerWidth, h: window.innerHeight });
+
 /** Dragged by the bar. The window keeps its size; only the corner it starts at moves. */
 export function moved(box: Box, dx: number, dy: number): Box {
   return onScreen(docked({ ...box, x: box.x + dx, y: box.y + dy }));

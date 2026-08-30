@@ -136,14 +136,43 @@
   font-size: var(--t-lead);
   line-height: 1;
   color: var(--muted);
-  /* Held against the far end by the bar itself rather than by whatever happens to stand beside
-     it. With a name in the bar this is inert — the name's flex:1 has already taken the free
-     space, so the auto margin resolves to nothing — and with chips there instead it is the whole
-     reason the close stays in the corner a reader last used it in as the chips get shorter. */
-  margin-left: auto;
 }
 .close:hover { color: var(--fault); border-color: color-mix(in srgb, var(--fault) 40%, transparent); }
 .close:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+/* Out to the whole screen and back. Drawn like the close beside it and standing in front of it,
+   because the two of them are what a reader reaches for when a window is in the way.
+
+   The auto margin is here rather than on the close, which is where it used to be: with chips in
+   the bar nothing else grows, and two auto margins in one row would split the free space between
+   them and open a gap down the middle of the pair. With a name in the bar it is inert either way
+   — the name's flex:1 has taken the space before any margin is resolved. */
+.swell {
+  all: unset;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  min-width: 24px;
+  min-height: 24px;
+  flex: none;
+  border: 1px solid transparent;
+  border-radius: var(--r-control);
+  font-size: var(--t-code);
+  line-height: 1;
+  color: var(--muted);
+}
+.swell:hover { color: var(--ink); border-color: var(--rule); }
+.swell:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+/* Filling the screen, and therefore cornerless. A plate has corners and a lift because something
+   lies beside it; this one has nothing beside it, and a rounded corner at the very edge of the
+   viewport shows a sliver of the console it is supposed to be covering. */
+.window[data-full] {
+  border-radius: 0;
+  box-shadow: none;
+}
 
 /* The corner that sizes it. Two hairlines rather than a hatched box: at this size a texture
    reads as dirt on the corner, and two rules read as a corner. */

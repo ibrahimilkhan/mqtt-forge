@@ -1,7 +1,8 @@
 import { useEffect, useRef, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { Expand, Shrink } from '../brand/icons';
 import { MessageDetail } from './MessageDetail';
 import styles from './Floating.module.css';
-import { moved, sized, useFloating } from './floating';
+import { fullBox, moved, sized, useFloating } from './floating';
 import { Pin } from './Pin';
 import { TrafficChart } from './TrafficChart';
 import { useWindows, type FloatWindow } from './useWindows';
@@ -27,7 +28,10 @@ export function Windows() {
   useEffect(() => {
     const settle = () => {
       for (const chart of useWindows.getState().windows) {
-        const box = moved(sized(chart.box, 0, 0), 0, 0);
+        // A window filling the screen follows the screen. Clamping the box it happens to hold
+        // would leave it the old viewport's size in the new one, which is a window that filled
+        // the screen until the reader touched the corner of theirs.
+        const box = chart.full ? fullBox() : moved(sized(chart.box, 0, 0), 0, 0);
         if (box.x !== chart.box.x || box.y !== chart.box.y || box.w !== chart.box.w || box.h !== chart.box.h) {
           place(chart.id, box);
         }
@@ -76,10 +80,14 @@ function Frame({ pane: chart, depth }: { pane: FloatWindow; depth: number }) {
   const close = useWindows((state) => state.close);
   const place = useWindows((state) => state.place);
   const fix = useWindows((state) => state.fix);
+  const swell = useWindows((state) => state.swell);
   const raise = useWindows((state) => state.raise);
   const { bar, grip } = useFloating(chart.box, (box) => place(chart.id, box));
   const frame = useRef<HTMLElement>(null);
   const message = chart.pane.kind === 'message';
+  // Filling the screen holds a window still as surely as the pin does, and for a plainer reason:
+  // there is nowhere left to move it to.
+  const held = chart.fixed || chart.full;
 
   // A window opened onto one message takes the focus, because it was opened by a keystroke or a
   // press on a row and there is nothing else on screen it could mean. On the way out the focus
@@ -144,6 +152,7 @@ function Frame({ pane: chart, depth }: { pane: FloatWindow; depth: number }) {
       data-testid={message ? 'message-window' : 'chart-window'}
       data-filter={chart.pane.kind === 'chart' ? chart.pane.filter : undefined}
       data-fixed={chart.fixed ? '' : undefined}
+      data-full={chart.full ? '' : undefined}
       aria-label={message ? `${chart.label}, opened` : `${chart.label} chart`}
       // Focusable only as a message: a chart window is read, and its own controls are the way in.
       tabIndex={message ? -1 : undefined}
@@ -160,32 +169,43 @@ function Frame({ pane: chart, depth }: { pane: FloatWindow; depth: number }) {
         className={styles.bar}
         // Pinned, the bar is a label with controls on it rather than a handle. The window still
         // comes forward when it is touched — it is being moved that the pin stops.
-        {...(chart.fixed ? {} : bar)}
+        {...(held ? {} : bar)}
         // In the tab order only while it can do something, and named for what the arrow keys
         // will do with it once it is there.
-        tabIndex={chart.fixed ? undefined : 0}
-        role={chart.fixed ? undefined : 'application'}
-        aria-label={chart.fixed ? undefined : `Move the ${chart.label} chart`}
-        title={chart.fixed ? 'Pinned in place — unpin to move it' : 'Drag to move — the corner sizes it'}
+        tabIndex={held ? undefined : 0}
+        role={held ? undefined : 'application'}
+        aria-label={held ? undefined : `Move the ${chart.label} chart`}
+        title={
+          chart.full
+            ? 'Filling the screen — put it back to move it'
+            : chart.fixed
+              ? 'Pinned in place — unpin to move it'
+              : 'Drag to move — the corner sizes it'
+        }
       >
         {/* At the near end of the bar, not the far one. A window opens in the middle at the size
             the chart opens at, so the far end of this bar is exactly where the control that
             opened it was standing a moment ago — and a second press there, the one that asks
             'did that work?', would have landed on whatever is put in that corner. */}
-        <button
-          type="button"
-          className={styles.pin}
-          aria-pressed={chart.fixed}
-          aria-label={chart.fixed ? `Let ${chart.label} move` : `Pin ${chart.label} in place`}
-          title={
-            chart.fixed
-              ? `${chart.label} is pinned where it stands — unpin it to move or size it`
-              : `Pin ${chart.label} where it stands`
-          }
-          onClick={() => fix(chart.id, !chart.fixed)}
-        >
-          <Pin />
-        </button>
+        {/* Gone while it fills the screen. The pin is about whether a window may be moved, and
+            one that has nowhere to move to is a pin that answers a question nobody is asking. Its
+            state is kept underneath, so putting the window back puts the pin back too. */}
+        {!chart.full && (
+          <button
+            type="button"
+            className={styles.pin}
+            aria-pressed={chart.fixed}
+            aria-label={chart.fixed ? `Let ${chart.label} move` : `Pin ${chart.label} in place`}
+            title={
+              chart.fixed
+                ? `${chart.label} is pinned where it stands — unpin it to move or size it`
+                : `Pin ${chart.label} where it stands`
+            }
+            onClick={() => fix(chart.id, !chart.fixed)}
+          >
+            <Pin />
+          </button>
+        )}
 
         {/* Beside the pin, a message wears the same chips its row wears — qos, retained, the
             weight, and 'bin' where the body is a byte dump. They are the row's own strings, taken
@@ -220,6 +240,22 @@ function Frame({ pane: chart, depth }: { pane: FloatWindow; depth: number }) {
           <span className={styles.name}>{chart.label}</span>
         )}
 
+        {/* Beside the close rather than anywhere else: the two of them are what a reader reaches
+            for when a window is in the way, and they should be found in one place. */}
+        <button
+          type="button"
+          className={styles.swell}
+          data-testid="swell"
+          aria-pressed={chart.full}
+          aria-label={
+            chart.full ? `Put ${chart.label} back` : `Fill the screen with ${chart.label}`
+          }
+          title={chart.full ? 'Put it back' : 'Fill the screen'}
+          onClick={() => swell(chart.id, !chart.full)}
+        >
+          {chart.full ? <Shrink /> : <Expand />}
+        </button>
+
         <button
           type="button"
           className={styles.close}
@@ -241,7 +277,7 @@ function Frame({ pane: chart, depth }: { pane: FloatWindow; depth: number }) {
 
       {/* Gone while it is pinned rather than shown and refusing: a corner that can be taken hold
           of and does nothing is a broken window, and the pin beside it says why it is not there. */}
-      {!chart.fixed && (
+      {!held && (
         <button
           type="button"
           className={styles.grip}
