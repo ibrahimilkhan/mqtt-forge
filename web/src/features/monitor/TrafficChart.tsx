@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { chartable } from '../../lib/chartable';
 import { fitDistribution } from '../../lib/distribution';
+import { above, branchesUnder, named } from '../../lib/fieldTree';
 import { domainFor, SCALES, type ScaleId } from '../../lib/scale';
 import { numericFields, sampleOfRuns, type Series } from '../../lib/series';
 import { shapeOf } from '../../lib/shape';
@@ -265,7 +266,20 @@ function Controls({
   onBranch: () => void;
 }) {
   const [saved, setSaved] = useState<'idle' | 'done' | 'refused'>('idle');
+  /** Which group of fields the chips are standing in. The empty prefix is the top of the body. */
+  const [under, setUnder] = useState('');
+  const [chooser, setChooser] = useState(true);
   const exporter = useExport();
+
+  // Derived rather than corrected, because the fields change underneath this: clicking into one
+  // topic of a branch swaps the whole list, and a prefix left over from the last one would leave
+  // the row empty with a back chip as its only content. Falling back to the top costs a line and
+  // cannot get stuck.
+  const level = useMemo(() => {
+    const shown = branchesUnder(fields, under);
+
+    return shown.length > 0 ? { under, shown } : { under: '', shown: branchesUnder(fields, '') };
+  }, [fields, under]);
 
   // A first save with no folder yet opens the dialog rather than refusing and telling the reader
   // to go and set something up before pressing the button they have just pressed.
@@ -301,22 +315,84 @@ function Controls({
         </button>
       )}
 
-      {/* One topic can carry a whole environment. Which of its fields is wanted is the
-          reader's business, so all of them are on offer and the best covered one leads. */}
+      {/* One topic can carry a whole environment. Which of its fields is wanted is the reader's
+          business, so all of them are on offer and the best covered one leads — but a device that
+          reports its whole configuration in one message has forty of them, and forty chips
+          reading `broker.session.expiryInterval` are the chart region full of somebody else's
+          field names with the chart pushed off the bottom of it.
+
+          So the list is walked rather than shown: one level of segments at a time, a step in and a
+          step back out, which is the shape the message already has and the shape the reader is
+          holding in their head while they hunt for one number in it. A body with two flat numbers
+          in it is unaffected — its top level is both of them. */}
       {fields.length > 1 && (
         <div className={styles.fields} role="group" aria-label="Field to chart">
-          {fields.map((name) => (
+          {chooser ? (
+            <>
+              {level.under !== '' && (
+                <button
+                  type="button"
+                  className={styles.chip}
+                  aria-label={`Back out of ${named(level.under)}`}
+                  title={CONTROLS.up.what}
+                  onClick={() => setUnder(above(level.under))}
+                >
+                  ← {named(level.under)}
+                </button>
+              )}
+
+              {level.shown.map((branch) =>
+                branch.field !== null ? (
+                  <button
+                    key={branch.segment}
+                    type="button"
+                    className={styles.chip}
+                    aria-label={`Chart ${branch.field}`}
+                    aria-pressed={field === branch.field}
+                    onClick={() => onField(branch.field!)}
+                  >
+                    {branch.segment}
+                  </button>
+                ) : (
+                  <button
+                    key={branch.segment}
+                    type="button"
+                    className={styles.chip}
+                    aria-label={`Open ${named(branch.under!)}`}
+                    title={`${branch.count} field${branch.count === 1 ? '' : 's'} under it`}
+                    onClick={() => setUnder(branch.under!)}
+                  >
+                    {branch.segment} ›
+                  </button>
+                ),
+              )}
+
+              {/* Away, once the reader has what they came for. The chips are a way in rather than
+                  a reading, and a way in that stays open is a way in that has become furniture. */}
+              <button
+                type="button"
+                className={styles.chip}
+                aria-label="Put the field chips away"
+                title={CONTROLS.fewer.what}
+                onClick={() => setChooser(false)}
+              >
+                {CONTROLS.fewer.label}
+              </button>
+            </>
+          ) : (
+            /* What is left when they are away: the field being charted, which is the one thing
+               the row was saying that the reader still needs, and the way back to the rest. */
             <button
-              key={name}
               type="button"
               className={styles.chip}
-              aria-label={`Chart ${name}`}
-              aria-pressed={field === name}
-              onClick={() => onField(name)}
+              aria-label="Show the field chips"
+              title={CONTROLS.fewer.what}
+              aria-pressed
+              onClick={() => setChooser(true)}
             >
-              {name}
+              {field ?? CONTROLS.field.label}
             </button>
-          ))}
+          )}
         </div>
       )}
 

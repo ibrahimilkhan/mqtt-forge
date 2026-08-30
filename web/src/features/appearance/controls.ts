@@ -13,7 +13,17 @@ import { SCALES, type ScaleId } from '../../lib/scale';
  * already work. Both read this catalogue, so the label on a chip and the label beside its
  * explanation cannot drift apart.
  */
-export type ControlId = 'field' | 'auto' | 'time' | 'dist' | 'csv' | 'open' | 'branch';
+export type ControlId =
+  | 'field'
+  | 'into'
+  | 'up'
+  | 'fewer'
+  | 'auto'
+  | 'time'
+  | 'dist'
+  | 'csv'
+  | 'open'
+  | 'branch';
 
 type Control = {
   /** Exactly what the control shows, so the panel and the chart cannot disagree. */
@@ -41,6 +51,24 @@ export const CONTROLS: Record<ControlId, Control & { group: ControlGroup }> = {
     label: 'temp, hum, …',
     group: 'what',
     what: 'Each numeric field of a JSON body, by name. It opens on the busiest.',
+    when: 'Only when the bodies carry more than one number.',
+  },
+  into: {
+    label: 'radios ›',
+    group: 'what',
+    what: 'A group of fields rather than one of them. It opens the group; its title says how many are inside.',
+    when: 'Only when a body nests its numbers.',
+  },
+  up: {
+    label: '← radios',
+    group: 'what',
+    what: 'Back out of a group of fields. It names the group you are standing in.',
+    when: 'Only after opening one.',
+  },
+  fewer: {
+    label: 'hide',
+    group: 'what',
+    what: 'Puts the field chips away. The one chip left behind names what is charted, and brings them back.',
     when: 'Only when the bodies carry more than one number.',
   },
   branch: {
