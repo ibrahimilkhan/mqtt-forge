@@ -14,7 +14,6 @@ public sealed record AlertEngineOptions
     public int HistoryDepth { get; init; } = 500;
     public int DefaultCooldownSeconds { get; init; } = 1;
     public int FreshnessSeconds { get; init; } = 60;
-    public int ReplayWindowSeconds { get; init; } = 2;
     public int PatternTimeoutsBeforeDisable { get; init; } = 10;
     public string TopicPrefix { get; init; } = "mqttforge/alerts/";
 }
