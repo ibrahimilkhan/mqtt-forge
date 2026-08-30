@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { LogEntry } from '../../stores/logStore';
-import { moved, openingBox, type Box } from './floating';
+import { fullBox, moved, openingBox, type Box } from './floating';
 
 /**
  * What a window is showing.
@@ -43,6 +43,17 @@ export type FloatWindow = {
    * to put it somewhere.
    */
   fixed: boolean;
+  /**
+   * Filling the viewport, with the box it came from kept for the way back.
+   *
+   * Three fifths of the screen is the right size for reading a run beside the console it came
+   * from and the wrong one for a forty-thousand-character document — which is what a window
+   * opened onto one message often holds. Kept here rather than worked out from the box, because
+   * a window a reader had already dragged to fill the screen themselves would otherwise come back
+   * from this to nowhere.
+   */
+  full: boolean;
+  wasAt: Box | null;
 };
 
 type WindowState = {
@@ -50,6 +61,7 @@ type WindowState = {
   windows: ReadonlyArray<FloatWindow>;
   open: (pane: Pane, label: string, from?: Box) => void;
   close: (id: string) => void;
+  swell: (id: string, full: boolean) => void;
   place: (id: string, box: Box) => void;
   fix: (id: string, fixed: boolean) => void;
   raise: (id: string) => void;
@@ -95,12 +107,27 @@ export const useWindows = create<WindowState>((set) => ({
             label,
             box: from ? moved(from, 0, 0) : openingBox(),
             fixed: true,
+            full: false,
+            wasAt: null,
           },
         ],
       };
     }),
 
   close: (id) => set((state) => ({ windows: state.windows.filter((one) => one.id !== id) })),
+
+  // Out to the whole viewport and back to exactly where it stood. `wasAt` is dropped on the way
+  // back rather than kept: a window that has been put back has no way back to remember.
+  swell: (id, full) =>
+    set((state) => ({
+      windows: state.windows.map((one) =>
+        one.id !== id
+          ? one
+          : full
+            ? { ...one, full: true, wasAt: one.box, box: fullBox() }
+            : { ...one, full: false, wasAt: null, box: one.wasAt ?? one.box },
+      ),
+    })),
 
   place: (id, box) =>
     set((state) => ({

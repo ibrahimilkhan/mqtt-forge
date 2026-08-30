@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 /**
- * The six marks the panel menu wears, one per panel — and eight more that are not panels.
+ * The six marks the panel menu wears, one per panel — and nine more that are not panels.
  *
  * Drawn here rather than pulled from an icon set. Twelve glyphs is not worth a dependency, and a
  * set drawn to its own rules would sit beside the mark in `marks.tsx` looking borrowed: the same
@@ -16,7 +16,7 @@ import type { ReactNode } from 'react';
  * `Warning` wears no panel: it stands on the Broker row beside `Antenna`, and a triangle
  * borrowed from somewhere else would look stuck on rather than part of the rail.
  *
- * The last six wear no panel either — they go inside buttons, in the same mono the button is
+ * The last seven wear no panel either — they go inside buttons, in the same mono the button is
  * lettered in, at the size of one line of that type. Which is what they are drawn for: a mark in
  * a button has one line of type's worth of room and has to be recognised in it, so each of them
  * is the simplest shape that survives thirteen pixels.
@@ -237,5 +237,25 @@ export const Copy = () => (
 export const Check = () => (
   <Glyph>
     <path d="M4.5 12.5 9.5 17.5 19.5 6.5" />
+  </Glyph>
+);
+
+/**
+ * Put it back.
+ *
+ * Expand's own construction, mirrored: the same two corners and the same two diagonals, with the
+ * elbows moved inside and the lines running out to the square's corners rather than in from them.
+ * Lucide's `minimize-2`. Drawn from Expand rather than copied from the set, because these two sit
+ * in the same place in the same bar one press apart, and a pair that is not exactly a pair reads
+ * as a control that changed into a different control.
+ */
+export const Shrink = () => (
+  <Glyph>
+    <>
+      <path d="M20 9.5h-5.5V4" />
+      <path d="M4 14.5h5.5V20" />
+      <path d="M20 4l-5.5 5.5" />
+      <path d="M4 20l5.5-5.5" />
+    </>
   </Glyph>
 );

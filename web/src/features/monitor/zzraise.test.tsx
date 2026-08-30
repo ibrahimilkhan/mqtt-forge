@@ -27,6 +27,8 @@ describe('raising a window that the keyboard has just reached', () => {
           label: 'sensors/kiln',
           box,
           fixed: true,
+          full: false,
+          wasAt: null,
         },
         {
           id: 'chart-2',
@@ -34,6 +36,8 @@ describe('raising a window that the keyboard has just reached', () => {
           label: 'sensors/room',
           box,
           fixed: true,
+          full: false,
+          wasAt: null,
         },
       ],
     });

@@ -382,6 +382,70 @@ describe('placing a window', () => {
     act(() => sized(viewport));
   });
 
+  // Three fifths of the screen is the right size for reading a run beside the console it came
+  // from, and the wrong one for a document. One press either way, and back to exactly where it
+  // stood — including a window the reader had already put somewhere themselves.
+  it('fills the screen, and puts itself back where it stood', async () => {
+    readings('sensors/kiln', '900', '910');
+    useSelectionStore.getState().select(kiln);
+    render(<Console />);
+    await openAndPin();
+
+    act(() => {
+      useWindows.getState().place(useWindows.getState().windows[0].id, { x: 40, y: 30, w: 500, h: 400 });
+    });
+
+    await userEvent.click(screen.getByTestId('swell'));
+
+    const window_ = screen.getByTestId('chart-window');
+    expect(window_).toHaveAttribute('data-full');
+    expect(window_.style.left).toBe('0px');
+    expect(window_.style.width).toBe(`${window.innerWidth}px`);
+
+    await userEvent.click(screen.getByTestId('swell'));
+
+    expect(window_).not.toHaveAttribute('data-full');
+    expect(window_.style.left).toBe('40px');
+    expect(window_.style.width).toBe('500px');
+  });
+
+  // Nothing left to move it to, and nothing left to size it by.
+  it('offers neither a corner nor a pin while it fills the screen', async () => {
+    readings('sensors/kiln', '900', '910');
+    useSelectionStore.getState().select(kiln);
+    render(<Console />);
+    await openAndPin();
+
+    await userEvent.click(screen.getByTestId('swell'));
+
+    expect(screen.queryByRole('button', { name: /^Resize / })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Let / })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Pin / })).not.toBeInTheDocument();
+  });
+
+  // A window that filled the screen until the reader touched the corner of theirs is a window
+  // that did not fill the screen.
+  it('follows the screen it is filling when that screen changes size', async () => {
+    readings('sensors/kiln', '900', '910');
+    useSelectionStore.getState().select(kiln);
+    render(<Console />);
+    await openAndPin();
+    await userEvent.click(screen.getByTestId('swell'));
+
+    const viewport = { w: window.innerWidth, h: window.innerHeight };
+    const sized = (to: { w: number; h: number }) => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: to.w });
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: to.h });
+      window.dispatchEvent(new Event('resize'));
+    };
+
+    act(() => sized({ w: 600, h: 400 }));
+
+    expect(screen.getByTestId('chart-window').style.width).toBe('600px');
+    expect(screen.getByTestId('chart-window').style.height).toBe('400px');
+    act(() => sized(viewport));
+  });
+
   // Reaching into a window behind another one should bring it forward before the press lands.
   it('brings the window that is reached into to the front', async () => {
     readings('sensors/kiln', '900', '910');
