@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Copy, Fold, Unfold } from '../brand/icons';
 import { copyText } from '../../lib/copyText';
 import { checkJson, formatJson } from '../../lib/payload';
 import { useRuleLookup } from '../../lib/useRuleLookup';
 import type { LogEntry } from '../../stores/logStore';
-import { branches, JsonTree, MOST_ROWS, rowCount, type Json } from './JsonTree';
+import { branches, JsonTree, MOST_ROWS, rowCount, topOf, type Json, type Top } from './JsonTree';
 import { Topic } from './LogEntryRow';
 import styles from './MessageDetail.module.css';
 
@@ -84,6 +84,15 @@ export function MessageDetail({ entry }: { entry: LogEntry }) {
 }
 
 /**
+ * How long a document has to be before it is worth a map of itself.
+ *
+ * Rows rather than keys, because rows are what runs off the bottom of the pane. Three keys and
+ * eighteen lines are entirely on screen in any window worth opening one in, and a ruled strip
+ * beside that is a map of a room you are standing in.
+ */
+const ENOUGH = 24;
+
+/**
  * The whole payload, drawn as whatever it actually is.
  *
  * Four answers, and the reader can always get back to the fifth. A body that is not text at all
@@ -100,6 +109,9 @@ export function MessageDetail({ entry }: { entry: LogEntry }) {
  */
 function Payload({ entry }: { entry: LogEntry }) {
   const [raw, setRaw] = useState(false);
+  /** The branch the index has been asked to go to, until the row for it has been found. */
+  const [going, setGoing] = useState<string | null>(null);
+  const pane = useRef<HTMLDivElement>(null);
   /**
    * The branches folded away, by path. Empty is the document open, which is what it opens as:
    * this drew the whole of it before, and a window that suddenly showed one line where it used to
@@ -129,9 +141,62 @@ function Payload({ entry }: { entry: LogEntry }) {
     return { text: formatJson(body), why: null, tree, other: true };
   }, [entry.body, entry.mode]);
 
+  /**
+   * The top of the document, and whether it is worth a column of its own.
+   *
+   * Only where the document is long enough that its own top cannot be seen at once. A message of
+   * three keys and eighteen lines is entirely on screen in any window worth opening one in, and a
+   * ruled strip beside it would be a map of a room you are standing in. The number is rows rather
+   * than keys because rows are what runs off the bottom.
+   *
+   * Memoised on the parsed document, not on the render: this component's state churns — every
+   * fold, every raw toggle, and twice on every press of the copy mark while it says 'Copied'.
+   */
+  const index = useMemo<Top[]>(
+    () => (read?.tree && rowCount(read.tree) > ENOUGH ? topOf(read.tree) : []),
+    [read?.tree],
+  );
+
   // Says it copied only when something was: the desktop shell and the QR panel both run over
   // plain http, where there is no clipboard API at all and the old way is what answers.
   const copy = async () => setCopied((await copyText(entry.body ?? '')) ? 'yes' : 'failed');
+
+  /**
+   * Go to a branch: open the way to it, then bring it to the top of the pane.
+   *
+   * Two steps rather than one, because the row may not exist yet. A branch the reader folded — or
+   * that 'fold every branch' folded, which takes the whole document down to one line — has no row
+   * to scroll to, so the fold is lifted first and the scroll waits for the render that draws it.
+   * The root is lifted with it: folded, there is nowhere to land at all.
+   *
+   * Only the branch asked for. The rest of the reader's folds are theirs, and an index that tidied
+   * them away every time it was used would be a control that undoes the reader's own work.
+   */
+  const goTo = (path: string) => {
+    setShut((closed) => {
+      const next = new Set(closed);
+      next.delete('');
+      next.delete(path);
+
+      return next;
+    });
+    setGoing(path);
+  };
+
+  useEffect(() => {
+    if (going === null) return;
+
+    const box = pane.current;
+    // By arithmetic against the pane's own top rather than scrollIntoView, which walks every
+    // scroll ancestor it can find: measured, it took the window's whole body with it and carried
+    // the index off the top of the screen — the reader pressed a thing and the thing left.
+    const row = [...(box?.querySelectorAll('[data-path]') ?? [])].find(
+      (one) => (one as HTMLElement).dataset.path === going,
+    );
+    if (box && row) box.scrollTop += row.getBoundingClientRect().top - box.getBoundingClientRect().top;
+
+    setGoing(null);
+  }, [going]);
 
   // Back to itself, so the mark is a report on the press rather than a state the button is in.
   useEffect(() => {
@@ -145,6 +210,7 @@ function Payload({ entry }: { entry: LogEntry }) {
   if (!read) return null;
 
   const folding = read.tree !== null && !raw;
+  const listed = folding && index.length > 0;
 
   return (
     <>
@@ -208,38 +274,85 @@ function Payload({ entry }: { entry: LogEntry }) {
         </button>
       </div>
 
-      {/* A div rather than a p: a double-click inside a paragraph is claimed by the console's own
-          prose selection, and this is a payload somebody may well want to take a word out of.
+      {/* The index is a sibling of the payload and never a child of it, which is not a tidiness
+          preference: Ctrl+A takes the contents of the first [data-message] in the window, and the
+          copy mark hands over the bytes that arrived. A column of key names inside that box would
+          be pasted into a bug report as part of the message. Divs rather than a list, for the
+          other half of the same reason — this console makes p, li, dt and dd selectable by name,
+          so an index built out of them could be swept into a drag. */}
+      <div className={styles.document} data-index={listed ? '' : undefined}>
+        {listed && <Index top={index} onGo={goTo} />}
 
-          data-message is what Ctrl+A reaches for. The window catches the key and selects this,
-          rather than letting the browser select the console behind it. */}
-      <div
-        className={styles.payload}
-        data-mode={folding ? 'tree' : 'text'}
-        data-testid="window-body"
-        data-message
-        data-copy
-      >
-        {folding ? (
-          <JsonTree
-            value={read.tree!}
-            shut={shut}
-            onFold={(path) =>
-              setShut((closed) => {
-                const next = new Set(closed);
-                if (!next.delete(path)) next.add(path);
+        {/* A div rather than a p: a double-click inside a paragraph is claimed by the console's
+            own prose selection, and this is a payload somebody may well want to take a word out
+            of.
 
-                return next;
-              })
-            }
-          />
-        ) : raw ? (
-          entry.body
-        ) : (
-          read.text
-        )}
+            data-message is what Ctrl+A reaches for. The window catches the key and selects this,
+            rather than letting the browser select the console behind it. */}
+        <div
+          ref={pane}
+          className={styles.payload}
+          data-mode={folding ? 'tree' : 'text'}
+          data-testid="window-body"
+          data-message
+          data-copy
+        >
+          {folding ? (
+            <JsonTree
+              value={read.tree!}
+              shut={shut}
+              onFold={(path) =>
+                setShut((closed) => {
+                  const next = new Set(closed);
+                  if (!next.delete(path)) next.add(path);
+
+                  return next;
+                })
+              }
+            />
+          ) : raw ? (
+            entry.body
+          ) : (
+            read.text
+          )}
+        </div>
       </div>
     </>
+  );
+}
+
+/**
+ * What is in the message, down the left of it.
+ *
+ * Each entry says what is inside before it is folded, which is the one thing `{ … 7 }` will not
+ * say until it is too late to be useful.
+ *
+ * Named for where it goes rather than for what it is. The line it points at already carries a
+ * control called 'Fold radios', and two buttons of one name in a window is a window nobody can be
+ * given directions in.
+ */
+function Index({ top, onGo }: { top: readonly Top[]; onGo: (path: string) => void }) {
+  return (
+    <div className={styles.index} data-testid="index" role="group" aria-label="What is in the message">
+      {top.map((key) => {
+        const said = key.count === null ? `Go to ${key.name}` : `Go to ${key.name}, ${key.count} inside`;
+        const held = key.count === null ? '' : key.array ? ` [${key.count}]` : ` {${key.count}}`;
+
+        return (
+          <button
+            key={key.path}
+            type="button"
+            className={styles.entry}
+            aria-label={said}
+            title={said}
+            onClick={() => onGo(key.path)}
+          >
+            {key.name}
+            {held}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

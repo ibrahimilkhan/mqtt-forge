@@ -13,6 +13,16 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* The window's body hands this a definite height, and a column that stands still while the
+     document scrolls under it can only exist inside a box that knows how tall it is. */
+  min-height: 0;
+  /* The one container query in the console, and it has to be one. What decides whether there is
+     room for a column beside the document is how wide THIS WINDOW is, not how wide the screen is
+     — a window is placed by the reader and clamped to the viewport on every move, so a 300px
+     window on a 1920px screen is the ordinary case rather than the odd one. A media query would
+     hand that window a column it cannot hold. */
+  container-type: inline-size;
+  container-name: detail;
 }
 
 /* ---- what arrived, and when ----
@@ -223,4 +233,76 @@
   font-family: var(--mono);
   font-size: var(--t-micro);
   color: var(--fault);
+}
+
+/* ---- what is in the message, down the left of it ---- */
+
+.document {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+}
+.document > .payload { flex: 1; min-width: 0; }
+
+/* Sixteen characters of its own type, which is the box: twelve are left after the rule and the
+   gap, and `counters {6}` is twelve. Measured at thirteen and every second entry wrapped its
+   count onto a line of its own, which turns a list you scan into a list you read. A key longer
+   than that still wraps rather than being cut — nothing is hidden here, because an index that
+   trailed off in an ellipsis would be an index the reader had to open the document to read.
+
+   Micro and muted, which is this console's voice for a fact that is there when it is wanted and
+   quiet when it is not, the same voice as the timestamp three rules up. At the document's own
+   size it would be a second document standing beside the first. */
+.index {
+  flex: none;
+  width: 16ch;
+  padding-right: 10px;
+  border-right: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow-y: auto;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.entry {
+  all: unset;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  border-radius: var(--r-control);
+}
+.entry:hover { color: var(--ink); }
+.entry:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+/* Wide enough for a column, so the column stands still and the document scrolls under it. This is
+   the one place in this window where the scroll moves, and it moves for a reason: the head and
+   the controls stop leaving the top, which is what putting the controls above the payload was
+   for. It costs the head's own height off the reading area, and it is only ever spent where
+   there is an index to pay for it. */
+@container detail (width >= 24rem) {
+  .document[data-index] { flex: 1; min-height: 0; }
+  .document[data-index] > .payload {
+    min-height: 0;
+    overflow-y: auto;
+    /* The end of the document is the end of the document, not a scroll of the console the window
+       is standing over. */
+    overscroll-behavior: contain;
+  }
+}
+
+/* Below this there is no room for one. The narrowest window this console allows gives the
+   document 272px, and the widest row of an ordinary gateway payload is 225 of them — so a column
+   may only appear where the document still has the width it would have had without one. In rem
+   because the reader sets the type size themselves, and a wider character needs a wider window to
+   say the same line in.
+
+   Written as the hiding rather than as the showing, which is load-bearing rather than tidy: a
+   test runner's stylesheet parser skips an at-rule it does not know, so a rule that only ever
+   showed the column would leave it hidden — and untestable — in every test. */
+@container detail (width < 24rem) {
+  .index { display: none; }
 }

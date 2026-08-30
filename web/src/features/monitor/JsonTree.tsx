@@ -26,7 +26,7 @@ const isBranch = (value: Json): value is Json[] | { [key: string]: Json } =>
  * in it: {"a b": {"c": 1}} and {"a": {"b c": 1}} come to the same thing under a space, and folding
  * one of them would fold the other. The key's own length in front of it settles that for good.
  */
-const under = (path: string, key: string) => `${path}/${key.length}:${key}`;
+export const under = (path: string, key: string) => `${path}/${key.length}:${key}`;
 
 /**
  * As many rows as this will draw before it refuses to.
@@ -47,6 +47,39 @@ export function rowCount(value: Json): number {
   // A branch with something in it costs an opening line and a closing one; an empty one is
   // written `{}` on a single line and costs one.
   return children.reduce<number>((total, child) => total + rowCount(child), children.length ? 2 : 1);
+}
+
+/** What the index down the side says: one entry per key at the top of the document. */
+export type Top = {
+  name: string;
+  /** The same path the rows are keyed by, so the two can be matched without a second scheme. */
+  path: string;
+  /** How many things are inside it, or null on a key that is a value rather than a branch. */
+  count: number | null;
+  array: boolean;
+};
+
+/**
+ * The top level of a document, and nothing below it.
+ *
+ * The tree already draws every branch, at the same indent, in the same order and under the same
+ * name — a column that listed all of them would be the tree again in a tenth of the room. What
+ * the tree cannot do while it is open is show the top level at all: fully unfolded, a gateway's
+ * `broker` is on line two and its `sensors` on line thirty-eight, and the only gesture that puts
+ * them together folds the whole document to `{ … 7 }` and takes the reader's own folds with it.
+ *
+ * An array at the top has no names to list — `0`, `1`, `2` is a ruler, not an index — so it
+ * returns nothing and the column is not drawn.
+ */
+export function topOf(value: Json): Top[] {
+  if (!isBranch(value) || Array.isArray(value)) return [];
+
+  return Object.entries(value).map(([key, child]) => ({
+    name: key,
+    path: under('', key),
+    count: !isBranch(child) ? null : Array.isArray(child) ? child.length : Object.keys(child).length,
+    array: Array.isArray(child),
+  }));
 }
 
 /**
@@ -154,7 +187,15 @@ export function JsonTree({
   return (
     <div className={styles.tree}>
       {rowsOf(value, shut).map((row) => (
-        <div key={row.path} className={styles.row} style={{ paddingLeft: `${row.depth * 1.2}em` }}>
+        <div
+          key={row.path}
+          className={styles.row}
+          // What the index goes to. Read off the DOM rather than held in a ref per row: the rows
+          // are rebuilt on every fold, and a map of refs would be a second copy of the document
+          // kept in step with the first by hand.
+          data-path={row.path}
+          style={{ paddingLeft: `${row.depth * 1.2}em` }}
+        >
           {row.branch ? (
             <button
               type="button"
