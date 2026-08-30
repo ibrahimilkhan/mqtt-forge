@@ -1,7 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Check, Copy } from '../brand/icons';
+import { copyText } from '../../lib/copyText';
 import { checkJson, formatJson } from '../../lib/payload';
 import { useRuleLookup } from '../../lib/useRuleLookup';
 import type { LogEntry } from '../../stores/logStore';
+import { branches, JsonTree, MOST_ROWS, rowCount, type Json } from './JsonTree';
 import { Topic } from './LogEntryRow';
 import styles from './MessageDetail.module.css';
 
@@ -89,57 +92,149 @@ export function MessageDetail({ entry }: { entry: LogEntry }) {
 }
 
 /**
- * The whole payload, formatted where formatting is what it is.
+ * The whole payload, drawn as whatever it actually is.
  *
- * Three answers, and the reader can always get back to the fourth. A body that is not text at all
+ * Four answers, and the reader can always get back to the fifth. A body that is not text at all
  * — hex — is shown as it arrived, because reformatting a byte dump is not a thing. A body that
  * does not begin with a brace or a bracket is shown as it arrived, because `JSON.parse` accepts a
  * bare number and calling `21.5` a JSON document helps nobody. What is left is meant to be JSON:
- * pretty-printed if it parses, with one control back to the exact characters that arrived — and
- * if it does not parse, shown raw with the reason it did not, which is the same sentence the
- * publish form gives about a draft.
+ * drawn as a foldable document if it parses, with one control back to the exact characters that
+ * arrived — and if it does not parse, shown raw with the reason it did not, which is the same
+ * sentence the publish form gives about a draft.
+ *
+ * The controls stand over it rather than under it. There are four of them now where there was
+ * one, and a row of controls below a payload of forty thousand characters is a row of controls
+ * nobody will ever scroll to.
  */
 function Payload({ entry }: { entry: LogEntry }) {
   const [raw, setRaw] = useState(false);
+  /**
+   * The branches folded away, by path. Empty is the document open, which is what it opens as:
+   * this drew the whole of it before, and a window that suddenly showed one line where it used to
+   * show the message would be a window that had lost it.
+   */
+  const [shut, setShut] = useState<ReadonlySet<string>>(new Set());
+  const [copied, setCopied] = useState<'no' | 'yes' | 'failed'>('no');
 
   const read = useMemo(() => {
     const body = entry.body ?? '';
     if (!body) return null;
-    if (entry.mode === 'hex') return { text: body, why: null, formatted: false };
+
+    const plain = { text: body, why: null, tree: null, other: false };
+    if (entry.mode === 'hex') return plain;
 
     const first = body.trimStart()[0];
-    if (first !== '{' && first !== '[') return { text: body, why: null, formatted: false };
+    if (first !== '{' && first !== '[') return plain;
 
     const why = checkJson(body);
+    if (why !== null) return { text: body, why, tree: null, other: false };
 
-    return why === null
-      ? { text: formatJson(body), why: null, formatted: true }
-      : { text: body, why, formatted: false };
+    // Past the cap the document is still laid out, just not foldable — see MOST_ROWS. Which is
+    // exactly what this window did before folding existed, so nothing is lost but the chevrons.
+    const value = JSON.parse(body) as Json;
+    const tree = rowCount(value) > MOST_ROWS ? null : value;
+
+    return { text: formatJson(body), why: null, tree, other: true };
   }, [entry.body, entry.mode]);
 
+  // Says it copied only when something was: the desktop shell and the QR panel both run over
+  // plain http, where there is no clipboard API at all and the old way is what answers.
+  const copy = async () => setCopied((await copyText(entry.body ?? '')) ? 'yes' : 'failed');
+
+  // Back to itself, so the mark is a report on the press rather than a state the button is in.
+  useEffect(() => {
+    if (copied === 'no') return;
+
+    const held = setTimeout(() => setCopied('no'), 1600);
+
+    return () => clearTimeout(held);
+  }, [copied]);
+
   if (!read) return null;
+
+  const folding = read.tree !== null && !raw;
 
   return (
     <>
       {read.why && <p className={styles.fault}>{read.why}</p>}
 
-      {/* A div rather than a p: a double-click inside a paragraph is claimed by the console's own
-          prose selection, and this is a payload somebody may well want to take a word out of. */}
-      <div className={styles.payload} data-testid="window-body" data-copy>
-        {read.formatted && raw ? entry.body : read.text}
-      </div>
+      <div className={styles.controls}>
+        {folding && (
+          <>
+            <button type="button" className={styles.toggle} onClick={() => setShut(new Set())}>
+              expand all
+            </button>
+            <button
+              type="button"
+              className={styles.toggle}
+              onClick={() => setShut(new Set(branches(read.tree!)))}
+            >
+              collapse all
+            </button>
+          </>
+        )}
 
-      {read.formatted && (
+        {read.other && (
+          <button
+            type="button"
+            className={styles.toggle}
+            aria-pressed={!raw}
+            title={raw ? (read.tree ? 'Show it as a document' : 'Show it formatted') : 'Show exactly what arrived'}
+            onClick={() => setRaw(!raw)}
+          >
+            json
+          </button>
+        )}
+
+        {/* The far corner, and a mark rather than a word: it is the one control here a reader
+            reaches for without reading, and 'copy' spelled out beside three other lowercase
+            words would be the fourth of a kind rather than the thing in the corner.
+
+            It hands over exactly what arrived, never what is on screen. A folded branch on screen
+            is a summary, and a summary pasted into a bug report is a message that never existed. */}
         <button
           type="button"
-          className={styles.toggle}
-          aria-pressed={!raw}
-          title={raw ? 'Show it formatted' : 'Show exactly what arrived'}
-          onClick={() => setRaw(!raw)}
+          className={styles.copy}
+          data-testid="copy"
+          aria-label={{ no: 'Copy the message', yes: 'Copied', failed: 'Copy failed' }[copied]}
+          title={{ no: 'Copy the message', yes: 'Copied', failed: 'Copy failed' }[copied]}
+          onClick={copy}
         >
-          json
+          {copied === 'yes' ? <Check /> : <Copy />}
         </button>
-      )}
+      </div>
+
+      {/* A div rather than a p: a double-click inside a paragraph is claimed by the console's own
+          prose selection, and this is a payload somebody may well want to take a word out of.
+
+          data-message is what Ctrl+A reaches for. The window catches the key and selects this,
+          rather than letting the browser select the console behind it. */}
+      <div
+        className={styles.payload}
+        data-mode={folding ? 'tree' : 'text'}
+        data-testid="window-body"
+        data-message
+        data-copy
+      >
+        {folding ? (
+          <JsonTree
+            value={read.tree!}
+            shut={shut}
+            onFold={(path) =>
+              setShut((closed) => {
+                const next = new Set(closed);
+                if (!next.delete(path)) next.add(path);
+
+                return next;
+              })
+            }
+          />
+        ) : raw ? (
+          entry.body
+        ) : (
+          read.text
+        )}
+      </div>
     </>
   );
 }

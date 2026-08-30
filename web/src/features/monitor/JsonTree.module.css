@@ -1,0 +1,54 @@
+/* A JSON document drawn line by line, with a gutter down the left for the folds.
+
+   The indent is padding rather than spaces in the text, so a fold can move a whole branch two
+   characters to the right without anything having to be re-written — and so a reader who selects
+   the lot and copies it gets JSON with no leading whitespace, which is still JSON. */
+.tree {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+}
+
+/* One character of room in front of every line, whether or not it has a chevron in it. Without
+   it the lines that open something would sit a character to the left of the lines that do not,
+   and a document reads by its left edge. */
+.gutter {
+  flex: none;
+  width: 1.1em;
+}
+
+/* The chevron, which is the workspace's chevron: the same two glyphs the region strips fold with,
+   so one gesture in this console has one mark. Quiet at rest — a column of twenty arrows down the
+   side of a payload would be the loudest thing in the window.
+
+   Drawn by the stylesheet rather than written into the button, and that is not a preference. This
+   sits inside the one block on the screen a reader selects and copies out: with the glyphs in the
+   markup, select-all and copy handed back the message with a '▾' at the head of every branch in
+   it — JSON that no longer parses, from a window whose whole job is handing over what arrived.
+   Generated content is not selection content, so it cannot be copied by accident. */
+.fold {
+  /* Not composed from .gutter above it, though it is the same width and the temptation is real:
+     `all: unset` would land after that rule and reset the very width it borrowed. Stated. */
+  all: unset;
+  flex: none;
+  width: 1.1em;
+  cursor: pointer;
+  color: var(--muted);
+  user-select: none;
+}
+.fold::before { content: '▸'; }
+.fold[aria-expanded='true']::before { content: '▾'; }
+.fold:hover { color: var(--ink); }
+.fold:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+/* Breaks inside a value rather than pushing the window out. A payload holds base64, tokens and
+   URLs, none of which have anywhere polite to break. */
+.text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

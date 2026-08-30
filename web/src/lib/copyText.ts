@@ -1,10 +1,14 @@
 /**
- * Copy to the clipboard, in a panel that is only ever open where the modern way is unavailable.
+ * Copy to the clipboard, both ways, because one of them is missing where it is most wanted.
  *
  * navigator.clipboard exists only in a secure context, and the QR panel by definition shows
- * itself on a LAN address — which over plain http is not one. So the API this would reach for
- * first is undefined precisely when the panel is on screen, and the button was silently doing
- * nothing every time it shipped. The deprecated execCommand path is what still works there.
+ * itself on a LAN address — which over plain http is not one. So the API this reaches for first
+ * is undefined precisely when that panel is on screen, and its button was silently doing nothing
+ * every time it shipped. The deprecated execCommand path is what still works there.
+ *
+ * In lib rather than beside that panel because it is no longer only that panel's problem: a
+ * window opened onto one message offers the same thing, and the desktop shell is served over
+ * plain http too.
  *
  * Returns whether it worked, so the caller can say 'Copied' only when something was.
  */

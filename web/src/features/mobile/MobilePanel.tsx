@@ -3,7 +3,7 @@ import { PanelShell } from '../../components/PanelShell';
 import panel from '../../styles/panel.module.css';
 import styles from './MobilePanel.module.css';
 import { QrCode } from './QrCode';
-import { copyText } from './copyText';
+import { copyText } from '../../lib/copyText';
 import { resolveMobileUrl } from './mobileUrl';
 
 export function MobilePanel({ onClose }: { onClose: () => void }) {
