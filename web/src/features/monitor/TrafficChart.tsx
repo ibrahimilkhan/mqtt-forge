@@ -8,6 +8,7 @@ import { shapeOf } from '../../lib/shape';
 import { cadence, changePoint, cycle, summarise } from '../../lib/stats';
 import { useNow } from '../../lib/useNow';
 import { useRuleLookup } from '../../lib/useRuleLookup';
+import { Download, Fold, Unfold } from '../brand/icons';
 import { CHIP, CONTROLS } from '../appearance/controls';
 import type { ReadingId } from '../appearance/readings';
 import { useAppearanceStore } from '../../stores/appearanceStore';
@@ -281,6 +282,10 @@ function Controls({
     return shown.length > 0 ? { under, shown } : { under: '', shown: branchesUnder(fields, '') };
   }, [fields, under]);
 
+  // Whether this body nests its numbers at all — which decides whether the chip row is a thing
+  // that changes as it is used, and so whether it may share a line with anything.
+  const deep = useMemo(() => fields.some((name) => name.includes('.')), [fields]);
+
   // A first save with no folder yet opens the dialog rather than refusing and telling the reader
   // to go and set something up before pressing the button they have just pressed.
   const take = async () => {
@@ -326,19 +331,39 @@ function Controls({
           holding in their head while they hunt for one number in it. A body with two flat numbers
           in it is unaffected — its top level is both of them. */}
       {fields.length > 1 && (
-        <div className={styles.fields} role="group" aria-label="Field to chart">
+        <div
+          className={styles.fields}
+          // A nested body's chip row changes on every step of the walk — six segments, then two,
+          // then five — and while it shared a line with the range and the view, every one of
+          // those steps slid them along and shunted the plot up or down under the reader's hand.
+          // A body whose numbers are flat has a row that never changes, so it keeps the line it
+          // has always shared. See .fields[data-deep].
+          data-deep={deep ? '' : undefined}
+          role="group"
+          aria-label="Field to chart"
+        >
           {chooser ? (
             <>
               {level.under !== '' && (
-                <button
-                  type="button"
-                  className={styles.chip}
-                  aria-label={`Back out of ${named(level.under)}`}
-                  title={CONTROLS.up.what}
-                  onClick={() => setUnder(above(level.under))}
-                >
-                  ← {named(level.under)}
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className={styles.chip}
+                    data-role="up"
+                    aria-label={`Back out of ${named(level.under)}`}
+                    title={CONTROLS.up.what}
+                    onClick={() => setUnder(above(level.under))}
+                  >
+                    <span className={styles.mark} aria-hidden="true">
+                      ←
+                    </span>
+                    {named(level.under)}
+                  </button>
+                  {/* The way out is not one of the things that can be picked, so a rule stands
+                      between it and them — the same answer the ranges group gives to the same
+                      question one group over. */}
+                  <span className={styles.split} aria-hidden="true" />
+                </>
               )}
 
               {level.shown.map((branch) =>
@@ -358,40 +383,58 @@ function Controls({
                     key={branch.segment}
                     type="button"
                     className={styles.chip}
+                    data-role="into"
                     aria-label={`Open ${named(branch.under!)}`}
                     title={`${branch.count} field${branch.count === 1 ? '' : 's'} under it`}
                     onClick={() => setUnder(branch.under!)}
                   >
-                    {branch.segment} ›
+                    {branch.segment}
+                    <span className={styles.mark} aria-hidden="true">
+                      ›
+                    </span>
                   </button>
                 ),
               )}
 
               {/* Away, once the reader has what they came for. The chips are a way in rather than
-                  a reading, and a way in that stays open is a way in that has become furniture. */}
+                  a reading, and a way in that stays open is a way in that has become furniture.
+
+                  A mark, and held against the far end. It was the word 'hide' standing at the end
+                  of `channel dbm errors peers txPower`, where it read as one more thing the
+                  message carries — a field called hide. Nothing drawn can be mistaken for a field
+                  name, and nothing at the other end of the row can be mistaken for part of the
+                  list. */}
+              <span className={styles.split} data-end aria-hidden="true" />
               <button
                 type="button"
                 className={styles.chip}
+                data-role="aside"
                 aria-label="Put the field chips away"
                 title={CONTROLS.fewer.what}
                 onClick={() => setChooser(false)}
               >
-                {CONTROLS.fewer.label}
+                <Fold />
               </button>
             </>
           ) : (
             /* What is left when they are away: the field being charted, which is the one thing
-               the row was saying that the reader still needs, and the way back to the rest. */
-            <button
-              type="button"
-              className={styles.chip}
-              aria-label="Show the field chips"
-              title={CONTROLS.fewer.what}
-              aria-pressed
-              onClick={() => setChooser(true)}
-            >
-              {field ?? CONTROLS.field.label}
-            </button>
+               the row was still saying that the reader needs. A label rather than a control — the
+               way back is the mark beside it, and two controls for one gesture is one of them
+               being guessed at. */
+            <>
+              <span className={styles.chosen}>{field ?? CONTROLS.field.label}</span>
+              <span className={styles.split} data-end aria-hidden="true" />
+              <button
+                type="button"
+                className={styles.chip}
+                data-role="aside"
+                aria-label="Show the field chips"
+                title={CONTROLS.fewer.what}
+                onClick={() => setChooser(true)}
+              >
+                <Unfold />
+              </button>
+            </>
           )}
         </div>
       )}
@@ -465,6 +508,16 @@ function Controls({
               disabled={exporter.saving || exporter.choosing}
               onClick={take}
             >
+              {/* In front of the word rather than instead of it: 'csv' says what the file is and
+                  the mark says what the button does, and neither is the other. It goes while the
+                  button is reporting — 'saved' and 'failed' are what happened, not what pressing
+                  it will do, and a mark that means 'save' standing in front of 'failed' is the
+                  button arguing with itself. */}
+              {saved === 'idle' && (
+                <span className={styles.mark} aria-hidden="true">
+                  <Download />
+                </span>
+              )}
               {{ idle: CONTROLS.csv.label, done: 'saved', refused: 'failed' }[saved]}
             </button>
           </span>

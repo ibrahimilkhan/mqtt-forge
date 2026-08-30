@@ -144,10 +144,13 @@ describe('a body with its numbers nested', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Put the field chips away' }));
 
     expect(screen.queryByRole('button', { name: 'Open broker' })).not.toBeInTheDocument();
-    const left = screen.getByRole('button', { name: 'Show the field chips' });
-    expect(left).toHaveTextContent('uptime');
+    // A label rather than a control: the way back is the mark beside it, and the word 'hide'
+    // standing at the end of a row of field names read as one more field.
+    expect(screen.getByTestId('chart')).toHaveTextContent('uptime');
+    const back = screen.getByRole('button', { name: 'Show the field chips' });
+    expect(back).toHaveTextContent('');
 
-    await userEvent.click(left);
+    await userEvent.click(back);
 
     expect(screen.getByRole('button', { name: 'Open broker' })).toBeInTheDocument();
   });

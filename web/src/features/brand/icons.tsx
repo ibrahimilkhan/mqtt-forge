@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 /**
- * The six marks the panel menu wears, one per panel — and eleven more that are not panels.
+ * The six marks the panel menu wears, one per panel — and twelve more that are not panels.
  *
  * Drawn here rather than pulled from an icon set. Twelve glyphs is not worth a dependency, and a
  * set drawn to its own rules would sit beside the mark in `marks.tsx` looking borrowed: the same
@@ -16,7 +16,7 @@ import type { ReactNode } from 'react';
  * `Warning` wears no panel: it stands on the Broker row beside `Antenna`, and a triangle
  * borrowed from somewhere else would look stuck on rather than part of the rail.
  *
- * The last nine wear no panel either — they go inside buttons, in the same mono the button is
+ * The last ten wear no panel either — they go inside buttons, in the same mono the button is
  * lettered in, at the size of one line of that type. Which is what they are drawn for: a mark in
  * a button has one line of type's worth of room and has to be recognised in it, so each of them
  * is the simplest shape that survives thirteen pixels.
@@ -285,6 +285,23 @@ export const Fold = () => (
     <>
       <path d="M8 5.5 12 9.5 16 5.5" />
       <path d="M8 18.5 12 14.5 16 18.5" />
+    </>
+  </Glyph>
+);
+
+/**
+ * Out of the console and onto the disk.
+ *
+ * Lucide's `download` — an arrow into a tray, which is the one picture of saving that has never
+ * meant anything else. It stands in front of the word rather than instead of it: 'csv' says what
+ * the file is and the mark says what the button does, and neither of those is the other.
+ */
+export const Download = () => (
+  <Glyph>
+    <>
+      <path d="M12 3.5v11" />
+      <path d="M7.5 10 12 14.5 16.5 10" />
+      <path d="M4 16v2.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V16" />
     </>
   </Glyph>
 );

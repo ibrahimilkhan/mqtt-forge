@@ -66,9 +66,9 @@ export const CONTROLS: Record<ControlId, Control & { group: ControlGroup }> = {
     when: 'Only after opening one.',
   },
   fewer: {
-    label: 'hide',
+    label: '⌄',
     group: 'what',
-    what: 'Puts the field chips away. The one chip left behind names what is charted, and brings them back.',
+    what: 'Puts the field chips away, and brings them back. What is left behind names the field being charted.',
     when: 'Only when the bodies carry more than one number.',
   },
   branch: {

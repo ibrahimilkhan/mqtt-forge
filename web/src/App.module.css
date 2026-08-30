@@ -64,6 +64,15 @@
   font-size: var(--t-lead);
   font-weight: 600;
   letter-spacing: -0.03em;
+  /* The protocol half, in the grey the mark draws its F in, so the lockup spends two colours
+     between the icon and the name rather than three. MQTT is what this speaks and Forge is what
+     it is, and that is the order the two tones put them in.
+
+     A literal, for the same reason the mark's three are: these belong to the lockup rather than
+     to the theme. --muted is the near miss to resist — #67728a is ten points of blue off this,
+     close enough that using it would read as a colour someone got slightly wrong rather than as
+     a match, which is exactly how a dark grey fails against the petrol. */
+  color: #6b7480;
   /* Room for the tails. At a line height of 1 the box is shorter than the glyphs need, and the
      clip below — which is here to stop the name spilling sideways out of a rail that can be
      52px wide — took the descenders of the Q and the g off with it. The band's height is set by
@@ -204,6 +213,12 @@
   flex: 1;
   /* Stops a tall pane from pushing the row past the viewport. */
   min-height: 0;
+  /* The one seam in the console that was still welded. Both sides of it are plates — the rail
+     says so at the top of this file and the tree pane says so below — and both had turned their
+     corners for years against a neighbour standing flush on them, which is a corner nobody can
+     see. The same three pixels of channel that divide every other section from the next, so the
+     rail and the tree read as two things rather than one white surface with a hairline in it. */
+  gap: var(--channel);
 }
 
 /* Open, the rail would eat a narrow screen, so it lies over the workspace instead of beside it.
