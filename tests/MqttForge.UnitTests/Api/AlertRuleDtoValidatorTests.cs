@@ -420,27 +420,6 @@ public class AlertRuleDtoValidatorTests
             actions: [Publish("mqttforge/alerts/boiler", retain: true)])));
     }
 
-    // Three of the four still are. Outlier has landed — it is in the union, this validator holds
-    // its ranges, and the tests below exercise them — while distributionShift, shapeChange and
-    // pulse are still refused by the serialiser, because [JsonPolymorphic] on AlertCondition
-    // carries no fallback and a body naming one of them never becomes an AlertRulesDto at all.
-    // Pinned rather than assumed, because 'the layer below refuses it' is exactly the kind of
-    // claim that stops being true without anybody noticing. Task 7 puts the last three into the
-    // union and deletes this test outright, replacing it with facts about their ranges.
-    [Theory]
-    [InlineData("""{"type":"distributionShift","window":200}""")]
-    [InlineData("""{"type":"shapeChange","window":200}""")]
-    [InlineData("""{"type":"pulse","metric":"count","op":"gt","value":3,"window":200}""")]
-    public void The_statistical_conditions_are_refused_before_this_validator_sees_them(string condition)
-    {
-        var json = $$"""
-            {"rules":[{"id":"6f1d","name":"Boiler","enabled":true,"filter":"plant/boiler/temp",
-            "field":null,"condition":{{condition}},"clear":null,"for":null,"cooldown":null,
-            "severity":"warn","actions":[]}]}
-            """;
-
-        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<AlertRulesDto>(json, WireJson.Client));
-    }
 
     // The spec's ranges: window 20..2000, and k means two different things — an interquartile
     // multiplier for tukey, allowed 0.5 to 5, and a count of deviations for sigma, allowed 1 to
@@ -501,5 +480,37 @@ public class AlertRuleDtoValidatorTests
             new ThresholdCondition(ThresholdOp.Gt, 90),
             new AllCondition([new OutlierCondition(OutlierMethod.Sigma, 0, 5000)])
         ]))));
+    }
+
+    // 'for' is 'the condition has held for this long', and these two are not conditions that hold
+    // — they are moments. A distribution changes at a cycle boundary and is either the same name
+    // as last time or a different one; there is no interval for a duration to be measured over,
+    // so a rule carrying both would silently never fire.
+    [Fact]
+    public void Refuses_a_For_given_with_a_distribution_shift()
+    {
+        Assert.False(IsValid(Rule(condition: new DistributionShiftCondition(200), forSeconds: 30)));
+        Assert.Contains("'for'", Message(Rule(condition: new DistributionShiftCondition(200), forSeconds: 30)));
+    }
+
+    // Inside a composite too, exactly as the silence rule is: an edge buried in an 'any' is still
+    // an edge, and the rule around it is still one nobody could make hold for thirty seconds.
+    [Fact]
+    public void Refuses_a_For_given_with_a_shape_change_inside_a_composite()
+    {
+        var condition = new AnyCondition([new ThresholdCondition(ThresholdOp.Gt, 90), new ShapeChangeCondition(200)]);
+
+        Assert.False(IsValid(Rule(condition: condition, forSeconds: 30)));
+    }
+
+    // A pulse is not an edge. 'The period has been over eight seconds for two minutes' is a
+    // sentence about a state that holds, and refusing it would take away the one thing that
+    // stops a rhythm rule ringing on a single slow cycle.
+    [Fact]
+    public void Accepts_a_For_given_with_a_pulse()
+    {
+        var condition = new PulseCondition(PulseMetric.Period, ThresholdOp.Gt, 8000, 200);
+
+        Assert.True(IsValid(Rule(condition: condition, forSeconds: 120)));
     }
 }

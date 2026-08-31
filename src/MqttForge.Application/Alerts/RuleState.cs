@@ -1,4 +1,5 @@
 using MqttForge.Application.Alerts.Conditions;
+using MqttForge.Application.Alerts.Statistics;
 using MqttForge.Domain.Models;
 
 namespace MqttForge.Application.Alerts;
@@ -58,4 +59,42 @@ public sealed class RuleState
     // accepted, which is why a single normal reading in the middle of a step starts the count
     // again — a step that keeps being interrupted is not yet somewhere the plant lives.
     public int OutlierRun { get; set; }
+
+    /// <summary>
+    /// The distribution this pair has settled into, and the one challenging it.
+    /// </summary>
+    // Three members rather than one because a name is not believed the first time it is seen. A
+    // five per cent test refuses one healthy window in twenty, and a machine that took each cycle
+    // at its word would report a change and a change back, all day, on a stream that never moved.
+    // Confirmed is what the pair is officially on; Candidate is what the last cycle saw; Cycles is
+    // how many cycles running it has seen it. Confirmed only moves once the challenger has held a
+    // whole window, which is also what lets the alert it raised go.
+    public FitName? ConfirmedFit { get; set; }
+    public FitName? CandidateFit { get; set; }
+    public int FitCycles { get; set; }
+
+    /// <summary>The same three, for what kind of signal this is.</summary>
+    public ShapeId? ConfirmedShape { get; set; }
+    public ShapeId? CandidateShape { get; set; }
+    public int ShapeCycles { get; set; }
+
+    /// <summary>
+    /// The ring's own running total at the last cycle. Subtracting it from the ring's total is
+    /// 'readings since the cycle', which is what the machine asks and what the name says.
+    /// </summary>
+    // In readings and not in seconds, because a quarter of a window is a quarter of a window
+    // whether the topic sends fifty a second or one a minute — and a cycle clock on the wall would
+    // judge a slow sensor on a window that is mostly older than the question.
+    public long ReadingsSinceCycle { get; set; }
+
+    /// <summary>When this pair was last looked at statistically. The once-a-second quota.</summary>
+    // Summarising, fitting and shaping two thousand readings is not something to do fifty times a
+    // second on twenty thousand pairs. Once a second per pair is the spec's ceiling, and the
+    // outlier condition is deliberately outside it: it judges the arriving reading, and a reading
+    // nobody looked at is a reading nobody can alarm on.
+    //
+    // On the pair and not on the rule, because the cost is per pair: a rule watching a hundred
+    // topics does a hundred fits a second, and one chatty line must not be able to spend the quiet
+    // ones' second.
+    public DateTimeOffset? LastStatistical { get; set; }
 }

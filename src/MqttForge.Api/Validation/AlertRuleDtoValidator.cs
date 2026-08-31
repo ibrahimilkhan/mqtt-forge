@@ -136,12 +136,16 @@ public sealed partial class AlertRulesDtoValidator : AbstractValidator<AlertRule
 
             // 'nothing has arrived for 300 seconds, for 30 seconds' has no meaning the engine could
             // implement, and the two numbers read as one interval to everybody who sees them. The
-            // whole tree and not just the root: a silence inside an `any` is still a silence.
+            // two edge conditions are refused for the mirror-image reason: a distribution shift and
+            // a shape change are moments rather than states, so there is no interval for a duration
+            // to be measured over and a rule carrying both would silently never fire. The whole
+            // tree and not just the root: an edge inside an `any` is still an edge.
             rule.RuleFor(x => x.For)
-                .Must((x, _) => !HoldsSilence(x.Condition))
+                .Must((x, _) => !AlreadyADuration(x.Condition))
                 .When(x => x.For is not null && x.Condition is not null)
-                .WithMessage("'for' cannot be given with a silence condition: a silence is already " +
-                             "a duration.");
+                .WithMessage("'for' cannot be given with a silence, a distribution shift or a shape " +
+                             "change: a silence is already a duration, and the other two are moments " +
+                             "rather than states that can hold.");
 
             rule.RuleFor(x => x.For).GreaterThanOrEqualTo(0).When(x => x.For is not null);
             rule.RuleFor(x => x.Cooldown).GreaterThanOrEqualTo(0).When(x => x.Cooldown is not null);
@@ -242,11 +246,15 @@ public sealed partial class AlertRulesDtoValidator : AbstractValidator<AlertRule
     // Depth is not policed here on purpose: System.Text.Json refuses anything deeper than 64
     // levels while binding, so a hand-written 'all' chain deep enough to overflow this recursion
     // cannot reach the validator in the first place.
-    private static bool HoldsSilence(AlertCondition? condition) => condition switch
+    //
+    // Pulse is deliberately absent from this list. 'The period has been over eight seconds for two
+    // minutes' is a sentence about a state that holds, and refusing it would take away the one
+    // thing that stops a rhythm rule ringing on a single slow cycle.
+    private static bool AlreadyADuration(AlertCondition? condition) => condition switch
     {
-        SilenceCondition => true,
-        AllCondition all => all.Of.Any(HoldsSilence),
-        AnyCondition any => any.Of.Any(HoldsSilence),
+        SilenceCondition or DistributionShiftCondition or ShapeChangeCondition => true,
+        AllCondition all => all.Of.Any(AlreadyADuration),
+        AnyCondition any => any.Of.Any(AlreadyADuration),
         _ => false
     };
 
