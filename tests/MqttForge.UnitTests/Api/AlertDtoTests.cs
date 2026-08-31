@@ -70,6 +70,10 @@ public class AlertDtoTests
     // The two numbers the snapshot cannot hold. Dropped messages are the engine's own count, but
     // webhooks are dropped by a queue in another class, and how long the engine has been blind is
     // a question only the link supervisor can answer.
+    //
+    // And the warming list, which is on the snapshot and needs no help from anywhere: the sentence
+    // is built here rather than in the browser so that the panel, a webhook's reader and anybody
+    // curling the endpoint are all told the same thing in the same words.
     [Fact]
     public void The_panel_payload_carries_the_snapshot_and_the_two_numbers_beside_it()
     {
@@ -80,7 +84,8 @@ public class AlertDtoTests
             [new RuleDiagnostic("6f1d", 3, 1200, 4, At, Faulted: false, null)],
             Dropped: 7,
             Suppressed: 2,
-            [new CappedRule("6f1d", 12)]);
+            [new CappedRule("6f1d", 12)],
+            [new WarmingPair("6f1d", "plant/boiler/flow", 7, 20)]);
 
         var dto = AlertsDto.Of(snapshot, webhooksDropped: 5, blindSeconds: 42);
 
@@ -93,6 +98,10 @@ public class AlertDtoTests
         Assert.Equal(5, dto.WebhooksDropped);
         Assert.Equal(2, dto.Suppressed);
         Assert.Equal(42, dto.BlindSeconds);
+
+        var warming = Assert.Single(dto.Warming);
+        Assert.Equal("plant/boiler/flow", warming.Topic);
+        Assert.Equal("warming up, 7/20", warming.Note);
     }
 
     // The GET carries the server's configuration because the panel's own sentences depend on it:

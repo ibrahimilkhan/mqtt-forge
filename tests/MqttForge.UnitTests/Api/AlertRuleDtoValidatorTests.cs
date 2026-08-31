@@ -513,4 +513,85 @@ public class AlertRuleDtoValidatorTests
 
         Assert.True(IsValid(Rule(condition: condition, forSeconds: 120)));
     }
+
+    // The window is the engine's own range: below twenty there is not enough of a run for any of
+    // this to mean anything, and above two thousand a single pair is sixty-four kilobytes of ring.
+    //
+    // Nought is deliberately not in this theory. An omitted window binds to nought, and task 5
+    // already pins that a bare {"type":"outlier","method":"tukey"} saves — the engine supplies
+    // DefaultWindow for it. Refusing nought here would make the shortest honest way to write any
+    // of these four conditions unsaveable, so the only numbers refused are numbers a person typed.
+    [Theory]
+    [InlineData(19)]
+    [InlineData(2001)]
+    public void Refuses_a_statistical_window_outside_the_engines_range(int window)
+    {
+        Assert.False(IsValid(Rule(condition: new DistributionShiftCondition(window))));
+        Assert.Contains("20", Message(Rule(condition: new DistributionShiftCondition(window))));
+    }
+
+    [Theory]
+    [InlineData(20)]
+    [InlineData(200)]
+    [InlineData(2000)]
+    public void Accepts_a_statistical_window_at_and_inside_the_edges(int window)
+    {
+        Assert.True(IsValid(Rule(condition: new ShapeChangeCondition(window))));
+    }
+
+    // k means two different things and so has two different ranges. A tukey of 3 is a wide fence;
+    // a sigma of 3 is the usual one. A single shared range would let somebody write 'sigma 0.5',
+    // which fires on a third of a healthy stream.
+    [Theory]
+    [InlineData(OutlierMethod.Tukey, 0.4)]
+    [InlineData(OutlierMethod.Tukey, 5.1)]
+    [InlineData(OutlierMethod.Sigma, 0.9)]
+    [InlineData(OutlierMethod.Sigma, 10.1)]
+    public void Refuses_a_k_outside_its_own_methods_range(OutlierMethod method, double k)
+    {
+        Assert.False(IsValid(Rule(condition: new OutlierCondition(method, k, 200))));
+    }
+
+    [Theory]
+    [InlineData(OutlierMethod.Tukey, 0.5)]
+    [InlineData(OutlierMethod.Tukey, 1.5)]
+    [InlineData(OutlierMethod.Sigma, 1)]
+    [InlineData(OutlierMethod.Sigma, 3)]
+    [InlineData(OutlierMethod.Sigma, 10)]
+    public void Accepts_a_k_its_method_allows(OutlierMethod method, double k)
+    {
+        Assert.True(IsValid(Rule(condition: new OutlierCondition(method, k, 200))));
+    }
+
+    // A duty is a share of the readings. 'duty > 2' is a rule nobody can ever satisfy, and the
+    // moment to say so is while the person who wrote it is still looking at it.
+    [Theory]
+    [InlineData(1.5)]
+    [InlineData(-0.1)]
+    public void Refuses_a_duty_that_is_not_a_share(double value)
+    {
+        var condition = new PulseCondition(PulseMetric.Duty, ThresholdOp.Gt, value, 200);
+
+        Assert.False(IsValid(Rule(condition: condition)));
+    }
+
+    // A count, a period and a width are never negative, so 'count > -1' is a rule that fires on
+    // every message for ever — the opposite failure and the same refusal.
+    [Fact]
+    public void Refuses_a_pulse_measured_against_a_negative_number()
+    {
+        var condition = new PulseCondition(PulseMetric.Count, ThresholdOp.Gt, -1, 200);
+
+        Assert.False(IsValid(Rule(condition: condition)));
+    }
+
+    // The enum converter refuses an unknown word, but a number binds to whatever it says, and a
+    // metric of 9 is a rule the evaluator has to fault rather than judge.
+    [Fact]
+    public void Refuses_a_pulse_metric_this_server_has_never_heard_of()
+    {
+        var condition = new PulseCondition((PulseMetric)9, ThresholdOp.Gt, 1, 200);
+
+        Assert.False(IsValid(Rule(condition: condition)));
+    }
 }

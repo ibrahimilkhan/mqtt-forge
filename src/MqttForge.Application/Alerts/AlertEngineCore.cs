@@ -715,7 +715,17 @@ public sealed class AlertEngineCore
     {
         var active = new List<Alert>();
         var muted = new List<MutedPair>();
+        var warming = new List<WarmingPair>();
         var seen = new Dictionary<string, (int Topics, long Evaluated, long Skipped)>(StringComparer.Ordinal);
+
+        // Which rules judge statistically, worked out once for the whole walk rather than once per
+        // pair. The question is about the rule's condition tree, and a '#' rule has a thousand
+        // pairs asking it — a tree walk each would make the panel's refresh cost more than the
+        // judging does.
+        HashSet<string>? statistical = null;
+        foreach (var rule in _rules)
+            if (Statistical.Judges(rule.Condition) || Statistical.Judges(rule.Clear))
+                (statistical ??= new HashSet<string>(StringComparer.Ordinal)).Add(rule.Id);
 
         // One pass. Everything below is a projection of the pairs, and walking twenty thousand of
         // them three times to build three lists costs three times what it needs to on exactly the
@@ -724,6 +734,14 @@ public sealed class AlertEngineCore
         {
             if (state.Active is { } alert) active.Add(alert);
             if (state.MutedUntil is { } until) muted.Add(new MutedPair(state.RuleId, state.Topic, until));
+
+            // Only the rules that read history. Every pair holds a ring, so a threshold rule's
+            // pairs would otherwise all report themselves as filling a window nothing is going to
+            // read — a row about something that is not happening, on the panel whose whole job is
+            // telling a quiet rule from a broken one.
+            if (statistical?.Contains(state.RuleId) == true && Statistical.Warming(state.Window))
+                warming.Add(new WarmingPair(state.RuleId, state.Topic,
+                                            Statistical.Have(state.Window), Statistical.EnoughToJudge));
 
             seen.TryGetValue(state.RuleId, out var row);
             seen[state.RuleId] = (row.Topics + 1, row.Evaluated + state.Evaluated, row.Skipped + state.Skipped);
@@ -742,6 +760,20 @@ public sealed class AlertEngineCore
             var byRule = string.CompareOrdinal(a.RuleId, b.RuleId);
             return byRule != 0 ? byRule : string.CompareOrdinal(a.Topic, b.Topic);
         });
+
+        // Sorted before it is cut, so that the hundred shown are always the same hundred while they
+        // are warming rather than whichever hundred the dictionary happened to hand over this
+        // second. A '#' rule meeting a fresh broker is a thousand of these at once and none of them
+        // is news for more than twenty readings, so the list is capped and the panel says nothing
+        // more about the rest — they are a moment old and about to stop existing.
+        warming.Sort(static (a, b) =>
+        {
+            var byRule = string.CompareOrdinal(a.RuleId, b.RuleId);
+            return byRule != 0 ? byRule : string.CompareOrdinal(a.Topic, b.Topic);
+        });
+
+        if (warming.Count > MaxWarmingShown)
+            warming.RemoveRange(MaxWarmingShown, warming.Count - MaxWarmingShown);
 
         // Walked in the rule set's own order — _rules, the file-order list, not _byId — so the
         // panel's diagnostics line up with the editor's list rather than with a hash table's
@@ -765,16 +797,15 @@ public sealed class AlertEngineCore
                 row.Evaluated,
                 row.Skipped,
                 tally?.LastFiredAt,
-// Faulted has no writer until the fault-containment task; a rule that has not
-// thrown reports false, which is every rule until then.
-Faulted: _faults.ContainsKey(rule.Id),
+                Faulted: _faults.ContainsKey(rule.Id),
                 FaultReason: _faults.GetValueOrDefault(rule.Id)));
 
             if (tally is { Refused.Count: > 0 })
                 capped.Add(new CappedRule(rule.Id, tally.Refused.Count));
         }
 
-        return new AlertSnapshot(active, [.. _history], muted, diagnostics, _dropped, _suppressed, capped);
+        return new AlertSnapshot(active, [.. _history], muted, diagnostics, _dropped, _suppressed,
+                                 capped, warming);
     }
 
     // History only. The active alerts are not history — they are the present, and a user clearing
@@ -1412,4 +1443,10 @@ Faulted: _faults.ContainsKey(rule.Id),
         PulseMetric.Period => "period (ms)",
         _ => "width (ms)",
     };
+
+    /// <summary>How many warming pairs the panel is shown at once.</summary>
+    // A hundred is more rows than anybody reads and far fewer than a '#' rule produces on a fresh
+    // broker. The alternative — every one of them — would put a thousand rows into a frame that is
+    // sent once a second, to say something that stops being true after twenty readings.
+    public const int MaxWarmingShown = 100;
 }

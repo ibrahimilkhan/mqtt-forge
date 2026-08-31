@@ -228,4 +228,49 @@ public class ConfigHashTests
         Assert.Equal(64, hash.Length);
         Assert.All(hash, character => Assert.True(char.IsAsciiHexDigitLower(character)));
     }
+
+    // The window is what the engine sizes the ring from, so a user who widens a rule from two
+    // hundred readings to two thousand has changed what the rule means. A hash that missed it
+    // would leave the rule judging on the old ring until somebody restarted the process.
+    [Fact]
+    public void Of_notices_a_widened_statistical_window()
+    {
+        var narrow = Rule(new DistributionShiftCondition(200));
+        var wide = Rule(new DistributionShiftCondition(2000));
+
+        Assert.NotEqual(ConfigHash.Of(narrow), ConfigHash.Of(wide));
+    }
+
+    // Same k, same window, different method: 1.5 means an IQR multiplier to one of them and one
+    // and a half deviations to the other, which are not the same rule at all.
+    [Fact]
+    public void Of_notices_the_outlier_method_changing_under_the_same_k()
+    {
+        var tukey = Rule(new OutlierCondition(OutlierMethod.Tukey, 3, 200));
+        var sigma = Rule(new OutlierCondition(OutlierMethod.Sigma, 3, 200));
+
+        Assert.NotEqual(ConfigHash.Of(tukey), ConfigHash.Of(sigma));
+    }
+
+    // Every field of a pulse rule is part of what it asks. The metric especially: 'period > 8000'
+    // and 'width > 8000' share three of their four numbers and mean opposite things.
+    [Fact]
+    public void Of_notices_every_part_of_a_pulse_rule()
+    {
+        var period = Rule(new PulseCondition(PulseMetric.Period, ThresholdOp.Gt, 8000, 200));
+        var width = Rule(new PulseCondition(PulseMetric.Width, ThresholdOp.Gt, 8000, 200));
+        var lower = Rule(new PulseCondition(PulseMetric.Period, ThresholdOp.Gt, 4000, 200));
+
+        Assert.NotEqual(ConfigHash.Of(period), ConfigHash.Of(width));
+        Assert.NotEqual(ConfigHash.Of(period), ConfigHash.Of(lower));
+    }
+
+    // Two different statistical conditions must never hash alike — the failure the fallback arm
+    // was always at risk of, and the reason all four now have arms of their own.
+    [Fact]
+    public void Of_tells_the_two_edge_conditions_apart()
+    {
+        Assert.NotEqual(ConfigHash.Of(Rule(new DistributionShiftCondition(200))),
+                        ConfigHash.Of(Rule(new ShapeChangeCondition(200))));
+    }
 }

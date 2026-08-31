@@ -2,9 +2,9 @@ using System.Text.RegularExpressions;
 using FluentValidation;
 using MqttForge.Api.Contracts;
 using MqttForge.Application.Alerts;
+using MqttForge.Domain.Enums;
 using MqttForge.Application.Alerts.Conditions;
 using MqttForge.Domain;
-using MqttForge.Domain.Enums;
 using MqttForge.Domain.Models;
 
 namespace MqttForge.Api.Validation;
@@ -54,21 +54,8 @@ public sealed partial class AlertRulesDtoValidator : AbstractValidator<AlertRule
     public const int MaxHeaderNameLength = 64;
     public const int MaxHeaderValueLength = 1024;
     public const int MaxIdLength = 64;
-    /// <summary>Spec, "### Sayılar": a statistical window is 20 to 2000 readings.</summary>
-    public const int MinWindow = 20;
-    public const int MaxWindow = 2000;
 
-    /// <summary>The interquartile multiplier a tukey outlier may use.</summary>
-    // Below a half the fence is inside the box and every other reading is an outlier; past five
-    // it is so far out that only a fault the operator can already see would cross it.
-    public const double MinTukeyK = 0.5;
-    public const double MaxTukeyK = 5;
 
-    /// <summary>The deviations a sigma outlier may use.</summary>
-    // One deviation catches a third of a healthy normal run, which is a rule that fires all day;
-    // ten is four hundred parts per billion, which is a rule that never fires at all.
-    public const double MinSigmaK = 1;
-    public const double MaxSigmaK = 10;
 
     /// <summary>What a rule id may hold, because it is a level of a topic the engine publishes to.</summary>
     [GeneratedRegex("^[A-Za-z0-9_-]{1,64}$")]
@@ -76,9 +63,18 @@ public sealed partial class AlertRulesDtoValidator : AbstractValidator<AlertRule
 
     private readonly string _prefix;
 
+    // The engine's own range and not a pair of numbers copied into this file. The core clamps a
+    // ring to these when it opens one, so a window this validator let through unclamped would be
+    // a rule saved asking for three thousand readings and silently judged on two — which is the
+    // exact class of quiet disagreement the spec's window rule exists to end.
+    private readonly int _minWindow;
+    private readonly int _maxWindow;
+
     public AlertRulesDtoValidator(AlertEngineOptions options)
     {
         _prefix = options.TopicPrefix;
+        _minWindow = options.MinWindow;
+        _maxWindow = options.MaxWindow;
 
         RuleFor(x => x.Rules)
             .NotNull()
@@ -172,7 +168,7 @@ public sealed partial class AlertRulesDtoValidator : AbstractValidator<AlertRule
     }
 
     /// <summary>Why this condition tree cannot be saved, or null if it can.</summary>
-    private static string? Fault(AlertCondition condition)
+    private string? Fault(AlertCondition condition)
     {
         switch (condition)
         {
@@ -208,27 +204,53 @@ public sealed partial class AlertRulesDtoValidator : AbstractValidator<AlertRule
             case SilenceCondition silence when silence.After <= 0:
                 return "A silence condition has to wait at least a second.";
 
+            // k is one letter meaning two things, so it gets two ranges. Tukey's is a multiplier on
+            // the box: below half of one the fence is inside the readings' own spread and a quarter
+            // of a healthy stream is 'unusual', and past five it is outside anything a bounded
+            // sensor can reach. Sigma's is deviations, where the same two failures arrive at one
+            // and at ten. A single shared range would have to be the union of the two, which is to
+            // say no range at all.
+            //
+            // Both clauses let nought through, for the same reason OutsideTheWindow does: an
+            // omitted k binds to nought and the engine's KOf supplies the method's own default.
+            // {"type":"outlier","method":"tukey"} is the shortest honest way to ask for this
+            // condition and it has to stay saveable.
             case OutlierCondition outlier:
-                // Nought is 'not given' for both members, and both are then the engine's own
-                // default — a window of DefaultWindow and a k of 1.5 or 3. Refusing nought would
-                // make the shortest honest way to write the condition, {"type":"outlier",
-                // "method":"tukey"}, unsaveable.
-                if (outlier.Window != 0 && outlier.Window is < MinWindow or > MaxWindow)
-                    return $"An outlier window has to be between {MinWindow} and {MaxWindow} " +
-                           "readings, or absent for this server's default.";
+                return OutsideTheWindow(outlier.Window)
+                       ?? outlier.Method switch
+                       {
+                           OutlierMethod.Tukey when outlier.K != 0 && outlier.K is < 0.5 or > 5 =>
+                               "A tukey outlier's k is a multiplier on the box, from 0.5 to 5.",
+                           OutlierMethod.Sigma when outlier.K != 0 && outlier.K is < 1 or > 10 =>
+                               "A sigma outlier's k is a number of deviations, from 1 to 10.",
+                           _ when !Enum.IsDefined(outlier.Method) =>
+                               "An outlier is measured by 'tukey' or by 'sigma'.",
+                           _ => null
+                       };
 
-                // Named per method, because the two ranges are different and a person looking at a
-                // tukey rule who is told the sigma range has been told something false about the
-                // rule in front of them.
-                if (outlier.K != 0 && outlier.Method is OutlierMethod.Tukey
-                    && (outlier.K < MinTukeyK || outlier.K > MaxTukeyK))
-                    return $"A tukey outlier's k multiplies the interquartile range and has to be " +
-                           $"between {MinTukeyK} and {MaxTukeyK}.";
+            case DistributionShiftCondition shift:
+                return OutsideTheWindow(shift.Window);
 
-                if (outlier.K != 0 && outlier.Method is OutlierMethod.Sigma
-                    && (outlier.K < MinSigmaK || outlier.K > MaxSigmaK))
-                    return $"A sigma outlier's k counts deviations and has to be between " +
-                           $"{MinSigmaK} and {MaxSigmaK}.";
+            case ShapeChangeCondition change:
+                return OutsideTheWindow(change.Window);
+
+            case PulseCondition pulse:
+                if (OutsideTheWindow(pulse.Window) is { } narrow) return narrow;
+
+                // The enum converter refuses an unknown word, but a number binds to whatever it
+                // says, and a metric this server cannot read is a rule the engine has to fault
+                // rather than judge — which is a red row in the panel instead of a message here.
+                if (!Enum.IsDefined(pulse.Metric))
+                    return "A pulse is measured by 'count', 'duty', 'period' or 'width'.";
+
+                // Both of these refuse a rule that has an answer before it has any data: a duty
+                // over one can never be true, and a count over a negative number is always true.
+                // Neither is a shape error, which is exactly why nothing upstream catches them.
+                if (pulse.Metric is PulseMetric.Duty && pulse.Value is < 0 or > 1)
+                    return "A duty is the share of the readings spent past the line, from 0 to 1.";
+
+                if (pulse.Metric is not PulseMetric.Duty && pulse.Value < 0)
+                    return "A pulse count, period or width is never negative.";
 
                 return null;
 
@@ -369,6 +391,18 @@ public sealed partial class AlertRulesDtoValidator : AbstractValidator<AlertRule
     }
 
     private static bool Controls(string? text) => text is not null && text.Any(char.IsControl);
+
+    /// <summary>Why this window is not one the engine will judge anything on, or null.</summary>
+    // Nought is 'not given', for every condition that carries a window: the JSON omits an unset
+    // member, System.Text.Json binds the absence to the type's default, and the engine then uses
+    // DefaultWindow. Refusing it here would make the shortest honest way to write any of these
+    // four conditions unsaveable.
+    private string? OutsideTheWindow(int window)
+        => window != 0 && (window < _minWindow || window > _maxWindow)
+            ? $"A statistical window is between {_minWindow} and {_maxWindow} readings, or absent " +
+              "for this server's default: below that range there is not enough of a run to say " +
+              "anything, and above it one topic is holding more history than the panel can explain."
+            : null;
 }
 
 
@@ -397,4 +431,5 @@ public sealed class MuteRequestDtoValidator : AbstractValidator<MuteRequestDto>
         // disabling the rule without ever using the word, so the editor stops there and says so.
         RuleFor(x => x.Minutes).InclusiveBetween(0, AlertEngineCore.MaxMuteMinutes);
     }
+
 }

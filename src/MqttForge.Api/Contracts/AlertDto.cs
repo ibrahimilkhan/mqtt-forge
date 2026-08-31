@@ -72,6 +72,10 @@ public sealed record AlertDto(
 // Infrastructure that the core has never heard of, and BlindSeconds is the link supervisor's
 // answer to "how long has this engine been unable to see anything" — which is the one number that
 // explains a silent alerting system, and so the one number that must never be missing.
+//
+// Warming is the other explanation for a silent one, and the commoner: a statistical rule that has
+// only just been saved is right to say nothing, and without this the endpoint has no way to tell
+// its readers the difference between not yet and never.
 public sealed record AlertsDto(
     IReadOnlyList<AlertDto> Active,
     IReadOnlyList<AlertDto> History,
@@ -81,7 +85,8 @@ public sealed record AlertsDto(
     int WebhooksDropped,
     int Suppressed,
     IReadOnlyList<CappedRuleDto> Capped,
-    int BlindSeconds)
+    int BlindSeconds,
+    IReadOnlyList<WarmingPairDto> Warming)
 {
     public static AlertsDto Of(AlertSnapshot snapshot, int webhooksDropped, int blindSeconds) =>
         new([.. snapshot.Active.Select(AlertDto.Of)],
@@ -94,7 +99,9 @@ public sealed record AlertsDto(
             webhooksDropped,
             snapshot.Suppressed,
             [.. snapshot.Capped.Select(capped => new CappedRuleDto(capped.RuleId, capped.Untracked))],
-            blindSeconds);
+            blindSeconds,
+            [.. snapshot.Warming.Select(pair => new WarmingPairDto(
+                pair.RuleId, pair.Topic, pair.Have, pair.Need))]);
 }
 
 /// <summary>A silenced (rule, topic) pair and the moment it starts speaking again.</summary>
@@ -120,3 +127,13 @@ public sealed record CappedRuleDto(string RuleId, int Untracked);
 // again an hour later is a different Alert with a different Id, and a mute set on the boiler has
 // to outlive that. It is a body rather than a path because a topic carries '/'.
 public sealed record MuteRequestDto(string RuleId, string Topic, int Minutes);
+
+/// <summary>A pair still filling the shortest run this server will judge anything on.</summary>
+// The sentence is built here rather than in the browser, for the same reason Reason and
+// FaultReason are: this endpoint has three readers — the panel, whoever curls it, and whatever a
+// person wires it into — and a number pair that each of them phrases for itself is three different
+// sentences about one fact. The numbers travel beside it, so a reader that wants a bar has one.
+public sealed record WarmingPairDto(string RuleId, string Topic, int Have, int Need)
+{
+    public string Note => $"warming up, {Have}/{Need}";
+}

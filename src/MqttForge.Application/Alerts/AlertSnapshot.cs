@@ -2,13 +2,6 @@ using MqttForge.Domain.Models;
 
 namespace MqttForge.Application.Alerts;
 
-// Everything the panel shows, as one immutable object. The pump writes it to a field after each
-// change and GET /api/alerts only reads that field, so no reader ever takes a lock on state the
-// message path is writing.
-//
-// Dropped is the one number the core cannot know: messages are dropped by the channel in front
-// of it, and by the time a message is missing there is nothing here to notice. Task 13 gives the
-// core a SetDropped so the transport can hand the running total in.
 public sealed record AlertSnapshot(
     IReadOnlyList<Alert> Active,
     IReadOnlyList<Alert> History,
@@ -16,7 +9,8 @@ public sealed record AlertSnapshot(
     IReadOnlyList<RuleDiagnostic> Rules,
     int Dropped,
     int Suppressed,
-    IReadOnlyList<CappedRule> Capped);
+    IReadOnlyList<CappedRule> Capped,
+    IReadOnlyList<WarmingPair> Warming);
 
 // Muting addresses the pair, because that is what an alarm belongs to. An id resolved back to a
 // pair would be a step that can disagree with itself, and a topic carries '/' so it cannot go in
@@ -38,3 +32,13 @@ public sealed record RuleDiagnostic(
 // A rule at a ceiling keeps working on what it already tracks and counts what it had to leave
 // out. Stopping the rule outright would answer a memory question by turning off an alarm.
 public sealed record CappedRule(string RuleId, int Untracked);
+
+// A statistical rule says nothing for its first twenty readings on a topic, and that silence is
+// the one failure this panel exists to explain: a rule that has been saved, matches, is receiving
+// messages and is correctly quiet looks exactly like a rule that is broken.
+//
+// A row per pair rather than a flag on the rule, because a rule matching two hundred topics is
+// warm on a hundred and ninety-eight of them and 'this rule is warming up' would be false about
+// almost all of it. Have and Need rather than a percentage: seven of twenty is a number somebody
+// can watch move, and eventually stop watching.
+public sealed record WarmingPair(string RuleId, string Topic, int Have, int Need);

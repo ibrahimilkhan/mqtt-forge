@@ -45,12 +45,6 @@ public static class ConfigHash
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToString())));
     }
 
-    /// <summary>
-    /// Walks the condition tree by hand. The obvious shortcut — a record's own ToString, which
-    /// prints every property — is wrong for exactly the conditions that matter: `all` and `any`
-    /// hold a list, and a record prints a list as its type name, so every composite rule in the
-    /// file would hash the same as every other.
-    /// </summary>
     private static void Append(StringBuilder text, AlertCondition? condition)
     {
         switch (condition)
@@ -119,24 +113,44 @@ public static class ConfigHash
                     .Append(silence.After.ToString(CultureInfo.InvariantCulture)).Append(')');
                 break;
 
+            // The window is in the fingerprint for all four, and it is the reason they could not be
+            // left to the fallback below. It is the one field of a statistical condition that
+            // changes what the engine allocates: widening a rule from two hundred readings to two
+            // thousand has to throw the ring away and start again, or the rule goes on being judged
+            // on a window the user has just told us is too short.
             case OutlierCondition outlier:
-                // An arm of its own rather than the default's ToString, for the culture. A
-                // record prints a double with the current culture's separator, so the same rule
-                // would fingerprint as "K = 1.5" here and "K = 1,5" on a Turkish machine — and
-                // this value is written into alert-state.json and read back after a restart,
-                // where a fingerprint that moved reads as "rule changed" and quietly ends every
-                // alarm the file was carrying. Number() is invariant, which is why it exists.
                 text.Append("outlier(").Append(outlier.Method.ToString()).Append(',')
                     .Append(Number(outlier.K)).Append(',')
                     .Append(outlier.Window.ToString(CultureInfo.InvariantCulture)).Append(')');
                 break;
 
+            case DistributionShiftCondition shift:
+                text.Append("distributionShift(")
+                    .Append(shift.Window.ToString(CultureInfo.InvariantCulture)).Append(')');
+                break;
+
+            // Written with its own word rather than sharing the one above, so that the two edge
+            // conditions on the same window can never hash alike. They ask opposite questions of
+            // the same readings and a save that confused them would keep the wrong pair's memory.
+            case ShapeChangeCondition change:
+                text.Append("shapeChange(")
+                    .Append(change.Window.ToString(CultureInfo.InvariantCulture)).Append(')');
+                break;
+
+            case PulseCondition pulse:
+                text.Append("pulse(").Append(pulse.Metric.ToString()).Append(',')
+                    .Append(pulse.Op.ToString()).Append(',')
+                    .Append(Number(pulse.Value)).Append(',')
+                    .Append(pulse.Window.ToString(CultureInfo.InvariantCulture)).Append(')');
+                break;
+
             default:
-                // For condition types added to the union after this switch was written — the
-                // statistical family is the one heading this way. Falling back to the record's
-                // own ToString is imperfect for a type that holds a list, but it is far better
-                // than a constant: two different unknown conditions must never hash alike, or a
-                // save would keep the state of a rule it no longer describes.
+                // For condition types added to the union after this switch was written. The
+                // statistical family arrived and was given four arms of its own rather than left
+                // here, because this arm is a safety net and not a design: a record's own ToString
+                // is imperfect for anything holding a list. It stays for the next type, and for the
+                // same reason it was written — two different unknown conditions must never hash
+                // alike, or a save would keep the state of a rule it no longer describes.
                 text.Append(condition.GetType().Name).Append('(');
                 AppendCounted(text, condition.ToString() ?? string.Empty);
                 text.Append(')');
