@@ -98,6 +98,14 @@ public static class DependencyInjection
             sp.GetRequiredService<AlertEngine>()));
         services.AddSingleton<IMessageNotifier>(sp => sp.GetRequiredService<FanOutMessageNotifier>());
 
+        // The two panel numbers no snapshot can carry: how long the engine has been blind, which
+        // BrokerLinkSupervisor stamps on every poll, and how many webhook deliveries were dropped,
+        // which the webhook dispatcher counts. A singleton, and it has to be: both writers and the
+        // endpoint that reads them must be handed the same object, and a transient would give each
+        // of the three a counter of its own that nobody else can see. Registered here, before
+        // either of its writers exists in the container.
+        services.AddSingleton<AlertPanelCounters>();
+
         services.AddSingleton<ConnectionService>();
         services.AddSingleton<ColourRuleService>();
         services.AddSingleton<SavedProfileService>();

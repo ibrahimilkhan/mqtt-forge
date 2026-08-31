@@ -1,3 +1,4 @@
+using MqttForge.Application.Alerts;
 using MqttForge.Application.Services;
 using MqttForge.Domain.Abstractions;
 using MqttForge.Domain.Enums;
@@ -45,14 +46,27 @@ public sealed class BrokerLinkSupervisor : BackgroundService
     // runs in every host this product builds, including the ones that have no rules file at all.
     private bool _wanted;
 
+    /// Where the blind clock is kept, so that the endpoint reading it does not have to hold a
+    /// BackgroundService. See AlertPanelCounters.
+    private readonly AlertPanelCounters _panel;
+
+    // The panel goes last, after the clock, and both are optional. Every existing caller —
+    // BrokerLinkSupervisorTests' CreateSut, which passes four positional arguments ending with a
+    // FakeTimeProvider — goes on compiling and goes on meaning what it meant. The container fills
+    // this one from the registered singleton, because a registered service beats a default value.
     public BrokerLinkSupervisor(
         ConnectionService connection, IAlertRuleStore rules, ILogger<BrokerLinkSupervisor> log,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null, AlertPanelCounters? panel = null)
     {
         _connection = connection;
         _rules = rules;
         _log = log;
         _time = timeProvider ?? TimeProvider.System;
+
+        // A throwaway rather than a null check at every use, exactly as the clock above does it.
+        // A supervisor built without one writes its blindness where nobody reads it, which is
+        // what a test that never asked for the number wants.
+        _panel = panel ?? new AlertPanelCounters(_time);
     }
 
     /// <summary>The one decision made at start-up: whether there is anything to be connected for.</summary>
@@ -104,6 +118,13 @@ public sealed class BrokerLinkSupervisor : BackgroundService
     public async Task SuperviseAsync(CancellationToken ct)
     {
         var state = _connection.CurrentState;
+
+        // Before the Faulted test and outside it, because the panel's question is not this class's
+        // question. This class only acts on a link that broke by itself; the engine is blind
+        // whenever the link is not up, including when somebody closed it on purpose and including
+        // on a host that never wanted one. Recording it here rather than in a fourth background
+        // loop is simply because this is the loop that already looks at the link every second.
+        if (state == ConnectionState.Connected) _panel.Seeing(); else _panel.Blind();
 
         // Faulted is the only state that belongs to this class, and the manager is what makes
         // that a safe test rather than a guess: it writes Disconnected for an explicit
