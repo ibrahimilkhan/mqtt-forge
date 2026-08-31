@@ -41,6 +41,18 @@ public static class MqttForgeHost
 
         builder.Host.UseSerilog((ctx, cfg) => cfg.ReadFrom.Configuration(ctx.Configuration));
 
+        // Ten seconds to stop, pinned rather than inherited. The spec's "Sayılar" table costs the
+        // close at ten with four of them for the drain — long enough for a webhook already handed
+        // to HttpClient to get its answer or give up, and for the engine to write alert-state.json
+        // down. Docker sends SIGKILL ten seconds after SIGTERM by default, so a host holding out
+        // for the framework's thirty would simply be killed halfway through that, having saved
+        // nothing.
+        //
+        // Pinned because the default has already moved: the spec was written against five
+        // seconds, which was shorter than a single webhook timeout, and .NET 10 hands out thirty.
+        // Neither number is this app's; this one is.
+        builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(10));
+
         // Without this, controllers 404 when the entry assembly is MqttForge.Desktop, not this one
         builder.Services.AddControllers()
             .AddApplicationPart(typeof(MqttForgeHost).Assembly)
