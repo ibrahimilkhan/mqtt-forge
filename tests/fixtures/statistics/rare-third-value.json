@@ -1,0 +1,50 @@
+{
+  "name": "rare-third-value",
+  "readings": [
+    { "value": 0, "atMs": 1788091200000 }, { "value": 0, "atMs": 1788091201000 }, { "value": 1, "atMs": 1788091202000 },
+    { "value": 0, "atMs": 1788091203000 }, { "value": 0, "atMs": 1788091204000 }, { "value": 1, "atMs": 1788091205000 },
+    { "value": 1, "atMs": 1788091206000 }, { "value": 0, "atMs": 1788091207000 }, { "value": 0, "atMs": 1788091208000 },
+    { "value": 2, "atMs": 1788091209000 }, { "value": 0, "atMs": 1788091210000 }, { "value": 1, "atMs": 1788091211000 },
+    { "value": 0, "atMs": 1788091212000 }, { "value": 0, "atMs": 1788091213000 }, { "value": 1, "atMs": 1788091214000 },
+    { "value": 0, "atMs": 1788091215000 }, { "value": 0, "atMs": 1788091216000 }, { "value": 1, "atMs": 1788091217000 },
+    { "value": 0, "atMs": 1788091218000 }, { "value": 0, "atMs": 1788091219000 }
+  ],
+  "expected": {
+    "summary": {
+      "n": 20,
+      "low": 0,
+      "high": 2,
+      "mean": 0.4,
+      "median": 0,
+      "sd": 0.5830951894845302,
+      "q1": 0,
+      "q3": 1,
+      "fences": { "low": -1.5, "high": 2.5 },
+      "outliers": [],
+      "slope": -0.004511278195488721
+    },
+    "fit": null,
+    "shape": {
+      "id": "pulse",
+      "levels": 3,
+      "pulses": {
+        "rest": 0,
+        "peak": 2,
+        "threshold": 1,
+        "count": 6,
+        "duty": 0.35,
+        "every": 3000,
+        "width": 1000
+      }
+    },
+    "pulses": {
+      "rest": 0,
+      "peak": 2,
+      "threshold": 1,
+      "count": 6,
+      "duty": 0.35,
+      "every": 3000,
+      "width": 1000
+    }
+  }
+}

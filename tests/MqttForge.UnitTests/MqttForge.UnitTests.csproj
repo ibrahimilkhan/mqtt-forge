@@ -32,4 +32,11 @@
     <ProjectReference Include="..\MqttForge.SingleInstanceProbe\MqttForge.SingleInstanceProbe.csproj" />
   </ItemGroup>
 
+  <!-- The shared statistical vectors, read by this project and by web/src/lib/sharedVectors.test.ts.
+       Copied rather than located by a computed path: AppContext.BaseDirectory is the one directory
+       a test can name on every machine and in every runner. -->
+  <ItemGroup>
+    <Content Include="..\fixtures\statistics\*.json" LinkBase="fixtures\statistics" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

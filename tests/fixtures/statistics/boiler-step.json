@@ -1,0 +1,45 @@
+{
+  "name": "boiler-step",
+  "readings": [
+    { "value": 60, "atMs": 1788091200000 }, { "value": 60, "atMs": 1788091201000 }, { "value": 60, "atMs": 1788091202000 },
+    { "value": 60, "atMs": 1788091203000 }, { "value": 60, "atMs": 1788091204000 }, { "value": 60, "atMs": 1788091205000 },
+    { "value": 60, "atMs": 1788091206000 }, { "value": 60, "atMs": 1788091207000 }, { "value": 60, "atMs": 1788091208000 },
+    { "value": 60, "atMs": 1788091209000 }, { "value": 60, "atMs": 1788091210000 }, { "value": 60, "atMs": 1788091211000 },
+    { "value": 60, "atMs": 1788091212000 }, { "value": 60, "atMs": 1788091213000 }, { "value": 60, "atMs": 1788091214000 },
+    { "value": 95, "atMs": 1788091215000 }, { "value": 95, "atMs": 1788091216000 }, { "value": 95, "atMs": 1788091217000 },
+    { "value": 95, "atMs": 1788091218000 }, { "value": 95, "atMs": 1788091219000 }, { "value": 95, "atMs": 1788091220000 },
+    { "value": 95, "atMs": 1788091221000 }, { "value": 95, "atMs": 1788091222000 }, { "value": 95, "atMs": 1788091223000 },
+    { "value": 95, "atMs": 1788091224000 }, { "value": 95, "atMs": 1788091225000 }, { "value": 95, "atMs": 1788091226000 },
+    { "value": 95, "atMs": 1788091227000 }, { "value": 95, "atMs": 1788091228000 }, { "value": 95, "atMs": 1788091229000 }
+  ],
+  "expected": {
+    "summary": {
+      "n": 30,
+      "low": 60,
+      "high": 95,
+      "mean": 77.5,
+      "median": 77.5,
+      "sd": 17.5,
+      "q1": 60,
+      "q3": 95,
+      "fences": { "low": 7.5, "high": 147.5 },
+      "outliers": [],
+      "slope": 1.7519466073414904
+    },
+    "fit": null,
+    "shape": {
+      "id": "continuous",
+      "levels": 0,
+      "pulses": null
+    },
+    "pulses": {
+      "rest": 60,
+      "peak": 95,
+      "threshold": 86.25,
+      "count": 1,
+      "duty": 0.5,
+      "every": null,
+      "width": null
+    }
+  }
+}
