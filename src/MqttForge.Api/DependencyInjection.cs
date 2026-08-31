@@ -48,7 +48,18 @@ public static class DependencyInjection
         // alerting state and has no lock, which is safe only because AlertEngine's pump is the
         // single thread that ever calls into it — so both are singletons and neither is resolved
         // anywhere a request thread could touch it.
-        services.AddSingleton(new AlertEngineOptions());
+        // The shipped record with the two operator-facing values laid over it, read at resolve
+        // time rather than at registration so a late-configuring host — every test in this suite —
+        // still gets the configuration it set. This replaces the plain 'new AlertEngineOptions()'
+        // task 5 registered to get the engine standing; the engine holds this same object either
+        // way, and only the two values below can now differ from the shipped ones.
+        services.AddSingleton(sp => AlertOptions(sp.GetRequiredService<IConfiguration>()));
+
+        // The rule service the endpoints in plan 3 will ask for. It is registered here rather
+        // than beside the other services above because it is the only one of them that holds the
+        // engine: a save goes to the store and then straight into the engine's queue, so the two
+        // can never drift into disagreeing about what the rule set is.
+        services.AddSingleton<AlertRuleService>();
         services.AddSingleton<AlertEngineCore>();
         services.AddSingleton<IAlertNotifier, LoggingAlertNotifier>();
 
@@ -114,4 +125,40 @@ public static class DependencyInjection
         services.AddHostedService<BrokerLinkSupervisor>();
         return services;
     }
+
+
+        /// <summary>
+        /// The two things an operator can turn, laid over the shipped defaults.
+        /// </summary>
+        // A record 'with' rather than configuration binding: the other twelve members are ceilings
+        // this app does not offer as settings, and binding the section would quietly make every one
+        // of them settable — including MaxReadings, which is a memory budget, and MinWindow, which a
+        // condition's arithmetic depends on.
+        private static AlertEngineOptions AlertOptions(IConfiguration config)
+        {
+            var shipped = new AlertEngineOptions();
+
+            return shipped with
+            {
+                TopicPrefix = Prefix(config["MqttForge:AlertTopicPrefix"], shipped.TopicPrefix),
+
+                // Only 'true' and 'false' are answers. Anything else is a value nobody can read, and
+                // the shipped default stands: of the two ways to be wrong here, the one that turns an
+                // alerting channel off without saying so is the worse one.
+                AllowWebhooks = !bool.TryParse(config["MqttForge:AllowWebhooks"], out var allow) || allow
+            };
+        }
+
+        /// <summary>A prefix that is really a prefix: non-empty, and ending where a topic level does.</summary>
+        // Without the slash, 'site/alarms' in front of 'hot/plant/boiler/temp' is 'site/alarmshot/…' —
+        // a topic tree nobody meant to create, and one the engine's own loop guard cannot recognise
+        // as its own. Empty is the worse case and is refused outright: an empty prefix would make
+        // every topic on the broker look like the engine's own publication.
+        private static string Prefix(string? configured, string shipped)
+        {
+            var prefix = configured?.Trim();
+            if (string.IsNullOrEmpty(prefix)) return shipped;
+
+            return prefix.EndsWith('/') ? prefix : prefix + '/';
+        }
 }
