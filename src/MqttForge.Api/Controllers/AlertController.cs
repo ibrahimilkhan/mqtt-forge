@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using MqttForge.Api.Contracts;
+using MqttForge.Api.Realtime;
 using MqttForge.Application.Alerts;
 using MqttForge.Application.Services;
 using MqttForge.Domain.Exceptions;
@@ -29,13 +30,19 @@ public sealed class AlertController : ControllerBase
     private readonly AlertEngineOptions _options;
     private readonly AlertPanelCounters _panel;
 
+    // The console, by its own type rather than as IAlertNotifier. What this class has to say is
+    // not something the engine judged — it is what a person just did — and MutedAsync is
+    // deliberately not on that interface. See SignalRAlertNotifier for why.
+    private readonly SignalRAlertNotifier _console;
+
     public AlertController(AlertRuleService rules, AlertEngine engine, AlertEngineOptions options,
-                           AlertPanelCounters panel)
+                           AlertPanelCounters panel, SignalRAlertNotifier console)
     {
         _rules = rules;
         _engine = engine;
         _options = options;
         _panel = panel;
+        _console = console;
     }
 
     /// <summary>The rule set, and the two things about this host a rule editor has to know.</summary>
@@ -105,6 +112,38 @@ public sealed class AlertController : ControllerBase
     public IActionResult GetAlerts() =>
         Ok(AlertsDto.Of(_engine.Snapshot, _panel.WebhooksDropped, _panel.BlindSeconds));
 
+    /// <summary>Empties the session's alert history. The active alarms are not history.</summary>
+    [HttpDelete("alerts/history")]
+    public IActionResult ClearHistory()
+    {
+        _engine.Post(new ClearHistoryCommand());
+
+        return NoContent();
+    }
+
+    /// <summary>What was allowed but is worth saying out loud.</summary>
+    // Not FluentValidation's job and it cannot be made into one: a ValidationFailure fails
+    // IsValid, which is a 400, so a naive implementation of "webhooks are off on this host" would
+    // refuse the save outright. The rule is kept, the file is written, and the panel is told the
+    // channel will not fire — because the operator who turned webhooks off and the user writing
+    // the rule are frequently not the same person, and the rule is still worth having the day the
+    // setting changes.
+    //
+    // This is the one thing in this class that is not mapping: it is an answer about *this host*,
+    // and a DTO factory has no options object to ask.
+    private IReadOnlyList<SaveWarningDto> Warnings(IReadOnlyList<AlertRule> rules)
+    {
+        if (_options.AllowWebhooks) return [];
+
+        var warnings = new List<SaveWarningDto>();
+
+        foreach (var rule in rules)
+            if (rule.Actions.Any(action => action is WebhookAction))
+                warnings.Add(new SaveWarningDto(rule.Id, "webhooksDisabled"));
+
+        return warnings;
+    }
+
     /// <summary>Silences one (rule, topic) pair, or lifts a silence with zero minutes.</summary>
     /// <remarks>
     /// The pair is the address, not an alert id: a mute outlives the alert it was set on — an
@@ -112,7 +151,7 @@ public sealed class AlertController : ControllerBase
     /// and a topic carries '/', so it cannot go in a path anyway.
     /// </remarks>
     [HttpPost("alerts/mute")]
-    public IActionResult Mute(MuteRequestDto dto)
+    public async Task<IActionResult> Mute(MuteRequestDto dto)
     {
         var snapshot = _engine.Snapshot;
 
@@ -154,38 +193,23 @@ public sealed class AlertController : ControllerBase
         // ordering honest — a mute posted after an arrival is applied after that arrival.
         _engine.Post(new MuteCommand(dto.RuleId, dto.Topic, dto.Minutes));
 
+        // And then every console is told, including the ones that did not press the button. Said
+        // from here and not from the engine because a mute is a person's decision rather than a
+        // judgement: the pump's answer to it is EngineOutcome.Empty, which is nothing to announce.
+        //
+        // The moment is worked out the way the core works it out — the same clamp, on the wall
+        // clock a fraction of a second earlier — so that the countdown the panel starts drawing
+        // now agrees with the MutedUntil its next GET /api/alerts reads back. Null is the lift,
+        // which is what zero minutes means to the core and what "Geri al" means to the user.
+        //
+        // Awaited rather than fired and forgotten: this is a SignalR send to whoever is connected,
+        // and a request that answered 204 before the frame was handed over would be a mute the
+        // panel might learn about after its next poll anyway.
+        await _console.MutedAsync(dto.RuleId, dto.Topic,
+            dto.Minutes <= 0
+                ? null
+                : DateTimeOffset.UtcNow.AddMinutes(Math.Min(dto.Minutes, AlertEngineCore.MaxMuteMinutes)));
+
         return NoContent();
-    }
-
-    /// <summary>Empties the session's alert history. The active alarms are not history.</summary>
-    [HttpDelete("alerts/history")]
-    public IActionResult ClearHistory()
-    {
-        _engine.Post(new ClearHistoryCommand());
-
-        return NoContent();
-    }
-
-    /// <summary>What was allowed but is worth saying out loud.</summary>
-    // Not FluentValidation's job and it cannot be made into one: a ValidationFailure fails
-    // IsValid, which is a 400, so a naive implementation of "webhooks are off on this host" would
-    // refuse the save outright. The rule is kept, the file is written, and the panel is told the
-    // channel will not fire — because the operator who turned webhooks off and the user writing
-    // the rule are frequently not the same person, and the rule is still worth having the day the
-    // setting changes.
-    //
-    // This is the one thing in this class that is not mapping: it is an answer about *this host*,
-    // and a DTO factory has no options object to ask.
-    private IReadOnlyList<SaveWarningDto> Warnings(IReadOnlyList<AlertRule> rules)
-    {
-        if (_options.AllowWebhooks) return [];
-
-        var warnings = new List<SaveWarningDto>();
-
-        foreach (var rule in rules)
-            if (rule.Actions.Any(action => action is WebhookAction))
-                warnings.Add(new SaveWarningDto(rule.Id, "webhooksDisabled"));
-
-        return warnings;
     }
 }
