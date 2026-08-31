@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.vectors.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  /* The shared-vector reader is app code that also reads the filesystem: bundler resolution so
+     its extensionless imports of src/lib resolve as they do everywhere else in src, and Node
+     types so node:fs does. It cannot go in tsconfig.node.json — that project is nodenext, and
+     under nodenext every relative import in src/lib needs a .js suffix it does not have. */
+  "include": ["src/lib/sharedVectors.test.ts"]
+}

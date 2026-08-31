@@ -1,0 +1,37 @@
+{
+  "name": "below-every-minimum",
+  "readings": [
+    { "value": 3, "atMs": 1788091200000 }, { "value": 1, "atMs": 1788091201000 }, { "value": 4, "atMs": 1788091202000 },
+    { "value": 1, "atMs": 1788091203000 }, { "value": 5, "atMs": 1788091204000 }
+  ],
+  "expected": {
+    "summary": {
+      "n": 5,
+      "low": 1,
+      "high": 5,
+      "mean": 2.8,
+      "median": 3,
+      "sd": 1.6,
+      "q1": 1,
+      "q3": 4,
+      "fences": { "low": -3.5, "high": 8.5 },
+      "outliers": [],
+      "slope": 0.4
+    },
+    "fit": null,
+    "shape": {
+      "id": "unknown",
+      "levels": 0,
+      "pulses": null
+    },
+    "pulses": {
+      "rest": 1,
+      "peak": 5,
+      "threshold": 4,
+      "count": 2,
+      "duty": 0.4,
+      "every": 2000,
+      "width": 1000
+    }
+  }
+}

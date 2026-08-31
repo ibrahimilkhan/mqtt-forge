@@ -1,0 +1,40 @@
+{
+  "name": "one-outlier",
+  "readings": [
+    { "value": 10, "atMs": 1788091200000 }, { "value": 10.2, "atMs": 1788091201000 }, { "value": 9.8, "atMs": 1788091202000 },
+    { "value": 10.1, "atMs": 1788091203000 }, { "value": 9.9, "atMs": 1788091204000 }, { "value": 10.3, "atMs": 1788091205000 },
+    { "value": 10, "atMs": 1788091206000 }, { "value": 9.7, "atMs": 1788091207000 }, { "value": 10.1, "atMs": 1788091208000 },
+    { "value": 10.2, "atMs": 1788091209000 }, { "value": 9.9, "atMs": 1788091210000 }, { "value": 10, "atMs": 1788091211000 },
+    { "value": 25, "atMs": 1788091212000 }
+  ],
+  "expected": {
+    "summary": {
+      "n": 13,
+      "low": 9.7,
+      "high": 25,
+      "mean": 11.169230769230769,
+      "median": 10,
+      "sd": 3.995841033140605,
+      "q1": 9.9,
+      "q3": 10.2,
+      "fences": { "low": 9.450000000000003, "high": 10.649999999999999 },
+      "outliers": [12],
+      "slope": 0.4917582417582417
+    },
+    "fit": null,
+    "shape": {
+      "id": "continuous",
+      "levels": 0,
+      "pulses": null
+    },
+    "pulses": {
+      "rest": 9.7,
+      "peak": 25,
+      "threshold": 17.5,
+      "count": 1,
+      "duty": 0.07692307692307693,
+      "every": null,
+      "width": null
+    }
+  }
+}
