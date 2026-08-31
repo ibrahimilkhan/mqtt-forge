@@ -119,6 +119,18 @@ public static class ConfigHash
                     .Append(silence.After.ToString(CultureInfo.InvariantCulture)).Append(')');
                 break;
 
+            case OutlierCondition outlier:
+                // An arm of its own rather than the default's ToString, for the culture. A
+                // record prints a double with the current culture's separator, so the same rule
+                // would fingerprint as "K = 1.5" here and "K = 1,5" on a Turkish machine — and
+                // this value is written into alert-state.json and read back after a restart,
+                // where a fingerprint that moved reads as "rule changed" and quietly ends every
+                // alarm the file was carrying. Number() is invariant, which is why it exists.
+                text.Append("outlier(").Append(outlier.Method.ToString()).Append(',')
+                    .Append(Number(outlier.K)).Append(',')
+                    .Append(outlier.Window.ToString(CultureInfo.InvariantCulture)).Append(')');
+                break;
+
             default:
                 // For condition types added to the union after this switch was written — the
                 // statistical family is the one heading this way. Falling back to the record's

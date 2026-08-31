@@ -420,15 +420,14 @@ public class AlertRuleDtoValidatorTests
             actions: [Publish("mqttforge/alerts/boiler", retain: true)])));
     }
 
-    // The statistical family — outlier, distributionShift, shapeChange, pulse — is not in
-    // AlertCondition yet; it arrives with plan 4, and its `window` (20..2000) and `k` (tukey
-    // 0.5–5, sigma 1–10) ranges arrive with it, in this validator. Until then the refusal is the
-    // serialiser's: [JsonPolymorphic] on AlertCondition carries no fallback, so a body naming one
-    // of them never becomes an AlertRulesDto and this validator is never even constructed. Pinned
-    // here rather than assumed, because 'the layer below refuses it' is exactly the kind of claim
-    // that stops being true without anybody noticing.
+    // Three of the four still are. Outlier has landed — it is in the union, this validator holds
+    // its ranges, and the tests below exercise them — while distributionShift, shapeChange and
+    // pulse are still refused by the serialiser, because [JsonPolymorphic] on AlertCondition
+    // carries no fallback and a body naming one of them never becomes an AlertRulesDto at all.
+    // Pinned rather than assumed, because 'the layer below refuses it' is exactly the kind of
+    // claim that stops being true without anybody noticing. Task 7 puts the last three into the
+    // union and deletes this test outright, replacing it with facts about their ranges.
     [Theory]
-    [InlineData("""{"type":"outlier","method":"tukey","k":1.5,"window":200}""")]
     [InlineData("""{"type":"distributionShift","window":200}""")]
     [InlineData("""{"type":"shapeChange","window":200}""")]
     [InlineData("""{"type":"pulse","metric":"count","op":"gt","value":3,"window":200}""")]
@@ -441,5 +440,66 @@ public class AlertRuleDtoValidatorTests
             """;
 
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<AlertRulesDto>(json, WireJson.Client));
+    }
+
+    // The spec's ranges: window 20..2000, and k means two different things — an interquartile
+    // multiplier for tukey, allowed 0.5 to 5, and a count of deviations for sigma, allowed 1 to
+    // 10. Nought is not a value in either range; it is how JSON says the member was not given,
+    // and the engine's own defaults (1.5 and 3) apply. The second row is the whole of that rule:
+    // {"type":"outlier","method":"tukey"} is the shortest honest way to write this condition and
+    // it has to stay saveable.
+    [Theory]
+    [InlineData(OutlierMethod.Tukey, 1.5, 200)]
+    [InlineData(OutlierMethod.Tukey, 0, 0)]
+    [InlineData(OutlierMethod.Tukey, 0.5, 20)]
+    [InlineData(OutlierMethod.Tukey, 5, 2000)]
+    [InlineData(OutlierMethod.Sigma, 3, 200)]
+    [InlineData(OutlierMethod.Sigma, 1, 20)]
+    [InlineData(OutlierMethod.Sigma, 10, 2000)]
+    public void Accepts_an_outlier_condition_inside_its_ranges(
+        OutlierMethod method, double k, int window)
+    {
+        Assert.True(IsValid(Rule(condition: new OutlierCondition(method, k, window))));
+    }
+
+    [Theory]
+    [InlineData(OutlierMethod.Tukey, 1.5, 19)]
+    [InlineData(OutlierMethod.Tukey, 1.5, 2001)]
+    [InlineData(OutlierMethod.Tukey, 1.5, -1)]
+    [InlineData(OutlierMethod.Tukey, 0.4, 200)]
+    [InlineData(OutlierMethod.Tukey, 5.1, 200)]
+    [InlineData(OutlierMethod.Sigma, 0.9, 200)]
+    [InlineData(OutlierMethod.Sigma, 10.1, 200)]
+    public void Refuses_an_outlier_condition_outside_them(
+        OutlierMethod method, double k, int window)
+    {
+        Assert.False(IsValid(Rule(condition: new OutlierCondition(method, k, window))));
+    }
+
+    // The message names the method, because the two ranges are different and a user who has just
+    // been told "k has to be between 1 and 10" while looking at a tukey rule has been told
+    // something false about the rule in front of them.
+    [Fact]
+    public void The_refusal_names_the_method_whose_range_was_missed()
+    {
+        Assert.Contains(
+            "tukey",
+            Message(Rule(condition: new OutlierCondition(OutlierMethod.Tukey, 6, 200))));
+
+        Assert.Contains(
+            "sigma",
+            Message(Rule(condition: new OutlierCondition(OutlierMethod.Sigma, 12, 200))));
+    }
+
+    // The union is recursive, so the ranges have to be checked wherever an outlier sits — not
+    // only at the root. A composite that carried an unvalidated child would be one 'any' away
+    // from every rule in this section being decorative.
+    [Fact]
+    public void An_outlier_buried_in_a_composite_is_checked_too()
+    {
+        Assert.False(IsValid(Rule(condition: new AnyCondition([
+            new ThresholdCondition(ThresholdOp.Gt, 90),
+            new AllCondition([new OutlierCondition(OutlierMethod.Sigma, 0, 5000)])
+        ]))));
     }
 }
