@@ -31,6 +31,12 @@ public sealed class ConditionEvaluator
         AllCondition c => All(c, in context),
         AnyCondition c => Any(c, in context),
 
+        // The ring in the context is the ring as it stood BEFORE this message: AlertEngineCore
+        // writes the arriving reading after the evaluation, and only if this arm did not call it
+        // an outlier. Judged here and written there, from the same function, so the fence a rule
+        // fires on and the fence the next reading is measured against cannot come apart.
+        OutlierCondition c => Outlier.Judge(c, context.Window, context.Number),
+
         // Silence is a fact about time passing and is settled by the tick, which does not exist
         // yet. Skipped rather than a throw, so a rule set carrying one is loadable now and the
         // rule is merely quiet rather than Faulted. Final task 10 replaces this arm with one that
@@ -54,7 +60,6 @@ public sealed class ConditionEvaluator
         _ => throw new NotSupportedException(
             $"No arm for condition type '{condition.GetType().Name}'."),
     };
-
     private static Verdict Threshold(ThresholdCondition condition, double? number)
     {
         // IsFinite, not just null. Nothing upstream should hand this a NaN — asReading's pattern

@@ -42,6 +42,10 @@ public class AlertJsonShapeTests
     [InlineData(nameof(AllCondition), """{"type":"all","of":[{"type":"threshold","op":"lt","value":1}]}""")]
     [InlineData(nameof(AnyCondition), """{"type":"any","of":[]}""")]
     [InlineData(nameof(SilenceCondition), """{"type":"silence","after":300}""")]
+    // The member order is the record's own — method, k, window — and it is pinned here because
+    // this is the shape the spec writes and the shape web/src/types/api.ts will have to read.
+    [InlineData(nameof(OutlierCondition), """{"type":"outlier","method":"tukey","k":1.5,"window":200}""")]
+    [InlineData(nameof(OutlierCondition), """{"type":"outlier","method":"sigma","k":3,"window":0}""")]
     public void Every_condition_survives_a_round_trip(string expectedType, string json)
     {
         var condition = JsonSerializer.Deserialize<AlertCondition>(json, Options)!;
@@ -49,7 +53,6 @@ public class AlertJsonShapeTests
         Assert.Equal(expectedType, condition.GetType().Name);
         Assert.Equal(json, JsonSerializer.Serialize(condition, Options));
     }
-
     [Theory]
     [InlineData(nameof(ScreenAction), """{"type":"screen"}""")]
     [InlineData(nameof(SoundAction), """{"type":"sound"}""")]
@@ -79,17 +82,17 @@ public class AlertJsonShapeTests
         Assert.Equal(json, JsonSerializer.Serialize<AlertCondition>(all, Options));
     }
 
-    // 'outlier' is deliberately one of the two: it is a real condition type the spec names and
-    // this first version does not carry, so a rule file written against a later build has to be
-    // refused loudly rather than read as something else.
+    // 'outlier' used to stand here as the type a later build would bring, and it has now arrived,
+    // so the stand-in is a name no build of this tool carries. The property is unchanged and it is
+    // the one that matters: a rule file written against a newer build has to be refused loudly
+    // rather than read as something else.
     [Theory]
-    [InlineData("""{"type":"outlier","method":"tukey","k":1.5,"window":200}""")]
+    [InlineData("""{"type":"forecast","window":200,"ahead":30}""")]
     [InlineData("""{"type":"","value":1}""")]
     public void An_unknown_condition_type_is_refused(string json)
     {
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<AlertCondition>(json, Options));
     }
-
     [Fact]
     public void An_unknown_action_type_is_refused()
     {

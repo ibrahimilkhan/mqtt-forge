@@ -4,6 +4,7 @@ using MqttForge.Api.Contracts;
 using MqttForge.Application.Alerts;
 using MqttForge.Application.Alerts.Conditions;
 using MqttForge.Domain;
+using MqttForge.Domain.Enums;
 using MqttForge.Domain.Models;
 
 namespace MqttForge.Api.Validation;
@@ -27,11 +28,20 @@ namespace MqttForge.Api.Validation;
 // the source generator writes the other half of WellFormedId into a second declaration of this
 // class, and without the modifier the build stops at CS0260 before a single test runs.
 //
-// The statistical conditions the spec ranges (`window` 20..2000, `k` 0.5–5 for tukey and 1–10 for
-// sigma) are NOT checked here, because outlier, distributionShift, shapeChange and pulse are not
-// in AlertCondition yet — they arrive in plan 4, together with the rules for them. Until they do,
-// a body naming one is refused by the serialiser before this class is constructed, and
-// AlertRuleDtoValidatorTests pins that.
+// Outlier's ranges are below, in Fault: `window` 20..2000, and `k` 0.5–5 under tukey or 1–10 under
+// sigma. The other three of the statistical family — distributionShift, shapeChange and pulse —
+// are not in AlertCondition yet, so a body naming one is still refused by the serialiser before
+// this class is constructed, and AlertRuleDtoValidatorTests pins that.
+//
+// Nought is never a refusal in any of these ranges. It is how JSON says a member was not given:
+// the writer omits it, System.Text.Json binds the absence to the type's default, and the engine
+// then uses its own — DefaultWindow for the window, 1.5 or 3 for k. Refusing nought would make
+// {"type":"outlier","method":"tukey"}, which is the shortest honest way to write this condition,
+// unsaveable. Every windowed condition that follows is held to the same reading.
+//
+// The two window ends are constants here for now; when the other three windowed conditions arrive
+// they become fields read from AlertEngineOptions, because by then the same pair of numbers is
+// clamping four conditions' rings and one source of truth is worth more than four copies.
 public sealed partial class AlertRulesDtoValidator : AbstractValidator<AlertRulesDto>
 {
     public const int MaxRules = 100;
@@ -44,6 +54,21 @@ public sealed partial class AlertRulesDtoValidator : AbstractValidator<AlertRule
     public const int MaxHeaderNameLength = 64;
     public const int MaxHeaderValueLength = 1024;
     public const int MaxIdLength = 64;
+    /// <summary>Spec, "### Sayılar": a statistical window is 20 to 2000 readings.</summary>
+    public const int MinWindow = 20;
+    public const int MaxWindow = 2000;
+
+    /// <summary>The interquartile multiplier a tukey outlier may use.</summary>
+    // Below a half the fence is inside the box and every other reading is an outlier; past five
+    // it is so far out that only a fault the operator can already see would cross it.
+    public const double MinTukeyK = 0.5;
+    public const double MaxTukeyK = 5;
+
+    /// <summary>The deviations a sigma outlier may use.</summary>
+    // One deviation catches a third of a healthy normal run, which is a rule that fires all day;
+    // ten is four hundred parts per billion, which is a rule that never fires at all.
+    public const double MinSigmaK = 1;
+    public const double MaxSigmaK = 10;
 
     /// <summary>What a rule id may hold, because it is a level of a topic the engine publishes to.</summary>
     [GeneratedRegex("^[A-Za-z0-9_-]{1,64}$")]
@@ -178,6 +203,30 @@ public sealed partial class AlertRulesDtoValidator : AbstractValidator<AlertRule
             // every topic it has ever seen.
             case SilenceCondition silence when silence.After <= 0:
                 return "A silence condition has to wait at least a second.";
+
+            case OutlierCondition outlier:
+                // Nought is 'not given' for both members, and both are then the engine's own
+                // default — a window of DefaultWindow and a k of 1.5 or 3. Refusing nought would
+                // make the shortest honest way to write the condition, {"type":"outlier",
+                // "method":"tukey"}, unsaveable.
+                if (outlier.Window != 0 && outlier.Window is < MinWindow or > MaxWindow)
+                    return $"An outlier window has to be between {MinWindow} and {MaxWindow} " +
+                           "readings, or absent for this server's default.";
+
+                // Named per method, because the two ranges are different and a person looking at a
+                // tukey rule who is told the sigma range has been told something false about the
+                // rule in front of them.
+                if (outlier.K != 0 && outlier.Method is OutlierMethod.Tukey
+                    && (outlier.K < MinTukeyK || outlier.K > MaxTukeyK))
+                    return $"A tukey outlier's k multiplies the interquartile range and has to be " +
+                           $"between {MinTukeyK} and {MaxTukeyK}.";
+
+                if (outlier.K != 0 && outlier.Method is OutlierMethod.Sigma
+                    && (outlier.K < MinSigmaK || outlier.K > MaxSigmaK))
+                    return $"A sigma outlier's k counts deviations and has to be between " +
+                           $"{MinSigmaK} and {MaxSigmaK}.";
+
+                return null;
 
             case AllCondition all:
                 return all.Of.Select(Fault).FirstOrDefault(fault => fault is not null);

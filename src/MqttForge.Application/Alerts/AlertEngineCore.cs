@@ -50,6 +50,12 @@ public sealed class AlertEngineCore
 
     public AlertEngineCore(AlertEngineOptions options) => _options = options;
 
+    /// <summary>What a resolved alert says when the plant has moved rather than come back.</summary>
+    // Its own sentence and not "clear", because nothing cleared. The readings that rang the alarm
+    // are now the readings the fence is drawn from, and an endpoint told "clear" would record that
+    // the boiler came back to seventy when the boiler is at ninety-five and staying there.
+    public const string NewLevelAccepted = "new level accepted";
+
     public EngineOutcome OnMessage(MqttMessage message, DateTimeOffset now)
     {
         if (message.Topic.StartsWith(_options.TopicPrefix, StringComparison.Ordinal))
@@ -58,8 +64,11 @@ public sealed class AlertEngineCore
         if (message.Replay) return EngineOutcome.Empty;
 
         // Allocated only once a rule actually matches, so the common case — a topic nobody wrote
-        // a rule for — still costs nothing and still returns the shared Empty.
+        // a rule for — still costs nothing and still returns the shared Empty. Resolved is new
+        // here: until this task nothing on the arrival path could end an alarm, and accepting a
+        // new level does exactly that.
         List<Alert>? raised = null;
+        List<Alert>? resolved = null;
 
         foreach (var rule in _rules)
         {
@@ -77,27 +86,95 @@ public sealed class AlertEngineCore
             var state = Track(rule, message.Topic);
             if (state is null) continue;
 
-            // The message's own stamp, not the engine's: a queued burst must not collapse onto
-            // the moment the pump emptied it.
-            state.LastSeen = message.ReceivedAt;
-
-            var found = PayloadValue.TryExtract(message.Payload, rule.Field, out var text);
-            var number = found ? PayloadValue.AsReading(text) : null;
-
-            // Filled by arrival rather than by whichever condition wants it, so a condition never
-            // has to ask for history that was not kept.
-            if (state.Window is not null && number is { } reading)
-                state.Window.Add(new Reading(message.ReceivedAt.UtcTicks, reading));
-
-            var context = new EvalContext(
-                message.Topic, found ? text : null, number, now, state.LastSeen, state.Window);
-
-            OnArrival(rule, state, message, context, now, raised ??= []);
+            OnMatch(rule, state, message, now, raised ??= [], resolved ??= []);
         }
 
-        return raised is null || raised.Count == 0 ? EngineOutcome.Empty : new EngineOutcome(raised, []);
+        return Outcome(raised is { Count: > 0 } ? raised : null,
+                       resolved is { Count: > 0 } ? resolved : null);
     }
 
+    /// <summary>One matched (rule, topic) pair, for one arrival.</summary>
+    // Lifted out of OnMessage's loop because the order of the three things it does is the whole
+    // of this task, and an order that matters should be readable in one screen rather than inside
+    // a foreach over the rule set.
+    private void OnMatch(AlertRule rule, RuleState state, MqttMessage message, DateTimeOffset now,
+                         List<Alert> raised, List<Alert> resolved)
+    {
+        // The message's own stamp, not the engine's: a queued burst must not collapse onto
+        // the moment the pump emptied it.
+        state.LastSeen = message.ReceivedAt;
+
+        var found = PayloadValue.TryExtract(message.Payload, rule.Field, out var text);
+        var number = found ? PayloadValue.AsReading(text) : null;
+
+        // Seven members, and the seventh is the pair itself. Nothing this task evaluates reads it;
+        // the conditions that do arrive with the union in task 7, and they read it through
+        // Describe, which runs from this path and from the tick's alike. It is attached here, at
+        // the one place an arrival context is made, because EvalContext is a struct taken by 'in'
+        // — a callee that wrote `context with { State = state }` would be writing to a copy the
+        // caller never sees, and both edge conditions would then be named by their nameless
+        // sentence. Task 7 replaces Blank so that the tick's context carries the pair too.
+        var context = new EvalContext(
+            message.Topic, found ? text : null, number, now, state.LastSeen, state.Window, state);
+
+        OnArrival(rule, state, message, context, now, raised);
+
+        // And only now the ring, which is the reversal this task exists for. Before it, the
+        // reading went in first and every fence drawn afterwards had already been widened by the
+        // reading it was about to judge — so a boiler that steps to ninety-five would ring once
+        // and then teach the rule that ninety-five is normal, fifty readings at a time.
+        if (state.Window is { } window && number is { } value)
+            Record(rule, state, window, new Reading(message.ReceivedAt.UtcTicks, value), now, resolved);
+    }
+
+    /// <summary>
+    /// Whether this reading joins the run, and what it means when a run of them does not.
+    /// </summary>
+    private void Record(AlertRule rule, RuleState state, TopicWindow window,
+                        in Reading reading, DateTimeOffset now, List<Alert> resolved)
+    {
+        if (Outlier.Rejects(state.Plan.Outliers, window, reading.Value))
+        {
+            state.OutlierRun++;
+
+            // Still a burst as far as anyone can tell. The reading is dropped, the ring goes on
+            // describing the run this reading is unlike, and the alarm — which is standing on
+            // exactly that comparison — goes on standing.
+            if (state.OutlierRun < state.Plan.NewLevelAfter) return;
+
+            // A quarter of the ring in a row is not a burst. The plant has moved, and a rule that
+            // could never say so would ring until somebody deleted it, which is how a panel
+            // teaches the people watching it to stop looking.
+            window.Clear();
+            state.OutlierRun = 0;
+
+            if (state.Active is { } active)
+            {
+                var closed = active with { ResolvedAt = now, ResolvedBy = NewLevelAccepted };
+
+                // The clock is spent and the pair goes quiet for its cooldown, exactly as it does
+                // on the tick's own resolve. The ring is empty, so nothing could fire for another
+                // twenty readings anyway; the cooldown is here so that every resolution in this
+                // engine leaves the pair in the same state, whichever door it left by.
+                state.TrueSince = null;
+                state.CooldownUntil = now + Cooldown(rule);
+
+                // Close, never `state.Active = null`: Close is the only place the system-wide
+                // count of open alerts comes back down, and Announce is the only place the
+                // decision to tell anybody is made.
+                Close(state, closed);
+                Announce(state, closed, resolved, now);
+            }
+        }
+        else
+        {
+            // A reading that belongs ends the run, however long it was. A step interrupted by one
+            // ordinary reading is not yet somewhere the plant lives.
+            state.OutlierRun = 0;
+        }
+
+        window.Add(reading);
+    }
     private string NextId(DateTimeOffset now) =>
         string.Create(CultureInfo.InvariantCulture, $"{now.UtcTicks:x}-{++_sequence:x}");
 
@@ -191,12 +268,27 @@ public sealed class AlertEngineCore
             : $"{(b.Inside ? "inside" : "outside")} {Number(b.Low)}..{Number(b.High)}",
         PatternCondition p => p.Negate ? $"no match for /{p.Regex}/" : $"matched /{p.Regex}/",
         OneOfCondition o => o.Negate ? "not an accepted value" : "an accepted value",
+
+        // The measure goes in the sentence because there is no other way to read the alert. "95
+        // is an outlier" invites exactly one question — by what standard — and the person asking
+        // it is looking at a webhook body in another system, with the rule nowhere in sight.
+        // Task 7 replaces this method whole to add its own arms; this arm and Measure below come
+        // through it word for word, because two tests in this task read the sentence back.
+        OutlierCondition o => context.Number is { } n
+            ? $"{Number(n)} is an outlier ({Measure(o)})"
+            : $"an outlier ({Measure(o)})",
+
         SilenceCondition s => $"no message for {s.After}s",
         AllCondition => "every condition held",
         AnyCondition => "one of the conditions held",
         _ => "the condition held",
     };
 
+    /// <summary>How the fence was drawn, in the words the editor uses for it.</summary>
+    // Outlier.KOf and not the record's own K, so that a rule which left k unset says the number
+    // the engine actually used rather than a nought that would read as no fence at all.
+    private static string Measure(OutlierCondition condition) =>
+        $"{(condition.Method is OutlierMethod.Sigma ? "sigma" : "tukey")}, k {Number(Outlier.KOf(condition))}";
     // Invariant, and trimmed: this string goes into a webhook body and into an MQTT payload, and a
     // Turkish decimal comma in either is a number the endpoint cannot parse.
     private static string Number(double value)
@@ -752,28 +844,37 @@ Faulted: _faults.ContainsKey(rule.Id),
 
         var tally = TallyOf(rule.Id);
 
+        // Worked out before the ceilings are asked, because the third of them is a budget of
+        // readings and the number of readings is what this says. Until this task the ring was
+        // always DefaultWindow, so a rule asking for a window of two thousand was silently judged
+        // on two hundred — and the budget, which the spec writes as Σ(window × topics), was
+        // charged for two hundred as well. One number now answers both.
+        var plan = WindowPlan.For(rule, _options);
+
         // Three ceilings, and the order matters only for which one gets the credit. The per-rule
         // one stops a single '#' rule eating a whole broker; the system one stops thirty
         // well-behaved rules doing together what none of them could do alone; the ring budget
         // stops the memory regardless of how the pairs are distributed.
         if (tally.Topics >= _options.MaxTopicsPerRule) return Refuse(tally, topic);
         if (_pairs.Count >= _options.MaxPairs) return Refuse(tally, topic);
-        if (_readings + _options.DefaultWindow > _options.MaxReadings) return Refuse(tally, topic);
+        if (_readings + plan.Capacity > _options.MaxReadings) return Refuse(tally, topic);
 
         // Every pair gets a ring, unconditionally. Handing one out only to the rules whose
         // conditions read history was considered and is now deleted: it made the ring budget a
         // ceiling on a thing that was almost never allocated, and it made a pair that half works
         // — answering thresholds while silently never answering anything windowed. One ceiling
         // with one meaning is worth more than a pair nobody can explain.
-        var window = new TopicWindow(_options.DefaultWindow);
+        //
+        // The size is the rule's own, though, and no longer everyone's. A rule that asked for
+        // nothing windowed still gets DefaultWindow, so nothing about the plain rules changes.
+        var window = new TopicWindow(plan.Capacity);
         _readings += window.Capacity;
         tally.Topics++;
 
-        state = new RuleState(rule.Id, topic, window);
+        state = new RuleState(rule.Id, topic, window) { Plan = plan };
         _pairs[key] = state;
         return state;
     }
-
     private static RuleState? Refuse(RuleTally tally, string topic)
     {
         if (tally.Refused.Count < 1_000)

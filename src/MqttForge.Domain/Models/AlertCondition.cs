@@ -25,6 +25,7 @@ namespace MqttForge.Domain.Models;
 [JsonDerivedType(typeof(AllCondition), "all")]
 [JsonDerivedType(typeof(AnyCondition), "any")]
 [JsonDerivedType(typeof(SilenceCondition), "silence")]
+[JsonDerivedType(typeof(OutlierCondition), "outlier")]
 public abstract record AlertCondition;
 
 /// <summary>One reading against one number.</summary>
@@ -62,3 +63,28 @@ public sealed record AnyCondition(IReadOnlyList<AlertCondition> Of) : AlertCondi
 // The only condition whose truth is about time passing rather than about a message, which is why
 // it is the one condition the tick evaluates and the arrival path never does.
 public sealed record SilenceCondition(int After) : AlertCondition;
+
+/// <summary>
+/// A reading that does not belong with the ones before it.
+/// </summary>
+// The first condition in this union whose answer depends on more than the message in hand, and
+// therefore the first that needs the pair's ring. Three members and each carries a decision:
+//
+// Method picks which of the two fences is drawn — see OutlierMethod for why there are two.
+//
+// K means a different thing under each method, which is unusual enough to be worth naming: under
+// tukey it multiplies the interquartile range and the sensible span is 0.5 to 5, with 1.5 the
+// textbook value; under sigma it counts deviations and the sensible span is 1 to 10, with 3 the
+// value every control chart in the world is drawn at. One member rather than two because it is
+// one idea — how far is far enough — and a record carrying `tukeyK` and `sigmaK` would have one
+// of them meaningless in every rule ever written. The validator enforces the right range for the
+// method; the engine supplies the right default when the member is absent.
+//
+// Nought is 'not given', for K and for Window alike. The JSON omits an unset member, System.Text.
+// Json binds the absence to the type's default, and neither a fence of nought times anything nor
+// a window of no readings is a thing a person could mean.
+//
+// Window is how many of the most recent readings the fence is drawn from, 20 to 2000; absent, the
+// pair's whole ring is used, which is DefaultWindow unless another condition on the same rule
+// asked for more.
+public sealed record OutlierCondition(OutlierMethod Method, double K, int Window) : AlertCondition;
