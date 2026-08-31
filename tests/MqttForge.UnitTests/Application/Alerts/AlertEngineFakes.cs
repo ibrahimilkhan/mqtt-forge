@@ -333,3 +333,53 @@ internal static class Eventually
         Assert.Fail($"Timed out waiting until {what}.");
     }
 }
+
+/// <summary>
+/// Stands where the webhook and the MQTT dispatchers will stand, and keeps what it was given.
+/// </summary>
+// Beside RecordingAlertNotifier and locked the same way, for the same reason: the pump's thread
+// writes these lists while the test thread reads them, and a fake that did not lock would fail at
+// random and blame the engine.
+internal sealed class RecordingAlertDispatcher : IAlertDispatcher
+{
+    private readonly Lock _gate = new();
+    private readonly List<Alert> _raised = [];
+    private readonly List<Alert> _resolved = [];
+
+    private bool _throw;
+
+    /// <summary>When set, every call throws before recording anything.</summary>
+    public bool Throw
+    {
+        get => Volatile.Read(ref _throw);
+        set => Volatile.Write(ref _throw, value);
+    }
+
+    public IReadOnlyList<Alert> Raised
+    {
+        get { lock (_gate) return [.. _raised]; }
+    }
+
+    public IReadOnlyList<Alert> Resolved
+    {
+        get { lock (_gate) return [.. _resolved]; }
+    }
+
+    public Task RaisedAsync(IReadOnlyList<Alert> alerts)
+    {
+        if (Throw) throw new InvalidOperationException("This dispatcher is broken.");
+
+        lock (_gate) _raised.AddRange(alerts);
+
+        return Task.CompletedTask;
+    }
+
+    public Task ResolvedAsync(IReadOnlyList<Alert> alerts)
+    {
+        if (Throw) throw new InvalidOperationException("This dispatcher is broken.");
+
+        lock (_gate) _resolved.AddRange(alerts);
+
+        return Task.CompletedTask;
+    }
+}
