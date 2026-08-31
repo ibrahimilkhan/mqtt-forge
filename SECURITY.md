@@ -34,5 +34,36 @@ returns it — `GET /api/connection/settings` reports only whether one is set �
 the file on disk, not the endpoint. [README.md](README.md#keeping-your-settings) says where that
 file lives.
 
+## Alerts that leave the machine
+
+A rule can carry a webhook, and webhooks are **on by default**. A rule that has one makes this
+app POST to whatever address the rule names, with whatever headers the rule carries, whenever the
+rule fires. Anyone who can reach the port can write such a rule, because the app has no
+authentication of its own — so on a shared network the section above applies here too, and it
+applies harder: a rule is a standing instruction that keeps running after the person who wrote it
+has gone.
+
+Local and private addresses are deliberately reachable. `http://127.0.0.1:1880`,
+`http://192.168.1.20:8123` and a name on your own LAN all work, and that is the point — the
+things people alert into are Node-RED, Home Assistant and a script on the same box. There is no
+allow-list and no blocking of private ranges, so treat "this app can reach it" as "a rule can
+reach it".
+
+Webhook headers are written to `alert-rules.json` in plain text, unencrypted, the same way the
+broker password is written to the settings file. The API never sends them back — `GET
+/api/alert-rules` returns header **names** and no values, the way the connection endpoint returns
+only whether a password is set — so this is about the file on disk, not the endpoint. Put a
+bearer token in a header and it is a bearer token sitting in a JSON file.
+
+To turn all of it off, set `MqttForge:AllowWebhooks` to `false`:
+
+```
+docker run -d -p 5169:5169 -e MqttForge__AllowWebhooks=false ghcr.io/ibrahimilkhan/mqtt-forge
+```
+
+With that set, a rule's webhook action is never delivered and no HTTP request leaves the process
+for one. Everything else about alerting carries on, including the action that publishes the alert
+back onto your own broker — that one goes nowhere the broker connection was not already going.
+
 Neither of these is a vulnerability report; they are how the app is built. Something that lets a
 person do more than the above is worth telling me about.

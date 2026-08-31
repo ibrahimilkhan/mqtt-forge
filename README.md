@@ -128,6 +128,28 @@ it covers is drawn in it, in the tree and in the log. The more exact filter wins
 
 ![The Colours panel and the tree it paints](.github/assets/colours.png)
 
+## Alerts
+
+Give a rule a filter and a condition — `plant/+/temp` over 90 — and MQTTForge watches for it. A
+rule that fires raises an alert. Pick what happens: a notice on screen, a tone, a POST to an
+address you name, or the alert published back onto the broker. Any of the four, or all of them.
+
+A rule subscribes its own filter. Alerting works with the console shut, and in a container with
+no browser pointed at it at all.
+
+Conditions cover a threshold, a band, a text pattern, a set of values, and silence — a topic that
+has stopped publishing. **for** waits for the state to hold before it fires, **cooldown** keeps a
+flapping sensor from filling the panel, and muting a topic quietens it for a while without
+touching the rule.
+
+An alarm survives a restart. What was ringing when the process stopped is still ringing when it
+comes back, and an alarm whose rule was edited while the process was down ends rather than
+returning.
+
+Rules are kept in `alert-rules.json` beside your other settings. Webhook headers are stored in
+that file as plain text; `MqttForge__AllowWebhooks=false` turns webhooks off altogether.
+[SECURITY.md](SECURITY.md) says what that trade is.
+
 ## What it costs
 
 Measured on a live tram feed:
