@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
@@ -385,5 +386,80 @@ public class AlertingEndToEndTests : IClassFixture<MosquittoFixture>, IAsyncLife
         public async Task<Delivery> NextAsync() => await ReadAsync(_deliveries);
 
         public async ValueTask DisposeAsync() => await _app.DisposeAsync();
+    }
+
+    /// <summary>A rule that judges a reading against the run behind it, and posts what it found.</summary>
+    // Tukey at the usual 1.5, on the default window. Nothing about this rule names a number the
+    // plant would recognise — no 90, no 4..20 — which is the whole point of it: the operator does
+    // not have to know what normal is on this line, only that they want to be told when it stops.
+    private static AlertRule Unlike(string url) => new(
+        "odd", "Flow out of character", Enabled: true, "plant/+/flow", Field: null,
+        new OutlierCondition(OutlierMethod.Tukey, 1.5, 200), Clear: null, For: null, Cooldown: null,
+        AlertSeverity.Warn,
+        [new ScreenAction(), new WebhookAction(url, new Dictionary<string, string>())]);
+
+    /// <summary>A clean run over a real broker, and then one reading that does not belong to it.</summary>
+    private async Task SpikingAsync()
+    {
+        _probe = await WebhookProbe.StartAsync();
+
+        await new JsonConnectionSettingsStore(_settingsPath).SaveAsync(
+            new BrokerConnectionSettings(_broker.Host, _broker.Port, _clientId, null, null, false),
+            CancellationToken.None);
+
+        await new JsonAlertRuleStore(_alertRulesPath).SaveAsync(
+            [Unlike(_probe.Url)], CancellationToken.None);
+
+        var host = Started();
+        await ConsoleAsync(host);
+
+        await Until(
+            () => host.Services.GetRequiredService<IMqttSubscriber>().Filters,
+            filters => filters.Any(filter => filter.Filter == "plant/+/flow"),
+            "the engine to subscribe the rule's filter");
+
+        // Sixty readings between 19.4 and 20.6, which is three times the twenty the pair needs
+        // before it will judge anything. A run with real spread in it on purpose: a line pinned at
+        // one exact value has no box to measure a fence against, and that case belongs to the unit
+        // tests rather than to a broker.
+        for (var i = 0; i < 60; i++)
+            await PublishAsync("plant/inlet/flow", (20 + (i % 7 - 3) * 0.2).ToString("0.##", CultureInfo.InvariantCulture));
+
+        await PublishAsync("plant/inlet/flow", "180");
+    }
+
+    // The claim the whole statistical family is making, end to end and over a socket: a rule that
+    // was never told what normal is noticed when this line stopped being it.
+    [Fact]
+    public async Task A_reading_unlike_the_run_before_it_raises_an_alert_with_a_readable_reason()
+    {
+        await SpikingAsync();
+
+        var alert = await NextRaisedAsync();
+
+        Assert.Equal("odd", alert.GetProperty("ruleId").GetString());
+        Assert.Equal("plant/inlet/flow", alert.GetProperty("topic").GetString());
+
+        // Not the fallback sentence. 'the condition held' is what an alert says when nobody taught
+        // Describe about its condition, and it is indistinguishable from a working one until
+        // somebody reads a webhook at three in the morning.
+        var reason = alert.GetProperty("reason").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(reason), "the alert carried no reason at all");
+        Assert.NotEqual("the condition held", reason);
+    }
+
+    // And the reading itself leaves the process. An outlier alarm whose body carries no number is
+    // an endpoint being told that something was unusual and not what.
+    [Fact]
+    public async Task The_webhook_body_carries_the_reading_that_was_out_of_place()
+    {
+        await SpikingAsync();
+
+        var body = JsonDocument.Parse((await _probe!.NextAsync()).Body).RootElement;
+
+        Assert.Equal("raised", body.GetProperty("event").GetString());
+        Assert.Equal("plant/inlet/flow", body.GetProperty("topic").GetString());
+        Assert.Equal(180, body.GetProperty("value").GetDouble());
+        Assert.Equal("180", body.GetProperty("sample").GetString());
     }
 }

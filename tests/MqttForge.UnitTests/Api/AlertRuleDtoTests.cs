@@ -308,4 +308,32 @@ public class AlertRuleDtoTests
 
         Assert.Contains("telegram", thrown.Message, StringComparison.Ordinal);
     }
+
+    // The DTO carries the domain union itself, so this is really a test that it still does: a
+    // parallel condition union in the Api namespace would bind the fields it knew about and drop
+    // the window, and the rule would save as something quietly different from what was sent.
+    [Fact]
+    public void A_statistical_rule_survives_the_round_trip_to_the_store_and_back()
+    {
+        var dto = new AlertRuleDto(
+            "6f1d", "Pump rhythm", Enabled: true, "plant/+/pump", Field: null,
+            new AllCondition([
+                new PulseCondition(PulseMetric.Period, ThresholdOp.Gt, 8000, 500),
+                new OutlierCondition(OutlierMethod.Sigma, 3, 500)
+            ]),
+            Clear: null, For: 60, Cooldown: null, AlertSeverity.Warn,
+            [new AlertActionDto(AlertActionDto.Screen, null, null, null, null, null, null)]);
+
+        var back = AlertRuleDto.Of(dto.ToRule(null));
+
+        var all = Assert.IsType<AllCondition>(back.Condition);
+        var pulse = Assert.IsType<PulseCondition>(all.Of[0]);
+        var outlier = Assert.IsType<OutlierCondition>(all.Of[1]);
+
+        Assert.Equal(PulseMetric.Period, pulse.Metric);
+        Assert.Equal(8000, pulse.Value);
+        Assert.Equal(500, pulse.Window);
+        Assert.Equal(OutlierMethod.Sigma, outlier.Method);
+        Assert.Equal(3, outlier.K);
+    }
 }

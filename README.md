@@ -138,9 +138,15 @@ A rule subscribes its own filter. Alerting works with the console shut, and in a
 no browser pointed at it at all.
 
 Conditions cover a threshold, a band, a text pattern, a set of values, and silence — a topic that
-has stopped publishing. **for** waits for the state to hold before it fires, **cooldown** keeps a
-flapping sensor from filling the panel, and muting a topic quietens it for a while without
-touching the rule.
+has stopped publishing. Four more ask about the readings as a run rather than one at a time: an
+**outlier**, a reading unlike the ones before it; a **distribution shift**, readings that stop
+being the shape they were; a **shape change**, a quantity that becomes a switch or a pulse train
+that stops; and **pulse**, the count, duty, period or width of a signal's own rhythm. Those four
+need no number from you — a rule that says "tell me when this line stops behaving as it does"
+works without anybody knowing what it does. Each watches a window of 20 to 2000 readings and says
+nothing until it has 20 of them, and the alerts endpoint reports how far along each topic is while
+it fills. **for** waits for the state to hold before it fires, **cooldown** keeps a flapping sensor
+from filling the panel, and muting a topic quietens it for a while without touching the rule.
 
 An alarm survives a restart. What was ringing when the process stopped is still ringing when it
 comes back, and an alarm whose rule was edited while the process was down ends rather than

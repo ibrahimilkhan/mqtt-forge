@@ -242,4 +242,37 @@ public class AlertJsonShapeTests
         Assert.True(live.Retain);
         Assert.NotEqual(live, replayed);
     }
+
+    // The statistical family on disk. Every literal is the exact text the serialiser produces, so
+    // a renamed property or a re-ordered record fails here rather than in somebody's hand-edited
+    // alert-rules.json — which is the file this shape exists for.
+    [Theory]
+    [InlineData(nameof(OutlierCondition), """{"type":"outlier","method":"tukey","k":1.5,"window":200}""")]
+    [InlineData(nameof(OutlierCondition), """{"type":"outlier","method":"sigma","k":3,"window":500}""")]
+    [InlineData(nameof(DistributionShiftCondition), """{"type":"distributionShift","window":200}""")]
+    [InlineData(nameof(ShapeChangeCondition), """{"type":"shapeChange","window":2000}""")]
+    [InlineData(nameof(PulseCondition), """{"type":"pulse","metric":"period","op":"gt","value":8000,"window":200}""")]
+    [InlineData(nameof(PulseCondition), """{"type":"pulse","metric":"duty","op":"lt","value":0.1,"window":200}""")]
+    public void Every_statistical_condition_survives_a_round_trip(string expectedType, string json)
+    {
+        var condition = JsonSerializer.Deserialize<AlertCondition>(json, Options)!;
+
+        Assert.Equal(expectedType, condition.GetType().Name);
+        Assert.Equal(json, JsonSerializer.Serialize(condition, Options));
+    }
+
+    // A statistical condition nested in a composite, because that is how the useful ones are
+    // written: 'the pump has stopped pulsing AND the line is still pressurised'.
+    [Fact]
+    public void A_statistical_condition_round_trips_inside_a_composite()
+    {
+        const string json = """{"type":"all","of":[{"type":"pulse","metric":"count","op":"eq","value":0,"window":200},{"type":"threshold","op":"gt","value":2}]}""";
+
+        var all = Assert.IsType<AllCondition>(JsonSerializer.Deserialize<AlertCondition>(json, Options));
+        var pulse = Assert.IsType<PulseCondition>(all.Of[0]);
+
+        Assert.Equal(PulseMetric.Count, pulse.Metric);
+        Assert.Equal(200, pulse.Window);
+        Assert.Equal(json, JsonSerializer.Serialize<AlertCondition>(all, Options));
+    }
 }
