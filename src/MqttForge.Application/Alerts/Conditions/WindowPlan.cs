@@ -70,6 +70,21 @@ public sealed record WindowPlan(
     /// and ask for no history at all, which is what keeps a plain threshold rule the cheap thing
     /// it has always been.
     /// </summary>
+    // Two different things are being collected here. Every condition that reads the ring
+    // contributes its window, because the ring has to be big enough for all of them and the budget
+    // has to be charged for the biggest. Only three of them set Quota, because outlier is exempt
+    // from the once-a-second ceiling: it is a question about the reading in hand, and a reading
+    // nobody looked at is a reading that entered the ring unexamined and moved the fence.
+    //
+    // Quota is filled here and read nowhere yet, and that is worth being straight about rather
+    // than leaving for somebody to find. The ceiling itself is enforced in Statistical.MayLook,
+    // per pair, at the moment a condition asks to look — which is the only place that can also let
+    // two statistical arms of one rule share an instant instead of taking each other's turn. What
+    // this flag is, is the walk's own answer to "does this rule hold a quota-bound condition",
+    // available without walking the tree a second time; it costs one boolean per pair, and leaving
+    // a member of the plan declared and never written would be worse than that.
+    //
+    // A fourth statistical condition is one case here and one arm in ConditionEvaluator.Evaluate.
     private static void Walk(AlertCondition condition, Needs needs)
     {
         switch (condition)
@@ -77,6 +92,21 @@ public sealed record WindowPlan(
             case OutlierCondition outlier:
                 needs.Outliers.Add(outlier);
                 needs.Asked = Math.Max(needs.Asked, outlier.Window);
+                break;
+
+            case DistributionShiftCondition shift:
+                needs.Quota = true;
+                needs.Asked = Math.Max(needs.Asked, shift.Window);
+                break;
+
+            case ShapeChangeCondition shape:
+                needs.Quota = true;
+                needs.Asked = Math.Max(needs.Asked, shape.Window);
+                break;
+
+            case PulseCondition pulse:
+                needs.Quota = true;
+                needs.Asked = Math.Max(needs.Asked, pulse.Window);
                 break;
 
             case AllCondition all:
