@@ -25,6 +25,17 @@ public sealed class MqttExceptionHandler : IExceptionHandler
             MessageRejectedException => (StatusCodes.Status400BadRequest, "Message rejected"),
             // Nothing the request did wrong: the rules were valid and where they go is unwritable.
             RulesNotSavedException => (StatusCodes.Status500InternalServerError, "Could not save the colour rules"),
+            // A conflict and not a 500, because nothing failed: the file on disk holds something
+            // this build could not read, and the request is being stopped from deleting it. 409 is
+            // the status that says "the state of the thing you are addressing is in the way",
+            // which is exactly the sentence, and it is the one status a console can offer a second
+            // button for — the save that says 'discard it, I mean this'.
+            AlertRulesUnreadableException => (StatusCodes.Status409Conflict, "The alert rules file could not be read"),
+            // The alert twin of RulesNotSavedException, and a separate arm for the reason the
+            // exception's own comment gives: a reader who was editing an alert must not be told
+            // their colour rules could not be saved. Both types are sealed and neither derives
+            // from the other, so the order of these arms carries no trap.
+            AlertRulesNotSavedException => (StatusCodes.Status500InternalServerError, "Could not save the alert rules"),
             _ => (0, string.Empty)
         };
 
@@ -47,6 +58,11 @@ public sealed class MqttExceptionHandler : IExceptionHandler
             BrokerUnreachableException broker => BrokerFailureDto.Name(broker.Reason),
             ConnectAttemptAbortedException => "aborted",
             RulesNotSavedException => "rulesNotSaved",
+            // The two words the alerts panel branches on. 'rulesUnreadable' is the one that offers
+            // the second button, so it has to be told apart from every other 409 the console can
+            // meet — a 409 also means 'not connected' and 'connect aborted' on this API.
+            AlertRulesUnreadableException => "rulesUnreadable",
+            AlertRulesNotSavedException => "alertRulesNotSaved",
             _ => null
         };
 
