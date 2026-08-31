@@ -20,6 +20,45 @@ namespace MqttForge.Application.Alerts;
 // its tests are about exactly that and nothing else.
 public sealed class AlertEngine
 {
+
+    // The dispatcher goes last and is optional, after the clock, and that order is not cosmetic:
+    // five call sites construct this class positionally, three of them passing a clock as the
+    // eighth argument, and a parameter inserted anywhere before that would rebind their clock to a
+    // dispatcher. Null is also the honest default — a host with no webhook and no publish action
+    // anywhere has nothing for one to do.
+    public AlertEngine(AlertEngineCore core, IAlertRuleStore rules, IAlertStateStore state,
+                       IAlertNotifier notifier, IMqttConnectionManager connection,
+                       IMqttSubscriber subscriber, ILogger<AlertEngine> log,
+                       TimeProvider? timeProvider = null, IAlertDispatcher? dispatcher = null)
+    {
+        _core = core;
+        _rules = rules;
+        _state = state;
+        _notifier = notifier;
+        _connection = connection;
+        _subscriber = subscriber;
+        _log = log;
+        _dispatcher = dispatcher;
+
+        // MqttnetConnectionManager's signature exactly, for the same reason: production wires
+        // nothing and the tests hand in a clock they can move.
+        _time = timeProvider ?? TimeProvider.System;
+
+        _queue = Channel.CreateBounded<AlertCommand>(
+            new BoundedChannelOptions(QueueCapacity)
+            {
+                FullMode = BoundedChannelFullMode.DropOldest,
+                SingleReader = true,
+            },
+            OnDropped);
+
+        // Published before anything can ask for it. GET /api/alerts can arrive before the host has
+        // started the pump, and an empty panel is a better answer than a null reference.
+        _snapshot = _core.Snapshot();
+
+        _nextTick = _time.GetUtcNow() + TickInterval;
+    }
+
     /// <summary>
     /// Deep enough to ride out a burst the rules are still working through. Past this the oldest
     /// go, and the count is carried out to the panel rather than lost.
@@ -58,6 +97,10 @@ public sealed class AlertEngine
     private readonly IAlertRuleStore _rules;
     private readonly IAlertStateStore _state;
     private readonly IAlertNotifier _notifier;
+
+    /// Where an alert goes when it has to leave the process. Null in every test that predates it
+    /// and in any host that has wired no outgoing channel at all.
+    private readonly IAlertDispatcher? _dispatcher;
     private readonly IMqttConnectionManager _connection;
     private readonly IMqttSubscriber _subscriber;
     private readonly ILogger<AlertEngine> _log;
@@ -85,38 +128,6 @@ public sealed class AlertEngine
 
     private DateTimeOffset _lastSaved;
     private DateTimeOffset _nextTick;
-
-    public AlertEngine(AlertEngineCore core, IAlertRuleStore rules, IAlertStateStore state,
-                       IAlertNotifier notifier, IMqttConnectionManager connection,
-                       IMqttSubscriber subscriber, ILogger<AlertEngine> log,
-                       TimeProvider? timeProvider = null)
-    {
-        _core = core;
-        _rules = rules;
-        _state = state;
-        _notifier = notifier;
-        _connection = connection;
-        _subscriber = subscriber;
-        _log = log;
-
-        // MqttnetConnectionManager's signature exactly, for the same reason: production wires
-        // nothing and the tests hand in a clock they can move.
-        _time = timeProvider ?? TimeProvider.System;
-
-        _queue = Channel.CreateBounded<AlertCommand>(
-            new BoundedChannelOptions(QueueCapacity)
-            {
-                FullMode = BoundedChannelFullMode.DropOldest,
-                SingleReader = true,
-            },
-            OnDropped);
-
-        // Published before anything can ask for it. GET /api/alerts can arrive before the host has
-        // started the pump, and an empty panel is a better answer than a null reference.
-        _snapshot = _core.Snapshot();
-
-        _nextTick = _time.GetUtcNow() + TickInterval;
-    }
 
     /// <summary>Commands the queue had to discard because the engine could not keep up.</summary>
     public int Dropped => Volatile.Read(ref _dropped);
@@ -427,23 +438,6 @@ public sealed class AlertEngine
 
     private void Publish() => Volatile.Write(ref _snapshot, _core.Snapshot());
 
-    private async Task DeliverAsync(EngineOutcome outcome)
-    {
-        if (outcome.Raised.Count == 0 && outcome.Resolved.Count == 0) return;
-
-        try
-        {
-            if (outcome.Raised.Count > 0) await _notifier.RaisedAsync(outcome.Raised);
-            if (outcome.Resolved.Count > 0) await _notifier.ResolvedAsync(outcome.Resolved);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            // Telling is downstream of judging. A webhook endpoint that has gone away, or a hub
-            // with no clients, must not stop this engine noticing the next thing that goes wrong.
-            _log.LogError(ex, "An alert notifier threw. The alerts it was given were not delivered.");
-        }
-    }
-
     private async Task AnnounceDropsAsync(int dropped)
     {
         if (dropped == _announced) return;
@@ -538,5 +532,75 @@ public sealed class AlertEngine
 
         return new EngineOutcome([.. first.Raised, .. second.Raised],
                                  [.. first.Resolved, .. second.Resolved]);
+    }
+
+    private async Task DeliverAsync(EngineOutcome outcome)
+    {
+        if (outcome.Raised.Count == 0 && outcome.Resolved.Count == 0) return;
+
+        try
+        {
+            if (outcome.Raised.Count > 0) await _notifier.RaisedAsync(outcome.Raised);
+            if (outcome.Resolved.Count > 0) await _notifier.ResolvedAsync(outcome.Resolved);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Telling is downstream of judging. A webhook endpoint that has gone away, or a hub
+            // with no clients, must not stop this engine noticing the next thing that goes wrong.
+            _log.LogError(ex, "An alert notifier threw. The alerts it was given were not delivered.");
+        }
+
+        // After the notifier and in its own try, both deliberately. The console is the fast local
+        // channel and a screen notice must not wait behind a POST; and a fault in either of them
+        // is a fault in one channel, never in the other and never in the pump.
+        await DispatchAsync(outcome);
+    }
+
+    /// <summary>Hands on the alerts whose rules asked for something outside this process.</summary>
+    private async Task DispatchAsync(EngineOutcome outcome)
+    {
+        if (_dispatcher is null) return;
+
+        var raised = Outgoing(outcome.Raised);
+        var resolved = Outgoing(outcome.Resolved);
+
+        if (raised.Count == 0 && resolved.Count == 0) return;
+
+        try
+        {
+            if (raised.Count > 0) await _dispatcher.RaisedAsync(raised);
+            if (resolved.Count > 0) await _dispatcher.ResolvedAsync(resolved);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // One line for the turn rather than one per alert, and Error rather than Warning: an
+            // alert that was meant to leave the machine and did not is the failure this whole
+            // feature exists to prevent, and the spec's own measure is that a channel which fails
+            // silently is worse than one that does not exist.
+            _log.LogError(ex, "An alert dispatcher threw. The alerts it was given were not delivered.");
+        }
+    }
+
+    /// <summary>The alerts with somewhere outside to go.</summary>
+    // The filter lives here rather than in each dispatcher because the answer is the same for all
+    // of them and the cost is not: on a plant where every rule draws a screen notice and one rule
+    // posts a webhook, this is the difference between waking a queue with a bounded depth and a
+    // shared HttpClient on every alarm and waking it on the ones that have a reason to.
+    //
+    // Allocating nothing when nothing qualifies is the common case and worth the extra line: the
+    // shipped product's example rules are screen and sound.
+    private static IReadOnlyList<Alert> Outgoing(IReadOnlyList<Alert> alerts)
+    {
+        List<Alert>? outgoing = null;
+
+        foreach (var alert in alerts)
+            foreach (var action in alert.Actions)
+                if (action is WebhookAction or PublishAction)
+                {
+                    (outgoing ??= []).Add(alert);
+                    break;
+                }
+
+        return outgoing ?? [];
     }
 }
