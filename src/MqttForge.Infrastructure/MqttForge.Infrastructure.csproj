@@ -6,6 +6,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- IHostedService alone, for WebhookDispatcher: the queue has to be drained on the way
+         out, and a dispatcher that only learns about shutdown when the process ends is a
+         dispatcher that loses whatever it was holding. Abstractions, not the full Hosting
+         package — this layer implements the interface and never builds a host. -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0" />
     <PackageReference Include="MQTTnet" Version="5.2.0.1603" />
   </ItemGroup>
 
