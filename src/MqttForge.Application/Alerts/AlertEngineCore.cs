@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using System.Globalization;
 using MqttForge.Application.Alerts.Conditions;
+using MqttForge.Application.Alerts.Statistics;
 using MqttForge.Domain;
 using MqttForge.Domain.Enums;
 using MqttForge.Domain.Models;
@@ -92,11 +93,10 @@ public sealed class AlertEngineCore
         return Outcome(raised is { Count: > 0 } ? raised : null,
                        resolved is { Count: > 0 } ? resolved : null);
     }
-
     /// <summary>One matched (rule, topic) pair, for one arrival.</summary>
     // Lifted out of OnMessage's loop because the order of the three things it does is the whole
-    // of this task, and an order that matters should be readable in one screen rather than inside
-    // a foreach over the rule set.
+    // of the outlier task, and an order that matters should be readable in one screen rather than
+    // inside a foreach over the rule set.
     private void OnMatch(AlertRule rule, RuleState state, MqttMessage message, DateTimeOffset now,
                          List<Alert> raised, List<Alert> resolved)
     {
@@ -107,19 +107,17 @@ public sealed class AlertEngineCore
         var found = PayloadValue.TryExtract(message.Payload, rule.Field, out var text);
         var number = found ? PayloadValue.AsReading(text) : null;
 
-        // Seven members, and the seventh is the pair itself. Nothing this task evaluates reads it;
-        // the conditions that do arrive with the union in task 7, and they read it through
-        // Describe, which runs from this path and from the tick's alike. It is attached here, at
-        // the one place an arrival context is made, because EvalContext is a struct taken by 'in'
-        // — a callee that wrote `context with { State = state }` would be writing to a copy the
-        // caller never sees, and both edge conditions would then be named by their nameless
-        // sentence. Task 7 replaces Blank so that the tick's context carries the pair too.
+        // The pair goes on the context, and this is one of the two places it can: a context is
+        // built here and in Blank, and nowhere else. Attaching it further down, inside
+        // EvaluateGuarded, would give the evaluator a local copy and leave ReasonFor holding the
+        // one this line made — so every alert the two edge conditions raise would be described
+        // without the two names that are the whole news in it.
         var context = new EvalContext(
             message.Topic, found ? text : null, number, now, state.LastSeen, state.Window, state);
 
         OnArrival(rule, state, message, context, now, raised);
 
-        // And only now the ring, which is the reversal this task exists for. Before it, the
+        // And only now the ring, which is the reversal the outlier task exists for. Before it, the
         // reading went in first and every fence drawn afterwards had already been widened by the
         // reading it was about to judge — so a boiler that steps to ninety-five would ring once
         // and then teach the rule that ninety-five is normal, fifty readings at a time.
@@ -255,7 +253,6 @@ public sealed class AlertEngineCore
         var head = Describe(rule.Condition, context);
         return rule.For is { } seconds ? $"{head} for {seconds}s" : head;
     }
-
     private static string Describe(AlertCondition condition, in EvalContext context) => condition switch
     {
         // Two shapes for every value condition: with the number when a message brought one ("94.2 >
@@ -272,13 +269,32 @@ public sealed class AlertEngineCore
         // The measure goes in the sentence because there is no other way to read the alert. "95
         // is an outlier" invites exactly one question — by what standard — and the person asking
         // it is looking at a webhook body in another system, with the rule nowhere in sight.
-        // Task 7 replaces this method whole to add its own arms; this arm and Measure below come
-        // through it word for word, because two tests in this task read the sentence back.
         OutlierCondition o => context.Number is { } n
             ? $"{Number(n)} is an outlier ({Measure(o)})"
             : $"an outlier ({Measure(o)})",
 
         SilenceCondition s => $"no message for {s.After}s",
+
+        // Both names, because one of them is the news. "the readings stopped being normal and
+        // became uniform" is a sentence an operator can act on; "the distribution changed" is one
+        // they have to come and look up, and the alert is on its way out of the process by then —
+        // into a webhook body, an MQTT payload and somebody's phone.
+        //
+        // Read off the pair rather than off the condition, which carries no names at all: the rule
+        // says 'tell me when this changes', and what it changed from is a fact about the topic.
+        DistributionShiftCondition => context.State is { ConfirmedFit: { } was, CandidateFit: { } now }
+            ? $"the readings stopped being {Word(was)} and became {Word(now)}"
+            : "the readings changed distribution",
+        ShapeChangeCondition => context.State is { ConfirmedShape: { } was, CandidateShape: { } now }
+            ? $"the signal stopped being {Word(was)} and became {Word(now)}"
+            : "the signal changed shape",
+
+        // The rule's own sentence, without the measurement. Reason is written once at the moment an
+        // alert rings and the measurement is a window's worth of arithmetic; doing it again here,
+        // on the firing path, to put one number into a string was not worth what it costs — and the
+        // number is already on the alert, in Value, for anything that wants it.
+        PulseCondition p => $"{Word(p.Metric)} {Symbol(p.Op)} {Number(p.Value)}",
+
         AllCondition => "every condition held",
         AnyCondition => "one of the conditions held",
         _ => "the condition held",
@@ -313,10 +329,12 @@ public sealed class AlertEngineCore
         ThresholdOp.Eq => "equal to",
         _ => "not equal to",
     };
-
     /// <summary>A context with no message behind it: what a tick knows about a pair.</summary>
+    // The pair goes on it, like it goes on the arrival context. Describe reads ConfirmedFit and
+    // CandidateFit off it to name both sides of a change, and a tick that matured an edge writes
+    // the same sentence an arrival would have.
     private static EvalContext Blank(RuleState state, DateTimeOffset now)
-        => new(state.Topic, Text: null, Number: null, now, state.LastSeen, state.Window);
+        => new(state.Topic, Text: null, Number: null, now, state.LastSeen, state.Window, state);
 
     // Four kilobytes, matching the spec's ceiling. The AlertDto cuts it to 256 bytes again on the
     // way out; keeping the long one here is what makes a webhook body worth reading.
@@ -1367,4 +1385,31 @@ Faulted: _faults.ContainsKey(rule.Id),
         // an alarm on a guess is the mistake the hash was written to stop.
         return fingerprints.TryGetValue(ruleId, out var was) && was == hash ? null : "rule changed";
     }
+
+    // The panel's vocabulary and the webhook's, in one place. Lower case and no articles, so that
+    // they read inside the sentences above rather than beside them.
+    private static string Word(FitName name) => name switch
+    {
+        FitName.Normal => "normal",
+        FitName.Uniform => "uniform",
+        _ => "exponential",
+    };
+
+    // 'a quantity' rather than 'continuous', because the reader of an alarm is not reading a
+    // taxonomy — they are being told that the thing which used to have a mean now has two states.
+    private static string Word(ShapeId id) => id switch
+    {
+        ShapeId.Continuous => "a quantity",
+        ShapeId.State => "a state machine",
+        ShapeId.Pulse => "a pulse train",
+        _ => "unreadable",
+    };
+
+    private static string Word(PulseMetric metric) => metric switch
+    {
+        PulseMetric.Count => "pulses",
+        PulseMetric.Duty => "duty",
+        PulseMetric.Period => "period (ms)",
+        _ => "width (ms)",
+    };
 }

@@ -35,7 +35,6 @@ public sealed class TopicWindow
     public int Capacity => _readings.Length;
 
     public int Count => _count;
-
     // 'in' so a sixteen-byte struct is passed by reference on the hottest path in the engine —
     // once per matching arrival, per rule that wants a window.
     public void Add(in Reading reading)
@@ -47,6 +46,8 @@ public sealed class TopicWindow
         _next = _next + 1 == _readings.Length ? 0 : _next + 1;
 
         if (_count < _readings.Length) _count++;
+
+        Added++;
     }
 
     public void Clear()
@@ -116,4 +117,15 @@ public sealed class TopicWindow
     /// Where the newest `wanted` readings begin. One length is enough to lift it back into
     /// range: `wanted` never exceeds the count, and the count never exceeds the capacity.
     private int StartOfNewest(int wanted) => (_next - wanted + _readings.Length) % _readings.Length;
+
+    /// <summary>Every reading this ring has ever taken, the ones it has since dropped included.</summary>
+    // Count saturates at Capacity, so a full ring cannot say whether it has been fed once more or
+    // a thousand times more — and every statistical cycle in this engine is measured in new
+    // readings rather than in seconds. This is the only number that can answer 'has a quarter of a
+    // window gone by', and keeping it here rather than on the pair means it cannot disagree with
+    // the ring it is counting.
+    //
+    // A long, and not for caution: at fifty readings a second an int would wrap in about five
+    // hundred days, on a pair that is doing nothing unusual.
+    public long Added { get; private set; }
 }

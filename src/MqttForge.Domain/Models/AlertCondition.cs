@@ -26,6 +26,9 @@ namespace MqttForge.Domain.Models;
 [JsonDerivedType(typeof(AnyCondition), "any")]
 [JsonDerivedType(typeof(SilenceCondition), "silence")]
 [JsonDerivedType(typeof(OutlierCondition), "outlier")]
+[JsonDerivedType(typeof(DistributionShiftCondition), "distributionShift")]
+[JsonDerivedType(typeof(ShapeChangeCondition), "shapeChange")]
+[JsonDerivedType(typeof(PulseCondition), "pulse")]
 public abstract record AlertCondition;
 
 /// <summary>One reading against one number.</summary>
@@ -88,3 +91,32 @@ public sealed record SilenceCondition(int After) : AlertCondition;
 // pair's whole ring is used, which is DefaultWindow unless another condition on the same rule
 // asked for more.
 public sealed record OutlierCondition(OutlierMethod Method, double K, int Window) : AlertCondition;
+
+/// <summary>
+/// The window's readings stopped fitting the distribution they had settled into.
+/// </summary>
+// An edge and not a state: it is true from the moment a new name has been believed until that name
+// has held a whole window, and it is never true twice for one change. So there is nothing here for
+// 'for' to wait out, and the validator refuses the pair — the same refusal silence gets, for the
+// mirror-image reason. Silence is already a duration; this is already a moment.
+//
+// No name is written down in the rule. A rule saying "tell me when this stops being normal" would
+// need the user to know what it is now, which is the question they are asking the tool.
+public sealed record DistributionShiftCondition(int Window) : AlertCondition;
+
+/// <summary>
+/// The window's readings stopped being the kind of signal they were: a quantity became a switch,
+/// a switch became a pulse train.
+/// </summary>
+// The shape decides what may honestly be said about a topic at all — a mean is a fact about a
+// temperature and a fiction about a door sensor — so a shape that changes is the plant telling
+// you that the note beside this topic has been describing the wrong thing since it changed.
+public sealed record ShapeChangeCondition(int Window) : AlertCondition;
+
+/// <summary>One number about the rhythm of a signal, against one value.</summary>
+// Deliberately independent of the shape. The metrics are taken from the whole window whatever
+// ShapeId says about it, because a pump that has stopped pulsing is exactly the case where the
+// shape has stopped being 'pulse' — and a condition that needed the shape to agree with it first
+// would go quiet at the moment it was wanted.
+public sealed record PulseCondition(PulseMetric Metric, ThresholdOp Op, double Value, int Window)
+    : AlertCondition;
