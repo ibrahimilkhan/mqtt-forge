@@ -109,6 +109,10 @@ export function RuleEditor({ draftId, onDone }: { draftId: string; onDone: () =>
 
   return (
     <form className={panel.form} onSubmit={(event) => event.preventDefault()}>
+      <fieldset className={panel.part}>
+        <legend>What it watches</legend>
+        <p className={panel.note}>The rule&rsquo;s name, the topics it covers, and how loudly it speaks.</p>
+
       <div className={panel.row}>
         <Field label="Name" htmlFor={id('name')}>
           <input
@@ -146,37 +150,8 @@ export function RuleEditor({ draftId, onDone }: { draftId: string; onDone: () =>
             onChange={(event) => edit({ field: event.target.value })}
           />
         </Field>
-
-        <Field label="For, seconds" htmlFor={id('for')} narrow>
-          {/* Text rather than a number box, in every one of these. A number input silently throws
-              away what it cannot parse, so a typo would vanish from under the reader's hand and the
-              box would look like one they had cleared on purpose. And an empty box is a real
-              answer here — 'the moment it is true' — which has to survive being typed into and
-              emptied again. */}
-          <input
-            id={id('for')}
-            value={draft.for}
-            inputMode="numeric"
-            placeholder="at once"
-            aria-invalid={faults.for !== undefined}
-            onChange={(event) => edit({ for: event.target.value })}
-          />
-        </Field>
-
-        <Field label="Cooldown, seconds" htmlFor={id('cooldown')} narrow>
-          <input
-            id={id('cooldown')}
-            value={draft.cooldown}
-            inputMode="numeric"
-            placeholder="1"
-            aria-invalid={faults.cooldown !== undefined}
-            onChange={(event) => edit({ cooldown: event.target.value })}
-          />
-        </Field>
       </div>
 
-      {faults.for && <p className={panel.fault}>{faults.for}</p>}
-      {faults.cooldown && <p className={panel.fault}>{faults.cooldown}</p>}
 
       <Segmented
         label="Severity"
@@ -194,6 +169,12 @@ export function RuleEditor({ draftId, onDone }: { draftId: string; onDone: () =>
             : 'An info or warn notice fades after a few seconds.'
         }
       />
+
+      </fieldset>
+
+      <fieldset className={panel.part}>
+        <legend>When it fires</legend>
+        <p className={panel.note}>One condition, or a tree of them: &lsquo;all&rsquo; is and, &lsquo;any&rsquo; is or.</p>
 
       <Field label="Condition" htmlFor={id('condition')}>
         <select
@@ -223,14 +204,6 @@ export function RuleEditor({ draftId, onDone }: { draftId: string; onDone: () =>
       {faults.condition && <p className={panel.fault}>{faults.condition}</p>}
 
       <div className={panel.checks}>
-        <label>
-          <input
-            type="checkbox"
-            checked={draft.enabled}
-            onChange={(event) => edit({ enabled: event.target.checked })}
-          />
-          Enabled
-        </label>
         <label>
           <input
             type="checkbox"
@@ -271,7 +244,52 @@ export function RuleEditor({ draftId, onDone }: { draftId: string; onDone: () =>
         </>
       )}
 
+      </fieldset>
+
+      <fieldset className={panel.part}>
+        <legend>Everything else</legend>
+        <p className={panel.note}>How long it waits, how long it stays quiet afterwards, and who is told.</p>
+      <div className={panel.row}>
+        <Field label="For, seconds" htmlFor={id('for')} narrow>
+          {/* Text rather than a number box, in every one of these. A number input silently throws
+              away what it cannot parse, so a typo would vanish from under the reader's hand and the
+              box would look like one they had cleared on purpose. And an empty box is a real
+              answer here — 'the moment it is true' — which has to survive being typed into and
+              emptied again. */}
+          <input
+            id={id('for')}
+            value={draft.for}
+            inputMode="numeric"
+            placeholder="at once"
+            aria-invalid={faults.for !== undefined}
+            onChange={(event) => edit({ for: event.target.value })}
+          />
+        </Field>
+        <Field label="Cooldown, seconds" htmlFor={id('cooldown')} narrow>
+          <input
+            id={id('cooldown')}
+            value={draft.cooldown}
+            inputMode="numeric"
+            placeholder="1"
+            aria-invalid={faults.cooldown !== undefined}
+            onChange={(event) => edit({ cooldown: event.target.value })}
+          />
+        </Field>
+      </div>
+
+      {faults.for && <p className={panel.fault}>{faults.for}</p>}
+      {faults.cooldown && <p className={panel.fault}>{faults.cooldown}</p>}
+
+
       <div className={panel.checks}>
+        <label>
+          <input
+            type="checkbox"
+            checked={draft.enabled}
+            onChange={(event) => edit({ enabled: event.target.checked })}
+          />
+          Enabled
+        </label>
         <label>
           <input
             type="checkbox"
@@ -452,6 +470,8 @@ export function RuleEditor({ draftId, onDone }: { draftId: string; onDone: () =>
           {faults.publish && <p className={panel.fault}>{faults.publish}</p>}
         </>
       )}
+
+      </fieldset>
 
       <div className={panel.actions}>
         {/* Closing loses nothing: the draft is in the map, and reopening this rule brings it back
