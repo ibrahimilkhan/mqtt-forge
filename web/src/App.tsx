@@ -24,7 +24,10 @@ import { Workspace } from './features/workspace/Workspace';
 import type { Hub } from './realtime/hub';
 import { useHubBridge } from './realtime/useHubBridge';
 import { useHubStatusStore } from './stores/hubStatusStore';
-import { AlertsPanel } from './features/alerts/AlertsPanel';
+import { AlertsPanel, worst } from './features/alerts/AlertsPanel';
+import { AlertNotices } from './features/alerts/AlertNotices';
+import { useSoundStore } from './features/alerts/alertSound';
+import { useAlertStore } from './stores/alertStore';
 
 /** The width the workspace stops being columns at, and the rail starts lying over it. */
 const NARROW = '(max-width: 760px)';
@@ -70,6 +73,15 @@ export function App({ hub }: { hub: Hub }) {
 
   const { state } = useConnectionState();
   const health = useAppearanceStore((state) => state.health);
+  // What is alarming, read here rather than only in the panel: the panel is shut most of the
+  // time and the health strip is off by default, so the rail is the one place a standing alarm
+  // is always visible.
+  const alerting = useAlertStore((state) => state.active);
+  const loudest = worst(alerting);
+  // The preference outlives the page and the armed audio context cannot, so the row has to be
+  // able to say that the switch is on and no sound is coming.
+  const soundWanted = useAppearanceStore((state) => state.alertSound);
+  const soundArmed = useSoundStore((state) => state.armed);
 
   const where = useBrokerAddress();
   const hubStatus = useHubStatusStore((s) => s.status);
@@ -142,9 +154,26 @@ export function App({ hub }: { hub: Hub }) {
             // The first row of a group. Open, the group says its name; shut, there is no room
             // for one, so the same division is drawn as a rule between the icons.
             const opens = PANELS[index - 1]?.group !== panel.group;
-            // Only the Broker row has anything to add, and only in the states worth naming.
+            // Two rows carry a state of their own; the rest are ways in. Both say it in the
+            // row's own name, because an aria-label replaces the contents rather than adding to
+            // them and a badge that only existed as a colour would say nothing at all here.
             const linkSaid = panel.id === 'broker' ? LINK_SAID[linkState] : undefined;
-            const said = linkSaid ? `${panel.label}, ${linkSaid}` : undefined;
+            const alertSaid =
+              panel.id === 'alerts' && alerting.length > 0
+                ? `${alerting.length} alerting, worst ${loudest}`
+                : undefined;
+            const extra = linkSaid ?? alertSaid;
+            const said = extra ? `${panel.label}, ${extra}` : undefined;
+            // The broker it is pointed at, or — on the Alerts row — the one thing about
+            // alerting a reader can put right from outside the panel.
+            const hint =
+              panel.id === 'broker' && where
+                ? `${panel.label} · ${where}`
+                : panel.id === 'alerts' && soundWanted && !soundArmed
+                  ? 'Sound is not ready — click to turn it on'
+                  : menuOpen
+                    ? undefined
+                    : panel.label;
 
             return (
               <Fragment key={panel.id}>
@@ -167,13 +196,7 @@ export function App({ hub }: { hub: Hub }) {
                   aria-label={said ?? (menuOpen ? undefined : panel.label)}
                   // The broker it is pointed at, for a reader who wants it without opening the
                   // panel. It used to have a line of its own under the rail's readout.
-                  title={
-                    panel.id === 'broker' && where
-                      ? `${panel.label} · ${where}`
-                      : menuOpen
-                        ? undefined
-                        : panel.label
-                  }
+                  title={hint}
                   onClick={() => setOpenPanel((current) => (current === panel.id ? null : panel.id))}
                 >
                   <Icon />
@@ -187,6 +210,21 @@ export function App({ hub }: { hub: Hub }) {
                         <Warning />
                       </span>
                     )}
+                  {/* Same corner of the same row as the broker's warning triangle, and for the
+                      same reason: it is the note at the end of the name, not the name. The
+                      number is drawn as a number — the colour is the second signal, and a badge
+                      that was only a coloured dot would tell a reader something is wrong and
+                      not how much. */}
+                  {panel.id === 'alerts' && alerting.length > 0 && (
+                    <span
+                      className={styles.menuCount}
+                      data-testid="alert-badge"
+                      data-severity={loudest ?? undefined}
+                      aria-hidden="true"
+                    >
+                      {alerting.length}
+                    </span>
+                  )}
                 </button>
               </Fragment>
             );
@@ -259,6 +297,14 @@ export function App({ hub }: { hub: Hub }) {
       {/* Outside the workspace and under it: the workspace is a grid with a share of the height,
           and this is a line the reader has asked for rather than part of the tool. */}
       {health && <HealthStrip />}
+      {/* Outside the workspace and under it: the workspace is a grid with a share of the height,
+          and this is a line the reader has asked for rather than part of the tool. */}
+      {health && <HealthStrip />}
+
+      {/* Over the whole console, and outside `.body` on purpose: the rail lies over the
+          workspace at 300 on a narrow screen and a thrown-open chart draws a scrim at 200. A
+          notice that could be covered by either is a notice that did not happen. */}
+      <AlertNotices open={setOpenPanel} />
     </>
   );
 }
