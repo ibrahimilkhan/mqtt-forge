@@ -5,18 +5,27 @@ import { fullBox, moved, openingBox, type Box } from './floating';
 /**
  * What a window is showing.
  *
- * Two kinds, one stack. A chart taken off the selection, and a message taken out of the run — and
- * they are the same object as far as being a window goes: both stand over the console, both are
- * moved by their bar and sized by their corner, both are pinned when they open, and only one of
- * them can be in front. That last one is why there is a single store rather than two: the array
- * IS the z-order, and two arrays each numbering their own would put two windows on the same
- * layer and leave which one wins to the order they happened to be drawn in.
+ * Three kinds, one stack. A chart taken off the selection, a message taken out of the run, and an
+ * alert rule being written — and they are the same object as far as being a window goes: all three
+ * stand over the console, all three are moved by their bar and sized by their corner, all three
+ * are pinned when they open, and only one of them can be in front. That last one is why there is a
+ * single store rather than three: the array IS the z-order, and three arrays each numbering their
+ * own would put two windows on the same layer and leave which one wins to the order they happened
+ * to be drawn in.
  */
 export type Pane =
   /** Goes on drawing this filter whatever the console selects next. */
   | { kind: 'chart'; filter: string }
   /** One arrival, frozen. The log behind it may evict it; the window keeps its copy. */
-  | { kind: 'message'; entry: LogEntry };
+  | { kind: 'message'; entry: LogEntry }
+  /**
+   * One alert rule being written.
+   *
+   * The DRAFT's id and not the rule's: a rule this console has invented has no server id yet, and
+   * two new drafts have to be distinguishable. The draft itself lives in
+   * `features/alerts/ruleDraft.ts` and outlives this window, so closing one loses no typing.
+   */
+  | { kind: 'rule'; draftId: string };
 
 /**
  * A window a reader has opened, standing over the console.
@@ -68,11 +77,26 @@ type WindowState = {
 };
 
 let count = 0;
+/**
+ * The width below which a rule editor opens filling the screen.
+ *
+ * The same number the rail lies over the workspace at. A window's floor is 300 pixels wide, which
+ * is narrower than the 320-pixel panel column the rule editor exists to escape — so on a phone a
+ * three-fifths window would be the very form this feature refused to draw, only harder to reach.
+ */
+const NARROW = 760;
 
-/** Whether a window is already showing this exact arrival. */
+/** Whether a window is already showing this exact thing. */
+// Two charts of one topic stay allowed, for the reason on `Pane`: those two can differ, one on the
+// last ten minutes and one on the whole run. A message and a draft cannot. A second window on one
+// arrival would be the same frozen thing twice with nothing to tell them apart, and a second window
+// on one draft would be two forms writing over each other through one map — in both cases the
+// reader has pressed the same thing again, and what they mean by that is 'where did it go'.
 const showing = (window: FloatWindow, pane: Pane) =>
-  pane.kind === 'message' && window.pane.kind === 'message' && window.pane.entry.id === pane.entry.id;
-
+  (pane.kind === 'message' &&
+    window.pane.kind === 'message' &&
+    window.pane.entry.id === pane.entry.id) ||
+  (pane.kind === 'rule' && window.pane.kind === 'rule' && window.pane.draftId === pane.draftId);
 export const useWindows = create<WindowState>((set) => ({
   windows: [],
 
@@ -89,14 +113,16 @@ export const useWindows = create<WindowState>((set) => ({
   // would look like nothing had happened at all.
   open: (pane, label, from) =>
     set((state) => {
-      // A message is one frozen arrival, so a second window on it would be the same thing twice
-      // with nothing to tell them apart — the reader has pressed the same row again, and what
-      // they mean by that is 'where did it go'. Bring it forward instead. Two charts of one
-      // topic stay allowed, for the reason on Pane above: those two can differ.
+      // The reader has pressed the same row, or the same rule, again. Bring it forward.
       const already = state.windows.find((one) => showing(one, pane));
       if (already) return { windows: raised(state.windows, already.id) };
 
       count += 1;
+
+      // A rule editor on a narrow screen takes the whole viewport. Ten condition types with their
+      // own fields do not fit a column, which is why this is a window at all; three fifths of a
+      // phone is that column again, with the console showing round the edges of it.
+      const full = pane.kind === 'rule' && window.innerWidth <= NARROW;
 
       return {
         windows: [
@@ -105,10 +131,13 @@ export const useWindows = create<WindowState>((set) => ({
             id: `window-${count}`,
             pane,
             label,
-            box: from ? moved(from, 0, 0) : openingBox(),
+            box: full ? fullBox() : from ? moved(from, 0, 0) : openingBox(),
             fixed: true,
-            full: false,
-            wasAt: null,
+            full,
+            // Where 'put it back' goes. A window that opened full has never stood anywhere, and
+            // without this the swell would put it back to the size it already is — which is a
+            // control that visibly does nothing.
+            wasAt: full ? openingBox() : null,
           },
         ],
       };

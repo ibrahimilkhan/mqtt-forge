@@ -5,6 +5,7 @@ import styles from './Floating.module.css';
 import { fullBox, moved, sized, useFloating } from './floating';
 import { Pin } from './Pin';
 import { TrafficChart } from './TrafficChart';
+import { RuleEditor } from '../alerts/RuleEditor';
 import { stampMeaning, type LogEntry } from '../../stores/logStore';
 import { useWindows, type FloatWindow } from './useWindows';
 import { useRunsFor } from './useTraffic';
@@ -77,6 +78,21 @@ export function Windows() {
   );
 }
 
+/**
+ * Where a rule editor standing over the whole viewport has to be drawn.
+ *
+ * Below 760 pixels `.rail[data-open]` climbs to 300 and throws a `100vmax` scrim across everything
+ * behind it, and the panel column does the same at the width above that. A window at `22 + depth`
+ * is under both — and a form under a scrim is a form nobody can read, let alone fill in.
+ *
+ * Written here rather than as a media query in `Floating.module.css` because this is where the
+ * depth has always been written: the stylesheet's own comment on `.window` says the app writes it
+ * inline, and one place deciding a stacking order is the reason that comment exists. Scoped to a
+ * rule editor rather than to anything full, because a chart the reader swelled themselves is
+ * deliberately below the chart thrown open, which carries a scrim of its own.
+ */
+const OVER_THE_RAIL = 320;
+
 function Frame({ pane: chart, depth }: { pane: FloatWindow; depth: number }) {
   const close = useWindows((state) => state.close);
   const place = useWindows((state) => state.place);
@@ -86,9 +102,25 @@ function Frame({ pane: chart, depth }: { pane: FloatWindow; depth: number }) {
   const { bar, grip } = useFloating(chart.box, (box) => place(chart.id, box));
   const frame = useRef<HTMLElement>(null);
   const message = chart.pane.kind === 'message';
+  const rule = chart.pane.kind === 'rule';
   // Filling the screen holds a window still as surely as the pin does, and for a plainer reason:
   // there is nowhere left to move it to.
   const held = chart.fixed || chart.full;
+
+  /**
+   * What the controls in the bar call this window.
+   *
+   * A rule window's label is already a whole name — 'New alert rule', or the rule's own — so it
+   * takes 'editor' and not 'chart'. The other two keep the string they have always had, wording
+   * and all: 'the sensors/kiln chart' is what the close, the bar and the corner have been named
+   * since windows had corners, and renaming them here would be an accessibility change made in
+   * passing on the way to something else.
+   *
+   * The pin is the one control this does NOT reach, and that is on purpose: its two labels have
+   * always been the bare label — 'Pin sensors/kiln in place' — with no kind word in them at all,
+   * so pouring this into them would rename an existing control rather than name a new one.
+   */
+  const named = rule ? `${chart.label} editor` : `${chart.label} chart`;
 
   // A window opened onto one message takes the focus, because it was opened by a keystroke or a
   // press on a row and there is nothing else on screen it could mean. On the way out the focus
@@ -142,7 +174,9 @@ function Frame({ pane: chart, depth }: { pane: FloatWindow; depth: number }) {
     top: chart.box.y,
     width: chart.box.w,
     height: chart.box.h,
-    zIndex: 22 + depth,
+    // The depth, and above the rail for the one window the console itself opens full. See
+    // OVER_THE_RAIL: the reader is inside a form, and the rail's scrim would put it behind glass.
+    zIndex: (rule && chart.full ? OVER_THE_RAIL : 22) + depth,
   };
 
   return (
@@ -150,12 +184,13 @@ function Frame({ pane: chart, depth }: { pane: FloatWindow; depth: number }) {
       className={styles.window}
       style={where}
       ref={frame}
-      data-testid={message ? 'message-window' : 'chart-window'}
+      data-testid={rule ? 'rule-window' : message ? 'message-window' : 'chart-window'}
       data-filter={chart.pane.kind === 'chart' ? chart.pane.filter : undefined}
       data-fixed={chart.fixed ? '' : undefined}
       data-full={chart.full ? '' : undefined}
-      aria-label={message ? `${chart.label}, opened` : `${chart.label} chart`}
+      aria-label={message ? `${chart.label}, opened` : named}
       // Focusable only as a message: a chart window is read, and its own controls are the way in.
+      // An editor's way in is its first field.
       tabIndex={message ? -1 : undefined}
       // On the way down rather than on the click: a reader reaching for a control in a window
       // behind another one should have the window they are reaching into come forward first,
@@ -175,7 +210,7 @@ function Frame({ pane: chart, depth }: { pane: FloatWindow; depth: number }) {
         // will do with it once it is there.
         tabIndex={held ? undefined : 0}
         role={held ? undefined : 'application'}
-        aria-label={held ? undefined : `Move the ${chart.label} chart`}
+        aria-label={held ? undefined : `Move the ${named}`}
         title={
           chart.full
             ? 'Filling the screen — put it back to move it'
@@ -255,9 +290,7 @@ function Frame({ pane: chart, depth }: { pane: FloatWindow; depth: number }) {
           className={styles.swell}
           data-testid="swell"
           aria-pressed={chart.full}
-          aria-label={
-            chart.full ? `Put ${chart.label} back` : `Fill the screen with ${chart.label}`
-          }
+          aria-label={chart.full ? `Put ${named} back` : `Fill the screen with ${named}`}
           title={chart.full ? 'Put it back' : 'Fill the screen'}
           onClick={() => swell(chart.id, !chart.full)}
         >
@@ -267,7 +300,7 @@ function Frame({ pane: chart, depth }: { pane: FloatWindow; depth: number }) {
         <button
           type="button"
           className={styles.close}
-          aria-label={`Close the ${chart.label} chart`}
+          aria-label={`Close the ${named}`}
           title="Close this window"
           onClick={() => close(chart.id)}
         >
@@ -278,8 +311,10 @@ function Frame({ pane: chart, depth }: { pane: FloatWindow; depth: number }) {
       <div className={styles.body}>
         {chart.pane.kind === 'chart' ? (
           <ChartBody filter={chart.pane.filter} label={chart.label} />
-        ) : (
+        ) : chart.pane.kind === 'message' ? (
           <MessageDetail entry={chart.pane.entry} />
+        ) : (
+          <RuleEditor draftId={chart.pane.draftId} onDone={() => close(chart.id)} />
         )}
       </div>
 
@@ -289,7 +324,7 @@ function Frame({ pane: chart, depth }: { pane: FloatWindow; depth: number }) {
         <button
           type="button"
           className={styles.grip}
-          aria-label={`Resize the ${chart.label} chart`}
+          aria-label={`Resize the ${named}`}
           title="Drag to size"
           {...grip}
         >
