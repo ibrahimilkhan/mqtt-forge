@@ -104,13 +104,18 @@ export function ReconnectNotice() {
             <h3 className={styles.title}>Reconnecting</h3>
             <Countdown status={status} />
           </div>
+          {/* The reason rides in the same sentence as the drop it explains, which is how anybody
+              would say it out loud — and which stops the cause being set smaller and paler than
+              the mechanical fact that there was one. */}
           <p className={styles.detail}>
-            {where ? `The link to ${where} dropped.` : 'The link dropped.'}{' '}
+            {where ? `The link to ${where} dropped` : 'The link dropped'}
+            {why ? `: ${lowerFirst(why)}` : '.'}
+          </p>
+          <p className={styles.was}>
             {status.attempt > 0
               ? `${status.attempt} ${status.attempt === 1 ? 'try has' : 'tries have'} failed so far.`
               : 'Trying again shortly.'}
           </p>
-          {why && <p className={styles.was}>{why}</p>}
           <div className={styles.actions}>
             <button type="button" onClick={() => tryNow.mutate()} disabled={busy}>
               Try now
@@ -131,12 +136,14 @@ export function ReconnectNotice() {
             <h3 className={styles.title}>Not reconnecting</h3>
           </div>
           <p className={styles.detail}>
-            {where ? `The link to ${where} is down.` : 'The link is down.'}{' '}
+            {where ? `The link to ${where} is down` : 'The link is down'}
+            {why ? `: ${lowerFirst(why)}` : '.'}
+          </p>
+          <p className={styles.was}>
             {status.enabled
               ? 'Reconnecting was stopped, so nothing is being tried.'
               : 'Auto-reconnect is off, so nothing is being tried.'}
           </p>
-          {why && <p className={styles.was}>{why}</p>}
           <div className={styles.actions}>
             <button type="button" onClick={() => tryNow.mutate()} disabled={busy}>
               Reconnect
@@ -156,7 +163,7 @@ export function ReconnectNotice() {
           </p>
           {/* What broke it, still on screen. A notice saying only that a link dropped and came
               back leaves the reader with the question they opened the panel with. */}
-          {why && <p className={styles.was}>It had dropped: {why}</p>}
+          {why && <p className={styles.was}>It had dropped: {lowerFirst(why)}</p>}
           <div className={styles.actions}>
             <button
               type="button"
@@ -217,6 +224,24 @@ function Countdown({ status }: { status: ReconnectView }) {
       {left === 0 ? 'trying…' : `next try in ${left}s`}
     </span>
   );
+}
+
+/**
+ * A sentence joined onto another one after a colon.
+ *
+ * Only the first letter, and only when the word is not one that is capitalised in its own right:
+ * 'The broker closed the connection' becomes 'the broker closed…', while 'MQTT 5.0 was refused'
+ * and a hostname keep the capital they came with. The describer writes each of these as a
+ * standalone sentence, which is right where it is used alone.
+ */
+function lowerFirst(sentence: string): string {
+  const [first, second] = [sentence[0] ?? '', sentence[1] ?? ''];
+
+  // A second capital says the word is a name or an initialism, and lowering the first letter of
+  // one of those is worse than the join it was meant to smooth.
+  if (second && second === second.toUpperCase() && second !== second.toLowerCase()) return sentence;
+
+  return first.toLowerCase() + sentence.slice(1);
 }
 
 /** How long it was gone, in the roundest words that are still true. */
