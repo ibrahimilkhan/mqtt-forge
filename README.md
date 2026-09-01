@@ -100,6 +100,21 @@ need none of it.
 
 A failed connection names the cause and what to do about it.
 
+### When the link drops
+
+MQTTForge puts a dropped link back up on its own, and it tells you it is doing it. The Broker
+panel opens by itself, says what broke the link, and counts down to the next try — 1, 2, 4, 8, 16
+and then every 30 seconds. **Try now** does not wait for the count. **Stop trying** calls off this
+outage and leaves the link alone until you connect again.
+
+When the link comes back the panel stays open rather than closing on you: it says the link is
+back, what had broken it, and how long it was gone.
+
+**Reconnect automatically when the link drops** turns the whole arrangement off. It is on by
+default, because a MQTTForge running alert rules with no browser pointed at it has to survive a
+broker restart, and it is remembered in `reconnect.json` beside your other settings. With it off,
+a dropped link stays down until you press **Reconnect**.
+
 ## Reading a message
 
 Double-click a message to open it in its own window. A JSON body becomes a document you can fold,
@@ -140,9 +155,10 @@ rule that fires raises an alert. Pick what happens: a notice on screen, a tone, 
 address you name, or the alert published back onto the broker. Any of the four, or all of them.
 
 Rules are written in the **Alerts** panel. Each one opens in a window of its own, carrying the
-fields its condition needs and nothing else. The panel lists what is ringing now, what each rule
-is seeing — how many topics it covers, how many readings it has read, when it last fired — and
-what has since ended.
+fields its condition needs and nothing else. The panel lists the rules and what each one is
+seeing — how many topics it covers, how many readings it has read, when it last fired. It is
+about what is being watched for; how many alarms are ringing is the count on the **Alerts**
+button in the rail.
 
 A rule subscribes its own filter. Alerting works with the console shut, and in a container with
 no browser pointed at it at all.
@@ -158,12 +174,10 @@ nothing until it has 20 of them, and the panel says how far along each topic is 
 **for** waits for the state to hold before it fires, **cooldown** keeps a flapping sensor from
 filling the panel, and muting a topic quietens it for a while without touching the rule.
 
-An alert that is ringing shows in the corner of the console whatever you have open, and the
-Alerts button in the rail carries the count while the panel is shut. A critical one stays until
-you send it away; the other two fade. A notice goes when its alarm does — an alert the server no
-longer holds leaves nothing behind on screen. The tone needs one click to start — no browser
-makes a sound before somebody has clicked the page — and the console says so while it is waiting
-for that click, rather than being on and silent.
+The **Alerts** button in the rail carries the count of what is ringing, and turns the colour of
+the worst of them, whatever you have open. The tone needs one click to start — no browser makes a
+sound before somebody has clicked the page — and the console says so while it is waiting for that
+click, rather than being on and silent.
 
 An alarm survives a restart. What was ringing when the process stopped is still ringing when it
 comes back, and an alarm whose rule was edited while the process was down ends rather than
