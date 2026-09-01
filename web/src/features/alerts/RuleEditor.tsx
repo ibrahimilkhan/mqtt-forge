@@ -1,19 +1,30 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { getAlertRules, putAlertRules } from '../../api/alerts';
+import { queryKeys } from '../../api/queryKeys';
 import { Field } from '../../components/Field';
 import { QosSelect } from '../../components/QosSelect';
 import { Segmented } from '../../components/Segmented';
+import { useGuardedMutate } from '../../lib/useGuardedMutate';
+import { logFault, useLogStore } from '../../stores/logStore';
 import panel from '../../styles/panel.module.css';
-import type { AlertSeverity } from '../../types/api';
+import type { AlertRuleDto, AlertRulesResponseDto, AlertSeverity } from '../../types/api';
+import { ConditionFields } from './ConditionFields';
 import {
   blankCondition,
-  conditionText,
   CONDITION_LABELS,
   CONDITION_TYPES,
   draftOf,
+  faultsIn,
+  forgetDraft,
   keepDraft,
   readDraft,
+  ruleOf,
+  savable,
+  saveRule,
   type ConditionType,
   type DraftRule,
+  type SaveTarget,
 } from './ruleDraft';
 
 /**
@@ -28,6 +39,12 @@ import {
  * you — costs nothing.
  */
 export function RuleEditor({ draftId, onDone }: { draftId: string; onDone: () => void }) {
+  const queryClient = useQueryClient();
+  // Read, not written to. The list has one owner — this cache — and the editor's job at the click
+  // is to hand it back the same list with one rule changed. What is wanted from it here is the two
+  // facts only the server knows: where it publishes, and whether it posts webhooks at all.
+  const { data } = useQuery({ queryKey: queryKeys.alertRules, queryFn: getAlertRules });
+
   const [draft, setDraft] = useState<DraftRule>(
     // The map is the source. The fallback is unreachable through `openRuleEditor`, which makes the
     // draft before it opens the window, and exists so a window restored from a stale pane draws a
@@ -48,6 +65,48 @@ export function RuleEditor({ draftId, onDone }: { draftId: string; onDone: () =>
    */
   const id = (name: string) => `${draftId.replace(/[^a-z0-9]+/gi, '-')}-${name}`;
 
+  // The defaults are this server's own, and they are only in force for the moment before the GET
+  // lands: a form that refused every publish topic while the document was in flight would be a
+  // form that says no to a reader who has done nothing wrong.
+  const where: SaveTarget = {
+    topicPrefix: data?.topicPrefix ?? 'mqttforge/alerts/',
+    allowWebhooks: data?.allowWebhooks ?? true,
+  };
+  const faults = faultsIn(draft, where);
+
+  const save = useMutation({
+    // Never discardUnreadable: a rules file the server could not read is a record, and an editor
+    // that overwrote it would delete rules nobody has seen. The panel is where that decision is
+    // offered, with the count of what would go.
+    mutationFn: (rules: AlertRuleDto[]) => putAlertRules(rules, false),
+    onSuccess: (result) => {
+      const warning = result.warnings.find((one) => one.ruleId === draft.id);
+
+      useLogStore.getState().push({
+        kind: 'ok',
+        verb: 'Alert rule saved',
+        topic: draft.name.trim() || draft.filter.trim(),
+        // Saved and warned is a real answer — 'this server has webhooks turned off' — and the log
+        // is where the console's own actions are explained.
+        body: warning?.reason,
+      });
+
+      queryClient.setQueryData(queryKeys.alertRules, (held?: AlertRulesResponseDto) =>
+        held ? { ...held, rules: result.rules } : held,
+      );
+      void queryClient.invalidateQueries({ queryKey: queryKeys.alertRules });
+
+      // The draft has become a rule. The next Edit on this row reads what the server holds, ids
+      // and all, rather than the copy that was being typed into.
+      forgetDraft(draftId);
+      onDone();
+    },
+    // The draft is left exactly as it was: what was typed is the only copy of it.
+    onError: (error) => logFault('Alert rule not saved', error, draft.filter.trim()),
+  });
+
+  const guardedSave = useGuardedMutate(save);
+
   return (
     <form className={panel.form} onSubmit={(event) => event.preventDefault()}>
       <div className={panel.row}>
@@ -57,6 +116,7 @@ export function RuleEditor({ draftId, onDone }: { draftId: string; onDone: () =>
             value={draft.name}
             maxLength={80}
             placeholder="Boiler temperature"
+            aria-invalid={faults.name !== undefined}
             onChange={(event) => edit({ name: event.target.value })}
           />
         </Field>
@@ -67,10 +127,14 @@ export function RuleEditor({ draftId, onDone }: { draftId: string; onDone: () =>
             value={draft.filter}
             spellCheck={false}
             placeholder="plant/+/temp"
+            aria-invalid={faults.filter !== undefined}
             onChange={(event) => edit({ filter: event.target.value })}
           />
         </Field>
       </div>
+
+      {faults.name && <p className={panel.fault}>{faults.name}</p>}
+      {faults.filter && <p className={panel.fault}>{faults.filter}</p>}
 
       <div className={panel.row}>
         <Field label="Field" htmlFor={id('field')}>
@@ -94,6 +158,7 @@ export function RuleEditor({ draftId, onDone }: { draftId: string; onDone: () =>
             value={draft.for}
             inputMode="numeric"
             placeholder="at once"
+            aria-invalid={faults.for !== undefined}
             onChange={(event) => edit({ for: event.target.value })}
           />
         </Field>
@@ -104,10 +169,14 @@ export function RuleEditor({ draftId, onDone }: { draftId: string; onDone: () =>
             value={draft.cooldown}
             inputMode="numeric"
             placeholder="1"
+            aria-invalid={faults.cooldown !== undefined}
             onChange={(event) => edit({ cooldown: event.target.value })}
           />
         </Field>
       </div>
+
+      {faults.for && <p className={panel.fault}>{faults.for}</p>}
+      {faults.cooldown && <p className={panel.fault}>{faults.cooldown}</p>}
 
       <Segmented
         label="Severity"
@@ -146,13 +215,12 @@ export function RuleEditor({ draftId, onDone }: { draftId: string; onDone: () =>
         </select>
       </Field>
 
-      {/* What the condition says, as the file says it. Task 6 puts the fields above this; it stays
-          for the one case that has no fields — a condition from a newer build, or a tree deeper
-          than this form draws — because a reader who opened a rule they did not write is owed the
-          chance to see what it holds. */}
-      <pre className={panel.note} data-testid="condition-source">
-        {conditionText(draft.condition)}
-      </pre>
+      <ConditionFields
+        condition={draft.condition}
+        id={(name) => id(`condition-${name}`)}
+        onChange={(condition) => edit({ condition })}
+      />
+      {faults.condition && <p className={panel.fault}>{faults.condition}</p>}
 
       <div className={panel.checks}>
         <label>
@@ -193,9 +261,13 @@ export function RuleEditor({ draftId, onDone }: { draftId: string; onDone: () =>
               ))}
             </select>
           </Field>
-          <pre className={panel.note} data-testid="clear-source">
-            {conditionText(draft.clear)}
-          </pre>
+
+          <ConditionFields
+            condition={draft.clear}
+            id={(name) => id(`clear-${name}`)}
+            onChange={(clear) => edit({ clear })}
+          />
+          {faults.clear && <p className={panel.fault}>{faults.clear}</p>}
         </>
       )}
 
@@ -239,15 +311,109 @@ export function RuleEditor({ draftId, onDone }: { draftId: string; onDone: () =>
       </div>
 
       {draft.webhook && (
-        <Field label="Webhook address" htmlFor={id('url')}>
-          <input
-            id={id('url')}
-            value={draft.webhook.url}
-            spellCheck={false}
-            placeholder="https://ops.example/hook"
-            onChange={(event) => edit({ webhook: { ...draft.webhook!, url: event.target.value } })}
-          />
-        </Field>
+        <>
+          <Field label="Webhook address" htmlFor={id('url')}>
+            <input
+              id={id('url')}
+              value={draft.webhook.url}
+              spellCheck={false}
+              placeholder="https://ops.example/hook"
+              aria-invalid={faults.webhook !== undefined}
+              onChange={(event) => edit({ webhook: { ...draft.webhook!, url: event.target.value } })}
+            />
+          </Field>
+
+          {!where.allowWebhooks && (
+            <p className={panel.note}>
+              Webhooks are turned off on this server. The rule will save and the address will be
+              kept, and nothing will be posted to it.
+            </p>
+          )}
+
+          <div className={panel.subFields}>
+            {draft.webhook.headers.map((header, index) => (
+              <div key={index} className={panel.row}>
+                <Field label={`Header ${index + 1} name`} htmlFor={id(`header-${index}-name`)}>
+                  <input
+                    id={id(`header-${index}-name`)}
+                    value={header.name}
+                    spellCheck={false}
+                    onChange={(event) =>
+                      edit({
+                        webhook: {
+                          ...draft.webhook!,
+                          headers: draft.webhook!.headers.map((one, at) =>
+                            at === index ? { ...one, name: event.target.value } : one,
+                          ),
+                        },
+                      })
+                    }
+                  />
+                </Field>
+                <Field label={`Header ${index + 1} value`} htmlFor={id(`header-${index}-value`)}>
+                  <input
+                    id={id(`header-${index}-value`)}
+                    type="password"
+                    value={header.value}
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder={header.kept ? 'kept' : ''}
+                    onChange={(event) =>
+                      edit({
+                        webhook: {
+                          ...draft.webhook!,
+                          headers: draft.webhook!.headers.map((one, at) =>
+                            at === index ? { ...one, value: event.target.value } : one,
+                          ),
+                        },
+                      })
+                    }
+                  />
+                </Field>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() =>
+                    edit({
+                      webhook: {
+                        ...draft.webhook!,
+                        headers: draft.webhook!.headers.filter((_, at) => at !== index),
+                      },
+                    })
+                  }
+                >
+                  Remove header {index + 1}
+                </button>
+              </div>
+            ))}
+
+            <button
+              type="button"
+              className="ghost"
+              onClick={() =>
+                edit({
+                  webhook: {
+                    ...draft.webhook!,
+                    headers: [...draft.webhook!.headers, { name: '', value: '', kept: false }],
+                  },
+                })
+              }
+            >
+              Add a header
+            </button>
+          </div>
+
+          {/* Said plainly, because an empty box that means 'keep' is not a thing a form has ever
+              meant before. The value never left the server, so there is nothing this console could
+              show; and the value belongs to the address, so changing the address asks for it again. */}
+          <p className={panel.note}>
+            A header value stays on the server and is never sent to this console. Leave it empty to
+            keep the one already stored. Change the address and the stored values are not carried
+            over — they were issued for the old one.
+          </p>
+
+          {faults.webhook && <p className={panel.fault}>{faults.webhook}</p>}
+        </>
       )}
 
       {draft.publish && (
@@ -258,6 +424,7 @@ export function RuleEditor({ draftId, onDone }: { draftId: string; onDone: () =>
               value={draft.publish.topic}
               spellCheck={false}
               placeholder="the server's own tree"
+              aria-invalid={faults.publish !== undefined}
               onChange={(event) =>
                 edit({ publish: { ...draft.publish!, topic: event.target.value } })
               }
@@ -281,6 +448,8 @@ export function RuleEditor({ draftId, onDone }: { draftId: string; onDone: () =>
               Retain
             </label>
           </div>
+
+          {faults.publish && <p className={panel.fault}>{faults.publish}</p>}
         </>
       )}
 
@@ -289,6 +458,23 @@ export function RuleEditor({ draftId, onDone }: { draftId: string; onDone: () =>
             exactly as it stands. Said here rather than left to be discovered. */}
         <button type="button" className="ghost" onClick={onDone}>
           Close
+        </button>
+
+        <button
+          type="button"
+          className={panel.trailing}
+          disabled={!savable(faults) || save.isPending}
+          onClick={() => {
+            // Read at the click, and only here. Between this window opening and this press the
+            // panel may have flipped a switch, deleted a rule, or another editor may have saved —
+            // and a body compiled from anything older would quietly undo whichever of them was
+            // first. `saveRule` puts this one rule into that list and changes nothing else.
+            const held = queryClient.getQueryData<AlertRulesResponseDto>(queryKeys.alertRules);
+
+            guardedSave(saveRule(held?.rules ?? [], ruleOf(draft)));
+          }}
+        >
+          Save
         </button>
       </div>
     </form>

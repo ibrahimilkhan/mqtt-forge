@@ -322,3 +322,12 @@
 .form {
   max-width: 46rem;
 }
+
+/* A condition's children, set in from the condition that holds them. The indent is the only thing
+   saying which level a field belongs to, and without it an 'all' of three thresholds reads as nine
+   fields in a row. */
+.subFields { display: grid; gap: 12px; margin: 10px 0; }
+.subField {
+  border-left: 2px solid var(--rule);
+  padding-left: 12px;
+}
