@@ -331,3 +331,27 @@
   border-left: 2px solid var(--rule);
   padding-left: 12px;
 }
+
+/* The three parts a rule is written in: what it watches, when it fires, and everything else.
+   A real fieldset and legend rather than a heading and a div, because the grouping is the point:
+   a screen reader announces the legend with every control inside it, so 'Topic filter' is heard
+   as 'What it watches, Topic filter' and a reader who tabbed straight into the middle of a long
+   form still knows which third of it they are in. */
+.part {
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  padding: 10px 12px 4px;
+  margin: 0 0 14px;
+  min-width: 0;
+}
+
+.part > legend {
+  padding: 0 6px;
+  font-size: var(--t-small);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* The note under a legend says what the part is for, once, so the fields inside it do not each
+   have to. Tight to the legend and loose to the first field. */
+.part > .note:first-of-type { margin: 0 0 12px; }

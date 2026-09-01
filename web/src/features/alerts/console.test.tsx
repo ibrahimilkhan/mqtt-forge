@@ -261,7 +261,16 @@ describe('the alerts console', () => {
 
     // The server says so over the hub, which is the only thing the row believes.
     act(() =>
-      hub.emit('alertMuted', 'r-heat', 'plant/kiln-2/temp', '2026-09-01T09:27:00Z'),
+      // Relative to now, never a written-out instant. A mute is only a mute while it is in the
+      // future, and the row asks alertStore's mutedUntil exactly that — so a fixed timestamp is a
+      // test that passes in the morning and fails in the afternoon. This one did: it was written
+      // as 2026-09-01T09:27:00Z and started failing at 09:27 that day.
+      hub.emit(
+        'alertMuted',
+        'r-heat',
+        'plant/kiln-2/temp',
+        new Date(Date.now() + 15 * 60_000).toISOString(),
+      ),
     );
 
     await waitFor(() => expect(screen.getByTestId('alert-row')).toHaveAttribute('data-muted', ''));
