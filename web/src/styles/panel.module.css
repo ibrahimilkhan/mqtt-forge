@@ -315,3 +315,10 @@
 .foldFields:disabled :is(input, select, button, label) {
   cursor: default;
 }
+
+/* A form in a window rather than in the column. The column's own width is the measure there; here
+   the window is, and a form that filled a screen-wide editor would put a name box across a metre
+   of desk. The measure is the same one the panel column offers, so the two read alike. */
+.form {
+  max-width: 46rem;
+}
