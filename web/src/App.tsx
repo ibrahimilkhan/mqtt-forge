@@ -26,6 +26,7 @@ import { useHubBridge } from './realtime/useHubBridge';
 import { useHubStatusStore } from './stores/hubStatusStore';
 import { AlertsPanel, worst } from './features/alerts/AlertsPanel';
 import { AlertNotices } from './features/alerts/AlertNotices';
+import { SoundPrompt } from './features/alerts/SoundButton';
 import { useSoundStore } from './features/alerts/alertSound';
 import { useAlertStore } from './stores/alertStore';
 
@@ -305,6 +306,9 @@ export function App({ hub }: { hub: Hub }) {
           workspace at 300 on a narrow screen and a thrown-open chart draws a scrim at 200. A
           notice that could be covered by either is a notice that did not happen. */}
       <AlertNotices open={setOpenPanel} />
+      {/* Beside the notices rather than inside the stack: it explains why a notice made no
+          sound, so it must not be one of the three the stack is willing to show. */}
+      <SoundPrompt />
     </>
   );
 }

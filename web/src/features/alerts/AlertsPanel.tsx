@@ -6,7 +6,7 @@ import { PanelShell } from '../../components/PanelShell';
 import { duration } from '../../lib/format';
 import { useGuardedMutate } from '../../lib/useGuardedMutate';
 import { useNow } from '../../lib/useNow';
-import { useAlertStore } from '../../stores/alertStore';
+import { mutedUntil, useAlertStore } from '../../stores/alertStore';
 import { logFault, useLogStore } from '../../stores/logStore';
 import panel from '../../styles/panel.module.css';
 import type {
@@ -337,7 +337,12 @@ function AlertRow({
   onMute: (minutes: number) => void;
 }) {
   const [minutes, setMinutes] = useState(MUTES[0].minutes);
-  const muted = alert.mutedUntil !== null && Date.parse(alert.mutedUntil) > now;
+  // The pair list, not the alert's own stamp. The two say the same thing while the alert is the
+  // one the mute was set on — but a mute outlives its alarm, so an alarm that cleared and rang
+  // again carries no stamp while the pair is still quiet. The hub's alertMuted writes the pair;
+  // only a fresh snapshot rewrites the stamp, and the row must not wait for one.
+  const held = useAlertStore((state) => mutedUntil(state, alert.ruleId, alert.topic, now));
+  const muted = held !== undefined;
 
   return (
     <div className={styles.alert} data-testid="alert-row" data-muted={muted ? '' : undefined}>
@@ -374,7 +379,7 @@ function AlertRow({
 
       {muted ? (
         <div className={styles.muteRow}>
-          <span className={styles.reason}>{`muted until ${clock(alert.mutedUntil)}`}</span>
+          <span className={styles.reason}>{`muted until ${clock(held)}`}</span>
           <button
             type="button"
             className={styles.quiet}
