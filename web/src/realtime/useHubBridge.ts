@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { queryKeys } from '../api/queryKeys';
 import { createFrameBuffer } from '../lib/frameBuffer';
+import { useAlertStore } from '../stores/alertStore';
 import { useHubStatusStore } from '../stores/hubStatusStore';
 import { useHealthStore } from '../stores/healthStore';
 import { MAX_LOG_ENTRIES, useLogStore } from '../stores/logStore';
@@ -124,14 +125,29 @@ export function useHubBridge(hub: Hub) {
             `${total} message${total === 1 ? '' : 's'} never left the server: its queue filled ` +
             'while this console was behind. The tree and the log are short of what they show.',
         });
-      },
+      },      // The four the alert engine sends. Each is a one-line hand-off to the store, deliberately:
+      // what an alarm means is the panel's business, and a bridge that decided anything about one
+      // would be a second place alerting is implemented.
+      alertsRaised: (alerts) => useAlertStore.getState().raised(alerts),
+      alertsResolved: (alerts) => useAlertStore.getState().resolved(alerts),
+      alertMuted: (ruleId, topic, until) => useAlertStore.getState().mute(ruleId, topic, until),
+      alertsDropped: (total) => useAlertStore.getState().droppedTotal(total),
       reconnecting: () => useHubStatusStore.getState().setStatus('reconnecting'),
       // Broker state may have moved on while the hub was down; refetch, don't trust the cache.
       reconnected: () => {
         useHubStatusStore.getState().setStatus('live');
         void queryClient.invalidateQueries();
+        // Not covered by the line above: the alarms are a store rather than a query, so nothing
+        // invalidateQueries touches would fetch them. This is the call that ends a phantom alarm
+        // — an alertsResolved sent while the hub was down never arrives, and without a snapshot
+        // that does not contain it the row stands on screen for the rest of the session.
+        void useAlertStore.getState().load();
       },
     });
+
+    // After the subscription and before the hub is started, so that nothing raised while it is in
+    // flight can fall between the two: the store queues what arrives mid-snapshot and replays it.
+    void useAlertStore.getState().load();
 
     // Hub keeps retrying on its own; this just quiets the unhandled rejection and sets status.
     hub.start().catch(() => useHubStatusStore.getState().setStatus('reconnecting'));

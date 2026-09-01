@@ -1,13 +1,16 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { queryKeys } from '../api/queryKeys';
+import { server } from '../test/server';
+import { emptyAlerts, useAlertStore } from '../stores/alertStore';
 import { MAX_LOG_ENTRIES, runFor, useLogStore } from '../stores/logStore';
 import { useHealthStore } from '../stores/healthStore';
 import { usePauseStore } from '../stores/pauseStore';
 import { useTopicTreeStore } from '../stores/topicTreeStore';
-import type { MqttMessage } from '../types/api';
+import type { AlertDto, MqttMessage } from '../types/api';
 import { createFakeHub } from './fakeHub';
 import { useHubBridge } from './useHubBridge';
 
@@ -19,8 +22,26 @@ const message = (topic: string, payload = '1'): MqttMessage => ({
   receivedAt: '2026-07-26T10:00:00Z',
 });
 
-let frames: Array<() => void>;
+const alert = (id: string, over: Partial<AlertDto> = {}): AlertDto => ({
+  id,
+  ruleId: '6f1d',
+  ruleName: 'Boiler temperature',
+  topic: 'plant/1/temp',
+  severity: 'critical',
+  firedAt: '2026-09-01T10:00:00Z',
+  lastSeenAt: '2026-09-01T10:00:00Z',
+  resolvedAt: null,
+  resolvedBy: null,
+  mutedUntil: null,
+  count: 1,
+  reason: '94.2 > 90',
+  value: 94.2,
+  sample: '{"temp":94.2}',
+  actions: ['screen'],
+  ...over,
+});
 
+let frames: Array<() => void>;
 beforeEach(() => {
   frames = [];
   vi.stubGlobal('requestAnimationFrame', (callback: () => void) => frames.push(callback));
@@ -28,6 +49,7 @@ beforeEach(() => {
   useLogStore.getState().clear();
   useTopicTreeStore.getState().reset();
   useHealthStore.setState({ arrived: 0, spentMs: 0, dropped: 0 });
+  useAlertStore.setState(emptyAlerts());
 });
 
 afterEach(() => vi.unstubAllGlobals());
@@ -373,5 +395,89 @@ describe('while the console is stopped', () => {
 
     expect(useLogStore.getState().held).toBe(2_000);
     expect(usePauseStore.getState().waiting).toBe(1_000);
+  });
+});
+
+describe('useHubBridge and the alert engine', () => {
+  it('takes an alert snapshot as soon as it has subscribed', async () => {
+    server.use(
+      http.get('/api/alerts', () =>
+        HttpResponse.json({
+          active: [alert('a1')],
+          history: [],
+          muted: [],
+          rules: [],
+          dropped: 0,
+          webhooksDropped: 0,
+          suppressed: 0,
+          capped: [],
+          blindSeconds: 42,
+          warming: [],
+        }),
+      ),
+    );
+    const hub = createFakeHub();
+
+    renderBridge(hub);
+    await waitFor(() => expect(useAlertStore.getState().active).toHaveLength(1));
+
+    expect(useAlertStore.getState().blindSeconds).toBe(42);
+  });
+
+  it('hands a raised alarm to the store', async () => {
+    const hub = createFakeHub();
+    renderBridge(hub);
+    await waitFor(() => expect(useAlertStore.getState().syncing).toBe(false));
+
+    hub.emit('alertsRaised', [alert('a1'), alert('a2')]);
+
+    expect(useAlertStore.getState().active.map((held) => held.id)).toEqual(['a1', 'a2']);
+  });
+
+  it('takes a resolved alarm off the active list', async () => {
+    const hub = createFakeHub();
+    renderBridge(hub);
+    await waitFor(() => expect(useAlertStore.getState().syncing).toBe(false));
+
+    hub.emit('alertsRaised', [alert('a1'), alert('a2')]);
+    hub.emit('alertsResolved', [alert('a1', { resolvedBy: 'clear' })]);
+
+    expect(useAlertStore.getState().active.map((held) => held.id)).toEqual(['a2']);
+  });
+
+  it('records a mute somebody else set, and the lift', async () => {
+    const hub = createFakeHub();
+    renderBridge(hub);
+    await waitFor(() => expect(useAlertStore.getState().syncing).toBe(false));
+
+    hub.emit('alertMuted', '6f1d', 'plant/1/temp', '2026-09-01T10:30:00Z');
+    expect(useAlertStore.getState().muted).toHaveLength(1);
+
+    hub.emit('alertMuted', '6f1d', 'plant/1/temp', null);
+    expect(useAlertStore.getState().muted).toEqual([]);
+  });
+
+  it('keeps the count of what the engine never judged', async () => {
+    const hub = createFakeHub();
+    renderBridge(hub);
+    await waitFor(() => expect(useAlertStore.getState().syncing).toBe(false));
+
+    hub.emit('alertsDropped', 12);
+
+    expect(useAlertStore.getState().dropped).toBe(12);
+  });
+
+  // The phantom alarm, end to end: the resolve was sent while the hub was down, so it never
+  // arrived, and nothing but a fresh snapshot can take the row off the screen.
+  it('takes a fresh snapshot after a reconnect, since a resolve may have been missed', async () => {
+    const hub = createFakeHub();
+    renderBridge(hub);
+    await waitFor(() => expect(useAlertStore.getState().syncing).toBe(false));
+
+    hub.emit('alertsRaised', [alert('a1')]);
+    expect(useAlertStore.getState().active).toHaveLength(1);
+
+    hub.emit('reconnected');
+    await waitFor(() => expect(useAlertStore.getState().active).toHaveLength(0));
   });
 });

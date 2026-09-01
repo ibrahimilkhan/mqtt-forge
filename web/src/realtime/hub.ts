@@ -1,5 +1,5 @@
 import * as signalR from '@microsoft/signalr';
-import type { ConnectionStateResponse, MqttMessage } from '../types/api';
+import type { AlertDto, ConnectionStateResponse, MqttMessage } from '../types/api';
 
 export type HubEvents = {
   // Batched server-side: a busy broker outruns one frame per message.
@@ -7,6 +7,19 @@ export type HubEvents = {
   connectionStateChanged: (payload: ConnectionStateResponse) => void;
   /** Running total the server's own queue has had to drop, sent only when it moves. */
   messagesDropped: (total: number) => void;
+  /** Alarms that have just started. Batched at five hundred: a restart can restore a thousand. */
+  alertsRaised: (alerts: AlertDto[]) => void;
+  /** Alarms that have just stopped, carrying the resolvedAt and resolvedBy the active copy lacks. */
+  alertsResolved: (alerts: AlertDto[]) => void;
+  /**
+   * A (rule, topic) pair silenced, and the moment it speaks again. Null is the lift.
+   *
+   * Three arguments rather than one object because that is what the endpoint sends, and the pair
+   * rather than an alert id because a mute outlives the alarm it was set on.
+   */
+  alertMuted: (ruleId: string, topic: string, until: string | null) => void;
+  /** Running total of what the alert engine never judged, sent only when it moves. */
+  alertsDropped: (total: number) => void;
   reconnecting: () => void;
   reconnected: () => void;
 };
@@ -67,27 +80,32 @@ export function createSignalRHub(url = '/hubs/mqtt'): Hub {
       });
       return started;
     },
-
     subscribe(handlers) {
       const registered: Array<() => void> = [];
 
-      if (handlers.messagesReceived) {
-        const handler = handlers.messagesReceived;
-        connection.on('messagesReceived', handler);
-        registered.push(() => connection.off('messagesReceived', handler));
-      }
+      /**
+       * Binds one server-sent event, if this caller asked for it, and remembers how to unbind it.
+       *
+       * Seven of these now, and each used to be the same four lines with the same name written in
+       * three places — which is exactly the shape a new event gets added to by copying and then
+       * forgetting one of the three. The lifecycle pair below cannot join it: signalR has no
+       * removal API for onreconnecting and onreconnected, so those are kept in sets of our own.
+       */
+      const bind = <K extends keyof HubEvents>(event: K) => {
+        const handler = handlers[event];
+        if (!handler) return;
 
-      if (handlers.connectionStateChanged) {
-        const handler = handlers.connectionStateChanged;
-        connection.on('connectionStateChanged', handler);
-        registered.push(() => connection.off('connectionStateChanged', handler));
-      }
+        connection.on(event, handler);
+        registered.push(() => connection.off(event, handler));
+      };
 
-      if (handlers.messagesDropped) {
-        const handler = handlers.messagesDropped;
-        connection.on('messagesDropped', handler);
-        registered.push(() => connection.off('messagesDropped', handler));
-      }
+      bind('messagesReceived');
+      bind('connectionStateChanged');
+      bind('messagesDropped');
+      bind('alertsRaised');
+      bind('alertsResolved');
+      bind('alertMuted');
+      bind('alertsDropped');
 
       // signalR has no lifecycle-handler removal API; harmless since the connection outlives the app.
       if (handlers.reconnecting) {
