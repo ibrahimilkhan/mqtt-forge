@@ -73,6 +73,35 @@ public class ColourRulesDtoValidatorTests
         Assert.False(IsValid(new ColourRuleDto("sensors/#", colour)));
     }
 
+    // The second colour is the one a rule is allowed not to have: a rule that paints the topic
+    // and leaves the payload in the console's ink is the commonest rule there is, and every rule
+    // written before the second colour existed is one of them.
+    [Fact]
+    public void A_rule_may_carry_no_body_colour()
+    {
+        Assert.True(IsValid(new ColourRuleDto("sensors/#", "#b45309", null)));
+    }
+
+    [Theory]
+    [InlineData("#b45309")]
+    [InlineData("#B45309")]
+    [InlineData("#000000")]
+    public void Accepts_a_hex_triple_for_the_body(string colour)
+    {
+        Assert.True(IsValid(new ColourRuleDto("sensors/#", "#1e40af", colour)));
+    }
+
+    // Absent is allowed; malformed is not. It reaches the same style attribute as the first one.
+    [Theory]
+    [InlineData("")]
+    [InlineData("red")]
+    [InlineData("#fff")]
+    [InlineData("#b45309; background: url(x)")]
+    public void Refuses_a_body_colour_that_is_not_a_hex_triple(string colour)
+    {
+        Assert.False(IsValid(new ColourRuleDto("sensors/#", "#1e40af", colour)));
+    }
+
     // Swallowing one of them silently would leave the user unable to explain why the rule
     // they typed does nothing.
     [Fact]

@@ -1,17 +1,17 @@
-/* The panel is a column about 320px wide, so everything here is a stack rather than a table.
+/* This file used to open by saying the panel is a column about 320px wide, so everything in it is
+   a stack rather than a table. That premise died when the alerts panel took the whole workspace:
+   a stack in an 1100px plate is four ragged lines against the left edge with EDIT and × flung to
+   the right, and six hundred pixels of nothing between a rule's name and the control that deletes
+   it. The rules are a table now — see the block at the foot of this file. What is left up here is
+   an alarm's own type, which is still read one line at a time.
+
    Three kinds of block — an alarm, a past alarm, a rule — and each is set apart by space and a
    left rule rather than by a box, because seven boxes down a narrow column read as a form. */
 
-.title {
-  font-family: var(--mono);
-  font-size: var(--t-label);
-  font-weight: 400;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin: 18px 0 8px;
-}
-.title:first-of-type { margin-top: 12px; }
+/* The heading treatment, the 'new one' row, the empty state and the table head all live in
+   styles/panel.module.css now: the colours panel is the same page and had begun to keep a second
+   copy of every one of them. What is left in this file is what is particular to alert rules —
+   which columns the table has, and what a severity does to a row. */
 
 /* ---- an alarm that is on now ---- */
 
@@ -39,10 +39,14 @@
   text-transform: uppercase;
 }
 .level[data-severity='critical'] { color: var(--fault); }
-/* No amber in the palette, and one is not introduced for this: a second red beside the first is
-   two alarms the eye cannot rank, so a warning takes the ink and lets the word do the work. */
-.level[data-severity='warn'] { color: var(--ink); }
-.level[data-severity='info'] { color: var(--muted); }
+/* There was no amber in the palette, and this file used to argue that one should not be
+   introduced: a second red beside the first is two alarms the eye cannot rank. The argument was
+   sound and the conclusion was wrong — what it left behind was a warn lettered in --ink, which is
+   the colour of the furniture, and an info in --muted, which is the colour of a label. Three
+   levels that have to be read to be told apart are three levels nobody tells apart.
+   --warn is an ochre rather than a second red, and it is dark enough to be read as lettering. */
+.level[data-severity='warn'] { color: var(--warn); }
+.level[data-severity='info'] { color: var(--signal); }
 
 .topic {
   font-family: var(--mono);
@@ -65,7 +69,7 @@
 .marks { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
 .mark {
   font-family: var(--mono);
-  font-size: var(--t-nano);
+  font-size: var(--t-micro);
   color: var(--muted);
   border: 1px solid var(--rule);
   border-radius: var(--r-control);
@@ -95,29 +99,112 @@
   opacity: 0.7;
 }
 
-/* ---- a rule ---- */
+/* ---- the rules, as a table ----
 
-.ruleBlock + .ruleBlock { margin-top: 2px; }
-.ruleBlock .ruleRow { display: flex; align-items: center; gap: 8px; }
-.ruleRow input[type='checkbox'] { accent-color: var(--signal); flex: none; }
-.ruleName { flex: 1; min-width: 0; font-size: var(--t-small); color: var(--ink); }
+   One template, shared by the header and every row, which is the whole of why the columns line
+   up. The columns are the questions somebody comparing two rules actually asks: which one is it,
+   is it on, what is it called and what does it watch, how loud is it, what sets it off, what does
+   it do about it, and is it seeing anything at all. Before this the last four had no answer on
+   screen — telling two rules apart meant opening both.
+
+   Fractions rather than fixed widths on the four that hold prose, with a floor under each: a
+   topic filter and a diagnostic sentence both grow with the window, and neither may squeeze the
+   other out of existence when it does. */
+.rules { --rule-cols: 26px 30px minmax(190px, 1.5fr) 64px minmax(140px, 1fr) minmax(92px, 0.6fr) minmax(150px, 1.1fr) 76px; }
+
+/* The head carries the rows' own left border, transparent and unused: every row here is ruled
+   down its left edge in the colour of its level, and a head without that border stood three
+   pixels to the left of the columns it heads — the whole table's labels adrift of their cells.
+   Given to the head rather than taken off the rows, because the rows are the ones drawing it. */
+.rulesHead { border-left: 3px solid transparent; }
+
+.rulesHead,
+.ruleRow {
+  display: grid;
+  grid-template-columns: var(--rule-cols);
+  gap: 10px;
+  /* First lines together, whatever a cell holds under them: the RULE cell is a name with a filter
+     beneath it, and the rest are one line each. Aligning on the box would drop the single lines
+     to the middle of a two-line row and the eye would read a zigzag. */
+  align-items: baseline;
+}
+
+/* The row's own edge carries the level in colour, which is the second signal — the LEVEL column
+   says it in a word, which is the first. Transparent rather than absent, so a row does not move
+   three pixels sideways when a level is set. */
+.ruleRow {
+  padding: 7px 8px 8px;
+  border-left: 3px solid transparent;
+  border-bottom: 1px solid color-mix(in srgb, var(--rule) 55%, transparent);
+}
+.ruleRow[data-severity='critical'] { border-left-color: var(--fault); }
+.ruleRow[data-severity='warn'] { border-left-color: var(--warn); }
+.ruleRow[data-severity='info'] { border-left-color: var(--signal); }
+.ruleRow:hover { background: var(--paper); }
+
+/* Off is faded rather than hidden: a rule somebody switched off is still a rule they wrote, and
+   the switch that turns it back on is in the row.
+
+   What fades is what the rule SAYS, never what it can be DONE to. Fading the whole row took the
+   switch, Edit and × down with it, and a control at half strength reads as a control that has
+   been disabled — so the row that most needs to be edited or turned back on was the one whose
+   controls looked unavailable. */
+.ruleRow[data-off] .cellRule,
+.ruleRow[data-off] .level,
+.ruleRow[data-off] .fires,
+.ruleRow[data-off] .marks,
+.ruleRow[data-off] .seen { opacity: 0.5; }
+
+.ruleRow input[type='checkbox'] { accent-color: var(--signal); justify-self: center; }
+
+/* Name over filter. The one cell that stacks, because those two are one answer: what it is
+   called, and what it is pointed at. */
+.cellRule { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ruleName { font-size: var(--t-small); color: var(--ink); overflow-wrap: anywhere; }
 .filter {
-  display: block;
-  margin-left: 22px;
   font-family: var(--mono);
   font-size: var(--t-micro);
   color: var(--muted);
   overflow-wrap: anywhere;
 }
-/* The sentence that says what the rule can see. Indented under the name it belongs to, in the
-   quietest type on the panel: it is read when a rule is not doing what was expected, and it
-   should not compete with the rules themselves the rest of the time. */
-.seen {
-  display: block;
-  margin: 1px 0 8px 22px;
+
+/* What sets it off, in the engine's own arithmetic. Mono, because every one of these is a
+   comparison and a comparison read in prose type is a comparison read twice. */
+.fires {
   font-family: var(--mono);
-  font-size: var(--t-nano);
+  font-size: var(--t-micro);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+/* The sentence that says what the rule can see, which is the answer to 'why has this never
+   fired'. Quiet, but not the bottom of the scale: it is a sentence rather than a mark, and at a
+   13px base --t-nano is 8.7px of monospace prose. Quieter than the row it belongs to is the job;
+   unreadable is not. */
+.seen {
+  font-family: var(--mono);
+  font-size: var(--t-micro);
   color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* Held to the end of the row, together, because they are one pair: change this rule, or drop it. */
+.rowActions { display: flex; justify-content: flex-end; gap: 2px; }
+
+/* Under the width where eight columns stop being eight columns, the table goes back to being a
+   stack — the shape this file was written for. The header has nothing left to head, so it goes:
+   a row of labels over a stack is a row of labels pointing at nothing. */
+@media (max-width: 900px) {
+  .rulesHead { display: none; }
+  .ruleRow {
+    grid-template-columns: 26px 30px minmax(0, 1fr) auto;
+    row-gap: 3px;
+  }
+  .cellRule,
+  .fires,
+  .seen { grid-column: 3 / -1; }
+  .level { grid-column: 3 / -1; order: -1; }
+  .rowActions { grid-row: 1; grid-column: 4; }
 }
 
 /* A word-sized button standing inside a row rather than at the foot of the panel. */
@@ -151,3 +238,28 @@
 }
 .remove:hover:not(:disabled) { color: var(--fault); background: var(--surface); }
 .remove:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+/* ---- what the engine is doing ----
+
+   One group at the foot, ruled off from the rules above it. Not a box: a bordered panel inside a
+   bordered panel is the nesting this pass was called to remove. A rule across the top and a stack
+   of single lines under it says 'these belong together' with one border rather than four.
+
+   Every line is one line. They were paragraphs with a paragraph's leading, which spaced four
+   facts as far apart as four sections. */
+.engine {
+  margin-top: 18px;
+  padding-top: 4px;
+  border-top: 1px solid var(--rule);
+}
+
+.engineRow {
+  margin: 0;
+  padding: 3px 0;
+  font-size: var(--t-small);
+  color: var(--muted);
+}
+
+/* Red for the four that are faults and quiet grey for the two that are only news — a suppressed
+   firing and a window still filling are the engine working, not the engine failing. */
+.engineRow[data-severity='critical'] { color: var(--fault); }

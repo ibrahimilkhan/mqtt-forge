@@ -362,6 +362,7 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
     'console.html',
     'console-broker.html',
     'console-colours.html',
+    'console-painted.html',
     'console-zoomed.html',
     'console-pinned.html',
     'console-shut.html',
@@ -387,6 +388,8 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
                 ? 'Broker panel'
               : href === 'console-colours.html'
                 ? 'Colour rules'
+              : href === 'console-painted.html'
+                ? 'What the rules paint'
                 : href === 'console-zoomed.html'
                   ? 'Chart opened'
                   : href === 'console-pinned.html'
@@ -427,6 +430,10 @@ ${inner}
 
   writeFileSync(`${OUT}/console.html`, console_(client, { panel: null }));
   writeFileSync(`${OUT}/console-colours.html`, console_(client, { panel: 'colours', colours: true }));
+  // The rules with nothing standing in front of them: the tree, the log and the chart wearing
+  // what the panel above only describes — including the second colour, on the payloads of the
+  // one rule that carries one.
+  writeFileSync(`${OUT}/console-painted.html`, console_(client, { panel: null, colours: true }));
   // The panel the console opens on, which is the one page that shows the broker form whole.
   writeFileSync(`${OUT}/console-broker.html`, console_(client, { panel: 'broker' }));
   // The same console with the chart thrown open, which is the state a static page can show and
@@ -777,7 +784,8 @@ function console_(client, { zoomed = false, pinned = false, opened = false, pane
     queryKeys.colourRules,
     colours
       ? [
-          { filter: 'sensors/+/temp', colour: '#8161b3' },
+          // The second colour, on the rule whose payloads are what the reader is actually reading.
+          { filter: 'sensors/+/temp', colour: '#8161b3', bodyColour: '#5c6f84' },
           { filter: 'alerts/#', colour: '#b7514e' },
         ]
       : [],

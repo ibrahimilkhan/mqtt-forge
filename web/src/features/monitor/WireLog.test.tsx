@@ -1518,6 +1518,52 @@ describe('colour rules', () => {
   });
 });
 
+// A rule may carry a second colour, for the message under the topic. Most do not, and the payload
+// stays in the console's own ink — a wall of bodies in eight hues is a log nobody can read. The
+// ones that do are watching a single device among forty, where the payload is what is being read.
+describe('the message under the topic', () => {
+  const rules = (...rules: Array<{ filter: string; colour: string; bodyColour?: string | null }>) =>
+    server.use(http.get('/api/colour-rules', () => HttpResponse.json({ rules })));
+
+  const arrived = (topic: string, body: string) =>
+    useLogStore.getState().push({ kind: 'recv', topic, body });
+
+  const bodyOf = (topic: string) => {
+    const entry = screen
+      .getAllByTestId('entry')
+      .find((row) => within(row).getByTestId('topic').textContent === topic)!;
+
+    return within(entry).getByTestId('body');
+  };
+
+  it('is drawn in the rule`s second colour where there is one', async () => {
+    rules({ filter: 'sensors/+/temp', colour: '#b45309', bodyColour: '#1e40af' });
+    useSelectionStore.getState().select(chip);
+    arrived('sensors/a/temp', '21.5');
+
+    render(<Monitor />);
+
+    await waitFor(() => expect(bodyOf('sensors/a/temp')).toHaveStyle({ color: '#1e40af' }));
+  });
+
+  // The commonest rule there is: paint the path, leave the payload legible.
+  it('is left in the console`s ink by a rule that only paints the topic', async () => {
+    rules({ filter: 'sensors/+/temp', colour: '#b45309' });
+    useSelectionStore.getState().select(chip);
+    arrived('sensors/a/temp', '21.5');
+
+    render(<Monitor />);
+
+    await waitFor(() =>
+      expect(within(screen.getByTestId('entry')).getByTestId('topic')).toHaveStyle({
+        color: '#b45309',
+      }),
+    );
+    expect(bodyOf('sensors/a/temp').style.color).toBe('');
+  });
+
+});
+
 // The entry's left edge is its kind — ink for a message that arrived. A rule that covers the
 // topic takes that edge over, so a run of entries reads by rule at a glance.
 describe('the entry wears its rule on the left edge', () => {

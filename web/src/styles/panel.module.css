@@ -4,11 +4,145 @@
    what a box has to keep to still be a box worth typing into — under it the second field drops
    to its own line rather than both being squeezed. No breakpoint: the row answers the width it
    is actually given, which on this panel is the window minus whatever the measure leaves. */
-.row { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+.row { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 14px; }
 .row > * { flex: 1 1 200px; min-width: 0; }
 /* The port, which is four digits whatever the row does. Never the field that wraps: a port on a
    line of its own beneath an address it belongs to reads as a second address. */
 .row .narrow { flex: 0 0 96px; }
+/* ---- what makes a row of fields a row ----
+
+   Boxes bottom-aligned rather than stretched. Two fields side by side do not have labels of the
+   same length: 'Operator' is one line at 96px and 'Readings in the window' is two, and stretched
+   from the top that puts one box a whole line lower than its neighbour. Aligned at the foot, the
+   boxes line up — they are all one control high — and it is the labels above them that take the
+   difference, which is where a difference in the length of a word belongs.
+
+   The one thing this needs to be true is that a box and a select are the same height, which is
+   what the stated line-height in global.css buys.
+
+   A button in one of these rows — the header remover — stops being stretched to the full height
+   of the field beside it and stands on the same foot as the boxes, which is what it always
+   should have done. */
+.row { align-items: flex-end; }
+
+/* One field's worth of vertical rhythm, stated once.
+ *
+ * It used to be nowhere: `.row` carried a margin and a field standing on its own carried none, so
+ * a Condition select followed immediately by the fields of that condition had nothing at all
+ * between them, and the form read as one block of labels and boxes with no seams. The row keeps
+ * its own margin and its children give theirs up to it, so a field is followed by the same gap
+ * whether or not it happens to have a neighbour. */
+.field { margin-bottom: 14px; }
+.row > .field { margin-bottom: 0; }
+
+/* The label's line, and anything that rides at the end of it. `min-height` is the mark's own box,
+   so a field with a help mark and a field without one put their boxes at the same height. */
+.fieldHead {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 1.25rem;
+  margin-bottom: 6px;
+}
+/* The gap below belongs to the head now. Left on the label it would be spent inside the row. */
+.fieldHead > label { margin-bottom: 0; }
+
+/* ---- a panel that is a list of rules ----
+
+   Two of them now — alerts and colours — and they are the same page: a heading, one way to make
+   another rule, a table of the ones there are, and a sentence in the middle when there are none.
+   Written once here rather than twice in two feature stylesheets, because 'the colours page
+   should look like the alerts page' is a thing that has to stay true after today. */
+
+/* The section's name, and the one thing that can be done to the section, on one line.
+   `space-between` rather than `margin-left: auto` on the button: this row is only ever these two,
+   and the two of them at opposite ends is the whole arrangement. */
+.sectionTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0 8px;
+}
+/* Smaller than a form's Save, because it is not one: it stands beside a heading and has to sit on
+   that heading's line rather than set the height of it. */
+.sectionTop > button { padding: 7px 12px; }
+
+.sectionTitle {
+  font-family: var(--mono);
+  font-size: var(--t-label);
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 18px 0 8px;
+}
+/* Inside the row, the row owns the spacing and the heading owns none. */
+.sectionTop > .sectionTitle { margin: 0; }
+
+/* Nothing in the list yet, in a panel the width of the workspace.
+ *
+ * The console's own `.empty` is a line ruled off at the left, and it is right where it is used:
+ * beside a tree with no broker, inside a pane that has not filled in. Here there is no 'beside' —
+ * the panel is empty from edge to edge, and a sentence held against the left of 1400 pixels reads
+ * as a caption on the nothing next to it rather than as the panel saying what it is for.
+ *
+ * A share of the window rather than a fixed height: PanelShell is the shell for seven panels and
+ * this is one state of two of them, so the centring is bought here instead of by making that
+ * component a flex column for everybody. The block shrinks with the window, because vh does. */
+.nothingYet {
+  margin: 0;
+  padding: 24px 16px;
+  min-height: 46vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: var(--t-code);
+  line-height: 1.6;
+  color: var(--muted);
+}
+/* The sentence is a child of the centring box rather than being it. A flex container makes each
+   of its inline children an item and drops the whitespace-only text nodes between them, so
+   'Press New rule and' came out with the spaces around the bold words closed up. */
+.nothingYet p { margin: 0; max-width: 46ch; }
+.nothingYet b { font-weight: 600; color: var(--ink); }
+
+/* The head of a rule table. The grid itself is the panel's own — the columns differ — but the
+   lettering is one thing and is written here. */
+.rulesHead {
+  padding: 0 8px 5px;
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--mono);
+  /* --t-label, not --t-nano: a column header is read once per visit and has to survive being
+     read once. */
+  font-size: var(--t-label);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* The '#' over that column follows it. Left-aligned it sat at the left edge of a 26px track whose
+   numbers end at the right edge of it — three characters adrift on every table that uses this
+   head, which reads as a column heading pointing at the wrong column. The numbers are what the
+   alignment is for; the head goes where they are. */
+.rulesHead > :first-child {
+  text-align: end;
+  /* The head is letter-spaced, and the last letter carries its space with it — so a right-aligned
+     '#' ends 0.12em short of the edge its numbers end at. Taken back off the margin, which moves
+     the box rather than the letter and lands the glyph exactly where they do. */
+  margin-right: -0.12em;
+}
+
+/* Its place in the list, for pointing at a row out loud rather than for reading. Right-aligned so
+   9 and 40 end at the same place, and in the quietest type on the panel. */
+.ruleNumber {
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  color: var(--muted);
+  text-align: end;
+}
 
 .checks {
   display: flex;
@@ -75,6 +209,19 @@
   font-size: var(--t-small);
   color: var(--muted);
   margin-top: 10px;
+}
+
+/* A line about what a select above it is currently set to.
+ *
+ * Not `.note`, which is a remark under a block and spends 10px getting away from it. This one has
+ * to read as belonging to the control directly above — it is the sentence the picker's options
+ * used to carry, lifted out of them so the picker can be a list of words — so it is pulled up
+ * into the gap the field left and given its own room underneath instead. */
+.pickNote {
+  margin: -6px 0 14px;
+  font-size: var(--t-small);
+  line-height: 1.45;
+  color: var(--muted);
 }
 
 /* Same shape as a note, but it reports a failure, so it carries the fault colour. */
@@ -198,7 +345,10 @@
    would otherwise push the select off the panel rather than scroll inside its own field. */
 .addressLine { display: flex; align-items: stretch; gap: 0; }
 .addressLine > input { flex: 1; min-width: 0; border-radius: 0 var(--r-control) var(--r-control) 0; }
-.addressLine > select { flex: 0 0 auto; border-right: 0; border-radius: var(--r-control) 0 0 var(--r-control); }
+/* The one select in the app that is not a field's own box: it is the scheme in front of an
+   address, so it takes the width of the word in it. `width: auto` undoes the global 100%, which
+   `flex-basis: auto` would otherwise resolve to and hand it the whole line. */
+.addressLine > select { flex: 0 0 auto; width: auto; border-right: 0; border-radius: var(--r-control) 0 0 var(--r-control); }
 
 /* A path and the button that fills it in, on one line. The box keeps the room — a path is the
    longest thing anyone types into this panel — and the button takes only the width of its word,
@@ -323,14 +473,77 @@
   max-width: 46rem;
 }
 
-/* A condition's children, set in from the condition that holds them. The indent is the only thing
-   saying which level a field belongs to, and without it an 'all' of three thresholds reads as nine
-   fields in a row. */
-.subFields { display: grid; gap: 12px; margin: 10px 0; }
+/* ---- a condition's children, one card each ----
+
+   They were a 12px indent behind a 2px hairline: enough to say 'these belong to the thing above'
+   and nothing at all to say where one child ends and the next begins. An 'all' of three
+   thresholds is three selects, three operators and three values, every one of them drawn exactly
+   like its neighbours, down one continuous grey stripe — nine fields in a column that a reader
+   has to count in threes to parse. Adding a fourth changed nothing on screen except the length of
+   the stripe.
+
+   A card each says it instead, and says it before anything is read. The ground is --paper, which
+   is the console's own 'set into the page' — the same fill a printed body or a sample document
+   takes — so the white boxes inside stand up out of it and the gap between two cards is plainly
+   the gap between two conditions.
+
+   The `1fr` is load bearing on a grid: without it a card is as wide as its widest row, so three
+   children with different condition types came out three different widths. */
+.subFields { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin: 10px 0; }
 .subField {
-  border-left: 2px solid var(--rule);
-  padding-left: 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+  background: var(--paper);
+  padding: 10px 12px 12px;
+  min-width: 0;
 }
+/* A row of fields inside a card has less to spend than the same row at the top of a column.
+ *
+ * 200px is what a box has to keep to still be worth typing into, and it is the right basis out in
+ * the panel. Inside a child condition it is eight pixels too greedy: the card takes the column's
+ * 368 down to 308 by the time its own border and padding are off, and an Operator at a fixed 96
+ * plus a Value asking for 200 plus the gap comes to 310. So every threshold child drew its
+ * operator and its value on two lines, while the identical pair at the top of the same column
+ * drew them on one — the same condition, laid out two different ways, a hundred pixels apart.
+ *
+ * `:not(.narrow)` is not decoration either: `flex-basis` alone would overwrite the basis half of
+ * `.narrow`'s own `flex: 0 0 96px` and quietly widen every fixed field in the card. */
+.subField .row > .field:not(.narrow) { flex-basis: 140px; }
+
+/* The card's own floor. What ends a condition varies — a row of fields brings 14px under it, a
+   note brings none — so the padding is the floor and whatever lands on it gives up its margin. */
+.subField > :last-child { margin-bottom: 0; }
+
+/* Takes one child away, from the head of the card it takes away.
+ *
+ * It was a full-width 'REMOVE CONDITION 2' in the app's button face, sitting under the fields —
+ * which put the loudest thing in the block on the destructive action, and repeated the ordinal a
+ * reader had already read at the top. A mark at the card's own top-right is where every closable
+ * thing in this console puts its close, and it leaves the block to be read as a condition rather
+ * than as a thing that can be removed.
+ *
+ * `margin-left: auto` carries it to the end of the field head it rides in, past the label. */
+.subRemove {
+  all: unset;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: var(--r-control);
+  font-family: var(--mono);
+  font-size: var(--t-code);
+  line-height: 1;
+  letter-spacing: normal;
+  color: var(--muted);
+  cursor: pointer;
+  flex: none;
+}
+/* It destroys something, so it says so on the way — and only on the way. A control drawn in the
+   fault colour at rest is a block that looks like it is reporting a fault. */
+.subRemove:hover { color: var(--fault); background: var(--surface); }
+.subRemove:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 /* The three parts a rule is written in: what it watches, when it fires, and everything else.
    A real fieldset and legend rather than a heading and a div, because the grouping is the point:
@@ -338,9 +551,14 @@
    as 'What it watches, Topic filter' and a reader who tabbed straight into the middle of a long
    form still knows which third of it they are in. */
 .part {
-  border: 1px solid var(--edge);
-  border-radius: 6px;
-  padding: 10px 12px 4px;
+  /* --rule, not --edge. `--edge` is a local of WireLog's own rows and has never been a token, so
+     this asked for a custom property nothing defines — which is invalid at computed-value time
+     and leaves border-color at its initial value, `currentColor`. Three near-black boxes. It went
+     unnoticed for as long as the alert editor was overriding the border away; the moment the
+     boxes were wanted back, they came back in ink. */
+  border: 1px solid var(--rule);
+  border-radius: var(--r-plate);
+  padding: 12px 14px 2px;
   margin: 0 0 14px;
   min-width: 0;
 }
@@ -352,6 +570,19 @@
   color: var(--ink);
 }
 
-/* The note under a legend says what the part is for, once, so the fields inside it do not each
-   have to. Tight to the legend and loose to the first field. */
-.part > .note:first-of-type { margin: 0 0 12px; }
+/* The heading and the mark that explains it, on one line.
+ *
+ * Inline-flex inside the legend rather than flex on the legend itself. A `<legend>` is laid out
+ * by the browser rather than by the box model — it cuts the fieldset's own border and sits in the
+ * gap — and giving it a display of its own is asking three engines to agree about a special case.
+ * A span inside it is an ordinary box. */
+.partHead {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* A note used to stand under every legend, saying what the part was for, and this held it tight
+   to the heading. The headings say it themselves and the long form is behind the mark beside
+   them, so the line is gone — and the rule with it, or the first note a CONDITION happens to
+   write ('a duty is a share of the readings') would inherit a treatment meant for a caption. */

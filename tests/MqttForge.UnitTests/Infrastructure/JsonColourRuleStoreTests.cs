@@ -28,6 +28,30 @@ public class JsonColourRuleStoreTests : IDisposable
         Assert.Equal(rules, await store.LoadAsync(CancellationToken.None));
     }
 
+    // A file written before the second colour existed is not a corrupt file. It loads as rules
+    // that paint the topic and say nothing about the payload, which is what they always meant.
+    [Fact]
+    public async Task Load_reads_a_file_written_before_the_body_colour()
+    {
+        await File.WriteAllTextAsync(_path, """[{"Filter":"sensors/#","Colour":"#b45309"}]""");
+        var store = new JsonColourRuleStore(_path);
+
+        var loaded = await store.LoadAsync(CancellationToken.None);
+
+        Assert.Equal([new TopicColourRule("sensors/#", "#b45309", null)], loaded);
+    }
+
+    [Fact]
+    public async Task Save_then_Load_keeps_a_body_colour()
+    {
+        var store = new JsonColourRuleStore(_path);
+        TopicColourRule[] rules = [new("sensors/#", "#b45309", "#1e40af")];
+
+        await store.SaveAsync(rules, CancellationToken.None);
+
+        Assert.Equal(rules, await store.LoadAsync(CancellationToken.None));
+    }
+
     // Rules are a preference, not a record: a file nobody can read is worth less than a clean start.
     [Fact]
     public async Task Load_returns_empty_when_file_is_corrupt()

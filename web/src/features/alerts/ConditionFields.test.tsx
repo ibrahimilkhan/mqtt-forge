@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { ConditionFields } from './ConditionFields';
+import { ConditionFields, ConditionSummary } from './ConditionFields';
 import { blankCondition, SIMPLE_TYPES, type DraftCondition } from './ruleDraft';
 
 const draw = (condition: DraftCondition) => {
@@ -109,6 +109,76 @@ describe('k means two things', () => {
     draw({ type: 'outlier', method: 'sigma', k: '3', window: '' });
 
     expect(screen.getByText(/deviations/i)).toBeInTheDocument();
+  });
+});
+
+describe('what the picker no longer has to say', () => {
+  // The sentence used to be the option's own text, so eleven of them were a paragraph to choose
+  // from and the closed select afterwards was a line of prose. It stands under the select now.
+  it('puts the sentence under each child, saying what that child does', () => {
+    draw({ type: 'all', of: [blankCondition('band'), blankCondition('silence')] });
+
+    expect(
+      screen.getByText('Fires when the reading leaves a range — or while it stays inside one.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Fires when a topic that used to speak stops.')).toBeInTheDocument();
+  });
+
+  // The tick decides which way round a range fires, and the sentence above has said both. What
+  // is left for the note is what the tick itself changes.
+  it('does not say twice what the sentence over the fields has already said', () => {
+    draw({ type: 'all', of: [blankCondition('band')] });
+
+    expect(screen.getByText('The 4-20mA question — a reading that has left the pair.')).toBeInTheDocument();
+  });
+
+  it('says nothing over a condition it has just admitted it cannot read', () => {
+    render(<ConditionSummary type="opaque" />);
+
+    expect(screen.queryByText(/^Fires /)).not.toBeInTheDocument();
+  });
+});
+
+describe('an all of several conditions', () => {
+  const three: DraftCondition = {
+    type: 'all',
+    of: [blankCondition('threshold'), blankCondition('pattern'), blankCondition('silence')],
+  };
+
+  /*
+   * Three children used to be a 12px indent behind one continuous 2px hairline. Every child was
+   * drawn exactly like its neighbours — select, label, box, select, label, box — so where one
+   * ended and the next began was something a reader worked out by counting, and adding a fourth
+   * changed nothing on screen but the length of the stripe.
+   */
+  it('gives every child a block of its own, and numbers it', () => {
+    draw(three);
+
+    const cards = document.querySelectorAll('[class*="subField"]:not([class*="subFields"])');
+
+    expect(cards).toHaveLength(3);
+    // The ordinal is on the child's own control, so it is what a screen reader hears too.
+    expect(screen.getByLabelText('Condition 1')).toBeInTheDocument();
+    expect(screen.getByLabelText('Condition 3')).toBeInTheDocument();
+  });
+
+  it('puts the way to remove a child at the head of that child, not under it', async () => {
+    const onChange = draw(three);
+
+    const remove = screen.getByRole('button', { name: 'Remove condition 2' });
+
+    // In the head of card 2, beside its own label — which is also what proves it belongs to the
+    // second child rather than to the block as a whole.
+    const head = screen.getByLabelText('Condition 2').closest('[class*="subField"]')!;
+    expect(head.contains(remove)).toBe(true);
+    expect(remove.previousElementSibling?.tagName).toBe('LABEL');
+
+    await userEvent.click(remove);
+
+    expect(onChange).toHaveBeenCalledWith({
+      type: 'all',
+      of: [three.of[0], three.of[2]],
+    });
   });
 });
 

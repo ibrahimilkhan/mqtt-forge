@@ -78,7 +78,7 @@ export function MessageDetail({ entry }: { entry: LogEntry }) {
         )}
       </div>
 
-      <Payload entry={entry} />
+      <Payload entry={entry} bodyColour={rule?.bodyColour ?? null} />
     </div>
   );
 }
@@ -107,7 +107,7 @@ const ENOUGH = 24;
  * one, and a row of controls below a payload of forty thousand characters is a row of controls
  * nobody will ever scroll to.
  */
-function Payload({ entry }: { entry: LogEntry }) {
+function Payload({ entry, bodyColour }: { entry: LogEntry; bodyColour: string | null }) {
   const [raw, setRaw] = useState(false);
   /** The branch the index has been asked to go to, until the row for it has been found. */
   const [going, setGoing] = useState<string | null>(null);
@@ -303,6 +303,12 @@ function Payload({ entry }: { entry: LogEntry }) {
             data-testid="window-body"
             data-message
             data-copy
+            /* The rule's message colour, on the text the window shows as text — never on the
+               document. The tree draws keys, strings, numbers and nulls in four colours of its
+               own, and those say what each value IS; one colour laid over the lot would trade a
+               reading of the document for a reminder of which rule the reader already picked the
+               window off. Raw and formatted text carry no such colours, so there it is free. */
+            style={!folding && bodyColour ? { color: bodyColour } : undefined}
           >
             {folding ? (
               <JsonTree

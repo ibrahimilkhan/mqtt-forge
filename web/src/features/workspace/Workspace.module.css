@@ -171,10 +171,16 @@
    unmounted is a tree rebuilt from nothing the next time the panel shuts, and the log's history
    would go with it. `display: none` takes them out of the flow, so the single track is the whole
    of the row rather than a first column with four empty ones after it. */
-.grid[data-panel='full'] { grid-template-columns: minmax(0, 1fr); }
-.grid[data-panel='full'] > *:not(:first-child) { display: none; }
+.grid[data-panel='full'],
+.grid[data-panel='fill'] { grid-template-columns: minmax(0, 1fr); }
+.grid[data-panel='full'] > *:not(:first-child),
+.grid[data-panel='fill'] > *:not(:first-child) { display: none; }
 
-/* A form does not get better at 1400px. The panel takes the workspace so the reader is not
+/* `full` only, and that is the whole difference between it and `fill`: both take the workspace,
+   and only this one holds what is inside to a measure. A list of standing alarms wants the width
+   it was given — see the alerts panel — and a form does not.
+
+   A form does not get better at 1400px. The panel takes the workspace so the reader is not
    answering it down a column, but the fields stop growing where a pasted broker address stops
    needing more room — `mqtts://abc-ats.iot.eu-west-1.amazonaws.com:8883` is fifty characters,
    and the box holds about seventy at this measure.

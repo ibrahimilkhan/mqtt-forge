@@ -7,6 +7,7 @@ const row = (filter: string, colour = '#b45309'): DraftRule => ({
   id: 0,
   filter,
   colour,
+  bodyColour: null,
   saved: true,
 });
 
@@ -101,11 +102,35 @@ describe('draftFrom', () => {
 
     expect(rows.map((r) => r.filter)).toEqual(['b/#', 'a/#']);
   });
+
+  it('carries a stored message colour into the row, lowercased', () => {
+    const rows = draftFrom([{ filter: 'a/#', colour: '#b45309', bodyColour: '#1E40AF' }]);
+
+    expect(rows[0].bodyColour).toBe('#1e40af');
+  });
+
+  it('reads a rule with no message colour as one that leaves the payload alone', () => {
+    expect(draftFrom([{ filter: 'a/#', colour: '#b45309' }])[0].bodyColour).toBeNull();
+  });
+
+  // Unlike the topic's colour, a broken one here is dropped rather than replaced: 'the console's
+  // own ink' is a real answer, so there is no need to invent a colour nobody chose.
+  it('drops a message colour the panel cannot use', () => {
+    expect(
+      draftFrom([{ filter: 'a/#', colour: '#b45309', bodyColour: 'rgb(1,2,3)' }])[0].bodyColour,
+    ).toBeNull();
+  });
 });
 
 describe('newDraftRule', () => {
   it('starts with an empty filter, so the row asks to be filled in', () => {
     expect(newDraftRule('#b45309')).toMatchObject({ filter: '', colour: '#b45309' });
+  });
+
+  // Painting the topic is what tells a run of arrivals apart; repainting every payload as well is
+  // the rarer wish, and a new rule that arrived asking for both would be the panel deciding it.
+  it('paints the topic only, until somebody says otherwise', () => {
+    expect(newDraftRule('#b45309').bodyColour).toBeNull();
   });
 });
 

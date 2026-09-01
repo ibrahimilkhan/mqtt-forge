@@ -34,7 +34,17 @@ export function Segmented<T extends string>({ label, name, options, value, onCha
       </span>
       <div className={styles.options} role="radiogroup" aria-labelledby={`${name}Label`}>
         {options.map((option) => (
-          <label key={option.value} className={styles.option} data-selected={option.value === value}>
+          <label
+            key={option.value}
+            className={styles.option}
+            // The chip's own identity, for a caller that needs to draw one option unlike the
+            // others. Severity is the case: three levels that are told apart by reading them are
+            // three levels nobody tells apart at a glance, so the alert editor paints each chip
+            // in its own level's colour. Nothing generic here knows what any value means — it
+            // only makes the value reachable from a stylesheet.
+            data-value={option.value}
+            data-selected={option.value === value}
+          >
             <input
               type="radio"
               name={name}

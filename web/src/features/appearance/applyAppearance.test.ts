@@ -17,7 +17,7 @@ describe('startApplyingAppearance', () => {
 
     expect(root().style.getPropertyValue('--sans')).toBe(SANS.inter.stack);
     expect(root().style.getPropertyValue('--mono')).toBe(MONO.jetbrains.stack);
-    expect(root().style.fontSize).toBe('15px');
+    expect(root().style.fontSize).toBe('13px');
 
     stop();
   });
@@ -40,6 +40,6 @@ describe('startApplyingAppearance', () => {
 
     useAppearanceStore.getState().setSize(20);
 
-    expect(root().style.fontSize).toBe('15px');
+    expect(root().style.fontSize).toBe('13px');
   });
 });

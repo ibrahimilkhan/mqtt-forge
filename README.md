@@ -22,7 +22,8 @@ Open source, small and fast. It runs on macOS, Windows, Linux and Docker.
 - **Messages** — open one in its own window; a JSON body becomes a foldable document with an index.
 - **Publish** — text, JSON or hex, with QoS and the retained flag. Any logged message loads back
   into the form.
-- **Colour rules** — give a filter a colour and every topic it covers wears it.
+- **Colour rules** — give a filter a colour and every topic it covers wears it, with a second
+  colour for the message under it if you want one.
 - **Filters, QR, settings** — subscribe to a list of filters, open the session on your phone, set
   the fonts.
 
@@ -125,6 +126,10 @@ Pin a chart as a window and it keeps its topic while you use the rest of the con
 
 Give the **Colours** panel a filter and a colour — `sensors/+/temp`, `alerts/#` — and every topic
 it covers is drawn in it, in the tree and in the log. The more exact filter wins.
+
+A rule can carry a second colour for the message under the topic. Most rules do not: the path is
+what tells a scrolling log apart, and the payload stays in the console's own ink. Give one to the
+rule whose payloads you are actually reading.
 
 ![The Colours panel and the tree it paints](.github/assets/colours.png)
 

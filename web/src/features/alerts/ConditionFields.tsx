@@ -5,11 +5,29 @@ import {
   blankCondition,
   conditionText,
   CONDITION_LABELS,
+  CONDITION_SUMMARIES,
   defaultK,
   SIMPLE_TYPES,
   type ConditionType,
   type DraftCondition,
 } from './ruleDraft';
+
+/**
+ * What the chosen condition does, under the select that chose it.
+ *
+ * The other half of shortening the picker to a word. A reader who knows what a band is reads
+ * 'Range' and moves on; a reader who does not gets the sentence, once, where they are choosing —
+ * rather than eleven of them stacked in a dropdown.
+ *
+ * Nothing for `opaque`: a condition this form cannot draw explains itself at length where it is
+ * drawn, and a summary above that would be the console describing something it has just admitted
+ * it cannot read.
+ */
+export function ConditionSummary({ type }: { type: ConditionType | 'opaque' }) {
+  if (type === 'opaque') return null;
+
+  return <p className={panel.pickNote}>{CONDITION_SUMMARIES[type]}</p>;
+}
 
 /** The words for the six operators. '≠' is drawn rather than spelled: it is read at a glance. */
 const OPS: ReadonlyArray<{ value: ThresholdOp; label: string }> = [
@@ -107,10 +125,12 @@ export function ConditionFields({ condition, onChange, id }: Props) {
               Inside the range
             </label>
           </div>
+          {/* What the tick changes, and nothing else: the summary over the fields has already
+              said which way round a range fires. */}
           <p className={panel.note}>
             {condition.inside
-              ? 'Fires while the reading is between the two edges, both of them included.'
-              : 'Fires when the reading leaves the range — the 4-20mA question.'}
+              ? 'Both edges count as inside.'
+              : 'The 4-20mA question — a reading that has left the pair.'}
           </p>
         </>
       );
@@ -238,8 +258,8 @@ export function ConditionFields({ condition, onChange, id }: Props) {
             />
           </div>
           <p className={panel.note}>
-            Fires once, at the moment the readings settle into a different distribution — so there
-            is nothing here for 'For' to wait out, and it cannot be given with one.
+            It fires once, at the moment it happens — so there is nothing here for &lsquo;For&rsquo;
+            to wait out, and it cannot be given with one.
           </p>
         </>
       );
@@ -255,9 +275,8 @@ export function ConditionFields({ condition, onChange, id }: Props) {
             />
           </div>
           <p className={panel.note}>
-            Fires once, when a quantity becomes a switch or a switch becomes a pulse train — which
-            is the plant saying that whatever was written about this topic now describes something
-            else.
+            It fires once, and it is the plant saying that whatever was written about this topic
+            now describes something else.
           </p>
         </>
       );
@@ -324,7 +343,26 @@ export function ConditionFields({ condition, onChange, id }: Props) {
             // Keyed on the place, which is the only identity a child has: a condition carries no
             // id, and two identical children under one 'any' are a thing a person may write.
             <div key={index} className={panel.subField}>
-              <Field label={`Condition ${index + 1}`} htmlFor={id(`of-${index}`)}>
+              <Field
+                label={`Condition ${index + 1}`}
+                htmlFor={id(`of-${index}`)}
+                /* At the head of the card, where every closable thing in this console puts its
+                   close — and named for the child it removes, since the mark itself says nothing
+                   about which of three it belongs to when it is read out of context. */
+                aside={
+                  <button
+                    type="button"
+                    className={panel.subRemove}
+                    aria-label={`Remove condition ${index + 1}`}
+                    title="Remove this condition"
+                    onClick={() =>
+                      onChange({ ...condition, of: condition.of.filter((_, at) => at !== index) })
+                    }
+                  >
+                    ×
+                  </button>
+                }
+              >
                 <select
                   id={id(`of-${index}`)}
                   value={child.type === 'opaque' ? '' : child.type}
@@ -349,6 +387,8 @@ export function ConditionFields({ condition, onChange, id }: Props) {
                 </select>
               </Field>
 
+              <ConditionSummary type={child.type} />
+
               <ConditionFields
                 condition={child}
                 id={(name) => id(`of-${index}-${name}`)}
@@ -359,16 +399,6 @@ export function ConditionFields({ condition, onChange, id }: Props) {
                   })
                 }
               />
-
-              <button
-                type="button"
-                className="ghost"
-                onClick={() =>
-                  onChange({ ...condition, of: condition.of.filter((_, at) => at !== index) })
-                }
-              >
-                Remove condition {index + 1}
-              </button>
             </div>
           ))}
 

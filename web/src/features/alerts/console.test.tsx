@@ -118,19 +118,6 @@ function rulesOn(rules: AlertRuleDto[]) {
   return seen;
 }
 
-function muteTaken() {
-  const seen: { body?: { ruleId: string; topic: string; minutes: number } } = {};
-
-  server.use(
-    http.post('/api/alerts/mute', async ({ request }) => {
-      seen.body = (await request.json()) as typeof seen.body;
-      return new HttpResponse(null, { status: 204 });
-    }),
-  );
-
-  return seen;
-}
-
 function renderApp() {
   const hub = createFakeHub();
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -149,6 +136,12 @@ const railAlerts = () => menu().getByRole('button', { name: /^Alerts/ });
 const openPanel = async () => {
   await userEvent.click(railAlerts());
   return within(await screen.findByRole('region', { name: 'Alerts panel' }));
+};
+
+/** Where the sound switch lives now: it is a fact about this machine, not about alerting. */
+const openSettings = async () => {
+  await userEvent.click(menu().getByRole('button', { name: /^Settings/ }));
+  return within(await screen.findByRole('region', { name: 'Settings panel' }));
 };
 
 const raise = (hub: ReturnType<typeof createFakeHub>, alerts: AlertDto[]) =>
@@ -182,21 +175,22 @@ describe('the alerts console', () => {
 
   // Rule 2. The list has three writers, and the editor is only one of them: a save that sent its
   // own draft alone would drop every rule the panel already had.
-  it('writes a rule in the editor window, and saves the whole list with it', async () => {
+  it('writes a rule in the panel itself, and saves the whole list with it', async () => {
     serverHas();
     const seen = rulesOn([RULE]);
     renderApp();
     const panel = await openPanel();
 
+    // The editor takes the panel in place of the rule list, so it is the same region throughout:
+    // no window is opened, and there is nothing to look inside.
     await userEvent.click(await panel.findByRole('button', { name: 'New rule' }));
 
-    const editor = within(await screen.findByTestId('rule-window'));
-    await userEvent.type(editor.getByLabelText('Name'), 'Kiln stopped talking');
-    await userEvent.clear(editor.getByLabelText('Topic filter'));
-    await userEvent.type(editor.getByLabelText('Topic filter'), 'plant/kiln-2/temp');
-    await userEvent.selectOptions(editor.getByLabelText('Condition'), 'threshold');
-    await userEvent.type(editor.getByLabelText('Value'), '120');
-    await userEvent.click(editor.getByRole('button', { name: 'Save' }));
+    await userEvent.type(panel.getByLabelText('Name'), 'Kiln stopped talking');
+    await userEvent.clear(panel.getByLabelText('Topic filter'));
+    await userEvent.type(panel.getByLabelText('Topic filter'), 'plant/kiln-2/temp');
+    await userEvent.selectOptions(panel.getByLabelText('Condition'), 'threshold');
+    await userEvent.type(panel.getByLabelText('Value'), '120');
+    await userEvent.click(panel.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(seen.rules).toHaveLength(2));
     expect(seen.rules![0]).toMatchObject({ id: 'r-heat', name: 'Kiln too hot' });
@@ -209,7 +203,7 @@ describe('the alerts console', () => {
 
   // Rule 3 and rule 4 together, and the panel is never opened: this is the console as it stands
   // for most of the day, with the health line off and the rail the only thing on screen.
-  it('draws a notice and moves the badge with the panel shut', async () => {
+  it('moves the badge with the panel shut', async () => {
     serverHas();
     rulesOn([RULE]);
     const hub = renderApp();
@@ -217,13 +211,13 @@ describe('the alerts console', () => {
 
     raise(hub, [ALERT]);
 
-    const notice = await within(screen.getByTestId('alert-notices')).findByRole('alert');
-    expect(notice).toHaveTextContent('plant/kiln-2/temp');
-    expect(notice).toHaveTextContent('Kiln too hot');
-    expect(notice).toHaveTextContent('94.2 over 90');
-    // Severity in words as well as in colour: the stack is one of the three places this feature
-    // can fail silently for somebody.
-    expect(notice).toHaveTextContent(/critical/i);
+    // With the alarm wall off the console, the badge is the whole of what a shut panel says —
+    // which is why the count reaching a screen reader through the row's own name, below, is not
+    // a nicety here.
+    await waitFor(() =>
+      expect(within(railAlerts()).getByTestId('alert-badge')).toBeInTheDocument(),
+    );
+    expect(screen.queryByTestId('alert-wall')).not.toBeInTheDocument();
 
     expect(within(railAlerts()).getByTestId('alert-badge')).toHaveTextContent('1');
     // The badge itself is aria-hidden, so the count has to reach a screen reader through the
@@ -241,67 +235,30 @@ describe('the alerts console', () => {
     );
   });
 
-  it('quietens a row when it is muted, without touching the rule', async () => {
-    serverHas([ALERT]);
-    rulesOn([RULE]);
-    const seen = muteTaken();
-    const hub = renderApp();
-    const panel = await openPanel();
-
-    const row = await panel.findByTestId('alert-row');
-    await userEvent.click(within(row).getByRole('button', { name: /^Mute/ }));
-
-    await waitFor(() =>
-      expect(seen.body).toEqual({
-        ruleId: 'r-heat',
-        topic: 'plant/kiln-2/temp',
-        minutes: 15,
-      }),
-    );
-
-    // The server says so over the hub, which is the only thing the row believes.
-    act(() =>
-      // Relative to now, never a written-out instant. A mute is only a mute while it is in the
-      // future, and the row asks alertStore's mutedUntil exactly that — so a fixed timestamp is a
-      // test that passes in the morning and fails in the afternoon. This one did: it was written
-      // as 2026-09-01T09:27:00Z and started failing at 09:27 that day.
-      hub.emit(
-        'alertMuted',
-        'r-heat',
-        'plant/kiln-2/temp',
-        new Date(Date.now() + 15 * 60_000).toISOString(),
-      ),
-    );
-
-    await waitFor(() => expect(screen.getByTestId('alert-row')).toHaveAttribute('data-muted', ''));
-    expect(
-      within(screen.getByTestId('alert-row')).getByRole('button', { name: /^Lift the mute/ }),
-    ).toBeInTheDocument();
-  });
-
-  // Rule 6. A missed alertsResolved leaves an alarm on screen for ever, and no amount of correct
+  // Rule 6. A missed alertsResolved leaves an alarm counted for ever, and no amount of correct
   // hub handling finds that on its own.
+  //
+  // Read off the rail's badge, which is the console's whole surface for a standing alarm now: the
+  // panel's 'Alerting now' list went, and the corner notices before it. The muting journey that
+  // stood here went with the row it was performed on — the state behind it is still pinned in
+  // alertStore.test.ts, and nothing in the console reaches it any more.
   it('takes away an alert the server no longer has, on a reconnect', async () => {
     const snapshot = serverHas([ALERT]);
     rulesOn([RULE]);
     const hub = renderApp();
-    const panel = await openPanel();
+    await screen.findByRole('navigation', { name: 'Panels' });
 
     raise(hub, [ALERT]);
-    await panel.findByTestId('alert-row');
-    expect(within(railAlerts()).getByTestId('alert-badge')).toHaveTextContent('1');
+    await waitFor(() =>
+      expect(within(railAlerts()).getByTestId('alert-badge')).toHaveTextContent('1'),
+    );
 
     snapshot.active = [];
     act(() => hub.emit('reconnected'));
 
-    await waitFor(() => expect(screen.queryByTestId('alert-row')).not.toBeInTheDocument());
-    // And its notice with it, critical or not. A notice standing over an alert that has gone is
-    // the same ghost wearing a different coat: it cannot be opened, muted or resolved, and the
-    // panel it leads to does not have it.
-    expect(
-      within(screen.getByTestId('alert-notices')).queryByRole('alert'),
-    ).not.toBeInTheDocument();
-    expect(within(railAlerts()).queryByTestId('alert-badge')).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(within(railAlerts()).queryByTestId('alert-badge')).not.toBeInTheDocument(),
+    );
   });
 
   it('sounds the alert when the reader has turned the sound on', async () => {
@@ -309,9 +266,9 @@ describe('the alerts console', () => {
     serverHas();
     rulesOn([RULE]);
     const hub = renderApp();
-    const panel = await openPanel();
+    const settings = await openSettings();
 
-    await userEvent.click(await panel.findByRole('button', { name: 'Sound off' }));
+    await userEvent.click(await settings.findByRole('button', { name: 'Sound off' }));
     raise(hub, [{ ...ALERT, actions: ['screen', 'sound'] }]);
 
     await waitFor(() => expect(audio.tones).toHaveLength(TONES.critical.beeps));
@@ -333,7 +290,8 @@ describe('the alerts console', () => {
     // With the panel shut, the prompt at the app root is the only thing saying it.
     expect(await screen.findByText(NOT_READY)).toBeInTheDocument();
 
-    const panel = await openPanel();
-    expect(panel.getByRole('button', { name: 'Sound waiting' })).toBeInTheDocument();
+    const settings = await openSettings();
+    expect(settings.getByRole('button', { name: 'Sound on' })).toBeInTheDocument();
+    expect(settings.getByText(NOT_READY)).toBeInTheDocument();
   });
 });

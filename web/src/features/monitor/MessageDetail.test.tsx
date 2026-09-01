@@ -1,7 +1,9 @@
-import { act, fireEvent, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithClient as render } from '../../test/renderWithClient';
+import { server } from '../../test/server';
 import { byteLength } from '../../lib/payload';
 import type { DecodedMessage } from '../../realtime/decodeIncoming';
 import { useComposeStore } from '../../stores/composeStore';
@@ -527,5 +529,53 @@ describe('the payload, formatted where formatting is what it is', () => {
     await openIt();
 
     expect(body().textContent).toHaveLength(40_000);
+  });
+});
+
+/**
+ * The window and the row it was opened from are one message, so they wear the same rule — the
+ * topic in the rule's colour, and the payload in the second one where the rule carries it.
+ *
+ * With one exception, and it is the interesting half: a document drawn as a foldable tree already
+ * says what each value IS in four colours of its own, and one colour over the lot would trade a
+ * reading of the document for a reminder of which rule the reader already picked the window off.
+ */
+describe('the message colour in an opened window', () => {
+  const rules = (...rules: Array<{ filter: string; colour: string; bodyColour?: string | null }>) =>
+    server.use(http.get('/api/colour-rules', () => HttpResponse.json({ rules })));
+
+  const body = () => screen.getByTestId('window-body');
+
+  it('draws a payload that is text in the rule`s message colour', async () => {
+    rules({ filter: 'sensors/#', colour: '#b45309', bodyColour: '#1e40af' });
+    landed(arrival({ payload: '22.7' }));
+    render(<Console />);
+
+    await openIt();
+
+    await waitFor(() => expect(body()).toHaveStyle({ color: '#1e40af' }));
+    expect(body()).toHaveAttribute('data-mode', 'text');
+  });
+
+  it('leaves a document to the tree`s own colours', async () => {
+    rules({ filter: 'sensors/#', colour: '#b45309', bodyColour: '#1e40af' });
+    landed(arrival({ payload: '{"t":22.7}' }));
+    render(<Console />);
+
+    await openIt();
+
+    await waitFor(() => expect(body()).toHaveAttribute('data-mode', 'tree'));
+    expect(body().style.color).toBe('');
+  });
+
+  it('leaves the payload in the console`s ink when the rule paints only the topic', async () => {
+    rules({ filter: 'sensors/#', colour: '#b45309' });
+    landed(arrival({ payload: '22.7' }));
+    render(<Console />);
+
+    await openIt();
+
+    await waitFor(() => expect(screen.getByTestId('summary')).toHaveTextContent('sensors/#'));
+    expect(body().style.color).toBe('');
   });
 });

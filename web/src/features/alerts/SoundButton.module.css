@@ -2,23 +2,26 @@
    it rather than beside it, where it would set the width of the panel's whole action row. */
 .sound { display: flex; flex-direction: column; gap: 6px; }
 
-/* The standing prompt, in the TOP inline-end corner.
+/* The standing prompt, at the top of the console and clear of the alarm wall.
 
-   Not the bottom one, which is where it was first drawn and where it was wrong: the notice stack
-   is pinned to the bottom inline-end corner and grows upward out of it, so a strip parked there
-   is under the very notices it is explaining — the one thing on screen nobody could read, saying
-   the one thing they most needed to know. The other three corners are all spoken for as well:
-   the rail holds the whole inline-start edge, top to bottom, and a thrown-open chart stands in
-   the middle three fifths. The top inline-end corner is the only part of the frame nothing else
-   claims, and it is diagonally opposite the notices, so however many of them are up the two
-   never meet.
+   It was first drawn in the bottom inline-end corner, which was where the notice stack stood: a
+   strip parked there sat under the very notices it was explaining — the one thing on screen
+   nobody could read, saying the one thing they most needed to know. So it moved to the top
+   inline-end corner, diagonally opposite them.
 
-   399, one under the stack's 400: even out of its way, a critical alert must never be covered by
-   the console asking for permission to make a noise about it. */
+   The wall took that corner too, and took it more thoroughly: it holds the whole inline-end edge
+   from top to bottom, so there is no corner on that side left to be diagonally opposite. The
+   prompt stops at the wall's inner edge instead of standing on the loudest row in the console —
+   which is exactly the row it would have covered, since the wall sorts criticals to the top.
+
+   Below 760px there is no wall, and the corner is the corner again. */
 .prompt {
   position: fixed;
   inset-block-start: 12px;
   inset-inline-end: 12px;
+  /* Above the rail lying over a narrow workspace (300), a thrown-open chart (200) and a rule
+     window standing over both: the console asking permission to make a noise about an alarm must
+     not be the thing that ends up underneath. */
   z-index: 399;
   display: flex;
   align-items: center;
@@ -30,6 +33,12 @@
   box-shadow: 0 2px 10px rgb(0 0 0 / 12%);
   font-size: var(--t-small);
   color: var(--ink);
+}
+
+/* The wall's own width plus the channel it sits behind, so the prompt lands beside it rather
+   than on it. The width is a token for this reason — see --wall. */
+@media (min-width: 761px) {
+  .prompt { inset-inline-end: calc(var(--wall) + var(--channel) + 12px); }
 }
 
 .prompt p { margin: 0; }

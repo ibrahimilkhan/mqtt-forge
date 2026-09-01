@@ -48,6 +48,27 @@ describe('sortRules', () => {
     expect(sorted.map((r) => r.filter)).toEqual(['alerts/#']);
   });
 
+  // The second colour rides along with the rule and is held to the same standard as the first —
+  // it reaches the same style attribute. What differs is the answer to a bad one: the topic's
+  // colour is what a rule IS, so a rule without a usable one is dropped; the message's colour is
+  // something a rule may have, so a bad one costs the payload its colour and nothing else.
+  it('carries a usable body colour through, lowercased', () => {
+    const sorted = sortRules([{ filter: 'sensors/#', colour: '#B45309', bodyColour: '#1E40AF' }]);
+
+    expect(sorted[0].bodyColour).toBe('#1e40af');
+  });
+
+  it('keeps a rule whose body colour is nonsense, without the body colour', () => {
+    const sorted = sortRules([{ filter: 'sensors/#', colour: '#b45309', bodyColour: 'blue' }]);
+
+    expect(sorted.map((r) => r.filter)).toEqual(['sensors/#']);
+    expect(sorted[0].bodyColour).toBeUndefined();
+  });
+
+  it('leaves a rule that never had one without one', () => {
+    expect(sortRules([rule('sensors/#')])[0].bodyColour).toBeUndefined();
+  });
+
   it('leaves the caller`s array untouched', () => {
     const rules = [rule('sensors/#'), rule('sensors/+/temp')];
 

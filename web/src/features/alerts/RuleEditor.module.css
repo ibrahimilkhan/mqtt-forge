@@ -1,0 +1,167 @@
+/* ---- the rule editor, in three panels ----
+
+   panel.form caps a form at 46rem, and that cap is right: a form does not get better at 1400px,
+   and a label two feet from its box is a label nobody reads. But this form is not one column of
+   fields — it is three groups, and in a panel that now takes the whole workspace those three sat
+   in a 600px stack with five hundred pixels of nothing beside them.
+
+   So the cap comes off the form and lands on the columns instead. Each group keeps a measure of
+   its own, and the three read left to right in the order somebody writes a rule: what it watches,
+   when it fires, everything else. Under about 950px there is not room for three, and auto-fit
+   drops to two and then to one without a breakpoint being written for either. */
+.form { display: block; }
+
+/* ---- why the three panels are a grid of their own ----
+
+   The footer used to be a fourth child of this grid, spanning `1 / -1`, and that one line was
+   what left a quarter of the panel empty.
+
+   `auto-fit` fits as many 290px tracks as the width allows and then COLLAPSES the ones no item
+   landed in — which is what was meant to keep three sections filling whatever they are given. A
+   track the footer spans is not a track no item landed in. So at 1400px the form laid out four
+   tracks of 326px, put the three sections in the first three, and kept the fourth open for a
+   button row that was only passing through: 326 pixels of nothing, hard against the right-hand
+   edge. On a 2560px workspace it was eight tracks and five of them empty.
+
+   With the footer outside, the empty tracks collapse and the three survivors take a third of the
+   width each at any size worth three columns. Under about 950px auto-fit drops to two and then to
+   one, without a breakpoint being written for either. */
+.columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  gap: 20px;
+  /* ---- why the three are the same height ----
+
+     They were `align-items: start`, on the reasoning that a group should be as tall as what is in
+     it and that stretching the short ones would draw boxes of empty space. What that actually
+     drew was worse: the three columns are 432, 248 and 176 pixels tall in a rule nobody has
+     filled in yet, so two thirds of the form ended in mid-air and the right-hand half of the
+     panel read as space somebody forgot to use.
+
+     Stretched, the emptiness is inside a panel that is plainly a panel — room this section has to
+     grow into, which is exactly what it is: 'When it fires' grows a whole condition tree and
+     'Everything else' grows a webhook with headers. The floor of the form is one line instead of
+     a staircase, and the button row underneath sits on it. */
+  align-items: stretch;
+}
+
+/* The groups get their boxes back.
+
+   They were three columns divided by nothing but a gap and a rule across each top — one line
+   doing the work of four borders, which was the trade, and it held while the columns were tall
+   enough to read as columns. Beside a short one it stopped holding: with no left or right edge,
+   'Everything else' and the empty half of the panel beside it were the same surface, and the only
+   thing saying where the section ended was where its last checkbox happened to fall.
+
+   A border says it instead, at every width and whatever is in them. Still real fieldsets — a
+   screen reader announces the legend with every control inside, so 'Topic filter' is heard as
+   'What it watches, Topic filter' — and now the box a listener is told about is one a reader can
+   see too. `--rule` and a plate's own corner, so three panels inside a plate read as parts of it
+   rather than as cards from somewhere else. */
+.columns fieldset {
+  border: 1px solid var(--rule);
+  border-radius: var(--r-plate);
+  padding: 12px 16px 2px;
+  margin: 0;
+  min-width: 0;
+}
+
+/* The legend sits IN the border it cuts, so it needs air on both sides of the word rather than
+   only after it: the box's own left edge is now a line the letters would otherwise touch. */
+.columns fieldset > legend {
+  margin-left: 4px;
+  padding: 0 6px;
+  font-size: var(--t-small);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* Under the columns rather than in one of them: the two ways out are about the rule, not about
+   the third of it they happen to sit beneath.
+
+   No rule across the top any more. The three panels above it end in a border of their own on one
+   straight line, and a fourth line under that line would be a second floor. */
+.footer {
+  margin-top: 18px;
+}
+
+/* 'For, seconds' and 'Cooldown, seconds' are two long labels over two short boxes. panel.row lets
+   its children shrink below their 200px basis, which in a 290px column squeezed both to about 140
+   and broke each label onto two lines — with the boxes then starting at different heights, which
+   is the one thing a pair of fields beside each other must not do.
+
+   A floor under them instead of a basis: side by side where there is room for both, one above the
+   other where there is not, and never squeezed into a width their own labels do not fit.
+
+   150 rather than the 190 this started at, and the number is measured rather than guessed: the
+   longer of the two labels, 'COOLDOWN, SECONDS', is 133px in the console's own mono at the label
+   size, so 150 is the label plus air. At 190 the pair needed 394px and the column is 363 — so
+   they wrapped, and the form's one row of two short boxes was drawn as two rows of one with a
+   third of the column left empty beside each. */
+.timing > * { min-width: 150px; }
+
+/* The mark that opens a picker, on the label of the box it fills in.
+ *
+ * Same size and same quiet as the help mark it stands beside — they are the same offer — but it
+ * carries a drawn glyph rather than a letter, so the box is sized to the glyph's own 1em and the
+ * type size is the field label's rather than the note's. */
+.pickMark {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.45em;
+  height: 1.45em;
+  font-size: var(--t-small);
+  color: var(--muted);
+  border-radius: var(--r-control);
+  cursor: pointer;
+  letter-spacing: normal;
+  flex: none;
+}
+.pickMark:hover { color: var(--ink); }
+.pickMark[aria-expanded='true'] {
+  color: var(--signal);
+  background: color-mix(in srgb, var(--signal) 12%, transparent);
+}
+.pickMark:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+/* A switch and the mark that explains it, as one thing. `.checks` puts eighteen pixels between
+   its children, which is the distance between two different questions; the mark is not a second
+   question about this one. */
+.checkWithInfo {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* ---- the three levels, in three colours ----
+
+   They were lettered alike and told apart by reading them: 'warn' wore --ink, which is the colour
+   of the form around it, and 'info' wore --muted, which is the colour of a label. A level nobody
+   can see at a glance is not doing the one job a level has.
+
+   The colour is on the word whether the chip is chosen or not, so the row reads as three levels
+   rather than as one chosen word and two grey ones — and the chosen one takes the ring in its own
+   colour, which is the same way every other chip in this console says it is on. The palette is the
+   panel's: --fault is what a critical row is ruled in, --warn what a warn row is, --signal what an
+   info row is. One idea, spelled the same in the editor and in the list. */
+/* The `label` is load bearing. Segmented's own chosen-chip rule sets colour at exactly the
+   specificity a class-plus-attribute selector has, so without the element name these two would be
+   tied and the winner would be whichever stylesheet the bundler happened to put second. */
+.severity label[data-value='info'] { color: var(--signal); }
+.severity label[data-value='warn'] { color: var(--warn); }
+.severity label[data-value='critical'] { color: var(--fault); }
+
+.severity label[data-value='info'][data-selected='true'] {
+  border-color: var(--signal);
+  box-shadow: inset 0 0 0 1px var(--signal);
+}
+.severity label[data-value='warn'][data-selected='true'] {
+  border-color: var(--warn);
+  box-shadow: inset 0 0 0 1px var(--warn);
+}
+.severity label[data-value='critical'][data-selected='true'] {
+  border-color: var(--fault);
+  box-shadow: inset 0 0 0 1px var(--fault);
+}

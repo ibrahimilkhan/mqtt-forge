@@ -70,6 +70,38 @@ public class ColourRuleEndpointTests : IDisposable
         Assert.Empty(body!.Rules);
     }
 
+    // The second colour survives the round trip, and a rule without one comes back without one
+    // rather than coming back wearing the first — 'leave the payload alone' is a thing a rule
+    // says, and a store that could not say it would turn every old rule into a new one.
+    [Fact]
+    public async Task A_body_colour_is_saved_and_read_back()
+    {
+        var client = _factory.CreateClient();
+        ColourRulesDto sent = new([
+            new ColourRuleDto("sensors/+/temp", "#b45309", "#1e40af"),
+            new ColourRuleDto("alerts/#", "#ab3520"),
+        ]);
+
+        await client.PutAsJsonAsync("/api/colour-rules", sent);
+
+        var body = await client.GetFromJsonAsync<ColourRulesDto>("/api/colour-rules");
+        Assert.Equal(sent.Rules, body!.Rules);
+        Assert.Null(body.Rules[1].BodyColour);
+    }
+
+    [Theory]
+    [InlineData("red")]
+    [InlineData("#fff")]
+    public async Task A_body_colour_that_is_not_a_hex_triple_is_refused(string colour)
+    {
+        var client = _factory.CreateClient();
+        ColourRulesDto sent = new([new ColourRuleDto("sensors/#", "#b45309", colour)]);
+
+        var response = await client.PutAsJsonAsync("/api/colour-rules", sent);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     [Theory]
     [InlineData("red")]
     [InlineData("#fff")]

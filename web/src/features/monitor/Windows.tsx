@@ -314,7 +314,14 @@ function Frame({ pane: chart, depth }: { pane: FloatWindow; depth: number }) {
         ) : chart.pane.kind === 'message' ? (
           <MessageDetail entry={chart.pane.entry} />
         ) : (
-          <RuleEditor draftId={chart.pane.draftId} onDone={() => close(chart.id)} />
+          // The editor in a floating window, which is where it lived before the alerts panel
+          // took it. Nothing constructs a 'rule' pane any more; while the kind exists, Back means
+          // what the window's own × means — close it — and not the panel's Back, which asks first.
+          <RuleEditor
+            draftId={chart.pane.draftId}
+            onDone={() => close(chart.id)}
+            onBack={() => close(chart.id)}
+          />
         )}
       </div>
 

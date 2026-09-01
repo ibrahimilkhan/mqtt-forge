@@ -120,59 +120,142 @@ beforeEach(() => {
 });
 
 describe('AlertsPanel', () => {
-  it('says what an active alert is about, and how long it has been up', async () => {
+  // 'Alerting now' stood at the top: every standing alarm, how long it had been up, and the
+  // control that muted the pair. The panel is the rules now and nothing else — what is alarming
+  // is the rail's count, and this list is what is being watched for rather than what is wrong.
+  //
+  // Muting went out with the row it lived on: it was reachable from nowhere else. The state and
+  // the hub event behind it are untouched and still covered in alertStore.test.ts.
+  it('lists no standing alarms, whatever the engine is holding', async () => {
+    holding(RULE);
     answers({ active: [ALERT] });
     renderPanel();
 
-    const row = await screen.findByTestId('alert-row');
-    expect(within(row).getByText('sensors/kiln/temp')).toBeInTheDocument();
-    expect(within(row).getByText('Kiln too hot')).toBeInTheDocument();
-    expect(within(row).getByText('value 91.4 over 90')).toBeInTheDocument();
-    expect(within(row).getByText('up 4 min')).toBeInTheDocument();
-    // The level is a word before it is a colour.
-    expect(within(row).getByText('critical')).toBeInTheDocument();
-    // A delivery that failed carries its own mark, and it is marked as failed rather than
-    // merely written in red.
-    expect(within(row).getByText('webhook: 404')).toHaveAttribute('data-failed', '');
-    expect(within(row).getByText('screen')).not.toHaveAttribute('data-failed');
+    await screen.findByTestId('alert-rule');
+    expect(screen.queryByText('Alerting now')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('alert-row')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Mute/ })).not.toBeInTheDocument();
   });
 
-  it('mutes the pair the row is about, and the row goes quiet', async () => {
-    const sent: unknown[] = [];
-    answers({ active: [ALERT] });
-    server.use(
-      http.post('/api/alerts/mute', async ({ request }) => {
-        sent.push(await request.json());
-        // The console re-reads the snapshot after a mute; this is what the server now says.
-        //
-        // The muted PAIR and not the alert's own stamp: a mute is set on a (rule, topic) pair and
-        // outlives the alarm it was set on, so the pair list is the one thing that is still true
-        // after an alarm clears and rings again. The row reads it through alertStore's mutedUntil.
-        answers({
-          active: [ALERT],
-          muted: [
-            {
-              ruleId: 'r1',
-              topic: 'sensors/kiln/temp',
-              until: new Date(Date.now() + 900_000).toISOString(),
-            },
-          ],
-        });
-        return new HttpResponse(null, { status: 204 });
-      }),
-    );
+  // The editor was a window floating over the console. It is the panel now, in place of the list:
+  // writing a rule is what this panel is for while it is happening.
+  it('writes a new rule in the panel itself rather than in a window of its own', async () => {
+    holding(RULE);
+    answers({});
     renderPanel();
-    await screen.findByTestId('alert-row');
 
-    await userEvent.click(screen.getByRole('button', { name: 'Mute alerts on sensors/kiln/temp' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'New rule' }));
 
-    await waitFor(() =>
-      expect(sent).toEqual([{ ruleId: 'r1', topic: 'sensors/kiln/temp', minutes: 15 }]),
-    );
-    await waitFor(() => expect(screen.getByTestId('alert-row')).toHaveAttribute('data-muted', ''));
-    expect(
-      screen.getByRole('button', { name: 'Lift the mute on sensors/kiln/temp' }),
-    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Name')).toBeInTheDocument();
+    expect(screen.queryByTestId('alert-rule')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('rule-window')).not.toBeInTheDocument();
+  });
+
+  it('goes straight back from a rule nobody typed into', async () => {
+    holding(RULE);
+    answers({});
+    renderPanel();
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit Kiln too hot' }));
+
+    await userEvent.click(screen.getByRole('button', { name: '← Back' }));
+
+    expect(await screen.findByTestId('alert-rule')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+  });
+
+  // The only thing standing between minutes of somebody's work and a mis-aimed click on Back.
+  it('asks before throwing away a rule that has been filled in', async () => {
+    holding(RULE);
+    answers({});
+    renderPanel();
+    await userEvent.click(await screen.findByRole('button', { name: 'New rule' }));
+    await userEvent.type(screen.getByLabelText('Name'), 'Kiln stopped talking');
+
+    await userEvent.click(screen.getByRole('button', { name: '← Back' }));
+
+    // Still on the form: nothing has been thrown away yet, and the form is what is being asked
+    // about, so it stays on screen under the question.
+    expect(screen.getByRole('alertdialog', { name: 'Leave without saving?' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Name')).toHaveValue('Kiln stopped talking');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Keep writing' }));
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Name')).toHaveValue('Kiln stopped talking');
+  });
+
+  // There were two ways out: the panel's Back, which asks, and a Close inside the form, which
+  // called the same 'forget it and go back' without asking. The friendlier-sounding word was the
+  // one that threw work away.
+  it('offers one way out of a filled-in rule, and it is the one that asks', async () => {
+    holding(RULE);
+    answers({});
+    renderPanel();
+    await userEvent.click(await screen.findByRole('button', { name: 'New rule' }));
+    await userEvent.type(screen.getByLabelText('Name'), 'Kiln stopped talking');
+
+    expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: '← Back' }));
+
+    const asked = screen.getByRole('alertdialog', { name: 'Leave without saving?' });
+    expect(asked).toBeInTheDocument();
+
+    // Under the form, not over it. The question is about a press the reader has just made on the
+    // form's last row, and an answer that appeared above the first column would be an answer
+    // somewhere else on the screen.
+    const form = document.querySelector('form')!;
+    expect(form.compareDocumentPosition(asked) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  /*
+   * 'New rule' stood under the table, in a row of its own, which is where a form's Save goes —
+   * the end of a thing being filled in. This list is not being filled in, and on an empty panel
+   * the button was a control stranded under a sentence saying there was nothing here.
+   */
+  it('offers the new rule at the end of the line the section is named on', async () => {
+    holding(RULE);
+    renderPanel();
+
+    const make = await screen.findByRole('button', { name: 'New rule' });
+    const heading = screen.getByRole('heading', { name: 'Rules' });
+
+    expect(make.parentElement).toBe(heading.parentElement);
+    // The name reads first; the button is at the other end of the row.
+    expect(heading.compareDocumentPosition(make) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // And the mark inside it is a mark, not part of the name a listener hears.
+    expect(make.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('lets the rule go once the reader has said so twice', async () => {
+    holding(RULE);
+    answers({});
+    renderPanel();
+    await userEvent.click(await screen.findByRole('button', { name: 'New rule' }));
+    await userEvent.type(screen.getByLabelText('Name'), 'Kiln stopped talking');
+
+    await userEvent.click(screen.getByRole('button', { name: '← Back' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Discard it' }));
+
+    expect(await screen.findByTestId('alert-rule')).toBeInTheDocument();
+
+    // And it is gone rather than parked: opening a new rule again starts from nothing.
+    await userEvent.click(screen.getByRole('button', { name: 'New rule' }));
+    expect(screen.getByLabelText('Name')).toHaveValue('');
+  });
+
+  // The console's one rule about Escape is that it shuts the thing in front of you, and it must
+  // not become the one gesture that can lose work.
+  it('treats Escape as Back, question and all', async () => {
+    holding(RULE);
+    answers({});
+    renderPanel();
+    await userEvent.click(await screen.findByRole('button', { name: 'New rule' }));
+    await userEvent.type(screen.getByLabelText('Name'), 'Kiln stopped talking');
+
+    await userEvent.keyboard('{Escape}');
+
+    expect(screen.getByRole('alertdialog', { name: 'Leave without saving?' })).toBeInTheDocument();
   });
 
   it('says what a rule has actually seen', async () => {
@@ -229,11 +312,22 @@ describe('AlertsPanel', () => {
     });
     renderPanel();
 
-    await waitFor(() => expect(screen.getAllByTestId('engine-row')).toHaveLength(4));
+    await waitFor(() => expect(screen.getAllByTestId('engine-row')).toHaveLength(3));
     expect(screen.getByText(/40 messages went past unjudged/)).toBeInTheDocument();
     expect(screen.getByText(/2 webhook calls were dropped/)).toBeInTheDocument();
     expect(screen.getByText(/1 rule reached a ceiling/)).toBeInTheDocument();
-    expect(screen.getByText(/nothing has been judged for 12 s/)).toBeInTheDocument();
+  });
+
+  // The one number here that was never about the engine: being blind is being disconnected, and
+  // the rail says whether there is a link on every screen the console has. Two places saying one
+  // thing is two wordings to keep in step, and this was the one nobody could read.
+  it('says nothing about being blind, however long the link has been down', async () => {
+    answers({ blindSeconds: 31 });
+    renderPanel();
+
+    await screen.findByRole('heading', { name: 'Rules' });
+    expect(screen.queryByText(/nothing has been judged/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Blind/)).not.toBeInTheDocument();
   });
 
   it('names a rule the engine has stopped trusting', async () => {
@@ -253,7 +347,7 @@ describe('AlertsPanel', () => {
     expect(await screen.findByText('sensors/kiln/temp · 40 of 200 readings · outlier')).toBeInTheDocument();
   });
 
-  it('shows what put a past alert out', async () => {
+  it('keeps no log of the alarms that have already gone out', async () => {
     answers({
       history: [
         {
@@ -266,8 +360,27 @@ describe('AlertsPanel', () => {
     });
     renderPanel();
 
-    const past = await screen.findByTestId('alert-past');
-    expect(within(past).getByText(/value back under 90/)).toBeInTheDocument();
+    // The panel is what is alarming now and the rules behind it. A log of what has already gone
+    // out was a third thing on the same page, growing forever and answering nothing a reader
+    // opens this panel to ask. The store still holds it — see alertStore — and nothing draws it.
+    expect(await screen.findByText(/No alert rules yet/)).toBeInTheDocument();
+    expect(screen.queryByTestId('alert-past')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Clear history' })).not.toBeInTheDocument();
+  });
+
+  // Numbered so a rule can be pointed at in a sentence — 'rule 3 is the one that never fires' —
+  // and in the order the file holds them, which is the order they were written in. Not by name:
+  // a list that reorders itself when a rule is renamed is a list whose numbers mean nothing.
+  it('numbers the rules in the order they are saved in', async () => {
+    holding(OTHER, RULE);
+    answers({});
+    renderPanel();
+
+    const listed = await screen.findAllByTestId('alert-rule');
+    expect(within(listed[0]).getByTestId('rule-number')).toHaveTextContent('1');
+    expect(within(listed[0]).getByText('Room silent')).toBeInTheDocument();
+    expect(within(listed[1]).getByTestId('rule-number')).toHaveTextContent('2');
+    expect(within(listed[1]).getByText('Kiln too hot')).toBeInTheDocument();
   });
 
   // Rule 2: three writers, one owner. The switch sends the list the cache holds with one rule
@@ -291,7 +404,7 @@ describe('AlertsPanel', () => {
     await waitFor(() => expect(sent[0]).toEqual([{ ...RULE, enabled: false }, OTHER]));
   });
 
-  it('opens a window on the rule being edited, keyed on its draft', async () => {
+  it('edits the rule the row is about, prefilled from the rule itself', async () => {
     holding(RULE);
     answers({});
     renderPanel();
@@ -299,20 +412,19 @@ describe('AlertsPanel', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Edit Kiln too hot' }));
 
-    const [window] = useWindows.getState().windows;
-    // Task 5's own key for a held rule, so a second Edit on the same rule finds the window it
-    // already opened rather than opening a second one beside it.
-    expect(window.pane).toEqual({ kind: 'rule', draftId: 'rule:r1' });
+    expect(screen.getByLabelText('Name')).toHaveValue('Kiln too hot');
+    expect(screen.getByLabelText('Topic filter')).toHaveValue('sensors/kiln/temp');
   });
 
-  // Rule 5: the preference survives a reload and the armed audio context cannot, so the button
-  // has to be able to say that the switch is on and the sound still will not come. The button is
-  // Task 7's; that it is on this panel at all is what is being pinned here.
-  it('says when the sound is wanted but not ready', async () => {
+  // The switch moved to Settings, where the rest of 'what this machine does' lives. It is not a
+  // control about alerting: a rule says whether it wants a tone, and the switch says whether this
+  // browser will make one. See AppearancePanel.test.tsx, which now pins it.
+  it('leaves the sound switch to the settings panel', async () => {
     useAppearanceStore.setState({ alertSound: true });
     answers({});
     renderPanel();
 
-    expect(await screen.findByRole('button', { name: 'Sound waiting' })).toBeInTheDocument();
+    expect(await screen.findByText(/No alert rules yet/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Sound/ })).not.toBeInTheDocument();
   });
 });

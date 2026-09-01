@@ -1,7 +1,14 @@
 import { matchesFilter } from './topicMatch';
 
-/** One user-chosen colour and the MQTT filter whose topics wear it. */
-export type ColourRule = { filter: string; colour: string };
+/**
+ * One user-chosen colour and the MQTT filter whose topics wear it — and, when the reader asked
+ * for one, a second colour for the message underneath.
+ *
+ * `bodyColour` is optional because absent and present are different requests. A rule that paints
+ * a topic says nothing about the payload beneath it, and the console goes on drawing that in its
+ * own ink; a rule that carries the second colour is one somebody deliberately gave two.
+ */
+export type ColourRule = { filter: string; colour: string; bodyColour?: string | null };
 
 /**
  * A `#rrggbb` triple and nothing else.
@@ -72,7 +79,14 @@ function compareSpecificity(a: readonly string[], b: readonly string[]): number 
 export function sortRules(rules: readonly ColourRule[]): ColourRule[] {
   return rules
     .filter((rule) => isFilter(rule?.filter) && isColour(rule?.colour))
-    .map((rule) => ({ filter: rule.filter, colour: rule.colour.toLowerCase() }))
+    .map((rule) => ({
+      filter: rule.filter,
+      colour: rule.colour.toLowerCase(),
+      // Dropped rather than kept when it is not a usable triple, and the rule survives without
+      // it: the second colour is an addition to a rule, so a nonsense one costs the payload its
+      // colour and leaves the topic still painted. Absent stays absent.
+      ...(isColour(rule.bodyColour) ? { bodyColour: rule.bodyColour.toLowerCase() } : {}),
+    }))
     .sort((a, b) => compareSpecificity(a.filter.split('/'), b.filter.split('/')));
 }
 

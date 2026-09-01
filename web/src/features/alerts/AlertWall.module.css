@@ -1,0 +1,98 @@
+/* The column down the right.
+
+   A plate, dressed the way the rail down the left is dressed: its own surface, its own corner,
+   its own scroll. The console is a row of plates with a channel between them, and this is the
+   third one — not a thing floating over the workspace, which is what the corner stack was.
+
+   300px because that is the panel column's width, and the two are read the same way: a topic, a
+   rule name and a line of prose, none of which survive being narrower. It does not stretch,
+   because everything it holds is a fixed-width read and the workspace is what wants the room. */
+.wall {
+  width: var(--wall);
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  background: var(--surface);
+  border-radius: var(--r-plate);
+  /* Twenty standing alarms scroll the column rather than the console. */
+  overflow: hidden auto;
+}
+
+/* Forced colours drop every background, and the boundary this plate draws is a fill against a
+   fill. Its own edge, inside its own box so nothing shifts — the same as the rail. */
+@media (forced-colors: active) {
+  .wall { outline: 1px solid; outline-offset: -1px; }
+}
+
+/* The width at which the workspace stops being columns and the rail lies over it. 300px of
+   alarms on a 375px screen is the console gone, so the wall leaves the row entirely: the rail's
+   badge counts what is standing and the panel holds all of it, and both are still there. */
+@media (max-width: 760px) {
+  .wall { display: none; }
+}
+
+/* Sunk into the plate, the way a chip is sunk into a pane. The level is the left edge, in colour
+   and in the word above it. */
+.row {
+  all: unset;
+  cursor: pointer;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 9px 9px 10px;
+  background: var(--paper);
+  border-radius: var(--r-control);
+  border-left: 3px solid var(--rule);
+}
+.row[data-severity='critical'] { border-left-color: var(--fault); }
+.row[data-severity='warn'] { border-left-color: var(--warn); }
+.row[data-severity='info'] { border-left-color: var(--signal); }
+.row:hover { background: color-mix(in srgb, var(--paper) 60%, var(--surface)); }
+.row:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+/* The level and the time on one line: how bad, and how long it has been that way. */
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.level {
+  font-family: var(--mono);
+  font-size: var(--t-nano);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.row[data-severity='critical'] .level { color: var(--fault); }
+.row[data-severity='warn'] .level { color: var(--warn); }
+.row[data-severity='info'] .level { color: var(--signal); }
+
+.clock {
+  font-family: var(--mono);
+  font-size: var(--t-nano);
+  color: var(--muted);
+}
+
+.topic {
+  font-family: var(--mono);
+  font-size: var(--t-code);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.rule { font-size: var(--t-small); color: var(--ink); }
+.reason { font-size: var(--t-small); color: var(--muted); }
+
+/* Not an error state and not an instruction — the answer to the question the column is here to
+   answer, on the one day it is a short answer. Said quietly, at the top where the first row
+   would be, rather than centred in a column of empty space it would then be decorating. */
+.quiet {
+  margin: 0;
+  padding: 8px 9px;
+  font-size: var(--t-small);
+  color: var(--muted);
+}
