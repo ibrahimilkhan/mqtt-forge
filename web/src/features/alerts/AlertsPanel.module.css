@@ -1,0 +1,153 @@
+/* The panel is a column about 320px wide, so everything here is a stack rather than a table.
+   Three kinds of block — an alarm, a past alarm, a rule — and each is set apart by space and a
+   left rule rather than by a box, because seven boxes down a narrow column read as a form. */
+
+.title {
+  font-family: var(--mono);
+  font-size: var(--t-label);
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 18px 0 8px;
+}
+.title:first-of-type { margin-top: 12px; }
+
+/* ---- an alarm that is on now ---- */
+
+.alert {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 0 10px 10px;
+  border-left: 2px solid var(--fault);
+  margin-bottom: 8px;
+}
+/* Muted is quieter, not gone: the thing is still wrong, and a row that vanished when it was
+   silenced would let a reader silence an alarm into believing it had stopped. */
+.alert[data-muted] { opacity: 0.55; border-left-color: var(--rule); }
+
+.alertHead { display: flex; align-items: baseline; gap: 8px; }
+
+/* The level, as a word. The colour is the second signal and the word is the first — which is the
+   whole of this console's answer to a reader who cannot tell two of these three apart. */
+.level {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--t-nano);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.level[data-severity='critical'] { color: var(--fault); }
+/* No amber in the palette, and one is not introduced for this: a second red beside the first is
+   two alarms the eye cannot rank, so a warning takes the ink and lets the word do the work. */
+.level[data-severity='warn'] { color: var(--ink); }
+.level[data-severity='info'] { color: var(--muted); }
+
+.topic {
+  font-family: var(--mono);
+  font-size: var(--t-code);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+/* The rule's NAME, inside an alarm or a past alarm. The block a whole rule is drawn in is
+   `.ruleBlock` below — one class for both was a quiet bug: `.rule + .rule` then also put two
+   pixels between the two name lines of consecutive alarms. */
+.rule { font-size: var(--t-small); color: var(--ink); }
+.reason { font-size: var(--t-small); color: var(--muted); }
+.since {
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  color: var(--muted);
+}
+
+/* What each channel did with it. */
+.marks { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.mark {
+  font-family: var(--mono);
+  font-size: var(--t-nano);
+  color: var(--muted);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+  padding: 1px 5px;
+}
+/* A delivery that failed. The border carries it as well as the text, so it is findable in a row
+   of four marks without reading all four. */
+.mark[data-failed] { color: var(--fault); border-color: var(--fault); }
+
+.muteRow { display: flex; align-items: center; gap: 6px; margin-top: 5px; }
+.minutes {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  padding: 2px 4px;
+}
+
+/* ---- a past alarm ---- */
+/* Faded, because it is over. It is here to answer 'what happened while I was away', which is a
+   question asked in a different voice from 'what is wrong now'. */
+.past {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0 6px 10px;
+  border-left: 2px solid var(--rule);
+  opacity: 0.7;
+}
+
+/* ---- a rule ---- */
+
+.ruleBlock + .ruleBlock { margin-top: 2px; }
+.ruleBlock .ruleRow { display: flex; align-items: center; gap: 8px; }
+.ruleRow input[type='checkbox'] { accent-color: var(--signal); flex: none; }
+.ruleName { flex: 1; min-width: 0; font-size: var(--t-small); color: var(--ink); }
+.filter {
+  display: block;
+  margin-left: 22px;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+/* The sentence that says what the rule can see. Indented under the name it belongs to, in the
+   quietest type on the panel: it is read when a rule is not doing what was expected, and it
+   should not compete with the rules themselves the rest of the time. */
+.seen {
+  display: block;
+  margin: 1px 0 8px 22px;
+  font-family: var(--mono);
+  font-size: var(--t-nano);
+  color: var(--muted);
+}
+
+/* A word-sized button standing inside a row rather than at the foot of the panel. */
+.quiet {
+  all: unset;
+  flex: none;
+  cursor: pointer;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 6px;
+  border-radius: var(--r-control);
+}
+/* all: unset misses the global button:hover fill; :not(:disabled) matches its specificity. */
+.quiet:hover:not(:disabled) { color: var(--ink); background: var(--paper); }
+.quiet:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+/* The same ×, and the same reasoning, as the one that drops a colour rule. */
+.remove {
+  all: unset;
+  flex: none;
+  cursor: pointer;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: var(--t-code);
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: var(--r-control);
+}
+.remove:hover:not(:disabled) { color: var(--fault); background: var(--surface); }
+.remove:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
