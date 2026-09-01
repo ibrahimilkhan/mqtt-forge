@@ -94,6 +94,13 @@ function editor(client, width) {
   return view;
 }
 
+// Its own timeout, and a generous one. These are renderers rather than tests: each mounts the real
+// components several times over and writes the markup out, which on a machine running both test
+// projects at once takes longer than vitest's five seconds — and then fails as though something
+// were wrong with the console. Nothing is; the box was busy. A renderer that passes costs nothing
+// by being allowed thirty.
+const PATIENCE = 30_000;
+
 it.skipIf(!existsSync(OUT))('writes the alert editor pages', () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client.setQueryData(queryKeys.alertRules, {
@@ -322,4 +329,4 @@ it.skipIf(!existsSync(OUT))('writes the alert editor pages', () => {
   noColours.unmount();
 
   useTopicTreeStore.getState().reset();
-});
+}, PATIENCE);
