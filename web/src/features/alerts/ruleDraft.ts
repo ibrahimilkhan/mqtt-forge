@@ -487,3 +487,362 @@ export function openRuleEditor(rule?: AlertRuleDto): void {
 
   useWindows.getState().open({ kind: 'rule', draftId }, label);
 }
+
+/**
+ * Where a rule is being saved to, which is two things only the server knows.
+ *
+ * The prefix decides which publish topics are legal, and it is the one thing here that turns into
+ * a refusal. The webhook switch turns into a note instead: a server with webhooks off still saves
+ * the rule and still keeps the address, and refusing it in the editor would be the console lying
+ * about what the server does. Both come down with the rule list.
+ */
+export type SaveTarget = { topicPrefix: string; allowWebhooks: boolean };
+
+/** Why a field cannot be saved, in the words of the person who typed it. */
+export type RuleFaults = {
+  name?: string;
+  filter?: string;
+  for?: string;
+  cooldown?: string;
+  condition?: string;
+  clear?: string;
+  webhook?: string;
+  publish?: string;
+};
+
+export const savable = (faults: RuleFaults): boolean => Object.keys(faults).length === 0;
+
+/** The engine's own limits, said here so the answer arrives before the round trip. */
+const MIN_WINDOW = 20;
+const MAX_WINDOW = 2000;
+const MAX_PATTERN = 250;
+const MAX_HEADERS = 10;
+const MAX_HEADER_NAME = 64;
+
+/**
+ * Everything wrong with this draft, or an empty object.
+ *
+ * A mirror of `AlertRulesDtoValidator`, and only a mirror: it refuses what the server refuses and
+ * nothing more. Where the server has said a thing well — 'a tukey outlier's k is a multiplier on
+ * the box, from 0.5 to 5' — the sentence is carried across rather than reworded, so a reader who
+ * meets both hears one voice.
+ *
+ * Two refusals cannot be complete here and both are named where they sit: a regular expression is
+ * checked against the browser's engine rather than .NET's, and the prefix is whatever the last GET
+ * said it was.
+ */
+export function faultsIn(draft: DraftRule, where: SaveTarget): RuleFaults {
+  const faults: RuleFaults = {};
+
+  if (draft.name.trim() === '') faults.name = 'A rule needs a name.';
+  else if (draft.name.trim().length > 80) faults.name = 'A name may be at most 80 characters.';
+
+  const filter = filterFault(draft.filter.trim(), where.topicPrefix);
+  if (filter) faults.filter = filter;
+
+  const forFault = wholeSeconds(draft.for);
+  if (forFault) faults.for = forFault;
+  else if (draft.for.trim() !== '' && alreadyADuration(draft.condition)) {
+    faults.for =
+      "'For' cannot be given with a silence, a distribution shift or a shape change: a silence " +
+      'is already a duration, and the other two are moments rather than states that can hold.';
+  }
+
+  const cooldown = wholeSeconds(draft.cooldown);
+  if (cooldown) faults.cooldown = cooldown;
+
+  const condition = conditionFault(draft.condition);
+  if (condition) faults.condition = condition;
+
+  const clear = draft.clear ? conditionFault(draft.clear) : null;
+  if (clear) faults.clear = clear;
+
+  if (draft.webhook) {
+    const webhook = webhookFault(draft.webhook);
+    if (webhook) faults.webhook = webhook;
+  }
+
+  if (draft.publish) {
+    const publish = publishFault(draft.publish, draft.filter.trim(), where.topicPrefix);
+    if (publish) faults.publish = publish;
+  }
+
+  return faults;
+}
+
+/**
+ * Why this filter is not one a rule can watch.
+ *
+ * The wildcard rules are the colour panel's, and they are written again rather than shared: that
+ * function folds a duplicate-filter check into the same sentence, and a filter is allowed to be
+ * repeated here — two rules watching one tree for two different things is the ordinary case.
+ */
+function filterFault(filter: string, prefix: string): string | null {
+  if (filter === '') return 'A topic filter cannot be empty.';
+
+  const segments = filter.split('/');
+
+  for (const [index, segment] of segments.entries()) {
+    if (segment === '#' && index !== segments.length - 1) return "'#' can only be the last segment.";
+    if (segment !== '#' && segment.includes('#')) return "'#' has to be a whole segment, on its own.";
+    if (segment !== '+' && segment.includes('+')) return "'+' has to be a whole segment, on its own.";
+  }
+
+  // A rule watching the engine's own tree is not a loop — the engine drops what arrives from under
+  // its prefix — it is a subscription that costs bandwidth, matches messages and can never fire.
+  // Refusing it is the only way the person who wrote it ever finds out.
+  if (covers(segments, prefix)) {
+    return (
+      `A rule cannot watch '${prefix}': that is where this server publishes its own alerts, ` +
+      'and the engine ignores everything under it.'
+    );
+  }
+
+  return null;
+}
+
+/** Whether a filter reaches into the tree under the prefix. Structural, as the server's is. */
+function covers(parts: string[], prefix: string): boolean {
+  const levels = prefix.replace(/\/+$/, '').split('/');
+
+  for (const [index, level] of levels.entries()) {
+    if (index >= parts.length) return false;
+    if (parts[index] === '#') return true;
+    if (parts[index] !== '+' && parts[index] !== level) return false;
+  }
+
+  return parts.length > levels.length;
+}
+
+const wholeSeconds = (text: string): string | null => {
+  if (text.trim() === '') return null;
+
+  const value = Number(text);
+
+  return Number.isInteger(value) && value >= 0 ? null : 'A number of seconds, or empty.';
+};
+
+/** Whether anything in this tree is already an interval or a moment, which 'for' cannot wait out. */
+function alreadyADuration(condition: DraftCondition): boolean {
+  switch (condition.type) {
+    case 'silence':
+    case 'distributionShift':
+    case 'shapeChange':
+      return true;
+    case 'all':
+    case 'any':
+      return condition.of.some(alreadyADuration);
+    case 'opaque':
+      // Unread on purpose. The server will judge what it holds; guessing here could only refuse
+      // something it would have taken.
+      return false;
+    default:
+      return false;
+  }
+}
+
+/** Why this condition cannot be saved, or null. One sentence, as the server gives one. */
+function conditionFault(condition: DraftCondition): string | null {
+  switch (condition.type) {
+    case 'threshold':
+      return finite(condition.value, 'A threshold needs a number to compare against.');
+
+    case 'band':
+      return (
+        finite(condition.low, 'A band needs a low edge.') ??
+        finite(condition.high, 'A band needs a high edge.')
+      );
+
+    case 'pattern':
+      if (condition.regex === '') return 'A pattern condition needs an expression.';
+      if (condition.regex.length > MAX_PATTERN) {
+        return `A pattern may be at most ${MAX_PATTERN} characters.`;
+      }
+      try {
+        // The browser's engine, which is not the server's: a pattern refused here is certainly bad,
+        // and one accepted here may still come back a 400 from a .NET engine that reads it
+        // differently. Worth doing anyway — an unclosed bracket is the mistake people actually make.
+        new RegExp(condition.regex);
+      } catch {
+        return `'${condition.regex}' is not a valid regular expression.`;
+      }
+
+      return null;
+
+    case 'oneOf':
+      return listOf(condition.values).length === 0 ? 'A list needs at least one value.' : null;
+
+    case 'silence':
+      return Number(condition.after) >= 1 && Number.isInteger(Number(condition.after))
+        ? null
+        : 'A silence condition has to wait at least a second.';
+
+    case 'outlier':
+      return windowFault(condition.window) ?? kFault(condition.method, condition.k);
+
+    case 'distributionShift':
+    case 'shapeChange':
+      return windowFault(condition.window);
+
+    case 'pulse': {
+      // Worked out once and held: these two are the same question asked of two boxes, and asking
+      // each of them twice was how the first draft of this read.
+      const bad =
+        windowFault(condition.window) ??
+        finite(condition.value, 'A pulse needs a number to compare against.');
+      if (bad) return bad;
+
+      const value = Number(condition.value);
+
+      if (condition.metric === 'duty' && (value < 0 || value > 1)) {
+        return 'A duty is the share of the readings spent past the line, from 0 to 1.';
+      }
+      if (condition.metric !== 'duty' && value < 0) {
+        return 'A pulse count, period or width is never negative.';
+      }
+
+      return null;
+    }
+
+    case 'all':
+    case 'any':
+      if (condition.of.length === 0) return 'This needs at least one condition under it.';
+
+      return condition.of.map(conditionFault).find((fault) => fault !== null) ?? null;
+
+    case 'opaque':
+      // Kept, not judged. It came off the file exactly as it stands and goes back the same way.
+      return null;
+  }
+}
+
+const finite = (text: string, missing: string): string | null =>
+  text.trim() === '' || !Number.isFinite(Number(text)) ? missing : null;
+
+/** Empty is the server's own default and is always allowed; a number has to be one it will use. */
+const windowFault = (text: string): string | null => {
+  if (text.trim() === '') return null;
+
+  const window = Number(text);
+
+  return Number.isInteger(window) && window >= MIN_WINDOW && window <= MAX_WINDOW
+    ? null
+    : `A statistical window is between ${MIN_WINDOW} and ${MAX_WINDOW} readings, or empty for ` +
+        "this server's default: below that range there is not enough of a run to say anything.";
+};
+
+/** k's range is the method's, because k is the method's number. */
+const kFault = (method: OutlierMethod, text: string): string | null => {
+  if (text.trim() === '') return null;
+
+  const k = Number(text);
+
+  if (method === 'tukey') {
+    return Number.isFinite(k) && k >= 0.5 && k <= 5
+      ? null
+      : "A tukey outlier's k is a multiplier on the box, from 0.5 to 5.";
+  }
+
+  return Number.isFinite(k) && k >= 1 && k <= 10
+    ? null
+    : "A sigma outlier's k is a number of deviations, from 1 to 10.";
+};
+
+function webhookFault(webhook: DraftWebhook): string | null {
+  let url: URL;
+
+  try {
+    url = new URL(webhook.url.trim());
+  } catch {
+    return 'A webhook url has to be an absolute http:// or https:// address.';
+  }
+
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    return 'A webhook url has to be an absolute http:// or https:// address.';
+  }
+
+  // Credentials in the URL are sent on by every redirect and written into every log on the way.
+  // The header rows below are where this design put secrets on purpose.
+  if (url.username !== '' || url.password !== '') {
+    return 'A webhook url must not carry a username or password. Use a header.';
+  }
+
+  const named = webhook.headers.filter((header) => header.name.trim() !== '');
+  if (named.length > MAX_HEADERS) return `A webhook may carry at most ${MAX_HEADERS} headers.`;
+
+  for (const header of named) {
+    if (header.name.trim().length > MAX_HEADER_NAME) {
+      return `A header name has to be 1 to ${MAX_HEADER_NAME} characters.`;
+    }
+    // A CR or an LF in a header is a request-splitting attempt or a copy-paste accident, and there
+    // is no telling which, so neither goes out over a socket this server opened.
+    if (/[\u0000-\u001f\u007f]/.test(header.name) || /[\u0000-\u001f\u007f]/.test(header.value)) {
+      return 'A header cannot hold a control character.';
+    }
+  }
+
+  return null;
+}
+
+function publishFault(publish: DraftPublish, filter: string, prefix: string): string | null {
+  const topic = publish.topic.trim();
+
+  // Empty is the default topic, which is inside the prefix and carries the placeholder by
+  // construction — the easy answer and the safe one, with nothing left to check.
+  if (topic === '') return null;
+
+  if (topic.includes('+') || topic.includes('#')) {
+    return 'A publish topic cannot carry a wildcard: a publication is to one topic.';
+  }
+
+  // Expanded rather than tested as a template, because the rule is about the topic that is
+  // actually published: '{topic}/alarm' passes any test of the literal and publishes into the plant.
+  if (!topic.replace('{topic}', '\u0000').startsWith(prefix)) {
+    return (
+      `A publish topic has to stay under '${prefix}'. Anything else writes the engine's own ` +
+      'alerts back into the plant.'
+    );
+  }
+
+  // One rule over 'plant/+/temp' watches twenty boilers. A retained publish to one fixed topic
+  // means the twentieth alarm overwrites the nineteenth, and the empty retained message that
+  // clears one of them erases the record of all of them.
+  if (
+    publish.retain &&
+    (filter.includes('+') || filter.includes('#')) &&
+    !topic.includes('{topic}')
+  ) {
+    return (
+      "A retained publish from a wildcard filter has to carry '{topic}' in its topic, or " +
+      "every topic the rule watches overwrites the last one's retained alarm."
+    );
+  }
+
+  return null;
+}
+
+/**
+ * The rule set to PUT, with this one rule in it.
+ *
+ * `stored` is what the query cache holds at the moment of the click, and that timing is the whole
+ * point: three writers edit this list — the panel's switch, its delete button, and any number of
+ * editor windows — and a body compiled from anything older would undo whichever of them clicked
+ * first. The rules this one did not touch travel back exactly as they came, which is also what
+ * keeps their secrets: an action with header names and no headers is the wire's way of saying
+ * 'I am not editing these'.
+ *
+ * A rule with a null id is one the server has never seen, so it is added rather than matched: an
+ * id is the only identity a rule has, and matching a new one on its name would let two rules
+ * written a minute apart become one.
+ */
+export function saveRule(stored: readonly AlertRuleDto[], rule: AlertRuleDto): AlertRuleDto[] {
+  const at = rule.id ? stored.findIndex((one) => one.id === rule.id) : -1;
+
+  // In place, not moved to the end: the panel lists rules in the order the file holds them, and a
+  // rule that jumped to the bottom every time somebody renamed it would make the list unreadable.
+  return at === -1 ? [...stored, rule] : stored.map((one, index) => (index === at ? rule : one));
+}
+
+/** The rule set to PUT, with this rule gone. An id the list does not hold changes nothing. */
+export const removeRule = (stored: readonly AlertRuleDto[], id: string): AlertRuleDto[] =>
+  stored.filter((one) => one.id !== id);
