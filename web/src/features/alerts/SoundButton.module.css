@@ -1,0 +1,35 @@
+/* The switch and its line, stacked: the line is the button's own explanation and belongs under
+   it rather than beside it, where it would set the width of the panel's whole action row. */
+.sound { display: flex; flex-direction: column; gap: 6px; }
+
+/* The standing prompt, in the TOP inline-end corner.
+
+   Not the bottom one, which is where it was first drawn and where it was wrong: the notice stack
+   is pinned to the bottom inline-end corner and grows upward out of it, so a strip parked there
+   is under the very notices it is explaining — the one thing on screen nobody could read, saying
+   the one thing they most needed to know. The other three corners are all spoken for as well:
+   the rail holds the whole inline-start edge, top to bottom, and a thrown-open chart stands in
+   the middle three fifths. The top inline-end corner is the only part of the frame nothing else
+   claims, and it is diagonally opposite the notices, so however many of them are up the two
+   never meet.
+
+   399, one under the stack's 400: even out of its way, a critical alert must never be covered by
+   the console asking for permission to make a noise about it. */
+.prompt {
+  position: fixed;
+  inset-block-start: 12px;
+  inset-inline-end: 12px;
+  z-index: 399;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-plate);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 12%);
+  font-size: var(--t-small);
+  color: var(--ink);
+}
+
+.prompt p { margin: 0; }

@@ -3,7 +3,6 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { READINGS, type ReadingId } from '../features/appearance/readings';
 import { SCALE_DEFAULT, SCALES, type ScaleId } from '../lib/scale';
 import { DEFAULTS as FONTS, MONO, SANS, SIZE, type MonoId, type SansId } from '../features/appearance/fonts';
-
 export type AppearanceChoices = {
   sans: SansId;
   mono: MonoId;
@@ -25,8 +24,17 @@ export type AppearanceChoices = {
    * every second at the foot of a tool whose whole manner is quiet is not what they came for.
    */
   health: boolean;
+  /**
+   * Whether an alert that asks for a tone gets one.
+   *
+   * Off by default: a tool that makes a noise the first time somebody opens it is a tool that
+   * gets muted at the operating system and then never heard again, including on the day it had
+   * something to say. The choice is kept here with the other choices; whether this page is
+   * *allowed* to make a sound is a separate thing and deliberately not stored — see
+   * `features/alerts/alertSound.ts`.
+   */
+  alertSound: boolean;
 };
-
 type AppearanceState = AppearanceChoices & {
   setSans: (id: SansId) => void;
   setMono: (id: MonoId) => void;
@@ -34,19 +42,20 @@ type AppearanceState = AppearanceChoices & {
   setScale: (id: ScaleId) => void;
   toggleReading: (id: ReadingId, shown: boolean) => void;
   setHealth: (shown: boolean) => void;
+  setAlertSound: (on: boolean) => void;
   /** Back to the catalogue's own answer for every reading. */
   resetReadings: () => void;
   reset: () => void;
 };
 
 export const STORAGE_KEY = 'mqttforge.appearance';
-
 // The fonts' own defaults plus the chart's, which is where the two halves of 'appearance' meet.
 export const DEFAULTS: AppearanceChoices = {
   ...FONTS,
   scale: SCALE_DEFAULT,
   readings: {},
   health: false,
+  alertSound: false,
 };
 
 /** The stored switches, keeping only the ones that name a reading and say true or false. */
@@ -59,12 +68,11 @@ function switched(raw: unknown): Partial<Record<ReadingId, boolean>> {
     ),
   );
 }
-
 // Validates stored fields against the catalogue, since localStorage may hold a stale or hand-edited value.
 export function sanitize(raw: unknown): AppearanceChoices {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { ...DEFAULTS };
 
-  const { sans, mono, size, scale, readings, health } = raw as Record<string, unknown>;
+  const { sans, mono, size, scale, readings, health, alertSound } = raw as Record<string, unknown>;
 
   return {
     sans: typeof sans === 'string' && sans in SANS ? (sans as SansId) : DEFAULTS.sans,
@@ -76,9 +84,11 @@ export function sanitize(raw: unknown): AppearanceChoices {
     scale: typeof scale === 'string' && scale in SCALES ? (scale as ScaleId) : DEFAULTS.scale,
     readings: switched(readings),
     health: typeof health === 'boolean' ? health : DEFAULTS.health,
+    // Field by field, which is what makes the version bump cheap: a store written by version 5
+    // knows nothing of this one and keeps everything else it did know.
+    alertSound: typeof alertSound === 'boolean' ? alertSound : DEFAULTS.alertSound,
   };
 }
-
 // Client state, not fetched, so a store rather than the query cache. Only the stored
 // choices persist; CSS stacks are derived from the catalogue at read time.
 export const useAppearanceStore = create<AppearanceState>()(
@@ -90,6 +100,7 @@ export const useAppearanceStore = create<AppearanceState>()(
       setSize: (size) => set({ size }),
       setScale: (scale) => set({ scale }),
       setHealth: (health) => set({ health }),
+      setAlertSound: (alertSound) => set({ alertSound }),
       toggleReading: (id, shown) =>
         set((state) => ({ readings: { ...state.readings, [id]: shown } })),
       resetReadings: () => set({ readings: {} }),
@@ -97,14 +108,18 @@ export const useAppearanceStore = create<AppearanceState>()(
     }),
     {
       name: STORAGE_KEY,
-      version: 5,
-      partialize: ({ sans, mono, size, scale, readings, health }) => ({
+      // 6 since the sound preference joined the stored choices. `migrate` is `sanitize`, which
+      // reads field by field — so a store written by 5 keeps its font, its size, its scale, its
+      // readings and its health line, and gains the sound switched off.
+      version: 6,
+      partialize: ({ sans, mono, size, scale, readings, health, alertSound }) => ({
         sans,
         mono,
         size,
         scale,
         readings,
         health,
+        alertSound,
       }),
       merge: (persisted, current) => ({ ...current, ...sanitize(persisted) }),
       // Migrates rather than discarding on version bump; sanitize handles any shape.

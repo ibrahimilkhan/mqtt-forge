@@ -11,6 +11,7 @@ import { useTopicTreeStore } from '../stores/topicTreeStore';
 import type { MqttMessage } from '../types/api';
 import { decodeIncoming } from './decodeIncoming';
 import type { Hub } from './hub';
+import { soundFor } from '../features/alerts/alertSound';
 
 /**
  * How many messages one frame may take in.
@@ -128,7 +129,13 @@ export function useHubBridge(hub: Hub) {
       },      // The four the alert engine sends. Each is a one-line hand-off to the store, deliberately:
       // what an alarm means is the panel's business, and a bridge that decided anything about one
       // would be a second place alerting is implemented.
-      alertsRaised: (alerts) => useAlertStore.getState().raised(alerts),
+      alertsRaised: (alerts) => {
+        useAlertStore.getState().raised(alerts);
+        // The tone is not the notice. `screen` and `sound` are separate actions on a rule, so a
+        // silent notice and an alarm that is only heard are both things somebody asked for — and
+        // one tone answers the whole batch, at the worst severity in it.
+        soundFor(alerts);
+      },
       alertsResolved: (alerts) => useAlertStore.getState().resolved(alerts),
       alertMuted: (ruleId, topic, until) => useAlertStore.getState().mute(ruleId, topic, until),
       alertsDropped: (total) => useAlertStore.getState().droppedTotal(total),
