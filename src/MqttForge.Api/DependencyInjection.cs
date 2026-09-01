@@ -22,6 +22,11 @@ public static class DependencyInjection
         services.AddSingleton<SignalRMessageNotifier>();
         services.AddHostedService(sp => sp.GetRequiredService<SignalRMessageNotifier>());
         services.AddSingleton<IConnectionStateNotifier, SignalRConnectionStateNotifier>();
+        // Its own event and its own notifier, not more fields on the one above. That payload is
+        // the whole picture of the link; this is the whole picture of what is being done about
+        // one, and a console folding them together would re-read the link every time a countdown
+        // ticked. See ReconnectStatus.
+        services.AddSingleton<IReconnectStatusNotifier, SignalRReconnectStatusNotifier>();
         services.AddSingleton<IMqttSubscriber, MqttnetSubscriber>();
 
         // Read at resolve time, not registration, so late-configuring hosts (tests) still work
@@ -36,6 +41,9 @@ public static class DependencyInjection
 
         services.AddSingleton<IAlertRuleStore>(sp =>
             new JsonAlertRuleStore(StorePaths.AlertRules(sp.GetRequiredService<IConfiguration>())));
+
+        services.AddSingleton<IReconnectOptionStore>(sp =>
+            new JsonReconnectOptionStore(StorePaths.ReconnectOption(sp.GetRequiredService<IConfiguration>())));
 
         // Two arguments, unlike the four stores above it: this one says so in the log when it
         // cannot write, because nobody is waiting on the answer. The engine's shutdown save has
@@ -185,7 +193,13 @@ public static class DependencyInjection
         // broker. Registered the other way round, the first seconds of traffic after a reconnect
         // would land in a queue with nothing draining it.
         services.AddHostedService<AlertEngineHost>();
-        services.AddHostedService<BrokerLinkSupervisor>();
+
+        // Registered by type as well as hosted, because it is now something the API talks to: the
+        // reconnect endpoints ask it what it is doing and tell it to stop. Same instance either
+        // way — resolved from the container rather than constructed a second time, which would
+        // give the endpoints a supervisor that supervises nothing.
+        services.AddSingleton<BrokerLinkSupervisor>();
+        services.AddHostedService(sp => sp.GetRequiredService<BrokerLinkSupervisor>());
         return services;
     }
 
