@@ -106,6 +106,13 @@ const block = (query) =>
     </QueryClientProvider>,
   );
 
+// Its own timeout, and a generous one. These are renderers rather than tests: each mounts the real
+// components several times over and writes the markup out, which on a machine running both test
+// projects at once takes longer than vitest's five seconds — and then fails as though something
+// were wrong with the console. Nothing is; the box was busy. A renderer that passes costs nothing
+// by being allowed thirty.
+const PATIENCE = 30_000;
+
 it.skipIf(!existsSync(OUT))('writes the reconnect pages', () => {
   // 1 — the ladder mid-climb, which is the state the whole feature was asked for.
   history();
@@ -163,4 +170,4 @@ it.skipIf(!existsSync(OUT))('writes the reconnect pages', () => {
   );
   writeFileSync(`${OUT}/reconnect-panel.html`, page('the panel a fault opened', view.container.innerHTML));
   view.unmount();
-});
+}, PATIENCE);

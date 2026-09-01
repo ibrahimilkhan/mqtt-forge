@@ -241,6 +241,13 @@ function stamp(root: HTMLElement): HTMLElement {
 
 // Written into the API's static root, which is where a browser can reach it. Absent before the
 // web app has been built at least once, and there is nothing to serve it from then either.
+// Its own timeout, and a generous one. These are renderers rather than tests: each mounts the real
+// components several times over and writes the markup out, which on a machine running both test
+// projects at once takes longer than vitest's five seconds — and then fails as though something
+// were wrong with the console. Nothing is; the box was busy. A renderer that passes costs nothing
+// by being allowed thirty.
+const PATIENCE = 30_000;
+
 it.skipIf(!existsSync(OUT))('writes the gallery', () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
@@ -481,7 +488,7 @@ ${inner}
     `${OUT}/gallery-dots.html`,
     page('a dot per reading', `<h2>A dot per reading</h2>${dotSizes(client)}`),
   );
-});
+}, PATIENCE);
 
 /**
  * The same run at three plot heights.
