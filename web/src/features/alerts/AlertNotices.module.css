@@ -1,0 +1,95 @@
+/* The stack, in the corner of the viewport and over everything.
+
+   400 because the panel column reaches 300 when the rail lies over the workspace on a narrow
+   screen, and a thrown-open chart sits at 200 with a scrim of its own. A notice under any of
+   those is a notice that did not happen.
+
+   Bottom right: the rail and the panel are down the left, and the corner furthest from both is
+   the one place nothing the reader is working in already stands. The sound prompt takes the
+   bottom LEFT for the same reason in reverse — two things pinned to one corner means the lower
+   one is read through the upper one, and the prompt explaining the notices must not stand under
+   them. */
+.stack {
+  position: fixed;
+  z-index: 400;
+  inset-block-end: 12px;
+  inset-inline-end: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(340px, calc(100vw - 24px));
+  /* The column is only ever a place to put notices; the gaps between them are not a wall over
+     the console underneath. */
+  pointer-events: none;
+}
+
+.notice {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 9px 8px 10px 11px;
+  background: var(--surface);
+  border-radius: var(--r-plate);
+  border-left: 3px solid var(--rule);
+  /* Standing over the console rather than in it, and said the way every other floating thing
+     here says it. */
+  box-shadow:
+    0 0 0 1px var(--rule),
+    0 8px 22px color-mix(in srgb, var(--ink) 18%, transparent);
+}
+.notice[data-severity='critical'] { border-left-color: var(--fault); }
+.notice[data-severity='warn'] { border-left-color: var(--ink); }
+.notice[data-severity='info'] { border-left-color: var(--muted); }
+
+/* The whole body is the way into the panel, so it is a button — a click target the size of the
+   notice rather than a link hidden in one line of it. Stripped of a button's own dress: it is a
+   block of text that can be pressed. */
+.body {
+  all: unset;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.body:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+.level {
+  font-family: var(--mono);
+  font-size: var(--t-nano);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.notice[data-severity='critical'] .level { color: var(--fault); }
+.notice[data-severity='warn'] .level { color: var(--ink); }
+
+.topic {
+  font-family: var(--mono);
+  font-size: var(--t-code);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.rule { font-size: var(--t-small); color: var(--ink); }
+.reason { font-size: var(--t-small); color: var(--muted); }
+
+.shut {
+  all: unset;
+  flex: none;
+  cursor: pointer;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: var(--t-code);
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: var(--r-control);
+}
+.shut:hover:not(:disabled) { color: var(--fault); background: var(--paper); }
+.shut:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+/* The lift and the shadow are what say 'over'; on a screen that draws neither, the edge does. */
+@media (forced-colors: active) {
+  .notice { outline: 1px solid; outline-offset: -1px; }
+}
