@@ -6,6 +6,17 @@ import { setupServer } from 'msw/node';
 const defaultHandlers = [
   http.get('/api/connection', () => HttpResponse.json({ state: 'Disconnected' })),
   http.get('/api/connection/settings', () => new HttpResponse(null, { status: 204 })),
+  // A quiet supervisor: on, and nothing wrong. Tests about an outage override this.
+  http.get('/api/connection/reconnect', () =>
+    HttpResponse.json({
+      enabled: true,
+      active: false,
+      attempt: 0,
+      nextAttemptAt: null,
+      gaveUp: false,
+      now: new Date().toISOString(),
+    }),
+  ),
   http.get('/api/connection/profiles', () => HttpResponse.json([])),
   http.get('/api/subscriptions', () => HttpResponse.json([])),
   http.get('/api/colour-rules', () => HttpResponse.json({ rules: [] })),

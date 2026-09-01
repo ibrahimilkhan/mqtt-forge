@@ -475,9 +475,13 @@ public class ReconnectSupervisionTests
 
         public void Clear() => Statuses.Clear();
 
-        public Task NotifyReconnectStatusChangedAsync(ReconnectStatus status)
+        /// <summary>The clock readings that rode with each status, for the skew correction.</summary>
+        public List<DateTimeOffset> Stamps { get; } = [];
+
+        public Task NotifyReconnectStatusChangedAsync(ReconnectStatus status, DateTimeOffset now)
         {
             Statuses.Add(status);
+            Stamps.Add(now);
 
             return Throw is not null ? Task.FromException(Throw) : Task.CompletedTask;
         }

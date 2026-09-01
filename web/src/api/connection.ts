@@ -1,6 +1,7 @@
 import type {
   ConnectRequest,
   ConnectionStateResponse,
+  ReconnectStatus,
   SavedConnection,
   SavedProfile,
 } from '../types/api';
@@ -24,6 +25,31 @@ export const disconnect = () => request<void>('/api/connection', { method: 'DELE
 // started it may belong to a panel the user has since navigated away from, so the abort is
 // its own request rather than a hang-up on that one.
 export const cancelConnect = () => request<void>('/api/connection/attempt', { method: 'DELETE' });
+
+// ---- the standing arrangement to keep a link ----
+//
+// Four calls about one thing: whether a link that drops is put back, and what is being done
+// about one right now. The abort above is a different question — it hangs up on one CONNECT and
+// knows nothing about ladders.
+
+export const getReconnectStatus = () => request<ReconnectStatus>('/api/connection/reconnect');
+
+/** The standing answer, remembered across restarts. */
+export const setReconnectEnabled = (enabled: boolean) =>
+  request<ReconnectStatus>('/api/connection/reconnect', { method: 'PUT', ...json({ enabled }) });
+
+/** Dials now, whatever the ladder was waiting for. Works with the option off. */
+export const reconnectNow = () =>
+  request<ReconnectStatus>('/api/connection/reconnect', { method: 'POST' });
+
+/**
+ * Calls off the outage being worked on, and the attempt in flight with it.
+ *
+ * Not the same as turning the option off, and the panel offers both: this is "stop, I am looking
+ * at it" and lasts until the next connection that works, where the switch is the standing answer.
+ */
+export const stopReconnecting = () =>
+  request<ReconnectStatus>('/api/connection/reconnect', { method: 'DELETE' });
 
 // ---- brokers somebody chose to keep ----
 //

@@ -130,6 +130,12 @@ public sealed class BrokerLinkSupervisor : BackgroundService
     /// <summary>What is being done about the link, and whether anything is allowed to be.</summary>
     public ReconnectStatus Status => new(_enabled, _active, _attempts, _dueAt, _gaveUp);
 
+    /// <summary>The clock NextAttemptAt is an instant on.</summary>
+    // Exposed so that whatever serialises a status can send the two together — see
+    // IReconnectStatusNotifier. One clock, read in one place, rather than an endpoint reaching
+    // for DateTimeOffset.UtcNow beside a supervisor running on an injected one.
+    public DateTimeOffset Now => _time.GetUtcNow();
+
     /// <summary>The one decision made at start-up: whether there is anything to be connected for.</summary>
     // No enabled rule means no connection, which is today's behaviour kept on purpose. Opening
     // the console is what connects a broker; a container that dialled out on every start because
@@ -430,7 +436,7 @@ public sealed class BrokerLinkSupervisor : BackgroundService
 
         try
         {
-            await _notifier.NotifyReconnectStatusChangedAsync(status);
+            await _notifier.NotifyReconnectStatusChangedAsync(status, _time.GetUtcNow());
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -486,6 +492,7 @@ public sealed class BrokerLinkSupervisor : BackgroundService
 
     private sealed class SilentStatus : IReconnectStatusNotifier
     {
-        public Task NotifyReconnectStatusChangedAsync(ReconnectStatus status) => Task.CompletedTask;
+        public Task NotifyReconnectStatusChangedAsync(ReconnectStatus status, DateTimeOffset now) =>
+            Task.CompletedTask;
     }
 }

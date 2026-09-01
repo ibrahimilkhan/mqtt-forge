@@ -1,10 +1,18 @@
 import * as signalR from '@microsoft/signalr';
-import type { AlertDto, ConnectionStateResponse, MqttMessage } from '../types/api';
+import type { AlertDto, ConnectionStateResponse, MqttMessage, ReconnectStatus } from '../types/api';
 
 export type HubEvents = {
   // Batched server-side: a busy broker outruns one frame per message.
   messagesReceived: (messages: MqttMessage[]) => void;
   connectionStateChanged: (payload: ConnectionStateResponse) => void;
+  /**
+   * What the supervisor is doing about a link that dropped, sent only when it changes.
+   *
+   * Its own event rather than more fields on the payload above: that one is the whole picture of
+   * the link, and a console folding them together would re-read the link every time a countdown
+   * moved on a rung.
+   */
+  reconnectStatusChanged: (status: ReconnectStatus) => void;
   /** Running total the server's own queue has had to drop, sent only when it moves. */
   messagesDropped: (total: number) => void;
   /** Alarms that have just started. Batched at five hundred: a restart can restore a thousand. */
@@ -86,7 +94,7 @@ export function createSignalRHub(url = '/hubs/mqtt'): Hub {
       /**
        * Binds one server-sent event, if this caller asked for it, and remembers how to unbind it.
        *
-       * Seven of these now, and each used to be the same four lines with the same name written in
+       * Eight of these now, and each used to be the same four lines with the same name written in
        * three places — which is exactly the shape a new event gets added to by copying and then
        * forgetting one of the three. The lifecycle pair below cannot join it: signalR has no
        * removal API for onreconnecting and onreconnected, so those are kept in sets of our own.
@@ -101,6 +109,7 @@ export function createSignalRHub(url = '/hubs/mqtt'): Hub {
 
       bind('messagesReceived');
       bind('connectionStateChanged');
+      bind('reconnectStatusChanged');
       bind('messagesDropped');
       bind('alertsRaised');
       bind('alertsResolved');
