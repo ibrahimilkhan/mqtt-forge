@@ -223,7 +223,7 @@ describe('App', () => {
     renderApp();
     await userEvent.click(screen.getByRole('button', { name: 'Panel menu' }));
 
-    expect(menu().getAllByRole('button')).toHaveLength(6);
+    expect(menu().getAllByRole('button')).toHaveLength(7);
 
     await userEvent.click(menu().getByRole('button', { name: 'Filters' }));
 
@@ -241,8 +241,9 @@ describe('App', () => {
     expect(menu().queryByRole('heading', { name: 'Link' })).not.toBeInTheDocument();
   });
 
-  // Six flat buttons was a list to read through. The headings are the questions a reader
-  // actually arrives with, and Chart leads Reading because that is where a topic is read.
+  // Six flat buttons was a list to read through, and seven is more so. The headings are the
+  // questions a reader actually arrives with, and Chart leads Reading because that is where a
+  // topic is read. Alerts closes it: a rule is written about a run already being watched.
   it('groups the panels under headings, in the order they are worked through', () => {
     renderApp();
 
@@ -256,6 +257,7 @@ describe('App', () => {
       'Filters',
       'Chart',
       'Colours',
+      'Alerts',
       'QR',
       'Settings',
     ]);

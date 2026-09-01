@@ -1,13 +1,18 @@
 import type { ReactNode } from 'react';
 
 /**
- * The six marks the panel menu wears, one per panel — and twelve more that are not panels.
+ * The seven marks the panel menu wears, one per panel — and thirteen more that are not panels.
  *
- * Drawn here rather than pulled from an icon set. Twelve glyphs is not worth a dependency, and a
+ * Drawn here rather than pulled from an icon set. Twenty glyphs is not worth a dependency, and a
  * set drawn to its own rules would sit beside the mark in `marks.tsx` looking borrowed: the same
  * 24-unit square, one weight of stroke, round ends, no fill, current colour. That is the whole
  * drawing language of this console, and these follow it — the shapes are Lucide's `antenna`,
- * `funnel`, `chart-line`, `blend`, `qr-code` and `settings`, redrawn at the rail's own weight.
+ * `funnel`, `chart-line`, `blend`, `bell`, `qr-code` and `settings`, redrawn at the rail's own
+ * weight.
+ *
+ * The counts in this paragraph had already fallen behind the file before the bell arrived; they
+ * are put right here rather than left to drift further. Seven panels, one warning, twelve marks
+ * that go inside buttons.
  *
  * 1.8 rather than Lucide's 1.5, because 1.8 is what the mark and every other line in here is
  * drawn at. The one exception is the cog, which has enough going on at sixteen pixels that the
@@ -16,7 +21,7 @@ import type { ReactNode } from 'react';
  * `Warning` wears no panel: it stands on the Broker row beside `Antenna`, and a triangle
  * borrowed from somewhere else would look stuck on rather than part of the rail.
  *
- * The last ten wear no panel either — they go inside buttons, in the same mono the button is
+ * The last twelve wear no panel either — they go inside buttons, in the same mono the button is
  * lettered in, at the size of one line of that type. Which is what they are drawn for: a mark in
  * a button has one line of type's worth of room and has to be recognised in it, so each of them
  * is the simplest shape that survives thirteen pixels.
@@ -74,6 +79,22 @@ export const Blend = () => (
     <>
       <circle cx="9.6" cy="12" r="6" />
       <circle cx="14.4" cy="12" r="6" />
+    </>
+  </Glyph>
+);
+
+/**
+ * Alerts: the thing that is rung.
+ *
+ * The clapper is drawn as a separate arc rather than as part of the outline, because at sixteen
+ * pixels a bell closed at the bottom is a dome and reads as nothing in particular. The two
+ * shapes together are what makes it a bell at the size the rail actually draws it.
+ */
+export const Bell = () => (
+  <Glyph>
+    <>
+      <path d="M6.4 9.6a5.6 5.6 0 0 1 11.2 0c0 3.9 1.4 5.4 1.4 5.4H5s1.4-1.5 1.4-5.4Z" />
+      <path d="M10.2 18.3a2 2 0 0 0 3.6 0" />
     </>
   </Glyph>
 );

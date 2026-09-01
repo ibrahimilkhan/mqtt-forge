@@ -24,6 +24,7 @@ import { Workspace } from './features/workspace/Workspace';
 import type { Hub } from './realtime/hub';
 import { useHubBridge } from './realtime/useHubBridge';
 import { useHubStatusStore } from './stores/hubStatusStore';
+import { AlertsPanel } from './features/alerts/AlertsPanel';
 
 /** The width the workspace stops being columns at, and the rail starts lying over it. */
 const NARROW = '(max-width: 760px)';
@@ -42,6 +43,7 @@ const PANEL_VIEWS: Record<PanelId, (props: PanelProps) => ReactNode> = {
   subscribe: SubscribePanel,
   colours: ColoursPanel,
   chart: ChartPanel,
+  alerts: AlertsPanel,
   mobile: MobilePanel,
   settings: AppearancePanel,
 };
