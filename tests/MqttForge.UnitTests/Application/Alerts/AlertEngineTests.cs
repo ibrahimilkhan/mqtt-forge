@@ -248,7 +248,13 @@ public class AlertEngineTests
         harness.Engine.Post(new RuleSetChangedCommand(
             [Rule("b", "plant/b/#", Over90), Rule("c", "plant/c/#", Over90)]));
 
-        await harness.Until(() => harness.Subscriber.Batches.Count == 2, "the new filter went up");
+        // Both halves, not just the first. The engine subscribes what arrived and then
+        // unsubscribes what went — in that order, in one turn of the pump — so a wait that ends
+        // at the SUBSCRIBE can return with the UNSUBSCRIBE still to come. It passed on an idle
+        // machine and failed under a full parallel run, which is the shape of every race.
+        await harness.Until(
+            () => harness.Subscriber.Batches.Count == 2 && harness.Subscriber.Unsubscribed.Count == 1,
+            "the new filter went up and the old one came down");
 
         // Only the difference. 'plant/b/#' is already held and is not asked for a second time.
         Assert.Equal(["plant/c/#"], harness.Subscriber.Batches[1]);
