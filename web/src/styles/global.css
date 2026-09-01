@@ -43,7 +43,12 @@
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--muted);
-    margin-bottom: 5px;
+    /* Set rather than inherited from body's 1.55. A label is one or two words in eleven-point
+       capitals, and 1.55 of that is a line box half again as tall as the letters in it — which is
+       air that lands BETWEEN the label and its own box, where it reads as distance rather than as
+       leading. Tight here, and the gap below is stated once and deliberately. */
+    line-height: 1.35;
+    margin-bottom: 6px;
   }
 
   /* A select wears the same face as the boxes beside it: in this app it only ever appears as
@@ -52,6 +57,14 @@
      arrow is drawn back on as a background so it survives both themes. */
   select {
     appearance: none;
+    /* Like every box beside it. A select sizes itself to its longest option unless it is told
+       otherwise, which is how the alert editor ended up with a 41px Operator sitting in a 96px
+       slot and a 55px hole between it and the Value box next to it — the row was aligned and
+       still read as crooked, because the control was not filling the field it was in. A select in
+       this app is always standing where a value goes, and a value's box is the width of its
+       field. The one exception is the transport in front of the broker address, which is a prefix
+       rather than a field; panel.module.css says so there. */
+    width: 100%;
     font-family: var(--mono);
     font-size: var(--t-code);
     color: var(--ink);
@@ -65,14 +78,35 @@
     background-position: right 10px center, right 6px center;
     background-size: 4px 4px, 4px 4px;
     background-repeat: no-repeat;
+    /* Stated, not inherited. Form controls take their line-height from whatever the cascade hands
+       them, and a browser gives an `<input>` `normal` while letting a `<select>` take body's
+       1.55 — so a select and the box beside it came out four or five pixels apart in height, and
+       every Operator/Value pair in the alert editor sat on two different baselines. One number
+       for all three controls is what makes a row of them a row. */
+    line-height: 1.45;
   }
 
   select:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
-  input[type=text], input[type=number], input[type=password], textarea {
+  /* Written as an exclusion rather than as a list of the types we happen to use.
+   *
+   * `input[type=text]` matches an input carrying that attribute, and JSX does not add one: an
+   * `<input value=… />` is a text box to the browser and matches nothing to the stylesheet. There
+   * were seventeen of those in this console — sixteen of them in the alert rule editor — drawn as
+   * the platform's own 13px inset boxes, half the height of the selects beside them and not the
+   * app's face. That is what made that form look crooked, and no amount of row alignment could
+   * have fixed it, because the boxes themselves were the wrong shape.
+   *
+   * So: everything is one of these boxes unless it is a control the platform draws itself. A type
+   * added tomorrow — email, search, url — is styled without anyone having to remember this rule.
+   */
+  input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'],
+            [type='button'], [type='submit'], [type='reset'], [type='file']),
+  textarea {
     width: 100%;
     font-family: var(--mono);
     font-size: var(--t-code);
+    line-height: 1.45;
     color: var(--ink);
     background: var(--surface);
     border: 1px solid var(--rule);

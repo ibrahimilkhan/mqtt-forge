@@ -1,0 +1,102 @@
+/* ---- the broker's tree, offered inside a form ----
+
+   It stands under the field it fills in, in a box of its own. A box rather than the flat rule the
+   rest of this form is built from, and for once that is right: everything else on the page is a
+   control the reader is filling in, and this is a list they are picking out of. It is temporarily
+   in front of the form rather than part of it, and a border is the shortest way to say so. */
+.picker {
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+  background: var(--surface);
+  padding: 8px;
+  margin: 0 0 14px;
+}
+
+.head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+/* The search box takes the slack and the Close button keeps its own width. */
+.needle { flex: 1 1 auto; min-width: 0; }
+.head button { flex: none; padding: 7px 11px; }
+
+/* A window on the tree, not the tree itself: a broker with a thousand topics must not push the
+   Save button a thousand rows down the form. Two hundred and forty pixels is about ten rows,
+   which is enough to see the shape of a branch and scroll the rest. */
+.rows {
+  max-height: 240px;
+  overflow-y: auto;
+  font-family: var(--mono);
+  font-size: var(--t-code);
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  /* The same fixed step per level the workspace tree indents by, so the two read as one tree. */
+  padding-left: calc(var(--depth) * 14px);
+}
+
+/* The chevron, and the blank that stands in its place on a leaf so every row's name starts at
+   the same distance from its own indent. */
+.twisty {
+  all: unset;
+  flex: none;
+  width: 14px;
+  text-align: center;
+  color: var(--muted);
+  cursor: pointer;
+  transform: rotate(-90deg);
+  transition: transform 120ms ease;
+}
+.twisty[data-open='true'] { transform: none; }
+.twisty:hover { color: var(--ink); }
+.twisty:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+.pick {
+  all: unset;
+  display: flex;
+  align-items: baseline;
+  /* Tight, because the two spans inside a branch's button are one string — `boiler` and `/#` are
+     the name and its wildcard, not two facts. What needs air is the value beside them, and that
+     asks for it itself. */
+  gap: 2px;
+  min-width: 0;
+  padding: 2px 6px;
+  border-radius: var(--r-control);
+  cursor: pointer;
+  color: var(--ink);
+}
+.pick:hover { background: var(--paper); }
+.pick:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+.seg { font-weight: 600; white-space: nowrap; }
+
+/* The `/#` a branch hands back, drawn as the machinery it is rather than as part of the name. */
+.wildcard { color: var(--muted); }
+
+/* 'this topic only', on a branch that has also spoken for itself. Quieter than the branch beside
+   it: it is the narrower of the two offers and the rarer one to want. */
+.self { font-size: var(--t-small); }
+.self .seg { font-weight: 400; color: var(--muted); }
+
+/* What the topic last said, for telling two identically named leaves apart. Truncated hard: this
+   is a hint at a row's identity, not the message window. */
+.val {
+  margin-left: 6px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.capped {
+  margin: 8px 0 0;
+  font-family: var(--mono);
+  font-size: var(--t-small);
+  color: var(--muted);
+}

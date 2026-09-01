@@ -174,6 +174,18 @@ export const LogEntryRow = memo(function LogEntryRow({
           className={styles.body}
           data-testid="body"
           data-clipped={long && !whole ? '' : undefined}
+          /* The message's own colour, where the rule carries one. Most rules do not: painting the
+             topic is what tells a run of arrivals apart, and a wall of payloads in eight hues is
+             a log nobody can read. The rules that do are the ones watching one device among
+             forty, where the payload is the thing being read and the topic is furniture.
+
+             Only on an arrival, which today is all this pane holds — the store's per-topic run
+             drops everything else. Belt and braces, and cheap: a fault's body is drawn in the
+             fault colour, and a colour rule painting over that would turn 'this went wrong' into
+             'this is the plant topic'. */
+          style={
+            entry.kind === 'recv' && rule?.bodyColour ? { color: rule.bodyColour } : undefined
+          }
           // Twice, on the payload, opens it in a window. Counted rather than listened for with
           // onDoubleClick: the first click of the pair still reaches the row, and the row's own
           // guard above already declines anything inside the body — so the two gestures do not

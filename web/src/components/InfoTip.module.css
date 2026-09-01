@@ -1,0 +1,93 @@
+/* ---- the mark, and what it opens ---- */
+
+/* A glyph on its own, at the size of the type it stands beside. Not a button in the app's usual
+   sense — no plate, no border, no uppercase word — because it stands inside a heading and inside
+   a field label, and a filled block there would read as an action the form wants taken. It is an
+   offer, and an offer is drawn quietly. */
+.mark {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* The glyph draws at 1em; the box around it is what a finger and a pointer aim at. */
+  width: 1.45em;
+  height: 1.45em;
+  font-size: var(--t-small);
+  color: var(--muted);
+  border-radius: 50%;
+  cursor: pointer;
+  /* Against the letter-spacing of the uppercase headings these sit in, which would otherwise
+     push a gap between the mark and the edge of its own box. */
+  letter-spacing: normal;
+  flex: none;
+}
+
+.mark:hover { color: var(--ink); }
+
+/* Open is a state worth seeing from across the form: with three of these on one page, the one
+   that is answering a question should not look like the two that are not. */
+.mark[aria-expanded='true'] {
+  color: var(--signal);
+  background: color-mix(in srgb, var(--signal) 12%, transparent);
+}
+
+.mark:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
+/* What the mark opens. Set in from the left by a rule, in the app's own voice for 'this is about
+   the thing beside it' — the same two pixels of --rule that a nested condition and an empty state
+   are marked with, so a reader meets one idea in three places rather than three ideas. */
+.body {
+  border-left: 2px solid var(--signal);
+  padding: 2px 0 2px 12px;
+  margin: 0 0 14px;
+  font-size: var(--t-small);
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.body p { margin: 0 0 8px; }
+.body p:last-child { margin-bottom: 0; }
+.body code {
+  font-family: var(--mono);
+  font-size: var(--t-code);
+  color: var(--ink);
+}
+
+/* A sample document, printed as it would arrive. Pre-wrapped rather than scrolling: these are
+   six-line examples written to fit a column, and a reader who has to scroll sideways through an
+   explanation has been given a second puzzle. */
+.body pre {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  background: var(--paper);
+  border-radius: var(--r-control);
+  font-family: var(--mono);
+  font-size: var(--t-code);
+  line-height: 1.5;
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The correspondence: an expression, and what it reads. Two columns so the expressions line up
+   under one another and can be compared down the page, which is the thing being taught. */
+.example { margin: 0 0 8px; }
+.exampleRow {
+  display: flex;
+  gap: 10px;
+  padding: 2px 0;
+}
+.exampleRow dt {
+  flex: 0 0 9em;
+  font-family: var(--mono);
+  font-size: var(--t-code);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.exampleRow dd {
+  margin: 0;
+  min-width: 0;
+}

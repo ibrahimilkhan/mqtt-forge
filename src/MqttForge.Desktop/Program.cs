@@ -9,6 +9,10 @@ const string InstanceName = "mqttforge-desktop";
 // GUI launches don't guarantee cwd is the app dir; content root must be pinned to the executable
 Environment.CurrentDirectory = AppContext.BaseDirectory;
 
+// Read before anything is started, because this is the thread the window has to be opened on and
+// nothing below is allowed to drift off it. See WindowThread.
+var launchThread = Environment.CurrentManagedThreadId;
+
 // Surfaces the existing window instead of starting an indistinguishable rival host
 var instance = SingleInstance.TryAcquire(InstanceName);
 if (instance is null)
@@ -41,10 +45,13 @@ if (OperatingSystem.IsLinux())
     if (File.Exists(icon)) window.SetIconFile(icon);
 }
 
-var (app, outcome, port) = await DesktopBind.StartAsync(
+// Waited rather than awaited: the host's start-up really does suspend (AlertEngineHost reads the
+// rules and the alarms it left ringing), and an await would resume the rest of this file — the
+// window's Load and WaitForClose included — on a thread-pool thread, where the window deadlocks.
+var (app, outcome, port) = WindowThread.Wait(DesktopBind.StartAsync(
     args, settingsPath, 5169,
     picker: new WindowFolderPicker(window),
-    files: new WindowFilePicker(window));
+    files: new WindowFilePicker(window)));
 
 if (outcome == DesktopBind.Outcome.Unavailable)
 {
@@ -70,6 +77,10 @@ instance.ListenForSignals(() => window.Invoke(() =>
     window.SetTopMost(true);
     window.SetTopMost(false);
 }), shutdown.Token);
+
+// Everything above is synchronous on purpose; this says so out loud rather than hanging if some
+// later edit puts an await in front of the window.
+WindowThread.EnsureStillOn(launchThread);
 
 window.WaitForClose();
 await shutdown.CancelAsync();

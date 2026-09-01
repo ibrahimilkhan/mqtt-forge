@@ -1,12 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { clearAlertHistory, getAlertRules, muteAlert, putAlertRules } from '../../api/alerts';
+import { getAlertRules, putAlertRules } from '../../api/alerts';
 import { queryKeys } from '../../api/queryKeys';
 import { PanelShell } from '../../components/PanelShell';
-import { duration } from '../../lib/format';
+import { Plus } from '../brand/icons';
 import { useGuardedMutate } from '../../lib/useGuardedMutate';
-import { useNow } from '../../lib/useNow';
-import { mutedUntil, useAlertStore } from '../../stores/alertStore';
+import { useAlertStore } from '../../stores/alertStore';
 import { logFault, useLogStore } from '../../stores/logStore';
 import panel from '../../styles/panel.module.css';
 import type {
@@ -17,8 +16,10 @@ import type {
   RuleDiagnosticDto,
 } from '../../types/api';
 import styles from './AlertsPanel.module.css';
-import { openRuleEditor, removeRule, saveRule } from './ruleDraft';
-import { SoundButton } from './SoundButton';
+import { RuleEditor } from './RuleEditor';
+import { forgetDraft, readDraft, removeRule, sameDraft, saveRule, startRuleDraft } from './ruleDraft';
+import { firesOn } from './ruleSummary';
+import type { DraftRule } from './ruleDraft';
 
 /**
  * Which of three levels is the loudest, said as a number so it can be sorted on.
@@ -39,35 +40,16 @@ export function worst(alerts: readonly AlertDto[]): AlertSeverity | null {
   return found;
 }
 
-/**
- * How long a mute lasts unless the reader says otherwise.
- *
- * Fifteen minutes is long enough to finish looking at the thing that is actually wrong and short
- * enough that a mute nobody lifts puts itself right. A mute with no end is how an alarm system
- * stops being one.
- */
-const MUTES = [
-  { minutes: 15, said: '15 min' },
-  { minutes: 60, said: '1 hour' },
-  { minutes: 240, said: '4 hours' },
-];
-
-/** How often the 'up for' figures are worked out. Once a second: they are read, not watched. */
-const BEAT_MS = 1000;
-
 export function AlertsPanel({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
   const { data, isError } = useQuery({ queryKey: queryKeys.alertRules, queryFn: getAlertRules });
 
-  const active = useAlertStore((state) => state.active);
-  const history = useAlertStore((state) => state.history);
   const diagnostics = useAlertStore((state) => state.rules);
   const warming = useAlertStore((state) => state.warming);
   const dropped = useAlertStore((state) => state.dropped);
   const webhooksDropped = useAlertStore((state) => state.webhooksDropped);
   const suppressed = useAlertStore((state) => state.suppressed);
   const capped = useAlertStore((state) => state.capped);
-  const blindSeconds = useAlertStore((state) => state.blindSeconds);
   const load = useAlertStore((state) => state.load);
 
   /**
@@ -82,33 +64,6 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     void load();
   }, [load]);
-
-  // Only while something is standing: a beat that goes on ticking under an empty panel is a
-  // re-render a second for a figure nobody is looking at.
-  const now = useNow(active.length > 0 ? BEAT_MS : null);
-
-  const mute = useMutation({
-    // Three parameters rather than one object, because that is the shape `api/alerts.ts` has and
-    // a wrapper here is cheaper than a second spelling of the same call in the API layer.
-    mutationFn: ({ ruleId, topic, minutes }: { ruleId: string; topic: string; minutes: number }) =>
-      muteAlert(ruleId, topic, minutes),
-    // The snapshot is what says a pair is muted, so the console asks for it again rather than
-    // guessing at what the server did with the minutes it was given. The hub says the same thing
-    // a moment later and the two agree, because both go through the one snapshot.
-    onSuccess: () => void load(),
-    onError: (error) => logFault('Alert not muted', error),
-  });
-  // One mute at a time. A mute is one round trip and the guard is what stops a double click
-  // sending two — the second press is dropped rather than queued, which is what the reader who
-  // pressed it twice meant.
-  const guardedMute = useGuardedMutate(mute);
-
-  const forget = useMutation({
-    mutationFn: clearAlertHistory,
-    onSuccess: () => void load(),
-    onError: (error) => logFault('History not cleared', error),
-  });
-  const guardedForget = useGuardedMutate(forget);
 
   const write = useMutation({
     mutationFn: (rules: AlertRuleDto[]) => putAlertRules(rules, false),
@@ -133,6 +88,17 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
   const seen = new Map(diagnostics.map((one) => [one.ruleId, one]));
   const faulted = diagnostics.filter((one) => one.faulted);
 
+  // Whether the Engine group has a single line to draw. Worked out here rather than as five
+  // conditions inside the heading, because the heading is the thing that must not appear over an
+  // empty section — a section title with nothing under it is a reader looking for what is missing.
+  const engineHasSomethingToSay =
+    dropped > 0 ||
+    webhooksDropped > 0 ||
+    suppressed > 0 ||
+    capped.length > 0 ||
+    faulted.length > 0 ||
+    warming.length > 0;
+
   /**
    * The rule list as the cache holds it AT THE MOMENT OF THE CLICK.
    *
@@ -146,60 +112,145 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
       rules: [] as AlertRuleDto[],
     };
 
-  // One path makes a draft and opens the window on it, which is what makes 'prefilled once, at
-  // open' a fact about the code rather than a discipline this panel has to keep.
-  const edit = (rule?: AlertRuleDto) => openRuleEditor(rule);
+  /**
+   * The rule being written, and the draft as it stood when the editor opened.
+   *
+   * The editor used to be a window of its own, floating over the console. It is here now, in place
+   * of the list: writing a rule is the panel's whole job while it is happening, and a form that
+   * covers the list it came from cannot be lost behind the thing it is about.
+   *
+   * The opening copy is kept beside the id so that leaving can tell a draft somebody typed into
+   * from one they only looked at. Read once, at open — `readDraft` hands back the live object the
+   * editor mutates through `keepDraft`, so a reference held here would change under us and every
+   * draft would look untouched.
+   */
+  const [editing, setEditing] = useState<{ draftId: string; opened: DraftRule } | null>(null);
 
-  // Loudest first, and within a level the newest — which is the order the reader would put them
-  // in themselves if they had to choose what to look at next.
-  const standing = [...active].sort(
-    (one, other) =>
-      RANK[one.severity] - RANK[other.severity] ||
-      Date.parse(other.firedAt) - Date.parse(one.firedAt),
-  );
+  /** Whether the reader is being asked to confirm they meant to leave. */
+  const [leaving, setLeaving] = useState(false);
+
+  // One path makes a draft and shows the editor on it, which is what makes 'prefilled once, at
+  // open' a fact about the code rather than a discipline this panel has to keep.
+  const edit = (rule?: AlertRuleDto) => {
+    const draftId = startRuleDraft(rule);
+
+    setEditing({ draftId, opened: structuredClone(readDraft(draftId)!) });
+    setLeaving(false);
+  };
+
+  /** Back to the list, and the draft goes with it: leaving is abandoning. */
+  const leave = () => {
+    if (editing) forgetDraft(editing.draftId);
+    setEditing(null);
+    setLeaving(false);
+  };
+
+  /**
+   * Back, or the confirmation first.
+   *
+   * A draft nobody has typed into is nothing to lose, so leaving one is silent. A draft that has
+   * been filled in is minutes of somebody's work, and this is the only thing standing between it
+   * and a mis-aimed click on Back.
+   */
+  const back = () => {
+    if (editing && !sameDraft(readDraft(editing.draftId) ?? editing.opened, editing.opened)) {
+      setLeaving(true);
+
+      return;
+    }
+
+    leave();
+  };
+
+  // Escape is the console's one rule about Escape — it shuts the thing in front of you — and the
+  // editor is what is in front. Through `back`, so it cannot throw work away either.
+  useEffect(() => {
+    if (editing === null) return;
+
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') back();
+    };
+
+    window.addEventListener('keydown', onKey);
+
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
+  // The editor takes the panel while it is open. The list is not merely hidden behind it: a rule
+  // being written is what the panel is for until it is saved or given up, and half a list showing
+  // under a form is an invitation to click something that will be gone in a moment.
+  if (editing !== null) {
+    return (
+      <PanelShell title="Alerts" onClose={onClose}>
+        {/* Back is inside the editor now, on the row Save is on: it is the other answer to the
+            question that row asks, not a way of navigating away from the panel. What is left here
+            is the question it can raise, and that has to be BELOW the editor — it is about a
+            press the reader has just made on the form's last row, and an answer that appeared
+            above the first column would be an answer somewhere else on the screen. */}
+        <RuleEditor draftId={editing.draftId} onDone={leave} onBack={back} />
+
+        {/* Not a browser confirm(): that is a dialog from somewhere else, wearing somebody else's
+            type, and it stops the console dead while it is up. This is a line in the panel with
+            the two answers beside it, and the form stays on screen above — which is the thing the
+            reader is being asked about. */}
+        {leaving && (
+          <div className={panel.fault} role="alertdialog" aria-label="Leave without saving?">
+            <p>This rule has been filled in and not saved. Leave it?</p>
+            {/* Side by side, and NOT with `panel.trailing` on the second: that holds a form's
+                acting button against the right-hand end of a row, which is right for a row whose
+                other end is the form. This row is one question, and the panel is now as wide as
+                the workspace — its two answers thrown to opposite edges of 1400px would be two
+                buttons that do not look like they are about the same thing. */}
+            <div className={panel.actions}>
+              <button type="button" className="ghost" onClick={() => setLeaving(false)}>
+                Keep writing
+              </button>
+              <button type="button" onClick={leave}>
+                Discard it
+              </button>
+            </div>
+          </div>
+        )}
+      </PanelShell>
+    );
+  }
 
   return (
     <PanelShell title="Alerts" onClose={onClose}>
-      <h3 className={styles.title}>Alerting now</h3>
+      {/* 'Alerting now' stood here, above the rules: every standing alarm, how long it had been
+          up, and the control that muted the pair it was about. The panel is what is being watched
+          FOR now, and nothing about what is wrong — those are two different questions, and this
+          one is the only place the first is answered.
 
-      {standing.length === 0 && (
-        <p className="empty">Nothing is alarming. A rule that fires shows up here and in the corner.</p>
-      )}
+          What is alarming is the count on the rail. Muting went out with the row it was performed
+          on, because that row was the only way to reach it; the mute endpoint, the store's muted
+          list and the hub's alertMuted are all untouched and all still tested. */}
 
-      {standing.map((alert) => (
-        <AlertRow
-          key={alert.id}
-          alert={alert}
-          now={now}
-          onMute={(minutes) =>
-            guardedMute({ ruleId: alert.ruleId, topic: alert.topic, minutes })
-          }
-        />
-      ))}
+      {/* 'Lately' stood here: every alarm that had gone out, with what put it out, and a button to
+          clear the lot. It answered a question nobody opens this panel with — the two that bring a
+          reader here are 'what is wrong now' and 'what am I watching for', and a growing list of
+          things that are no longer wrong sat between the two of them. The store still holds the
+          history, and the server still keeps it; the panel simply does not draw it. */}
 
-      {history.length > 0 && (
-        <>
-          <h3 className={styles.title}>Lately</h3>
-          {history.map((alert) => (
-            <div key={alert.id} className={styles.past} data-testid="alert-past">
-              <span className={styles.topic}>{alert.topic}</span>
-              <span className={styles.rule}>{alert.ruleName}</span>
-              <span className={styles.reason}>
-                {alert.resolvedBy
-                  ? `out at ${clock(alert.resolvedAt)} — ${alert.resolvedBy}`
-                  : `out at ${clock(alert.resolvedAt)}`}
-              </span>
-            </div>
-          ))}
-          <div className={panel.actions}>
-            <button type="button" className="ghost" onClick={() => guardedForget()}>
-              Clear history
-            </button>
-          </div>
-        </>
-      )}
+      {/* The heading and the one thing you can do to the list, on one line.
+ 
+          'New rule' used to stand under the table in a row of its own, which is where a form's
+          Save goes — the end of a thing being filled in. This list is not being filled in. The
+          button makes a new one, and the place a reader looks for 'make one more of these' is the
+          end of the line the section is named on. On an empty panel it also stops being a control
+          stranded under a sentence about there being nothing here. */}
+      <div className={panel.sectionTop}>
+        <h3 className={panel.sectionTitle}>Rules</h3>
 
-      <h3 className={styles.title}>Rules</h3>
+        <button
+          type="button"
+          className={`ghost ${panel.iconButton}`}
+          onClick={() => edit()}
+        >
+          <Plus />
+          New rule
+        </button>
+      </div>
 
       {isError && (
         <p className={panel.fault}>
@@ -209,212 +260,178 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
       )}
 
       {!isError && rules.length === 0 && (
-        <p className="empty">No alert rules yet. Add one and say what should be watched for.</p>
+        // Not the app's usual `.empty`, which is a line ruled off at the left and belongs beside
+        // something — a pane that has not filled in yet, a tree with no broker. This one has the
+        // whole workspace to itself, and a sentence pinned to the left edge of a 1400px panel
+        // reads as a caption on nothing. Centred, it is the panel saying what it is for.
+        <div className={panel.nothingYet}>
+          {/* The sentence is a child of the centring box rather than being it. A flex container
+              makes each of its inline children an item and drops the whitespace-only text nodes
+              between them, so 'Press New rule and' came out with the spaces around the bold words
+              closed up. One item, laid out as text inside it. */}
+          <p>No alert rules yet. Press <b>New rule</b> and say what should be watched for.</p>
+        </div>
       )}
 
-      {rules.map((rule) => {
-        // A rule the server holds always has an id; the null is for a rule being written, which
-        // never reaches this list.
-        const diagnostic = rule.id === null ? undefined : seen.get(rule.id);
-
-        return (
-          <div key={rule.id} className={styles.ruleBlock} data-testid="alert-rule">
-            <div className={styles.ruleRow}>
-              <input
-                type="checkbox"
-                checked={rule.enabled}
-                aria-label={`Turn ${rule.name} ${rule.enabled ? 'off' : 'on'}`}
-                onChange={() =>
-                  guardedWrite(
-                    saveRule(held().rules, { ...rule, enabled: !rule.enabled }),
-                  )
-                }
-              />
-              <span className={styles.ruleName} data-severity={rule.severity}>
-                {rule.name}
-              </span>
-              <button
-                type="button"
-                className={styles.quiet}
-                aria-label={`Edit ${rule.name}`}
-                onClick={() => edit(rule)}
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                className={styles.remove}
-                aria-label={`Remove ${rule.name}`}
-                onClick={() => guardedWrite(removeRule(held().rules, rule.id ?? ''))}
-              >
-                ×
-              </button>
-            </div>
-            <span className={styles.filter}>{rule.filter}</span>
-            {/* What the rule can actually see, which is the answer to 'why has this never
-                fired'. Without it the only way to tell a rule that is watching nothing from one
-                that is watching everything and finding nothing wrong is to go and look at the
-                broker. */}
-            <span className={styles.seen}>{diagnostic ? sighting(diagnostic) : 'not yet running'}</span>
+      {/* The header exists for the four columns that were not on screen at all before it: a
+          reader who has never seen this table needs to be told that the mono line in the middle
+          is what fires the rule and the chips beside it are what it does about it. */}
+      {!isError && rules.length > 0 && (
+        <div className={styles.rules}>
+          <div className={`${styles.rulesHead} ${panel.rulesHead}`} aria-hidden="true">
+            <span>#</span>
+            <span>On</span>
+            <span>Rule</span>
+            <span>Level</span>
+            <span>Fires on</span>
+            <span>Does</span>
+            <span>Seeing</span>
+            <span />
           </div>
-        );
-      })}
 
-      <div className={panel.actions}>
-        <button type="button" className="ghost" onClick={() => edit()}>
-          New rule
-        </button>
-      </div>
+          {rules.map((rule, at) => {
+            // A rule the server holds always has an id; the null is for a rule being written,
+            // which never reaches this list.
+            const diagnostic = rule.id === null ? undefined : seen.get(rule.id);
 
-      {warming.length > 0 && (
-        <>
-          <h3 className={styles.title}>Filling up</h3>
+            return (
+              <div
+                key={rule.id}
+                className={styles.ruleRow}
+                data-testid="alert-rule"
+                data-severity={rule.severity}
+                data-off={rule.enabled ? undefined : ''}
+              >
+                {/* Its place in the list, so a rule can be pointed at in a sentence somebody says
+                    out loud. The order is the file's — the order they were written in — and not
+                    the name's: a list that reorders itself when a rule is renamed is a list whose
+                    numbers mean nothing twice running. */}
+                <span className={panel.ruleNumber} data-testid="rule-number">
+                  {at + 1}
+                </span>
+
+                <input
+                  type="checkbox"
+                  checked={rule.enabled}
+                  aria-label={`Turn ${rule.name} ${rule.enabled ? 'off' : 'on'}`}
+                  onChange={() =>
+                    guardedWrite(saveRule(held().rules, { ...rule, enabled: !rule.enabled }))
+                  }
+                />
+
+                <span className={styles.cellRule}>
+                  <span className={styles.ruleName}>{rule.name}</span>
+                  <span className={styles.filter}>{rule.filter}</span>
+                </span>
+
+                <span className={styles.level} data-severity={rule.severity}>
+                  {rule.severity}
+                </span>
+
+                <span className={styles.fires}>{firesOn(rule)}</span>
+
+                {/* The same chips an alarm wears when it fires, so the row and the alarm it
+                    produces are plainly about the same channels. */}
+                <span className={styles.marks}>
+                  {rule.actions.map((action) => (
+                    <span key={action.type} className={styles.mark}>
+                      {action.type}
+                    </span>
+                  ))}
+                </span>
+
+                {/* What the rule can actually see, which is the answer to 'why has this never
+                    fired'. Without it the only way to tell a rule that is watching nothing from
+                    one that is watching everything and finding nothing wrong is to go and look at
+                    the broker. */}
+                <span className={styles.seen}>
+                  {diagnostic ? sighting(diagnostic) : 'not yet running'}
+                </span>
+
+                <span className={styles.rowActions}>
+                  <button
+                    type="button"
+                    className={styles.quiet}
+                    aria-label={`Edit ${rule.name}`}
+                    onClick={() => edit(rule)}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.remove}
+                    aria-label={`Remove ${rule.name}`}
+                    onClick={() => guardedWrite(removeRule(held().rules, rule.id ?? ''))}
+                  >
+                    ×
+                  </button>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ---- what the engine is doing ----
+
+          Five kinds of line used to stand loose at the foot of the panel: three reds, a note, and
+          a 'Filling up' heading with its own list under it. Loose, they read as five unrelated
+          complaints; together they are one answer to one question, which is whether the engine is
+          keeping up with what it was asked to do.
+
+          Every line is silent until it has something to say. A row reading 'dropped 0' on a
+          console that has never dropped anything is reassurance nobody asked for, and it teaches
+          the eye to skip the place the bad news will appear. */}
+      {engineHasSomethingToSay && (
+        <section className={styles.engine} aria-label="What the engine is doing">
+          <h3 className={panel.sectionTitle}>Engine</h3>
+
+          {dropped > 0 && (
+            <p className={styles.engineRow} data-severity="critical" data-testid="engine-row">
+              {`${dropped} messages went past unjudged — the engine was behind.`}
+            </p>
+          )}
+          {webhooksDropped > 0 && (
+            <p className={styles.engineRow} data-severity="critical" data-testid="engine-row">
+              {`${webhooksDropped} webhook calls were dropped — more were owed than could be sent.`}
+            </p>
+          )}
+          {/* A list, not a count: the engine names each rule that hit its ceiling and says how
+              many topics it stopped tracking. The topics are the part a reader can act on — a
+              ceiling reached is a rule whose filter is wider than anybody meant it to be. */}
+          {capped.length > 0 && (
+            <p className={styles.engineRow} data-severity="critical" data-testid="engine-row">
+              {`${capped.length} rule${capped.length === 1 ? '' : 's'} reached a ceiling and ` +
+                `stopped counting — ${capped.reduce((sum, one) => sum + one.untracked, 0)} topics untracked.`}
+            </p>
+          )}
+          {faulted.map((one) => (
+            <p
+              key={one.ruleId}
+              className={styles.engineRow}
+              data-severity="critical"
+              data-testid="engine-row"
+            >
+              {`${nameOf(rules, one.ruleId)} has faulted: ${one.faultReason ?? 'no reason given'}.`}
+            </p>
+          ))}
+          {suppressed > 0 && (
+            <p className={styles.engineRow} data-testid="engine-row">
+              {`${suppressed} firings were swallowed by a cooldown or a mute.`}
+            </p>
+          )}
+          {/* Filling up had a heading of its own. It is the same question — is the engine ready to
+              judge anything — and a pair still counting toward its window is the most ordinary
+              reason a rule has never fired. */}
           {warming.map((pair) => (
-            <p key={`${pair.ruleId}/${pair.topic}`} className={panel.note}>
+            <p key={`${pair.ruleId}/${pair.topic}`} className={styles.engineRow} data-testid="engine-row">
               {`${pair.topic} · ${pair.have} of ${pair.need} readings · ${pair.note}`}
             </p>
           ))}
-        </>
+        </section>
       )}
 
-      {/* Every one of these is silent until its number moves. A row reading 'dropped 0' on every
-          console that has never dropped anything is reassurance nobody asked for, and it teaches
-          the eye to skip the place where the bad news will appear. */}
-      {dropped > 0 && (
-        <p className={panel.fault} data-testid="engine-row">
-          {`${dropped} messages went past unjudged — the engine was behind.`}
-        </p>
-      )}
-      {webhooksDropped > 0 && (
-        <p className={panel.fault} data-testid="engine-row">
-          {`${webhooksDropped} webhook calls were dropped — more were owed than could be sent.`}
-        </p>
-      )}
-      {suppressed > 0 && (
-        <p className={panel.note} data-testid="engine-row">
-          {`${suppressed} firings were swallowed by a cooldown or a mute.`}
-        </p>
-      )}
-      {/* A list, not a count: the engine names each rule that hit its ceiling and says how many
-          topics it stopped tracking. The topics are the part a reader can act on — a ceiling
-          reached is a rule whose filter is wider than anybody meant it to be. */}
-      {capped.length > 0 && (
-        <p className={panel.fault} data-testid="engine-row">
-          {`${capped.length} rule${capped.length === 1 ? '' : 's'} reached a ceiling and stopped ` +
-            `counting — ${capped.reduce((sum, one) => sum + one.untracked, 0)} topics untracked.`}
-        </p>
-      )}
-      {blindSeconds > 0 && (
-        <p className={panel.fault} data-testid="engine-row">
-          {`Blind: nothing has been judged for ${duration(blindSeconds * 1000)}.`}
-        </p>
-      )}
-      {faulted.map((one) => (
-        <p key={one.ruleId} className={panel.fault} data-testid="engine-row">
-          {`${nameOf(rules, one.ruleId)} has faulted: ${one.faultReason ?? 'no reason given'}.`}
-        </p>
-      ))}
-
-      {/* Task 7's button, on the panel it was drawn for. The preference, the audio context and
-          the three things the button can say all live in that task; what is decided here is only
-          that alerting's one sound control stands with alerting's other controls, at the foot of
-          the panel, rather than among the type sizes in Settings. */}
-      <div className={panel.actions}>
-        <SoundButton />
-      </div>
     </PanelShell>
-  );
-}
-
-/** One alarm that is on now. */
-function AlertRow({
-  alert,
-  now,
-  onMute,
-}: {
-  alert: AlertDto;
-  now: number;
-  onMute: (minutes: number) => void;
-}) {
-  const [minutes, setMinutes] = useState(MUTES[0].minutes);
-  // The pair list, not the alert's own stamp. The two say the same thing while the alert is the
-  // one the mute was set on — but a mute outlives its alarm, so an alarm that cleared and rang
-  // again carries no stamp while the pair is still quiet. The hub's alertMuted writes the pair;
-  // only a fresh snapshot rewrites the stamp, and the row must not wait for one.
-  const held = useAlertStore((state) => mutedUntil(state, alert.ruleId, alert.topic, now));
-  const muted = held !== undefined;
-
-  return (
-    <div className={styles.alert} data-testid="alert-row" data-muted={muted ? '' : undefined}>
-      <div className={styles.alertHead}>
-        {/* The level in words as well as in colour. A reader who cannot tell this red from this
-            amber is exactly the reader who most needs to know which one it is. */}
-        <span className={styles.level} data-severity={alert.severity}>
-          {alert.severity}
-        </span>
-        <span className={styles.topic}>{alert.topic}</span>
-      </div>
-
-      <span className={styles.rule}>{alert.ruleName}</span>
-      <span className={styles.reason}>{alert.reason}</span>
-      <span className={styles.since}>{`up ${duration(Math.max(0, now - Date.parse(alert.firedAt)))}`}</span>
-
-      {/* What was done about it, and what could not be. A channel that failed says so where the
-          alarm is, not only in the log: an alarm nobody was told about is the failure this whole
-          feature exists to avoid. The server writes a failure as 'webhook: 404' and a delivery
-          as the bare channel name, so the colon is what tells them apart. */}
-      {alert.actions.length > 0 && (
-        <div className={styles.marks}>
-          {alert.actions.map((mark, index) => (
-            <span
-              key={`${mark}-${index}`}
-              className={styles.mark}
-              data-failed={mark.includes(':') ? '' : undefined}
-            >
-              {mark}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {muted ? (
-        <div className={styles.muteRow}>
-          <span className={styles.reason}>{`muted until ${clock(held)}`}</span>
-          <button
-            type="button"
-            className={styles.quiet}
-            aria-label={`Lift the mute on ${alert.topic}`}
-            // Nought lifts it, which is the API's own way of saying so.
-            onClick={() => onMute(0)}
-          >
-            Lift
-          </button>
-        </div>
-      ) : (
-        <div className={styles.muteRow}>
-          <select
-            className={styles.minutes}
-            value={minutes}
-            aria-label={`How long to mute ${alert.topic}`}
-            onChange={(event) => setMinutes(Number(event.target.value))}
-          >
-            {MUTES.map((choice) => (
-              <option key={choice.minutes} value={choice.minutes}>
-                {choice.said}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            className={styles.quiet}
-            aria-label={`Mute alerts on ${alert.topic}`}
-            onClick={() => onMute(minutes)}
-          >
-            Mute
-          </button>
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -444,7 +461,7 @@ const nameOf = (rules: readonly AlertRuleDto[], id: string) =>
   rules.find((rule) => rule.id === id)?.name ?? id;
 
 /** A clock time, hours and minutes. Nobody reads seconds off a line about the last hour. */
-const clock = (at: string | null) =>
+export const clock = (at: string | null) =>
   at === null
     ? '—'
     : new Date(at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });

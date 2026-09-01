@@ -349,3 +349,73 @@ export const Corner = () => (
     </>
   </Glyph>
 );
+
+/**
+ * Look for one.
+ *
+ * The glass every search box has worn since there were search boxes, and it is here for the one
+ * gesture nobody has to be taught: press it and you are shown what there is to choose from. It
+ * stands beside the topic filter, where what there is to choose from is the broker's own tree.
+ *
+ * Drawn short in the handle. At thirteen pixels a long tail reads as a stroke that missed the
+ * circle, and the circle is the half that says 'glass'.
+ */
+export const Search = () => (
+  <Glyph>
+    <>
+      <circle cx="10.5" cy="10.5" r="6" />
+      <path d="M15 15l4.5 4.5" />
+    </>
+  </Glyph>
+);
+
+/**
+ * A document, to take a path out of.
+ *
+ * Two braces round a dot: what a JSON body looks like from far enough away, which is exactly the
+ * distance a mark on a button is read from. Not Lucide's `braces` — that one is drawn as two
+ * bare curly brackets, and without something between them a reader sees parentheses.
+ */
+export const Braces = () => (
+  <Glyph>
+    <>
+      <path d="M9 4.5H8A2.5 2.5 0 0 0 5.5 7v3L4 12l1.5 2v3A2.5 2.5 0 0 0 8 19.5h1" />
+      <path d="M15 4.5h1A2.5 2.5 0 0 1 18.5 7v3L20 12l-1.5 2v3a2.5 2.5 0 0 1-2.5 2.5h-1" />
+      <path d="M12 12h.01" />
+    </>
+  </Glyph>
+);
+
+/**
+ * What this is, said on request.
+ *
+ * The one mark in here drawn with a fill rather than as an outline: an `i` at thirteen pixels is
+ * a stem and a dot, and stroked at 1.8 the dot closes up into the stem. Filled, the two stay two
+ * things. The ring around it stays a stroke, so the glyph still reads as the same weight of line
+ * as everything beside it.
+ */
+export const Info = () => (
+  <Glyph>
+    <>
+      <circle cx="12" cy="12" r="8.4" />
+      <path d="M12 11v5.4" />
+      <path d="M12 7.8h.01" strokeWidth="2.6" />
+    </>
+  </Glyph>
+);
+
+/**
+ * One more of whatever the list holds.
+ *
+ * Two strokes, and nothing else it could be. It goes in front of the word rather than instead of
+ * it — 'New rule' says what will be made and the mark says the gesture — which is the same
+ * arrangement `Download` uses beside 'csv', for the same reason.
+ */
+export const Plus = () => (
+  <Glyph>
+    <>
+      <path d="M12 5.5v13" />
+      <path d="M5.5 12h13" />
+    </>
+  </Glyph>
+);

@@ -8,7 +8,6 @@ import type {
   PulseMetric,
   ThresholdOp,
 } from '../../types/api';
-import { useWindows } from '../monitor/useWindows';
 
 /**
  * A rule while it is being written.
@@ -115,19 +114,60 @@ export const SIMPLE_TYPES = CONDITION_TYPES.filter(
   (type) => type !== 'all' && type !== 'any',
 ) as ReadonlyArray<Exclude<ConditionType, 'all' | 'any'>>;
 
-/** The words the picker shows. The wire's own names are camelCase and two of them are jargon. */
+/**
+ * The word the picker shows, and the sentence under it.
+ *
+ * These were one thing and it was the sentence: 'Unlike the readings before it', 'The kind of
+ * signal has changed', 'Outside or inside a range'. Each of them said the whole truth, and eleven
+ * of them stacked in a dropdown was a paragraph a reader had to read end to end to choose from —
+ * and then read again in the closed select, where it is the only thing left saying which of the
+ * eleven the rule is. Three of those in an 'all' is three lines of prose where three names belong.
+ *
+ * So it is two things now. The name is what a reader picks and what they see afterwards, and it
+ * is one word wherever one word is honest — mostly the plant's own word, which is what somebody
+ * writing an alarm rule already calls these. The sentence stands under the select, where it can
+ * be as long as it needs to be without being read eleven times over.
+ *
+ * The wire's own names stay camelCase and two of them are jargon; neither of these is that.
+ */
 export const CONDITION_LABELS: Record<ConditionType, string> = {
-  threshold: 'Past a number',
-  band: 'Outside or inside a range',
-  pattern: 'Matches a pattern',
-  oneOf: 'One of a list',
-  silence: 'Nothing has arrived',
-  outlier: 'Unlike the readings before it',
-  distributionShift: 'The distribution has changed',
-  shapeChange: 'The kind of signal has changed',
-  pulse: 'A number about the rhythm',
-  all: 'All of these',
-  any: 'Any of these',
+  threshold: 'Threshold',
+  band: 'Range',
+  pattern: 'Pattern',
+  oneOf: 'List',
+  silence: 'Silence',
+  outlier: 'Outlier',
+  // Not 'Distribution shift', which is the wire's word and two of them: what a reader watching a
+  // process call this is drift.
+  distributionShift: 'Drift',
+  shapeChange: 'Shape',
+  pulse: 'Pulse',
+  all: 'All',
+  any: 'Any',
+};
+
+/**
+ * What each one actually does, in one line, under the select that chose it.
+ *
+ * Every one of them opens with 'Fires', because that is the question being answered — a reader
+ * comparing two conditions is comparing when each of them goes off, and a list where the sentences
+ * start differently is a list they have to parse before they can compare.
+ *
+ * `opaque` has none and needs none: a condition this form cannot draw already says so, at length,
+ * where it is drawn.
+ */
+export const CONDITION_SUMMARIES: Record<ConditionType, string> = {
+  threshold: 'Fires while the reading is on the wrong side of a number.',
+  band: 'Fires when the reading leaves a range — or while it stays inside one.',
+  pattern: 'Fires when the text matches an expression you write.',
+  oneOf: 'Fires when the text is one of a list you write out.',
+  silence: 'Fires when a topic that used to speak stops.',
+  outlier: 'Fires on a reading that does not belong with the ones before it.',
+  distributionShift: 'Fires when the readings settle into a different distribution.',
+  shapeChange: 'Fires when a quantity becomes a switch, or a switch becomes a pulse train.',
+  pulse: 'Fires on the rhythm of the excursions rather than on one reading.',
+  all: 'Fires when every condition below is true.',
+  any: 'Fires when any one of the conditions below is true.',
 };
 
 /**
@@ -167,6 +207,37 @@ export function blankCondition(type: ConditionType): DraftCondition {
     case 'any':
       return { type, of: [] };
   }
+}
+
+/**
+ * The condition somebody has just asked for, keeping whatever the old one still means.
+ *
+ * `all` and `any` differ in one word — every, or one of — and hold exactly the same thing: a list
+ * of conditions. So the picker throwing that list away on the way between them was throwing away
+ * work over a change that was not about the work: somebody writes three children under 'all',
+ * reads it back, decides they meant 'any', and the three children are gone. A first choice being
+ * wrong and corrected afterwards is the ordinary way a rule gets written, and it is exactly the
+ * case a form must not punish.
+ *
+ * Nothing else is carried, and that is deliberate rather than unfinished. The other types hold
+ * fields that merely look alike: a threshold's `value` and a pulse's `value` are both a number
+ * beside an operator, and they are a temperature and a count of excursions. A 90 that travelled
+ * quietly from one to the other would be a rule the reader watched not change on screen — which
+ * is the same reasoning that makes `k` go back to its method's own default in the outlier form,
+ * and the reason a wrong path or a wrong filter is the worst kind of mistake this editor can let
+ * through: it does not fail, it just never fires.
+ *
+ * A list carried between all and any is not that. It is the same list, saying the same thing,
+ * joined differently — and the joiner is the one thing the reader has just said out loud.
+ */
+export function retypeCondition(current: DraftCondition, next: ConditionType): DraftCondition {
+  const blank = blankCondition(next);
+
+  if ((blank.type === 'all' || blank.type === 'any') && (current.type === 'all' || current.type === 'any')) {
+    return { ...blank, of: current.of };
+  }
+
+  return blank;
 }
 
 /**
@@ -470,23 +541,36 @@ export const forgetDraft = (draftId: string): void => {
 };
 
 /**
- * Open the editor on a rule, or on a new one.
+ * Make or find the draft for a rule, and hand back its id.
  *
  * The prefill happens here and only here, on the one path that makes a draft — which is what makes
  * 'once, at open' a fact about the code rather than a discipline the editor has to keep.
+ *
+ * It used to open a window as well, and was called openRuleEditor for it. The editor is drawn in
+ * the alerts panel now, in place of the rule list, so where it appears is the panel's business and
+ * this is left with the one job nobody else can do.
  */
-export function openRuleEditor(rule?: AlertRuleDto): void {
+export function startRuleDraft(rule?: AlertRuleDto): string {
   const draftId = draftIdOf(rule);
 
   if (!drafts.has(draftId)) {
     drafts.set(draftId, draftOf(rule, useSelectionStore.getState().selected?.topic));
   }
 
-  const draft = drafts.get(draftId)!;
-  const label = draft.id ? draft.name.trim() || 'This alert rule' : 'New alert rule';
-
-  useWindows.getState().open({ kind: 'rule', draftId }, label);
+  return draftId;
 }
+
+/**
+ * Whether two drafts say the same thing.
+ *
+ * Serialised rather than walked field by field: a draft is a plain tree of strings, numbers,
+ * booleans and arrays of the same, every one of them built by `draftOf` and changed only by
+ * spreading over it — so the key order is the shape's own and two drafts that read alike
+ * serialise alike. A comparison written out by hand would be a second copy of DraftRule's shape,
+ * and the field somebody forgot to add to it is exactly the field they were editing.
+ */
+export const sameDraft = (one: DraftRule, other: DraftRule): boolean =>
+  JSON.stringify(one) === JSON.stringify(other);
 
 /**
  * Where a rule is being saved to, which is two things only the server knows.

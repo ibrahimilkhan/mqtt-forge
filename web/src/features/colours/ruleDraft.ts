@@ -7,7 +7,14 @@ import { nextColour } from './palette';
  * `saved` is what separates a rule someone settled on from one still being decided: an unsaved
  * row goes on following the topic picked in the tree, a saved one is left where it is.
  */
-export type DraftRule = { id: number; filter: string; colour: string; saved: boolean };
+export type DraftRule = {
+  id: number;
+  filter: string;
+  colour: string;
+  /** The message's own colour, or null for the console's ink — which is what most rules want. */
+  bodyColour: string | null;
+  saved: boolean;
+};
 
 /** What the API accepts. Held here too so the answer arrives before the round trip, as a sentence. */
 export const MAX_RULES = 100;
@@ -31,7 +38,13 @@ export function draftFrom(rules: readonly ColourRule[]): DraftRule[] {
       ? rule.colour.toLowerCase()
       : nextColour(usable.map((row) => row.colour));
 
-    usable.push({ id: nextId++, filter: rule.filter, colour, saved: true });
+    // The second colour is not replaced when it is unusable, it is dropped. A topic has to be
+    // drawn in something, so a rule with a broken first colour is repaired into a visible one;
+    // a message has somewhere to fall back to, and 'the console's ink' is a real answer rather
+    // than a stand-in. Repairing it would invent a colour nobody chose.
+    const bodyColour = isColour(rule.bodyColour) ? rule.bodyColour.toLowerCase() : null;
+
+    usable.push({ id: nextId++, filter: rule.filter, colour, bodyColour, saved: true });
   }
 
   return usable;
@@ -41,6 +54,9 @@ export const newDraftRule = (colour: string): DraftRule => ({
   id: nextId++,
   filter: '',
   colour,
+  // A new rule paints the topic only. Two colours on arrival would be the panel deciding that
+  // every rule wants its payloads repainted too, which is the rarer of the two wishes.
+  bodyColour: null,
   saved: false,
 });
 

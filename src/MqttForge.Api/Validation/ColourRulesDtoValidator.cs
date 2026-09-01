@@ -35,6 +35,13 @@ public sealed partial class ColourRulesDtoValidator : AbstractValidator<ColourRu
             rule.RuleFor(x => x.Colour)
                 .Must(colour => colour is not null && HexTriple.IsMatch(colour))
                 .WithMessage("'{PropertyValue}' is not a #rrggbb colour.");
+
+            // The second colour is allowed to be absent — that is a rule which paints the topic
+            // and leaves the payload alone — but a value that is present is held to exactly the
+            // same standard, because it reaches the same style attribute.
+            rule.RuleFor(x => x.BodyColour)
+                .Must(colour => colour is null || HexTriple.IsMatch(colour))
+                .WithMessage("'{PropertyValue}' is not a #rrggbb colour.");
         });
     }
 }

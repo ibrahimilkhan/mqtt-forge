@@ -13,17 +13,31 @@ type Props = {
   /** Column one. Absent when no panel is open, and its width is shared out between the other two. */
   panel?: ReactNode;
   /**
-   * Whether the open panel takes the whole workspace instead of a column of it.
+   * Whether the open panel takes the whole workspace instead of a column of it, and what it does
+   * with the width when it does.
    *
-   * For the broker panel, which is read in one sitting and answered in one sitting: nothing in
-   * the tree or the log means anything until the connection it describes is up. The other panels
-   * are read against what is on screen — a filter against the tree it will narrow, a colour rule
-   * against the branch it will paint — so they stay in their column.
+   * Absent for the panels that are read against what is on screen — a filter against the tree it
+   * will narrow, a plot against the run it will draw. Those stay in their column.
    *
-   * The other panes stay mounted underneath. A tree unmounted is a tree rebuilt from nothing the
-   * next time the panel shuts, and the log would lose its history with it.
+   * `full` for the broker panel, which is read in one sitting and answered in one sitting:
+   * nothing in the tree or the log means anything until the connection it describes is up. Its
+   * fields stop growing at a reading measure, because a form does not get better at 1400px.
+   *
+   * `fill` for the two panels that hold a list of rules — alerts and colours. They take the
+   * workspace for the opposite reason: each row is a topic filter and a line about what the rule
+   * is doing, and a table of those held to a reading measure in the middle of a wide window is a
+   * table wrapping in a column with empty space either side of it.
+   *
+   * Colours was in the first group until the list became a table. It was there because a colour
+   * rule is read against the branch it will paint, and giving that up is a real cost — so it is
+   * paid back inside the panel instead: every row carries the glass that opens the same tree, the
+   * one the alert editor wears. What a reader loses is the tree being on screen at the same time;
+   * what they get is a page that says which of their rules is painting nothing.
+   *
+   * The other panes stay mounted underneath either way. A tree unmounted is a tree rebuilt from
+   * nothing the next time the panel shuts, and the log would lose its history with it.
    */
-  wide?: boolean;
+  wide?: 'full' | 'fill';
   tree: ReactNode;
   log: ReactNode;
   /**
@@ -88,7 +102,7 @@ const clamp = (value: number, low: number, high: number) => Math.min(high, Math.
  */
 const CEILING = 1 - 2 * MIN_SHARE;
 
-export function Workspace({ panel, wide = false, tree, log, logCount, chart, publish }: Props) {
+export function Workspace({ panel, wide, tree, log, logCount, chart, publish }: Props) {
   // Held as the row looks with a panel open, so closing and reopening one puts it back as it was.
   const [widths, setWidths] = useState<Widths>(START);
 
@@ -392,7 +406,7 @@ export function Workspace({ panel, wide = false, tree, log, logCount, chart, pub
     <div
       className={styles.grid}
       data-testid="layout"
-      data-panel={panel ? (wide ? 'full' : 'open') : 'closed'}
+      data-panel={panel ? (wide ?? 'open') : 'closed'}
       style={tracks}
     >
       {panel && (

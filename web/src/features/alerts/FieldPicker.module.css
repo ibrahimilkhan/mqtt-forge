@@ -1,0 +1,113 @@
+/* ---- a message, and the paths in it ----
+
+   Drawn as the topic picker is drawn, and deliberately: they are the same gesture on the two
+   fields that stand next to each other, and two boxes that behave alike should not look unlike. */
+.picker {
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+  background: var(--surface);
+  padding: 8px;
+  margin: 0 0 14px;
+}
+
+.head {
+  display: flex;
+  gap: 8px;
+  align-items: end;
+  margin-bottom: 8px;
+}
+
+/* 'From' over the topic list. The label sits above its select like every other label in the
+   form rather than beside it, so the row's baseline is the one the rest of the page uses. */
+.source {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.source select { width: 100%; }
+.head > button { flex: none; padding: 7px 11px; }
+
+.paste { margin-bottom: 8px; }
+
+/* The loaded body, laid out. Capped and scrolling: a gateway frame runs to eighty lines, and a
+   picker that pushed the list of paths off the bottom of the panel would have shown the reader
+   the document instead of letting them use it. */
+.body {
+  max-height: 140px;
+  overflow: auto;
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  background: var(--paper);
+  border-radius: var(--r-control);
+  font-family: var(--mono);
+  font-size: var(--t-code);
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.rows {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.pick {
+  all: unset;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 3px 6px;
+  /* The nesting of the document, kept: `$.pump.state` under `$.pump` reads as a document rather
+     than as a list of strings that happen to share a prefix. */
+  padding-left: calc(var(--depth) * 12px + 6px);
+  border-radius: var(--r-control);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: var(--t-code);
+  color: var(--ink);
+}
+.pick:hover { background: var(--paper); }
+.pick:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+.path {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* What kind of value it is, which is what decides which conditions can be written about it: a
+   number takes a threshold or a band, text takes a pattern or a list. Said in a word rather than
+   left for the reader to infer from the sample, because a `"21.5"` published as a string is
+   exactly the case where inferring goes wrong. */
+.kind {
+  flex: none;
+  font-size: var(--t-nano);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: var(--r-control);
+  border: 1px solid var(--rule);
+  color: var(--muted);
+}
+.kind[data-kind='number'] { color: var(--live); border-color: color-mix(in srgb, var(--live) 45%, var(--rule)); }
+.kind[data-kind='text'] { color: var(--signal); border-color: color-mix(in srgb, var(--signal) 45%, var(--rule)); }
+
+.val {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.hint {
+  margin: 8px 0 0;
+  font-size: var(--t-small);
+  color: var(--muted);
+}
+.hint:first-child { margin-top: 0; }
+.hint code {
+  font-family: var(--mono);
+  font-size: var(--t-code);
+  color: var(--ink);
+}

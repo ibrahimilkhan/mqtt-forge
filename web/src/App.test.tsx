@@ -29,7 +29,7 @@ const share = (name: string) =>
 
 // The app opens on the broker panel, which takes the whole workspace — so the columns it covers
 // are not on screen while it is up. Anything about those columns swaps it for a panel that lives
-// in one, which is every other panel there is.
+// in one, which is every panel except the broker's and the alerts'.
 const intoColumns = () => userEvent.click(menu().getByRole('button', { name: 'Filters' }));
 
 describe('App', () => {
@@ -49,6 +49,32 @@ describe('App', () => {
     expect(
       screen.queryByRole('separator', { name: 'Panel and topics boundary' }),
     ).not.toBeInTheDocument();
+  });
+
+  // The second panel to cover them, and for a different reason than the broker's. The broker's is
+  // a form, and a form does not get better at 1400px — it takes the workspace and keeps its
+  // fields at a reading measure. This is a list of standing alarms and the rules under them, and
+  // a list read down a quarter-width column is a list of wrapped lines: it takes the width too.
+  it('gives the alerts panel the columns to its right, and the width with them', async () => {
+    renderApp();
+    await menu().findByRole('button', { name: 'Broker' });
+
+    await userEvent.click(menu().getByRole('button', { name: 'Alerts' }));
+
+    expect(screen.getByTestId('layout')).toHaveAttribute('data-panel', 'fill');
+    expect(
+      screen.queryByRole('separator', { name: 'Panel and topics boundary' }),
+    ).not.toBeInTheDocument();
+  });
+
+  // The alarm wall is built and tested and off the console for now — see AlertWall.test.tsx. It
+  // is the rail's badge and this panel that carry a standing alarm while it is away.
+  it('keeps the alarm column off the console', async () => {
+    renderApp();
+
+    await menu().findByRole('button', { name: 'Broker' });
+
+    expect(screen.queryByTestId('alert-wall')).not.toBeInTheDocument();
   });
 
   it('gives the columns back to any other panel', async () => {

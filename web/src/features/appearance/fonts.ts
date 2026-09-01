@@ -25,7 +25,10 @@ export const MONO = {
 export type SansId = keyof typeof SANS;
 export type MonoId = keyof typeof MONO;
 
-export const SIZE = { min: 12, max: 20, step: 1, default: 15 } as const;
+// 13px, and 10 to 16 either side of it. The console is a wall of readings rather than a page of
+// prose: the size that suits it is a notch under a document's, and the range stops where a topic
+// filter starts wrapping at one end and where the log stops fitting a payload at the other.
+export const SIZE = { min: 10, max: 16, step: 1, default: 13 } as const;
 
 // Fonts only. What the appearance store holds is these plus the chart's detail, composed there:
 // this file is read by a guard test that runs under Node, where an import of anything else in
