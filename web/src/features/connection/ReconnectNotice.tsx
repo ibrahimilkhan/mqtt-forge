@@ -1,0 +1,233 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+import { reconnectNow, setReconnectEnabled, stopReconnecting } from '../../api/connection';
+import { queryKeys } from '../../api/queryKeys';
+import { useConnectionState } from '../../api/useConnectionState';
+import { useReconnectStatus } from '../../api/useReconnectStatus';
+import { logFault } from '../../stores/logStore';
+import { useLinkWatchStore } from '../../stores/linkWatchStore';
+import styles from './ReconnectNotice.module.css';
+import { describeFailureReason } from './connectFailure';
+import { arrived, secondsUntil, type ReconnectView } from './reconnectView';
+
+/**
+ * What happened to the link, and what is being done about it.
+ *
+ * The five things this block exists for, and they are one feature: reconnect is an option rather
+ * than a policy the app decided by itself; while it is trying it says so; while it is trying it
+ * can be stopped; a link that drops because of a fault brings the reader here; and a link that
+ * comes back does not close the panel out from under them — it says what broke and that it is
+ * back.
+ *
+ * It has four faces and never more than one at a time:
+ *
+ * - **working** — an outage the supervisor is climbing its ladder for, counting down to the next
+ *   rung, with Try now and Stop.
+ * - **stopped** — an outage nobody is working on, because the reader stopped it or because the
+ *   option is off. One button: Reconnect.
+ * - **back** — it dropped and it is back. What broke it, how long it was gone, and a way to put
+ *   the notice away.
+ * - **quiet** — a live link and nothing to report, which is the panel opened on purpose. Only the
+ *   switch, so the standing answer can be set while nothing is wrong.
+ */
+export function ReconnectNotice() {
+  const { state, failure } = useConnectionState();
+  const { status } = useReconnectStatus();
+  const watch = useLinkWatchStore();
+  const queryClient = useQueryClient();
+
+  // Every one of the three writes answers with the status it produced, so the cache is written
+  // from the answer rather than invalidated and re-fetched. The hub sends the same payload a beat
+  // later and they agree; a refetch would put a round trip between the click and the screen.
+  const write = (status: ReconnectView) => queryClient.setQueryData(queryKeys.reconnect, status);
+
+  const tryNow = useMutation({
+    mutationFn: reconnectNow,
+    onSuccess: (result) => write(arrived(result)),
+    onError: (error) => logFault('Reconnect failed', error),
+  });
+
+  const stop = useMutation({
+    mutationFn: stopReconnecting,
+    onSuccess: (result) => write(arrived(result)),
+    onError: (error) => logFault('Could not stop reconnecting', error),
+  });
+
+  const option = useMutation({
+    mutationFn: setReconnectEnabled,
+    onSuccess: (result) => write(arrived(result)),
+    onError: (error) => logFault('Could not change auto-reconnect', error),
+  });
+
+  /**
+   * A link that went down, as opposed to one that never came up.
+   *
+   * Both halves are needed. The watch is what makes it a *drop* — a Connect the reader pressed
+   * and that failed is not one, and this block has nothing to say about it: the form that made
+   * the attempt is right there with its own sentence under it. And the live state is what makes
+   * it *now*, so a watch still holding an outage the reader has not dismissed does not put a
+   * "the link is down" block over a link that is up.
+   */
+  const down = state === 'Faulted' && watch.droppedAt !== null;
+  const back = watch.recoveredAt !== null;
+  const busy = tryNow.isPending || stop.isPending;
+
+  // Which face. Order matters: a recovery outranks an outage, because by the time there is one to
+  // report the outage is over — and a link that is up outranks both, except that 'back' IS a link
+  // that is up and is the whole point of the notice.
+  const face: Face | null = back
+    ? 'back'
+    : down && status.active
+      ? 'working'
+      : down
+        ? 'stopped'
+        : state === 'Connected'
+          ? 'quiet'
+          : null;
+
+  // Nothing to say. A console that has never connected, or one mid-attempt with no history, gets
+  // no block at all rather than an empty one.
+  if (face === null) return null;
+
+  // The failure is read from the watch rather than from the connection state, and that is the
+  // whole reason the watch exists: the API sends no failure once the link is up, so a recovery
+  // notice reading the live state would have nothing to say about what broke.
+  const broke = watch.failure ?? failure ?? undefined;
+  const why = broke ? describeFailureReason(broke.reason, broke) : undefined;
+  const where = broke ? `${broke.host}:${broke.port}` : undefined;
+
+  return (
+    <section className={styles.notice} data-state={face} aria-live="polite">
+      {face === 'working' && (
+        <>
+          <div className={styles.head}>
+            <h3 className={styles.title}>Reconnecting</h3>
+            <Countdown status={status} />
+          </div>
+          <p className={styles.detail}>
+            {where ? `The link to ${where} dropped.` : 'The link dropped.'}{' '}
+            {status.attempt > 0
+              ? `${status.attempt} ${status.attempt === 1 ? 'try has' : 'tries have'} failed so far.`
+              : 'Trying again shortly.'}
+          </p>
+          {why && <p className={styles.was}>{why}</p>}
+          <div className={styles.actions}>
+            <button type="button" onClick={() => tryNow.mutate()} disabled={busy}>
+              Try now
+            </button>
+            {/* Stops this outage, not the option. The switch below is the standing answer, and
+                keeping them apart is what lets 'stop, I am looking at it' mean that and nothing
+                more — the next connection that works puts the supervisor back to work. */}
+            <button type="button" className="ghost" onClick={() => stop.mutate()} disabled={busy}>
+              Stop trying
+            </button>
+          </div>
+        </>
+      )}
+
+      {face === 'stopped' && (
+        <>
+          <div className={styles.head}>
+            <h3 className={styles.title}>Not reconnecting</h3>
+          </div>
+          <p className={styles.detail}>
+            {where ? `The link to ${where} is down.` : 'The link is down.'}{' '}
+            {status.enabled
+              ? 'Reconnecting was stopped, so nothing is being tried.'
+              : 'Auto-reconnect is off, so nothing is being tried.'}
+          </p>
+          {why && <p className={styles.was}>{why}</p>}
+          <div className={styles.actions}>
+            <button type="button" onClick={() => tryNow.mutate()} disabled={busy}>
+              Reconnect
+            </button>
+          </div>
+        </>
+      )}
+
+      {face === 'back' && (
+        <>
+          <div className={styles.head}>
+            <h3 className={styles.title}>Reconnected</h3>
+            <span className={styles.counter}>{away(watch.droppedAt, watch.recoveredAt)}</span>
+          </div>
+          <p className={styles.detail}>
+            {where ? `The link to ${where} came back.` : 'The link came back.'}
+          </p>
+          {/* What broke it, still on screen. A notice saying only that a link dropped and came
+              back leaves the reader with the question they opened the panel with. */}
+          {why && <p className={styles.was}>It had dropped: {why}</p>}
+          <div className={styles.actions}>
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => useLinkWatchStore.getState().dismiss()}
+            >
+              Dismiss
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* On every face, including the quiet one. It is the answer to "why did it do that", and the
+          place a reader goes looking for it is the block that just did it. */}
+      <label className={styles.option}>
+        <input
+          type="checkbox"
+          checked={status.enabled}
+          disabled={option.isPending}
+          onChange={(e) => option.mutate(e.target.checked)}
+        />
+        <span>Reconnect automatically when the link drops</span>
+      </label>
+    </section>
+  );
+}
+
+type Face = 'working' | 'stopped' | 'back' | 'quiet';
+
+/**
+ * Seconds to the next rung, ticking.
+ *
+ * Its own component so that the second that changes re-renders one span rather than the whole
+ * block — and, more to the point, so the interval is only alive while there is something to count.
+ */
+function Countdown({ status }: { status: ReconnectView }) {
+  const { dueAt } = status;
+  const [, tick] = useState(0);
+
+  useEffect(() => {
+    if (dueAt === null) return;
+
+    // Twice a second, not once. On a one-second timer the displayed figure can be a whole second
+    // stale, which on the bottom rung of the ladder is the whole countdown.
+    const timer = setInterval(() => tick((n) => n + 1), 500);
+
+    return () => clearInterval(timer);
+  }, [dueAt]);
+
+  // No deadline is a real state — the attempt is running right now — and the honest thing to say
+  // about a dial in flight is that it is in flight, not 'in 0s'.
+  if (dueAt === null) return <span className={styles.counter}>trying…</span>;
+
+  const left = secondsUntil(dueAt);
+
+  return (
+    <span className={styles.counter}>
+      {left === 0 ? 'trying…' : `next try in ${left}s`}
+    </span>
+  );
+}
+
+/** How long it was gone, in the roundest words that are still true. */
+function away(droppedAt: number | null, recoveredAt: number | null): string {
+  if (droppedAt === null || recoveredAt === null) return '';
+
+  const seconds = Math.max(0, Math.round((recoveredAt - droppedAt) / 1000));
+  if (seconds < 60) return `gone for ${seconds}s`;
+
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `gone for ${minutes}m`;
+
+  return `gone for ${Math.round(minutes / 60)}h`;
+}

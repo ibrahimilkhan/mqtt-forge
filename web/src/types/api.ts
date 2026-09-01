@@ -41,6 +41,40 @@ export type BrokerLink = {
   protocolVersion: Exclude<MqttProtocolLevel, 'auto'>;
 };
 
+/**
+ * What the supervisor is doing about the link, which is not what the link is doing.
+ *
+ * `state` answers "is there a link"; this answers "is anyone working on getting one back". They
+ * have to be two things: through a reconnect the link's own state flickers Faulted → Connecting →
+ * Faulted once a rung, which is the truth about the socket and useless as something to show
+ * somebody — it says nothing about how many rungs have gone or when the next one is.
+ */
+export type ReconnectStatus = {
+  /** The option. Off means the supervisor does nothing at all, whatever the link does. */
+  enabled: boolean;
+  /** Whether an outage is being worked on right now. Distinct from `enabled`, and both matter. */
+  active: boolean;
+  /** Attempts spent on this outage. Zero while the first wait is still running. */
+  attempt: number;
+  /**
+   * When the next attempt is due, as an absolute instant.
+   *
+   * Not a number of seconds: a count is stale the moment it is serialised, and the console runs
+   * its own countdown anyway — which it can only do against a fixed point.
+   */
+  nextAttemptAt: string | null;
+  /** This outage was called off by hand. The option is still on. */
+  gaveUp: boolean;
+  /**
+   * The instant on the server's clock that this status was true at.
+   *
+   * `nextAttemptAt` is on that same clock, so their difference is a duration — which is a thing
+   * the browser can add to its own clock. Without it, a console on a machine two minutes fast
+   * would draw the skew between the two as time remaining.
+   */
+  now: string;
+};
+
 export type ConnectionStateResponse = {
   state: ConnectionState;
   failure?: BrokerFailure | null;
@@ -138,12 +172,12 @@ export type MqttMessage = {
 /**
  * How loud an alarm is.
  *
- * Three levels rather than five, because the console picks a tone and a notice behaviour from
- * this, and a level nobody can tell from its neighbour by ear or by eye only makes the editor
- * longer. Ordered: the panel sorts active alarms by it, critical last.
+ * Three levels rather than five, because the console picks a tone and a place on the alarm wall
+ * from this, and a level nobody can tell from its neighbour by ear or by eye only makes the
+ * editor longer. Ordered: the panel sorts active alarms by it, critical last.
  *
  * Exported as a name of its own rather than left inline on the two records that hold it, because
- * the notices, the rail badge and the sound all switch on it and a union spelled out in four
+ * the wall, the rail badge and the sound all switch on it and a union spelled out in four
  * places is a union that grows a fourth level in three of them.
  */
 export type AlertSeverity = 'info' | 'warn' | 'critical';

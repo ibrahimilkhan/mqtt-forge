@@ -1,10 +1,11 @@
-import { Fragment, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import styles from './App.module.css';
 import { AppearancePanel } from './features/appearance/AppearancePanel';
 import { Mark, Wordmark } from './features/brand/marks';
 import { ChartPanel } from './features/chart/ChartPanel';
 import { ColoursPanel } from './features/colours/ColoursPanel';
 import { BrokerPanel } from './features/connection/BrokerPanel';
+import { useLinkWatch } from './features/connection/useLinkWatch';
 import { MobilePanel } from './features/mobile/MobilePanel';
 import { useBrokerAddress, useConnectionState } from './api/useConnectionState';
 import { Windows } from './features/monitor/Windows';
@@ -25,10 +26,10 @@ import type { Hub } from './realtime/hub';
 import { useHubBridge } from './realtime/useHubBridge';
 import { useHubStatusStore } from './stores/hubStatusStore';
 import { AlertsPanel, worst } from './features/alerts/AlertsPanel';
-import { AlertNotices } from './features/alerts/AlertNotices';
 import { SoundPrompt } from './features/alerts/SoundButton';
 import { useSoundStore } from './features/alerts/alertSound';
 import { useAlertStore } from './stores/alertStore';
+import { useLinkWatchStore } from './stores/linkWatchStore';
 
 /** The width the workspace stops being columns at, and the rail starts lying over it. */
 const NARROW = '(max-width: 760px)';
@@ -64,6 +65,10 @@ const PANEL_VIEWS: Record<PanelId, (props: PanelProps) => ReactNode> = {
 export function App({ hub }: { hub: Hub }) {
   useHubBridge(hub);
   useProseSelection();
+  // Mounted here rather than in the Broker panel, and that is the point: the panel is shut
+  // most of the time, and a drop that happened while it was shut is exactly the drop the
+  // reader most needs told about.
+  useLinkWatch();
 
   // Connecting comes first; reopen from the menu once closed.
   const [openPanel, setOpenPanel] = useState<PanelId | null>('broker');
@@ -88,6 +93,22 @@ export function App({ hub }: { hub: Hub }) {
   const hubStatus = useHubStatusStore((s) => s.status);
   const zoomed = useZoomStore((s) => s.zoomed);
   const zoomBox = useZoomStore((s) => s.box);
+
+  /**
+   * A link that broke brings the reader to the panel that can explain it.
+   *
+   * Only a link that was up and then faulted, which is what the watch sets this on — never a
+   * failed Connect the reader pressed themselves. That is not a disconnection, the panel is
+   * already open and in front of them, and reopening it would be the app arguing with somebody
+   * who is already there.
+   *
+   * Closing the panel by hand clears the flag (see BrokerPanel), so this cannot reopen a panel
+   * the reader has deliberately shut.
+   */
+  const openedByFault = useLinkWatchStore((watch) => watch.openedByFault);
+  useEffect(() => {
+    if (openedByFault) setOpenPanel('broker');
+  }, [openedByFault]);
 
   const close = () => setOpenPanel(null);
 
@@ -165,12 +186,12 @@ export function App({ hub }: { hub: Hub }) {
                 : undefined;
             const extra = linkSaid ?? alertSaid;
             const said = extra ? `${panel.label}, ${extra}` : undefined;
-            // The broker it is pointed at, or — on the Alerts row — the one thing about
-            // alerting a reader can put right from outside the panel.
+            // The broker it is pointed at, or — on the Settings row, which is where the switch
+            // is — the one thing about alerting a reader can put right without opening anything.
             const hint =
               panel.id === 'broker' && where
                 ? `${panel.label} · ${where}`
-                : panel.id === 'alerts' && soundWanted && !soundArmed
+                : panel.id === 'settings' && soundWanted && !soundArmed
                   ? 'Sound is not ready — click to turn it on'
                   : menuOpen
                     ? undefined
@@ -245,8 +266,14 @@ export function App({ hub }: { hub: Hub }) {
 
       <Workspace
         panel={Panel ? <Panel onClose={close} open={setOpenPanel} /> : undefined}
-        // The broker panel only. See Workspace's own note on why it is the one.
-        wide={openPanel === 'broker'}
+        // Three of the seven, for two different reasons. See Workspace's own note on both.
+        wide={
+          openPanel === 'broker'
+            ? 'full'
+            : openPanel === 'alerts' || openPanel === 'colours'
+              ? 'fill'
+              : undefined
+        }
         tree={
           <section className={styles.treePane}>
             {/* The live link, so every topic hangs off the broker it actually came from. */}
@@ -289,6 +316,11 @@ export function App({ hub }: { hub: Hub }) {
         publish={<PublishPanel />}
       />
 
+      {/* AlertWall stood here: a third plate in the row, after the rail and the workspace, holding
+          every standing alarm down the inline-end edge. It is off the console for now, and the
+          alerts panel took the job by taking the whole workspace instead — the component and its
+          tests are kept because 'for now' is what was asked for. */}
+
       {/* Over everything, and outside the workspace: a chart window is placed against the
           viewport, and every ancestor inside the workspace is a grid track with a share of a
           height. */}
@@ -298,16 +330,10 @@ export function App({ hub }: { hub: Hub }) {
       {/* Outside the workspace and under it: the workspace is a grid with a share of the height,
           and this is a line the reader has asked for rather than part of the tool. */}
       {health && <HealthStrip />}
-      {/* Outside the workspace and under it: the workspace is a grid with a share of the height,
-          and this is a line the reader has asked for rather than part of the tool. */}
-      {health && <HealthStrip />}
 
-      {/* Over the whole console, and outside `.body` on purpose: the rail lies over the
-          workspace at 300 on a narrow screen and a thrown-open chart draws a scrim at 200. A
-          notice that could be covered by either is a notice that did not happen. */}
-      <AlertNotices open={setOpenPanel} />
-      {/* Beside the notices rather than inside the stack: it explains why a notice made no
-          sound, so it must not be one of the three the stack is willing to show. */}
+      {/* In the corner the alarm wall no longer uses, and outside `.body`: it explains why an
+          alarm made no sound, which is a thing about the console rather than a thing on the
+          wall. */}
       <SoundPrompt />
     </>
   );

@@ -1,0 +1,107 @@
+/* The block a reader lands on when a link drops out from under them.
+
+   It sits at the TOP of the broker panel, above the form, which is the one place in this panel a
+   block of facts belongs in front of the fields. The rest of the panel is read top to bottom as a
+   form, and a paragraph before the first field is normally a paragraph in the reader's way — but
+   this one is why the panel is open at all. They did not ask for it; a fault did.
+
+   Set apart by a left rule and its own ground rather than by a box. Three boxes down a narrow
+   column read as a form, which is the argument the alerts panel settled the same way. */
+
+.notice {
+  padding: 10px 12px 12px;
+  margin-bottom: 18px;
+  border-left: 2px solid var(--rule);
+  background: var(--paper);
+  border-radius: var(--r-control);
+}
+
+/* The three states this block has, in the order of how much they want the eye. An outage being
+   worked on is amber rather than red: something is wrong AND something is being done about it,
+   which is not the same alarm as a link that is simply down. */
+.notice[data-state='working'] { border-left-color: var(--warn); }
+.notice[data-state='stopped'] { border-left-color: var(--fault); }
+.notice[data-state='back'] { border-left-color: var(--live); }
+
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.title {
+  font-size: var(--t-small);
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+
+/* The counter, in the mono face the rest of this console counts in. It is the one part of the
+   block that changes every second, and giving it a fixed-width face stops the line it sits on
+   from reflowing as 9s becomes 10s. */
+.counter {
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+
+.detail {
+  margin: 0;
+  font-size: var(--t-small);
+  line-height: 1.45;
+  color: var(--muted);
+  max-width: 52ch;
+}
+
+/* What broke the link, kept on screen after it comes back. Quieter than the headline above it,
+   because by then it is history rather than news — but still there, because 'it dropped and came
+   back' with no reason given is a sentence that leaves the reader with the same question. */
+.was {
+  margin: 6px 0 0;
+  font-size: var(--t-micro);
+  color: var(--muted);
+  max-width: 52ch;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+/* The standing answer, set apart from the buttons above it by a rule rather than by space: those
+   are about this outage and this one is about every outage, and a reader scanning for the button
+   that stops the thing happening now should not find the switch first. */
+.option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--rule);
+  font-size: var(--t-micro);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.option input { accent-color: var(--signal); }
+.option span { user-select: none; }
+
+/* Sits alone when there is no outage to report — a live link, the panel opened on purpose. No
+   rule above it then, because there is nothing above it to be set apart from. */
+.notice[data-state='quiet'] {
+  background: none;
+  border-left-color: var(--rule);
+  padding: 0 0 0 12px;
+}
+
+.notice[data-state='quiet'] .option {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}

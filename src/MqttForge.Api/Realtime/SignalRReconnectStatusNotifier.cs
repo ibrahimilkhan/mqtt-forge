@@ -16,6 +16,6 @@ public sealed class SignalRReconnectStatusNotifier : IReconnectStatusNotifier
 
     public SignalRReconnectStatusNotifier(IHubContext<MqttHub> hub) => _hub = hub;
 
-    public Task NotifyReconnectStatusChangedAsync(ReconnectStatus status) =>
-        _hub.Clients.All.SendAsync(ReconnectStatusChanged, ReconnectStatusDto.Of(status));
+    public Task NotifyReconnectStatusChangedAsync(ReconnectStatus status, DateTimeOffset now) =>
+        _hub.Clients.All.SendAsync(ReconnectStatusChanged, ReconnectStatusDto.Of(status, now));
 }

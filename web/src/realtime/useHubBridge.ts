@@ -12,6 +12,7 @@ import type { MqttMessage } from '../types/api';
 import { decodeIncoming } from './decodeIncoming';
 import type { Hub } from './hub';
 import { soundFor } from '../features/alerts/alertSound';
+import { arrived } from '../features/connection/reconnectView';
 
 /**
  * How many messages one frame may take in.
@@ -107,6 +108,11 @@ export function useHubBridge(hub: Hub) {
         usePauseStore.getState().track(buffer.waiting());
       },
       connectionStateChanged: (payload) => queryClient.setQueryData(queryKeys.connection, payload),
+      // Its own key, written the same way. The supervisor sends this only when something about it
+      // actually moved, so there is nothing to throttle here: a whole outage is a handful of
+      // payloads, and the countdown the panel draws runs off the instant in the last one.
+      reconnectStatusChanged: (status) =>
+        queryClient.setQueryData(queryKeys.reconnect, arrived(status)),
       // The one loss the console cannot see for itself: these never arrived, so nothing on this
       // side could have counted them. The server has always kept the figure; until now nothing
       // asked for it, and a console quietly short of topics looked exactly like a quiet broker.

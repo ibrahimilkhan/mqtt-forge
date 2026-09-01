@@ -24,7 +24,7 @@ public sealed class ReconnectController : ControllerBase
     // arrangement the connection state has. Neither is enough on its own: the push covers a
     // console that was watching, and this covers one that has just been opened.
     [HttpGet]
-    public IActionResult GetStatus() => Ok(ReconnectStatusDto.Of(_supervisor.Status));
+    public IActionResult GetStatus() => Ok(ReconnectStatusDto.Of(_supervisor.Status, _supervisor.Now));
 
     /// <summary>Turns supervision on or off, and remembers the answer.</summary>
     [HttpPut]
@@ -38,7 +38,7 @@ public sealed class ReconnectController : ControllerBase
 
         await _supervisor.SetEnabledAsync(enabled, ct);
 
-        return Ok(ReconnectStatusDto.Of(_supervisor.Status));
+        return Ok(ReconnectStatusDto.Of(_supervisor.Status, _supervisor.Now));
     }
 
     /// <summary>Dials now, whatever the ladder was waiting for.</summary>
@@ -50,7 +50,7 @@ public sealed class ReconnectController : ControllerBase
     {
         await _supervisor.RetryNowAsync(ct);
 
-        return Ok(ReconnectStatusDto.Of(_supervisor.Status));
+        return Ok(ReconnectStatusDto.Of(_supervisor.Status, _supervisor.Now));
     }
 
     /// <summary>Calls off the outage being worked on, and the attempt in flight with it.</summary>
@@ -61,6 +61,6 @@ public sealed class ReconnectController : ControllerBase
     {
         await _supervisor.CancelAsync();
 
-        return Ok(ReconnectStatusDto.Of(_supervisor.Status));
+        return Ok(ReconnectStatusDto.Of(_supervisor.Status, _supervisor.Now));
     }
 }

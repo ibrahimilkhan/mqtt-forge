@@ -16,10 +16,12 @@ import styles from '../../styles/panel.module.css';
 import { useConnectionState } from '../../api/useConnectionState';
 import { ApiError, fieldError } from '../../lib/problemDetails';
 import { logFault } from '../../stores/logStore';
+import { useLinkWatchStore } from '../../stores/linkWatchStore';
 import { useGuardedMutate } from '../../lib/useGuardedMutate';
 import type { CertificateFileKind } from '../../api/connection';
 import { describeConnectFailure, describeFailureReason, suggestScheme } from './connectFailure';
 import { ConnectionSummary } from './ConnectionSummary';
+import { ReconnectNotice } from './ReconnectNotice';
 import { SavedBrokers } from './SavedBrokers';
 import { useCertificateFile } from './useCertificateFile';
 import { useConnectionActions } from './useConnectionActions';
@@ -269,17 +271,44 @@ export function BrokerPanel({
     closer.current = onClose;
   });
 
+  /**
+   * Whether this panel is one the reader opened, or one a fault opened for them.
+   *
+   * The difference decides the close above. A panel the reader asked for has done its job when
+   * the link comes up and steps aside, which is right for a form they have just finished with. A
+   * panel a fault opened is not that: they never asked for it, so closing it "back" the moment
+   * the supervisor succeeds would take the answer away at the exact moment it arrived — the link
+   * went, and came back, and the reader would be left with no sign that either happened.
+   *
+   * So a fault-opened panel stays, and what it shows instead is ReconnectNotice's 'back' face:
+   * what broke the link, how long it was gone, and that it is up again.
+   */
+  const openedByFault = useLinkWatchStore((watch) => watch.openedByFault);
+
+  /**
+   * The sentence the notice at the top is already saying, if it is saying one.
+   *
+   * Both blocks read the same failure through the same describer, so on a dropped link they print
+   * the same words — once at the top, where the reader was thrown, and once at the foot under the
+   * form. Two copies of one sentence is not emphasis; it reads as two different things having
+   * gone wrong. The top one wins, because it is the one with the buttons that answer it.
+   */
+  const outage = useLinkWatchStore((watch) => watch.droppedAt !== null);
+  const dropped = useLinkWatchStore((watch) => watch.failure);
+  const saidAbove =
+    outage && dropped ? describeFailureReason(dropped.reason, dropped) : undefined;
+
   useEffect(() => {
     // Not while the attempt is still running. The connect is not over when the broker says yes:
     // the subscription this console asks for on connect goes out inside the same mutation, and
     // the answer to it is the difference between a link worth stepping aside for and a link that
     // is listening to nothing. Waiting here is what makes everythingRefused knowable in time.
-    if (!settling || attemptRunning || everythingRefused) return;
+    if (!settling || attemptRunning || everythingRefused || openedByFault) return;
 
     const held = setTimeout(() => closer.current(), SETTLE);
 
     return () => clearTimeout(held);
-  }, [settling, attemptRunning, everythingRefused]);
+  }, [settling, attemptRunning, everythingRefused, openedByFault]);
 
   // Arrives after first render; neither password is ever returned by the API.
   useEffect(() => {
@@ -294,6 +323,18 @@ export function BrokerPanel({
   //
   // Once, on the way in. `answered` is what makes that possible to say: before the API answers,
   // isOnline is a guess, and focusing on a guess means focusing and then taking it away.
+  /**
+   * Closing by hand ends the hold a fault had on this panel.
+   *
+   * Without it, a reader who read the notice and shut the panel would find it reopening itself
+   * at the next thing that touched the link — the hold is what suppresses the auto-close, and a
+   * hold nobody ever released would outlast the outage it was about.
+   */
+  const releaseThenClose = () => {
+    useLinkWatchStore.getState().released();
+    onClose();
+  };
+
   const focused = useRef(false);
   useEffect(() => {
     if (!answered || focused.current) return;
@@ -401,7 +442,12 @@ export function BrokerPanel({
   };
 
   return (
-    <PanelShell title="Broker" onClose={onClose}>
+    <PanelShell title="Broker" onClose={releaseThenClose}>
+      {/* Above the form, which is the one block in this panel that belongs in front of the fields:
+          the rest is read top to bottom as a form and a paragraph before the first field is a
+          paragraph in the way — but this is why the panel is open at all. A fault opened it. */}
+      <ReconnectNotice />
+
       {/* One column, in the order the questions arrive: where to point it, who it says it is
           when it gets there, and how the channel is secured.
 
@@ -856,7 +902,7 @@ export function BrokerPanel({
           />        </div>
       )}
 
-      {failure && (
+      {failure && failure !== saidAbove && (
         <p className={styles.fault} role="alert">
           {failure}
         </p>
