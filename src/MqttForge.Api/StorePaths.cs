@@ -1,6 +1,6 @@
 namespace MqttForge.Api;
 
-/// <summary>Where the app keeps the five things it remembers between runs.</summary>
+/// <summary>Where the app keeps the six things it remembers between runs.</summary>
 public static class StorePaths
 {
     public const string ColourRulesFileName = "colour-rules.json";
@@ -8,6 +8,7 @@ public static class StorePaths
     public const string SavedProfilesFileName = "saved-brokers.json";
     public const string AlertRulesFileName = "alert-rules.json";
     public const string AlertStateFileName = "alert-state.json";
+    public const string ReconnectOptionFileName = "reconnect.json";
 
     public static string ConnectionSettings(IConfiguration config) =>
         config["MqttForge:SettingsPath"]
@@ -43,6 +44,16 @@ public static class StorePaths
     /// </summary>
     public static string AlertState(IConfiguration config) =>
         config["MqttForge:AlertStatePath"] ?? Beside(config, AlertStateFileName);
+
+    /// <summary>
+    /// Whether the broker link is supervised. Beside the rest, so one mounted volume still keeps
+    /// everything the app remembers.
+    /// </summary>
+    // Only the option lives here. The rest of a ReconnectStatus is about an outage, and an outage
+    // does not outlive the process that was living through it: a container coming back up holding
+    // "attempt 4, next in 16 seconds" would be describing a broker nobody has tried yet.
+    public static string ReconnectOption(IConfiguration config) =>
+        config["MqttForge:ReconnectOptionPath"] ?? Beside(config, ReconnectOptionFileName);
 
     private static string Beside(IConfiguration config, string fileName)
     {
