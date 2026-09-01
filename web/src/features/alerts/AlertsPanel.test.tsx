@@ -144,7 +144,20 @@ describe('AlertsPanel', () => {
       http.post('/api/alerts/mute', async ({ request }) => {
         sent.push(await request.json());
         // The console re-reads the snapshot after a mute; this is what the server now says.
-        answers({ active: [{ ...ALERT, mutedUntil: new Date(Date.now() + 900_000).toISOString() }] });
+        //
+        // The muted PAIR and not the alert's own stamp: a mute is set on a (rule, topic) pair and
+        // outlives the alarm it was set on, so the pair list is the one thing that is still true
+        // after an alarm clears and rings again. The row reads it through alertStore's mutedUntil.
+        answers({
+          active: [ALERT],
+          muted: [
+            {
+              ruleId: 'r1',
+              topic: 'sensors/kiln/temp',
+              until: new Date(Date.now() + 900_000).toISOString(),
+            },
+          ],
+        });
         return new HttpResponse(null, { status: 204 });
       }),
     );

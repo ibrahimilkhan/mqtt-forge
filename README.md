@@ -134,6 +134,11 @@ Give a rule a filter and a condition — `plant/+/temp` over 90 — and MQTTForg
 rule that fires raises an alert. Pick what happens: a notice on screen, a tone, a POST to an
 address you name, or the alert published back onto the broker. Any of the four, or all of them.
 
+Rules are written in the **Alerts** panel. Each one opens in a window of its own, carrying the
+fields its condition needs and nothing else. The panel lists what is ringing now, what each rule
+is seeing — how many topics it covers, how many readings it has read, when it last fired — and
+what has since ended.
+
 A rule subscribes its own filter. Alerting works with the console shut, and in a container with
 no browser pointed at it at all.
 
@@ -144,9 +149,16 @@ being the shape they were; a **shape change**, a quantity that becomes a switch 
 that stops; and **pulse**, the count, duty, period or width of a signal's own rhythm. Those four
 need no number from you — a rule that says "tell me when this line stops behaving as it does"
 works without anybody knowing what it does. Each watches a window of 20 to 2000 readings and says
-nothing until it has 20 of them, and the alerts endpoint reports how far along each topic is while
-it fills. **for** waits for the state to hold before it fires, **cooldown** keeps a flapping sensor
-from filling the panel, and muting a topic quietens it for a while without touching the rule.
+nothing until it has 20 of them, and the panel says how far along each topic is while it fills.
+**for** waits for the state to hold before it fires, **cooldown** keeps a flapping sensor from
+filling the panel, and muting a topic quietens it for a while without touching the rule.
+
+An alert that is ringing shows in the corner of the console whatever you have open, and the
+Alerts button in the rail carries the count while the panel is shut. A critical one stays until
+you send it away; the other two fade. A notice goes when its alarm does — an alert the server no
+longer holds leaves nothing behind on screen. The tone needs one click to start — no browser
+makes a sound before somebody has clicked the page — and the console says so while it is waiting
+for that click, rather than being on and silent.
 
 An alarm survives a restart. What was ringing when the process stopped is still ringing when it
 comes back, and an alarm whose rule was edited while the process was down ends rather than
@@ -154,7 +166,9 @@ returning.
 
 Rules are kept in `alert-rules.json` beside your other settings. Webhook headers are stored in
 that file as plain text; `MqttForge__AllowWebhooks=false` turns webhooks off altogether.
-[SECURITY.md](SECURITY.md) says what that trade is.
+[SECURITY.md](SECURITY.md) says what that trade is. The editor shows the header names a rule
+already has with an empty value box beside each: leave it empty and the stored value is kept.
+Header values never come back out of the server.
 
 ## What it costs
 
