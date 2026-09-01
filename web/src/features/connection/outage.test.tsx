@@ -146,7 +146,7 @@ describe('a link that drops while the reader is elsewhere', () => {
     expect(brokerButton()).toHaveAttribute('aria-expanded', 'true');
     expect(await screen.findByText('Reconnected')).toBeInTheDocument();
     // And the error is still on screen, which is the point of keeping the panel.
-    expect(screen.getByText(/The broker closed the connection/)).toBeInTheDocument();
+    expect(screen.getByText(/broker closed the connection/)).toBeInTheDocument();
   });
 
   // The hold has to be released, or the panel would reopen itself at the next thing that touched
@@ -174,7 +174,7 @@ describe('a link that drops while the reader is elsewhere', () => {
     await says('Faulted');
     await supervising({ active: true, attempt: 1 });
 
-    expect(await screen.findAllByText(/The broker closed the connection/)).toHaveLength(1);
+    expect(await screen.findAllByText(/broker closed the connection/)).toHaveLength(1);
   });
 
   // The connect that never happened. A console opened over a broker it has never reached shows

@@ -224,7 +224,7 @@ describe('the reconnect notice', () => {
 
       expect(await screen.findByText('Reconnected')).toBeInTheDocument();
       expect(screen.getByText(/It had dropped:/)).toBeInTheDocument();
-      expect(screen.getByText(/The broker closed the connection/)).toBeInTheDocument();
+      expect(screen.getByText(/broker closed the connection/)).toBeInTheDocument();
     });
 
     it('says how long it was gone', async () => {

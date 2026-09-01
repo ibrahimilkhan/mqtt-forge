@@ -56,9 +56,13 @@
   max-width: 52ch;
 }
 
-/* What broke the link, kept on screen after it comes back. Quieter than the headline above it,
-   because by then it is history rather than news — but still there, because 'it dropped and came
-   back' with no reason given is a sentence that leaves the reader with the same question. */
+/* The second line: history rather than news. How many tries have gone while it is still trying,
+   and what had broken the link once it is back.
+
+   It used to carry the REASON on an outage, and that was the wrong way round — the reason is why
+   the reader is here, and it sat a size smaller and a shade paler than the mechanical fact above
+   it. The reason is part of `.detail` now, in the same sentence as the drop it explains, which is
+   also how somebody would say it out loud. */
 .was {
   margin: 6px 0 0;
   font-size: var(--t-micro);
@@ -90,7 +94,20 @@
 }
 
 .option input { accent-color: var(--signal); }
-.option span { user-select: none; }
+
+/* A sentence, so it is set as one. The bare `label` in global.css is eleven-point mono capitals,
+   which is right for the one or two words over a box and shouty for a whole sentence — the same
+   correction `.checks label` makes for 'Encrypted (TLS)' two sections further down this panel,
+   and made the same way so the two read alike. */
+.option span {
+  user-select: none;
+  font-family: var(--sans);
+  font-size: var(--t-small);
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--ink);
+  line-height: 1.4;
+}
 
 /* Sits alone when there is no outage to report — a live link, the panel opened on purpose. No
    rule above it then, because there is nothing above it to be set apart from. */
