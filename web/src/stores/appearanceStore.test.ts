@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { sanitize, STORAGE_KEY, useAppearanceStore } from './appearanceStore';
-
 const DEFAULTS = {
   sans: 'inter',
   mono: 'jetbrains',
@@ -9,6 +8,9 @@ const DEFAULTS = {
   readings: {},
   // The line under the workspace is diagnostics, and starts out of the way.
   health: false,
+  // Off, because a tool that makes a noise the first time it is opened is a tool that gets
+  // muted at the operating system and then never heard again.
+  alertSound: false,
 };
 
 beforeEach(() => {
@@ -43,6 +45,10 @@ describe('sanitize', () => {
     for (const raw of [null, undefined, 3, 'x', []]) {
       expect(sanitize(raw)).toEqual(DEFAULTS);
     }
+  });
+
+  it('refuses a stored sound preference that is not a boolean', () => {
+    expect(sanitize({ ...DEFAULTS, alertSound: 'yes' }).alertSound).toBe(false);
   });
 });
 
@@ -84,7 +90,6 @@ describe('persistence', () => {
     expect({ sans, mono, size }).toEqual({ sans: 'system', mono: 'system', size: 18 });
     expect(typeof setSans).toBe('function'); // replace-on-hydrate must keep the actions.
   });
-
   it('rehydrates a corrupt stored value to the defaults rather than propagating it', async () => {
     localStorage.setItem(
       STORAGE_KEY,
@@ -93,8 +98,8 @@ describe('persistence', () => {
 
     await useAppearanceStore.persist.rehydrate();
 
-    const { sans, mono, size, scale, readings, health } = useAppearanceStore.getState();
-    expect({ sans, mono, size, scale, readings, health }).toEqual(DEFAULTS);
+    const { sans, mono, size, scale, readings, health, alertSound } = useAppearanceStore.getState();
+    expect({ sans, mono, size, scale, readings, health, alertSound }).toEqual(DEFAULTS);
   });
 
   it('does not throw when the storage write fails, and the choice still applies to this tab', () => {
@@ -122,7 +127,6 @@ describe('persistence', () => {
     const { sans, mono, size } = useAppearanceStore.getState();
     expect({ sans, mono, size }).toEqual({ sans: 'system', mono: 'system', size: 16 });
   });
-
   it('migrate coerces corrupt payloads to defaults even under version mismatch', async () => {
     localStorage.setItem(
       STORAGE_KEY,
@@ -131,7 +135,40 @@ describe('persistence', () => {
 
     await useAppearanceStore.persist.rehydrate();
 
-    const { sans, mono, size, scale, readings, health } = useAppearanceStore.getState();
-    expect({ sans, mono, size, scale, readings, health }).toEqual(DEFAULTS);
+    const { sans, mono, size, scale, readings, health, alertSound } = useAppearanceStore.getState();
+    expect({ sans, mono, size, scale, readings, health, alertSound }).toEqual(DEFAULTS);
+  });
+
+  it('keeps the sound preference, and writes it under the storage key at version 6', () => {
+    useAppearanceStore.getState().setAlertSound(true);
+
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
+    expect(stored.version).toBe(6);
+    expect(stored.state).toEqual({ ...DEFAULTS, alertSound: true });
+  });
+
+  // The point of the bump. One boolean must not cost a reader the typography they chose.
+  // 'extremes' rather than an invented id: sanitize checks the scale against SCALES, and a name
+  // that is not in the catalogue would come back as the default and prove nothing at all.
+  it('loads a version 5 store with its other settings intact, and the sound off', async () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        state: { sans: 'system', mono: 'system', size: 18, scale: 'extremes', health: true },
+        version: 5,
+      }),
+    );
+
+    await useAppearanceStore.persist.rehydrate();
+
+    const { sans, mono, size, scale, health, alertSound } = useAppearanceStore.getState();
+    expect({ sans, mono, size, scale, health }).toEqual({
+      sans: 'system',
+      mono: 'system',
+      size: 18,
+      scale: 'extremes',
+      health: true,
+    });
+    expect(alertSound).toBe(false);
   });
 });
