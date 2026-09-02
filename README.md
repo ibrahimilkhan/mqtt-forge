@@ -100,6 +100,16 @@ need none of it.
 
 A failed connection names the cause and what to do about it.
 
+Once a link is up the panel stops asking and starts reporting: the state in words, the address,
+and what the broker agreed to — version, session, keep-alive, how many filters are up. The form
+is not there, because none of it is a question any more.
+
+**Listen to every topic on connect** subscribes `#`. **Include $SYS broker statistics** is a
+second subscription and a separate box, because `#` cannot reach it: MQTT does not let a filter
+starting with a wildcard match a topic starting with `$`. It is off by default — those topics are
+republished on a timer, so a console that asked for them without being told would fill its log
+with a subtree nobody wanted. MQTT Explorer asks for both and has this one on.
+
 ### When the link drops
 
 MQTTForge puts a dropped link back up on its own, and it tells you it is doing it. The Broker
@@ -110,7 +120,12 @@ outage and leaves the link alone until you connect again.
 When the link comes back the panel stays open rather than closing on you: it says the link is
 back, what had broken it, and how long it was gone.
 
-**Reconnect automatically when the link drops** turns the whole arrangement off. It is on by
+The **Broker** row in the rail carries all of this as a colour: green while there is a link, amber
+while something is being done about there not being one — a connect in flight, a reconnect being
+tried — and red when the link is down and nothing is happening. It goes on naming the broker while
+the link is down, which is when you most want to know which one went.
+
+**Reconnect automatically if the link drops** turns the whole arrangement off. It is on by
 default, because a MQTTForge running alert rules with no browser pointed at it has to survive a
 broker restart, and it is remembered in `reconnect.json` beside your other settings. With it off,
 a dropped link stays down until you press **Reconnect**.

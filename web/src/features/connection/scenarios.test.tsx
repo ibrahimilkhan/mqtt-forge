@@ -426,6 +426,85 @@ describe('a connection that does not come up', () => {
     expect(await screen.findByText(said)).toBeInTheDocument();
   });
 
+  /**
+   * What '#' does not reach.
+   *
+   * MQTT 5.0 §4.7.2: a filter beginning with a wildcard must not match a topic name beginning
+   * with '$'. So a console subscribed to '#' and nothing else is blind to $SYS by the
+   * specification — measured against Mosquitto 2, '#' returned nought $SYS topics in five seconds
+   * where '$SYS/#' returned fifty-five.
+   */
+  describe('the broker talking about itself', () => {
+    /** Every filter the console asked the broker for, in the order it asked. */
+    function watchSubscribes() {
+      const asked: string[] = [];
+
+      server.use(
+        http.post('/api/connection', () => HttpResponse.json({ state: 'Connected' })),
+        http.post('/api/subscriptions', async ({ request }) => {
+          asked.push(((await request.json()) as { topicFilter: string }).topicFilter);
+
+          return new HttpResponse(null, { status: 202 });
+        }),
+      );
+
+      return asked;
+    }
+
+    it('is not asked for unless somebody asks', async () => {
+      const asked = watchSubscribes();
+      renderPanel();
+
+      await connect();
+
+      await waitFor(() => expect(asked).toEqual(['#']));
+    });
+
+    it('is a second subscribe, because it cannot be a wider first one', async () => {
+      const asked = watchSubscribes();
+      renderPanel();
+
+      await userEvent.click(await screen.findByLabelText(/Include \$SYS/));
+      await connect();
+
+      await waitFor(() => expect(asked).toEqual(['#', '$SYS/#']));
+    });
+
+    // A broker with no $SYS tree is an ordinary broker — HiveMQ CE has none — and one that has it
+    // may refuse it to a client without the right. Neither is a console listening to nothing,
+    // which is what the dead-end offer below the form is about.
+    it('a broker that refuses it is not a console listening to nothing', async () => {
+      server.use(
+        http.post('/api/connection', () => HttpResponse.json({ state: 'Connected' })),
+        http.post('/api/subscriptions', async ({ request }) => {
+          const { topicFilter } = (await request.json()) as { topicFilter: string };
+
+          return topicFilter === '$SYS/#'
+            ? HttpResponse.json({ title: 'Refused', reason: 'notPermitted' }, { status: 400 })
+            : new HttpResponse(null, { status: 202 });
+        }),
+      );
+      renderPanel();
+
+      await userEvent.click(await screen.findByLabelText(/Include \$SYS/));
+      await connect();
+
+      await waitFor(() =>
+        expect(screen.queryByRole('button', { name: 'Ask for less in Filters' })).not.toBeInTheDocument(),
+      );
+    });
+
+    // Nothing at all is asked for when the box above it is off, so the second one has nothing to
+    // add and says so by not being pressable.
+    it('cannot be asked for on its own', async () => {
+      renderPanel();
+
+      await userEvent.click(await screen.findByLabelText('Listen to every topic on connect'));
+
+      expect(screen.getByLabelText(/Include \$SYS/)).toBeDisabled();
+    });
+  });
+
   // The one path with no backend detail to fall back on used to show nothing at all.
   it('names the broker even when nothing could name the reason', async () => {
     server.use(
