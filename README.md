@@ -176,7 +176,9 @@ about what is being watched for; how many alarms are ringing is the count on the
 button in the rail.
 
 A rule subscribes its own filter. Alerting works with the console shut, and in a container with
-no browser pointed at it at all.
+no browser pointed at it at all: a server with an enabled rule dials the saved broker as it
+starts. The desktop app does not — it opens on the **Broker** panel and waits for you to press
+Connect. `MqttForge__ConnectOnStart=false` gives a server the same manners.
 
 Conditions cover a threshold, a band, a text pattern, a set of values, and silence — a topic that
 has stopped publishing. Four more ask about the readings as a run rather than one at a time: an

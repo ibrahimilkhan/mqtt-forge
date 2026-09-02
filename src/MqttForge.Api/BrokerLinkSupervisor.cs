@@ -48,6 +48,7 @@ public sealed class BrokerLinkSupervisor : BackgroundService
     private readonly TimeProvider _time;
     private readonly IReconnectOptionStore _option;
     private readonly IReconnectStatusNotifier _notifier;
+    private readonly BrokerLinkOptions _options;
 
     // When the ladder next allows an attempt. Null means no outage is being worked on — either
     // the link is fine, or it is down for a reason that is none of this class's business.
@@ -112,7 +113,8 @@ public sealed class BrokerLinkSupervisor : BackgroundService
     public BrokerLinkSupervisor(
         ConnectionService connection, IAlertRuleStore rules, ILogger<BrokerLinkSupervisor> log,
         TimeProvider? timeProvider = null, AlertPanelCounters? panel = null,
-        IReconnectOptionStore? option = null, IReconnectStatusNotifier? notifier = null)
+        IReconnectOptionStore? option = null, IReconnectStatusNotifier? notifier = null,
+        BrokerLinkOptions? options = null)
     {
         _connection = connection;
         _rules = rules;
@@ -125,6 +127,10 @@ public sealed class BrokerLinkSupervisor : BackgroundService
         _panel = panel ?? new AlertPanelCounters(_time);
         _option = option ?? new UnsavedOption();
         _notifier = notifier ?? new SilentStatus();
+
+        // The server's defaults when nobody says otherwise, which is every unit test and every
+        // integration host: the ladder tests below assume a start-up that dials.
+        _options = options ?? BrokerLinkOptions.Shipped;
     }
 
     /// <summary>What is being done about the link, and whether anything is allowed to be.</summary>
@@ -151,6 +157,18 @@ public sealed class BrokerLinkSupervisor : BackgroundService
         // done by StartAsync; this is what makes a direct call — every unit test in the suite —
         // behave like the real thing.
         await ReadOptionOnceAsync(ct);
+
+        // Before the rules are even read, because on a host told not to dial the rules do not
+        // change the answer. This is the desktop app: it opens on the Broker panel, and the
+        // reader presses Connect — after which the link is wanted exactly as a hand-dialled one
+        // always was (see SuperviseAsync), so a rule still gets its broker kept up. What the
+        // option takes away is only the dial nobody pressed a button for.
+        if (!_options.ConnectOnStart)
+        {
+            _log.LogInformation(
+                "Connecting at start-up is off for this host, so the broker is left alone until somebody connects.");
+            return;
+        }
 
         try
         {

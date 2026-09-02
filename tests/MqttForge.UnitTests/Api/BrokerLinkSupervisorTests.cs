@@ -128,6 +128,46 @@ public class BrokerLinkSupervisorTests
         Assert.Empty(_attempts);
     }
 
+    // The desktop app's case: a rule is enabled and a broker is saved, and still nothing is
+    // dialled, because the window in front of the reader is the Broker panel and the dial is
+    // theirs to make. The rules are not even read — on this host they do not change the answer.
+    [Fact]
+    public async Task A_host_told_not_to_connect_on_start_leaves_the_broker_alone_whatever_the_rules_say()
+    {
+        RulesHold(Rule(enabled: true));
+        var sut = new BrokerLinkSupervisor(
+            new ConnectionService(_manager, _settingsStore, Substitute.For<ILogger<ConnectionService>>()),
+            _rules, _log, _time, options: new BrokerLinkOptions(ConnectOnStart: false));
+
+        await sut.StartUpAsync(CancellationToken.None);
+
+        Assert.Empty(_attempts);
+        await _rules.DidNotReceive().LoadAsync(Arg.Any<CancellationToken>());
+        Assert.Contains(_log.Entries, entry => entry.Level == LogLevel.Information);
+    }
+
+    // ...and a link the reader then opens by hand is kept up as any hand-opened link is. The
+    // option is about the dial nobody pressed a button for, not about supervision.
+    [Fact]
+    public async Task A_host_told_not_to_connect_on_start_still_keeps_up_a_link_the_reader_opened()
+    {
+        RulesHold(Rule(enabled: true));
+        var sut = new BrokerLinkSupervisor(
+            new ConnectionService(_manager, _settingsStore, Substitute.For<ILogger<ConnectionService>>()),
+            _rules, _log, _time, options: new BrokerLinkOptions(ConnectOnStart: false));
+        await sut.StartUpAsync(CancellationToken.None);
+
+        // The reader connects at second 1, and the link dies straight after.
+        _manager.State.Returns(ConnectionState.Connected);
+        await PollAsync(sut);
+
+        _manager.State.Returns(ConnectionState.Faulted);
+        // Second 2 arms the bottom rung, second 3 spends it.
+        await PollAsync(sut, seconds: 2);
+
+        Assert.Equal([3], _attempts);
+    }
+
     [Fact]
     public async Task One_enabled_rule_connects_to_the_saved_broker_exactly_once()
     {

@@ -198,6 +198,9 @@ public static class DependencyInjection
         // reconnect endpoints ask it what it is doing and tell it to stop. Same instance either
         // way — resolved from the container rather than constructed a second time, which would
         // give the endpoints a supervisor that supervises nothing.
+        // Read at resolve time for the same reason AlertOptions is, and registered before the
+        // supervisor that takes it so that a reader of this file meets the option before its use.
+        services.AddSingleton(sp => BrokerLinkOptions.From(sp.GetRequiredService<IConfiguration>()));
         services.AddSingleton<BrokerLinkSupervisor>();
         services.AddHostedService(sp => sp.GetRequiredService<BrokerLinkSupervisor>());
         return services;
