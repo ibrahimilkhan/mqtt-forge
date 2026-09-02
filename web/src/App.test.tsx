@@ -51,6 +51,18 @@ describe('App', () => {
     ).not.toBeInTheDocument();
   });
 
+  // The same panel over a live link is a report rather than a form, and a report is read beside
+  // the tree and the log it describes — so it comes back into the column, and the columns come
+  // back with it.
+  it('gives the broker panel a column once the link is up', async () => {
+    server.use(http.get('/api/connection', () => HttpResponse.json({ state: 'Connected' })));
+    renderApp();
+
+    await menu().findByRole('button', { name: 'Broker' });
+    await waitFor(() => expect(screen.getByTestId('layout')).toHaveAttribute('data-panel', 'open'));
+    expect(screen.getByRole('separator', { name: 'Panel and topics boundary' })).toBeInTheDocument();
+  });
+
   // The second panel to cover them, and for a different reason than the broker's. The broker's is
   // a form, and a form does not get better at 1400px — it takes the workspace and keeps its
   // fields at a reading measure. This is a list of standing alarms and the rules under them, and

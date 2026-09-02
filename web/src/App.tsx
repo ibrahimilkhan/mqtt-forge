@@ -301,9 +301,17 @@ export function App({ hub }: { hub: Hub }) {
       <Workspace
         panel={Panel ? <Panel onClose={close} open={setOpenPanel} /> : undefined}
         // Three of the seven, for two different reasons. See Workspace's own note on both.
+        //
+        // The broker panel only while there is no link. Over a live one it is a report — the
+        // state, the address, what the broker agreed to — and a report takes a column beside the
+        // tree and the log it describes, not a window with the tree and the log hidden behind
+        // it. The form is what takes the window: it is answered in one sitting, and nothing on
+        // screen means anything until it has been.
         wide={
           openPanel === 'broker'
-            ? 'full'
+            ? state === 'Connected'
+              ? undefined
+              : 'full'
             : openPanel === 'alerts' || openPanel === 'colours'
               ? 'fill'
               : undefined

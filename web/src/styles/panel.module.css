@@ -523,6 +523,39 @@
   max-width: 46rem;
 }
 
+/* ---- the broker panel, spread across the window it takes ----
+
+   The panel is the whole workspace, and for a while what it held was one 640px stack down the
+   middle of it with a gutter either side wider than the stack. A form should not grow past the
+   width its widest answer needs, and it does not: it keeps to the left column at the measure it
+   had. What grows is the page. Beside the form, at any width that has room for it, stands what is
+   not the form — the brokers the reader kept, which are a shortcut into it, and the notice about
+   what became of the link, which is the news about it. Both are read at a glance and neither is
+   typed into, which is why they are the ones that leave the column.
+
+   A container query rather than a media query, because the width that decides this is the
+   panel's and not the window's: the same panel in a 1280px window and in a 1920px one should
+   split at the same point, and a rail that opens or shuts should be able to tip it. Below the
+   break the aside falls under the form, in the order it always had — saved brokers, then the
+   line about the link — so a laptop reads exactly what it read before. */
+.spread { container-type: inline-size; }
+.spreadGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  column-gap: 48px;
+  align-items: start;
+}
+.aside { min-width: 0; }
+@container (min-width: 900px) {
+  .spreadGrid { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); }
+  /* Beside the form rather than under it, so the line that set it apart from the form above has
+     nothing above it to be set apart from. The heading does that job on its own. */
+  .aside .saved { margin-top: 0; padding-top: 0; border-top: none; }
+  /* The gap the saved brokers took when they stood under the form, now between them and the
+     notice that follows them down the aside. */
+  .aside > * + * { margin-top: 22px; }
+}
+
 /* ---- a condition's children, one card each ----
 
    They were a 12px indent behind a 2px hairline: enough to say 'these belong to the thing above'
