@@ -24,5 +24,10 @@ USER $APP_UID
 # The runtime image sets this to 8080; naming the port the image exposes keeps the two in step
 # and leaves ASPNETCORE_URLS free to override at `docker run -e`.
 ENV ASPNETCORE_HTTP_PORTS=5169
+# A container has nobody to press Connect. With this on, a start-up that finds an enabled alert
+# rule dials the saved broker, so rules go on being evaluated across a restart with no browser
+# pointed at the console. Everywhere else it is off, and `-e MqttForge__ConnectOnStart=false`
+# turns it off here too.
+ENV MqttForge__ConnectOnStart=true
 EXPOSE 5169
 ENTRYPOINT ["./MqttForge.Api"]

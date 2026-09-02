@@ -49,9 +49,13 @@ public class ReconnectSupervisionTests
 
     private int Second => (int)(_time.GetUtcNow() - T0).TotalSeconds;
 
+    // Told to dial at start-up, as the container is: the start-up dial is what puts the link the
+    // ladder then works on into the story. The shipped default never dials — see
+    // BrokerLinkSupervisorTests for that host.
     private BrokerLinkSupervisor CreateSut() =>
         new(new ConnectionService(_manager, _settingsStore, Substitute.For<ILogger<ConnectionService>>()),
-            _rules, _log, _time, panel: null, option: _option, notifier: _heard);
+            _rules, _log, _time, panel: null, option: _option, notifier: _heard,
+            options: new BrokerLinkOptions(ConnectOnStart: true));
 
     private static AlertRule Rule(bool enabled) =>
         new("r1", "Boiler temperature", enabled, "plant/+/temp", null,

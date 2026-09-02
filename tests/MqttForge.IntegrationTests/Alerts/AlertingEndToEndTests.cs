@@ -220,7 +220,11 @@ public class AlertingEndToEndTests : IClassFixture<MosquittoFixture>, IAsyncLife
                     // The factory turns webhooks off for the whole suite, and this delegate runs
                     // after it, so this source is the last one added and wins. The address the
                     // rule points at is a listener this class bound itself.
-                    ["MqttForge:AllowWebhooks"] = "true"
+                    ["MqttForge:AllowWebhooks"] = "true",
+
+                    // And the start-up dial, which is off out of the box: this host is the
+                    // container, with nobody to press Connect, as the Dockerfile has it.
+                    ["MqttForge:ConnectOnStart"] = "true"
                 })));
 
         _hosts.Add(factory);

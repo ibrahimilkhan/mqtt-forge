@@ -69,12 +69,7 @@ public static class DesktopBind
     private static WebApplication Build(
         string[] args, string settingsPath, string? urls, IFolderPicker? picker, IFilePicker? files) =>
         MqttForgeHost.Build(
-            // The desktop app opens on the Broker panel and waits for the reader to press Connect.
-            // A server dials the saved broker at start-up when a rule is enabled; a window that
-            // did the same would be connected before the person in front of it had said where to.
-            // Before the caller's args, so a `--MqttForge:ConnectOnStart=true` on the command
-            // line still wins.
-            ["--MqttForge:ConnectOnStart=false", .. args, $"--MqttForge:SettingsPath={settingsPath}"],
+            [.. args, $"--MqttForge:SettingsPath={settingsPath}"],
             urls: urls,
             configure: services =>
             {

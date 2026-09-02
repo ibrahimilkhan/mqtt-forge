@@ -1,6 +1,7 @@
 using System.Threading.Channels;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using MqttForge.Application.Alerts;
 using MqttForge.Domain.Abstractions;
@@ -74,7 +75,16 @@ public class HeadlessAlertingTests : IClassFixture<MosquittoFixture>, IDisposabl
             _settingsPath, _colourRulesPath, _savedProfilesPath, _alertRulesPath, _alertStatePath);
 
         var host = factory.WithWebHostBuilder(builder =>
-            builder.ConfigureTestServices(services => services.AddSingleton<IAlertNotifier>(_alerts)));
+        {
+            // This run is the container: nobody presses Connect, so the host has to be told to
+            // dial off the settings file at start-up, exactly as the Dockerfile tells it.
+            builder.ConfigureAppConfiguration((_, config) =>
+                config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["MqttForge:ConnectOnStart"] = "true"
+                }));
+            builder.ConfigureTestServices(services => services.AddSingleton<IAlertNotifier>(_alerts));
+        });
 
         _hosts.Add(factory);
         _hosts.Add(host);
