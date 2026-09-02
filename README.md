@@ -115,10 +115,15 @@ publishes nothing — after 20 seconds with nothing under `$SYS/`, the log says 
 ### When the link drops
 
 MQTTForge puts a dropped link back up on its own, and it tells you it is doing it. The Broker
-panel opens by itself, and a notice at its foot says what broke the link and counts down to the
-next try — 1, 2, 4, 8, 16 and then every 30 seconds. **Stop trying** calls off this outage and
-leaves the link alone until you connect again; **Connect** on the form above it does not wait for
-the count.
+panel opens by itself, and a notice says what broke the link and counts down to the next try —
+1, 2, 4, 8, 16 and then every 30 seconds. **Stop trying** calls off this outage and leaves the
+link alone until you connect again; **Connect** on the form does not wait for the count.
+
+Some faults it does not retry, because retrying could not fix them and sometimes makes them
+worse: a rejected password, a certificate nobody trusts, a client ID another client has just
+taken. The notice says the fault is one to fix rather than wait out, and **Try now** attempts it
+once as it stands if you want to. When a retry does succeed, the topics you were watching are
+subscribed again on their own.
 
 When the link comes back the panel stays open rather than closing on you: it says the link is
 back, what had broken it, and how long it was gone.
