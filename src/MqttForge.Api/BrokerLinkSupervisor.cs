@@ -49,6 +49,7 @@ public sealed class BrokerLinkSupervisor : BackgroundService
     private readonly IReconnectOptionStore _option;
     private readonly IReconnectStatusNotifier _notifier;
     private readonly BrokerLinkOptions _options;
+    private readonly ISubscriptionRestorer? _restorer;
 
     // When the ladder next allows an attempt. Null means no outage is being worked on — either
     // the link is fine, or it is down for a reason that is none of this class's business.
@@ -70,6 +71,10 @@ public sealed class BrokerLinkSupervisor : BackgroundService
     // This outage, given up on by hand. Cleared the moment the link is anything but Faulted, so
     // it cannot outlive the outage it was about — see SuperviseAsync.
     private bool _gaveUp;
+
+    // This outage, declined by this class: the reason the link is down is one a redial could not
+    // change, or one it must not try to. Cleared the same way _gaveUp is, and by a Retry now.
+    private bool _declined;
 
     // The option, cached. Read from the store once at start-up and written through by
     // SetEnabledAsync, so the loop never touches a file.
@@ -114,7 +119,7 @@ public sealed class BrokerLinkSupervisor : BackgroundService
         ConnectionService connection, IAlertRuleStore rules, ILogger<BrokerLinkSupervisor> log,
         TimeProvider? timeProvider = null, AlertPanelCounters? panel = null,
         IReconnectOptionStore? option = null, IReconnectStatusNotifier? notifier = null,
-        BrokerLinkOptions? options = null)
+        BrokerLinkOptions? options = null, ISubscriptionRestorer? restorer = null)
     {
         _connection = connection;
         _rules = rules;
@@ -131,10 +136,15 @@ public sealed class BrokerLinkSupervisor : BackgroundService
         // The shipped defaults when nobody says otherwise — which is every integration host, and
         // is why none of them dials a broker at start-up. The ladder tests say 'true' themselves.
         _options = options ?? BrokerLinkOptions.Shipped;
+
+        // Optional, and null means a redial that restores nothing — which is every test that is
+        // only asking about the ladder, and was every host until the console's filters were found
+        // to be gone after every redial the supervisor made.
+        _restorer = restorer;
     }
 
     /// <summary>What is being done about the link, and whether anything is allowed to be.</summary>
-    public ReconnectStatus Status => new(_enabled, _active, _attempts, _dueAt, _gaveUp);
+    public ReconnectStatus Status => new(_enabled, _active, _attempts, _dueAt, _gaveUp, _declined);
 
     /// <summary>The clock NextAttemptAt is an instant on.</summary>
     // Exposed so that whatever serialises a status can send the two together — see
@@ -267,6 +277,29 @@ public sealed class BrokerLinkSupervisor : BackgroundService
             return;
         }
 
+        // The reason, read before the ladder is climbed. Most outages are a broker that is down
+        // or a network that is not there, and the ladder is the right answer to both. Some are
+        // not: a password the broker rejected is rejected again on every rung, a certificate
+        // nobody trusts does not become trusted by being shown again, and a client ID another
+        // client has just taken is taken *back* by a redial — which throws them off, and if they
+        // reconnect too the two of them spend the afternoon knocking each other off one broker.
+        // Measured against the lab: a takeover was answered with a redial inside a second. So
+        // those are declined, said so, and left to the reader's next Connect.
+        if (_declined || Declines(_connection.CurrentFailure?.Reason))
+        {
+            if (!_declined)
+                _log.LogInformation(
+                    "The link is down for a reason a redial would not change ({Reason}), so it is not retried.",
+                    _connection.CurrentFailure?.Reason);
+
+            _declined = true;
+            _active = false;
+            _dueAt = null;
+            _rung = 0;
+            await AnnounceAsync();
+            return;
+        }
+
         _active = true;
         var now = _time.GetUtcNow();
 
@@ -320,7 +353,9 @@ public sealed class BrokerLinkSupervisor : BackgroundService
     {
         // A reader who presses this has un-given-up by definition, and the ladder starts again
         // from the bottom: this is a fresh go at the broker, not the continuation of a climb.
+        // A declined outage is un-declined the same way — one try, at their asking.
         _gaveUp = false;
+        _declined = false;
         _rung = 0;
         _dueAt = null;
 
@@ -357,6 +392,7 @@ public sealed class BrokerLinkSupervisor : BackgroundService
         {
             // A reader turning it back on has plainly stopped giving up on this outage.
             _gaveUp = false;
+            _declined = false;
         }
 
         try
@@ -411,7 +447,34 @@ public sealed class BrokerLinkSupervisor : BackgroundService
         _rung = 0;
         _attempts = 0;
         _gaveUp = false;
+        _declined = false;
     }
+
+    /// <summary>Whether a link down for this reason is one the ladder should leave alone.</summary>
+    // Three kinds. What the broker said about who we are, which it will say again; what this
+    // machine or the broker said about a certificate, which a redial re-presents unchanged; and
+    // the two answers that make a redial actively wrong — a client that took our ID would lose
+    // it again, and an administrator who disconnected us did not ask to be argued with. A refused
+    // filter is here too: a redial now restores the console's filters, so it would re-ask the one
+    // the broker closed the session over and be closed on again. Everything else — down,
+    // unreachable, timed out, busy, closed, lost — is the ladder's own business.
+    public static bool Declines(BrokerFailureReason? reason) => reason is
+        BrokerFailureReason.CredentialsRequired
+        or BrokerFailureReason.CredentialsRejected
+        or BrokerFailureReason.Banned
+        or BrokerFailureReason.ClientIdRejected
+        or BrokerFailureReason.ProtocolVersionUnsupported
+        or BrokerFailureReason.NoSupportedProtocolVersion
+        or BrokerFailureReason.TlsCertUntrusted
+        or BrokerFailureReason.TlsCertExpired
+        or BrokerFailureReason.TlsCertNameMismatch
+        or BrokerFailureReason.ClientCertificateRequired
+        or BrokerFailureReason.ClientCertificateRejected
+        or BrokerFailureReason.CertificateFileUnreadable
+        or BrokerFailureReason.SessionTakenOver
+        or BrokerFailureReason.Kicked
+        or BrokerFailureReason.NotPermitted
+        or BrokerFailureReason.FilterRefused;
 
     private TimeSpan NextRung()
     {
@@ -486,6 +549,21 @@ public sealed class BrokerLinkSupervisor : BackgroundService
             _attempts++;
             _log.LogInformation("Connecting to {Endpoint} for the alert rules.", settings.Endpoint);
             await _connection.ConnectAsync(settings, ct);
+
+            // The link is back; now what the console was listening to. Its own try/catch, because
+            // a filter the broker refuses on the redial is not a failed redial — the link is up,
+            // the rules have their filters, and the console's tree is the only thing short.
+            if (_restorer is not null)
+            {
+                try
+                {
+                    await _restorer.RestoreConsoleFiltersAsync(ct);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _log.LogWarning(ex, "The link is back, but not every filter the console held could be restored.");
+                }
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

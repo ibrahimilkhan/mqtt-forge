@@ -182,6 +182,58 @@ describe('the reconnect notice', () => {
     });
   });
 
+  // ---- an outage the supervisor declined ----
+
+  describe('when the supervisor has declined it', () => {
+    it('says it is not something reconnecting would fix, and offers one manual try', async () => {
+      dropped();
+      api('Faulted', { active: false, declined: true });
+
+      renderWithClient(<ReconnectNotice />);
+
+      expect(await screen.findByText('Not reconnecting')).toBeInTheDocument();
+      expect(screen.getByText(/not something reconnecting would fix/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Try now' })).toBeInTheDocument();
+    });
+
+    // The plainly-stopped face has no Try now — Connect on the form is the only answer there.
+    it('a stopped outage that was not declined offers no manual try', async () => {
+      dropped();
+      api('Faulted', { active: false, gaveUp: true });
+
+      renderWithClient(<ReconnectNotice />);
+
+      expect(await screen.findByText(/Reconnecting was stopped/)).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Try now' })).not.toBeInTheDocument();
+    });
+
+    it('trying now dials, from the declined face', async () => {
+      dropped();
+      api('Faulted', { active: false, declined: true });
+
+      let called = false;
+      server.use(
+        http.post('/api/connection/reconnect', () => {
+          called = true;
+          return HttpResponse.json({
+            enabled: true,
+            active: true,
+            attempt: 1,
+            nextAttemptAt: '2026-09-02T21:00:04.000Z',
+            gaveUp: false,
+            declined: false,
+            now: '2026-09-02T21:00:03.000Z',
+          });
+        }),
+      );
+
+      renderWithClient(<ReconnectNotice />);
+      await userEvent.click(await screen.findByRole('button', { name: 'Try now' }));
+
+      await waitFor(() => expect(called).toBe(true));
+    });
+  });
+
   // ---- a link that came back ----
 
   describe('when it comes back', () => {

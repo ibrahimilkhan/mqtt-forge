@@ -1,4 +1,5 @@
 using MqttForge.Domain.Abstractions;
+using MqttForge.Domain.Enums;
 using MqttForge.Domain.Exceptions;
 using MqttForge.Domain.Models;
 using MqttForge.Infrastructure.Mqtt;
@@ -56,6 +57,71 @@ public class MqttnetSubscriberTests
 
     private static IReadOnlyList<SubscriptionRequest> Asking(params string[] filters) =>
         [.. filters.Select(filter => new SubscriptionRequest(filter, 0))];
+
+    private static bool AsksForEverythingAtQoS2(MqttClientSubscribeOptions? options)
+    {
+        var filters = options?.TopicFilters;
+
+        return filters is { Count: 1 }
+            && filters[0].Topic == "#"
+            && filters[0].QualityOfServiceLevel == MqttQualityOfServiceLevel.ExactlyOnce;
+    }
+
+    private void RaiseDisconnected() =>
+        _client.DisconnectedAsync += Raise.Event<Func<MqttClientDisconnectedEventArgs, Task>>(
+            new MqttClientDisconnectedEventArgs(
+                clientWasConnected: true, connectResult: null,
+                reason: MqttClientDisconnectReason.UnspecifiedError, reasonString: null,
+                userProperties: null, exception: null));
+
+    // What the console held when the link went is asked for again on the redial — at the QoS it
+    // had — and the engine's own filters are not, because the engine puts those back itself.
+    [Fact]
+    public async Task Restoring_asks_again_for_the_consoles_filters_and_only_those()
+    {
+        GivenTheBrokerAnswers(("#", MqttClientSubscribeResultCode.GrantedQoS2));
+        var sut = CreateSut();
+        await sut.SubscribeAsync([new SubscriptionRequest("#", 2)], CancellationToken.None);
+        GivenTheBrokerAnswers(("plant/#", MqttClientSubscribeResultCode.GrantedQoS0));
+        await sut.SubscribeAsync(Asking("plant/#"), CancellationToken.None, SubscriptionOwner.Rules);
+        _client.ClearReceivedCalls();
+
+        RaiseDisconnected();
+        Assert.Empty(sut.ActiveFilters);
+
+        GivenTheBrokerAnswers(("#", MqttClientSubscribeResultCode.GrantedQoS2));
+        await sut.RestoreConsoleFiltersAsync(CancellationToken.None);
+
+        await _client.Received(1).SubscribeAsync(
+            Arg.Is<MqttClientSubscribeOptions>(options => AsksForEverythingAtQoS2(options)),
+            Arg.Any<CancellationToken>());
+        Assert.Equal(["#"], sut.ActiveFilters);
+    }
+
+    [Fact]
+    public async Task Restoring_twice_asks_once()
+    {
+        GivenTheBrokerAnswers(("#", MqttClientSubscribeResultCode.GrantedQoS0));
+        var sut = CreateSut();
+        await sut.SubscribeAsync(Asking("#"), CancellationToken.None);
+        RaiseDisconnected();
+        _client.ClearReceivedCalls();
+
+        await sut.RestoreConsoleFiltersAsync(CancellationToken.None);
+        await sut.RestoreConsoleFiltersAsync(CancellationToken.None);
+
+        await _client.Received(1).SubscribeAsync(Arg.Any<MqttClientSubscribeOptions>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Restoring_with_nothing_held_asks_for_nothing()
+    {
+        var sut = CreateSut();
+
+        await sut.RestoreConsoleFiltersAsync(CancellationToken.None);
+
+        await _client.DidNotReceive().SubscribeAsync(Arg.Any<MqttClientSubscribeOptions>(), Arg.Any<CancellationToken>());
+    }
 
     [Fact]
     public async Task SubscribeAsync_reports_a_filter_the_broker_closed_the_session_over()

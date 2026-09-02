@@ -88,6 +88,20 @@ export function useLinkWatch() {
     }
     gaveUp.current = status.gaveUp;
   }, [status.gaveUp]);
+
+  // The supervisor declining an outage is worth a line: it is the moment the retries a reader
+  // was watching stop on their own, and without it they would read as simply having stopped.
+  const declined = useRef(false);
+  useEffect(() => {
+    if (status.declined && !declined.current) {
+      useBrokerEventsStore.getState().push({
+        kind: 'note',
+        what: 'Not retried',
+        detail: 'The link is down for a reason a redial would not fix.',
+      });
+    }
+    declined.current = status.declined ?? false;
+  }, [status.declined]);
 }
 
 /** How long it was gone, in the roundest words that are still true. */

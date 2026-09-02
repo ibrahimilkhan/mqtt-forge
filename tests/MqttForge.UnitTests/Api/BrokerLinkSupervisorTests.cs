@@ -4,6 +4,7 @@ using MqttForge.Api;
 using MqttForge.Application.Services;
 using MqttForge.Domain.Abstractions;
 using MqttForge.Domain.Enums;
+using MqttForge.Domain.Exceptions;
 using MqttForge.Domain.Models;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -308,6 +309,113 @@ public class BrokerLinkSupervisorTests
         await PollAsync(sut, seconds: 120);
 
         Assert.Empty(_attempts);
+    }
+
+    private static BrokerFailure Failure(BrokerFailureReason reason) =>
+        new(reason, "broker.local", 1883, "mqttforge", false, MqttTransport.Tcp, MqttProtocolLevel.Auto);
+
+    // A password the broker rejected is rejected again on every rung, and a redial against a
+    // taken client ID takes it back from whoever has it. Neither is the ladder's business.
+    [Theory]
+    [InlineData(BrokerFailureReason.CredentialsRejected)]
+    [InlineData(BrokerFailureReason.SessionTakenOver)]
+    [InlineData(BrokerFailureReason.TlsCertUntrusted)]
+    [InlineData(BrokerFailureReason.Kicked)]
+    public async Task A_fault_a_redial_could_not_fix_is_declined_rather_than_climbed(BrokerFailureReason reason)
+    {
+        var sut = await WantedAsync();
+
+        _manager.State.Returns(ConnectionState.Faulted);
+        _manager.Failure.Returns(Failure(reason));
+        await PollAsync(sut, seconds: 120);
+
+        Assert.Empty(_attempts);
+        Assert.True(sut.Status.Declined);
+        Assert.False(sut.Status.Active);
+    }
+
+    [Theory]
+    [InlineData(BrokerFailureReason.ConnectionLost)]
+    [InlineData(BrokerFailureReason.Refused)]
+    [InlineData(BrokerFailureReason.BrokerBusy)]
+    public async Task A_broker_that_is_merely_down_is_climbed_for(BrokerFailureReason reason)
+    {
+        var sut = await WantedAsync();
+
+        _manager.State.Returns(ConnectionState.Faulted);
+        _manager.Failure.Returns(Failure(reason));
+        await PollAsync(sut, seconds: 3);
+
+        Assert.NotEmpty(_attempts);
+        Assert.False(sut.Status.Declined);
+    }
+
+    // Retry now is the reader overruling the decline: one try, at their asking.
+    [Fact]
+    public async Task Retry_now_overrules_a_decline()
+    {
+        var sut = await WantedAsync();
+        _manager.State.Returns(ConnectionState.Faulted);
+        _manager.Failure.Returns(Failure(BrokerFailureReason.CredentialsRejected));
+        await PollAsync(sut);
+        Assert.True(sut.Status.Declined);
+
+        await sut.RetryNowAsync(CancellationToken.None);
+
+        Assert.Single(_attempts);
+    }
+
+    [Fact]
+    public async Task A_link_that_comes_back_ends_the_decline()
+    {
+        var sut = await WantedAsync();
+        _manager.State.Returns(ConnectionState.Faulted);
+        _manager.Failure.Returns(Failure(BrokerFailureReason.CredentialsRejected));
+        await PollAsync(sut);
+
+        _manager.State.Returns(ConnectionState.Connected);
+        _manager.Failure.Returns((BrokerFailure?)null);
+        await PollAsync(sut);
+
+        Assert.False(sut.Status.Declined);
+    }
+
+    // The redial the supervisor makes is followed by nobody: the reader's console asks for its
+    // filters after *their* Connect, not after this one. So the supervisor asks on its behalf.
+    [Fact]
+    public async Task A_redial_that_works_puts_the_consoles_filters_back()
+    {
+        var restorer = Substitute.For<ISubscriptionRestorer>();
+        RulesHold(Rule(enabled: true));
+        _manager.ConnectAsync(Arg.Any<BrokerConnectionSettings>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        var sut = new BrokerLinkSupervisor(
+            new ConnectionService(_manager, _settingsStore, Substitute.For<ILogger<ConnectionService>>()),
+            _rules, _log, _time, options: new BrokerLinkOptions(ConnectOnStart: true), restorer: restorer);
+
+        await sut.StartUpAsync(CancellationToken.None);
+
+        await restorer.Received(1).RestoreConsoleFiltersAsync(Arg.Any<CancellationToken>());
+    }
+
+    // A filter the broker refuses on the redial is not a failed redial.
+    [Fact]
+    public async Task A_filter_refused_on_the_redial_does_not_fail_the_redial()
+    {
+        var restorer = Substitute.For<ISubscriptionRestorer>();
+        restorer.RestoreConsoleFiltersAsync(Arg.Any<CancellationToken>())
+            .ThrowsAsync(new MessageRejectedException("The broker refused '#'."));
+        RulesHold(Rule(enabled: true));
+        _manager.ConnectAsync(Arg.Any<BrokerConnectionSettings>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        var sut = new BrokerLinkSupervisor(
+            new ConnectionService(_manager, _settingsStore, Substitute.For<ILogger<ConnectionService>>()),
+            _rules, _log, _time, options: new BrokerLinkOptions(ConnectOnStart: true), restorer: restorer);
+
+        var exception = await Record.ExceptionAsync(() => sut.StartUpAsync(CancellationToken.None));
+
+        Assert.Null(exception);
+        Assert.Contains(_log.Entries, entry => entry.Level == LogLevel.Warning);
     }
 
     [Fact]

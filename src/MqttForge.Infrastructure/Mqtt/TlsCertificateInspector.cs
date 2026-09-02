@@ -59,19 +59,33 @@ public sealed class TlsCertificateInspector
             return true;
         }
 
-        // Only the chain, and only when a root was actually supplied. A name mismatch is not a
-        // trust question and no CA file fixes it; a missing certificate leaves nothing to build
-        // a chain from. Both keep failing here, which is what makes this narrow enough to be safe.
-        if (errors == SslPolicyErrors.RemoteCertificateChainErrors
+        // Whether the chain is one this connection trusts — either the machine's store said so,
+        // or the extra CA the reader pointed at signs it. Worked out first, because everything
+        // said below depends on it: a name mismatch on a certificate nobody trusts is not the
+        // news, and a reader told to set Server name on a self-signed certificate would set it
+        // and be refused again. A missing certificate leaves nothing to build a chain from, so it
+        // never counts as trusted whatever roots were supplied.
+        var chainTrusted = !errors.HasFlag(SslPolicyErrors.RemoteCertificateChainErrors)
+            && !errors.HasFlag(SslPolicyErrors.RemoteCertificateNotAvailable);
+
+        if (!chainTrusted
+            && !errors.HasFlag(SslPolicyErrors.RemoteCertificateNotAvailable)
             && extraRoots is { Count: > 0 }
             && certificate is not null
             && ChainsTo(certificate, extraRoots))
+        {
+            chainTrusted = true;
+        }
+
+        // A trusted chain with the right name is a certificate with nothing wrong with it; the
+        // name is the one thing a CA file cannot vouch for, so it still fails here on its own.
+        if (chainTrusted && !errors.HasFlag(SslPolicyErrors.RemoteCertificateNameMismatch))
         {
             Problem = null;
             return true;
         }
 
-        Problem = Describe(errors, chainStatus);
+        Problem = Describe(errors, chainStatus, chainTrusted);
 
         return false;
     }
@@ -87,17 +101,34 @@ public sealed class TlsCertificateInspector
         Overlooked = Describe(errors, chainStatus);
     }
 
-    public static BrokerFailureReason? Describe(SslPolicyErrors errors, X509ChainStatus[] chainStatus)
+    // Read off the errors alone, for callers that have no extra roots to vouch with.
+    public static BrokerFailureReason? Describe(SslPolicyErrors errors, X509ChainStatus[] chainStatus) =>
+        Describe(
+            errors, chainStatus,
+            chainTrusted: !errors.HasFlag(SslPolicyErrors.RemoteCertificateChainErrors)
+                && !errors.HasFlag(SslPolicyErrors.RemoteCertificateNotAvailable));
+
+    // The chain first, and the name only once the chain is good. It was the other way round —
+    // the name being "the one problem the user fixes by retyping the host" — and EMQX's own
+    // self-signed certificate, untrusted and issued for a name nothing dials it by, was reported
+    // as the name being wrong, which sent the reader to a Server name box that could not have
+    // helped. Expiry within an untrusted chain still outranks 'untrusted': it is the more specific
+    // of the two things the chain is wrong about, and an expired certificate also fails to chain.
+    public static BrokerFailureReason? Describe(
+        SslPolicyErrors errors, X509ChainStatus[] chainStatus, bool chainTrusted)
     {
         if (errors == SslPolicyErrors.None) return null;
 
-        // Checked first: a name mismatch is the one problem the user fixes by retyping the host
+        if (!chainTrusted)
+        {
+            if (chainStatus.Any(s => s.Status.HasFlag(X509ChainStatusFlags.NotTimeValid)))
+                return BrokerFailureReason.TlsCertExpired;
+
+            return BrokerFailureReason.TlsCertUntrusted;
+        }
+
         if (errors.HasFlag(SslPolicyErrors.RemoteCertificateNameMismatch))
             return BrokerFailureReason.TlsCertNameMismatch;
-
-        // Before the untrusted case, because an expired certificate also fails to chain
-        if (chainStatus.Any(s => s.Status.HasFlag(X509ChainStatusFlags.NotTimeValid)))
-            return BrokerFailureReason.TlsCertExpired;
 
         return BrokerFailureReason.TlsCertUntrusted;
     }

@@ -11,7 +11,7 @@ using MQTTnet.Protocol;
 
 namespace MqttForge.Infrastructure.Mqtt;
 
-public sealed class MqttnetSubscriber : IMqttSubscriber
+public sealed class MqttnetSubscriber : IMqttSubscriber, ISubscriptionRestorer
 {
     /// <summary>
     /// How long after a SUBACK a retained message is read as the broker catching us up rather
@@ -39,6 +39,16 @@ public sealed class MqttnetSubscriber : IMqttSubscriber
     // class now has to answer — "is anybody else still holding it" and "was this message a
     // replay" — are about the value rather than the key.
     private readonly ConcurrentDictionary<string, ActiveFilter> _filters = new(StringComparer.Ordinal);
+
+    // The QoS each console filter was asked at, so that a filter put back after a drop is put
+    // back at the ceiling it had. Kept beside the active list rather than on ActiveFilter, which
+    // the engine reads and which has no use for it.
+    private readonly ConcurrentDictionary<string, int> _consoleQos = new(StringComparer.Ordinal);
+
+    // What the console held at the moment the link last went. Written on every disconnect and
+    // read by RestoreConsoleFiltersAsync, so it is always about the latest link: a filter the
+    // reader dropped an hour ago is not in it, and neither is one from a broker they left.
+    private volatile IReadOnlyList<SubscriptionRequest> _heldAtDrop = [];
 
     public MqttnetSubscriber(
         MqttnetClientProvider provider, IMessageNotifier notifier, TimeProvider? timeProvider = null)
@@ -96,6 +106,7 @@ public sealed class MqttnetSubscriber : IMqttSubscriber
         }
 
         var named = string.Join("', '", requests.Select(r => r.TopicFilter));
+        var asked = requests.ToDictionary(r => r.TopicFilter, r => r.Qos, StringComparer.Ordinal);
 
         MqttClientSubscribeResult result;
 
@@ -138,7 +149,16 @@ public sealed class MqttnetSubscriber : IMqttSubscriber
         var refused = new List<string>();
         foreach (var item in result.Items)
         {
-            if (Granted(item.ResultCode)) Record(item.TopicFilter.Topic, owner, granted);
+            if (Granted(item.ResultCode))
+            {
+                Record(item.TopicFilter.Topic, owner, granted);
+
+                // The QoS asked for, off the request rather than off the answer: the answer's
+                // code is the grant, which a broker may set lower, and a restore should ask for
+                // what the reader asked for rather than for what the last broker allowed.
+                if (owner.HasFlag(SubscriptionOwner.Console))
+                    _consoleQos[item.TopicFilter.Topic] = asked.GetValueOrDefault(item.TopicFilter.Topic);
+            }
             else refused.Add($"'{item.TopicFilter.Topic}' ({item.ResultCode})");
         }
 
@@ -252,9 +272,33 @@ public sealed class MqttnetSubscriber : IMqttSubscriber
     }
 
     // Subscriptions die with the connection; clears local list to match
+    /// <inheritdoc />
+    // Only the console's. The engine's filters come back through the engine, which watches the
+    // link for exactly this and re-syncs its own; asking for them here as well would double every
+    // SUBSCRIBE on a redial and put the engine's replay window in the wrong place.
+    public async Task RestoreConsoleFiltersAsync(CancellationToken ct)
+    {
+        var held = _heldAtDrop;
+        if (held.Count == 0) return;
+
+        // Taken before the ask rather than after it: a drop in the middle of the restore writes
+        // a fresh stash, and this one must not overwrite it on the way out.
+        _heldAtDrop = [];
+
+        await SubscribeAsync(held, ct, SubscriptionOwner.Console);
+    }
+
     private Task OnDisconnectedAsync(MqttClientDisconnectedEventArgs e)
     {
+        // What the console had, kept for the redial — see RestoreConsoleFiltersAsync. Written
+        // whether or not this drop was the reader's own Disconnect: a restore only ever follows
+        // the supervisor's redial, and the supervisor never redials a link somebody hung up on.
+        _heldAtDrop = [.. _filters.Values
+            .Where(filter => filter.Owners.HasFlag(SubscriptionOwner.Console))
+            .Select(filter => new SubscriptionRequest(filter.Filter, _consoleQos.GetValueOrDefault(filter.Filter)))];
+
         _filters.Clear();
+        _consoleQos.Clear();
         return Task.CompletedTask;
     }
 }

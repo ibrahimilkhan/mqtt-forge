@@ -66,6 +66,12 @@ export type ReconnectStatus = {
   /** This outage was called off by hand. The option is still on. */
   gaveUp: boolean;
   /**
+   * The supervisor will not retry this outage on its own, because a redial could not fix it: a
+   * rejected password, a certificate nobody trusts, a client ID another client took. The option
+   * is still on; the reader's next Connect is the answer, and Try now overrules it for one go.
+   */
+  declined?: boolean;
+  /**
    * The instant on the server's clock that this status was true at.
    *
    * `nextAttemptAt` is on that same clock, so their difference is a duration — which is a thing

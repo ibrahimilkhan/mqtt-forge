@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { stopReconnecting } from '../../api/connection';
+import { reconnectNow, stopReconnecting } from '../../api/connection';
 import { queryKeys } from '../../api/queryKeys';
 import { useConnectionState } from '../../api/useConnectionState';
 import { useReconnectStatus } from '../../api/useReconnectStatus';
@@ -50,6 +50,15 @@ export function ReconnectNotice() {
   // agree; a refetch would put a round trip between the click and the screen.
   const write = (status: ReconnectView) => queryClient.setQueryData(queryKeys.reconnect, status);
 
+  // Only ever pressed from the declined face, where the supervisor has stood down and the reader
+  // is overruling it for one attempt. The working face lost its Try now — the ladder is already
+  // counting down there — and the plainly-stopped face never had one.
+  const tryNow = useMutation({
+    mutationFn: reconnectNow,
+    onSuccess: (result) => write(arrived(result)),
+    onError: (error) => logFault('Reconnect failed', error),
+  });
+
   const stop = useMutation({
     mutationFn: stopReconnecting,
     onSuccess: (result) => write(arrived(result)),
@@ -67,7 +76,7 @@ export function ReconnectNotice() {
    */
   const down = state === 'Faulted' && watch.droppedAt !== null;
   const back = watch.recoveredAt !== null;
-  const busy = stop.isPending;
+  const busy = stop.isPending || tryNow.isPending;
 
   // Which face. Order matters: a recovery outranks an outage, because by the time there is one to
   // report the outage is over — and a link that is up outranks both, except that 'back' IS a link
@@ -131,12 +140,29 @@ export function ReconnectNotice() {
             {where ? `The link to ${where} is down` : 'The link is down'}
             {why ? `: ${lowerFirst(why)}` : '.'}
           </p>
-          {/* And nothing to press: Connect is on the form above this notice, and is the answer. */}
+          {/* Three reasons nothing is being tried, and they want different words. Declined is the
+              supervisor's own judgement — a redial could not fix this one — and it is the only one
+              that says why in the same breath, because the reason is the whole of the point:
+              retrying a rejected password is not caution, it is a lockout. Connect is the answer
+              to all three, and it is on the form above. */}
           <p className={styles.was}>
-            {status.enabled
-              ? 'Reconnecting was stopped, so nothing is being tried. Connect puts it back.'
-              : 'Auto-reconnect is off, so nothing is being tried. Connect puts it back.'}
+            {status.declined
+              ? 'This is not something reconnecting would fix, so it is left for you. Change what ' +
+                'the fault was about and Connect, or press Try now to attempt it once as it is.'
+              : status.enabled
+                ? 'Reconnecting was stopped, so nothing is being tried. Connect puts it back.'
+                : 'Auto-reconnect is off, so nothing is being tried. Connect puts it back.'}
           </p>
+          {/* Try now is offered on a declined outage — the reader may know something the reason
+              code does not, or want to see the failure again — and never on a plainly stopped
+              one, where it would just duplicate the Connect on the form. */}
+          {status.declined && (
+            <div className={styles.actions}>
+              <button type="button" onClick={() => tryNow.mutate()} disabled={busy}>
+                Try now
+              </button>
+            </div>
+          )}
         </>
       )}
 

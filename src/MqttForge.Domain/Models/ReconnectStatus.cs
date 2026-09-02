@@ -26,7 +26,13 @@ public sealed record ReconnectStatus(
     // Per-outage, not permanent: it means "stop, I am looking at it". The next connection that
     // works re-arms the supervisor, the same way a hand-dialled link always has. The permanent
     // answer is Enabled, and it is a different control on a different part of the panel.
-    bool GaveUp)
+    bool GaveUp,
+
+    /// <summary>This outage is one the supervisor will not work on, because trying again could
+    /// not fix it or should not try to: a rejected password, a certificate nobody trusts, a
+    /// client ID another client has just taken. The option is still on; the next Connect that
+    /// works puts the supervisor back to work.</summary>
+    bool Declined = false)
 {
     /// <summary>Nothing wrong, nothing being done, and the option as it was last set.</summary>
     public static ReconnectStatus Idle(bool enabled) => new(enabled, false, 0, null, false);

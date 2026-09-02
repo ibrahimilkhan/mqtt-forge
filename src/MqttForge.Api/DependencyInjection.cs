@@ -28,6 +28,9 @@ public static class DependencyInjection
         // ticked. See ReconnectStatus.
         services.AddSingleton<IReconnectStatusNotifier, SignalRReconnectStatusNotifier>();
         services.AddSingleton<IMqttSubscriber, MqttnetSubscriber>();
+        // The same instance under its second face, for the supervisor alone — see the interface.
+        services.AddSingleton<ISubscriptionRestorer>(sp =>
+            (ISubscriptionRestorer)sp.GetRequiredService<IMqttSubscriber>());
 
         // Read at resolve time, not registration, so late-configuring hosts (tests) still work
         services.AddSingleton<IConnectionSettingsStore>(sp =>

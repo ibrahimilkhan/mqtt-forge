@@ -23,6 +23,7 @@ const UNANSWERED: ReconnectView = {
   attempt: 0,
   nextAttemptAt: null,
   gaveUp: false,
+  declined: false,
   now: '',
   dueAt: null,
 };

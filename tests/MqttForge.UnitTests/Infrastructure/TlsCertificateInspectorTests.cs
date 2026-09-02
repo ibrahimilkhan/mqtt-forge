@@ -57,6 +57,31 @@ public class TlsCertificateInspectorTests
                 [Status(X509ChainStatusFlags.UntrustedRoot), Status(X509ChainStatusFlags.NotTimeValid)]));
     }
 
+    // EMQX's own certificate, as shipped: self-signed, and issued for a name nothing dials it
+    // by. Both are true and only one is worth saying — the reader who fixes the trust finds out
+    // about the name, and the reader who is sent to fix the name first fixes nothing.
+    [Fact]
+    public void An_untrusted_chain_outranks_a_name_that_does_not_match()
+    {
+        Assert.Equal(
+            BrokerFailureReason.TlsCertUntrusted,
+            TlsCertificateInspector.Describe(
+                SslPolicyErrors.RemoteCertificateChainErrors | SslPolicyErrors.RemoteCertificateNameMismatch,
+                [Status(X509ChainStatusFlags.UntrustedRoot)]));
+    }
+
+    // ...unless the chain is one the reader vouched for. Then the name is all that is wrong.
+    [Fact]
+    public void A_name_mismatch_on_a_chain_the_extra_ca_signs_is_named_as_such()
+    {
+        Assert.Equal(
+            BrokerFailureReason.TlsCertNameMismatch,
+            TlsCertificateInspector.Describe(
+                SslPolicyErrors.RemoteCertificateChainErrors | SslPolicyErrors.RemoteCertificateNameMismatch,
+                [Status(X509ChainStatusFlags.UntrustedRoot)],
+                chainTrusted: true));
+    }
+
     [Fact]
     public void A_certificate_with_no_problems_leaves_nothing_to_report()
     {
