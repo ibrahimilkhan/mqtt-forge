@@ -514,15 +514,20 @@ describe('the keyboard, which is what most of this is filled in with', () => {
     expect(seen.request).toBeUndefined();
   });
 
-  it('does nothing on Enter over a live link, which Connect cannot do anyway', async () => {
-    const seen = watchConnect();
+  // Enter used to be caught and dropped over a live link, because the form was still on screen
+  // with a Port box a reader could put their cursor in. There is no form over a live link now, so
+  // there is nothing to press Enter in — which is the same answer arrived at by removing the
+  // question rather than by guarding it.
+  it('has no form at all over a live link', async () => {
     server.use(http.get('/api/connection', () => HttpResponse.json({ state: 'Connected' })));
     renderPanel();
 
     await screen.findByRole('button', { name: 'Disconnect' });
-    await userEvent.type(screen.getByLabelText('Port'), '{Enter}');
 
-    expect(seen.request).toBeUndefined();
+    expect(screen.queryByLabelText('Address')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Port')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Client ID')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Connect' })).not.toBeInTheDocument();
   });
 
   // Where a reader who opened this panel is going to type first.
@@ -532,12 +537,13 @@ describe('the keyboard, which is what most of this is filled in with', () => {
     await waitFor(() => expect(address()).toHaveFocus());
   });
 
-  // That panel was opened to read the summary or to end the connection.
-  it('leaves the cursor alone over a live link', async () => {
+  // That panel was opened to read the summary or to end the connection, and there is no box on it
+  // to put a cursor in.
+  it('has nothing to put a cursor in over a live link', async () => {
     server.use(http.get('/api/connection', () => HttpResponse.json({ state: 'Connected' })));
     renderPanel();
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Disconnect' })).toBeEnabled());
-    expect(address()).not.toHaveFocus();
+    expect(screen.queryByLabelText('Address')).not.toBeInTheDocument();
   });
 });
