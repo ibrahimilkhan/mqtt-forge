@@ -63,6 +63,28 @@ describe('App', () => {
     expect(screen.getByRole('separator', { name: 'Panel and topics boundary' })).toBeInTheDocument();
   });
 
+  // The shape is decided when the panel opens, not on every change of the link. Read live, the
+  // first Connect turned the window-sized form into a column the instant the link came up, a
+  // second before the panel stepped aside — a big panel shutting and a small one opening and
+  // shutting, for one button press.
+  it('keeps the window while a link the reader is making comes up', async () => {
+    server.use(
+      http.get('/api/connection', () => HttpResponse.json({ state: 'Disconnected' })),
+      http.post('/api/connection', () => HttpResponse.json({ state: 'Connected' })),
+      http.post('/api/subscriptions', () => new HttpResponse(null, { status: 202 })),
+    );
+    renderApp();
+    await menu().findByRole('button', { name: 'Broker' });
+    expect(screen.getByTestId('layout')).toHaveAttribute('data-panel', 'full');
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+    server.use(http.get('/api/connection', () => HttpResponse.json({ state: 'Connected' })));
+
+    // The link is up, on screen — and the panel is still the window it was.
+    await screen.findByText('Connected', { selector: 'p' });
+    expect(screen.getByTestId('layout')).toHaveAttribute('data-panel', 'full');
+  });
+
   // The second panel to cover them, and for a different reason than the broker's. The broker's is
   // a form, and a form does not get better at 1400px — it takes the workspace and keeps its
   // fields at a reading measure. This is a list of standing alarms and the rules under them, and
