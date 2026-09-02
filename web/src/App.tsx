@@ -38,9 +38,10 @@ const NARROW = '(max-width: 760px)';
 /**
  * What every panel is handed.
  *
- * `open` is here for the one panel that has somewhere to send the reader: connecting with the
- * broker refusing a subscription to everything is a dead end unless the Filters panel is a button
- * away. Panels with nowhere to send anyone simply do not name it.
+ * `open` is here for a panel that has somewhere to send the reader. None does at the moment —
+ * the Broker panel used to send a reader whose '#' was refused to Filters, and stopped — but the
+ * shape is the panel column's, not any one panel's, and a panel with nowhere to send anyone
+ * simply does not name it.
  */
 type PanelProps = { onClose: () => void; open: (id: PanelId) => void };
 

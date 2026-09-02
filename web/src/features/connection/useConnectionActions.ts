@@ -1,12 +1,11 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { cancelConnect, connect, disconnect } from '../../api/connection';
 import { queryKeys } from '../../api/queryKeys';
 import { subscribe } from '../../api/subscriptions';
 import { describeError } from '../../lib/problemDetails';
 import { logFault, useLogStore } from '../../stores/logStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
-import type { ConnectRequest } from '../../types/api';
+import type { ConnectRequest, ConnectionStateResponse } from '../../types/api';
 import { formatBrokerAddress } from './address';
 import { wasAborted } from './connectFailure';
 import { schemeOf } from './scheme';
@@ -26,24 +25,9 @@ type ConnectVars = { request: ConnectRequest; autoSubscribe: boolean; includeSys
 export function useConnectionActions() {
   const queryClient = useQueryClient();
 
-  /**
-   * Whether the broker turned down the subscription this console asks for on connect.
-   *
-   * Its own state because there is nothing else to carry it. A broker that refuses every topic
-   * has two ways of saying so, and only one of them is a failure: it can close the session, which
-   * arrives as a fault with a reason on it, or it can answer the SUBACK with a refusal code and
-   * leave the link up. The second is the quiet one — the connect worked, the link is up, and the
-   * console is listening to nothing at all — and until now the only trace of it was a line in the
-   * log, on a panel that had already stepped aside because the link held.
-   */
-  const [everythingRefused, setEverythingRefused] = useState(false);
-
   const connectMutation = useMutation({
     // Success means the connection itself succeeded; auto-subscribe failure doesn't count against it.
     mutationFn: ({ request }: ConnectVars) => connect(request),
-
-    // A new attempt is not answered yet, whatever the last one was told.
-    onMutate: () => setEverythingRefused(false),
 
     onSuccess: async (result, { request, autoSubscribe, includeSystem }) => {
       // Refetch, don't write the response: the hub may have already pushed a newer state.
@@ -67,7 +51,7 @@ export function useConnectionActions() {
         body: `${endpoint(request)} · ${request.clientId}`,
       });
 
-      if (autoSubscribe) setEverythingRefused(await subscribeOnConnect(includeSystem));
+      if (autoSubscribe) await subscribeOnConnect(includeSystem, queryClient);
 
       void queryClient.invalidateQueries({ queryKey: queryKeys.subscriptions });
       void queryClient.invalidateQueries({ queryKey: queryKeys.savedSettings });
@@ -98,7 +82,6 @@ export function useConnectionActions() {
   const disconnectMutation = useMutation({
     mutationFn: disconnect,
     onSuccess: () => {
-      setEverythingRefused(false);
       void queryClient.invalidateQueries({ queryKey: queryKeys.connection });
       void queryClient.invalidateQueries({ queryKey: queryKeys.subscriptions });
       useLogStore.getState().push({ kind: 'ok', verb: 'Disconnected' });
@@ -107,7 +90,7 @@ export function useConnectionActions() {
       logFault('Disconnect failed', error),
   });
 
-  return { connectMutation, disconnectMutation, abortMutation, everythingRefused };
+  return { connectMutation, disconnectMutation, abortMutation };
 }
 
 /** Everything, which is what the box beside Connect asks for. */
@@ -147,29 +130,68 @@ const SYSTEM = '$SYS/#';
 const EVERYTHING_QOS = 2;
 
 /**
- * What to listen to the moment the link is up, and whether the broker said no.
+ * What to listen to the moment the link is up.
  *
- * Everything, or nothing at all. A good many brokers out on the internet refuse a bare '#' —
- * mqtt.hsl.fi by closing the session — and that used to be guarded against with a filter box in
- * the panel. It is answered where it happens instead: the refusal is reported, and the Filters
- * panel is one button away from it.
+ * Everything, and then $SYS if it was asked for. A good many brokers out on the internet refuse a
+ * bare '#' — mqtt.hsl.fi by closing the session — and either way of refusing is reported where it
+ * happens: a closed session is a fault on the link, and a refused SUBACK is a line in the log.
  *
- * Reported on its own log line, so a failure here reads as a subscribe failure, not a connect
- * failure: the link is a separate thing and may well still be up. The answer is returned as well
- * as logged, because a link that is still up is exactly the case a log line on its own is not
- * enough for — see everythingRefused above.
+ * There used to be a third thing here: a flag that held the panel open over a link that was up
+ * and listening to nothing, and offered the Filters panel as the way out. It is gone. The refusal
+ * is a command that failed, and the log is where commands that failed are read.
  */
-async function subscribeOnConnect(includeSystem: boolean): Promise<boolean> {
-  const refused = !(await ask(EVERYTHING));
+async function subscribeOnConnect(includeSystem: boolean, queryClient: QueryClient): Promise<void> {
+  await ask(EVERYTHING);
 
-  // After the one that matters, and never allowed to answer for it. A broker with no $SYS tree at
-  // all is an ordinary broker — HiveMQ CE has none — and one that has it may still refuse it to a
-  // client that has not been given the right; neither is a console listening to nothing, which is
-  // what everythingRefused means and what the panel offers a way out of. So this one is reported
-  // in the log and forgotten.
-  if (includeSystem) await ask(SYSTEM);
+  // After the one that matters. A broker that refuses this one — EMQX answers NotAuthorized —
+  // says so in the SUBACK, and ask logs it. The quieter case is the one watched for: HiveMQ CE
+  // grants the filter and has no $SYS tree to publish under it, so the log said 'Subscribed' and
+  // nothing ever arrived, and nothing said which of the two was the odd one.
+  if (includeSystem && (await ask(SYSTEM))) watchForSystem(queryClient);
+}
 
-  return refused;
+/**
+ * How long a granted $SYS subscription is given to produce something before the log says it did
+ * not. Mosquitto republishes the tree every ten seconds by default and sends the retained half
+ * at once; twice that is long enough to be sure of, and short enough to still read as being
+ * about the connect it follows.
+ */
+export const SYSTEM_QUIET_AFTER = 20_000;
+
+/**
+ * Says so in the log if $SYS was granted and nothing came of it.
+ *
+ * A broker with no $SYS tree grants the filter like any other, and the only trace used to be a
+ * subscription listed in Filters with nothing under it: a ticked box and no data, and nothing to
+ * say which of the two was wrong. This is that line. It is a timer rather than a hub event
+ * because the thing it reports is an absence, and it is exported because a test wants a shorter
+ * wait than a reader does.
+ *
+ * Three reasons to say nothing, and each is a reason the line would be about a link that is not
+ * this one any more: the tree started again (a new connection), the link is not up, or something
+ * under $SYS did arrive after all.
+ */
+export function watchForSystem(queryClient: QueryClient, after = SYSTEM_QUIET_AFTER) {
+  const generation = useTopicTreeStore.getState().generation;
+
+  setTimeout(() => {
+    const tree = useTopicTreeStore.getState();
+    if (tree.generation !== generation) return;
+    if (tree.root.children.has('$SYS')) return;
+
+    const link = queryClient.getQueryData<ConnectionStateResponse>(queryKeys.connection);
+    if (link?.state !== 'Connected') return;
+
+    useLogStore.getState().push({
+      kind: 'fault',
+      verb: 'No $SYS statistics',
+      topic: SYSTEM,
+      body:
+        `Nothing arrived under $SYS/ in ${Math.round(after / 1000)}s. The broker took the ` +
+        'subscription but does not publish its statistics — HiveMQ CE has no $SYS tree; ' +
+        'Mosquitto and EMQX have one.',
+    });
+  }, after);
 }
 
 /** One filter, at the ceiling, and whether the broker took it. */

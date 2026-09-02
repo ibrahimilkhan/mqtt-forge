@@ -112,14 +112,17 @@ describe('the reconnect notice', () => {
       expect(await screen.findByText(/Trying again shortly/)).toBeInTheDocument();
     });
 
-    it('offers a way to stop it and a way to hurry it', async () => {
+    // A way to stop it, and no way to hurry it: the form this notice sits under has Connect,
+    // and a second dialling button an inch below it was one button too many.
+    it('offers a way to stop it and nothing that dials', async () => {
       dropped();
       api('Faulted', { active: true, attempt: 1, nextAttemptAt: '2026-09-02T21:00:08.000Z' });
 
       renderWithClient(<ReconnectNotice />);
 
-      expect(await screen.findByRole('button', { name: 'Try now' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Stop trying' })).toBeInTheDocument();
+      expect(await screen.findByRole('button', { name: 'Stop trying' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Try now' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Reconnect' })).not.toBeInTheDocument();
     });
 
     it('stopping calls the outage off', async () => {
@@ -150,32 +153,6 @@ describe('the reconnect notice', () => {
       // refetch between the click and the screen.
       expect(await screen.findByText('Not reconnecting')).toBeInTheDocument();
     });
-
-    it('trying now dials without waiting for the rung', async () => {
-      dropped();
-      api('Faulted', { active: true, attempt: 1, nextAttemptAt: '2026-09-02T21:00:08.000Z' });
-
-      let called = false;
-      server.use(
-        http.post('/api/connection/reconnect', () => {
-          called = true;
-
-          return HttpResponse.json({
-            enabled: true,
-            active: true,
-            attempt: 2,
-            nextAttemptAt: '2026-09-02T21:00:04.000Z',
-            gaveUp: false,
-            now: '2026-09-02T21:00:03.000Z',
-          });
-        }),
-      );
-
-      renderWithClient(<ReconnectNotice />);
-      await userEvent.click(await screen.findByRole('button', { name: 'Try now' }));
-
-      await waitFor(() => expect(called).toBe(true));
-    });
   });
 
   // ---- an outage nobody is working on ----
@@ -189,7 +166,8 @@ describe('the reconnect notice', () => {
 
       expect(await screen.findByText('Not reconnecting')).toBeInTheDocument();
       expect(screen.getByText(/Reconnecting was stopped/)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Reconnect' })).toBeInTheDocument();
+      // Nothing to press: the form above the notice has Connect.
+      expect(screen.queryByRole('button', { name: 'Reconnect' })).not.toBeInTheDocument();
     });
 
     // A different sentence, because it is a different reason and only one of them is undone by

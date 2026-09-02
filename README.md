@@ -108,14 +108,17 @@ is not there, because none of it is a question any more.
 second subscription and a separate box, because `#` cannot reach it: MQTT does not let a filter
 starting with a wildcard match a topic starting with `$`. It is off by default — those topics are
 republished on a timer, so a console that asked for them without being told would fill its log
-with a subtree nobody wanted. MQTT Explorer asks for both and has this one on.
+with a subtree nobody wanted. MQTT Explorer asks for both and has this one on. Not every broker
+has the tree: EMQX refuses the subscription and the log says so, and HiveMQ CE accepts it and
+publishes nothing — after 20 seconds with nothing under `$SYS/`, the log says that too.
 
 ### When the link drops
 
 MQTTForge puts a dropped link back up on its own, and it tells you it is doing it. The Broker
-panel opens by itself, says what broke the link, and counts down to the next try — 1, 2, 4, 8, 16
-and then every 30 seconds. **Try now** does not wait for the count. **Stop trying** calls off this
-outage and leaves the link alone until you connect again.
+panel opens by itself, and a notice at its foot says what broke the link and counts down to the
+next try — 1, 2, 4, 8, 16 and then every 30 seconds. **Stop trying** calls off this outage and
+leaves the link alone until you connect again; **Connect** on the form above it does not wait for
+the count.
 
 When the link comes back the panel stays open rather than closing on you: it says the link is
 back, what had broken it, and how long it was gone.
@@ -128,7 +131,7 @@ the link is down, which is when you most want to know which one went.
 **Reconnect automatically if the link drops** turns the whole arrangement off. It is on by
 default, because a MQTTForge running alert rules with no browser pointed at it has to survive a
 broker restart, and it is remembered in `reconnect.json` beside your other settings. With it off,
-a dropped link stays down until you press **Reconnect**.
+a dropped link stays down until you press **Connect**.
 
 ## Reading a message
 

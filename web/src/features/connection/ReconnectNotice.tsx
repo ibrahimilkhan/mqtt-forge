@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { reconnectNow, stopReconnecting } from '../../api/connection';
+import { stopReconnecting } from '../../api/connection';
 import { queryKeys } from '../../api/queryKeys';
 import { useConnectionState } from '../../api/useConnectionState';
 import { useReconnectStatus } from '../../api/useReconnectStatus';
@@ -19,14 +19,19 @@ import { arrived, secondsUntil, type ReconnectView } from './reconnectView';
  * comes back does not close the panel out from under them — it says what broke and that it is
  * back.
  *
- * It has four faces and never more than one at a time:
+ * It has three faces and never more than one at a time:
  *
  * - **working** — an outage the supervisor is climbing its ladder for, counting down to the next
- *   rung, with Try now and Stop.
+ *   rung, with a way to stop it.
  * - **stopped** — an outage nobody is working on, because the reader stopped it or because the
- *   option is off. One button: Reconnect.
+ *   option is off. No button: the form this notice sits under has Connect.
  * - **back** — it dropped and it is back. What broke it, how long it was gone, and a way to put
  *   the notice away.
+ *
+ * It used to dial as well — 'Try now' on the working face and 'Reconnect' on the stopped one —
+ * and both are gone. The notice stands at the foot of the Broker panel, under a form whose one
+ * dark button does exactly what they did, and a second dialling button an inch below the first
+ * was a reader wondering which of the two was the real one. This block reports; the form acts.
  *
  * There used to be a fourth, 'quiet': a live link with the auto-reconnect switch on it and nothing
  * else. It is gone, and the switch with it. Over a live link the panel's whole job is to report
@@ -40,16 +45,10 @@ export function ReconnectNotice() {
   const watch = useLinkWatchStore();
   const queryClient = useQueryClient();
 
-  // Every one of the three writes answers with the status it produced, so the cache is written
-  // from the answer rather than invalidated and re-fetched. The hub sends the same payload a beat
-  // later and they agree; a refetch would put a round trip between the click and the screen.
+  // The write answers with the status it produced, so the cache is written from the answer
+  // rather than invalidated and re-fetched. The hub sends the same payload a beat later and they
+  // agree; a refetch would put a round trip between the click and the screen.
   const write = (status: ReconnectView) => queryClient.setQueryData(queryKeys.reconnect, status);
-
-  const tryNow = useMutation({
-    mutationFn: reconnectNow,
-    onSuccess: (result) => write(arrived(result)),
-    onError: (error) => logFault('Reconnect failed', error),
-  });
 
   const stop = useMutation({
     mutationFn: stopReconnecting,
@@ -68,7 +67,7 @@ export function ReconnectNotice() {
    */
   const down = state === 'Faulted' && watch.droppedAt !== null;
   const back = watch.recoveredAt !== null;
-  const busy = tryNow.isPending || stop.isPending;
+  const busy = stop.isPending;
 
   // Which face. Order matters: a recovery outranks an outage, because by the time there is one to
   // report the outage is over — and a link that is up outranks both, except that 'back' IS a link
@@ -113,12 +112,9 @@ export function ReconnectNotice() {
               : 'Trying again shortly.'}
           </p>
           <div className={styles.actions}>
-            <button type="button" onClick={() => tryNow.mutate()} disabled={busy}>
-              Try now
-            </button>
-            {/* Stops this outage, not the option. The switch below is the standing answer, and
-                keeping them apart is what lets 'stop, I am looking at it' mean that and nothing
-                more — the next connection that works puts the supervisor back to work. */}
+            {/* Stops this outage, not the option. The switch on the form is the standing answer,
+                and keeping them apart is what lets 'stop, I am looking at it' mean that and
+                nothing more — the next connection that works puts the supervisor back to work. */}
             <button type="button" className="ghost" onClick={() => stop.mutate()} disabled={busy}>
               Stop trying
             </button>
@@ -135,16 +131,12 @@ export function ReconnectNotice() {
             {where ? `The link to ${where} is down` : 'The link is down'}
             {why ? `: ${lowerFirst(why)}` : '.'}
           </p>
+          {/* And nothing to press: Connect is on the form above this notice, and is the answer. */}
           <p className={styles.was}>
             {status.enabled
-              ? 'Reconnecting was stopped, so nothing is being tried.'
-              : 'Auto-reconnect is off, so nothing is being tried.'}
+              ? 'Reconnecting was stopped, so nothing is being tried. Connect puts it back.'
+              : 'Auto-reconnect is off, so nothing is being tried. Connect puts it back.'}
           </p>
-          <div className={styles.actions}>
-            <button type="button" onClick={() => tryNow.mutate()} disabled={busy}>
-              Reconnect
-            </button>
-          </div>
         </>
       )}
 

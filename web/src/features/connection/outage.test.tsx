@@ -316,6 +316,21 @@ describe('a link that drops while the reader is elsewhere', () => {
     expect(screen.getAllByRole('checkbox', { name: /Reconnect automatically/ })).toHaveLength(1);
   });
 
+  // The notice reports from the foot of the panel, under the form: the form is what puts a
+  // dropped link back, so the block explaining the drop stands after it rather than in the way.
+  it('the notice stands under the form, not above it', async () => {
+    const { says, supervising } = renderApp();
+    await says('Connected');
+    await says('Faulted');
+    await supervising({ active: true, attempt: 1, nextAttemptAt: '2026-09-02T21:00:08.000Z' });
+
+    const notice = await screen.findByText('Reconnecting');
+    const connect = screen.getByRole('button', { name: 'Connect' });
+
+    expect(connect.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Try now' })).not.toBeInTheDocument();
+  });
+
   it('the notice offers the stop that the supervisor honours', async () => {
     const { says, supervising } = renderApp();
     await says('Connected');

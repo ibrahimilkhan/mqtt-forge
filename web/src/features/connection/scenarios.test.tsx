@@ -28,7 +28,7 @@ function renderPanel() {
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
-  return render(<BrokerPanel onClose={vi.fn()} open={vi.fn()} />, { wrapper });
+  return render(<BrokerPanel onClose={vi.fn()} />, { wrapper });
 }
 
 /** The request the API was asked for, or nothing if Connect never reached it. */
@@ -470,10 +470,9 @@ describe('a connection that does not come up', () => {
       await waitFor(() => expect(asked).toEqual(['#', '$SYS/#']));
     });
 
-    // A broker with no $SYS tree is an ordinary broker — HiveMQ CE has none — and one that has it
-    // may refuse it to a client without the right. Neither is a console listening to nothing,
-    // which is what the dead-end offer below the form is about.
-    it('a broker that refuses it is not a console listening to nothing', async () => {
+    // A broker that has it may refuse it to a client without the right — EMQX answers
+    // NotAuthorized — and that is a line in the log, not a fault on a link that is up.
+    it('a broker that refuses it is a line in the log and nothing more', async () => {
       server.use(
         http.post('/api/connection', () => HttpResponse.json({ state: 'Connected' })),
         http.post('/api/subscriptions', async ({ request }) => {
@@ -490,8 +489,11 @@ describe('a connection that does not come up', () => {
       await connect();
 
       await waitFor(() =>
-        expect(screen.queryByRole('button', { name: 'Ask for less in Filters' })).not.toBeInTheDocument(),
+        expect(useLogStore.getState().commands).toContainEqual(
+          expect.objectContaining({ kind: 'fault', verb: 'Subscribe failed', topic: '$SYS/#' }),
+        ),
       );
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
 
     // Nothing at all is asked for when the box above it is off, so the second one has nothing to

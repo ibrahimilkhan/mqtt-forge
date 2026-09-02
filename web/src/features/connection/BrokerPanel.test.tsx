@@ -37,8 +37,7 @@ function renderPanel(queryClient = newQueryClient()) {
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
   const onClose = vi.fn();
-  const open = vi.fn();
-  return { ...render(<BrokerPanel onClose={onClose} open={open} />, { wrapper }), onClose, open };
+  return { ...render(<BrokerPanel onClose={onClose} />, { wrapper }), onClose };
 }
 
 beforeEach(() => {
@@ -227,8 +226,6 @@ describe('BrokerPanel', () => {
     await new Promise((resolve) => setTimeout(resolve, SETTLE + 300));
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByRole('alert')).toBeInTheDocument();
-    // And the way out of this particular dead end is still under it.
-    expect(screen.getByRole('button', { name: 'Ask for less in Filters' })).toBeInTheDocument();
   });
 
   // Reopened over a link that is already up — to read the summary, or to disconnect — nothing
@@ -1304,24 +1301,19 @@ describe('a broker that will not give you everything', () => {
     expect(asked).toBe(false);
   });
 
-  // The dead end, and the way out of it. Without this the reader is connected to nothing with
-  // nothing on screen to do about it.
-  it.each(['filterRefused', 'notPermitted'])('offers Filters after %s', async (reason) => {
-    faulted(reason);
-    const { open } = renderPanel();
+  // A refused filter is a sentence and nothing to press. There used to be a button here that
+  // opened Filters, and it is gone: the sentence says what the broker would not give, and the
+  // Filters panel is one click away in the rail, where every panel is.
+  it.each(['filterRefused', 'notPermitted', 'credentialsRejected'])(
+    'reports %s as a sentence, with nothing to press under it',
+    async (reason) => {
+      faulted(reason);
+      renderPanel();
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Ask for less in Filters' }));
-
-    expect(open).toHaveBeenCalledWith('subscribe');
-  });
-
-  it('offers nothing of the sort for a failure about the connection itself', async () => {
-    faulted('credentialsRejected');
-    renderPanel();
-
-    expect(await screen.findByText('The broker rejected the username or password.')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Ask for less in Filters' })).not.toBeInTheDocument();
-  });
+      expect(await screen.findByRole('alert')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Filters/ })).not.toBeInTheDocument();
+    },
+  );
 });
 
 // The section at the foot used to hold eleven brokers somebody else runs. These are the ones the

@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { MqttTransport, SavedProfile } from '../../types/api';
-import type { PanelId } from '../panels';
 import {
   deleteProfile,
   getSavedProfiles,
@@ -97,13 +96,7 @@ const DEFAULTS: BrokerForm = {
  * sentence naming why a connect failed. Placeholders carry what a box wants; the README carries
  * what the fields are for.
  */
-export function BrokerPanel({
-  onClose,
-  open,
-}: {
-  onClose: () => void;
-  open: (id: PanelId) => void;
-}) {
+export function BrokerPanel({ onClose }: { onClose: () => void }) {
   const [form, setForm] = useState(DEFAULTS);
   // The Address box's own text. Normally the host, the way in being the control to its
   // left and the port the one to its right — but the box takes a whole address too, and while
@@ -160,8 +153,7 @@ export function BrokerPanel({
     onError: (error) => logFault('Forget failed', error),
   });
   const files = useCertificateFile();
-  const { connectMutation, disconnectMutation, abortMutation, everythingRefused } =
-    useConnectionActions();
+  const { connectMutation, disconnectMutation, abortMutation } = useConnectionActions();
   const { isOnline, isConnecting, failure: faulted, answered } = useConnectionState();
   const guardedConnect = useGuardedMutate(connectMutation);
   const guardedDisconnect = useGuardedMutate(disconnectMutation);
@@ -297,23 +289,24 @@ export function BrokerPanel({
   const openedByFault = useLinkWatchStore((watch) => watch.openedByFault);
 
   /**
-   * The sentence the notice at the top is already saying, if it is saying one.
+   * Whether the notice at the foot is up, in which case the red line under the form is not.
    *
-   * Both blocks read the same failure through the same describer, so on a dropped link they print
-   * the same words — once at the top, where the reader was thrown, and once at the foot under the
-   * form. Two copies of one sentence is not emphasis; it reads as two different things having
-   * gone wrong. The top one wins, because it is the one with the buttons that answer it.
+   * Both read the same link, and on a dropped link they would say two things a few lines apart:
+   * the notice names what broke the link, and the line names what the latest retry ran into,
+   * which after a rung or two is a different sentence about the same outage. Two sentences read
+   * as two things having gone wrong. The notice wins, because it is the one that also says what
+   * is being done; and it wins outright rather than only when the words match, because the
+   * words stop matching the moment the ladder makes its second try.
    */
-  const outage = useLinkWatchStore((watch) => watch.droppedAt !== null);
-  const dropped = useLinkWatchStore((watch) => watch.failure);
-  const saidAbove =
-    outage && dropped ? describeFailureReason(dropped.reason, dropped) : undefined;
+  const noticeUp = useLinkWatchStore(
+    (watch) => watch.droppedAt !== null || watch.recoveredAt !== null,
+  );
 
   useEffect(() => {
     // Not while the attempt is still running. The connect is not over when the broker says yes:
-    // the subscription this console asks for on connect goes out inside the same mutation, and
-    // the answer to it is the difference between a link worth stepping aside for and a link that
-    // is listening to nothing. Waiting here is what makes everythingRefused knowable in time.
+    // the subscription this console asks for on connect goes out inside the same mutation, and a
+    // panel that stepped aside before the answer would leave a 'Subscribe failed' line to land
+    // on a screen the reader had already been sent away from.
     if (!settling || attemptRunning) return;
 
     const held = setTimeout(() => {
@@ -325,12 +318,12 @@ export function BrokerPanel({
       setSettling(false);
 
       // And the close, which is a different question: whether this panel was the reader's to
-      // begin with, and whether the link it stepped aside for is one worth stepping aside for.
-      if (!everythingRefused && !openedByFault) closer.current();
+      // begin with.
+      if (!openedByFault) closer.current();
     }, SETTLE);
 
     return () => clearTimeout(held);
-  }, [settling, attemptRunning, everythingRefused, openedByFault]);
+  }, [settling, attemptRunning, openedByFault]);
 
   // Arrives after first render; neither password is ever returned by the API.
   useEffect(() => {
@@ -400,17 +393,6 @@ export function BrokerPanel({
       (faulted && suggestScheme(faulted.reason, faulted)) ||
       undefined
     : undefined;
-
-  // The broker took the connection and then refused what was asked of it. Listening to every
-  // topic is what this panel asks for, and a good many brokers out on the internet will not
-  // allow it — so the dead end gets a way out rather than a sentence and nothing to press.
-  //
-  // Two shapes, and the second is the quiet one. A broker can close the session, which arrives as
-  // a fault with a reason on it; or it can refuse the SUBACK and leave the link up, which is not a
-  // failure anywhere and used to leave the reader connected, listening to nothing, with the panel
-  // already gone because the link held. See everythingRefused in useConnectionActions.
-  const filterRefused =
-    faulted?.reason === 'filterRefused' || faulted?.reason === 'notPermitted' || everythingRefused;
 
   const encrypted = isEncrypted(form.scheme);
   const overWebSocket = isWebSocket(form.scheme);
@@ -537,10 +519,6 @@ export function BrokerPanel({
   if (live) {
     return (
       <PanelShell title="Broker" onClose={releaseThenClose}>
-        {/* The 'back' face, for a link that dropped and came back. It is the one thing the notice
-            has to say over a live link, and the reason this panel stayed open at all. */}
-        <ReconnectNotice />
-
         <div className={styles.live}>
           <ConnectionSummary lead />
 
@@ -570,28 +548,16 @@ export function BrokerPanel({
           {nameBox}
         </div>
 
-        {/* The dead end this panel can be in while the link is perfectly fine: connected, and
-            listening to nothing, because the broker refused the filter this console asks for on
-            connect. It belongs on this face and not only on the other one — that is the whole
-            case it was written for. */}
-        {filterRefused && (
-          <div className={styles.actions}>
-            <button type="button" className="ghost" onClick={() => open('subscribe')}>
-              Ask for less in Filters
-            </button>
-          </div>
-        )}
+        {/* The 'back' face, for a link that dropped and came back. It is the one thing the notice
+            has to say over a live link, and the reason this panel stayed open at all. At the foot,
+            under the summary: the link is the news, and what it went through is the note. */}
+        <ReconnectNotice />
       </PanelShell>
     );
   }
 
   return (
     <PanelShell title="Broker" onClose={releaseThenClose}>
-      {/* Above the form, which is the one block in this panel that belongs in front of the fields:
-          the rest is read top to bottom as a form and a paragraph before the first field is a
-          paragraph in the way — but this is why the panel is open at all. A fault opened it. */}
-      <ReconnectNotice />
-
       {/* One column, in the order the questions arrive: where to point it, who it says it is
           when it gets there, and how the channel is secured.
 
@@ -1032,7 +998,7 @@ export function BrokerPanel({
           />        </div>
       )}
 
-      {failure && failure !== saidAbove && (
+      {failure && !noticeUp && (
         <p className={styles.fault} role="alert">
           {failure}
         </p>
@@ -1048,17 +1014,13 @@ export function BrokerPanel({
         </div>
       )}
 
-      {/* The other dead end, and the other way out. The box above asks for every topic; a broker
-          that will not give you every topic leaves you connected to nothing, and the panel that
-          asks for less is the answer. */}
-      {filterRefused && !attemptRunning && (
-        <div className={styles.actions}>
-          <button type="button" className="ghost" onClick={() => open('subscribe')}>
-            Ask for less in Filters
-          </button>
-        </div>
-      )}
-
+      {/* At the very foot, under the form and the brokers the reader keeps. It used to stand
+          above the fields, on the argument that a fault opening the panel was the reason the panel
+          was open at all. It was also a block of red between the reader and the address box, and
+          the form is the answer to it: a dropped link is put back by the same Connect button as
+          the first one was. So the notice reports from the foot, with the failure line it
+          replaces, and the form stays a form. */}
+      <ReconnectNotice />
     </PanelShell>
   );
 }
