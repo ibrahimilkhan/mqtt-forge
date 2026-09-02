@@ -123,6 +123,10 @@ the count.
 When the link comes back the panel stays open rather than closing on you: it says the link is
 back, what had broken it, and how long it was gone.
 
+Beside the form — under it on a narrow window — **Broker events** keeps the record: every
+connect, every subscription the broker took or refused, every drop, every try the ladder made,
+and the link coming back. The log starts again with each connection; this list does not.
+
 The **Broker** row in the rail carries all of this as a colour: green while there is a link, amber
 while something is being done about there not being one — a connect in flight, a reconnect being
 tried — and red when the link is down and nothing is happening. It goes on naming the broker while

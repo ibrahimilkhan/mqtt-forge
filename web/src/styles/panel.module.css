@@ -530,6 +530,64 @@
   max-width: none;
 }
 
+/* ---- the broker panel, spread across the window it takes ----
+
+   Two columns where there is room for them. The form at the left, at the width the measure
+   gives it; beside it what is not the form — the notice about the link, and under that the
+   record of what the link has been doing. Both are read rather than filled in, which is why they
+   are the ones that leave the column. The brokers the reader kept are not here: they stand under
+   both columns, across the whole measure, as a row of chips at the foot of the page.
+
+   A container query rather than a media query, because the width that decides this is the
+   panel's and not the window's: the same panel in a 1280px window and in a 1920px one should
+   split at the same point, and over a live link the panel is a column and never splits at all.
+   Below the break the aside falls under the form. */
+.spread { container-type: inline-size; }
+.spreadGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  column-gap: 48px;
+  align-items: start;
+}
+.aside { min-width: 0; }
+@container (min-width: 900px) {
+  .spreadGrid { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); }
+  /* Beside the form rather than under it, so the line that set the events apart from the form
+     above has nothing above it to be set apart from. The heading does that job on its own. */
+  .aside > .events:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+}
+
+/* ---- what the link has been doing ---- */
+.events { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--rule); }
+.eventsTitle { composes: savedTitle; }
+.eventsEmpty {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--t-small);
+  color: var(--muted);
+}
+.eventList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: var(--mono);
+  font-size: var(--t-small);
+}
+.event {
+  display: grid;
+  grid-template-columns: 8ch minmax(0, 1fr);
+  gap: 10px;
+  padding: 4px 0;
+  border-top: 1px solid var(--rule);
+}
+.event:first-child { border-top: none; padding-top: 0; }
+.eventAt { color: var(--muted); letter-spacing: 0.04em; }
+.eventBody { min-width: 0; }
+.eventWhat { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+.event[data-kind='fault'] .eventWhat { color: var(--fault); }
+.event[data-kind='note'] .eventWhat { color: var(--muted); }
+.eventDetail { margin: 2px 0 0; color: var(--muted); overflow-wrap: anywhere; }
+
 /* ---- a condition's children, one card each ----
 
    They were a 12px indent behind a 2px hairline: enough to say 'these belong to the thing above'

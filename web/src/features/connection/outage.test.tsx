@@ -331,6 +331,24 @@ describe('a link that drops while the reader is elsewhere', () => {
     expect(screen.queryByRole('button', { name: 'Try now' })).not.toBeInTheDocument();
   });
 
+  // The record beside the form: the drop, each try, and the link coming back — none of which
+  // is a command the reader gave, so none of which the log's own lines would say.
+  it('the events beside the form say what happened to the link', async () => {
+    const { says, supervising } = renderApp();
+    await says('Connected');
+    await says('Faulted');
+    await supervising({ active: true, attempt: 1, nextAttemptAt: '2026-09-02T21:00:08.000Z' });
+
+    expect(await screen.findByText(/^Link dropped/)).toBeInTheDocument();
+    expect(await screen.findByText('Try 1 failed')).toBeInTheDocument();
+
+    await supervising({ active: true, attempt: 2, nextAttemptAt: '2026-09-02T21:00:12.000Z' });
+    expect(await screen.findByText('Try 2 failed')).toBeInTheDocument();
+
+    await says('Connected');
+    expect(await screen.findByText(/^Link back/)).toBeInTheDocument();
+  });
+
   it('the notice offers the stop that the supervisor honours', async () => {
     const { says, supervising } = renderApp();
     await says('Connected');

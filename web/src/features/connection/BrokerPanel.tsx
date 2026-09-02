@@ -1,40 +1,31 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type KeyboardEvent,
-} from "react";
-import type { MqttTransport, SavedProfile } from "../../types/api";
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import type { MqttTransport, SavedProfile } from '../../types/api';
 import {
   deleteProfile,
   getSavedProfiles,
   getSavedSettings,
   saveProfile,
-} from "../../api/connection";
-import { queryKeys } from "../../api/queryKeys";
-import { Cross, Link, Save, Unlink } from "../brand/icons";
-import { Field } from "../../components/Field";
-import { PanelShell } from "../../components/PanelShell";
-import styles from "../../styles/panel.module.css";
-import { useConnectionState } from "../../api/useConnectionState";
-import { ApiError, fieldError } from "../../lib/problemDetails";
-import { logFault } from "../../stores/logStore";
-import { useLinkWatchStore } from "../../stores/linkWatchStore";
-import { useGuardedMutate } from "../../lib/useGuardedMutate";
-import type { CertificateFileKind } from "../../api/connection";
-import {
-  describeConnectFailure,
-  describeFailureReason,
-  suggestScheme,
-} from "./connectFailure";
-import { ConnectionSummary } from "./ConnectionSummary";
-import { AutoReconnectSwitch } from "./AutoReconnectSwitch";
-import { ReconnectNotice } from "./ReconnectNotice";
-import { SavedBrokers } from "./SavedBrokers";
-import { useCertificateFile } from "./useCertificateFile";
-import { useConnectionActions } from "./useConnectionActions";
+} from '../../api/connection';
+import { queryKeys } from '../../api/queryKeys';
+import { Cross, Link, Save, Unlink } from '../brand/icons';
+import { Field } from '../../components/Field';
+import { PanelShell } from '../../components/PanelShell';
+import styles from '../../styles/panel.module.css';
+import { useConnectionState } from '../../api/useConnectionState';
+import { ApiError, fieldError } from '../../lib/problemDetails';
+import { logFault } from '../../stores/logStore';
+import { useLinkWatchStore } from '../../stores/linkWatchStore';
+import { useGuardedMutate } from '../../lib/useGuardedMutate';
+import type { CertificateFileKind } from '../../api/connection';
+import { describeConnectFailure, describeFailureReason, suggestScheme } from './connectFailure';
+import { ConnectionSummary } from './ConnectionSummary';
+import { AutoReconnectSwitch } from './AutoReconnectSwitch';
+import { BrokerEvents } from './BrokerEvents';
+import { ReconnectNotice } from './ReconnectNotice';
+import { SavedBrokers } from './SavedBrokers';
+import { useCertificateFile } from './useCertificateFile';
+import { useConnectionActions } from './useConnectionActions';
 import {
   choiceOf,
   isEncrypted,
@@ -43,13 +34,8 @@ import {
   schemeForPort,
   schemeOf,
   type Scheme,
-} from "./scheme";
-import {
-  applyAddress,
-  buildConnectRequest,
-  formFromSaved,
-  type BrokerForm,
-} from "./brokerForm";
+} from './scheme';
+import { applyAddress, buildConnectRequest, formFromSaved, type BrokerForm } from './brokerForm';
 
 /**
  * How long a link has to hold before this panel steps aside for it, in milliseconds.
@@ -62,22 +48,22 @@ import {
 export const SETTLE = 300;
 
 const DEFAULTS: BrokerForm = {
-  scheme: "mqtt",
-  host: "localhost",
+  scheme: 'mqtt',
+  host: 'localhost',
   port: 1883,
-  clientId: "mqttforge-console",
-  username: "",
-  password: "",
-  webSocketPath: "",
+  clientId: 'mqttforge-console',
+  username: '',
+  password: '',
+  webSocketPath: '',
   cleanSession: true,
-  sessionExpiry: "",
+  sessionExpiry: '',
   allowUntrusted: false,
-  caPath: "",
-  clientCertPath: "",
-  clientKeyPath: "",
-  clientCertPassword: "",
-  sniHost: "",
-  alpnProtocol: "",
+  caPath: '',
+  clientCertPath: '',
+  clientKeyPath: '',
+  clientCertPassword: '',
+  sniHost: '',
+  alpnProtocol: '',
 };
 
 /**
@@ -138,10 +124,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
   // Which saved broker the form was last filled from, so its chip can say so. Cleared by every
   // edit that moves the address, since after that the form is no longer that broker.
   const [from, setFrom] = useState<string | null>(null);
-  const { data: saved } = useQuery({
-    queryKey: queryKeys.savedSettings,
-    queryFn: getSavedSettings,
-  });
+  const { data: saved } = useQuery({ queryKey: queryKeys.savedSettings, queryFn: getSavedSettings });
   const { data: profiles } = useQuery({
     queryKey: queryKeys.savedProfiles,
     queryFn: getSavedProfiles,
@@ -159,7 +142,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
       setFrom(name);
       refreshProfiles();
     },
-    onError: (error) => logFault("Save failed", error),
+    onError: (error) => logFault('Save failed', error),
   });
 
   const forgetMutation = useMutation({
@@ -168,17 +151,11 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
       setFrom((current) => (current === name ? null : current));
       refreshProfiles();
     },
-    onError: (error) => logFault("Forget failed", error),
+    onError: (error) => logFault('Forget failed', error),
   });
   const files = useCertificateFile();
-  const { connectMutation, disconnectMutation, abortMutation } =
-    useConnectionActions();
-  const {
-    isOnline,
-    isConnecting,
-    failure: faulted,
-    answered,
-  } = useConnectionState();
+  const { connectMutation, disconnectMutation, abortMutation } = useConnectionActions();
+  const { isOnline, isConnecting, failure: faulted, answered } = useConnectionState();
   const guardedConnect = useGuardedMutate(connectMutation);
   const guardedDisconnect = useGuardedMutate(disconnectMutation);
   const guardedAbort = useGuardedMutate(abortMutation);
@@ -187,6 +164,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
   // fires, before the API has been asked anything; isConnecting is the only one a panel that
   // was closed when the attempt started — or reopened since — has to go on.
   const attemptRunning = isConnecting || connectMutation.isPending;
+
 
   /**
    * The form and the address box, moved together.
@@ -230,6 +208,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
     settle(formFromSaved(profile.connection));
     setFrom(profile.name);
   };
+
 
   /**
    * The two answers, put back together into the one thing the API is told.
@@ -411,8 +390,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
   // The gate on `failure` inherits everything describeConnectFailure refuses to speak about: a
   // field error the inputs print themselves, and an attempt the reader called off.
   const suggestion = failure
-    ? (attempted &&
-        suggestScheme(errorReason(connectMutation.error), attempted)) ||
+    ? (attempted && suggestScheme(errorReason(connectMutation.error), attempted)) ||
       (faulted && suggestScheme(faulted.reason, faulted)) ||
       undefined
     : undefined;
@@ -429,17 +407,14 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
   const set = <K extends keyof BrokerForm>(key: K, value: BrokerForm[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
 
+
   // The box's text is reconciled here rather than relied on to have been reconciled by the blur.
   // A pure function called from both places means there is no ordering of events in which the
   // box shows one broker and the attempt goes to another.
   const submit = () => {
     const resolved = applyAddress(form, addressText);
     settle(resolved);
-    guardedConnect({
-      request: buildConnectRequest(resolved),
-      autoSubscribe,
-      includeSystem,
-    });
+    guardedConnect({ request: buildConnectRequest(resolved), autoSubscribe, includeSystem });
   };
 
   /**
@@ -461,17 +436,9 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
   // the scheme replaced and the port moved the way pressing the chip would move it.
   const retryOn = (scheme: Scheme) => {
     const current = applyAddress(form, addressText);
-    const next = {
-      ...current,
-      scheme,
-      port: portFor(current.scheme, scheme, current.port),
-    };
+    const next = { ...current, scheme, port: portFor(current.scheme, scheme, current.port) };
     settle(next);
-    guardedConnect({
-      request: buildConnectRequest(next),
-      autoSubscribe,
-      includeSystem,
-    });
+    guardedConnect({ request: buildConnectRequest(next), autoSubscribe, includeSystem });
   };
 
   /**
@@ -487,10 +454,9 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
    * cannot do.
    */
   const onEnter = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key !== "Enter" || naming !== null || isOnline || attemptRunning)
-      return;
+    if (e.key !== 'Enter' || naming !== null || isOnline || attemptRunning) return;
     // Not from inside a fold's summary, where Enter is what opens it.
-    if ((e.target as HTMLElement).tagName !== "INPUT") return;
+    if ((e.target as HTMLElement).tagName !== 'INPUT') return;
 
     e.preventDefault();
     submit();
@@ -506,37 +472,37 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
    * a second copy of this box would be a second set of answers to the same three questions.
    */
   const nameBox = naming !== null && (
-    <div className={styles.row}>
-      <Field label="Save as" htmlFor="profileName">
-        <input
-          id="profileName"
-          type="text"
-          value={naming}
-          placeholder="a name you will recognise"
-          autoFocus
-          onChange={(e) => setNaming(e.target.value)}
-          // Enter keeps it, Escape gives up. Neither is discoverable on its own, which is
-          // why both buttons are there too — these are for the hands already on the keys.
-          onKeyDown={(e) => {
-            if (e.key === "Enter") keep();
-            if (e.key === "Escape") setNaming(null);
-          }}
-        />
-      </Field>
-      <div className={styles.namingActions}>
-        <button
-          type="button"
-          onClick={keep}
-          disabled={naming.trim() === "" || keepMutation.isPending}
-        >
-          Save
-        </button>
-        <button type="button" className="ghost" onClick={() => setNaming(null)}>
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
+        <div className={styles.row}>
+          <Field label="Save as" htmlFor="profileName">
+            <input
+              id="profileName"
+              type="text"
+              value={naming}
+              placeholder="a name you will recognise"
+              autoFocus
+              onChange={(e) => setNaming(e.target.value)}
+              // Enter keeps it, Escape gives up. Neither is discoverable on its own, which is
+              // why both buttons are there too — these are for the hands already on the keys.
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') keep();
+                if (e.key === 'Escape') setNaming(null);
+              }}
+            />
+          </Field>
+          <div className={styles.namingActions}>
+            <button
+              type="button"
+              onClick={keep}
+              disabled={naming.trim() === '' || keepMutation.isPending}
+            >
+              Save
+            </button>
+            <button type="button" className="ghost" onClick={() => setNaming(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+    );
 
   /**
    * The panel over a live link: what is up, and the two things to do about it.
@@ -554,6 +520,8 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
   if (live) {
     return (
       <PanelShell title="Broker" onClose={releaseThenClose}>
+        <div className={styles.spread}>
+        <div className={styles.spreadGrid}>
         <div className={styles.live}>
           <ConnectionSummary lead />
 
@@ -568,7 +536,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
             </button>
 
             {/* The same mark as Connect with the join taken out of it, which is the whole of
-            what this button does. */}
+                what this button does. */}
             <button
               type="button"
               className={`ghost ${styles.iconButton} ${styles.trailing}`}
@@ -583,10 +551,15 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
           {nameBox}
         </div>
 
-        {/* The 'back' face, for a link that dropped and came back. It is the one thing the notice
-            has to say over a live link, and the reason this panel stayed open at all. Under the
-            summary: the link is the news, and what it went through is the note. */}
-        <ReconnectNotice />
+        {/* The 'back' face, for a link that dropped and came back, and under it the record of
+            everything the link has done. Beside the summary where there is room, under it where
+            there is not: the link is the news, and what it went through is the note. */}
+        <aside className={styles.aside}>
+          <ReconnectNotice />
+          <BrokerEvents />
+        </aside>
+        </div>
+        </div>
       </PanelShell>
     );
   }
@@ -602,7 +575,11 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
           would say the questions in. One order, at every width, is the whole of the change.
 
           In the column the form is capped; over the whole workspace it takes the panel's measure —
-          see `.form`. */}
+          see `.form` — and what stands beside it there is what is not the form: the notice about
+          the link and the record of what the link has done. See `.spread`. */}
+      <div className={styles.spread}>
+      <div className={styles.spreadGrid}>
+      <div>
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <div className={styles.form} onKeyDown={onEnter}>
         <section className={styles.group}>
@@ -623,9 +600,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
                   id="transport"
                   aria-label="Transport"
                   value={choiceOf(form.scheme).transport}
-                  onChange={(e) =>
-                    pickWay(e.target.value as MqttTransport, encrypted)
-                  }
+                  onChange={(e) => pickWay(e.target.value as MqttTransport, encrypted)}
                 >
                   {/* Written with the `://` they carry in an address, this being where they stand
                       and what they are standing in for. */}
@@ -646,7 +621,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
                   // by the time the box is left the reader has finished writing in it.
                   onPaste={(e) => {
                     e.preventDefault();
-                    settle(applyAddress(form, e.clipboardData.getData("text")));
+                    settle(applyAddress(form, e.clipboardData.getData('text')));
                   }}
                   onBlur={(e) => settle(applyAddress(form, e.target.value))}
                 />
@@ -659,15 +634,10 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
                 id="port"
                 type="number"
                 value={form.port}
-                onChange={(e) => set("port", Number(e.target.value))}
+                onChange={(e) => set('port', Number(e.target.value))}
                 // On the way out, for the same reason the address box splits on the way out: a
                 // number halfway through being typed is not a number. See schemeForPort.
-                onBlur={() =>
-                  settle({
-                    ...form,
-                    scheme: schemeForPort(form.scheme, form.port),
-                  })
-                }
+                onBlur={() => settle({ ...form, scheme: schemeForPort(form.scheme, form.port) })}
               />
               <FieldError error={connectMutation.error} field="Port" />
             </Field>
@@ -694,11 +664,9 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
               <input
                 type="checkbox"
                 checked={encrypted}
-                onChange={(e) =>
-                  pickWay(choiceOf(form.scheme).transport, e.target.checked)
-                }
+                onChange={(e) => pickWay(choiceOf(form.scheme).transport, e.target.checked)}
               />
-              {" Encrypted (TLS)"}
+              {' Encrypted (TLS)'}
             </label>
           </div>
 
@@ -712,7 +680,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
                   type="text"
                   value={form.webSocketPath}
                   placeholder="/mqtt"
-                  onChange={(e) => set("webSocketPath", e.target.value)}
+                  onChange={(e) => set('webSocketPath', e.target.value)}
                 />
                 {/* No FieldError: the API refuses no path, deliberately. A wrong one comes back as
                     a refused upgrade, which says more than any rule here could. */}
@@ -730,7 +698,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
                 type="text"
                 placeholder="optional"
                 value={form.username}
-                onChange={(e) => set("username", e.target.value)}
+                onChange={(e) => set('username', e.target.value)}
               />
             </Field>
             <Field label="Password" htmlFor="password">
@@ -739,7 +707,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
                 type="password"
                 placeholder="optional"
                 value={form.password}
-                onChange={(e) => set("password", e.target.value)}
+                onChange={(e) => set('password', e.target.value)}
               />
             </Field>
           </div>
@@ -755,7 +723,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
                 id="clientId"
                 type="text"
                 value={form.clientId}
-                onChange={(e) => set("clientId", e.target.value)}
+                onChange={(e) => set('clientId', e.target.value)}
               />
               <FieldError error={connectMutation.error} field="ClientId" />
             </Field>
@@ -766,9 +734,9 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
               <input
                 type="checkbox"
                 checked={form.cleanSession}
-                onChange={(e) => set("cleanSession", e.target.checked)}
+                onChange={(e) => set('cleanSession', e.target.checked)}
               />
-              {" Clean session"}
+              {' Clean session'}
             </label>
           </div>
 
@@ -785,7 +753,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
                   min={0}
                   placeholder="secs"
                   value={form.sessionExpiry}
-                  onChange={(e) => set("sessionExpiry", e.target.value)}
+                  onChange={(e) => set('sessionExpiry', e.target.value)}
                 />
               </Field>
             </div>
@@ -822,109 +790,101 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
           <summary>Encryption</summary>
 
           <fieldset className={styles.foldFields} disabled={!encrypted}>
-            <div className={styles.checks}>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={form.allowUntrusted}
-                  onChange={(e) => set("allowUntrusted", e.target.checked)}
-                />
-                {" Accept any certificate"}
-              </label>
-            </div>
-            <PathField
-              label="Extra CA certificate"
-              id="caPath"
-              kind="authority"
-              placeholder="/path/to/ca.crt"
-              value={form.caPath}
-              onPath={(path) => set("caPath", path)}
-              files={files}
-            />
+          <div className={styles.checks}>
+            <label>
+              <input
+                type="checkbox"
+                checked={form.allowUntrusted}
+                onChange={(e) => set('allowUntrusted', e.target.checked)}
+              />
+              {' Accept any certificate'}
+            </label>
+          </div>
+          <PathField
+            label="Extra CA certificate"
+            id="caPath"
+            kind="authority"
+            placeholder="/path/to/ca.crt"
+            value={form.caPath}
+            onPath={(path) => set('caPath', path)}
+            files={files}
+          />
 
-            {/* A row each, rather than two to a row. Paths are the longest thing anyone types
+          {/* A row each, rather than two to a row. Paths are the longest thing anyone types
               into this panel, and half a column shows about six characters of one — measured,
               after the two shared a row and 'Client certificate' wrapped to two lines while
               'Private key' did not, leaving their boxes at different heights. */}
+          <PathField
+            label="Client certificate"
+            id="clientCertPath"
+            kind="certificate"
+            placeholder="/path/to/client.pfx or .crt"
+            value={form.clientCertPath}
+            onPath={(path) => set('clientCertPath', path)}
+            files={files}
+          />
+
+          {/* Only where there is a certificate for it to belong to, and only where that
+              certificate does not already carry it. */}
+          {clientCert !== '' && !bundled && (
             <PathField
-              label="Client certificate"
-              id="clientCertPath"
-              kind="certificate"
-              placeholder="/path/to/client.pfx or .crt"
-              value={form.clientCertPath}
-              onPath={(path) => set("clientCertPath", path)}
+              label="Private key"
+              id="clientKeyPath"
+              kind="key"
+              placeholder="/path/to/client.key"
+              value={form.clientKeyPath}
+              onPath={(path) => set('clientKeyPath', path)}
               files={files}
             />
+          )}
 
-            {/* Only where there is a certificate for it to belong to, and only where that
-              certificate does not already carry it. */}
-            {clientCert !== "" && !bundled && (
-              <PathField
-                label="Private key"
-                id="clientKeyPath"
-                kind="key"
-                placeholder="/path/to/client.key"
-                value={form.clientKeyPath}
-                onPath={(path) => set("clientKeyPath", path)}
-                files={files}
-              />
-            )}
+          {clientCert !== '' && (
+            <>
+              <div className={styles.row}>
+                <Field label="Certificate password" htmlFor="clientCertPassword">
+                  <input
+                    id="clientCertPassword"
+                    type="password"
+                    placeholder="optional"
+                    value={form.clientCertPassword}
+                    onChange={(e) => set('clientCertPassword', e.target.value)}
+                  />
+                </Field>
+              </div>
+            </>
+          )}
 
-            {clientCert !== "" && (
-              <>
-                <div className={styles.row}>
-                  <Field
-                    label="Certificate password"
-                    htmlFor="clientCertPassword"
-                  >
-                    <input
-                      id="clientCertPassword"
-                      type="password"
-                      placeholder="optional"
-                      value={form.clientCertPassword}
-                      onChange={(e) =>
-                        set("clientCertPassword", e.target.value)
-                      }
-                    />
-                  </Field>
-                </div>
-              </>
-            )}
-
-            {/* The other two, behind a line of their own: neither is about a certificate, and
+          {/* The other two, behind a line of their own: neither is about a certificate, and
               neither is asked for by any broker you reach at its own address on its own port.
               Kept rather than dropped, because without ALPN there is no way to reach AWS IoT Core
               on 443, which is the documented way through a firewall that allows only HTTPS. */}
-            <details className={styles.more}>
-              <summary>Server name and ALPN</summary>
+          <details className={styles.more}>
+            <summary>Server name and ALPN</summary>
 
-              <div className={styles.row}>
-                <Field label="Server name" htmlFor="sniHost">
-                  <input
-                    id="sniHost"
-                    type="text"
-                    placeholder="defaults to the host"
-                    value={form.sniHost}
-                    onChange={(e) => set("sniHost", e.target.value)}
-                  />
-                </Field>
-              </div>
-              <div className={styles.row}>
-                <Field label="ALPN protocol" htmlFor="alpnProtocol">
-                  <input
-                    id="alpnProtocol"
-                    type="text"
-                    placeholder="e.g. x-amzn-mqtt-ca"
-                    value={form.alpnProtocol}
-                    onChange={(e) => set("alpnProtocol", e.target.value)}
-                  />
-                  <FieldError
-                    error={connectMutation.error}
-                    field="Tls.AlpnProtocol"
-                  />
-                </Field>
-              </div>
-            </details>
+            <div className={styles.row}>
+              <Field label="Server name" htmlFor="sniHost">
+                <input
+                  id="sniHost"
+                  type="text"
+                  placeholder="defaults to the host"
+                  value={form.sniHost}
+                  onChange={(e) => set('sniHost', e.target.value)}
+                />
+              </Field>
+            </div>
+            <div className={styles.row}>
+              <Field label="ALPN protocol" htmlFor="alpnProtocol">
+                <input
+                  id="alpnProtocol"
+                  type="text"
+                  placeholder="e.g. x-amzn-mqtt-ca"
+                  value={form.alpnProtocol}
+                  onChange={(e) => set('alpnProtocol', e.target.value)}
+                />
+                <FieldError error={connectMutation.error} field="Tls.AlpnProtocol" />
+              </Field>
+            </div>
+          </details>
           </fieldset>
         </details>
       </div>
@@ -945,7 +905,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
             checked={autoSubscribe}
             onChange={(e) => setAutoSubscribe(e.target.checked)}
           />
-          {" Listen to every topic on connect"}
+          {' Listen to every topic on connect'}
         </label>
 
         {/* Its own box because it is its own SUBSCRIBE. '#' cannot reach these — a filter that
@@ -959,7 +919,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
             disabled={!autoSubscribe}
             onChange={(e) => setIncludeSystem(e.target.checked)}
           />
-          {" Include $SYS broker statistics"}
+          {' Include $SYS broker statistics'}
         </label>
 
         {/* Beside it, because the two are the same kind of answer: what this console should do
@@ -1038,10 +998,41 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
 
       {nameBox}
 
-      {/* At the foot, and only once there is something to put here. It used to hold eleven
-          brokers somebody else runs; these are the ones the reader kept. Under the form rather
-          than beside it: they stood in a column of their own for a while, and a column for a
-          row of chips was a column mostly of nothing. */}
+      {failure && !noticeUp && (
+        <p className={styles.fault} role="alert">
+          {failure}
+        </p>
+      )}
+
+      {/* Under the sentence that explains the failure, not beside the button that caused it:
+          it is the answer to what just happened, and it only exists because of it. */}
+      {suggestion && !attemptRunning && (
+        <div className={styles.actions}>
+          <button type="button" className="ghost" onClick={() => retryOn(suggestion.scheme)}>
+            {`Try ${suggestion.scheme}:// instead`}
+          </button>
+        </div>
+      )}
+
+      </div>
+
+      {/* Beside the form where there is room, under it where there is not; either way after it.
+          The notice says what became of the link and what is being done; the record under it
+          says everything the link has done since the console opened. The notice used to stand
+          above the fields, on the argument that a fault opening the panel was the reason the
+          panel was open at all. It was also a block of red between the reader and the address
+          box, and the form is the answer to it: a dropped link is put back by the same Connect
+          button as the first one was. */}
+      <aside className={styles.aside}>
+        <ReconnectNotice />
+        <BrokerEvents />
+      </aside>
+      </div>
+      </div>
+
+      {/* At the foot of the page, across both columns, and only once there is something to put
+          here. It used to hold eleven brokers somebody else runs; these are the ones the reader
+          kept. A row of chips wants the width, not a column. */}
       {profiles !== undefined && profiles.length > 0 && (
         <div className={styles.saved}>
           <h3 className={styles.savedTitle}>Saved brokers</h3>
@@ -1053,41 +1044,12 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
           />
         </div>
       )}
-
-      {failure && !noticeUp && (
-        <p className={styles.fault} role="alert">
-          {failure}
-        </p>
-      )}
-
-      {/* Under the sentence that explains the failure, not beside the button that caused it:
-          it is the answer to what just happened, and it only exists because of it. */}
-      {suggestion && !attemptRunning && (
-        <div className={styles.actions}>
-          <button
-            type="button"
-            className="ghost"
-            onClick={() => retryOn(suggestion.scheme)}
-          >
-            {`Try ${suggestion.scheme}:// instead`}
-          </button>
-        </div>
-      )}
-
-      {/* At the very foot, under the form and the brokers the reader keeps. It used to stand
-          above the fields, on the argument that a fault opening the panel was the reason the
-          panel was open at all. It was also a block of red between the reader and the address
-          box, and the form is the answer to it: a dropped link is put back by the same Connect
-          button as the first one was. So the notice reports from the foot, with the failure line
-          it replaces, and the form stays a form. */}
-      <ReconnectNotice />
     </PanelShell>
   );
 }
 // The reason off an error that carries one. Anything else — a network error, a thrown string —
 // names no reason, and a suggestion needs one to be about.
-const errorReason = (error: unknown) =>
-  error instanceof ApiError ? error.reason : undefined;
+const errorReason = (error: unknown) => (error instanceof ApiError ? error.reason : undefined);
 
 /**
  * A path, and the dialog that fills it in.
@@ -1145,7 +1107,7 @@ function PathField({
                 if (path) onPath(path);
               }}
             >
-              {value.trim() === "" ? "Choose…" : "Change…"}
+              {value.trim() === '' ? 'Choose…' : 'Change…'}
             </button>
           )}
         </div>

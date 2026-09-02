@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useBrokerEventsStore } from './brokerEventsStore';
 import { describeError } from '../lib/problemDetails';
 import { matchesFilter } from '../lib/topicMatch';
 import type { BodyMode } from '../lib/payload';
@@ -164,6 +165,17 @@ export const useLogStore = create<LogState>((set) => ({
       if (written.kind === 'recv' && written.topic) {
         return { held: file(state, written, state.held), version: state.version + 1 };
       }
+
+      // Every command is a broker event as well, and the events are where it outlives this log:
+      // the next connection clears the commands, and the line saying what the last one did goes
+      // with them. See brokerEventsStore.
+      useBrokerEventsStore.getState().push({
+        // Past the arrival test above, so 'recv' is not a value this can be — the type just
+        // does not know it.
+        kind: written.kind === 'fault' ? 'fault' : 'ok',
+        what: written.topic ? `${written.verb ?? ''} · ${written.topic}` : (written.verb ?? ''),
+        detail: written.body,
+      });
 
       return {
         commands: [written, ...state.commands].slice(0, MAX_COMMANDS),
