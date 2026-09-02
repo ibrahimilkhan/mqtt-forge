@@ -250,18 +250,15 @@ describe('the reconnect notice', () => {
   // ---- nothing wrong ----
 
   describe('when there is nothing to report', () => {
-    // The standing answer, set while nothing is wrong. It is the one control here that is not
-    // about an outage, so it is the one that survives when there is no outage.
-    it('a live link shows the switch and nothing else', async () => {
+    // There used to be a fourth face here — a live link carrying the auto-reconnect switch and
+    // nothing else. Over a live link this block has nothing to say unless the link has just come
+    // back, and a switch about a thing that is not happening was the loudest control on a panel
+    // describing a connection that was perfectly fine. The switch stands with the form now.
+    it('a live link with nothing to report shows no block at all', async () => {
       api('Connected');
+      const { container } = renderWithClient(<ReconnectNotice />);
 
-      renderWithClient(<ReconnectNotice />);
-
-      expect(
-        await screen.findByRole('checkbox', { name: /Reconnect automatically/ }),
-      ).toBeInTheDocument();
-      expect(screen.queryByText('Reconnecting')).not.toBeInTheDocument();
-      expect(screen.queryByText('Reconnected')).not.toBeInTheDocument();
+      await waitFor(() => expect(container).toBeEmptyDOMElement());
     });
 
     // The distinction the whole store turns on. A Connect that failed is the Broker panel's own
@@ -284,30 +281,4 @@ describe('the reconnect notice', () => {
     });
   });
 
-  // ---- the option ----
-
-  it('the switch is the standing answer, and it is sent', async () => {
-    api('Connected');
-
-    let sent: unknown;
-    server.use(
-      http.put('/api/connection/reconnect', async ({ request }) => {
-        sent = await request.json();
-
-        return HttpResponse.json({
-          enabled: false,
-          active: false,
-          attempt: 0,
-          nextAttemptAt: null,
-          gaveUp: false,
-          now: '2026-09-02T21:00:00.000Z',
-        });
-      }),
-    );
-
-    renderWithClient(<ReconnectNotice />);
-    await userEvent.click(await screen.findByRole('checkbox', { name: /Reconnect automatically/ }));
-
-    await waitFor(() => expect(sent).toEqual({ enabled: false }));
-  });
 });

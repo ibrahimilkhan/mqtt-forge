@@ -29,7 +29,7 @@ const STYLE = `<style>
   nav a { font-family: var(--mono); font-size: var(--t-small); margin-right: 14px; }
 </style>`;
 
-const NAV = ['reconnect-working', 'reconnect-stopped', 'reconnect-off', 'reconnect-back', 'reconnect-quiet', 'reconnect-panel']
+const NAV = ['reconnect-working', 'reconnect-stopped', 'reconnect-off', 'reconnect-back', 'broker-form', 'broker-live', 'reconnect-panel']
   .map((name) => `<a href="/${name}.html">${name}</a>`)
   .join('');
 
@@ -97,6 +97,15 @@ function history({ back = false } = {}) {
   });
 }
 
+const panel = (query) =>
+  render(
+    <QueryClientProvider client={query}>
+      <div className="plate" style={{ maxWidth: 900 }}>
+        <BrokerPanel onClose={() => {}} open={() => {}} />
+      </div>
+    </QueryClientProvider>,
+  );
+
 const block = (query) =>
   render(
     <QueryClientProvider client={query}>
@@ -146,27 +155,27 @@ it.skipIf(!existsSync(OUT))('writes the reconnect pages', () => {
   writeFileSync(`${OUT}/reconnect-back.html`, page('reconnected', view.container.innerHTML));
   view.unmount();
 
-  // 5 — nothing wrong: the switch on its own, which is the panel opened on purpose.
+  // 5 — the panel with no link: the form, and the switch standing with it. The one face that
+  // asks for something.
+  resetLinkWatch();
+  view = panel(client('Disconnected', {}));
+  writeFileSync(`${OUT}/broker-form.html`, page('the form, and the switch', view.container.innerHTML));
+  view.unmount();
+
+  // 5b — and the panel over a live link, which is the whole of what this change is about: no
+  // form, no switch, just what is up and the two things to do about it.
   resetLinkWatch();
   act(() => useLinkWatchStore.getState().saw('Connected', null, 0));
-  view = block(client('Connected', {}));
-  writeFileSync(`${OUT}/reconnect-quiet.html`, page('nothing wrong', view.container.innerHTML));
+  view = panel(client('Connected', {}));
+  writeFileSync(`${OUT}/broker-live.html`, page('a live link', view.container.innerHTML));
   view.unmount();
 
   // 6 — and the whole panel with the block on top of it, which is the only page that shows
   // whether it sits right above the form it was put in front of.
   history();
-  const query = client('Faulted', {
-    active: true,
-    attempt: 2,
-    nextAttemptAt: '2026-09-02T21:00:16.000Z',
-  });
-  view = render(
-    <QueryClientProvider client={query}>
-      <div className="plate" style={{ maxWidth: 900 }}>
-        <BrokerPanel onClose={() => {}} open={() => {}} />
-      </div>
-    </QueryClientProvider>,
+  history();
+  view = panel(
+    client('Faulted', { active: true, attempt: 2, nextAttemptAt: '2026-09-02T21:00:16.000Z' }),
   );
   writeFileSync(`${OUT}/reconnect-panel.html`, page('the panel a fault opened', view.container.innerHTML));
   view.unmount();

@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { reconnectNow, setReconnectEnabled, stopReconnecting } from '../../api/connection';
+import { reconnectNow, stopReconnecting } from '../../api/connection';
 import { queryKeys } from '../../api/queryKeys';
 import { useConnectionState } from '../../api/useConnectionState';
 import { useReconnectStatus } from '../../api/useReconnectStatus';
@@ -27,8 +27,12 @@ import { arrived, secondsUntil, type ReconnectView } from './reconnectView';
  *   option is off. One button: Reconnect.
  * - **back** — it dropped and it is back. What broke it, how long it was gone, and a way to put
  *   the notice away.
- * - **quiet** — a live link and nothing to report, which is the panel opened on purpose. Only the
- *   switch, so the standing answer can be set while nothing is wrong.
+ *
+ * There used to be a fourth, 'quiet': a live link with the auto-reconnect switch on it and nothing
+ * else. It is gone, and the switch with it. Over a live link the panel's whole job is to report
+ * what is up, and a switch about a thing that is not happening was the loudest control on a screen
+ * describing a connection that was perfectly fine. The switch now stands with the form, where it
+ * is only on screen while there is no link — see AutoReconnectSwitch.
  */
 export function ReconnectNotice() {
   const { state, failure } = useConnectionState();
@@ -53,12 +57,6 @@ export function ReconnectNotice() {
     onError: (error) => logFault('Could not stop reconnecting', error),
   });
 
-  const option = useMutation({
-    mutationFn: setReconnectEnabled,
-    onSuccess: (result) => write(arrived(result)),
-    onError: (error) => logFault('Could not change auto-reconnect', error),
-  });
-
   /**
    * A link that went down, as opposed to one that never came up.
    *
@@ -81,9 +79,7 @@ export function ReconnectNotice() {
       ? 'working'
       : down
         ? 'stopped'
-        : state === 'Connected'
-          ? 'quiet'
-          : null;
+        : null;
 
   // Nothing to say. A console that has never connected, or one mid-attempt with no history, gets
   // no block at all rather than an empty one.
@@ -176,22 +172,15 @@ export function ReconnectNotice() {
         </>
       )}
 
-      {/* On every face, including the quiet one. It is the answer to "why did it do that", and the
-          place a reader goes looking for it is the block that just did it. */}
-      <label className={styles.option}>
-        <input
-          type="checkbox"
-          checked={status.enabled}
-          disabled={option.isPending}
-          onChange={(e) => option.mutate(e.target.checked)}
-        />
-        <span>Reconnect automatically when the link drops</span>
-      </label>
+      {/* The switch was here too for a moment, on the two outage faces, and that was one switch
+          too many: every state this block draws is a state with no link, and a panel with no link
+          is showing the form — which carries the switch already, a few inches down. Two checkboxes
+          for one setting on one screen is a reader wondering which of them is the real one. */}
     </section>
   );
 }
 
-type Face = 'working' | 'stopped' | 'back' | 'quiet';
+type Face = 'working' | 'stopped' | 'back';
 
 /**
  * Seconds to the next rung, ticking.

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
@@ -534,7 +534,7 @@ describe('BrokerPanel', () => {
     await waitFor(() => expect(calls).toBe(1));
   });
 
-  it('shows the live link under the form once connected', async () => {
+  it('names the broker it is connected to', async () => {
     server.use(
       http.get('/api/connection', () =>
         HttpResponse.json({
@@ -556,8 +556,14 @@ describe('BrokerPanel', () => {
 
     renderPanel();
 
-    const details = await screen.findByLabelText('Connection details');
-    expect(within(details).getByText('broker.example:8883')).toBeInTheDocument();
+    // Above the list rather than in it: the status head carries the address, and the list would
+    // otherwise say the same broker twice two lines apart.
+    await screen.findByLabelText('Connection details');
+    expect(screen.getByText('broker.example:8883')).toBeInTheDocument();
+    // And the state itself, in words, which nine rows of true facts never said.
+    expect(screen.getByText('Connected')).toBeInTheDocument();
+    // The row that used to wear that word says what its value is instead.
+    expect(screen.getByText('Since')).toBeInTheDocument();
   });
 
   it('offers no second connect while one is already live', async () => {
@@ -657,21 +663,59 @@ describe('what the panel shows first', () => {
     await waitFor(() => expect(sent).toMatchObject({ protocolVersion: 'auto' }));
   });
 
-  // The link is not asked for, it is reported — so it reads last, under everything the reader
-  // could do about it. It led the panel for a release, which put a block of facts between the
-  // reader and the first field they came to type in.
-  it('closes with the live link when there is one', async () => {
+  // The link is not asked for, it is reported — and over a live link there is nothing else on the
+  // panel to report it under. It read last for a release, under a form of four hundred lines of
+  // question every one of which the connection had already answered.
+  it('leads with the live link, and the form is gone', async () => {
     connected();
     renderPanel();
 
     const details = await screen.findByLabelText('Connection details');
-    const address = screen.getByLabelText('Address');
 
-    expect(details.compareDocumentPosition(address)).toBe(Node.DOCUMENT_POSITION_PRECEDING);
-    // And the one button that ends the link stands with it, at the foot.
+    expect(screen.queryByLabelText('Address')).not.toBeInTheDocument();
+    // The two things left to do about a link that exists, both after the facts about it.
+    for (const name of ['Save', 'Disconnect'])
+      expect(details.compareDocumentPosition(screen.getByRole('button', { name }))).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+  });
+
+  /**
+   * The switch is a setting, and a setting about a thing that is not happening is clutter.
+   *
+   * It stands beside 'Listen to every topic on connect', which is the same kind of answer — what
+   * this console should do around the connection, as opposed to what the connection is made of —
+   * and it is only ever on screen while there is no link. Over one, the panel's whole job is to
+   * report what is up, and this would have been the only control on it.
+   */
+  it('offers auto-reconnect with the form, and only there', async () => {
+    renderPanel();
+
     expect(
-      details.compareDocumentPosition(screen.getByRole('button', { name: 'Disconnect' })),
-    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      await screen.findByRole('checkbox', { name: /Reconnect automatically/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('takes auto-reconnect away over a live link', async () => {
+    connected();
+    renderPanel();
+
+    await screen.findByLabelText('Connection details');
+    expect(
+      screen.queryByRole('checkbox', { name: /Reconnect automatically/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  // Saving is offered on both faces: the moment a broker has connected is the moment it is most
+  // obviously worth keeping, and the box that asks for the name has to come with it.
+  it('can still name and keep the broker it is connected to', async () => {
+    connected();
+    renderPanel();
+
+    await screen.findByLabelText('Connection details');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByLabelText('Save as')).toBeInTheDocument();
   });
 
   // A live link is the one thing this panel cannot connect over, so the button that would is

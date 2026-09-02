@@ -366,7 +366,25 @@
    is no lamp above it any more to carry it instead. A wash behind the two states that are wrong,
    at the six percent the rail's own band used to use — enough that it is plainly not the paper,
    nowhere near enough to compete with the log. */
+/* Four states and three colours, and the question each one answers is 'what, if anything, is
+   being done about this'.
+
+   Green   — there is a link.
+   Amber   — there is no link and something is happening about it: a connect in flight, or a
+             ladder being climbed. It is the state that used to be missing. A reader could not
+             tell a broker that had gone for good from one three seconds off coming back, because
+             both were red — and a retry that flashed red once a rung read as a fault repeating
+             rather than as one outage being worked on.
+   Red     — there is no link and nothing is being done. A connect that failed, an outage somebody
+             called off, the console's own link to its server gone.
+   Nothing — nobody has asked for a link. The console opens here, and a red that is on at rest is
+             a red nobody looks at when it finally means something. */
 .menuBtn[data-link='Connected'] { color: var(--live); }
+.menuBtn[data-link='Waiting'],
+.menuBtn[data-link='Retrying'] {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 6%, transparent);
+}
 .menuBtn[data-link='Faulted'],
 .menuBtn[data-link='Reconnecting'] {
   color: var(--fault);
@@ -376,16 +394,27 @@
 /* The open row is already ink on surface, which is a louder statement than any of these and
    would fight them. The glyph keeps the colour, so the state survives being looked at. */
 .menuBtn[aria-expanded='true'][data-link='Connected'] svg { color: var(--live); }
+.menuBtn[aria-expanded='true'][data-link='Waiting'] svg,
+.menuBtn[aria-expanded='true'][data-link='Retrying'] svg { color: var(--warn); }
 .menuBtn[aria-expanded='true'][data-link='Faulted'] svg,
 .menuBtn[aria-expanded='true'][data-link='Reconnecting'] svg { color: var(--fault); }
 .menuBtn[aria-expanded='true'][data-link='Faulted'],
-.menuBtn[aria-expanded='true'][data-link='Reconnecting'] { background: var(--signal); }
+.menuBtn[aria-expanded='true'][data-link='Reconnecting'],
+.menuBtn[aria-expanded='true'][data-link='Retrying'],
+.menuBtn[aria-expanded='true'][data-link='Waiting'] { background: var(--signal); }
 
 /* Alive, and saying so. A breath rather than a blink: this is the state the console is in nearly
    all the time, and something flashing in the corner of a room all day is something people turn
    away from. Four seconds, and a swing small enough to notice only when you look. */
 .menuBtn[data-link='Connected'] svg { animation: breathe 4s ease-in-out infinite; }
-.menuBtn[data-link='Reconnecting'] .menuWarn { animation: pulse 1s ease-in-out infinite; }
+
+/* The two states that are working on something, and the only two that move. A pulse on the mark
+   rather than on the glyph, so what moves is the note at the end of the row and not the row's own
+   name. Waiting has no mark — a first connect is not a fault — so it breathes its glyph instead,
+   at the pace of the thing it is waiting for rather than the resting four seconds. */
+.menuBtn[data-link='Reconnecting'] .menuWarn,
+.menuBtn[data-link='Retrying'] .menuWarn { animation: pulse 1s ease-in-out infinite; }
+.menuBtn[data-link='Waiting'] svg { animation: breathe 1.6s ease-in-out infinite; }
 
 @keyframes breathe { 50% { opacity: 0.55; } }
 @keyframes pulse { 50% { opacity: 0.35; } }

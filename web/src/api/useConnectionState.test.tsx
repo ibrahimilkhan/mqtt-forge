@@ -134,7 +134,8 @@ describe('connection gating', () => {
   it('reads the address off the live link, not the last saved settings', async () => {
     renderApp('Connected', { ...LINK, host: 'live.example', port: 1884 });
 
-    const details = await screen.findByLabelText('Connection details');
-    expect(within(details).getByText('live.example:1884')).toBeInTheDocument();
+    await screen.findByLabelText('Connection details');
+    // On the status head above the list, which is the one place it is said now.
+    expect(screen.getByText('live.example:1884')).toBeInTheDocument();
   });
 });

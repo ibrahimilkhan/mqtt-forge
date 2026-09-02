@@ -239,6 +239,56 @@
   font-family: var(--mono);
   font-size: var(--t-small);
 }
+
+/* First on the panel, with nothing above it to be set apart from. A rule drawn across the top of
+   a panel's opening block reads as the bottom edge of something that is not there. It is the
+   status head above it that this block now stands under, so it keeps a rule — a short one, at the
+   list's own left edge rather than across the plate. */
+.summary[data-lead] {
+  margin-top: 14px;
+  padding-top: 0;
+  border-top: none;
+}
+
+/* ---- the state a list of facts cannot state ---- */
+/* Only on the panel over a live link, which was the one face of the broker panel with no
+   statement of state on it: nine rows of true facts and nothing saying what they added up to. */
+.linkHead { margin: 0 0 2px; }
+
+.linkState {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--t-label);
+  font-weight: 600;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--live);
+}
+
+/* A disc rather than a tick or a word in green: the rail says this state with colour on a glyph,
+   and a reader moving from the rail to the panel should meet the same signal twice rather than
+   two different ones. Sized off the type so it grows with a reader who turns the base size up. */
+.lamp {
+  width: 0.6em;
+  height: 0.6em;
+  flex: none;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* The address, at the size the panel's own headings are read at. It leaves the list below rather
+   than being said twice — a block that led with the broker and repeated it two lines later would
+   read as two brokers to anyone scanning. */
+.linkWhere {
+  margin: 4px 0 0;
+  font-family: var(--mono);
+  font-size: var(--t-lead);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
 .summaryRow {
   display: flex;
   gap: 10px;

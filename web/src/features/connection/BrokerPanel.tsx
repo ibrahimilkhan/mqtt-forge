@@ -21,6 +21,7 @@ import { useGuardedMutate } from '../../lib/useGuardedMutate';
 import type { CertificateFileKind } from '../../api/connection';
 import { describeConnectFailure, describeFailureReason, suggestScheme } from './connectFailure';
 import { ConnectionSummary } from './ConnectionSummary';
+import { AutoReconnectSwitch } from './AutoReconnectSwitch';
 import { ReconnectNotice } from './ReconnectNotice';
 import { SavedBrokers } from './SavedBrokers';
 import { useCertificateFile } from './useCertificateFile';
@@ -303,9 +304,20 @@ export function BrokerPanel({
     // the subscription this console asks for on connect goes out inside the same mutation, and
     // the answer to it is the difference between a link worth stepping aside for and a link that
     // is listening to nothing. Waiting here is what makes everythingRefused knowable in time.
-    if (!settling || attemptRunning || everythingRefused || openedByFault) return;
+    if (!settling || attemptRunning) return;
 
-    const held = setTimeout(() => closer.current(), SETTLE);
+    const held = setTimeout(() => {
+      // The beat ends whatever comes of it, and this line is the whole of that. It used to end
+      // only by the panel closing, which was true for as long as closing was the only thing that
+      // could happen next — and stopped being true the moment a fault-opened panel was allowed to
+      // stay. Left latched, `settling` held `live` false over a link that was up, so the reader
+      // got the form back under a notice saying the link had come back.
+      setSettling(false);
+
+      // And the close, which is a different question: whether this panel was the reader's to
+      // begin with, and whether the link it stepped aside for is one worth stepping aside for.
+      if (!everythingRefused && !openedByFault) closer.current();
+    }, SETTLE);
 
     return () => clearTimeout(held);
   }, [settling, attemptRunning, everythingRefused, openedByFault]);
@@ -346,6 +358,22 @@ export function BrokerPanel({
   // Once this panel is closed that attempt is gone, so the connection state carries its own
   // copy of both the reason and the broker it is about — which is also what a dropped link
   // reports. Never the saved settings: those only record a connect that worked.
+  /**
+   * Whether this panel is reporting a link or asking for one. They are two different panels.
+   *
+   * Over a live link there is nothing to fill in: the settings that produced the link are not a
+   * question any more, they are a fact, and a form holding them is an invitation to edit fields
+   * that cannot take effect until the connection is torn down. So the form goes and the summary
+   * takes the panel — which is also the only way a reader can tell, at a glance, which of the two
+   * states they are looking at.
+   *
+   * Not while it is settling, which is the beat the auto-close waits out. A broker that takes the
+   * connection and hangs up a moment later would otherwise swap the whole panel for a summary and
+   * swap it back inside 300ms, and the reader would be left looking at the form they started with
+   * wondering what they had just seen.
+   */
+  const live = isOnline && !settling;
+
   const attempted = connectMutation.variables?.request;
   const failure =
     (attempted && describeConnectFailure(connectMutation.error, attempted)) ??
@@ -440,6 +468,112 @@ export function BrokerPanel({
     e.preventDefault();
     submit();
   };
+
+  /**
+   * The name, asked for where the button was rather than in a dialog over the form: the reader is
+   * naming what they are looking at, and a box that covers it is a box that makes them remember it
+   * instead.
+   *
+   * Held in a variable rather than written where it renders, because Save is offered on both of
+   * this panel's two faces — a broker is most obviously worth keeping once it has connected — and
+   * a second copy of this box would be a second set of answers to the same three questions.
+   */
+  const nameBox = naming !== null && (
+        <div className={styles.row}>
+          <Field label="Save as" htmlFor="profileName">
+            <input
+              id="profileName"
+              type="text"
+              value={naming}
+              placeholder="a name you will recognise"
+              autoFocus
+              onChange={(e) => setNaming(e.target.value)}
+              // Enter keeps it, Escape gives up. Neither is discoverable on its own, which is
+              // why both buttons are there too — these are for the hands already on the keys.
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') keep();
+                if (e.key === 'Escape') setNaming(null);
+              }}
+            />
+          </Field>
+          <div className={styles.namingActions}>
+            <button
+              type="button"
+              onClick={keep}
+              disabled={naming.trim() === '' || keepMutation.isPending}
+            >
+              Save
+            </button>
+            <button type="button" className="ghost" onClick={() => setNaming(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+    );
+
+  /**
+   * The panel over a live link: what is up, and the two things to do about it.
+   *
+   * A separate return rather than a conditional threaded through the one below, because these are
+   * two panels and not one panel with parts hidden. The form is four hundred lines of question,
+   * every one of which is already answered — and answered by the connection itself, which is what
+   * the summary reports. Wrapping it all in `{!live && …}` would leave the two faces sharing a
+   * shape neither of them wants and re-indent the whole file to say so.
+   *
+   * What a reader can still do here is keep this broker — the moment it has connected is the
+   * moment it is most obviously worth keeping — and end the link. Nothing else on this panel is
+   * about a connection that already exists.
+   */
+  if (live) {
+    return (
+      <PanelShell title="Broker" onClose={releaseThenClose}>
+        {/* The 'back' face, for a link that dropped and came back. It is the one thing the notice
+            has to say over a live link, and the reason this panel stayed open at all. */}
+        <ReconnectNotice />
+
+        <div className={styles.live}>
+          <ConnectionSummary lead />
+
+          <div className={styles.actions}>
+            <button
+              type="button"
+              className={`ghost ${styles.iconButton}`}
+              onClick={() => setNaming(from ?? `${form.host}:${form.port}`)}
+            >
+              <Save />
+              Save
+            </button>
+
+            {/* The same mark as Connect with the join taken out of it, which is the whole of
+                what this button does. */}
+            <button
+              type="button"
+              className={`ghost ${styles.iconButton} ${styles.trailing}`}
+              onClick={() => guardedDisconnect()}
+              disabled={disconnectMutation.isPending}
+            >
+              <Unlink />
+              Disconnect
+            </button>
+          </div>
+
+          {nameBox}
+        </div>
+
+        {/* The dead end this panel can be in while the link is perfectly fine: connected, and
+            listening to nothing, because the broker refused the filter this console asks for on
+            connect. It belongs on this face and not only on the other one — that is the whole
+            case it was written for. */}
+        {filterRefused && (
+          <div className={styles.actions}>
+            <button type="button" className="ghost" onClick={() => open('subscribe')}>
+              Ask for less in Filters
+            </button>
+          </div>
+        )}
+      </PanelShell>
+    );
+  }
 
   return (
     <PanelShell title="Broker" onClose={releaseThenClose}>
@@ -784,6 +918,12 @@ export function BrokerPanel({
           />
           {' Listen to every topic on connect'}
         </label>
+
+        {/* Beside it, because the two are the same kind of answer: what this console should do
+            around the connection, as opposed to what the connection is made of. It is only ever
+            on screen here — over a live link it would be a switch about a thing that is not
+            happening, on a panel whose job at that moment is to report. */}
+        <AutoReconnectSwitch id="brokerAutoReconnect" />
       </div>
 
       {/* Two things to do with a form: keep it, or use it. Disconnect is neither and stands with
@@ -853,41 +993,7 @@ export function BrokerPanel({
         )}
       </div>
 
-      {/* The name, asked for where the button was rather than in a dialog over the form: the
-          reader is naming what they are looking at, and a box that covers it is a box that makes
-          them remember it instead. */}
-      {naming !== null && (
-        <div className={styles.row}>
-          <Field label="Save as" htmlFor="profileName">
-            <input
-              id="profileName"
-              type="text"
-              value={naming}
-              placeholder="a name you will recognise"
-              autoFocus
-              onChange={(e) => setNaming(e.target.value)}
-              // Enter keeps it, Escape gives up. Neither is discoverable on its own, which is
-              // why both buttons are there too — these are for the hands already on the keys.
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') keep();
-                if (e.key === 'Escape') setNaming(null);
-              }}
-            />
-          </Field>
-          <div className={styles.namingActions}>
-            <button
-              type="button"
-              onClick={keep}
-              disabled={naming.trim() === '' || keepMutation.isPending}
-            >
-              Save
-            </button>
-            <button type="button" className="ghost" onClick={() => setNaming(null)}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
+      {nameBox}
 
       {/* At the foot, and only once there is something to put here. It used to hold eleven
           brokers somebody else runs; these are the ones the reader kept. */}
@@ -929,47 +1035,6 @@ export function BrokerPanel({
         </div>
       )}
 
-      {/* What is up right now, at the foot of the panel, with the one button that ends it.
-
-          It stood first for a while, on the reasoning that a panel reopened over a working
-          connection was reopened to read it or to end it rather than to fill in a form. That is
-          still true of why the panel was opened, and it was the wrong conclusion about where the
-          block goes: the panel is read top to bottom as a form, and a block of facts in front of
-          the first field is a paragraph between the reader and the thing they came to type in.
-          The link is not asked for, it is reported — so it reads last, under everything the
-          reader could do about it, which is where a footer goes.
-
-          Not while the link is settling, which is the same beat the close waits out. Connecting
-          to a broker that hangs up on the subscribe put this block on screen and took it off
-          again inside 110ms — measured, 752px to 1077px to 874px — and a 325px block opening and
-          shutting under the reader's eyes is the whole of what that felt like. A link that is not
-          going to hold should move nothing at all. So through the settle the panel stays as it
-          was mid-attempt, and at the end of it either the panel goes (the link held) or the
-          failure appears (it did not).
-
-          Which means this block is on screen only in the case it was written for: a panel opened
-          over a link that was already up. That is not a transition, so nothing is settling.
-
-          No `lead`: the block draws its own rule now, because it has the whole panel above it to
-          be set apart from. */}
-      {isOnline && !settling && (
-        <div className={styles.live}>
-          <ConnectionSummary />
-          <div className={styles.actions}>
-            {/* The same mark as Connect with the join taken out of it, which is the whole of
-                what this button does. */}
-            <button
-              type="button"
-              className={`ghost ${styles.iconButton}`}
-              onClick={() => guardedDisconnect()}
-              disabled={disconnectMutation.isPending}
-            >
-              <Unlink />
-              Disconnect
-            </button>
-          </div>
-        </div>
-      )}
     </PanelShell>
   );
 }

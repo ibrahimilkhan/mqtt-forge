@@ -7,7 +7,13 @@ import { App } from '../../App';
 import { createFakeHub } from '../../realtime/fakeHub';
 import { resetLinkWatch } from '../../stores/linkWatchStore';
 import { server } from '../../test/server';
-import type { BrokerFailure, ConnectionState, ReconnectStatus } from '../../types/api';
+import type {
+  BrokerFailure,
+  BrokerLink,
+  ConnectionState,
+  ConnectionStateResponse,
+  ReconnectStatus,
+} from '../../types/api';
 
 /**
  * A link that drops out from under the reader, through the whole console.
@@ -25,7 +31,22 @@ describe('a link that drops while the reader is elsewhere', () => {
    * its own state through the hub. A handler left saying Disconnected undoes the setup from
    * underneath, and the test then fails describing a console that behaved correctly.
    */
-  let link: { state: ConnectionState; failure: BrokerFailure | null };
+  /** What the API hands back for a live link, which is what the summary is drawn from. */
+  const CONNECTION: BrokerLink = {
+    host: 'broker.local',
+    port: 1883,
+    clientId: 'console',
+    username: null,
+    useTls: false,
+    connectedAt: '2026-09-02T21:00:00.000Z',
+    sessionPresent: false,
+    assignedClientId: null,
+    serverKeepAlive: 60,
+    transport: 'tcp',
+    protocolVersion: 'v311',
+  };
+
+  let link: ConnectionStateResponse;
   let supervisor: ReconnectStatus;
 
   beforeEach(() => {
@@ -75,7 +96,11 @@ describe('a link that drops while the reader is elsewhere', () => {
 
     /** The server telling every console what the link is now, and remembering it said so. */
     const says = async (state: ConnectionState) => {
-      link = { state, failure: state === 'Faulted' ? failure : null };
+      link = {
+        state,
+        failure: state === 'Faulted' ? failure : null,
+        connection: state === 'Connected' ? CONNECTION : null,
+      };
 
       await act(async () => {
         hub.emit('connectionStateChanged', link);
@@ -149,6 +174,34 @@ describe('a link that drops while the reader is elsewhere', () => {
     expect(screen.getByText(/broker closed the connection/)).toBeInTheDocument();
   });
 
+  /**
+   * The panel that stayed is still a panel over a live link, and shows what one shows.
+   *
+   * This is the case the settle beat had to be taught. It used to end only by the panel closing,
+   * which was true while closing was the only thing that could happen next — and stopped being
+   * true the moment a fault-opened panel was allowed to stay. Latched on, it held the panel in
+   * its 'no link' face: the reader got the whole form back, under a notice telling them the link
+   * had come back. Every test in the suite passed while it did.
+   */
+  it('shows the live link, not the form, once it is back', async () => {
+    const { says, supervising } = renderApp();
+    await says('Connected');
+    await goElsewhere();
+    await says('Faulted');
+    await supervising({ active: true, attempt: 1 });
+    await waitFor(() => expect(brokerRow()).toHaveAttribute('aria-expanded', 'true'));
+
+    await says('Connected');
+
+    // Past the settle the panel would otherwise have closed on.
+    await waitFor(() => expect(screen.queryByLabelText('Address')).not.toBeInTheDocument(), {
+      timeout: 2_000,
+    });
+    expect(await screen.findByLabelText('Connection details')).toBeInTheDocument();
+    // And the notice is still there, which is the whole reason the panel stayed.
+    expect(screen.getByText('Reconnected')).toBeInTheDocument();
+  });
+
   // The hold has to be released, or the panel would reopen itself at the next thing that touched
   // the link — for the rest of the session.
   it('a panel the reader closes stays closed', async () => {
@@ -185,6 +238,82 @@ describe('a link that drops while the reader is elsewhere', () => {
     await waitFor(() => expect(brokerButton()).toHaveAttribute('aria-expanded', 'true'));
     expect(screen.queryByText('Reconnecting')).not.toBeInTheDocument();
     expect(screen.queryByText('Not reconnecting')).not.toBeInTheDocument();
+  });
+
+  // ---- what the rail says, which is the only place the link's state is said at all ----
+
+  const brokerRow = () => menu().getByRole('button', { name: /^Broker/ });
+
+  /**
+   * Amber is the state that was missing.
+   *
+   * Red said 'there is no link'. It said it for a broker that had gone for good and for one three
+   * seconds off coming back, which are the two cases a reader most needs told apart — and, because
+   * a ladder puts the link through Faulted → Connecting → Faulted once a rung, it said it in
+   * flashes that read as a fault repeating rather than as one outage being worked on.
+   */
+  it('goes amber while an outage is being worked on', async () => {
+    const { says, supervising } = renderApp();
+    await says('Connected');
+    await says('Faulted');
+
+    await supervising({ active: true, attempt: 2, nextAttemptAt: '2026-09-02T21:00:08.000Z' });
+
+    await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Retrying'));
+    expect(
+      menu().getByRole('button', { name: 'Broker, reconnecting to the broker' }),
+    ).toBeInTheDocument();
+  });
+
+  // The rung's own dial, which the link reports as Connecting. The row must not change colour for
+  // it: one outage is one state, however many times the socket is picked up and put down.
+  it('stays amber through the dial each rung makes', async () => {
+    const { says, supervising } = renderApp();
+    await says('Connected');
+    await says('Faulted');
+    await supervising({ active: true, attempt: 1, nextAttemptAt: '2026-09-02T21:00:02.000Z' });
+    await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Retrying'));
+
+    await says('Connecting');
+
+    expect(brokerRow()).toHaveAttribute('data-link', 'Retrying');
+  });
+
+  it('goes red once nobody is working on it any more', async () => {
+    const { says, supervising } = renderApp();
+    await says('Connected');
+    await says('Faulted');
+    await supervising({ active: true, attempt: 1 });
+    await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Retrying'));
+
+    await supervising({ active: false, gaveUp: true });
+
+    await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Faulted'));
+  });
+
+  // The row loses the live link's address the moment the link goes, which is the moment a reader
+  // most wants to know which broker it was. The failure carries the endpoint for exactly this.
+  it('still names the broker while the link is down', async () => {
+    const { says } = renderApp();
+    await says('Connected');
+    await says('Faulted');
+
+    await waitFor(() =>
+      expect(brokerRow()).toHaveAttribute('title', 'Broker · broker.local:1883'),
+    );
+  });
+
+  // Every face the notice draws is a state with no link, which is a panel already showing the
+  // form — and the form carries the switch. A second copy inside the block was two checkboxes for
+  // one setting on one screen.
+  it('offers exactly one auto-reconnect switch during an outage', async () => {
+    const { says, supervising } = renderApp();
+    await says('Connected');
+    await says('Faulted');
+    await supervising({ active: true, attempt: 1, nextAttemptAt: '2026-09-02T21:00:08.000Z' });
+
+    await screen.findByText('Reconnecting');
+    expect(screen.getAllByRole('checkbox', { name: /Reconnect automatically/ })).toHaveLength(1);
   });
 
   it('the notice offers the stop that the supervisor honours', async () => {

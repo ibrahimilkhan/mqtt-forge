@@ -8,6 +8,7 @@ import { BrokerPanel } from './features/connection/BrokerPanel';
 import { useLinkWatch } from './features/connection/useLinkWatch';
 import { MobilePanel } from './features/mobile/MobilePanel';
 import { useBrokerAddress, useConnectionState } from './api/useConnectionState';
+import { useReconnectStatus } from './api/useReconnectStatus';
 import { Windows } from './features/monitor/Windows';
 import { StreamPause } from './features/monitor/StreamPause';
 import { HealthStrip } from './features/health/HealthStrip';
@@ -77,7 +78,7 @@ export function App({ hub }: { hub: Hub }) {
   // Read once, on the first render — a reader who opens it should keep it open through a resize.
   const [menuOpen, setMenuOpen] = useState(() => !window.matchMedia?.(NARROW).matches);
 
-  const { state } = useConnectionState();
+  const { state, failure } = useConnectionState();
   const health = useAppearanceStore((state) => state.health);
   // What is alarming, read here rather than only in the panel: the panel is shut most of the
   // time and the health strip is off by default, so the rail is the one place a standing alarm
@@ -89,7 +90,22 @@ export function App({ hub }: { hub: Hub }) {
   const soundWanted = useAppearanceStore((state) => state.alertSound);
   const soundArmed = useSoundStore((state) => state.armed);
 
+  /**
+   * Whether an outage is being worked on, which is a different thing from the link being down.
+   *
+   * Red is 'it is down and nobody is doing anything about it' — a failed connect, a link somebody
+   * closed. Amber is 'it is down and something is happening'. Before this the two were one colour,
+   * and a reader could not tell a broker that had gone for good from one that was three seconds
+   * from coming back.
+   */
+  const retrying = useReconnectStatus().status.active && state !== 'Connected';
+
   const where = useBrokerAddress();
+  /** The broker the row is about, whether or not there is a link to it right now. */
+  // The live link names it while there is one; a failure names it while there is not. Without the
+  // second, the row loses the address at the exact moment a reader wants to know which broker has
+  // gone — see BrokerFailure, which carries the endpoint for this reason.
+  const pointedAt = where ?? (failure ? `${failure.host}:${failure.port}` : undefined);
   const hubStatus = useHubStatusStore((s) => s.status);
   const zoomed = useZoomStore((s) => s.zoomed);
   const zoomBox = useZoomStore((s) => s.box);
@@ -128,13 +144,28 @@ export function App({ hub }: { hub: Hub }) {
    * is this console showing me anything real — and the answer is no either way.
    */
   const linkState =
-    hubStatus === 'reconnecting' ? 'Reconnecting' : state === 'Connecting' ? 'Waiting' : state;
+    hubStatus === 'reconnecting'
+      ? 'Reconnecting'
+      : // Ahead of Connecting, and that is the whole of what makes this state readable. A ladder
+        // puts the link through Faulted → Connecting → Faulted once a rung, so a row that read the
+        // link's own state would flash between two colours for the length of an outage — which
+        // says 'something keeps happening' where the truth is 'one thing is happening, still'.
+        // The supervisor's own answer does not flicker, so neither does the row.
+        retrying
+        ? 'Retrying'
+        : state === 'Connecting'
+          ? 'Waiting'
+          : state;
 
   /** Said out loud on the row, since nothing else says it any more. */
+  // 'Retrying' names the broker and 'Reconnecting' does not, because the second one is the
+  // console's own link to its server. Two rows both reading 'reconnecting' would be a screen
+  // reader saying the same thing about two different failures.
   const LINK_SAID: Partial<Record<typeof linkState, string>> = {
     Connected: 'connected',
     Faulted: 'connection faulted',
     Reconnecting: 'reconnecting',
+    Retrying: 'reconnecting to the broker',
     Waiting: 'connecting',
   };
   const Panel = openPanel && PANEL_VIEWS[openPanel];
@@ -189,8 +220,8 @@ export function App({ hub }: { hub: Hub }) {
             // The broker it is pointed at, or — on the Settings row, which is where the switch
             // is — the one thing about alerting a reader can put right without opening anything.
             const hint =
-              panel.id === 'broker' && where
-                ? `${panel.label} · ${where}`
+              panel.id === 'broker' && pointedAt
+                ? `${panel.label} · ${pointedAt}`
                 : panel.id === 'settings' && soundWanted && !soundArmed
                   ? 'Sound is not ready — click to turn it on'
                   : menuOpen
@@ -227,7 +258,9 @@ export function App({ hub }: { hub: Hub }) {
                       is what it finds next. A shape as well as a colour, because a colour on its
                       own says nothing to a reader who cannot tell these two apart. */}
                   {panel.id === 'broker' &&
-                    (linkState === 'Faulted' || linkState === 'Reconnecting') && (
+                    (linkState === 'Faulted' ||
+                      linkState === 'Reconnecting' ||
+                      linkState === 'Retrying') && (
                       <span className={styles.menuWarn} aria-hidden="true">
                         <Warning />
                       </span>
