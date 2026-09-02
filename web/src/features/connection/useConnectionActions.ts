@@ -21,7 +21,7 @@ import { schemeOf } from './scheme';
 const endpoint = ({ transport, useTls, host, port }: ConnectRequest) =>
   `${formatBrokerAddress(schemeOf(transport ?? 'tcp', useTls), host)}:${port}`;
 
-type ConnectVars = { request: ConnectRequest; autoSubscribe: boolean };
+type ConnectVars = { request: ConnectRequest; autoSubscribe: boolean; includeSystem: boolean };
 
 export function useConnectionActions() {
   const queryClient = useQueryClient();
@@ -45,7 +45,7 @@ export function useConnectionActions() {
     // A new attempt is not answered yet, whatever the last one was told.
     onMutate: () => setEverythingRefused(false),
 
-    onSuccess: async (result, { request, autoSubscribe }) => {
+    onSuccess: async (result, { request, autoSubscribe, includeSystem }) => {
       // Refetch, don't write the response: the hub may have already pushed a newer state.
       void queryClient.invalidateQueries({ queryKey: queryKeys.connection });
 
@@ -67,7 +67,7 @@ export function useConnectionActions() {
         body: `${endpoint(request)} · ${request.clientId}`,
       });
 
-      if (autoSubscribe) setEverythingRefused(await subscribeOnConnect());
+      if (autoSubscribe) setEverythingRefused(await subscribeOnConnect(includeSystem));
 
       void queryClient.invalidateQueries({ queryKey: queryKeys.subscriptions });
       void queryClient.invalidateQueries({ queryKey: queryKeys.savedSettings });
@@ -114,6 +114,22 @@ export function useConnectionActions() {
 const EVERYTHING = '#';
 
 /**
+ * Everything the broker says about itself, which '#' does not cover.
+ *
+ * Not an extra: MQTT reserves it. A topic filter beginning with a wildcard must not match a topic
+ * name beginning with '$' — MQTT 5.0 §4.7.2 — so a console subscribed to '#' and nothing else is
+ * blind to $SYS by the specification rather than by an oversight. Measured against Mosquitto 2:
+ * '#' returned nought $SYS topics in five seconds and '$SYS/#' returned fifty-five.
+ *
+ * It is a second SUBSCRIBE and it is asked for separately, which is also how MQTT Explorer does
+ * it. Off by default here and on by default there, and the difference is the traffic: these are
+ * republished on a timer — every ten seconds on a stock Mosquitto — so a reader who did not ask
+ * for them would find a subtree they never subscribed to churning through their log for as long
+ * as the console was open.
+ */
+const SYSTEM = '$SYS/#';
+
+/**
  * And at the highest ceiling, which is what makes the log's QoS mean anything.
  *
  * A subscription's QoS is a cap, not a demand: a broker delivers every copy at the lower of the
@@ -143,18 +159,32 @@ const EVERYTHING_QOS = 2;
  * as logged, because a link that is still up is exactly the case a log line on its own is not
  * enough for — see everythingRefused above.
  */
-async function subscribeOnConnect(): Promise<boolean> {
+async function subscribeOnConnect(includeSystem: boolean): Promise<boolean> {
+  const refused = !(await ask(EVERYTHING));
+
+  // After the one that matters, and never allowed to answer for it. A broker with no $SYS tree at
+  // all is an ordinary broker — HiveMQ CE has none — and one that has it may still refuse it to a
+  // client that has not been given the right; neither is a console listening to nothing, which is
+  // what everythingRefused means and what the panel offers a way out of. So this one is reported
+  // in the log and forgotten.
+  if (includeSystem) await ask(SYSTEM);
+
+  return refused;
+}
+
+/** One filter, at the ceiling, and whether the broker took it. */
+async function ask(topicFilter: string): Promise<boolean> {
   try {
-    await subscribe({ topicFilter: EVERYTHING, qos: EVERYTHING_QOS });
+    await subscribe({ topicFilter, qos: EVERYTHING_QOS });
     useLogStore
       .getState()
-      .push({ kind: 'ok', verb: 'Subscribed', topic: EVERYTHING, stamps: [`QoS ${EVERYTHING_QOS}`] });
-
-    return false;
-  } catch (error) {
-    logFault('Subscribe failed', error, EVERYTHING);
+      .push({ kind: 'ok', verb: 'Subscribed', topic: topicFilter, stamps: [`QoS ${EVERYTHING_QOS}`] });
 
     return true;
+  } catch (error) {
+    logFault('Subscribe failed', error, topicFilter);
+
+    return false;
   }
 }
 

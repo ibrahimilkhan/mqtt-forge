@@ -113,6 +113,16 @@ export function BrokerPanel({
   const [addressText, setAddressText] = useState(DEFAULTS.host);
   const addressRef = useRef<HTMLInputElement>(null);
   const [autoSubscribe, setAutoSubscribe] = useState(true);
+  /**
+   * Whether to ask the broker about itself as well as about the traffic.
+   *
+   * Off, and the box beside it is on, and the difference is not an opinion about which matters
+   * more. '#' does not reach $SYS — MQTT reserves topics beginning with '$' from wildcard
+   * filters — so this is a second SUBSCRIBE rather than a wider first one, and what it brings
+   * back is republished on a timer. A reader who did not ask for it would find a subtree they
+   * never subscribed to churning through their log all day.
+   */
+  const [includeSystem, setIncludeSystem] = useState(false);
   // The name box, and whether it is on screen at all. Null is "not saving"; a string is the name
   // as far as it has been typed. Two states in one, because "empty box open" and "no box" are
   // different things and a boolean beside a string would let them disagree.
@@ -421,7 +431,7 @@ export function BrokerPanel({
   const submit = () => {
     const resolved = applyAddress(form, addressText);
     settle(resolved);
-    guardedConnect({ request: buildConnectRequest(resolved), autoSubscribe });
+    guardedConnect({ request: buildConnectRequest(resolved), autoSubscribe, includeSystem });
   };
 
   /**
@@ -445,7 +455,7 @@ export function BrokerPanel({
     const current = applyAddress(form, addressText);
     const next = { ...current, scheme, port: portFor(current.scheme, scheme, current.port) };
     settle(next);
-    guardedConnect({ request: buildConnectRequest(next), autoSubscribe });
+    guardedConnect({ request: buildConnectRequest(next), autoSubscribe, includeSystem });
   };
 
   /**
@@ -917,6 +927,20 @@ export function BrokerPanel({
             onChange={(e) => setAutoSubscribe(e.target.checked)}
           />
           {' Listen to every topic on connect'}
+        </label>
+
+        {/* Its own box because it is its own SUBSCRIBE. '#' cannot reach these — a filter that
+            starts with a wildcard is not allowed to match a topic that starts with '$' — so a
+            console listening to everything is still blind to what the broker says about itself,
+            which is a thing readers coming from MQTT Explorer expect to see. */}
+        <label>
+          <input
+            type="checkbox"
+            checked={includeSystem}
+            disabled={!autoSubscribe}
+            onChange={(e) => setIncludeSystem(e.target.checked)}
+          />
+          {' Include $SYS broker statistics'}
         </label>
 
         {/* Beside it, because the two are the same kind of answer: what this console should do
