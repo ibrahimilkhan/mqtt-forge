@@ -183,10 +183,11 @@
    A form does not get better at 1400px, but a page does get worse with a form down the middle
    of it and nothing either side. The measure was 640px — the width at which a pasted broker
    address stops needing more room — and on a 1280px window that left two gutters wider than the
-   form between them. So the measure is now the whole of what the broker panel lays out at this
-   width: the form at the left, and beside it the things that are not the form — the brokers the
-   reader kept, and what became of the link. See `.spread` in panel.module.css, which is where
-   the split lives and where it folds back into one column when the width is not there.
+   form between them. It was then, briefly, 1120px with a second column beside the form for the
+   brokers the reader kept; that column is gone, asked away, and what is left is one stack at a
+   measure the window can carry: 960px, which on the same 1280px window leaves a hand's width
+   either side and no more. The form's own cap comes off inside it — see `.form` — so the
+   fields take the measure rather than standing at 46rem inside it.
 
    Still centred, for the reason it was: a single stack has no anchor to protect, and all the
    spare width on one side left it pinned to the edge of a window it no longer fills.
@@ -207,7 +208,7 @@
    gets one full-width stack, a laptop the same stack with a margin, a desktop the same stack
    again. The rows inside it wrap on their own — see .row. */
 .grid[data-panel='full'] section > *:not([data-head]) {
-  max-width: 1120px;
+  max-width: 960px;
   margin-inline: auto;
 }
 

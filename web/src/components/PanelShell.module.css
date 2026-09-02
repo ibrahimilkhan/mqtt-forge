@@ -95,8 +95,8 @@
    The negative margin and the padding that answers it lift the row's box into the pane's own
    11px of top padding, so the × does not shift the moment it detaches. They are that padding's
    number — change one and change both. The background is the pane's own: the content under
-   this row is now let out to 1120px, which at these widths reaches the corner the × sits in,
-   and a form scrolling up through a floating × is a × nobody can find. */
+   this row is let out to 960px, which on a window not much wider than that reaches the corner
+   the × sits in, and a form scrolling up through a floating × is a × nobody can find. */
 @media (min-width: 1181px) {
   [data-panel='full'] .panelHead {
     position: sticky;
