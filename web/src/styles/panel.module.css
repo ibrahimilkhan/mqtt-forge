@@ -554,11 +554,25 @@
   .spreadGrid { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); }
   /* Beside the form rather than under it, so the line that set the events apart from the form
      above has nothing above it to be set apart from. The heading does that job on its own. */
-  .aside > .events:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+  /* First in the aside, so nothing stands above it to be spaced off — but the card keeps its
+     own frame; only the gap that would have pushed it below the form's top goes. */
+  .aside > .events:first-child { margin-top: 0; }
 }
 
-/* ---- what the link has been doing ---- */
-.events { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--rule); }
+/* ---- what the link has been doing ----
+
+   Its own card, set into the panel's --paper ground on --surface the way every field is, because
+   under the form on the same ground it read as one more block of the form. A hairline alone did
+   not part them — the saved brokers above it take a hairline too, and three ruled-off blocks in a
+   column read as one list. The fill is the boundary: the form is paper, this is a plate lying on
+   it. */
+.events {
+  margin-top: 22px;
+  padding: 14px 16px 16px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-plate);
+}
 .eventsTitle { composes: savedTitle; }
 .eventsEmpty {
   margin: 0;
