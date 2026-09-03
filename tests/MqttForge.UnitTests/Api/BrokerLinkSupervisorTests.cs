@@ -446,6 +446,62 @@ public class BrokerLinkSupervisorTests
         Assert.Empty(_attempts);
     }
 
+    // A console that opens mid-outage has nothing of its own to draw from; the status says when
+    // the outage began, and keeps saying it through a stop and a decline, until the link is up.
+    [Fact]
+    public async Task The_status_says_when_the_outage_began_until_the_link_is_back()
+    {
+        var sut = await WantedAsync();
+        Assert.Null(sut.Status.Since);
+
+        _manager.State.Returns(ConnectionState.Faulted);
+        _manager.Failure.Returns(Failure(BrokerFailureReason.Refused));
+        await PollAsync(sut);
+        var began = sut.Status.Since;
+        Assert.Equal(T0.AddSeconds(1), began);
+
+        await PollAsync(sut, seconds: 10);
+        await sut.CancelAsync();
+        Assert.Equal(began, sut.Status.Since);
+
+        _manager.State.Returns(ConnectionState.Connected);
+        await PollAsync(sut);
+        Assert.Null(sut.Status.Since);
+    }
+
+    [Fact]
+    public async Task A_fault_on_a_link_nobody_wanted_is_not_an_outage_with_a_beginning()
+    {
+        RulesHold(Rule(enabled: false));
+        var sut = CreateSut();
+        await sut.StartUpAsync(CancellationToken.None);
+
+        _manager.State.Returns(ConnectionState.Faulted);
+        _manager.Failure.Returns(Failure(BrokerFailureReason.Refused));
+        await PollAsync(sut, seconds: 3);
+
+        Assert.Null(sut.Status.Since);
+    }
+
+    // A dial at the broker that is down is not leaving it: the ladder keeps its place.
+    [Fact]
+    public async Task A_readers_dial_at_the_broker_that_is_down_does_not_stand_the_ladder_down()
+    {
+        var sut = await WantedAsync();
+        _manager.State.Returns(ConnectionState.Faulted);
+        _manager.Failure.Returns(Failure(BrokerFailureReason.Refused));
+        await PollAsync(sut, seconds: 2);
+        var before = _attempts.Count;
+
+        // The reader presses Connect on the same broker — Saved is broker.local:1883, as the
+        // failure is — and is refused like the ladder was.
+        await Assert.ThrowsAnyAsync<Exception>(() => Service.ConnectAsync(Saved, CancellationToken.None));
+        await PollAsync(sut, seconds: 30);
+
+        Assert.True(_attempts.Count > before + 1, "the ladder should have gone on climbing");
+        Assert.True(sut.Status.Active);
+    }
+
     // ...and a reader's dial that works is a link worth keeping up, exactly as before.
     [Fact]
     public async Task A_readers_dial_that_works_is_kept_up()

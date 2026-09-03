@@ -20,13 +20,13 @@ import type { ConnectionState } from '../../types/api';
  */
 export function useLinkWatch() {
   const { state, failure, link, answered } = useConnectionState();
-  const { status } = useReconnectStatus();
+  const { status, answered: statusAnswered } = useReconnectStatus();
 
   // What was last seen, so that a transition can be told from a repeat. Undefined until the
   // API has answered once: a console reloaded over a broken link is looking at a drop that
   // happened before it opened, and writing 'Link dropped' at that moment would date it wrong.
   const seen = useRef<ConnectionState | undefined>(undefined);
-  const tries = useRef(0);
+  const tries = useRef<number | null>(null);
 
   useEffect(() => {
     // Before the API has answered, `state` is the standing-in Disconnected rather than an
@@ -72,18 +72,43 @@ export function useLinkWatch() {
     }
   }, [state, failure, link, answered]);
 
+  // The link is down with an outage the server is working on — or has stopped working on, which
+  // is still an outage — and this console holds no record of it. It did not see it begin; the
+  // supervisor did, and says when. Without this a reload mid-outage drew a form with a red line
+  // and no notice, no countdown and no way to stop the ladder. Its own effect rather than a
+  // branch of the one above, because the two answers it needs — the link's state and the
+  // supervisor's status — arrive as two queries in either order, and `resume` is a no-op once
+  // the watch holds anything of its own.
+  useEffect(() => {
+    if (!answered || state !== 'Faulted' || status.sinceAt === null) return;
+
+    useLinkWatchStore.getState().resume(failure, status.sinceAt);
+  }, [answered, state, failure, status.sinceAt]);
+
   // One line per try. The supervisor announces after each attempt with the count so far, and a
   // count that went up while the link is still down is a try that failed. Only while it is
   // still down: the announcement for the try that worked carries the same count, and it arrives
   // a beat after the state has already said Connected.
   useEffect(() => {
+    // Not before the API has answered: the stand-in status says zero tries, and seeding from it
+    // made the real answer look like four tries happening at once.
+    if (!statusAnswered) return;
+
     const before = tries.current;
     tries.current = status.attempt;
 
+    // The first status a console sees is a count, not a try: a reload mid-outage found four tries
+    // already made and wrote four lines stamped with the moment it loaded.
+    if (before === null) return;
+
+    // One line per try, not one per render: two announcements landing in one render batch
+    // skipped a number, and a record reading 1, 2, 4 looks like a try that was never made.
     if (status.attempt > before && state === 'Faulted') {
-      useBrokerEventsStore.getState().push({ kind: 'fault', what: `Try ${status.attempt} failed` });
+      for (let n = before + 1; n <= status.attempt; n++) {
+        useBrokerEventsStore.getState().push({ kind: 'fault', what: `Try ${n} failed` });
+      }
     }
-  }, [status.attempt, state]);
+  }, [status.attempt, statusAnswered, state]);
 
   // And the one thing a reader can do to the ladder from the notice, so the record says it was
   // done rather than showing tries that simply stop.

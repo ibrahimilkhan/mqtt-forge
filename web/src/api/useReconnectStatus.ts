@@ -24,8 +24,10 @@ const UNANSWERED: ReconnectView = {
   nextAttemptAt: null,
   gaveUp: false,
   declined: false,
+  since: null,
   now: '',
   dueAt: null,
+  sinceAt: null,
 };
 
 export function useReconnectStatus() {

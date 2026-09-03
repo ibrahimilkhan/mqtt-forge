@@ -76,6 +76,11 @@ public sealed class BrokerLinkSupervisor : BackgroundService
     // change, or one it must not try to. Cleared the same way _gaveUp is, and by a Retry now.
     private bool _declined;
 
+    // When this outage was first seen — the first Faulted poll on a link that was wanted. Kept
+    // through the whole of it, declined or given up included, and cleared with the rest when the
+    // link is anything but Faulted. See ReconnectStatus.Since for who reads it.
+    private DateTimeOffset? _since;
+
     // The option, cached. Read from the store once at start-up and written through by
     // SetEnabledAsync, so the loop never touches a file.
     private bool _enabled = EnabledByDefault;
@@ -149,7 +154,7 @@ public sealed class BrokerLinkSupervisor : BackgroundService
     }
 
     /// <summary>What is being done about the link, and whether anything is allowed to be.</summary>
-    public ReconnectStatus Status => new(_enabled, _active, _attempts, _dueAt, _gaveUp, _declined);
+    public ReconnectStatus Status => new(_enabled, _active, _attempts, _dueAt, _gaveUp, _declined, _since);
 
     /// <summary>The clock NextAttemptAt is an instant on.</summary>
     // Exposed so that whatever serialises a status can send the two together — see
@@ -241,8 +246,21 @@ public sealed class BrokerLinkSupervisor : BackgroundService
         if (dials != _readerDialsSeen)
         {
             _readerDialsSeen = dials;
-            _wanted = false;
-            Rest();
+
+            // Unless the dial was at the very broker that is down. That is not leaving, it is a
+            // reader trying to hurry the ladder — and a ladder that stood down because they
+            // pressed Connect on the broker it was already climbing for left them with 'nothing
+            // is being tried' after they had just tried. Measured. The ladder keeps its place and
+            // its schedule; their attempt was one more rung, made by hand.
+            var failure = _connection.CurrentFailure;
+            var atTheOutage = failure is not null
+                && _connection.LastReaderEndpoint == $"{failure.Host}:{failure.Port}";
+
+            if (!atTheOutage)
+            {
+                _wanted = false;
+                Rest();
+            }
         }
 
         // Before the Faulted test and outside it, because the panel's question is not this class's
@@ -285,6 +303,11 @@ public sealed class BrokerLinkSupervisor : BackgroundService
         // this supervisor's business, and a broker that faults on it is somebody else's story —
         // most of this repository's integration tests are exactly that host, and two of them
         // assert a Faulted broker deliberately.
+        // An outage begins the first time a wanted link is seen down, whatever is then done about
+        // it — including nothing, when the option is off or the reader stopped it. A fault on a
+        // link nobody wanted is not an outage: it is the reader's own failed Connect.
+        if (_wanted) _since ??= _time.GetUtcNow();
+
         if (!_enabled || !_wanted || _gaveUp)
         {
             // Not Rest(): the giving-up is about this outage and the outage is still on. Only the
@@ -468,6 +491,7 @@ public sealed class BrokerLinkSupervisor : BackgroundService
         _attempts = 0;
         _gaveUp = false;
         _declined = false;
+        _since = null;
     }
 
     /// <summary>Whether a link down for this reason is one the ladder should leave alone.</summary>

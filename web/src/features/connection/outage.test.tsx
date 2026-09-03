@@ -349,6 +349,26 @@ describe('a link that drops while the reader is elsewhere', () => {
     expect(await screen.findByText(/^Link back/)).toBeInTheDocument();
   });
 
+  // A console that opens in the middle of an outage: the server says when it began and how many
+  // tries it has made. The notice is drawn from that — and the tries already made are a count,
+  // not four events happening at the moment the page loaded.
+  it('a console that loads mid-outage draws the notice and invents no tries', async () => {
+    link = { state: 'Faulted', failure, connection: null };
+    supervisor = {
+      ...supervisor,
+      active: true,
+      attempt: 4,
+      nextAttemptAt: '2026-09-02T21:00:08.000Z',
+      since: '2026-09-02T20:59:30.000Z',
+    };
+
+    renderApp();
+
+    expect(await screen.findByText('Reconnecting')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Stop trying' })).toBeInTheDocument();
+    expect(screen.queryByText(/^Try \d+ failed$/)).not.toBeInTheDocument();
+  });
+
   it('the notice offers the stop that the supervisor honours', async () => {
     const { says, supervising } = renderApp();
     await says('Connected');

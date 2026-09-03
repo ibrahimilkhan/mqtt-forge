@@ -45,6 +45,15 @@ public sealed class ConnectionService
     // an outage of the broker they just left, which a ladder would otherwise dial back.
     public int ReaderDials => Volatile.Read(ref _readerDials);
 
+    /// <summary>Where the reader's latest dial was aimed, as host:port. Null until they have dialled.</summary>
+    // With the count above, the whole of what the supervisor asks about a reader's dial: was there
+    // one, and was it at the broker that is down. A dial at that broker is a hurry-up and the
+    // ladder keeps its place; a dial anywhere else is the reader leaving, and the ladder stands
+    // down until a link is seen up.
+    public string? LastReaderEndpoint => Volatile.Read(ref _lastReaderEndpoint);
+
+    private string? _lastReaderEndpoint;
+
     public BrokerFailure? CurrentFailure => _manager.Failure;
 
     public BrokerLink? CurrentLink => _manager.Link;
@@ -53,7 +62,11 @@ public sealed class ConnectionService
     public async Task<bool> ConnectAsync(
         BrokerConnectionSettings settings, CancellationToken ct, ConnectOrigin origin = ConnectOrigin.Reader)
     {
-        if (origin == ConnectOrigin.Reader) Interlocked.Increment(ref _readerDials);
+        if (origin == ConnectOrigin.Reader)
+        {
+            Volatile.Write(ref _lastReaderEndpoint, $"{settings.Host}:{settings.Port}");
+            Interlocked.Increment(ref _readerDials);
+        }
 
         if (_manager.State == ConnectionState.Connected && settings == _connectedSettings)
         {

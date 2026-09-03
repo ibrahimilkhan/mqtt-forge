@@ -17,17 +17,29 @@ import type { ReconnectStatus } from '../../types/api';
 export type ReconnectView = ReconnectStatus & {
   /** When the next attempt is due, in `Date.now()` milliseconds. Null when none is scheduled. */
   dueAt: number | null;
+  /** When the outage began, in `Date.now()` milliseconds. Null when there is no outage. */
+  sinceAt: number | null;
 };
 
 /** Stamps an arriving status with a deadline on this machine's clock. */
 export function arrived(status: ReconnectStatus, receivedAt = Date.now()): ReconnectView {
-  return { ...status, dueAt: dueAtOn(status, receivedAt) };
+  return {
+    ...status,
+    dueAt: onThisClock(status.nextAttemptAt, status, receivedAt),
+    sinceAt: onThisClock(status.since, status, receivedAt),
+  };
 }
 
-function dueAtOn(status: ReconnectStatus, receivedAt: number): number | null {
-  if (!status.nextAttemptAt) return null;
+// One conversion for both instants, and the same skew arithmetic: the server's instant minus the
+// server's now is a duration, and a duration is a thing this clock can add.
+function onThisClock(
+  instant: string | null | undefined,
+  status: ReconnectStatus,
+  receivedAt: number,
+): number | null {
+  if (!instant) return null;
 
-  const due = Date.parse(status.nextAttemptAt);
+  const due = Date.parse(instant);
   const sent = Date.parse(status.now);
 
   // A payload whose instants will not parse is one this console cannot count down for, and a NaN

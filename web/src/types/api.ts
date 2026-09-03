@@ -72,6 +72,11 @@ export type ReconnectStatus = {
    */
   declined?: boolean;
   /**
+   * When this outage was first seen, on the server's clock. Null when there is none. A console
+   * that opens mid-outage has no record of the drop of its own; this is what it draws from.
+   */
+  since?: string | null;
+  /**
    * The instant on the server's clock that this status was true at.
    *
    * `nextAttemptAt` is on that same clock, so their difference is a duration — which is a thing

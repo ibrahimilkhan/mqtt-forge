@@ -32,7 +32,14 @@ public sealed record ReconnectStatus(
     /// not fix it or should not try to: a rejected password, a certificate nobody trusts, a
     /// client ID another client has just taken. The option is still on; the next Connect that
     /// works puts the supervisor back to work.</summary>
-    bool Declined = false)
+    bool Declined = false,
+
+    /// <summary>When this outage was first seen, on the server's clock. Null when there is none.</summary>
+    // For a console that opens, or reloads, in the middle of one. Its own record of the drop is
+    // gone with the page, and without this it drew the form with a red line under it and no
+    // sign that anything was being done — while the rail said 'reconnecting' and the ladder
+    // climbed. The instant lets it draw the notice it would have drawn had it been watching.
+    DateTimeOffset? Since = null)
 {
     /// <summary>Nothing wrong, nothing being done, and the option as it was last set.</summary>
     public static ReconnectStatus Idle(bool enabled) => new(enabled, false, 0, null, false);

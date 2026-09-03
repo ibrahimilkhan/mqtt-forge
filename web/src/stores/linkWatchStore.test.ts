@@ -109,6 +109,26 @@ describe('what the console remembers about a link', () => {
     expect(watch().recoveredAt).toBe(5_000);
   });
 
+  // A console that reloads mid-outage: the server says when it began, and the watch takes its
+  // word — once, and only while it holds nothing of its own.
+  it('resuming an outage the server reports draws it as a drop that opened the panel', () => {
+    useLinkWatchStore.getState().resume(broke(), 1_000);
+
+    expect(watch().droppedAt).toBe(1_000);
+    expect(watch().openedByFault).toBe(true);
+    expect(watch().failure?.reason).toBe('brokerClosed');
+  });
+
+  it('resuming never overwrites an outage the console saw itself', () => {
+    saw('Connected');
+    saw('Faulted', broke(), 1_000);
+
+    useLinkWatchStore.getState().resume(broke('refused'), 5_000);
+
+    expect(watch().droppedAt).toBe(1_000);
+    expect(watch().failure?.reason).toBe('brokerClosed');
+  });
+
   it('a first connection is not a recovery', () => {
     saw('Connected', null, 5_000);
 

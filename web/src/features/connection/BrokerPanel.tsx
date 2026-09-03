@@ -379,6 +379,12 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
   const live = isOnline && !settling;
 
   const attempted = connectMutation.variables?.request;
+
+  // The reader pressed Connect and it failed. That sentence is theirs whatever else is on the
+  // panel: with an outage notice up it used to be hidden along with the outage's own line — and
+  // a reader who dialled a second broker mid-outage and was refused saw nothing about it at all.
+  const ownAttemptFailed = connectMutation.isError;
+
   const failure =
     (attempted && describeConnectFailure(connectMutation.error, attempted)) ??
     (faulted && describeFailureReason(faulted.reason, faulted));
@@ -998,7 +1004,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
 
       {nameBox}
 
-      {failure && !noticeUp && (
+      {failure && (!noticeUp || ownAttemptFailed) && (
         <p className={styles.fault} role="alert">
           {failure}
         </p>

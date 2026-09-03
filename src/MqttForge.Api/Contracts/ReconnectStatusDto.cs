@@ -13,9 +13,9 @@ namespace MqttForge.Api.Contracts;
 // alone, a console on a machine two minutes fast would draw the skew as time remaining.
 public sealed record ReconnectStatusDto(
     bool Enabled, bool Active, int Attempt, DateTimeOffset? NextAttemptAt, bool GaveUp,
-    DateTimeOffset Now, bool Declined = false)
+    DateTimeOffset Now, bool Declined = false, DateTimeOffset? Since = null)
 {
     public static ReconnectStatusDto Of(ReconnectStatus status, DateTimeOffset now) =>
         new(status.Enabled, status.Active, status.Attempt, status.NextAttemptAt, status.GaveUp, now,
-            status.Declined);
+            status.Declined, status.Since);
 }

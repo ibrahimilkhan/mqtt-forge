@@ -50,6 +50,16 @@ export type LinkWatchState = {
     link?: Pick<BrokerLink, 'host' | 'port'> | null,
   ) => void;
 
+  /**
+   * An outage this console did not see begin, told to it by the server.
+   *
+   * A console that opens or reloads mid-outage has no drop of its own to remember, and drew the
+   * form with a red line and no notice while the rail said 'reconnecting'. The supervisor knows
+   * when the outage began; this takes its word for it, once, and only while nothing of its own
+   * is on record.
+   */
+  resume: (failure: BrokerFailure | null | undefined, droppedAt: number) => void;
+
   /** The reader has read the notice. Clears the recovery, not the memory of the outage. */
   dismiss: () => void;
 
@@ -134,6 +144,12 @@ export const useLinkWatchStore = create<LinkWatchState>((set, get) => ({
     // Disconnected is somebody hanging up on purpose, which ends the outage without recovering
     // from it — there is nothing to tell them they already know.
     if (state === 'Disconnected') set(rested);
+  },
+
+  resume: (failure, droppedAt) => {
+    if (get().droppedAt !== null) return;
+
+    set({ failure: failure ?? null, droppedAt, recoveredAt: null, openedByFault: true, wasUp: false });
   },
 
   dismiss: () => set({ ...rested, wasUp: get().wasUp }),
