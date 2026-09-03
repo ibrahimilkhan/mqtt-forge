@@ -586,6 +586,14 @@
   padding: 0;
   font-family: var(--mono);
   font-size: var(--t-small);
+  /* Capped and scrolled inside the card, so a broker that flaps all afternoon fills its own
+     plate rather than growing it down the page and pushing the saved brokers under both columns
+     ahead of it. About a dozen rows before the rest are a scroll away — the newest are at the top,
+     which is what a reader glancing at the card wants first. A little right padding keeps the
+     scrollbar off the text; the card's own padding answers it on the other three sides. */
+  max-height: 19rem;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 .event {
   display: grid;
