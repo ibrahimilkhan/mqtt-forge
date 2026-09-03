@@ -116,7 +116,7 @@ describe('what the console remembers about a link', () => {
     expect(watch().failure).toBeNull();
   });
 
-  it('connecting is a rung or a reader dialling, and changes nothing', () => {
+  it('connecting mid-outage is a rung of the ladder, and changes nothing', () => {
     saw('Connected');
     saw('Faulted', broke(), 1_000);
 
@@ -124,6 +124,30 @@ describe('what the console remembers about a link', () => {
 
     expect(watch().droppedAt).toBe(1_000);
     expect(watch().openedByFault).toBe(true);
+  });
+
+  // Measured: a Connect to a wrong password, pressed from a live link, read as that link
+  // dropping — and the next Connect that worked as the wrong-password broker coming back.
+  it('dialling by hand from a live link is leaving it on purpose, so a failed dial is not a drop', () => {
+    saw('Connected');
+
+    saw('Connecting');
+    saw('Faulted', broke('credentialsRejected'), 1_000);
+
+    expect(watch().droppedAt).toBeNull();
+    expect(watch().openedByFault).toBe(false);
+  });
+
+  it('a dial that works after one that failed is a first connection, not a recovery', () => {
+    saw('Connected');
+    saw('Connecting');
+    saw('Faulted', broke('credentialsRejected'), 1_000);
+
+    saw('Connecting');
+    saw('Connected', null, 5_000);
+
+    expect(watch().recoveredAt).toBeNull();
+    expect(watch().wasUp).toBe(true);
   });
 
   // Otherwise the very next drop would read as a first connect that failed, and tell nobody.

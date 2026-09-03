@@ -105,9 +105,17 @@ export const useLinkWatchStore = create<LinkWatchState>((set, get) => ({
       return;
     }
 
-    // Connecting is a rung of the ladder or the reader dialling; either way the outage is not
-    // over and nothing here changes. Disconnected is somebody hanging up on purpose, which ends
-    // the outage without recovering from it — there is nothing to tell them they already know.
+    // Connecting is one of two things, and the outage tells them apart. Mid-outage it is a rung
+    // of the ladder, and nothing here changes. With no outage on it is the reader dialling by
+    // hand — and if a link was up, they have just left it on purpose. That is a hang-up, not a
+    // drop waiting to happen: a Connect to a wrong password from a live link used to read as the
+    // live link dropping, and the next Connect that worked as the broker that rejected the
+    // password "coming back". So the link is not up any more, and the next fault has to earn its
+    // status as a drop again by following a link that actually came up.
+    if (state === 'Connecting' && current.droppedAt === null && current.wasUp) set({ wasUp: false });
+
+    // Disconnected is somebody hanging up on purpose, which ends the outage without recovering
+    // from it — there is nothing to tell them they already know.
     if (state === 'Disconnected') set(rested);
   },
 

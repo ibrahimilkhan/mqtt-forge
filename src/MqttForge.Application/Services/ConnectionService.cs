@@ -15,6 +15,10 @@ public sealed class ConnectionService
     // Tracks live-connection settings to detect a repeat connect
     private BrokerConnectionSettings? _connectedSettings;
 
+    // How many times a person has pressed Connect, counted so that the supervisor can tell a dial
+    // it did not make from one it did. The supervisor's own dials do not count; see ConnectAsync.
+    private int _readerDials;
+
     // Serialises the two things that can happen to an in-flight attempt's source — being
     // cancelled by another request, and being disposed by the attempt itself. Cancelling a
     // disposed source throws, so the field has to be cleared and disposed as one step.
@@ -33,13 +37,24 @@ public sealed class ConnectionService
 
     public ConnectionState CurrentState => _manager.State;
 
+    /// <summary>How many dials a person has made so far, as opposed to the supervisor.</summary>
+    // A counter rather than a flag, so a reader who reads it once a second can tell "another one
+    // since I last looked" from "the same one I already answered". What the supervisor does with
+    // it: a reader's dial supersedes whatever link was standing, so a fault that follows one is
+    // the reader's own failed Connect — the form's business, with a sentence under it — and not
+    // an outage of the broker they just left, which a ladder would otherwise dial back.
+    public int ReaderDials => Volatile.Read(ref _readerDials);
+
     public BrokerFailure? CurrentFailure => _manager.Failure;
 
     public BrokerLink? CurrentLink => _manager.Link;
 
     // A failed settings save is logged but doesn't fail an otherwise-successful connect
-    public async Task<bool> ConnectAsync(BrokerConnectionSettings settings, CancellationToken ct)
+    public async Task<bool> ConnectAsync(
+        BrokerConnectionSettings settings, CancellationToken ct, ConnectOrigin origin = ConnectOrigin.Reader)
     {
+        if (origin == ConnectOrigin.Reader) Interlocked.Increment(ref _readerDials);
+
         if (_manager.State == ConnectionState.Connected && settings == _connectedSettings)
         {
             _logger.LogInformation("Connect skipped, already connected with the same settings");
@@ -93,7 +108,18 @@ public sealed class ConnectionService
         lock (_attemptLock) _attempt?.Cancel();
     }
 
-    public Task DisconnectAsync(CancellationToken ct) => _manager.DisconnectAsync(ct);
+    /// <summary>Hangs up — and calls off any dial still in flight, whoever started it.</summary>
+    // The abort first, because of what happens without it. The supervisor decides to redial off
+    // a poll, and its dial then waits on the manager's gate; a reader who presses Disconnect in
+    // the same second gets the gate first, hangs up, and the supervisor's dial goes through
+    // straight after — a link nobody asked for, a second after somebody asked for none. Measured
+    // as "sometimes it reconnects after I disconnect by hand". Cancelling the registered attempt
+    // makes the dial fail on the gate instead, and the next poll finds Disconnected and rests.
+    public Task DisconnectAsync(CancellationToken ct)
+    {
+        CancelAttempt();
+        return _manager.DisconnectAsync(ct);
+    }
 
     public Task<BrokerConnectionSettings?> GetSavedSettingsAsync(CancellationToken ct) =>
         _store.LoadAsync(ct);

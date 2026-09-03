@@ -54,9 +54,15 @@ public class BrokerLinkSupervisorTests
     // The container's case unless a test says otherwise: a host told to dial at start-up when
     // the rules want a broker. That is the one the ladder is about; the shipped default, which
     // never dials, has two tests of its own below.
+    // One service per test, shared between the supervisor under test and the tests that play the
+    // reader: a reader's dial goes through the same ConnectionService the supervisor reads, which
+    // is how it learns that somebody pressed Connect.
+    private ConnectionService? _service;
+    private ConnectionService Service =>
+        _service ??= new ConnectionService(_manager, _settingsStore, Substitute.For<ILogger<ConnectionService>>());
+
     private BrokerLinkSupervisor CreateSut(bool connectOnStart = true) =>
-        new(new ConnectionService(_manager, _settingsStore, Substitute.For<ILogger<ConnectionService>>()),
-            _rules, _log, _time, options: new BrokerLinkOptions(connectOnStart));
+        new(Service, _rules, _log, _time, options: new BrokerLinkOptions(connectOnStart));
 
     private static AlertRule Rule(bool enabled) =>
         new("r1", "Boiler temperature", enabled, "plant/+/temp", null,
@@ -390,8 +396,7 @@ public class BrokerLinkSupervisorTests
         _manager.ConnectAsync(Arg.Any<BrokerConnectionSettings>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
         var sut = new BrokerLinkSupervisor(
-            new ConnectionService(_manager, _settingsStore, Substitute.For<ILogger<ConnectionService>>()),
-            _rules, _log, _time, options: new BrokerLinkOptions(ConnectOnStart: true), restorer: restorer);
+            Service, _rules, _log, _time, options: new BrokerLinkOptions(ConnectOnStart: true), restorer: restorer);
 
         await sut.StartUpAsync(CancellationToken.None);
 
@@ -409,13 +414,56 @@ public class BrokerLinkSupervisorTests
         _manager.ConnectAsync(Arg.Any<BrokerConnectionSettings>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
         var sut = new BrokerLinkSupervisor(
-            new ConnectionService(_manager, _settingsStore, Substitute.For<ILogger<ConnectionService>>()),
-            _rules, _log, _time, options: new BrokerLinkOptions(ConnectOnStart: true), restorer: restorer);
+            Service, _rules, _log, _time, options: new BrokerLinkOptions(ConnectOnStart: true), restorer: restorer);
 
         var exception = await Record.ExceptionAsync(() => sut.StartUpAsync(CancellationToken.None));
 
         Assert.Null(exception);
         Assert.Contains(_log.Entries, entry => entry.Level == LogLevel.Warning);
+    }
+
+    // Measured: a Connect to a wrong password, pressed from a live link, faulted — and the ladder
+    // redialled the saved broker, the one the reader had just left. A reader's dial supersedes
+    // the link this class was keeping up; if it fails, that is theirs to read under the form.
+    [Fact]
+    public async Task A_readers_own_failed_dial_is_not_an_outage_to_climb_for()
+    {
+        var sut = await WantedAsync();
+        _manager.State.Returns(ConnectionState.Connected);
+        await PollAsync(sut);
+
+        // The reader dials a broker that refuses them. ConnectionService counts the dial; the
+        // manager is left Faulted about it.
+        await Assert.ThrowsAnyAsync<Exception>(() => Service.ConnectAsync(
+            new BrokerConnectionSettings("other.local", 1883, "mqttforge", "u", "wrong", false),
+            CancellationToken.None));
+        _manager.State.Returns(ConnectionState.Faulted);
+        _manager.Failure.Returns(Failure(BrokerFailureReason.Refused));
+        _attempts.Clear();
+
+        await PollAsync(sut, seconds: 60);
+
+        Assert.Empty(_attempts);
+    }
+
+    // ...and a reader's dial that works is a link worth keeping up, exactly as before.
+    [Fact]
+    public async Task A_readers_dial_that_works_is_kept_up()
+    {
+        var sut = CreateSut();
+        _manager.ConnectAsync(Arg.Any<BrokerConnectionSettings>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        await Service.ConnectAsync(Saved, CancellationToken.None);
+        _manager.State.Returns(ConnectionState.Connected);
+        await PollAsync(sut);
+
+        _manager.State.Returns(ConnectionState.Faulted);
+        _manager.Failure.Returns(Failure(BrokerFailureReason.ConnectionLost));
+        _manager.ConnectAsync(Arg.Any<BrokerConnectionSettings>(), Arg.Any<CancellationToken>())
+            .Returns(_ => { _attempts.Add(Second); return Task.FromException(new IOException("down")); });
+        await PollAsync(sut, seconds: 3);
+
+        Assert.NotEmpty(_attempts);
     }
 
     [Fact]

@@ -91,6 +91,11 @@ public sealed class BrokerLinkSupervisor : BackgroundService
     // runs in every host this product builds, including the ones that have no rules file at all.
     private bool _wanted;
 
+    // The reader's dial count as of the last poll — see ConnectionService.ReaderDials. A change
+    // means somebody pressed Connect since, and whatever link was wanted before is not any more:
+    // the reader is driving. Wanted again the moment their link is seen up.
+    private int _readerDialsSeen;
+
     // The last status anybody was told about, so that a poll that changed nothing says nothing.
     // Without it the console would be sent an identical payload every second for the whole of an
     // outage, and the countdown it draws does not need one: it has an instant to subtract from.
@@ -225,6 +230,21 @@ public sealed class BrokerLinkSupervisor : BackgroundService
     {
         var state = _connection.CurrentState;
 
+        // A person pressed Connect since the last look. Whatever this class was keeping up is
+        // superseded — they chose a broker, and if their dial fails the failure is theirs to read
+        // under the form, not an outage of the broker they left for this class to dial back. It
+        // was: a Connect to a wrong password from a live link read as that link dropping, and
+        // the ladder redialled the *saved* broker, which is the one they had just walked away
+        // from. Nothing is wanted until a link is seen up again, which the Connected branch below
+        // does on this same poll if the dial already worked.
+        var dials = _connection.ReaderDials;
+        if (dials != _readerDialsSeen)
+        {
+            _readerDialsSeen = dials;
+            _wanted = false;
+            Rest();
+        }
+
         // Before the Faulted test and outside it, because the panel's question is not this class's
         // question. This class only acts on a link that broke by itself; the engine is blind
         // whenever the link is not up, including when somebody closed it on purpose and including
@@ -319,7 +339,7 @@ public sealed class BrokerLinkSupervisor : BackgroundService
 
         if (now < _dueAt) return;
 
-        await AttemptAsync(ct);
+        await AttemptAsync(ct, redial: true);
         _dueAt = _time.GetUtcNow() + NextRung();
         await AnnounceAsync();
     }
@@ -530,7 +550,7 @@ public sealed class BrokerLinkSupervisor : BackgroundService
     // actually on — while a supervisor holding start-up's copy would answer a drop by dialling
     // whichever broker they left an hour ago, and, because there is only ever one active
     // connection, would take them off the one they moved to.
-    private async Task AttemptAsync(CancellationToken ct)
+    private async Task AttemptAsync(CancellationToken ct, bool redial = false)
     {
         // Whoever arrives second has nothing to add — see _dialling.
         if (!await _dialling.WaitAsync(0, ct)) return;
@@ -546,9 +566,15 @@ public sealed class BrokerLinkSupervisor : BackgroundService
                 return;
             }
 
+            // Somebody hung up between the poll that decided this redial and now. Their Disconnect
+            // has already aborted whatever dial was registered; this one has not been, so it
+            // checks. Only a redial: at start-up nothing has happened yet and Disconnected is
+            // simply the state a fresh client is in.
+            if (redial && _connection.CurrentState == ConnectionState.Disconnected) return;
+
             _attempts++;
             _log.LogInformation("Connecting to {Endpoint} for the alert rules.", settings.Endpoint);
-            await _connection.ConnectAsync(settings, ct);
+            await _connection.ConnectAsync(settings, ct, ConnectOrigin.Supervisor);
 
             // The link is back; now what the console was listening to. Its own try/catch, because
             // a filter the broker refuses on the redial is not a failed redial — the link is up,

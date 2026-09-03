@@ -74,6 +74,42 @@ public class ConnectionServiceTests
         await _manager.Received(1).DisconnectAsync(Arg.Any<CancellationToken>());
     }
 
+    // "Sometimes it reconnects after I disconnect by hand": the supervisor's dial was waiting on
+    // the manager's gate, the hang-up got the gate first, and the dial went through after it.
+    [Fact]
+    public async Task DisconnectAsync_calls_off_a_dial_still_in_flight()
+    {
+        var dialling = new TaskCompletionSource();
+        CancellationToken seen = default;
+        _manager.ConnectAsync(Arg.Any<BrokerConnectionSettings>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                seen = call.Arg<CancellationToken>();
+                dialling.SetResult();
+                return Task.Delay(Timeout.Infinite, seen);
+            });
+        var sut = CreateSut();
+
+        var dial = sut.ConnectAsync(_settings, CancellationToken.None, ConnectOrigin.Supervisor);
+        await dialling.Task;
+        await sut.DisconnectAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<ConnectAttemptAbortedException>(() => dial);
+        Assert.True(seen.IsCancellationRequested);
+    }
+
+    [Fact]
+    public async Task Only_a_readers_dial_is_counted_as_one()
+    {
+        var sut = CreateSut();
+
+        await sut.ConnectAsync(_settings, CancellationToken.None);
+        await sut.ConnectAsync(_settings, CancellationToken.None, ConnectOrigin.Supervisor);
+        await sut.ConnectAsync(_settings, CancellationToken.None, ConnectOrigin.Reader);
+
+        Assert.Equal(2, sut.ReaderDials);
+    }
+
     [Fact]
     public void CurrentState_reflects_manager_state()
     {
