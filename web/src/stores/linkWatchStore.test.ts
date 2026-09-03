@@ -86,6 +86,29 @@ describe('what the console remembers about a link', () => {
 
   // A notice saying so on the first successful connect of a session would be the console
   // congratulating itself.
+  // mqtt.hsl.fi takes the connection and then closes it over a wildcard; the reader goes to
+  // localhost instead. localhost coming up is not hsl.fi coming back.
+  it('a link to a different broker is not the dropped one coming back', () => {
+    saw('Connected');
+    saw('Faulted', broke('notPermitted'), 1_000);
+
+    useLinkWatchStore.getState().saw('Connected', null, 5_000, { host: 'localhost', port: 1883 });
+
+    expect(watch().recoveredAt).toBeNull();
+    expect(watch().droppedAt).toBeNull();
+    expect(watch().openedByFault).toBe(false);
+    expect(watch().wasUp).toBe(true);
+  });
+
+  it('the same broker coming back is a recovery, whoever dialled it', () => {
+    saw('Connected');
+    saw('Faulted', broke(), 1_000);
+
+    useLinkWatchStore.getState().saw('Connected', null, 5_000, { host: 'broker.local', port: 1883 });
+
+    expect(watch().recoveredAt).toBe(5_000);
+  });
+
   it('a first connection is not a recovery', () => {
     saw('Connected', null, 5_000);
 

@@ -19,7 +19,7 @@ import type { ConnectionState } from '../../types/api';
  * no command behind them.
  */
 export function useLinkWatch() {
-  const { state, failure, answered } = useConnectionState();
+  const { state, failure, link, answered } = useConnectionState();
   const { status } = useReconnectStatus();
 
   // What was last seen, so that a transition can be told from a repeat. Undefined until the
@@ -42,7 +42,7 @@ export function useLinkWatch() {
     const watch = useLinkWatchStore.getState();
     const dropped = watch.droppedAt !== null && watch.recoveredAt === null ? watch.droppedAt : null;
 
-    watch.saw(state, failure);
+    watch.saw(state, failure, undefined, link);
 
     if (before === undefined || before === state) return;
     const events = useBrokerEventsStore.getState();
@@ -58,13 +58,19 @@ export function useLinkWatch() {
       });
     }
 
-    if (state === 'Connected' && dropped !== null) {
+    // Back, and the same broker. A Connect to a different broker while an outage is on is not
+    // the dropped link returning — that line is the mutation's own 'Connected'.
+    const sameBroker =
+      !link ||
+      !watch.failure ||
+      (link.host === watch.failure.host && link.port === watch.failure.port);
+    if (state === 'Connected' && dropped !== null && sameBroker) {
       events.push({
         kind: 'ok',
         what: `Link back · gone for ${away(dropped)}`,
       });
     }
-  }, [state, failure, answered]);
+  }, [state, failure, link, answered]);
 
   // One line per try. The supervisor announces after each attempt with the count so far, and a
   // count that went up while the link is still down is a try that failed. Only while it is

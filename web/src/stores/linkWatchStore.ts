@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { BrokerFailure, ConnectionState } from '../types/api';
+import type { BrokerFailure, BrokerLink, ConnectionState } from '../types/api';
 
 /**
  * What the API forgets the moment a link comes back.
@@ -42,7 +42,13 @@ export type LinkWatchState = {
    * The whole transition table lives here rather than in an effect in a component, because two
    * components need the answer and a second copy of it is a second thing that can be wrong.
    */
-  saw: (state: ConnectionState, failure: BrokerFailure | null | undefined, now?: number) => void;
+  saw: (
+    state: ConnectionState,
+    failure: BrokerFailure | null | undefined,
+    now?: number,
+    /** Which broker is up, when the state is Connected. Decides whether it is the one that went. */
+    link?: Pick<BrokerLink, 'host' | 'port'> | null,
+  ) => void;
 
   /** The reader has read the notice. Clears the recovery, not the memory of the outage. */
   dismiss: () => void;
@@ -58,7 +64,7 @@ export const useLinkWatchStore = create<LinkWatchState>((set, get) => ({
   openedByFault: false,
   wasUp: false,
 
-  saw: (state, failure, now = Date.now()) => {
+  saw: (state, failure, now = Date.now(), link) => {
     const current = get();
 
     if (state === 'Faulted') {
@@ -99,6 +105,17 @@ export const useLinkWatchStore = create<LinkWatchState>((set, get) => ({
       // notice saying so on the first successful connect of a session would be the console
       // congratulating itself.
       if (current.droppedAt === null || current.recoveredAt !== null) return;
+
+      // And only the *same* link. A broker that took the connection and then threw the reader
+      // off — mqtt.hsl.fi does, over a wildcard it will not allow — is a real drop, and the
+      // reader's answer is often to go elsewhere. A Connect to localhost that then works is not
+      // hsl.fi coming back, and 'Reconnected' over it was a lie the notice told with a straight
+      // face. When the link names a broker other than the one that went, the outage is simply
+      // over: nothing to announce, and nothing left holding the panel open.
+      if (link && current.failure && (link.host !== current.failure.host || link.port !== current.failure.port)) {
+        set({ ...rested, wasUp: true });
+        return;
+      }
 
       set({ recoveredAt: now });
 
