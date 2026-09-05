@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { App } from '../../App';
 import { createFakeHub } from '../../realtime/fakeHub';
 import { resetLinkWatch } from '../../stores/linkWatchStore';
+import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import { server } from '../../test/server';
 import type {
   BrokerFailure,
@@ -347,6 +348,55 @@ describe('a link that drops while the reader is elsewhere', () => {
 
     await says('Connected');
     expect(await screen.findByText(/^Link back/)).toBeInTheDocument();
+  });
+
+  // A broker without persistence loses its retained tree on a restart. A hand Connect starts the
+  // console's tree again; a redial the supervisor made did not, so the old values stayed on
+  // screen looking current.
+  it('starts the tree again when the link comes back on its own', async () => {
+    const { says } = renderApp();
+    await says('Connected');
+    await goElsewhere();
+
+    act(() => {
+      useTopicTreeStore.getState().apply([
+        {
+          topic: 'lab/oven',
+          payload: '210',
+          mode: 'text',
+          size: 3,
+          qos: 0,
+          retain: true,
+          receivedAt: '2026-09-02T21:00:00.000Z',
+        },
+      ]);
+    });
+    expect(useTopicTreeStore.getState().root.children.size).toBe(1);
+
+    await says('Faulted');
+    await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Faulted'));
+    await says('Connected');
+
+    await waitFor(() => expect(useTopicTreeStore.getState().root.children.size).toBe(0));
+  });
+
+  // ...but not twice. The reader's own Connect resets it and pushes 'Connected' into the log; a
+  // second reset a tick later would clear that line away.
+  it('does not start the tree again when the reader reconnected it by hand', async () => {
+    const { says } = renderApp();
+    await says('Connected');
+    await goElsewhere();
+    await says('Faulted');
+    await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Faulted'));
+
+    // The reader's own Connect, which starts the tree again on its way through.
+    act(() => useTopicTreeStore.getState().reset());
+    const after = useTopicTreeStore.getState().generation;
+
+    await says('Connected');
+    await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Connected'));
+
+    expect(useTopicTreeStore.getState().generation).toBe(after);
   });
 
   // A console that opens in the middle of an outage: the server says when it began and how many

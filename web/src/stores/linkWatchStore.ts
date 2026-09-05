@@ -82,7 +82,14 @@ export const useLinkWatchStore = create<LinkWatchState>((set, get) => ({
       // Faulted once a rung — with wasUp false, since the link is down. Re-stamping would make
       // the notice say the outage began at the last rung rather than at the drop, and would
       // reopen a panel the reader had just closed.
-      if (current.droppedAt !== null) {
+      //
+      // `recoveredAt` is what makes this the *current* outage rather than any outage. It used to
+      // read droppedAt alone, and a recovery the reader had not dismissed left droppedAt standing
+      // — so the next drop of a flapping broker was swallowed whole: the notice went on saying
+      // 'Reconnected, gone for 12s' over a link that was down, with no countdown, no Stop trying
+      // and no way back. A broker that restarts every few seconds is the commonest outage there
+      // is, and nobody dismisses a notice every time.
+      if (current.droppedAt !== null && current.recoveredAt === null) {
         // The reason can still sharpen: the first announcement of a drop carries whatever
         // MQTTnet said, and a later rung's refusal is often the more specific of the two.
         if (failure && !current.failure) set({ failure });

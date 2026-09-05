@@ -290,6 +290,15 @@ public sealed class MqttnetSubscriber : IMqttSubscriber, ISubscriptionRestorer
 
     private Task OnDisconnectedAsync(MqttClientDisconnectedEventArgs e)
     {
+        // Only a link that was actually up has filters worth keeping, and that is the whole of
+        // why this is gated. MQTTnet raises this event on the failed-connect path too, with
+        // nothing subscribed — so an outage that took more than one rung used to overwrite the
+        // stash with an empty list on the first failed try, and the rung that finally worked
+        // restored nothing. The reader was left on a green link listening to none of the topics
+        // they had asked for. ClientWasConnected is the same flag MqttnetConnectionManager reads
+        // to tell a drop from a dial that never landed.
+        if (!e.ClientWasConnected) return Task.CompletedTask;
+
         // What the console had, kept for the redial — see RestoreConsoleFiltersAsync. Written
         // whether or not this drop was the reader's own Disconnect: a restore only ever follows
         // the supervisor's redial, and the supervisor never redials a link somebody hung up on.

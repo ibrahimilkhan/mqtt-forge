@@ -129,6 +129,34 @@ describe('what the console remembers about a link', () => {
     expect(watch().failure?.reason).toBe('brokerClosed');
   });
 
+  // A flapping broker, and a reader who does not press Dismiss between the flaps.
+  it('a second drop after an un-dismissed recovery is a drop of its own', () => {
+    saw('Connected');
+    saw('Faulted', broke(), 1_000);
+    saw('Connected', null, 5_000);
+    expect(watch().recoveredAt).toBe(5_000);
+
+    saw('Faulted', broke('refused'), 9_000);
+
+    expect(watch().droppedAt).toBe(9_000);
+    expect(watch().recoveredAt).toBeNull();
+    expect(watch().failure?.reason).toBe('refused');
+    expect(watch().openedByFault).toBe(true);
+  });
+
+  // ...and the panel the reader closed by hand during the first outage opens again for the
+  // second, because a new drop is new news.
+  it('a second drop reopens a panel the reader had released', () => {
+    saw('Connected');
+    saw('Faulted', broke(), 1_000);
+    useLinkWatchStore.getState().released();
+    saw('Connected', null, 5_000);
+
+    saw('Faulted', broke(), 9_000);
+
+    expect(watch().openedByFault).toBe(true);
+  });
+
   it('a first connection is not a recovery', () => {
     saw('Connected', null, 5_000);
 

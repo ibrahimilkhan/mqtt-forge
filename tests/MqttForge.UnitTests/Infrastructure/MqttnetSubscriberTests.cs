@@ -67,12 +67,37 @@ public class MqttnetSubscriberTests
             && filters[0].QualityOfServiceLevel == MqttQualityOfServiceLevel.ExactlyOnce;
     }
 
-    private void RaiseDisconnected() =>
+    private void RaiseDisconnected(bool clientWasConnected = true) =>
         _client.DisconnectedAsync += Raise.Event<Func<MqttClientDisconnectedEventArgs, Task>>(
             new MqttClientDisconnectedEventArgs(
-                clientWasConnected: true, connectResult: null,
+                clientWasConnected: clientWasConnected, connectResult: null,
                 reason: MqttClientDisconnectReason.UnspecifiedError, reasonString: null,
                 userProperties: null, exception: null));
+
+    // An outage that takes more than one rung. MQTTnet raises DisconnectedAsync on the failed
+    // connect path too, with nothing subscribed — and that used to overwrite the stash, so the
+    // rung that finally worked restored nothing and the reader watched a green link carrying
+    // none of their topics.
+    [Fact]
+    public async Task A_failed_rung_between_the_drop_and_the_redial_does_not_lose_the_filters()
+    {
+        GivenTheBrokerAnswers(("#", MqttClientSubscribeResultCode.GrantedQoS2));
+        var sut = CreateSut();
+        await sut.SubscribeAsync([new SubscriptionRequest("#", 2)], CancellationToken.None);
+
+        RaiseDisconnected();                               // the drop
+        RaiseDisconnected(clientWasConnected: false);      // rung 1 never lands
+        RaiseDisconnected(clientWasConnected: false);      // rung 2 never lands
+        _client.ClearReceivedCalls();
+
+        GivenTheBrokerAnswers(("#", MqttClientSubscribeResultCode.GrantedQoS2));
+        await sut.RestoreConsoleFiltersAsync(CancellationToken.None);
+
+        await _client.Received(1).SubscribeAsync(
+            Arg.Is<MqttClientSubscribeOptions>(options => AsksForEverythingAtQoS2(options)),
+            Arg.Any<CancellationToken>());
+        Assert.Equal(["#"], sut.ActiveFilters);
+    }
 
     // What the console held when the link went is asked for again on the redial — at the QoS it
     // had — and the engine's own filters are not, because the engine puts those back itself.

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useConnectionState } from '../../api/useConnectionState';
 import { useReconnectStatus } from '../../api/useReconnectStatus';
 import { useBrokerEventsStore } from '../../stores/brokerEventsStore';
+import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import { useLinkWatchStore } from '../../stores/linkWatchStore';
 import type { ConnectionState } from '../../types/api';
 
@@ -28,6 +29,18 @@ export function useLinkWatch() {
   const seen = useRef<ConnectionState | undefined>(undefined);
   const tries = useRef<number | null>(null);
 
+  /**
+   * The tree's generation at the moment the link dropped, so a recovery can tell whether anybody
+   * has started it again since.
+   *
+   * A hand Connect resets the tree — new connection, new tree, retained messages refill it. A
+   * redial the supervisor made is the same new connection and had no such reset, so a broker that
+   * came back without its retained tree (no `persistence`, which is every default container) left
+   * its old values on screen looking current. A monitoring console showing state the broker no
+   * longer holds is wrong in the one thing it is for.
+   */
+  const treeAtDrop = useRef<number | null>(null);
+
   useEffect(() => {
     // Before the API has answered, `state` is the standing-in Disconnected rather than an
     // observation — and Disconnected is the one value that clears the store. A console reloaded
@@ -52,6 +65,7 @@ export function useLinkWatch() {
     // as two things having gone wrong. The record keeps the fact and the time; the reader's own
     // failed connects reach it with their reasons through the log.
     if (state === 'Faulted' && before === 'Connected') {
+      treeAtDrop.current = useTopicTreeStore.getState().generation;
       events.push({
         kind: 'fault',
         what: failure ? `Link dropped · ${failure.host}:${failure.port}` : 'Link dropped',
@@ -65,6 +79,14 @@ export function useLinkWatch() {
       !watch.failure ||
       (link.host === watch.failure.host && link.port === watch.failure.port);
     if (state === 'Connected' && dropped !== null && sameBroker) {
+      // Started again since the drop means the reader's own Connect did it, and resetting a
+      // second time would clear the log out from under the 'Connected' line that mutation had
+      // just pushed. Unchanged means this link came back on its own, and the tree is still the
+      // old broker's — so it is started again here, and the retained messages refill it.
+      const tree = useTopicTreeStore.getState();
+      if (treeAtDrop.current === tree.generation) tree.reset();
+      treeAtDrop.current = null;
+
       events.push({
         kind: 'ok',
         what: `Link back · gone for ${away(dropped)}`,
