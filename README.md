@@ -227,7 +227,10 @@ Measured on a live tram feed:
 | --- | --- | --- |
 | 128k messages · 6.7k topics · 36.8 MB | 1 ms per second | 47 fps |
 
-The log keeps half a million messages and drops the oldest.
+The log keeps half a million messages and drops the oldest. The tree keeps fifty thousand topics
+and gives up the ones that have been quiet longest, taking their messages with them — a broker
+whose topic names carry an id (`request/<uuid>/response`) would otherwise grow a console left open
+for days without end. It says underneath how many it has forgotten.
 
 ## Next
 

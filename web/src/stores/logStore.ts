@@ -146,6 +146,15 @@ export type LogState = {
   push: (entry: NewLogEntry) => void;
   appendReceived: (messages: DecodedMessage[]) => void;
   clear: () => void;
+  /**
+   * Drops the runs of topics the tree has given up.
+   *
+   * The two structures hold one thing between them — a topic's row and that topic's readings —
+   * and a reader who clicks a row to find nothing, or a run nothing on screen can reach, is worse
+   * off than if both had gone. The tree's ceiling is the one that fires here; the log's own
+   * eviction is a different budget and answers to itself.
+   */
+  forgetTopics: (topics: readonly string[]) => void;
 };
 
 let nextId = 0;
@@ -189,6 +198,22 @@ export const useLogStore = create<LogState>((set) => ({
       for (const message of messages) held = file(state, toEntry(message), held);
 
       return { held, version: state.version + 1 };
+    }),
+
+  forgetTopics: (topics) =>
+    set((state) => {
+      if (topics.length === 0) return state;
+
+      let held = state.held;
+      for (const topic of topics) {
+        const ring = state.byTopic.get(topic);
+        if (!ring) continue;
+
+        held -= ring.length;
+        state.byTopic.delete(topic);
+      }
+
+      return { held: Math.max(0, held), version: state.version + 1 };
     }),
 
   clear: () =>

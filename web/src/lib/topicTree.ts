@@ -279,6 +279,86 @@ export type TopicRow = {
 // and left out. A '#' subscription can otherwise reach tens of thousands of topics.
 export const MAX_TREE_ROWS = 1500;
 
+/**
+ * The topics the tree is allowed to remember, as against to draw.
+ *
+ * The drawing cap above is about a screen; this one is about memory, and until it existed the
+ * tree was the only structure in the console without a ceiling. Every distinct topic ever seen
+ * made a node that lived until the next connection — which is fine for a broker whose topics are
+ * a fixed set, and unbounded for one whose topic names carry an id: `request/<uuid>/response` is
+ * a new node per message, and a console left open for days holds every one of them.
+ *
+ * Fifty thousand is far above what anyone reads — the screen stops at 1500 rows — and covers the
+ * big real brokers whole. It is a count rather than a byte budget because counting nodes is exact
+ * and cheap where measuring them in a browser is guesswork; the same reason logStore counts
+ * readings.
+ */
+export const MAX_TREE_TOPICS = 50_000;
+
+/** How much is taken when the ceiling bites: a tenth, so the walk is paid once per five thousand
+ *  topics rather than on every arrival past the cap. */
+const EVICTION_SHARE = 0.1;
+
+/**
+ * The topics that have been quiet longest, for a tree that has to give some up.
+ *
+ * Quietest rather than oldest: in a monitor the topic least missed is the one that has said
+ * nothing for the longest, which is the rule logStore's own eviction already follows. `keep` is
+ * what the reader is looking at — a selection they would find empty is worse than a node kept.
+ */
+export function quietestTopics(root: TopicNode, count: number, keep?: string): string[] {
+  if (count <= 0) return [];
+
+  const found: { topic: string; at: number }[] = [];
+  const stack: { node: TopicNode; path: string; isRoot: boolean }[] = [
+    { node: root, path: '', isRoot: true },
+  ];
+
+  while (stack.length > 0) {
+    const { node, path, isRoot } = stack.pop()!;
+
+    // A node with hits is a topic in its own right; one without is only a folder on the way.
+    if (!isRoot && node.hits > 0 && path !== keep) found.push({ topic: path, at: node.lastHitAt });
+
+    for (const name of node.order) {
+      stack.push({
+        node: node.children.get(name)!,
+        path: isRoot ? name : `${path}/${name}`,
+        isRoot: false,
+      });
+    }
+  }
+
+  found.sort((a, b) => a.at - b.at);
+
+  return found.slice(0, count).map((one) => one.topic);
+}
+
+/**
+ * The tree with its quietest topics given up, or the very same tree when it is inside its ceiling.
+ *
+ * Returns the topics that went as well, because they have to leave the log with them: a row whose
+ * click shows nothing, or a run of readings with no row to reach it from, is worse than either
+ * being gone.
+ */
+export function evictQuietestTopics(
+  root: TopicNode,
+  ceiling: number = MAX_TREE_TOPICS,
+  keep?: string,
+): { root: TopicNode; forgotten: string[] } {
+  if (root.subTopics <= ceiling) return { root, forgotten: [] };
+
+  // Down to the ceiling, and a tenth further, so the next arrival does not walk the tree again.
+  const over = root.subTopics - ceiling;
+  const victims = new Set(
+    quietestTopics(root, over + Math.floor(ceiling * EVICTION_SHARE), keep),
+  );
+
+  if (victims.size === 0) return { root, forgotten: [] };
+
+  return { root: pruneTopics(root, (topic) => victims.has(topic)), forgotten: [...victims] };
+}
+
 // Flattens the visible part of the tree so rendering never walks a closed subtree.
 // Iterative, matching insert() — deep topics would overflow a recursive walk.
 export function flattenTree(

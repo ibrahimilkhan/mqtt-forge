@@ -1,6 +1,16 @@
 import { create } from 'zustand';
 import { matchesFilter } from '../lib/topicMatch';
-import { applyMessages, emptyTree, nodeAt, pruneTopics, type TopicNode } from '../lib/topicTree';
+import {
+  applyMessages,
+  emptyTree,
+  evictQuietestTopics,
+  MAX_TREE_TOPICS,
+  nodeAt,
+  pruneTopics,
+  type TopicNode,
+} from '../lib/topicTree';
+import { useLogStore } from './logStore';
+import { useSelectionStore } from './selectionStore';
 import type { DecodedMessage } from '../realtime/decodeIncoming';
 
 type TreeState = {
@@ -11,6 +21,8 @@ type TreeState = {
   // The broker row that everything hangs off. Its own field rather than a path in openPaths:
   // it defaults the other way (open), and collapse-all must not make the whole tree vanish.
   brokerOpen: boolean;
+  /** Topics given up to the ceiling since this tree started. */
+  forgotten: number;
   apply: (messages: DecodedMessage[]) => void;
   dropFilter: (filter: string, stillSubscribed: readonly string[]) => void;
   toggle: (path: string) => void;
@@ -33,7 +45,33 @@ export const useTopicTreeStore = create<TreeState>((set, get) => ({
   brokerOpen: true,
   generation: 0,
 
-  apply: (messages) => set((state) => ({ root: applyMessages(state.root, messages, Date.now()) })),
+  /**
+   * How many topics this tree has given up to stay inside its ceiling, for the whole connection.
+   *
+   * Counted and shown rather than quietly dropped: a monitor that forgets is allowed to, and a
+   * monitor that forgets in silence is one whose emptiness a reader has no way to read.
+   */
+  forgotten: 0,
+
+  apply: (messages) =>
+    set((state) => {
+      const grown = applyMessages(state.root, messages, Date.now());
+
+      // The ceiling, checked here rather than inside the insert: a batch is one walk of the tree
+      // at most, where a check per message would be one per arrival.
+      const { root, forgotten } = evictQuietestTopics(
+        grown,
+        MAX_TREE_TOPICS,
+        useSelectionStore.getState().selected?.topic,
+      );
+
+      if (forgotten.length === 0) return { root: grown };
+
+      // The readings go with the rows. See logStore.forgetTopics.
+      useLogStore.getState().forgetTopics(forgotten);
+
+      return { root, forgotten: state.forgotten + forgotten.length };
+    }),
 
   // Messages stop arriving for a filter that was dropped, so what the tree still shows for it is
   // history the user just said they were done with. Overlapping subscriptions are the reason for
@@ -102,6 +140,8 @@ export const useTopicTreeStore = create<TreeState>((set, get) => ({
       openPaths: new Map(),
       defaultOpen: get().defaultOpen,
       brokerOpen: true,
+      // A new tree has given nothing up yet; the count belongs to the connection it was about.
+      forgotten: 0,
       generation: get().generation + 1,
     }),
 }));

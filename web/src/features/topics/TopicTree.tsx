@@ -48,6 +48,8 @@ export function TopicTree({ broker }: { broker?: string }) {
 
   // The store is read once here rather than once per row, so a message wakes this component
   // alone and only the rows whose node object actually changed re-render.
+  const forgotten = useTopicTreeStore((state) => state.forgotten);
+
   const { rows, hidden } = useMemo(
     () =>
       brokerOpen
@@ -297,9 +299,17 @@ export function TopicTree({ broker }: { broker?: string }) {
         </div>
       )}
 
-      {hidden > 0 && (
+      {(hidden > 0 || forgotten > 0) && (
         <p className={styles.capped}>
-          {hidden} more {hidden === 1 ? 'topic' : 'topics'} not shown
+          {hidden > 0 && `${hidden} more ${hidden === 1 ? 'topic' : 'topics'} not shown`}
+          {hidden > 0 && forgotten > 0 && ' · '}
+          {/* Not the same thing as the line before it, and the difference is the whole reason it
+              is said: those are on screen's other side, these are gone. A tree that forgets is
+              allowed to — a broker whose topic names carry an id would otherwise fill a laptop —
+              but a tree that forgets in silence leaves a reader with an emptiness they cannot
+              read. See MAX_TREE_TOPICS. */}
+          {forgotten > 0 &&
+            `${forgotten} quiet ${forgotten === 1 ? 'topic' : 'topics'} forgotten`}
         </p>
       )}
     </>
