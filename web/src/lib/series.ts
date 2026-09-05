@@ -209,17 +209,28 @@ function walk(body: unknown, path: string): unknown {
   }, body);
 }
 
-/** Every path in the body whose leaf is a number — booleans and strings are not readings. */
-function paths(body: unknown, prefix: string, depth: number): string[] {
-  if (depth >= MAX_DEPTH || body === null || typeof body !== 'object') return [];
+/**
+ * Every path in the body whose leaf is a number — booleans and strings are not readings.
+ *
+ * A generator, so the caller's ceiling actually stops the walk. It used to build the whole list
+ * first and the caller broke out of reading it, which is the same work done and then thrown away:
+ * a message carrying an array of twenty thousand rows built sixty thousand path strings to offer
+ * a reader forty. Cheap next to what selecting such a topic cost elsewhere, but unbounded, and
+ * the ceiling above reads as though it bounds it.
+ */
+function* paths(body: unknown, prefix: string, depth: number): Generator<string> {
+  if (depth >= MAX_DEPTH || body === null || typeof body !== 'object') return;
 
-  return Object.entries(body as Record<string, unknown>).flatMap(([key, value]) => {
+  for (const [key, value] of Object.entries(body as Record<string, unknown>)) {
     const path = prefix ? `${prefix}.${key}` : key;
 
-    if (typeof value === 'number' && Number.isFinite(value)) return [path];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      yield path;
+      continue;
+    }
 
-    return paths(value, path, depth + 1);
-  });
+    yield* paths(value, path, depth + 1);
+  }
 }
 
 /**

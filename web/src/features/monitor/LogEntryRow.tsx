@@ -22,6 +22,21 @@ const SHOW = 480;
 /** What the clamp in the stylesheet actually shows. Kept here so the control agrees with it. */
 const CLAMP_LINES = 4;
 
+/**
+ * How much of a clamped body is put into the page at all.
+ *
+ * The clamp is a height, so the row used to hand the browser the whole body and let CSS hide what
+ * would not fit. That is right for the forty thousand characters a device's configuration runs to
+ * and wrong by two orders of magnitude for a megabyte: laying out a million characters to show
+ * four lines of them cost 125 ms for plain text and 330 ms for JSON, measured, every time such a
+ * topic was selected — which is the pause a reader feels as the console 'loading'.
+ *
+ * Four thousand is far more than four lines can show at any pane width this console has, so
+ * nothing that was visible before is cut. What the reader asks for by pressing 'show all', and
+ * what the message window opens, is still the whole body.
+ */
+const CLAMP_CHARS = 4_000;
+
 const lines = (body: string) => body.split('\n').length;
 
 // Entries are immutable, so memoising means a new arrival re-renders only one row.
@@ -200,7 +215,10 @@ export const LogEntryRow = memo(function LogEntryRow({
             openWindow({ kind: 'message', entry }, name);
           }}
         >
-          {entry.body}
+          {/* Only what the clamp could show, unless the reader has asked for the rest. */}
+          {whole || entry.body.length <= CLAMP_CHARS
+            ? entry.body
+            : entry.body.slice(0, CLAMP_CHARS)}
         </div>
       )}
 

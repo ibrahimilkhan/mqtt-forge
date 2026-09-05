@@ -11,6 +11,23 @@ import { logFault } from '../../stores/logStore';
 import { useConnectionState } from '../../api/useConnectionState';
 import { useGuardedMutate } from '../../lib/useGuardedMutate';
 
+/**
+ * How big a loaded body has to be before the box shows it in part.
+ *
+ * A textarea lays out every character it holds, however few of them its four visible lines can
+ * show. Clicking a topic loads that topic's message in here, so the layout of a body the reader
+ * has not asked to read is on the click: a megabyte of JSON measured 150 ms of the 180 ms that
+ * selecting such a topic took, and the same body cut to four thousand characters measured 0.6 ms.
+ * That pause is the console 'loading' — for a message nobody was going to edit by hand.
+ *
+ * Sixty-four kilobytes is far above any body a reader types or tweaks here, and lays out in about
+ * ten milliseconds, which nobody feels.
+ */
+const SHOW_WHOLE = 64 * 1024;
+
+/** How much of a body over that ceiling the box does show. Four lines can show nothing near it. */
+const CLAMP_CHARS = 4_000;
+
 const MODES: ReadonlyArray<{ id: PayloadMode; label: string }> = [
   { id: 'text', label: 'Text' },
   { id: 'json', label: 'JSON' },
@@ -33,6 +50,10 @@ export function PublishPanel() {
   // Clicking a topic in the tree, or a message in the wire log, loads it here to be sent back.
   const draft = useComposeStore((state) => state.draft);
 
+  // Whether the reader has asked to see a body too big to show whole. Held here rather than
+  // derived, so that a body the reader opened stays open while they edit it.
+  const [opened, setOpened] = useState(false);
+
   useEffect(() => {
     if (!draft) return;
 
@@ -41,11 +62,19 @@ export function PublishPanel() {
     // guard, and the same reason, for how it was sent: a message hands over its own QoS and retain
     // flag, and a place hands over nothing — because a placeholder written in here is the reader's
     // ticked QoS 2 going quietly back to nought on the way past.
-    if (draft.payload !== undefined) setPayload(draft.payload);
+    if (draft.payload !== undefined) {
+      setPayload(draft.payload);
+      // A new body is a new question: one the reader opened does not open the next one.
+      setOpened(false);
+    }
     if (draft.mode) setMode(draft.mode);
     if (draft.qos !== undefined) setQos(draft.qos);
     if (draft.retain !== undefined) setRetain(draft.retain);
   }, [draft, setQos, setRetain]);
+
+  // A body over the ceiling that the reader has not opened. What is held is still the whole of
+  // it — this is what the box shows, not what Publish sends.
+  const clamped = !opened && payload.length > SHOW_WHOLE;
 
   // What would go out if Publish were pressed now — and, when it would not go out, why.
   // Memoised so a large hex body is not re-parsed and re-base64'd on renders unrelated to it.
@@ -109,13 +138,26 @@ export function PublishPanel() {
         <Field label="Payload" htmlFor="payload">
           <textarea
             id="payload"
-            value={payload}
+            value={clamped ? payload.slice(0, CLAMP_CHARS) : payload}
             onChange={(e) => setPayload(e.target.value)}
+            // Shown in part, so it cannot be typed in: an edit would otherwise write the shown
+            // part back over the whole body and publish a message the reader never had.
+            readOnly={clamped}
             aria-invalid={!encoded.ok}
-            aria-describedby={encoded.ok ? undefined : 'payload-message'}
+            aria-describedby={clamped ? 'payload-held' : encoded.ok ? undefined : 'payload-message'}
           />
         </Field>
       </div>
+
+      {clamped && (
+        <p id="payload-held" className={styles.note}>
+          {`Holding all ${payload.length.toLocaleString('en-GB')} characters; showing the ` +
+            `first ${CLAMP_CHARS.toLocaleString('en-GB')}. Publish sends the whole body. `}
+          <button type="button" className={styles.reveal} onClick={() => setOpened(true)}>
+            Show all
+          </button>
+        </p>
+      )}
 
       {/* The count is the answer to "what actually goes out": in UTF-8 it is not the number of
           characters typed, and in hex it is not the number of digits either. */}

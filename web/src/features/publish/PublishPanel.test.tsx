@@ -352,4 +352,92 @@ describe('PublishPanel', () => {
       await waitFor(() => expect(screen.getByRole('radio', { name: 'Hex' })).toBeChecked());
     });
   });
+
+  /*
+   * A textarea lays out every character it is given, and a click on a topic gives it that topic's
+   * whole message. A megabyte of JSON took 150 ms to lay out for the four lines the box shows —
+   * the pause a reader feels as the console loading, spent on a body they had not asked to read.
+   *
+   * So a body past the ceiling is shown in part. What is held, and what goes out, is still all of
+   * it: the saving is in what the box draws, and it must never be in what Publish sends.
+   */
+  describe('a body too big to show', () => {
+    const huge = JSON.stringify(Array.from({ length: 4_000 }, (_, i) => ({ id: i, v: i / 3 })));
+
+    it('shows the front of it and says how much it is holding', async () => {
+      renderPanel();
+
+      act(() => useComposeStore.getState().load({ topic: 'lab/dump', payload: huge }));
+
+      const box = await screen.findByLabelText<HTMLTextAreaElement>('Payload');
+      await waitFor(() => expect(box.value).toHaveLength(4_000));
+      expect(box.value).toBe(huge.slice(0, 4_000));
+      // Read-only, so that an edit cannot write the shown part over the body underneath it.
+      expect(box).toHaveAttribute('readonly');
+      expect(
+        screen.getByText(new RegExp(`Holding all ${huge.length.toLocaleString('en-GB')}`)),
+      ).toBeInTheDocument();
+    });
+
+    it('publishes the whole body, not the part it shows', async () => {
+      let sent: { payload?: string } | undefined;
+      server.use(
+        http.post('/api/publish', async ({ request }) => {
+          sent = (await request.json()) as { payload?: string };
+          return new HttpResponse(null, { status: 202 });
+        }),
+      );
+
+      renderPanel();
+      act(() => useComposeStore.getState().load({ topic: 'lab/dump', payload: huge }));
+      await waitFor(() =>
+        expect(screen.getByLabelText<HTMLTextAreaElement>('Payload').value).toHaveLength(4_000),
+      );
+
+      await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+
+      await waitFor(() => expect(sent?.payload).toBe(huge));
+    });
+
+    it('shows the whole of it when asked, and lets it be edited then', async () => {
+      renderPanel();
+      act(() => useComposeStore.getState().load({ topic: 'lab/dump', payload: huge }));
+      await waitFor(() =>
+        expect(screen.getByLabelText<HTMLTextAreaElement>('Payload').value).toHaveLength(4_000),
+      );
+
+      await userEvent.click(screen.getByRole('button', { name: 'Show all' }));
+
+      const box = screen.getByLabelText<HTMLTextAreaElement>('Payload');
+      expect(box.value).toBe(huge);
+      expect(box).not.toHaveAttribute('readonly');
+    });
+
+    it('asks again for the next big body, however the last one was answered', async () => {
+      renderPanel();
+      act(() => useComposeStore.getState().load({ topic: 'lab/dump', payload: huge }));
+      await waitFor(() =>
+        expect(screen.getByLabelText<HTMLTextAreaElement>('Payload').value).toHaveLength(4_000),
+      );
+      await userEvent.click(screen.getByRole('button', { name: 'Show all' }));
+
+      act(() => useComposeStore.getState().load({ topic: 'lab/other', payload: `${huge} ` }));
+
+      await waitFor(() =>
+        expect(screen.getByLabelText<HTMLTextAreaElement>('Payload').value).toHaveLength(4_000),
+      );
+      expect(screen.getByRole('button', { name: 'Show all' })).toBeInTheDocument();
+    });
+
+    it('leaves an ordinary body whole and editable', async () => {
+      renderPanel();
+
+      act(() => useComposeStore.getState().load({ topic: 'lab/oven', payload: '180' }));
+
+      const box = await screen.findByLabelText<HTMLTextAreaElement>('Payload');
+      await waitFor(() => expect(box.value).toBe('180'));
+      expect(box).not.toHaveAttribute('readonly');
+      expect(screen.queryByRole('button', { name: 'Show all' })).not.toBeInTheDocument();
+    });
+  });
 });

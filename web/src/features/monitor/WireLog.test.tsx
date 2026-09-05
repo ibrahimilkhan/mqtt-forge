@@ -1648,3 +1648,48 @@ describe('the head and the stamps stay quiet', () => {
     expect(screen.getByTestId('head')).not.toHaveTextContent('↓');
   });
 });
+
+/*
+ * A row lays out every character it is given, however few of them its four clamped lines show.
+ * A megabyte handed to the browser to draw four lines of it measured 125 ms for plain text and
+ * 330 ms for JSON — the pause a reader feels on clicking such a topic. So a body far past what
+ * the clamp can show is put into the page in part, and the whole of it stays one press away.
+ */
+describe('a payload too big to draw', () => {
+  const huge = 'x'.repeat(20_000);
+
+  beforeEach(() => {
+    useLogStore.getState().clear();
+    useSelectionStore.getState().select(chip);
+  });
+
+  it('puts a fraction of it in the page, and says the whole count on the control', () => {
+    useLogStore.getState().push({ kind: 'recv', topic: 'sensors/temp', body: huge });
+
+    render(<Monitor />);
+
+    expect(screen.getByTestId('body')).toHaveTextContent(/^x{4000}$/);
+    const asked = `Show all ${huge.length} characters of this payload`;
+    expect(screen.getByRole('button', { name: asked })).toBeInTheDocument();
+  });
+
+  it('gives the whole of it when the reader asks', async () => {
+    useLogStore.getState().push({ kind: 'recv', topic: 'sensors/temp', body: huge });
+
+    render(<Monitor />);
+    await userEvent.click(
+      screen.getByRole('button', { name: `Show all ${huge.length} characters of this payload` }),
+    );
+
+    expect(screen.getByTestId('body').textContent).toHaveLength(huge.length);
+  });
+
+  it('leaves a body the clamp can show alone', () => {
+    const ordinary = 'y'.repeat(1_000);
+    useLogStore.getState().push({ kind: 'recv', topic: 'sensors/temp', body: ordinary });
+
+    render(<Monitor />);
+
+    expect(screen.getByTestId('body').textContent).toHaveLength(ordinary.length);
+  });
+});
