@@ -86,6 +86,19 @@ export type ReconnectStatus = {
   now: string;
 };
 
+/**
+ * A filter that is up, and whose it is.
+ *
+ * Both flags can be true at once: the console asked for '#' and a rule asked for it too, and one
+ * letting go leaves the other's subscription standing. The panel needs to know, because a chip
+ * that offers to remove a filter the console does not hold offers something it cannot do.
+ */
+export type ActiveFilter = {
+  topicFilter: string;
+  console: boolean;
+  rules: boolean;
+};
+
 export type ConnectionStateResponse = {
   state: ConnectionState;
   failure?: BrokerFailure | null;

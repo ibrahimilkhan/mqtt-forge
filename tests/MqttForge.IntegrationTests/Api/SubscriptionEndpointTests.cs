@@ -63,8 +63,9 @@ public class SubscriptionEndpointTests : IClassFixture<MqttForgeApiFactory>, ICl
         var subscribe = await client.PostAsJsonAsync("/api/subscriptions", new SubscribeRequestDto("lab/#", 0));
         Assert.Equal(HttpStatusCode.Accepted, subscribe.StatusCode);
 
-        var active = await client.GetFromJsonAsync<string[]>("/api/subscriptions");
-        Assert.Contains("lab/#", active!);
+        // The list says who holds each filter now, not just what is up — see ActiveFilterDto.
+        var active = await client.GetFromJsonAsync<ActiveFilterDto[]>("/api/subscriptions");
+        Assert.Contains(active!, f => f.TopicFilter == "lab/#" && f.Console);
 
         using var external = new MqttClientFactory().CreateMqttClient();
         await external.ConnectAsync(new MqttClientOptionsBuilder()

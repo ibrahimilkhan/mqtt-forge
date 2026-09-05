@@ -118,10 +118,16 @@ public sealed class ConnectionController : ControllerBase
     public async Task<IActionResult> DeleteProfile(string name, CancellationToken ct) =>
         await _profiles.DeleteAsync(name, ct) ? NoContent() : NotFound();
 
+    // Deliberately not given the request's token. A dial belongs to the link, not to the browser
+    // that asked for it: a reader who reloads the page mid-connect, or whose tab is closed by the
+    // system, aborted the dial with it — and the reloaded console then drew an empty form over a
+    // broker that was never dialled. Only DELETE /api/connection/attempt calls a dial off, which
+    // is the button that says so, and the panel finds a running attempt again after a reload
+    // because there is one to find.
     [HttpPost]
-    public async Task<IActionResult> Connect(ConnectRequestDto dto, CancellationToken ct)
+    public async Task<IActionResult> Connect(ConnectRequestDto dto, CancellationToken _)
     {
-        var alreadyConnected = await _service.ConnectAsync(Settings(dto), ct);
+        var alreadyConnected = await _service.ConnectAsync(Settings(dto), CancellationToken.None);
         return Ok(new { state = _service.CurrentState.ToString(), alreadyConnected });
     }
 

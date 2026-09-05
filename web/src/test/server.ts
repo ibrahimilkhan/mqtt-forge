@@ -55,3 +55,7 @@ const defaultHandlers = [
 ];
 
 export const server = setupServer(...defaultHandlers);
+
+/** The shape GET /api/subscriptions answers with: a filter and the hands that hold it. */
+export const held = (...topicFilters: string[]) =>
+  topicFilters.map((topicFilter) => ({ topicFilter, console: true, rules: false }));

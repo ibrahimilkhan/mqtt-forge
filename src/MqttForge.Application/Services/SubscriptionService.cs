@@ -11,6 +11,12 @@ public sealed class SubscriptionService
 
     public IReadOnlyCollection<string> ActiveFilters => _subscriber.ActiveFilters;
 
+    /// <summary>Every filter that is up, and who asked for it.</summary>
+    // The console could not tell its own subscriptions from a rule's, so a rule's filter wore an
+    // × that offered to remove it — and pressing it wrote 'Unsubscribed' about a subscription
+    // that was still up, because the subscriber only drops a filter when its last owner lets go.
+    public IReadOnlyCollection<ActiveFilter> Filters => _subscriber.Filters;
+
     public Task SubscribeAsync(SubscriptionRequest request, CancellationToken ct) =>
         _subscriber.SubscribeAsync([request], ct);
 

@@ -13,8 +13,11 @@ public sealed class SubscriptionController : ControllerBase
 
     public SubscriptionController(SubscriptionService service) => _service = service;
 
+    // The filters, each with the hands that hold it. It used to be a list of bare strings, and a
+    // console that could not tell its own from a rule's drew an × on both.
     [HttpGet]
-    public IActionResult GetActive() => Ok(_service.ActiveFilters);
+    public IActionResult GetActive() =>
+        Ok(_service.Filters.Select(ActiveFilterDto.Of).OrderBy(f => f.TopicFilter, StringComparer.Ordinal));
 
     [HttpPost]
     public async Task<IActionResult> Subscribe(SubscribeRequestDto dto, CancellationToken ct)

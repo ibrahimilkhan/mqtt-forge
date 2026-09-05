@@ -75,7 +75,14 @@ export function ReconnectNotice() {
    * it *now*, so a watch still holding an outage the reader has not dismissed does not put a
    * "the link is down" block over a link that is up.
    */
-  const down = state === 'Faulted' && watch.droppedAt !== null;
+  // Faulted, or the ladder's own dial running inside the outage. The dial is a state of the
+  // outage rather than an end of it: against an address that swallows packets every rung takes
+  // the full twenty seconds, and a block that only existed while the link read Faulted vanished
+  // for those twenty seconds and came back when they failed — the countdown flashing rather than
+  // counting, and Stop trying out of reach for most of the wait. Countdown already has a face for
+  // a dial in flight ('trying…'); this is what lets it be seen.
+  const down =
+    (state === 'Faulted' || (state === 'Connecting' && status.active)) && watch.droppedAt !== null;
   const back = watch.recoveredAt !== null;
   const busy = stop.isPending || tryNow.isPending;
 

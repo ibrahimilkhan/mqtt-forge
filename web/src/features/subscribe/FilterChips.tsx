@@ -1,8 +1,13 @@
 import { memo, useCallback } from 'react';
 import { useSelectionStore } from '../../stores/selectionStore';
+import type { ActiveFilter } from '../../types/api';
 import styles from './FilterChips.module.css';
 
-type Props = { filters: string[]; onRemove: (filter: string) => void; pendingFilter?: string };
+type Props = {
+  filters: ActiveFilter[];
+  onRemove: (filter: string) => void;
+  pendingFilter?: string;
+};
 
 export function FilterChips({ filters, onRemove, pendingFilter }: Props) {
   const selected = useSelectionStore((state) => state.selected?.filter ?? null);
@@ -18,12 +23,15 @@ export function FilterChips({ filters, onRemove, pendingFilter }: Props) {
 
   return (
     <div className={styles.filters}>
-      {filters.map((filter) => (
+      {filters.map(({ topicFilter, console: ours, rules }) => (
         <Chip
-          key={filter}
-          filter={filter}
-          selected={selected === filter}
-          pending={pendingFilter === filter}
+          key={topicFilter}
+          filter={topicFilter}
+          selected={selected === topicFilter}
+          pending={pendingFilter === topicFilter}
+          // A filter only a rule holds is not this console's to drop: the × would send an
+          // UNSUBSCRIBE the subscriber refuses to act on, and the chip would come straight back.
+          held={!ours && rules}
           onPick={pick}
           onRemove={onRemove}
         />
@@ -36,11 +44,13 @@ type ChipProps = {
   filter: string;
   selected: boolean;
   pending: boolean;
+  /** Held by an alert rule and not by this console, so there is nothing here to let go of. */
+  held: boolean;
   onPick: (filter: string) => void;
   onRemove: (filter: string) => void;
 };
 
-const Chip = memo(function Chip({ filter, selected, pending, onPick, onRemove }: ChipProps) {
+const Chip = memo(function Chip({ filter, selected, pending, held, onPick, onRemove }: ChipProps) {
   return (
     <span className={styles.filter} data-selected={selected}>
       {/* Sibling buttons, not nested — nested buttons aren't valid HTML. */}
@@ -55,8 +65,11 @@ const Chip = memo(function Chip({ filter, selected, pending, onPick, onRemove }:
       <button
         type="button"
         onClick={() => onRemove(filter)}
-        disabled={pending}
-        aria-label={`Unsubscribe from ${filter}`}
+        disabled={pending || held}
+        aria-label={
+          held ? `${filter} is held by an alert rule` : `Unsubscribe from ${filter}`
+        }
+        title={held ? 'An alert rule asked for this filter. Disable the rule to drop it.' : undefined}
       >
         ×
       </button>

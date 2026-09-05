@@ -29,7 +29,7 @@ beforeEach(() => {
 
 describe('SubscribePanel', () => {
   it('lists the active filters', async () => {
-    server.use(http.get('/api/subscriptions', () => HttpResponse.json(['sensors/#', 'devices/+/state'])));
+    server.use(http.get('/api/subscriptions', () => HttpResponse.json([{ topicFilter: 'sensors/#', console: true, rules: false }, { topicFilter: 'devices/+/state', console: true, rules: false }])));
 
     renderPanel();
 
@@ -58,7 +58,7 @@ describe('SubscribePanel', () => {
   it('unsubscribes from the chip that was dismissed', async () => {
     let removed: string | null = null;
     server.use(
-      http.get('/api/subscriptions', () => HttpResponse.json(['sensors/#'])),
+      http.get('/api/subscriptions', () => HttpResponse.json([{ topicFilter: 'sensors/#', console: true, rules: false }])),
       http.delete('/api/subscriptions', ({ request }) => {
         removed = new URL(request.url).searchParams.get('topicFilter');
         return new HttpResponse(null, { status: 204 });
@@ -73,7 +73,7 @@ describe('SubscribePanel', () => {
 
   it('clears the unsubscribed topics out of the tree', async () => {
     server.use(
-      http.get('/api/subscriptions', () => HttpResponse.json(['sensors/#', 'devices/#'])),
+      http.get('/api/subscriptions', () => HttpResponse.json([{ topicFilter: 'sensors/#', console: true, rules: false }, { topicFilter: 'devices/#', console: true, rules: false }])),
       http.delete('/api/subscriptions', () => new HttpResponse(null, { status: 204 })),
     );
     useTopicTreeStore.getState().apply([
@@ -170,7 +170,7 @@ describe('SubscribePanel', () => {
   it('ignores extra clicks on the same chip while its unsubscribe is already in flight', async () => {
     let calls = 0;
     server.use(
-      http.get('/api/subscriptions', () => HttpResponse.json(['sensors/#'])),
+      http.get('/api/subscriptions', () => HttpResponse.json([{ topicFilter: 'sensors/#', console: true, rules: false }])),
       http.delete('/api/subscriptions', async () => {
         calls += 1;
         await delay(20);
@@ -191,7 +191,7 @@ describe('SubscribePanel', () => {
   it('releases a chip whose unsubscribe failed even when another chip was dismissed in the same tick', async () => {
     const calls: string[] = [];
     server.use(
-      http.get('/api/subscriptions', () => HttpResponse.json(['aaa/#', 'bbb/#'])),
+      http.get('/api/subscriptions', () => HttpResponse.json([{ topicFilter: 'aaa/#', console: true, rules: false }, { topicFilter: 'bbb/#', console: true, rules: false }])),
       http.delete('/api/subscriptions', ({ request }) => {
         calls.push(new URL(request.url).searchParams.get('topicFilter')!);
         return HttpResponse.json({ title: 'fault' }, { status: 400 });
@@ -218,7 +218,7 @@ describe('SubscribePanel', () => {
     const filterBox = () => screen.getByLabelText('Topic filter');
 
     it('will not send a filter that is already subscribed', async () => {
-      server.use(http.get('/api/subscriptions', () => HttpResponse.json(['sensors/#'])));
+      server.use(http.get('/api/subscriptions', () => HttpResponse.json([{ topicFilter: 'sensors/#', console: true, rules: false }])));
 
       renderPanel();
 
@@ -231,7 +231,7 @@ describe('SubscribePanel', () => {
     it('sends only the filters of a pasted list that are not up yet', async () => {
       let sent: unknown;
       server.use(
-        http.get('/api/subscriptions', () => HttpResponse.json(['a/#'])),
+        http.get('/api/subscriptions', () => HttpResponse.json([{ topicFilter: 'a/#', console: true, rules: false }])),
         http.post('/api/subscriptions/batch', async ({ request }) => {
           sent = await request.json();
           return new HttpResponse(null, { status: 202 });
@@ -377,7 +377,7 @@ describe('picking a topic into the box', () => {
 
   // The other way in, and the one on this panel: the chips are right under the box.
   it('writes a filter clicked on its own chip', async () => {
-    server.use(http.get('/api/subscriptions', () => HttpResponse.json(['plant/line1/#'])));
+    server.use(http.get('/api/subscriptions', () => HttpResponse.json([{ topicFilter: 'plant/line1/#', console: true, rules: false }])));
 
     renderPanel();
     await userEvent.click(await screen.findByRole('button', { name: 'plant/line1/#' }));

@@ -58,7 +58,7 @@ export function useLinkWatch() {
    * The generation says whether this console's own Connect already started the tree again, so a
    * link the reader moved themselves is not reset twice — see the recovery above.
    */
-  const linkAt = useRef<{ endpoint: string; generation: number } | null>(null);
+  const linkAt = useRef<{ endpoint: string; since: string; generation: number } | null>(null);
 
   useEffect(() => {
     // Before the API has answered, `state` is the standing-in Disconnected rather than an
@@ -89,6 +89,16 @@ export function useLinkWatch() {
         kind: 'fault',
         what: failure ? `Link dropped · ${formatEndpoint(failure.host, failure.port)}` : 'Link dropped',
       });
+    }
+
+    // Somebody hung up — this console or another one. Not a fault and not an outage, so the
+    // notice stays away; but the subscriptions the server held are gone, and a console still
+    // showing their chips is offering an x for a filter nobody holds. A line says it happened at
+    // all, which for a hang-up from another console is the only trace there would otherwise be.
+    if (state === 'Disconnected' && before === 'Connected') {
+      linkAt.current = null;
+      void queryClient.invalidateQueries({ queryKey: queryKeys.subscriptions });
+      events.push({ kind: 'note', what: 'Link ended', detail: 'The connection was closed.' });
     }
 
     // Back, and the same broker. A Connect to a different broker while an outage is on is not
@@ -122,29 +132,41 @@ export function useLinkWatch() {
     }
   }, [state, failure, link, answered, queryClient]);
 
-  // The link moved to another broker, by a hand that is not this console's.
+  // The link is not the one this console was watching — another broker, or the same broker on a
+  // session this console never saw begin.
+  //
+  // The second half is the machine that slept. A laptop closed overnight wakes to a link that
+  // dropped and came back hours ago: nothing on this side saw either, so the state still reads
+  // Connected and every arrival of the old session is still on screen, under a green lamp, as
+  // though it were current. `connectedAt` is the broker's own answer to 'is this the same
+  // session', and a new one means the tree belongs to a connection that is over.
   useEffect(() => {
     if (!answered || state !== 'Connected' || !link) return;
 
     const endpoint = formatEndpoint(link.host, link.port);
+    const since = link.connectedAt;
     const tree = useTopicTreeStore.getState();
     const held = linkAt.current;
 
-    if (held && held.endpoint !== endpoint) {
+    if (held && (held.endpoint !== endpoint || held.since !== since)) {
+      const moved = held.endpoint !== endpoint;
       // Nobody has started the tree again since this console last saw the old link, so the
       // topics under it are the old broker's and this console is the one to clear them.
       if (held.generation === tree.generation) {
         tree.reset();
+        void queryClient.invalidateQueries({ queryKey: queryKeys.subscriptions });
         useBrokerEventsStore.getState().push({
           kind: 'note',
-          what: `Link moved · ${endpoint}`,
-          detail: `Another console pointed this server at ${endpoint}; the topics of ${held.endpoint} are gone.`,
+          what: moved ? `Link moved · ${endpoint}` : `New session · ${endpoint}`,
+          detail: moved
+            ? `Another console pointed this server at ${endpoint}; the topics of ${held.endpoint} are gone.`
+            : 'The link was made again while this console was not watching; the topics on screen were the old session’s.',
         });
       }
     }
 
-    linkAt.current = { endpoint, generation: useTopicTreeStore.getState().generation };
-  }, [answered, state, link]);
+    linkAt.current = { endpoint, since, generation: useTopicTreeStore.getState().generation };
+  }, [answered, state, link, queryClient]);
 
   // The link is down with an outage the server is working on — or has stopped working on, which
   // is still an outage — and this console holds no record of it. It did not see it begin; the

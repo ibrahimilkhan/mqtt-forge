@@ -63,7 +63,7 @@ export function SubscribePanel({ onClose }: { onClose: () => void }) {
   // Subscribing again to a filter that is already up is a no-op at the broker, but it still
   // costs a round trip and logs a subscription that never changed — so the live ones are
   // dropped here, and a box holding nothing else leaves the button dead.
-  const active = new Set(filters ?? []);
+  const active = new Set((filters ?? []).map((f) => f.topicFilter));
   const fresh = wanted.filter((filter) => !active.has(filter));
   const alreadyUp = wanted.length - fresh.length;
 
@@ -95,11 +95,35 @@ export function SubscribePanel({ onClose }: { onClose: () => void }) {
   const unsubscribeMutation = useMutation({
     mutationFn: unsubscribe,
     onSuccess: (_result, filter) => {
-      useLogStore.getState().push({ kind: 'ok', verb: 'Unsubscribed', topic: filter });
+      // Whether the subscription actually went down. A filter a rule also holds stays up when
+      // the console lets go of its own claim, and saying 'Unsubscribed' about it — and pruning
+      // the tree under it — was the console reporting something that had not happened.
+      const alsoARule = (filters ?? []).find((f) => f.topicFilter === filter)?.rules === true;
+
+      useLogStore.getState().push(
+        alsoARule
+          ? {
+              kind: 'ok',
+              verb: 'Claim dropped',
+              topic: filter,
+              body: 'An alert rule still holds this filter, so the subscription stays up.',
+            }
+          : { kind: 'ok', verb: 'Unsubscribed', topic: filter },
+      );
+
       // Read off the list this panel is showing, minus the chip that just went: the refetch
       // below has not landed yet, and the tree should not wait a round trip to stop showing
-      // topics nothing is listening to any more.
-      useTopicTreeStore.getState().dropFilter(filter, (filters ?? []).filter((f) => f !== filter));
+      // topics nothing is listening to any more. A filter a rule keeps is still listening, so
+      // nothing is pruned for it.
+      if (!alsoARule) {
+        useTopicTreeStore
+          .getState()
+          .dropFilter(
+            filter,
+            (filters ?? []).filter((f) => f.topicFilter !== filter).map((f) => f.topicFilter),
+          );
+      }
+
       void refreshFilters();
     },
     onError: (error, filter) => logFault('Unsubscribe failed', error, filter),

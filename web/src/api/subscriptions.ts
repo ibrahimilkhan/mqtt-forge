@@ -1,7 +1,7 @@
-import type { SubscribeRequest } from '../types/api';
+import type { ActiveFilter, SubscribeRequest } from '../types/api';
 import { json, request } from './client';
 
-export const getSubscriptions = () => request<string[]>('/api/subscriptions');
+export const getSubscriptions = () => request<ActiveFilter[]>('/api/subscriptions');
 
 export const subscribe = (body: SubscribeRequest) =>
   request<void>('/api/subscriptions', { method: 'POST', ...json(body) });
