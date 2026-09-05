@@ -312,22 +312,38 @@ describe('AlertsPanel', () => {
     });
     renderPanel();
 
-    await waitFor(() => expect(screen.getAllByTestId('engine-row')).toHaveLength(3));
+    // Four now: the blind row joined them — see 'says no rule is judging anything'.
+    await waitFor(() => expect(screen.getAllByTestId('engine-row')).toHaveLength(4));
     expect(screen.getByText(/40 messages went past unjudged/)).toBeInTheDocument();
     expect(screen.getByText(/2 webhook calls were dropped/)).toBeInTheDocument();
     expect(screen.getByText(/1 rule reached a ceiling/)).toBeInTheDocument();
   });
 
-  // The one number here that was never about the engine: being blind is being disconnected, and
-  // the rail says whether there is a link on every screen the console has. Two places saying one
-  // thing is two wordings to keep in step, and this was the one nobody could read.
-  it('says nothing about being blind, however long the link has been down', async () => {
+  // Asked for on 2026-09-06, overruling the earlier decision that the rail saying 'no link' was
+  // enough. It says there is no link; it does not say what that costs the rules, and a panel full
+  // of ticks and counts over a stopped watch is the reading a person actually takes from it.
+  it('says no rule is judging anything while there is no link', async () => {
     answers({ blindSeconds: 31 });
     renderPanel();
 
+    expect(await screen.findByText(/no rule is judging anything/)).toBeInTheDocument();
+    expect(screen.getByText(/31s so far/)).toBeInTheDocument();
+  });
+
+  it('says nothing about it while the link is up', async () => {
+    answers({ blindSeconds: 0 });
+    renderPanel();
+
     await screen.findByRole('heading', { name: 'Rules' });
-    expect(screen.queryByText(/nothing has been judged/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Blind/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/no rule is judging anything/)).not.toBeInTheDocument();
+  });
+
+  // Rounded the way the outage notice rounds: a reader wants 'an hour', not 3 615 seconds.
+  it('rounds a long silence into words', async () => {
+    answers({ blindSeconds: 5400 });
+    renderPanel();
+
+    expect(await screen.findByText(/2h so far/)).toBeInTheDocument();
   });
 
   it('names a rule the engine has stopped trusting', async () => {

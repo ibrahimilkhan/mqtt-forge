@@ -47,6 +47,7 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
   const diagnostics = useAlertStore((state) => state.rules);
   const warming = useAlertStore((state) => state.warming);
   const dropped = useAlertStore((state) => state.dropped);
+  const blindSeconds = useAlertStore((state) => state.blindSeconds);
   const webhooksDropped = useAlertStore((state) => state.webhooksDropped);
   const suppressed = useAlertStore((state) => state.suppressed);
   const capped = useAlertStore((state) => state.capped);
@@ -92,6 +93,7 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
   // conditions inside the heading, because the heading is the thing that must not appear over an
   // empty section — a section title with nothing under it is a reader looking for what is missing.
   const engineHasSomethingToSay =
+    blindSeconds > 0 ||
     dropped > 0 ||
     webhooksDropped > 0 ||
     suppressed > 0 ||
@@ -386,6 +388,15 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
         <section className={styles.engine} aria-label="What the engine is doing">
           <h3 className={panel.sectionTitle}>Engine</h3>
 
+          {/* First, because it is the one that makes every rule below untrue: with no link there
+              is no traffic, so nothing is being judged and the ticks and counts on the rules are
+              about a watch that stopped. The rail says there is no link; it does not say what
+              that costs the rules, and this panel is where a reader asks that. */}
+          {blindSeconds > 0 && (
+            <p className={styles.engineRow} data-severity="warn" data-testid="engine-row">
+              {`No broker link, so no rule is judging anything — ${blindFor(blindSeconds)} so far.`}
+            </p>
+          )}
           {dropped > 0 && (
             <p className={styles.engineRow} data-severity="critical" data-testid="engine-row">
               {`${dropped} messages went past unjudged — the engine was behind.`}
@@ -478,4 +489,14 @@ function count(n: number): string {
   if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`;
 
   return `${(n / 1_000_000).toFixed(1)}M`;
+}
+
+/** How long the engine has been blind, in the roundest words that are still true. */
+function blindFor(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+
+  return `${Math.round(minutes / 60)}h`;
 }
