@@ -5,6 +5,7 @@ using MqttForge.Domain.Enums;
 using MqttForge.Domain.Exceptions;
 using MqttForge.Domain.Models;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using Xunit;
 
 namespace MqttForge.UnitTests.Application;
@@ -17,6 +18,97 @@ public class ConnectionServiceTests
     private readonly BrokerConnectionSettings _settings = new("localhost", 1883, "id", null, null, false);
 
     private ConnectionService CreateSut() => new(_manager, _store, _logger);
+
+    /// <summary>The saved settings, as the store would hand them back.</summary>
+    private void Saved(BrokerConnectionSettings settings) =>
+        _store.LoadAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult<BrokerConnectionSettings?>(settings));
+
+    private static BrokerConnectionSettings Dialled(IMqttConnectionManager manager)
+    {
+        var call = manager.ReceivedCalls().Single(c => c.GetMethodInfo().Name == nameof(IMqttConnectionManager.ConnectAsync));
+        return (BrokerConnectionSettings)call.GetArguments()[0]!;
+    }
+
+    // The API never sends a password back, so the box is empty every time the panel is filled
+    // from what was saved. A reader who pressed Disconnect and Connect again was told their
+    // password was wrong about a password they had never typed.
+    [Fact]
+    public async Task A_password_left_empty_is_the_one_saved_for_the_same_broker_and_user()
+    {
+        Saved(new BrokerConnectionSettings("localhost", 1883, "id", "forge", "forge-secret", false));
+
+        await CreateSut().ConnectAsync(
+            new BrokerConnectionSettings("localhost", 1883, "id", "forge", null, false), CancellationToken.None);
+
+        Assert.Equal("forge-secret", Dialled(_manager).Password);
+    }
+
+    [Fact]
+    public async Task A_password_that_was_typed_is_never_replaced()
+    {
+        Saved(new BrokerConnectionSettings("localhost", 1883, "id", "forge", "forge-secret", false));
+
+        await CreateSut().ConnectAsync(
+            new BrokerConnectionSettings("localhost", 1883, "id", "forge", "typed", false), CancellationToken.None);
+
+        Assert.Equal("typed", Dialled(_manager).Password);
+    }
+
+    // A different login, whose password is not this one.
+    [Theory]
+    [InlineData("elsewhere", 1883, "forge")]
+    [InlineData("localhost", 8883, "forge")]
+    [InlineData("localhost", 1883, "someone-else")]
+    public async Task A_password_is_not_carried_to_another_broker_or_another_user(
+        string host, int port, string username)
+    {
+        Saved(new BrokerConnectionSettings("localhost", 1883, "id", "forge", "forge-secret", false));
+
+        await CreateSut().ConnectAsync(
+            new BrokerConnectionSettings(host, port, "id", username, null, false), CancellationToken.None);
+
+        Assert.Null(Dialled(_manager).Password);
+    }
+
+    // No username is a reader connecting anonymously, and sending them a stored password would
+    // be dialling as somebody they did not say they were.
+    [Fact]
+    public async Task An_anonymous_connect_is_sent_no_stored_password()
+    {
+        Saved(new BrokerConnectionSettings("localhost", 1883, "id", "forge", "forge-secret", false));
+
+        await CreateSut().ConnectAsync(
+            new BrokerConnectionSettings("localhost", 1883, "id", null, null, false), CancellationToken.None);
+
+        Assert.Null(Dialled(_manager).Password);
+    }
+
+    [Fact]
+    public async Task A_certificate_password_left_empty_is_the_one_saved_for_that_certificate()
+    {
+        var tls = new BrokerTlsSettings(false, null, "/certs/client.pfx", null, "forge", null, null);
+        Saved(new BrokerConnectionSettings("localhost", 8883, "id", null, null, true, Tls: tls));
+
+        await CreateSut().ConnectAsync(
+            new BrokerConnectionSettings("localhost", 8883, "id", null, null, true,
+                Tls: tls with { ClientCertificatePassword = null }),
+            CancellationToken.None);
+
+        Assert.Equal("forge", Dialled(_manager).Tls?.ClientCertificatePassword);
+    }
+
+    // Settings nobody can read are not a reason to refuse a connection the reader asked for.
+    [Fact]
+    public async Task An_unreadable_settings_file_does_not_stop_the_dial()
+    {
+        _store.LoadAsync(Arg.Any<CancellationToken>()).ThrowsAsync(new IOException("locked"));
+
+        var exception = await Record.ExceptionAsync(() => CreateSut().ConnectAsync(
+            new BrokerConnectionSettings("localhost", 1883, "id", "forge", null, false), CancellationToken.None));
+
+        Assert.Null(exception);
+        await _manager.Received(1).ConnectAsync(Arg.Any<BrokerConnectionSettings>(), Arg.Any<CancellationToken>());
+    }
 
     [Fact]
     public async Task ConnectAsync_connects_via_manager()

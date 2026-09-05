@@ -18,6 +18,10 @@ export type BrokerAddress = {
   host: string;
   port?: number;
   webSocketPath?: string;
+  /** The user half of `user:pass@host`, when the address carried one. */
+  username?: string;
+  /** The password half. Goes to the password box, never to the address box. */
+  password?: string;
 };
 
 /**
@@ -69,12 +73,23 @@ export function parseBrokerAddress(text: string): BrokerAddress | null {
   // address a broker is dialled at, and a path carrying one is a path that will not match.
   rest = rest.split(/[?#]/, 1)[0];
 
-  // A path may only follow the authority, so the first slash ends it. Anything the credentials
-  // half of a URL carries is dropped rather than filled in: a password does not belong in a
-  // text box that is not a password box, and half a credential is worse than none.
+  // A path may only follow the authority, so the first slash ends it.
   const slash = rest.indexOf('/');
-  const authority = (slash === -1 ? rest : rest.slice(0, slash)).replace(/^[^@]*@/, '');
+  const beforePath = slash === -1 ? rest : rest.slice(0, slash);
   const path = slash === -1 ? '' : rest.slice(slash);
+
+  // The credentials half, handed to the boxes that are for it. It used to be dropped on the
+  // floor — the objection being that a password does not belong in a text box that is not a
+  // password box, which is right about the Address box and wrong about the Password box a few
+  // lines below it. Dropping it silently meant a reader who pasted the connection string their
+  // broker's dashboard gave them was dialled anonymously and told their credentials were
+  // refused. Percent-encoding is undone the way a URL's userinfo is written.
+  const at = beforePath.lastIndexOf('@');
+  const userinfo = at === -1 ? '' : beforePath.slice(0, at);
+  const authority = at === -1 ? beforePath : beforePath.slice(at + 1);
+  const colon = userinfo.indexOf(':');
+  const username = decode(colon === -1 ? userinfo : userinfo.slice(0, colon));
+  const password = colon === -1 ? '' : decode(userinfo.slice(colon + 1));
 
   const { host, port } = splitPort(authority);
   if (host === '') return null;
@@ -83,11 +98,28 @@ export function parseBrokerAddress(text: string): BrokerAddress | null {
   const webSocketPath = path === '' || path === '/' ? undefined : path;
 
   // Nothing was taken apart, so there is nothing to hand back: the text is a hostname and
-  // belongs in the box it was typed into, untouched.
-  if (!scheme && port === undefined && webSocketPath === undefined) return null;
+  // belongs in the box it was typed into, untouched. Credentials count as taking it apart —
+  // `forge:secret@host` is not a hostname anybody typed.
+  if (!scheme && port === undefined && webSocketPath === undefined && username === '') return null;
 
-  return { scheme, host, port, webSocketPath };
+  return {
+    scheme,
+    host,
+    port,
+    webSocketPath,
+    username: username === '' ? undefined : username,
+    password: password === '' ? undefined : password,
+  };
 }
+
+/** Percent-decoding that gives the text back rather than throwing on a stray '%'. */
+const decode = (value: string) => {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+};
 
 /**
  * `host`, `host:port`, or `[::1]:port`.

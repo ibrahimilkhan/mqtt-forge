@@ -204,5 +204,9 @@ export function applyAddress(form: BrokerForm, text: string): BrokerForm {
     host: parsed.host,
     port: parsed.port ?? portFor(form.scheme, scheme, form.port),
     webSocketPath: parsed.webSocketPath ?? form.webSocketPath,
+    // What the address carried, in the boxes that are for it. An address with no credentials
+    // leaves both alone, the way it leaves a port it does not name.
+    username: parsed.username ?? form.username,
+    password: parsed.password ?? form.password,
   };
 }

@@ -401,6 +401,27 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
       undefined
     : undefined;
 
+  /**
+   * Whether an empty password box will be answered by the one already saved.
+   *
+   * The API never sends a password back, so the box comes up empty whenever the form is filled
+   * from what was saved — and a reader who pressed Disconnect and Connect again used to be told
+   * their password was wrong about one they had never typed. The server now keeps the stored
+   * password for the same broker and the same user (see ConnectionService), and this is the box
+   * saying so rather than the reader having to find out by pressing Connect.
+   */
+  const passwordKept =
+    saved?.hasPassword === true &&
+    !!form.username &&
+    saved.username === form.username &&
+    saved.host === form.host &&
+    saved.port === form.port;
+
+  const certificatePasswordKept =
+    saved?.tls?.hasClientCertificatePassword === true &&
+    !!form.clientCertPath &&
+    saved.tls?.clientCertificatePath === form.clientCertPath;
+
   const encrypted = isEncrypted(form.scheme);
   const overWebSocket = isWebSocket(form.scheme);
   // A certificate names the two fields that go with it. Until there is one, a key and a password
@@ -711,7 +732,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
               <input
                 id="password"
                 type="password"
-                placeholder="optional"
+                placeholder={passwordKept ? 'kept' : 'optional'}
                 value={form.password}
                 onChange={(e) => set('password', e.target.value)}
               />
@@ -851,7 +872,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
                   <input
                     id="clientCertPassword"
                     type="password"
-                    placeholder="optional"
+                    placeholder={certificatePasswordKept ? 'kept' : 'optional'}
                     value={form.clientCertPassword}
                     onChange={(e) => set('clientCertPassword', e.target.value)}
                   />

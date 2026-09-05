@@ -88,6 +88,60 @@ describe('an address pasted into the Host box', () => {
   });
 });
 
+// A connection string off a broker's dashboard carries the login in it. The credentials used to
+// be dropped on the floor, so the dial went out anonymous and came back refused.
+describe('credentials in a pasted address', () => {
+  it('fills the user and the password from the userinfo half', () => {
+    expect(parseBrokerAddress('mqtt://forge:forge-secret@broker.example:1883')).toEqual({
+      scheme: 'mqtt',
+      host: 'broker.example',
+      port: 1883,
+      webSocketPath: undefined,
+      username: 'forge',
+      password: 'forge-secret',
+    });
+  });
+
+  it('takes a user with no password', () => {
+    expect(parseBrokerAddress('mqtt://forge@broker.example:1883')).toMatchObject({
+      host: 'broker.example',
+      username: 'forge',
+    });
+    expect(parseBrokerAddress('mqtt://forge@broker.example:1883')?.password).toBeUndefined();
+  });
+
+  // A password is where the awkward characters live, and a dashboard writes them encoded.
+  it('undoes the percent-encoding a URL writes them in', () => {
+    expect(parseBrokerAddress('mqtts://a%40b:p%3Ass%2Fword@broker.example:8883')).toMatchObject({
+      username: 'a@b',
+      password: 'p:ss/word',
+    });
+  });
+
+  // The last '@' wins, because a username may carry one and a host may not.
+  it('splits on the last at-sign, so an email address is a username', () => {
+    expect(parseBrokerAddress('mqtt://user@corp.com:secret@broker.example:1883')).toMatchObject({
+      host: 'broker.example',
+      username: 'user@corp.com',
+      password: 'secret',
+    });
+  });
+
+  it('an address with credentials and nothing else is still taken apart', () => {
+    expect(parseBrokerAddress('forge:secret@broker.example')).toMatchObject({
+      host: 'broker.example',
+      username: 'forge',
+      password: 'secret',
+    });
+  });
+
+  it('leaves an address with no credentials saying nothing about them', () => {
+    const parsed = parseBrokerAddress('mqtt://broker.example:1883');
+    expect(parsed?.username).toBeUndefined();
+    expect(parsed?.password).toBeUndefined();
+  });
+});
+
 describe('an address written back out', () => {
   it('puts the scheme in front of the host', () => {
     expect(formatBrokerAddress('mqtts', 'broker.hivemq.com')).toBe('mqtts://broker.hivemq.com');

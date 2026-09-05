@@ -157,6 +157,27 @@ describe('what the console remembers about a link', () => {
     expect(watch().openedByFault).toBe(true);
   });
 
+  // A broker that comes back with authentication switched on: it drops as one thing and then
+  // refuses every rung as another, and the second is the one worth reading.
+  it('keeps the newest reason beside the one that broke the link', () => {
+    saw('Connected');
+    saw('Faulted', broke('brokerShuttingDown'), 1_000);
+    saw('Faulted', broke('credentialsRequired'), 3_000);
+
+    expect(watch().failure?.reason).toBe('brokerShuttingDown');
+    expect(watch().latest?.reason).toBe('credentialsRequired');
+    expect(watch().droppedAt).toBe(1_000);
+  });
+
+  it('a rung that says nothing new leaves both reasons standing', () => {
+    saw('Connected');
+    saw('Faulted', broke('refused'), 1_000);
+    saw('Faulted', undefined, 3_000);
+
+    expect(watch().failure?.reason).toBe('refused');
+    expect(watch().latest?.reason).toBe('refused');
+  });
+
   it('a first connection is not a recovery', () => {
     saw('Connected', null, 5_000);
 

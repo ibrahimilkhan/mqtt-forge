@@ -62,6 +62,8 @@ public sealed class ConnectionService
     public async Task<bool> ConnectAsync(
         BrokerConnectionSettings settings, CancellationToken ct, ConnectOrigin origin = ConnectOrigin.Reader)
     {
+        settings = await WithKeptSecretsAsync(settings, ct);
+
         if (origin == ConnectOrigin.Reader)
         {
             Volatile.Write(ref _lastReaderEndpoint, $"{settings.Host}:{settings.Port}");
@@ -116,6 +118,67 @@ public sealed class ConnectionService
 
     // Calls off an attempt still in flight. Nothing in flight is not an error: whoever asked
     // wanted the attempt stopped, and it already is.
+    /// <summary>The passwords the console cannot send back, taken from the saved settings.</summary>
+    // The API never returns a password, so the boxes come up empty every time the panel is
+    // filled from what was saved — and a reader who pressed Disconnect and Connect again was
+    // told their password was wrong about a password they had never typed. The same idiom the
+    // alert editor already uses for webhook headers: leave it empty and the stored value is kept.
+    //
+    // Only for the same broker and the same user. A username is what makes it the same identity,
+    // so a reader who clears the username as well is connecting anonymously and is sent nothing;
+    // and a different host, port or user is a different login, whose password is not this one.
+    private async Task<BrokerConnectionSettings> WithKeptSecretsAsync(
+        BrokerConnectionSettings settings, CancellationToken ct)
+    {
+        var wantsPassword = !string.IsNullOrEmpty(settings.Username)
+            && string.IsNullOrEmpty(settings.Password);
+
+        var wantsCertificatePassword = !string.IsNullOrEmpty(settings.Tls?.ClientCertificatePath)
+            && string.IsNullOrEmpty(settings.Tls?.ClientCertificatePassword);
+
+        if (!wantsPassword && !wantsCertificatePassword) return settings;
+
+        BrokerConnectionSettings? saved;
+
+        try
+        {
+            saved = await _store.LoadAsync(ct);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Unreadable settings are not a reason to refuse a connection the reader asked for.
+            _logger.LogWarning(ex, "Could not read the saved settings to reuse a stored password");
+            return settings;
+        }
+
+        if (saved is null) return settings;
+
+        var sameBroker = saved.Host == settings.Host && saved.Port == settings.Port;
+
+        if (wantsPassword
+            && sameBroker
+            && saved.Username == settings.Username
+            && !string.IsNullOrEmpty(saved.Password))
+        {
+            settings = settings with { Password = saved.Password };
+        }
+
+        // The certificate's password answers to the certificate rather than to the user: the same
+        // file opened with the same phrase, whoever is logging in.
+        if (wantsCertificatePassword
+            && sameBroker
+            && saved.Tls?.ClientCertificatePath == settings.Tls?.ClientCertificatePath
+            && !string.IsNullOrEmpty(saved.Tls?.ClientCertificatePassword))
+        {
+            settings = settings with
+            {
+                Tls = settings.TlsSettings with { ClientCertificatePassword = saved.Tls!.ClientCertificatePassword },
+            };
+        }
+
+        return settings;
+    }
+
     public void CancelAttempt()
     {
         lock (_attemptLock) _attempt?.Cancel();

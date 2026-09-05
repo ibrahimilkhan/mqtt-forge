@@ -182,6 +182,40 @@ describe('the reconnect notice', () => {
     });
   });
 
+  // ---- a reason that sharpened while the link stayed down ----
+
+  describe('when a later rung refuses for a different reason', () => {
+    function sharpened() {
+      const watch = useLinkWatchStore.getState();
+      watch.saw('Connected', null);
+      watch.saw('Faulted', failure, 1_000);
+      watch.saw('Faulted', { ...failure, reason: 'credentialsRequired' }, 3_000);
+    }
+
+    it('says what is stopping it now, not what first broke it', async () => {
+      sharpened();
+      api('Faulted', { active: false, declined: true });
+
+      renderWithClient(<ReconnectNotice />);
+
+      expect(await screen.findByText(/needs a username and password/)).toBeInTheDocument();
+      expect(screen.queryByText(/broker closed the connection/)).not.toBeInTheDocument();
+    });
+
+    // ...and once it is back, what broke it is the question again.
+    it('reports the original reason on the face that says it came back', async () => {
+      sharpened();
+      useLinkWatchStore.getState().saw('Connected', null, 9_000);
+      api('Connected');
+
+      renderWithClient(<ReconnectNotice />);
+
+      expect(await screen.findByText('Reconnected')).toBeInTheDocument();
+      expect(screen.getByText(/It had dropped:/)).toBeInTheDocument();
+      expect(screen.getByText(/broker closed the connection/)).toBeInTheDocument();
+    });
+  });
+
   // ---- an outage the supervisor declined ----
 
   describe('when the supervisor has declined it', () => {

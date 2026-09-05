@@ -16,6 +16,21 @@ import type { BrokerFailure, BrokerLink, ConnectionState } from '../types/api';
 export type LinkWatchState = {
   /** What took the link down, kept across the recovery. Null when nothing has. */
   failure: BrokerFailure | null;
+
+  /**
+   * The newest reason the link is still down, as against what first broke it.
+   *
+   * Two different questions, and one field answered only the first. A broker that comes back
+   * with authentication switched on drops the link as 'the broker is shutting down' and then
+   * refuses every rung with 'this broker needs a username and password' — and the panel went on
+   * reporting the shutdown for the whole outage, so the one sentence that would have told the
+   * reader what to do was never on screen. Same for a certificate that expired while the link
+   * was up, and for a filter the broker started refusing.
+   *
+   * The down faces read this; the 'back' face reads `failure`, because what a reader wants after
+   * a recovery is what broke it, not what the last failed rung ran into.
+   */
+  latest: BrokerFailure | null;
   /** When the link went, as epoch milliseconds. Null when it has not. */
   droppedAt: number | null;
   /**
@@ -69,6 +84,7 @@ export type LinkWatchState = {
 
 export const useLinkWatchStore = create<LinkWatchState>((set, get) => ({
   failure: null,
+  latest: null,
   droppedAt: null,
   recoveredAt: null,
   openedByFault: false,
@@ -91,8 +107,10 @@ export const useLinkWatchStore = create<LinkWatchState>((set, get) => ({
       // is, and nobody dismisses a notice every time.
       if (current.droppedAt !== null && current.recoveredAt === null) {
         // The reason can still sharpen: the first announcement of a drop carries whatever
-        // MQTTnet said, and a later rung's refusal is often the more specific of the two.
-        if (failure && !current.failure) set({ failure });
+        // MQTTnet said, and a later rung's refusal is often the more specific of the two. The
+        // drop's own reason is kept as it was — a recovery reports what broke the link — and the
+        // newest one is kept beside it for the faces that describe a link still down.
+        if (failure) set({ latest: failure, ...(current.failure ? {} : { failure }) });
         return;
       }
 
@@ -104,6 +122,7 @@ export const useLinkWatchStore = create<LinkWatchState>((set, get) => ({
 
       set({
         failure: failure ?? null,
+        latest: failure ?? null,
         droppedAt: now,
         recoveredAt: null,
         openedByFault: true,
@@ -173,6 +192,7 @@ export const useLinkWatchStore = create<LinkWatchState>((set, get) => ({
  */
 const rested = {
   failure: null,
+  latest: null,
   droppedAt: null,
   recoveredAt: null,
   openedByFault: false,

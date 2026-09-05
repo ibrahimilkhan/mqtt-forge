@@ -96,9 +96,16 @@ export function ReconnectNotice() {
   // The failure is read from the watch rather than from the connection state, and that is the
   // whole reason the watch exists: the API sends no failure once the link is up, so a recovery
   // notice reading the live state would have nothing to say about what broke.
+  // Two questions, and the faces want different answers. A link still down is described by what
+  // is stopping it NOW — the newest rung's refusal, which on a broker that came back with a
+  // password or an expired certificate is the only sentence worth reading. A link that came back
+  // is described by what broke it, which is the whole of what 'It had dropped: …' means.
   const broke = watch.failure ?? failure ?? undefined;
-  const why = broke ? describeFailureReason(broke.reason, broke) : undefined;
-  const where = broke ? `${broke.host}:${broke.port}` : undefined;
+  const blocking = watch.latest ?? failure ?? watch.failure ?? undefined;
+  const now = face === 'back' ? broke : blocking;
+  const why = now ? describeFailureReason(now.reason, now) : undefined;
+  const where = now ? `${now.host}:${now.port}` : undefined;
+  const brokeWhy = broke ? describeFailureReason(broke.reason, broke) : undefined;
 
   return (
     <section className={styles.notice} data-state={face} aria-live="polite">
@@ -183,7 +190,7 @@ export function ReconnectNotice() {
           </p>
           {/* What broke it, still on screen. A notice saying only that a link dropped and came
               back leaves the reader with the question they opened the panel with. */}
-          {why && <p className={styles.was}>It had dropped: {lowerFirst(why)}</p>}
+          {brokeWhy && <p className={styles.was}>It had dropped: {lowerFirst(brokeWhy)}</p>}
           <div className={styles.actions}>
             <button
               type="button"
