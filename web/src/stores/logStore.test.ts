@@ -275,3 +275,44 @@ describe('what the log weighs', () => {
     expect(heldWeight(useLogStore.getState().byTopic)).toBe(TOPIC_DEPTH * 10);
   });
 });
+
+// A message is never cut down to fit. The tree keeps the first four kilobytes of a body for the
+// value on its row; the log is where the whole thing lives, and a reader who opens a message or
+// publishes it again must get every byte the broker sent. Verified against the lab at 300 kB and
+// 1 MB; this is the line that keeps it true.
+describe('a message far larger than the per-topic budget', () => {
+  const arrival = (topic: string, payload: string) => ({
+    topic,
+    payload,
+    mode: 'text' as const,
+    size: payload.length,
+    qos: 0,
+    retain: false,
+    receivedAt: '2026-09-06T00:00:00.000Z',
+  });
+
+  beforeEach(() => useLogStore.getState().clear());
+
+  it('is held whole', () => {
+    const body = 'z'.repeat(1_000_000);
+
+    useLogStore.getState().appendReceived([arrival('big', body)]);
+
+    const held = useLogStore.getState().byTopic.get('big')?.newestFirst()[0];
+    expect(held?.body).toHaveLength(1_000_000);
+    expect(held?.body).toBe(body);
+  });
+
+  // ...and it is the newest that survives, which is the trade the byte budget makes: a topic
+  // sending megabytes keeps the last one rather than a prefix of several.
+  it('pushes the older messages of its own topic out rather than being cut', () => {
+    useLogStore.getState().appendReceived([
+      arrival('big', 'small'),
+      arrival('big', 'y'.repeat(1_000_000)),
+    ]);
+
+    const run = useLogStore.getState().byTopic.get('big')?.newestFirst() ?? [];
+    expect(run).toHaveLength(1);
+    expect(run[0].body).toHaveLength(1_000_000);
+  });
+});
