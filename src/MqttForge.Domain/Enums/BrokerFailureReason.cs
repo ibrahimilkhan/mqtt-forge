@@ -17,6 +17,14 @@ public enum BrokerFailureReason
 
     // Something answered, but not a broker we could talk to
     NoMqttResponse,
+
+    /// <summary>The socket was accepted and then closed without a word.</summary>
+    // Told apart from NoMqttResponse because the advice is different. Something that answers with
+    // bytes that are not MQTT is usually the wrong port; something that accepts and then says
+    // nothing at all is usually a broker that has as many connections as it will take — Mosquitto
+    // does exactly this at max_connections — or one behind a proxy that closed the tunnel. Sending
+    // that reader to check the port number is sending them to look at the one thing that was right.
+    ClosedWithoutAnswering,
     TlsNotOffered,
     ProtocolVersionUnsupported,
 

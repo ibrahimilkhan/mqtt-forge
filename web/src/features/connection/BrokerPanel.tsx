@@ -20,7 +20,12 @@ import { logFault } from '../../stores/logStore';
 import { useLinkWatchStore } from '../../stores/linkWatchStore';
 import { useGuardedMutate } from '../../lib/useGuardedMutate';
 import type { CertificateFileKind } from '../../api/connection';
-import { describeConnectFailure, describeFailureReason, suggestScheme } from './connectFailure';
+import {
+  containerHint,
+  describeConnectFailure,
+  describeFailureReason,
+  suggestScheme,
+} from './connectFailure';
 import { ConnectionSummary } from './ConnectionSummary';
 import { AutoReconnectSwitch } from './AutoReconnectSwitch';
 import { BrokerEvents } from './BrokerEvents';
@@ -168,7 +173,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
   });
   const files = useCertificateFile();
   const { connectMutation, disconnectMutation, abortMutation } = useConnectionActions();
-  const { isOnline, isConnecting, failure: faulted, answered } = useConnectionState();
+  const { isOnline, isConnecting, failure: faulted, link, answered } = useConnectionState();
   const guardedConnect = useGuardedMutate(connectMutation);
   const guardedDisconnect = useGuardedMutate(disconnectMutation);
   const guardedAbort = useGuardedMutate(abortMutation);
@@ -478,6 +483,15 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
     const name = naming?.trim();
     if (!name) return;
 
+    // Over a live link, what is saved is the link. The form is a draft on that face — the reader
+    // may have typed an address during an outage and never pressed Connect, and the ladder may
+    // have brought the old broker back underneath it — so saving the form kept a broker nobody
+    // had connected to, under a name taken from the one they had.
+    if (live && saved) {
+      keepMutation.mutate({ name, form: formFromSaved(saved) });
+      return;
+    }
+
     const resolved = applyAddress(form, addressText);
     settle(resolved);
     keepMutation.mutate({ name, form: resolved });
@@ -580,7 +594,14 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
             <button
               type="button"
               className={`ghost ${styles.iconButton}`}
-              onClick={() => setNaming(from ?? formatEndpoint(form.host, form.port))}
+              // The link's own address, not the form's: on this face the form is a draft the
+              // reader may have typed during an outage and never connected to.
+              onClick={() =>
+                setNaming(
+                  from ??
+                    (link ? formatEndpoint(link.host, link.port) : formatEndpoint(form.host, form.port)),
+                )
+              }
             >
               <Save />
               Save
@@ -1052,6 +1073,15 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
       {failure && (!noticeUp || ownAttemptFailed) && (
         <p className={styles.fault} role="alert">
           {failure}
+          {/* What the address means here, when that is the thing that is wrong. Inside a
+              container 'localhost' is the container, and the sentence above names an address that
+              looks exactly right. */}
+          {containerHint(attempted?.host ?? form.host, defaults?.inContainer) && (
+            <>
+              {' '}
+              {containerHint(attempted?.host ?? form.host, defaults?.inContainer)}
+            </>
+          )}
         </p>
       )}
 

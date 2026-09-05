@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../../lib/problemDetails';
-import { describeConnectFailure, describeFailureReason, suggestScheme } from './connectFailure';
+import {
+  containerHint,
+  describeConnectFailure,
+  describeFailureReason,
+  suggestScheme,
+} from './connectFailure';
 
 const FORM = { host: 'broker.local', port: 1883, clientId: 'mqttforge-console', useTls: false };
 
@@ -138,6 +143,7 @@ describe('every reason the backend can send', () => {
     'banned', 'blockedLocally', 'brokerBusy', 'brokerClosed', 'brokerRejected',
     'brokerShuttingDown', 'certificateFileUnreadable', 'clientCertificateRejected',
     'authenticationMethodUnsupported', 'clientCertificateRequired', 'clientIdRejected',
+    'closedWithoutAnswering',
     'connectionLost', 'credentialsRejected',
     'credentialsRequired', 'filterRefused', 'hostNotFound', 'nameLookupFailed', 'noMqttResponse',
     'noSupportedProtocolVersion', 'notPermitted', 'protocolVersionUnsupported', 'refused',
@@ -172,9 +178,9 @@ describe('every reason the backend can send', () => {
     );
   });
 
-  it('covers all thirty-three of them', () => {
-    expect(REASONS).toHaveLength(33);
-    expect(new Set(REASONS).size).toBe(33);
+  it('covers all thirty-four of them', () => {
+    expect(REASONS).toHaveLength(34);
+    expect(new Set(REASONS).size).toBe(34);
   });
 });
 
@@ -328,5 +334,25 @@ describe('a WebSocket pointed at a port MQTT is spoken on directly', () => {
   // are WebSocket ports, so the path is the likely reason and there is nothing to offer.
   it.each([8083, 8084, 29001])('offers nothing for %s, where a path is the likely reason', (port) => {
     expect(suggestScheme('webSocketUpgradeRejected', overWebSocket(port))).toBeUndefined();
+  });
+});
+
+// Inside a container 'localhost' is the container, so a reader whose broker runs on the machine
+// hosting Docker is pointing at a host with nothing on it — and the sentence names an address
+// that looks exactly right.
+describe('what an address means inside a container', () => {
+  it('says so for a loopback address', () => {
+    for (const host of ['localhost', '127.0.0.1', '::1', '0.0.0.0']) {
+      expect(containerHint(host, true)).toContain('host.docker.internal');
+    }
+  });
+
+  it('says nothing for a real host', () => {
+    expect(containerHint('broker.example', true)).toBeUndefined();
+  });
+
+  it('says nothing when the server is not in a container', () => {
+    expect(containerHint('localhost', false)).toBeUndefined();
+    expect(containerHint('localhost', undefined)).toBeUndefined();
   });
 });

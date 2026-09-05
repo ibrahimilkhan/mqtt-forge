@@ -77,16 +77,19 @@ public class BrokerFailureClassifierTests
         Assert.Equal(BrokerFailureReason.NoMqttResponse, BrokerFailureClassifier.Classify(exception, useTls: false));
     }
 
-    // Port open, TCP accepted, nothing MQTT ever came back: wrong port, an HTTP server, a
-    // broker that closed on us. MQTTnet flattens all of them into one shape.
+    // Port open, TCP accepted, and then closed with nothing said. Told apart from a peer that
+    // answered with bytes that are not MQTT, because the advice is different: this is the shape a
+    // broker at its connection limit makes — Mosquitto at max_connections, measured — and sending
+    // the reader to check the port number sends them to look at the one thing that was right.
     [Fact]
-    public void Classify_reads_a_peer_that_never_answered_as_a_broker()
+    public void Classify_reads_a_peer_that_accepted_and_said_nothing_as_a_closed_connection()
     {
         var exception = new MqttConnectingFailedException(
             "Error while authenticating. Connection closed.",
             new MqttCommunicationException("Connection closed."));
 
-        Assert.Equal(BrokerFailureReason.NoMqttResponse, BrokerFailureClassifier.Classify(exception));
+        Assert.Equal(
+            BrokerFailureReason.ClosedWithoutAnswering, BrokerFailureClassifier.Classify(exception));
     }
 
     // Ticking the box must not turn every unclassifiable failure into a TLS story.

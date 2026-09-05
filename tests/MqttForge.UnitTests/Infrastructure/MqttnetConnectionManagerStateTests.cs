@@ -527,6 +527,59 @@ public class MqttnetConnectionManagerStateTests
             });
 
     // MQTTnet raises this whenever the socket closes, whoever closed it.
+    // Pressing Stop trying while the ladder is mid-dial calls off that dial. The outage is still
+    // an outage — the reader asked to stop working on it, not to be told it never happened — and
+    // reading the cancel as 'the caller went away' wiped it: no notice, no reason, a blank form.
+    [Fact]
+    public async Task A_dial_called_off_during_an_outage_leaves_the_outage_standing()
+    {
+        var sut = CreateSut();
+
+        // A link that was up and then broke, which is the state a ladder climbs from.
+        GivenConnectSucceeds();
+        _client.IsConnected.Returns(true);
+        await sut.ConnectAsync(_settings, CancellationToken.None);
+        _client.IsConnected.Returns(false);
+        RaiseDisconnected(MqttClientDisconnectReason.UnspecifiedError, clientWasConnected: true);
+        Assert.Equal(ConnectionState.Faulted, sut.State);
+
+        // ...and a rung of the ladder, called off while it is in flight.
+        using var attempt = new CancellationTokenSource();
+        _client.ConnectAsync(Arg.Any<MqttClientOptions>(), Arg.Any<CancellationToken>())
+            .Returns<Task<MqttClientConnectResult>>(async _ =>
+            {
+                await attempt.CancelAsync();
+                throw new OperationCanceledException(attempt.Token);
+            });
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => sut.ConnectAsync(_settings, attempt.Token));
+
+        Assert.Equal(ConnectionState.Faulted, sut.State);
+        Assert.NotNull(sut.Failure);
+    }
+
+    // ...and a reader who aborts their own first Connect is left where they were, which is down.
+    [Fact]
+    public async Task A_first_dial_called_off_leaves_the_link_disconnected()
+    {
+        var sut = CreateSut();
+
+        using var attempt = new CancellationTokenSource();
+        _client.ConnectAsync(Arg.Any<MqttClientOptions>(), Arg.Any<CancellationToken>())
+            .Returns<Task<MqttClientConnectResult>>(async _ =>
+            {
+                await attempt.CancelAsync();
+                throw new OperationCanceledException(attempt.Token);
+            });
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => sut.ConnectAsync(_settings, attempt.Token));
+
+        Assert.Equal(ConnectionState.Disconnected, sut.State);
+        Assert.Null(sut.Failure);
+    }
+
     private void RaiseDisconnected(
         MqttClientDisconnectReason reason = MqttClientDisconnectReason.UnspecifiedError,
         bool clientWasConnected = true,

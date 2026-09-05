@@ -72,6 +72,15 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
     public async Task ConnectAsync(BrokerConnectionSettings settings, CancellationToken ct)
     {
         await _gate.WaitAsync(ct);
+
+        // What this dial is replacing. A dial that is called off leaves the link exactly where it
+        // found it, and that is not always Disconnected: the supervisor's own Stop trying calls
+        // off a rung of the ladder, and reading that as 'the caller went away' wiped the outage
+        // the reader had just asked to stop working on — the panel went blank, as though nothing
+        // had ever gone wrong. Measured: Stop trying pressed 88 seconds into a frozen broker.
+        var replaced = _offlineState;
+        var replacedReason = _failureReason;
+
         try
         {
             _offlineState = ConnectionState.Connecting;
@@ -98,6 +107,24 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
             await AnnounceAsync();
 
             await WalkVersionsAsync(settings, ct);
+        }
+        catch (Exception) when (ct.IsCancellationRequested)
+        {
+            // A dial that was called off leaves the link where it found it. It used to be read as
+            // 'the caller went away' and written down as Disconnected, which is right for a
+            // reader who aborted their own first Connect and wrong for the other caller: the
+            // supervisor calling off a rung when the reader presses Stop trying. That wiped the
+            // outage the reader had just asked to stop working on — no notice, no reason, a blank
+            // form, as though nothing had ever gone wrong.
+            //
+            // Connecting is the state this dial itself wrote, so it is never what it found.
+            _offlineState = replaced == ConnectionState.Connecting
+                ? ConnectionState.Disconnected
+                : replaced;
+            _failureReason = _offlineState == ConnectionState.Faulted ? replacedReason : null;
+
+            await AnnounceAsync();
+            throw;
         }
         finally
         {
@@ -150,11 +177,15 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
     private static bool MovesToNextVersion(BrokerFailureReason reason) => reason is
         // The broker named the problem.
         BrokerFailureReason.ProtocolVersionUnsupported or
+        // Something answered with bytes that were not MQTT, which a port that is not a broker
+        // does. One wasted round trip against a host that has already answered is cheaper than
+        // failing to reach a broker that works.
+        BrokerFailureReason.NoMqttResponse or
         // The broker closed on the CONNECT without answering, which is what mosquitto 1.x and
-        // most v3-only brokers do — measured, not assumed. It also covers a port that is not a
-        // broker at all, and the cost of that is one wasted round trip against a host that has
-        // already answered, which is cheaper than failing to reach a broker that works.
-        BrokerFailureReason.NoMqttResponse;
+        // most v3-only brokers do — measured, not assumed. A broker at its connection limit makes
+        // the same shape and will refuse every rung, which costs two more round trips and then
+        // says so.
+        BrokerFailureReason.ClosedWithoutAnswering;
 
     // One version, one CONNECT. Everything the caller needs to know comes back as an exception
     // or as a link; the state fields are left describing whichever of the two happened.
@@ -176,10 +207,9 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
         }
         catch (Exception) when (ct.IsCancellationRequested)
         {
-            // Caller went away. Whatever shape the abandoned attempt came back in, nothing
-            // here is worth reporting as a broker failure.
-            _offlineState = ConnectionState.Disconnected;
-            await AnnounceAsync();
+            // Called off. Whatever shape the abandoned attempt came back in, nothing here is
+            // worth reporting as a broker failure. Where the link is left is ConnectAsync's
+            // answer, not this method's — see the catch there.
             throw;
         }
         catch (Exception ex) when (attempt.IsCancellationRequested || ex is OperationCanceledException)

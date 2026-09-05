@@ -44,7 +44,7 @@ export const setReconnectEnabled = (enabled: boolean) =>
  * suffix so two MQTTForges on one broker do not take the link from each other for ever.
  */
 export const getConnectionDefaults = () =>
-  request<{ clientId: string }>('/api/connection/defaults');
+  request<{ clientId: string; inContainer: boolean }>('/api/connection/defaults');
 
 export const reconnectNow = () =>
   request<ReconnectStatus>('/api/connection/reconnect', { method: 'POST' });

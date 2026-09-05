@@ -69,8 +69,25 @@ describe('the reconnect notice', () => {
       renderWithClient(<ReconnectNotice />);
 
       expect(await screen.findByText('Reconnecting')).toBeInTheDocument();
-      expect(screen.getByText(/3 tries have failed so far/)).toBeInTheDocument();
+      expect(screen.getByText(/3 tries have failed/)).toBeInTheDocument();
       expect(screen.getByText(/The link to broker\.local:1883 dropped/)).toBeInTheDocument();
+    });
+
+    // A reader coming back after two hours wants the length of the outage first; a try count on
+    // its own is a number with no scale.
+    it('says how long the link has been down', async () => {
+      dropped();
+      api('Faulted', {
+        active: true,
+        attempt: 12,
+        nextAttemptAt: '2026-09-02T21:00:08.000Z',
+        since: '2026-09-02T19:00:03.000Z',
+      });
+
+      renderWithClient(<ReconnectNotice />);
+
+      expect(await screen.findByText(/Down for 2h/)).toBeInTheDocument();
+      expect(screen.getByText(/12 tries have failed/)).toBeInTheDocument();
     });
 
     // The counter, which is the whole of "show me that you are trying". Eight seconds on the
@@ -109,7 +126,7 @@ describe('the reconnect notice', () => {
 
       renderWithClient(<ReconnectNotice />);
 
-      expect(await screen.findByText(/Trying again shortly/)).toBeInTheDocument();
+      expect(await screen.findByText(/trying again shortly/)).toBeInTheDocument();
     });
 
     // A way to stop it, and no way to hurry it: the form this notice sits under has Connect,

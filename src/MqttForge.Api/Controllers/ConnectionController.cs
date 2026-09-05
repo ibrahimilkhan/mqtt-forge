@@ -43,7 +43,16 @@ public sealed class ConnectionController : ControllerBase
     // endpoint rather than a field on the saved settings, because it is wanted exactly when
     // there are none.
     [HttpGet("defaults")]
-    public IActionResult GetDefaults() => Ok(new { clientId = _identity.DefaultClientId });
+    public IActionResult GetDefaults() => Ok(new
+    {
+        clientId = _identity.DefaultClientId,
+
+        // Whether this server is inside a container, which changes what an address means rather
+        // than what it is: 'localhost' there is the container itself, and a reader whose broker is
+        // on the machine running Docker is pointing at a host with nothing on it. The runtime sets
+        // this variable in every official .NET image; the Dockerfile inherits it.
+        inContainer = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true",
+    });
 
     [HttpGet("settings")]
     public async Task<IActionResult> GetSavedSettings(CancellationToken ct)

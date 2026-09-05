@@ -79,7 +79,12 @@ public static class BrokerFailureClassifier
         // Over a WebSocket the same silence means one layer further in: the upgrade succeeded,
         // so something there does speak WebSocket, and what it is not speaking is MQTT. Both end
         // at the same advice — check what is actually on this port and path — so both say so.
-        if (deepest is MqttCommunicationException) return BrokerFailureReason.NoMqttResponse;
+        // A bare communication exception is the peer accepting the socket and then closing it
+        // without answering the CONNECT. A broker at its connection limit does that, and so does
+        // a proxy that shut the tunnel — neither of which is 'this is not a broker'. Over a
+        // WebSocket the upgrade had already succeeded, so the same silence means the same thing
+        // one layer in.
+        if (deepest is MqttCommunicationException) return BrokerFailureReason.ClosedWithoutAnswering;
 
         return outer ?? BrokerFailureReason.Unknown;
     }

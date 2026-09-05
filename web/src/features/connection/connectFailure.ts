@@ -41,6 +41,15 @@ const SENTENCE: Record<string, (attempt: Attempt) => string> = {
         'check the path, and that this is the broker rather than something else on the same host.'
       : `${formatEndpoint(attempt.host, attempt.port)} answered, but not as an MQTT broker — check the port number` +
         (attempt.useTls ? '.' : ', and whether it needs TLS.'),
+  // Accepted the socket and then closed it without a word. A broker at its connection limit does
+  // exactly this, and so does a proxy that shut the tunnel — so the reader is not sent to check a
+  // port number that was right.
+  closedWithoutAnswering: (attempt) =>
+    `${formatEndpoint(attempt.host, attempt.port)} accepted the connection and then closed it ` +
+    'without answering. A broker at its connection limit does this; so does something in front of ' +
+    'it that closed the tunnel' +
+    (attempt.useTls ? '.' : ', and so does a plain port that wanted TLS.'),
+
   tlsNotOffered: ({ host, port }) =>
     `${formatEndpoint(host, port)} doesn't accept encrypted connections — switch to mqtt://, or use the broker's TLS port.`,
 
@@ -120,6 +129,25 @@ const SENTENCE: Record<string, (attempt: Attempt) => string> = {
   brokerShuttingDown: () => 'The broker is shutting down.',
   kicked: () => 'An administrator disconnected this client.',
 };
+
+/**
+ * The clause a container adds to a failure at a loopback address.
+ *
+ * Inside a container 'localhost' is the container, so a reader whose broker runs on the machine
+ * hosting Docker is pointing at a host with nothing on it — and the sentence they get names an
+ * address that looks exactly right. The console cannot know this by itself; the server says so
+ * (see /api/connection/defaults) and this is what it is for.
+ */
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '::1', '[::1]', '0.0.0.0']);
+
+export function containerHint(host: string, inContainer: boolean | undefined): string | undefined {
+  if (!inContainer || !LOOPBACK.has(host.trim().toLowerCase())) return undefined;
+
+  return (
+    'MQTTForge is running in a container, where this address means the container itself. For a ' +
+    'broker on the machine running Docker use host.docker.internal.'
+  );
+}
 
 // A reason read off the connection state, where there is no detail to fall back on. An
 // unrecognised one says nothing: FAULTED in the top bar already carries that much.

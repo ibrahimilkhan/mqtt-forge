@@ -130,10 +130,18 @@ export function ReconnectNotice() {
             {where ? `The link to ${where} dropped` : 'The link dropped'}
             {why ? `: ${lowerFirst(why)}` : '.'}
           </p>
+          {/* How long, beside how many. A reader coming back to a console after two hours wants
+              the length of the outage first — the try count alone reads as a number without a
+              scale. The server's own instant, so it is right whatever the browser's clock says. */}
           <p className={styles.was}>
-            {status.attempt > 0
-              ? `${status.attempt} ${status.attempt === 1 ? 'try has' : 'tries have'} failed so far.`
-              : 'Trying again shortly.'}
+            {[
+              status.sinceAt === null ? null : `Down for ${lengthOf(status.sinceAt, Date.now())}`,
+              status.attempt > 0
+                ? `${status.attempt} ${status.attempt === 1 ? 'try has' : 'tries have'} failed`
+                : 'trying again shortly',
+            ]
+              .filter(Boolean)
+              .join(' · ') + '.'}
           </p>
           <div className={styles.actions}>
             {/* Stops this outage, not the option. The switch on the form is the standing answer,
@@ -160,6 +168,9 @@ export function ReconnectNotice() {
               that says why in the same breath, because the reason is the whole of the point:
               retrying a rejected password is not caution, it is a lockout. Connect is the answer
               to all three, and it is on the form above. */}
+          {status.sinceAt !== null && (
+            <p className={styles.was}>{`Down for ${lengthOf(status.sinceAt, Date.now())}.`}</p>
+          )}
           <p className={styles.was}>
             {status.declined
               ? 'This is not something reconnecting would fix, so it is left for you. Change what ' +
@@ -272,15 +283,20 @@ function lowerFirst(sentence: string): string {
   return first.toLowerCase() + sentence.slice(1);
 }
 
-/** How long it was gone, in the roundest words that are still true. */
+/** A span of time in the roundest words that are still true: 43s, 7m, 2h. */
+function lengthOf(from: number, to: number): string {
+  const seconds = Math.max(0, Math.round((to - from) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+
+  return `${Math.round(minutes / 60)}h`;
+}
+
+/** How long it was gone, for the face that says it came back. */
 function away(droppedAt: number | null, recoveredAt: number | null): string {
   if (droppedAt === null || recoveredAt === null) return '';
 
-  const seconds = Math.max(0, Math.round((recoveredAt - droppedAt) / 1000));
-  if (seconds < 60) return `gone for ${seconds}s`;
-
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `gone for ${minutes}m`;
-
-  return `gone for ${Math.round(minutes / 60)}h`;
+  return `gone for ${lengthOf(droppedAt, recoveredAt)}`;
 }

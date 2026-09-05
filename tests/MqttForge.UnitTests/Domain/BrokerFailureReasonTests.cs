@@ -11,6 +11,6 @@ public class BrokerFailureReasonTests
     [Fact]
     public void Every_reason_is_one_the_console_has_words_for()
     {
-        Assert.Equal(33, Enum.GetValues<BrokerFailureReason>().Length);
+        Assert.Equal(34, Enum.GetValues<BrokerFailureReason>().Length);
     }
 }
