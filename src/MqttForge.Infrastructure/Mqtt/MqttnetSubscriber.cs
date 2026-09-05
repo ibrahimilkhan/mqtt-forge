@@ -133,6 +133,19 @@ public sealed class MqttnetSubscriber : IMqttSubscriber, ISubscriptionRestorer
                 [.. requests.Select(r => r.TopicFilter)],
                 ex);
         }
+        // The same refusal from a broker too old to send a DISCONNECT packet: it closes the TCP
+        // socket while the SUBSCRIBE is in flight, and MQTTnet hands that over as a bare
+        // communication failure. Azure IoT Hub does exactly this to a filter it does not allow,
+        // and reading it as 'the link died' left the filter unnamed and the reader with nothing to
+        // narrow. Only while subscribing: everywhere else this shape means what it says.
+        catch (MqttCommunicationException ex) when (ex is not MqttClientUnexpectedDisconnectReceivedException)
+        {
+            throw new MessageRejectedException(
+                $"The broker closed the connection while '{named}' was being asked for. " +
+                "A filter covering more of the topic tree than the broker allows is the usual cause.",
+                [.. requests.Select(r => r.TopicFilter)],
+                ex);
+        }
 
         // Read once, after the SUBACK and before anything is recorded, so every filter in one
         // batch carries the same grant moment. Reading the clock per filter would give a

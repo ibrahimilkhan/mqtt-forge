@@ -23,11 +23,16 @@ public sealed class AlertRuleService
 {
     private readonly IAlertRuleStore _store;
     private readonly AlertEngine _engine;
+    private readonly ILinkForRules? _link;
 
-    public AlertRuleService(IAlertRuleStore store, AlertEngine engine)
+    public AlertRuleService(IAlertRuleStore store, AlertEngine engine, ILinkForRules? link = null)
     {
         _store = store;
         _engine = engine;
+
+        // Optional, and null means a host that never dials for rules — which is every test that
+        // is only asking what the file holds.
+        _link = link;
     }
 
     /// <summary>The document as the file gave it, unreadable flag and skipped ids included.</summary>
@@ -63,6 +68,13 @@ public sealed class AlertRuleService
         // Posted, never applied: this is a Kestrel thread, and the core is single-threaded by
         // construction with not a lock in it. The queue is where the two worlds meet.
         _engine.Post(new RuleSetChangedCommand(rules));
+
+        // And a link to evaluate them on, where the host is one that dials for rules. A container
+        // started with no rules and given its first enabled one an hour later had nobody to
+        // notice: the only dial-because-a-rule-wants-one happened at start-up. The supervisor
+        // decides whether this host is that kind — see BrokerLinkSupervisor.WantedAsync.
+        if (_link is not null && rules.Any(rule => rule.Enabled))
+            await _link.WantedAsync(ct);
     }
 
     /// <summary>Why this save must not go through, or null if it may.</summary>

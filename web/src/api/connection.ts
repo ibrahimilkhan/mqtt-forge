@@ -24,7 +24,13 @@ export const disconnect = () => request<void>('/api/connection', { method: 'DELE
 // Calls off an attempt still in flight — the attempt, not the connection. The request that
 // started it may belong to a panel the user has since navigated away from, so the abort is
 // its own request rather than a hang-up on that one.
-export const cancelConnect = () => request<void>('/api/connection/attempt', { method: 'DELETE' });
+// With a dial named, only that one is called off; with none, whatever is running — which is what
+// a console that never saw a dial number (a fresh tab finding an attempt already in flight) means.
+export const cancelConnect = (dial?: number) =>
+  request<void>(
+    dial === undefined ? '/api/connection/attempt' : `/api/connection/attempt?dial=${dial}`,
+    { method: 'DELETE' },
+  );
 
 // ---- the standing arrangement to keep a link ----
 //

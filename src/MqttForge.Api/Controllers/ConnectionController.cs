@@ -148,7 +148,15 @@ public sealed class ConnectionController : ControllerBase
     public async Task<IActionResult> Connect(ConnectRequestDto dto, CancellationToken _)
     {
         var alreadyConnected = await _service.ConnectAsync(Settings(dto), CancellationToken.None);
-        return Ok(new { state = _service.CurrentState.ToString(), alreadyConnected });
+
+        // The dial's own number goes back with the answer, so the console that made it can abort
+        // that one rather than whatever happens to be running — see ConnectionService.CancelAttempt.
+        return Ok(new
+        {
+            state = _service.CurrentState.ToString(),
+            alreadyConnected,
+            dial = _service.LastDial,
+        });
     }
 
     // Everything the console sends, in the shape the domain wants it. The TLS block collapses
@@ -185,10 +193,12 @@ public sealed class ConnectionController : ControllerBase
 
     // The attempt, not the connection: a panel the user has since navigated away from may have
     // left one in flight, and the request that started it is nobody's to hang up on but its own.
+    // With a dial named, only that one is called off; with none, whatever is running — which is
+    // what Try now and an older console mean by it.
     [HttpDelete("attempt")]
-    public IActionResult CancelAttempt()
+    public IActionResult CancelAttempt([FromQuery] long? dial = null)
     {
-        _service.CancelAttempt();
+        _service.CancelAttempt(dial);
         return NoContent();
     }
 

@@ -140,6 +140,27 @@ const SENTENCE: Record<string, (attempt: Attempt) => string> = {
  */
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '::1', '[::1]', '0.0.0.0']);
 
+/**
+ * The clause a TLS connection on 443 with no ALPN protocol earns.
+ *
+ * AWS IoT Core carries MQTT on 443 only for clients that ask for it by name — `x-amzn-mqtt-ca` —
+ * and to one that does not it looks like a port that accepts the connection and says nothing.
+ * The sentence for that sends the reader to the certificate or the port, which are both right.
+ */
+export function alpnHint(attempt: Attempt, reason: string | null | undefined): string | undefined {
+  const silent =
+    reason === 'noMqttResponse' ||
+    reason === 'closedWithoutAnswering' ||
+    reason === 'tlsFailed';
+
+  if (!silent || !attempt.useTls || attempt.port !== 443) return undefined;
+
+  return (
+    'A broker reached over 443 usually wants an ALPN protocol: AWS IoT Core needs ' +
+    'x-amzn-mqtt-ca, set under Encryption.'
+  );
+}
+
 export function containerHint(host: string, inContainer: boolean | undefined): string | undefined {
   if (!inContainer || !LOOPBACK.has(host.trim().toLowerCase())) return undefined;
 

@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { useRef } from 'react';
 import { cancelConnect, connect, disconnect } from '../../api/connection';
 import { queryKeys } from '../../api/queryKeys';
 import { subscribe } from '../../api/subscriptions';
@@ -27,9 +28,14 @@ export function useConnectionActions() {
 
   const connectMutation = useMutation({
     // Success means the connection itself succeeded; auto-subscribe failure doesn't count against it.
-    mutationFn: ({ request }: ConnectVars) => connect(request),
+    mutationFn: async ({ request }: ConnectVars) => {
+      const result = await connect(request);
+      ours.current = result.dial;
+      return result;
+    },
 
     onSuccess: async (result, { request, autoSubscribe, includeSystem }) => {
+      ours.current = undefined;
       // Refetch, don't write the response: the hub may have already pushed a newer state.
       void queryClient.invalidateQueries({ queryKey: queryKeys.connection });
 
@@ -60,18 +66,26 @@ export function useConnectionActions() {
     // An attempt the user called off is not a failure, and there is nothing to explain: they
     // know why it stopped. Reported here rather than by the abort itself, because this is the
     // request that actually ended.
-    onError: (error) =>
+    onError: (error) => {
+      ours.current = undefined;
+
       useLogStore
         .getState()
         .push(
           wasAborted(error)
             ? { kind: 'ok', verb: 'Connect aborted' }
             : { kind: 'fault', verb: 'Connect failed', body: describeError(error) },
-        ),
+        );
+    },
   });
 
+  // The dial this console started, so its Abort calls off that one rather than another console's.
+  // Cleared when the attempt is over, so a later Abort — from a tab that found a dial already
+  // running and has no number for it — still means 'whatever is running'.
+  const ours = useRef<number | undefined>(undefined);
+
   const abortMutation = useMutation({
-    mutationFn: cancelConnect,
+    mutationFn: () => cancelConnect(ours.current),
     // The attempt's own 409 carries the outcome; a second line here would just repeat it.
     // Refetch anyway: with the hub down, nothing else would clear Connecting off the screen.
     onSettled: () => void queryClient.invalidateQueries({ queryKey: queryKeys.connection }),

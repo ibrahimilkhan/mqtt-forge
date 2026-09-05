@@ -67,6 +67,12 @@ public sealed class ConnectionService
     public BrokerLink? CurrentLink => _manager.Link;
 
     // A failed settings save is logged but doesn't fail an otherwise-successful connect
+    /// <summary>The id of the dial this call made, for a caller that may want to abort it.</summary>
+    // Handed back through the request rather than returned, because ConnectAsync's answer is
+    // already 'was it already connected' and a second return value would make every caller
+    // unpack a tuple to ignore half of it.
+    public long LastDial => Volatile.Read(ref _dialId);
+
     public async Task<bool> ConnectAsync(
         BrokerConnectionSettings settings, CancellationToken ct, ConnectOrigin origin = ConnectOrigin.Reader)
     {
@@ -89,10 +95,13 @@ public sealed class ConnectionService
         var attempt = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
         CancellationTokenSource? standing;
+        long dial;
         lock (_attemptLock)
         {
             standing = _attempt;
             _attempt = attempt;
+            dial = ++_dialId;
+            _attemptLive = true;
         }
 
         // A person dialling supersedes whatever was in flight — another console's Connect, or the
@@ -123,7 +132,12 @@ public sealed class ConnectionService
             {
                 // Only if it is still ours. A dial that superseded this one has already written
                 // itself here, and clearing the field would leave that one unabortable.
-                if (ReferenceEquals(_attempt, attempt)) _attempt = null;
+                if (ReferenceEquals(_attempt, attempt))
+                {
+                    _attempt = null;
+                    _attemptLive = false;
+                }
+
                 attempt.Dispose();
             }
         }
@@ -205,9 +219,29 @@ public sealed class ConnectionService
         return settings;
     }
 
-    public void CancelAttempt()
+    /// <summary>Which dial is in flight, or null. Counts up, so a console can name its own.</summary>
+    // Abort used to cancel whatever was running, which is right for one console and wrong for
+    // two: a reader who pressed Abort on their own slow dial cancelled the other console's
+    // instead, and that console was told its attempt had been aborted though nobody there had
+    // touched anything. A number is enough to tell them apart — nobody guesses it, and a console
+    // that does not send one still means 'whatever is running', which is what a Try-now or an
+    // older console asks for.
+    public long? RunningDial => Volatile.Read(ref _dialId) is var id && id > 0 && Volatile.Read(ref _attemptLive) ? id : null;
+
+    private long _dialId;
+    private bool _attemptLive;
+
+    /// <summary>Calls off a dial. With an id, only that one.</summary>
+    public bool CancelAttempt(long? dial = null)
     {
-        lock (_attemptLock) _attempt?.Cancel();
+        lock (_attemptLock)
+        {
+            if (_attempt is null) return false;
+            if (dial is not null && dial != _dialId) return false;
+
+            _attempt.Cancel();
+            return true;
+        }
     }
 
     /// <summary>Hangs up — and calls off any dial still in flight, whoever started it.</summary>

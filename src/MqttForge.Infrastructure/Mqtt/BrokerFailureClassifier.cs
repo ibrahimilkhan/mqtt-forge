@@ -134,6 +134,20 @@ public static class BrokerFailureClassifier
         if (dropped.Exception is not null)
         {
             var reason = Classify(dropped.Exception);
+
+            // Three answers that can only be true of a dial, and this is a link that was up: the
+            // WebSocket upgrade succeeded long ago, and so did the MQTT handshake. A proxy in
+            // front of a ws broker that closes an idle tunnel produces exactly the shape of a
+            // failed upgrade, and reporting 'this port did not open a WebSocket — check the path'
+            // about a link that had been carrying traffic for an hour sends the reader to look at
+            // the one thing that was right.
+            if (reason is BrokerFailureReason.WebSocketUpgradeRejected
+                or BrokerFailureReason.NoMqttResponse
+                or BrokerFailureReason.ClosedWithoutAnswering)
+            {
+                reason = BrokerFailureReason.ConnectionLost;
+            }
+
             if (reason != BrokerFailureReason.Unknown) return reason;
         }
 

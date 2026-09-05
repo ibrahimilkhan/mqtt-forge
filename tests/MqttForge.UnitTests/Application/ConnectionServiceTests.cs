@@ -342,7 +342,7 @@ public class ConnectionServiceTests
     {
         var sut = CreateSut();
 
-        Assert.Null(Record.Exception(sut.CancelAttempt));
+        Assert.Null(Record.Exception(() => sut.CancelAttempt()));
     }
 
     // The attempt disposes its own source on the way out, so a late abort must not touch it.
@@ -352,7 +352,46 @@ public class ConnectionServiceTests
         var sut = CreateSut();
         await sut.ConnectAsync(_settings, CancellationToken.None);
 
-        Assert.Null(Record.Exception(sut.CancelAttempt));
+        Assert.Null(Record.Exception(() => sut.CancelAttempt()));
+    }
+
+    // Abort used to cancel whatever was running, which is right for one console and wrong for
+    // two: a reader aborting their own slow dial cancelled the other console's instead, and that
+    // console was told its attempt had been aborted though nobody there had touched anything.
+    [Fact]
+    public async Task An_abort_that_names_another_dial_leaves_the_running_one_alone()
+    {
+        var started = new TaskCompletionSource();
+        _manager.ConnectAsync(Arg.Any<BrokerConnectionSettings>(), Arg.Any<CancellationToken>())
+            .Returns(call => BlockUntilCancelled(call.Arg<CancellationToken>(), started));
+
+        var sut = CreateSut();
+        var dialling = sut.ConnectAsync(_settings, CancellationToken.None);
+        await started.Task;
+
+        // Another console's Abort, naming the dial it started rather than this one.
+        Assert.False(sut.CancelAttempt(sut.LastDial - 1));
+        Assert.False(dialling.IsCompleted);
+
+        // ...and the one that owns it.
+        Assert.True(sut.CancelAttempt(sut.LastDial));
+        await Record.ExceptionAsync(() => dialling);
+    }
+
+    // An abort with no id is 'whatever is running', which is what Try now and an older console ask.
+    [Fact]
+    public async Task An_abort_with_no_id_calls_off_whatever_is_running()
+    {
+        var started = new TaskCompletionSource();
+        _manager.ConnectAsync(Arg.Any<BrokerConnectionSettings>(), Arg.Any<CancellationToken>())
+            .Returns(call => BlockUntilCancelled(call.Arg<CancellationToken>(), started));
+
+        var sut = CreateSut();
+        var dialling = sut.ConnectAsync(_settings, CancellationToken.None);
+        await started.Task;
+
+        Assert.True(sut.CancelAttempt());
+        await Record.ExceptionAsync(() => dialling);
     }
 
     private static async Task BlockUntilCancelled(CancellationToken token, TaskCompletionSource started)

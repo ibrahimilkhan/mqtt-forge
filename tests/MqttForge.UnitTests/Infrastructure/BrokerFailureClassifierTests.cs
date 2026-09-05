@@ -1,3 +1,4 @@
+using System.Net.WebSockets;
 using System.Net.Sockets;
 using System.Security.Authentication;
 using MqttForge.Domain.Enums;
@@ -90,6 +91,26 @@ public class BrokerFailureClassifierTests
 
         Assert.Equal(
             BrokerFailureReason.ClosedWithoutAnswering, BrokerFailureClassifier.Classify(exception));
+    }
+
+    // A link that was up cannot fail its handshake: the upgrade and the CONNECT are long done. A
+    // proxy that closes an idle ws tunnel makes the shape of a refused upgrade, and 'check the
+    // path' about a link that carried traffic for an hour is the one thing that was right.
+    [Theory]
+    [InlineData(typeof(WebSocketException))]
+    [InlineData(typeof(MqttCommunicationException))]
+    public void A_live_link_that_drops_is_never_reported_as_a_failed_handshake(Type shape)
+    {
+        var inner = shape == typeof(WebSocketException)
+            ? new WebSocketException("The server returned status code '502'.")
+            : (Exception)new MqttCommunicationException("Connection closed.");
+
+        var reason = BrokerFailureClassifier.Classify(new MqttClientDisconnectedEventArgs(
+            clientWasConnected: true, connectResult: null,
+            reason: MqttClientDisconnectReason.UnspecifiedError, reasonString: null,
+            userProperties: null, exception: inner));
+
+        Assert.Equal(BrokerFailureReason.ConnectionLost, reason);
     }
 
     // Ticking the box must not turn every unclassifiable failure into a TLS story.

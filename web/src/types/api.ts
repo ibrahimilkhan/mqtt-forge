@@ -104,6 +104,13 @@ export type ConnectionStateResponse = {
   failure?: BrokerFailure | null;
   connection?: BrokerLink | null;
   alreadyConnected?: boolean;
+  /**
+   * The number of the dial this answer is about, so the console that made it can abort that one.
+   *
+   * Abort used to call off whatever was running, which is right for one console and wrong for
+   * two: a reader aborting their own slow dial cancelled the other console's instead.
+   */
+  dial?: number;
 };
 
 /** A connection somebody kept, under the name they kept it under. */

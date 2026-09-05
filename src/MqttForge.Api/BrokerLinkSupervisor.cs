@@ -26,7 +26,7 @@ namespace MqttForge.Api;
 // says what it is doing (Status, published on every change), takes an answer to it (CancelAsync,
 // RetryNowAsync) and can be turned off altogether (SetEnabledAsync). None of that changed the
 // ladder, which was never the part anybody objected to.
-public sealed class BrokerLinkSupervisor : BackgroundService
+public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
 {
     /// <summary>Seconds to wait before each successive retry, flattening at the last rung.</summary>
     public static readonly IReadOnlyList<int> Backoff = [1, 2, 4, 8, 16, 30];
@@ -291,6 +291,18 @@ public sealed class BrokerLinkSupervisor : BackgroundService
         // ladder has nothing to add until it is over.
         if (state != ConnectionState.Faulted)
         {
+            // A dial in flight is not the end of an outage, it is a moment in one. This class
+            // never sees its own dials — SuperviseAsync awaits them — so a Connecting seen here is
+            // the reader's, and against a broker that answers slowly theirs takes twenty seconds.
+            // Resting through it threw away when the outage began, how many rungs had been spent
+            // and whether the reader had stopped it, so a panel that had been counting for an hour
+            // started again from nothing the moment they pressed Connect.
+            if (state == ConnectionState.Connecting && _since is not null)
+            {
+                await AnnounceAsync();
+                return;
+            }
+
             if (state == ConnectionState.Connected) _wanted = true;
 
             // The outage is over, however it ended, so everything that was only true *of* it goes
@@ -371,6 +383,24 @@ public sealed class BrokerLinkSupervisor : BackgroundService
         await AttemptAsync(ct, redial: true);
         _dueAt = _time.GetUtcNow() + NextRung();
         await AnnounceAsync();
+    }
+
+    /// <inheritdoc />
+    // The same decision StartUpAsync makes, made again when a rule is saved rather than only when
+    // the process starts. Gated on the same option, so a desktop console does not dial because
+    // somebody saved a rule — that reader has a Connect button and did not press it — and on the
+    // link being down, so a save on a live link is the no-op it should be.
+    public async Task WantedAsync(CancellationToken ct)
+    {
+        if (!_options.ConnectOnStart) return;
+        if (_connection.CurrentState is ConnectionState.Connected or ConnectionState.Connecting) return;
+
+        _wanted = true;
+        _gaveUp = false;
+        _declined = false;
+
+        _log.LogInformation("A rule wants a broker link, so one is being dialled.");
+        await AttemptAsync(ct);
     }
 
     /// <summary>Calls off the outage being worked on, and the attempt in flight with it.</summary>

@@ -21,6 +21,7 @@ import { useLinkWatchStore } from '../../stores/linkWatchStore';
 import { useGuardedMutate } from '../../lib/useGuardedMutate';
 import type { CertificateFileKind } from '../../api/connection';
 import {
+  alpnHint,
   containerHint,
   describeConnectFailure,
   describeFailureReason,
@@ -1080,6 +1081,14 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
             <>
               {' '}
               {containerHint(attempted?.host ?? form.host, defaults?.inContainer)}
+            </>
+          )}
+          {/* And what a broker on 443 usually wants, which is the one setting nothing else
+              would send the reader to. */}
+          {alpnHint(attempted ?? buildConnectRequest(form), errorReason(connectMutation.error) ?? faulted?.reason) && (
+            <>
+              {' '}
+              {alpnHint(attempted ?? buildConnectRequest(form), errorReason(connectMutation.error) ?? faulted?.reason)}
             </>
           )}
         </p>

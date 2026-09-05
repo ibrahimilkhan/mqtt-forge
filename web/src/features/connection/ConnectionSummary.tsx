@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { formatEndpoint } from './address';
 import type { ReactNode } from 'react';
 import { queryKeys } from '../../api/queryKeys';
+import { getSavedSettings } from '../../api/connection';
 import { getSubscriptions } from '../../api/subscriptions';
 import { useConnectionState } from '../../api/useConnectionState';
 import styles from '../../styles/panel.module.css';
@@ -26,6 +27,14 @@ const NOTHING = '—';
  */
 export function ConnectionSummary({ lead = false }: { lead?: boolean } = {}) {
   const { link } = useConnectionState();
+  // What was asked for, as against what the link agreed to. Only one row reads it, and only to
+  // say that one of the things asked for could not be carried.
+  const { data: saved } = useQuery({
+    queryKey: queryKeys.savedSettings,
+    queryFn: getSavedSettings,
+    enabled: Boolean(link),
+  });
+
   const { data: filters } = useQuery({
     queryKey: queryKeys.subscriptions,
     queryFn: getSubscriptions,
@@ -84,6 +93,17 @@ export function ConnectionSummary({ lead = false }: { lead?: boolean } = {}) {
         <Row label="Session" value={link.sessionPresent ? 'resumed' : 'fresh'} />
         <Row label="Keep-alive" value={keepAlive(link)} />
         <Row label="Subscriptions" value={filters ? String(filters.length) : NOTHING} />
+        {/* A setting that was asked for and could not be carried. Session expiry is an MQTT 5
+            field; the validator refuses it against a version pinned to 3.1 or 3.1.1, but Auto is
+            not pinned — it asks for 5.0 and steps down, and a broker that only speaks 3.1.1 leaves
+            the number in the form with nowhere to go. Said here because this block is the one
+            place the version that was actually agreed is on screen. */}
+        {saved?.sessionExpiryInterval != null && link.protocolVersion !== 'v500' && (
+          <Row
+            label="Session expiry"
+            value={`not sent — ${versionName(link.protocolVersion)} has no such field`}
+          />
+        )}
       </dl>
     </>
   );

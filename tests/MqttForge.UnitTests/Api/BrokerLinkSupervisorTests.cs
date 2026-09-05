@@ -483,6 +483,46 @@ public class BrokerLinkSupervisorTests
         Assert.Null(sut.Status.Since);
     }
 
+    // A container started with no rules and given its first enabled one an hour later had nobody
+    // to notice: the only dial-because-a-rule-wants-one happened at start-up.
+    [Fact]
+    public async Task A_rule_saved_on_a_host_that_dials_for_rules_gets_a_link()
+    {
+        RulesHold(Rule(enabled: false));
+        var sut = CreateSut(connectOnStart: true);
+        await sut.StartUpAsync(CancellationToken.None);
+        Assert.Empty(_attempts);
+
+        await sut.WantedAsync(CancellationToken.None);
+
+        Assert.Single(_attempts);
+    }
+
+    // ...and a desktop console does not dial because somebody saved a rule. That reader has a
+    // Connect button and did not press it.
+    [Fact]
+    public async Task A_rule_saved_on_a_host_that_waits_for_a_reader_dials_nothing()
+    {
+        RulesHold(Rule(enabled: false));
+        var sut = CreateSut(connectOnStart: false);
+        await sut.StartUpAsync(CancellationToken.None);
+
+        await sut.WantedAsync(CancellationToken.None);
+
+        Assert.Empty(_attempts);
+    }
+
+    [Fact]
+    public async Task A_rule_saved_over_a_live_link_dials_nothing()
+    {
+        var sut = CreateSut(connectOnStart: true);
+        _manager.State.Returns(ConnectionState.Connected);
+
+        await sut.WantedAsync(CancellationToken.None);
+
+        Assert.Empty(_attempts);
+    }
+
     // A dial at the broker that is down is not leaving it: the ladder keeps its place.
     [Fact]
     public async Task A_readers_dial_at_the_broker_that_is_down_does_not_stand_the_ladder_down()
