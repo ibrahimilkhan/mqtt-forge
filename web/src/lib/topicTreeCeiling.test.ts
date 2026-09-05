@@ -3,6 +3,7 @@ import {
   applyMessages,
   emptyTree,
   evictQuietestTopics,
+  MAX_TREE_PAYLOAD,
   quietestTopics,
   type TopicNode,
 } from './topicTree';
@@ -85,5 +86,47 @@ describe('the topics a tree gives up', () => {
 
     expect(after.children.get('plant')?.children.has('a')).toBe(false);
     expect(after.subTopics).toBe(1);
+  });
+});
+
+// The body is the one part of a node with no natural size: fifty thousand topics carrying
+// four-kilobyte documents is two hundred megabytes of text held for a row that shows one line.
+describe('the body a node keeps', () => {
+  const body = (length: number) => 'x'.repeat(length);
+
+  const put = (payload: string) =>
+    applyMessages(
+      emptyTree(),
+      [
+        {
+          topic: 'lab/big',
+          payload,
+          mode: 'text' as const,
+          qos: 0,
+          retain: false,
+        },
+      ],
+      1000,
+    );
+
+  it('keeps an ordinary body whole and says it is whole', () => {
+    const node = put(body(100)).children.get('lab')?.children.get('big');
+
+    expect(node?.latestPayload).toHaveLength(100);
+    expect(node?.latestTruncated).toBe(false);
+  });
+
+  it('cuts one past the ceiling and says it cut it', () => {
+    const node = put(body(MAX_TREE_PAYLOAD + 5000)).children.get('lab')?.children.get('big');
+
+    expect(node?.latestPayload).toHaveLength(MAX_TREE_PAYLOAD);
+    expect(node?.latestTruncated).toBe(true);
+  });
+
+  // The boundary itself is whole: a body exactly at the ceiling has nothing missing from it.
+  it('keeps a body of exactly the ceiling whole', () => {
+    const node = put(body(MAX_TREE_PAYLOAD)).children.get('lab')?.children.get('big');
+
+    expect(node?.latestTruncated).toBe(false);
   });
 });

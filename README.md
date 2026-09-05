@@ -230,7 +230,8 @@ Measured on a live tram feed:
 The log keeps half a million messages and drops the oldest. The tree keeps fifty thousand topics
 and gives up the ones that have been quiet longest, taking their messages with them — a broker
 whose topic names carry an id (`request/<uuid>/response`) would otherwise grow a console left open
-for days without end. It says underneath how many it has forgotten.
+for days without end. It says underneath how many it has forgotten. It keeps the first 4 kB of
+each message for the value on the row; publishing one again takes the whole body from the log.
 
 ## Next
 

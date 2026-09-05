@@ -10,6 +10,20 @@ export type TopicNode = {
    *  array of strings rather than a rebuild of a map of thousands. */
   order: readonly string[];
   latestPayload: string | null;
+  /**
+   * Whether `latestPayload` is only the front of the message.
+   *
+   * The tree keeps a node per topic and the newest body on each, and a body is the one part of a
+   * node with no natural size: fifty thousand topics carrying four-kilobyte documents is two
+   * hundred megabytes of text held for a row that shows one line of it. So the body is cut at
+   * MAX_TREE_PAYLOAD and this says when that happened.
+   *
+   * What it costs is exactness, in two places, and both are answered rather than accepted: the
+   * publish form takes the whole body from the log's own run (see TopicTree's pickTopic), and the
+   * alert editor's field discovery simply passes over a document it cannot parse, which it
+   * already did for every body that is not JSON.
+   */
+  latestTruncated: boolean;
   latestMode: BodyMode | null;  // how latestPayload is written; null means no message of its own,
                                  // so a click must leave the publish form's mode untouched
   latestQos: number;     // settings of the last message on this exact topic, for re-publishing it
@@ -113,6 +127,7 @@ const leaf = (name: string): TopicNode => ({
   children: NO_CHILDREN,
   order: NO_ORDER,
   latestPayload: null,
+  latestTruncated: false,
   latestMode: null,
   latestQos: 0,
   latestRetain: false,
@@ -255,6 +270,7 @@ function rebuild(
     children: kept,
     order,
     latestPayload: dropped ? null : node.latestPayload,
+    latestTruncated: dropped ? false : node.latestTruncated,
     latestMode: dropped ? null : node.latestMode,
     latestQos: dropped ? 0 : node.latestQos,
     latestRetain: dropped ? false : node.latestRetain,
@@ -294,6 +310,16 @@ export const MAX_TREE_ROWS = 1500;
  * readings.
  */
 export const MAX_TREE_TOPICS = 50_000;
+
+/**
+ * The most of a message body the tree keeps, in characters.
+ *
+ * Four kilobytes is more than a row can show and more than any hand-written JSON document needs,
+ * so the two things the body is for — the value on the row and the fields an alert rule can be
+ * written against — are untouched for everything but the outliers. The log keeps the whole body
+ * (256 KB a topic), which is where re-publishing reads it from.
+ */
+export const MAX_TREE_PAYLOAD = 4096;
 
 /** How much is taken when the ceiling bites: a tenth, so the walk is paid once per five thousand
  *  topics rather than on every arrival past the cap. */
@@ -552,7 +578,8 @@ function insert(
     ...target,
     readings,
     hits: target.hits + 1,
-    latestPayload: payload,
+    latestPayload: payload.length > MAX_TREE_PAYLOAD ? payload.slice(0, MAX_TREE_PAYLOAD) : payload,
+    latestTruncated: payload.length > MAX_TREE_PAYLOAD,
     latestMode: mode,
     latestQos: qos,
     latestRetain: retain,

@@ -14,6 +14,7 @@ import { HoldButton } from '../monitor/HoldButton';
 import { useHoldStore } from '../monitor/useTraffic';
 import { useComposeStore } from '../../stores/composeStore';
 import { useSelectionStore } from '../../stores/selectionStore';
+import { useLogStore } from '../../stores/logStore';
 import { isPathOpen, useTopicTreeStore } from '../../stores/topicTreeStore';
 import styles from './TopicTree.module.css';
 import { TreeNode } from './TreeNode';
@@ -153,9 +154,18 @@ export function TopicTree({ broker }: { broker?: string }) {
       // back to nought on the way past, which is exactly what it used to do.
       const held = node.latestMode !== null;
 
+      // The whole body, when the tree is holding only the front of it. The tree cuts a message at
+      // MAX_TREE_PAYLOAD because it keeps one per topic and there are fifty thousand of those;
+      // the log keeps the run for this topic whole, so that is where the exact bytes are. Failing
+      // that — a topic whose run the log has already given up — nothing is offered rather than a
+      // body that would publish as a message the reader never sent.
+      const body = node.latestTruncated
+        ? useLogStore.getState().byTopic.get(path)?.newestFirst()[0]?.body
+        : node.latestPayload ?? undefined;
+
       load({
         topic: path,
-        payload: node.latestPayload ?? undefined,
+        payload: body,
         mode: node.latestMode ?? undefined,
         qos: held ? node.latestQos : undefined,
         retain: held ? node.latestRetain : undefined,
