@@ -125,9 +125,12 @@ public sealed class MqttnetSubscriber : IMqttSubscriber, ISubscriptionRestorer
         // unhandled and the reader got a bare 500 naming neither the filter nor the objection.
         catch (MqttClientUnexpectedDisconnectReceivedException ex)
         {
+            // Every filter in the packet is named: the broker closed the session rather than
+            // answering per filter, so which of them it objected to is not knowable from here.
             throw new MessageRejectedException(
                 $"The broker refused '{named}' and closed the connection. " +
                 "A filter covering more of the topic tree than the broker allows is the usual cause.",
+                [.. requests.Select(r => r.TopicFilter)],
                 ex);
         }
 
@@ -147,6 +150,7 @@ public sealed class MqttnetSubscriber : IMqttSubscriber, ISubscriptionRestorer
         // batch is one packet but not one decision, and forgetting the granted half would leave
         // the console wrong in the other direction.
         var refused = new List<string>();
+        var refusedFilters = new List<string>();
         foreach (var item in result.Items)
         {
             if (Granted(item.ResultCode))
@@ -159,11 +163,16 @@ public sealed class MqttnetSubscriber : IMqttSubscriber, ISubscriptionRestorer
                 if (owner.HasFlag(SubscriptionOwner.Console))
                     _consoleQos[item.TopicFilter.Topic] = asked.GetValueOrDefault(item.TopicFilter.Topic);
             }
-            else refused.Add($"'{item.TopicFilter.Topic}' ({item.ResultCode})");
+            else
+            {
+                refused.Add($"'{item.TopicFilter.Topic}' ({item.ResultCode})");
+                refusedFilters.Add(item.TopicFilter.Topic);
+            }
         }
 
         if (refused.Count > 0)
-            throw new MessageRejectedException($"The broker refused {string.Join(", ", refused)}.");
+            throw new MessageRejectedException(
+                $"The broker refused {string.Join(", ", refused)}.", refusedFilters);
     }
 
     /// <summary>Adds one owner's claim to a filter, and moves its replay window to this SUBACK.</summary>

@@ -2,6 +2,7 @@ using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using MqttForge.Domain.Abstractions;
 using MqttForge.Domain.Enums;
+using MqttForge.Domain.Exceptions;
 using MqttForge.Domain.Models;
 
 namespace MqttForge.Application.Alerts;
@@ -123,6 +124,22 @@ public sealed class AlertEngine
     /// Set when the filters the rules want may differ from the filters the subscriber holds.
     private bool _resubscribe;
 
+    /// <summary>Filters this broker has already refused, on this link.</summary>
+    // The engine used to leave the resubscribe flag up after a refusal, so the same filter was
+    // asked for again on the next turn — once a second, for as long as the link lasted. A broker
+    // that said no says no again: it is a wasted round trip a second, and some brokers count that
+    // as abuse. So a refused filter is set aside and not asked for again.
+    //
+    // Not for ever: the set is emptied whenever the question is genuinely new — a link made again
+    // (a broker restarted with a different ACL is the ordinary case) and a rule set the reader has
+    // just edited. Both already force a resubscribe, so both clear this in the same breath.
+    private readonly HashSet<string> _refused = new(StringComparer.Ordinal);
+
+    /// <summary>Which broker the pairs in the core were learned from.</summary>
+    // See AlertEngineCore.ForgetTopics. A link to a different broker is a different world, and
+    // the per-topic state of the old one has nothing true to say about it.
+    private string? _learnedFrom;
+
     /// Set when something the state file cares about changed and has not been written yet.
     private bool _unsaved;
 
@@ -192,6 +209,7 @@ public sealed class AlertEngine
         // The link may well be down at this point — the supervisor connects on its own schedule —
         // in which case this does nothing and the flag stays set for the reconnect to honour.
         _resubscribe = true;
+        _refused.Clear();
         _linkWasUp = _connection.State == ConnectionState.Connected;
         await SyncSubscriptionsAsync(ct);
     }
@@ -294,6 +312,27 @@ public sealed class AlertEngine
                 // could judge a whole second of silence against a link that had already gone.
                 var connected = _connection.State == ConnectionState.Connected;
 
+                // And if it IS a different broker, everything the rules learned at the last one
+                // goes — before the tick judges anything, so no silence rule fires about a topic
+                // that belongs to a broker nobody is connected to. Read on every turn rather than
+                // only on the transition above: the reader can move the link from one live broker
+                // to another without it ever being seen down.
+                if (connected)
+                {
+                    var link = _connection.Link;
+                    var endpoint = link is null ? null : $"{link.Host}:{link.Port}";
+
+                    if (endpoint is not null && _learnedFrom is not null && endpoint != _learnedFrom)
+                    {
+                        _core.ForgetTopics();
+                        _log.LogInformation(
+                            "The link moved from {Was} to {Now}, so the rules start again: what they had learned was the other broker's.",
+                            _learnedFrom, endpoint);
+                    }
+
+                    if (endpoint is not null) _learnedFrom = endpoint;
+                }
+
                 var outcome = _core.OnTick(now, connected);
                 raised.AddRange(outcome.Raised);
                 resolved.AddRange(outcome.Resolved);
@@ -301,7 +340,16 @@ public sealed class AlertEngine
                 // Subscriptions die with the connection — MqttnetSubscriber clears its own set on
                 // disconnect — so the link coming back is the third of the three moments the rule
                 // set has to be applied.
-                if (connected && !_linkWasUp) _resubscribe = true;
+                if (connected && !_linkWasUp)
+                {
+                    _resubscribe = true;
+
+                    // A new link is a new answer: the broker may have been restarted with a
+                    // different ACL, or be a different broker altogether.
+                    _refused.Clear();
+                }
+
+
                 _linkWasUp = connected;
 
                 // A tick is always worth republishing for. Things end on a tick that produce no
@@ -350,6 +398,10 @@ public sealed class AlertEngine
                 // would be a file read per save on the hot side of the engine.
                 _live = change.Rules;
                 _resubscribe = true;
+
+                // The reader has just edited the rules, which is the other way a refused filter
+                // becomes worth asking about again — most obviously by being narrowed.
+                _refused.Clear();
 
                 return _core.SetRules(change.Rules, now);
 
@@ -402,7 +454,7 @@ public sealed class AlertEngine
 
         var missing = new List<SubscriptionRequest>();
         foreach (var filter in wanted)
-            if (!held.Contains(filter))
+            if (!held.Contains(filter) && !_refused.Contains(filter))
                 missing.Add(new SubscriptionRequest(filter, RuleQos));
 
         var gone = new List<string>();
@@ -425,12 +477,47 @@ public sealed class AlertEngine
 
             _resubscribe = false;
         }
+        catch (MessageRejectedException refusal)
+        {
+            // The broker said no to these, so they are not asked for again on this link: it would
+            // say no again, once a second, for as long as the link lasted. Whatever else was in
+            // the packet is still wanted, so the flag stays up and the next turn asks for the
+            // rest — which is also how a session the broker closed over one filter comes back
+            // with the others.
+            // What the broker named, or — when it named nothing, which is what an older broker
+            // closing the session amounts to — everything this packet asked for. Either way the
+            // engine must come away knowing not to ask again, or the retry it was left with is
+            // the once-a-second loop this is here to end.
+            var refused = refusal.Filters.Count > 0
+                ? refusal.Filters
+                : [.. missing.Select(request => request.TopicFilter)];
+
+            foreach (var filter in refused) _refused.Add(filter);
+
+            var marked = false;
+            foreach (var rule in _live)
+            {
+                if (!rule.Enabled || !_refused.Contains(rule.Filter)) continue;
+
+                _core.MarkFilterRefused(rule.Id, rule.Filter);
+                marked = true;
+            }
+
+            // The panel is told at once rather than on the next thing that happens to change: a
+            // rule that will never be sent anything produces no arrivals and no ticks worth
+            // publishing for, so waiting for one would leave the reason unread for as long as the
+            // link lasted.
+            if (marked) Publish();
+
+            _log.LogWarning(refusal,
+                "The broker refused {Count} rule filter(s); they will not be asked for again on this link.",
+                refusal.Filters.Count);
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // A broker is entitled to refuse a filter — a wildcard too broad for it, a topic its
-            // ACL does not allow — and it may refuse it by closing the connection. None of that
-            // may stop the pump, and none of it is permanent: the flag is left set, so the next
-            // turn asks again, and the filter goes up the moment the broker will have it.
+            // Everything else — a link that went in the middle of the packet, a broker that never
+            // answered. None of it may stop the pump, and none of it is permanent: the flag is
+            // left set, so the next turn asks again.
             _log.LogWarning(ex,
                 "The alert engine could not apply its rule subscriptions. It will try again.");
         }

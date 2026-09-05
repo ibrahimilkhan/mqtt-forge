@@ -15,13 +15,16 @@ public sealed class ConnectionController : ControllerBase
     private readonly ConnectionService _service;
     private readonly SavedProfileService _profiles;
     private readonly CertificatePicker _files;
+    private readonly InstallIdentity _identity;
 
     public ConnectionController(
-        ConnectionService service, SavedProfileService profiles, CertificatePicker files)
+        ConnectionService service, SavedProfileService profiles, CertificatePicker files,
+        InstallIdentity identity)
     {
         _service = service;
         _profiles = profiles;
         _files = files;
+        _identity = identity;
     }
 
     [HttpGet]
@@ -34,6 +37,14 @@ public sealed class ConnectionController : ControllerBase
         });
 
     // Lets the console prefill the connection form
+    /// <summary>What a form with nothing in it should suggest.</summary>
+    // The client ID is the whole of it: it carries a per-install suffix so that two MQTTForges on
+    // one broker do not take the link from each other for ever — see InstallIdentity. Its own
+    // endpoint rather than a field on the saved settings, because it is wanted exactly when
+    // there are none.
+    [HttpGet("defaults")]
+    public IActionResult GetDefaults() => Ok(new { clientId = _identity.DefaultClientId });
+
     [HttpGet("settings")]
     public async Task<IActionResult> GetSavedSettings(CancellationToken ct)
     {

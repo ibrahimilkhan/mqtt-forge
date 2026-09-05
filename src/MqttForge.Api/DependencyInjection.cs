@@ -27,6 +27,9 @@ public static class DependencyInjection
         // one, and a console folding them together would re-read the link every time a countdown
         // ticked. See ReconnectStatus.
         services.AddSingleton<IReconnectStatusNotifier, SignalRReconnectStatusNotifier>();
+        services.AddSingleton(sp => new InstallIdentity(
+            StorePaths.InstallToken(sp.GetRequiredService<IConfiguration>()),
+            sp.GetRequiredService<ILogger<InstallIdentity>>()));
         services.AddSingleton<IMqttSubscriber, MqttnetSubscriber>();
         // The same instance under its second face, for the supervisor alone — see the interface.
         services.AddSingleton<ISubscriptionRestorer>(sp =>

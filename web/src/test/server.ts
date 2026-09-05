@@ -19,6 +19,8 @@ const defaultHandlers = [
   ),
   http.get('/api/connection/profiles', () => HttpResponse.json([])),
   http.get('/api/subscriptions', () => HttpResponse.json([])),
+  // The client ID a fresh form suggests, with this install's suffix — see InstallIdentity.
+  http.get('/api/connection/defaults', () => HttpResponse.json({ clientId: 'mqttforge-console' })),
   http.get('/api/colour-rules', () => HttpResponse.json({ rules: [] })),
   // Every mounted App reaches this through the hub bridge, which takes an alert snapshot as soon
   // as it subscribes. Written out in full rather than as {}: the store copies the snapshot member

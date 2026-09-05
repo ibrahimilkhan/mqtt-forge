@@ -273,7 +273,18 @@ internal sealed class FakeConnection : IMqttConnectionManager
 
     public BrokerFailure? Failure => null;
 
-    public BrokerLink? Link => null;
+    private BrokerLink? _link;
+
+    /// <summary>Which broker is up, when a test cares — the engine reads it to notice a move.</summary>
+    public BrokerLink? Link
+    {
+        get => Volatile.Read(ref _link);
+        set => Volatile.Write(ref _link, value);
+    }
+
+    /// <summary>Points the fake at a broker, as a successful connect would.</summary>
+    public void At(string host, int port) =>
+        Link = new BrokerLink(host, port, "test", null, false, DateTimeOffset.UnixEpoch, false, null, null);
 
     public Task ConnectAsync(BrokerConnectionSettings settings, CancellationToken ct) => Task.CompletedTask;
 

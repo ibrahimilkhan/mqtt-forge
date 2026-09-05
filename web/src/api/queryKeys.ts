@@ -1,5 +1,6 @@
 export const queryKeys = {
   connection: ['connection'] as const,
+  connectionDefaults: ['connection', 'defaults'] as const,
   savedSettings: ['connection', 'settings'] as const,
   reconnect: ['connection', 'reconnect'] as const,
   savedProfiles: ['connection', 'profiles'] as const,

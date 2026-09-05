@@ -299,8 +299,60 @@ public class AlertEngineTests
         Assert.Equal(["plant/a/#"], harness.Subscriber.Batches[1]);
     }
 
+    // A silence rule judges 'nothing has arrived on this topic for N seconds', and it keeps that
+    // per topic. Moving the link to another broker used to carry every topic learned at the first
+    // one into the second, where they do not exist — so within N seconds each of them rang, about
+    // devices on a broker nobody is watching any more.
     [Fact]
-    public async Task A_filter_the_broker_refuses_is_tried_again_on_a_later_turn()
+    public async Task Moving_the_link_to_another_broker_forgets_what_the_last_one_taught()
+    {
+        await using var harness = Build(Document([Rule("dead", "plant/boiler/temp", new SilenceCondition(30))]));
+        harness.Connection.At("broker.a", 1883);
+        await harness.Engine.StartAsync(CancellationToken.None);
+        harness.Run();
+
+        // One tick, so the engine has seen which broker it is on. It reads that on the tick, and
+        // an arrival makes a pair without one.
+        await harness.TickAsync(2);
+
+        // A reading at the first broker is what makes a pair to be silent about.
+        harness.Engine.Post(new ArrivalCommand(Message("plant/boiler/temp", "21")));
+        await harness.Until(() => harness.Engine.Snapshot.Rules[0].Topics == 1, "the topic was learned");
+
+        // The reader points the one link at another broker.
+        harness.Connection.At("broker.b", 1883);
+
+        await harness.TickAsync(3);
+
+        Assert.Equal(0, harness.Engine.Snapshot.Rules[0].Topics);
+
+        // ...and nothing rings about a topic that belonged to the broker that was left.
+        await harness.TickAsync(60);
+        Assert.Empty(harness.Notifier.Raised);
+    }
+
+    [Fact]
+    public async Task A_link_that_stays_on_the_same_broker_keeps_what_it_learned()
+    {
+        await using var harness = Build(Document([Rule("dead", "plant/boiler/temp", new SilenceCondition(30))]));
+        harness.Connection.At("broker.a", 1883);
+        await harness.Engine.StartAsync(CancellationToken.None);
+        harness.Run();
+        await harness.TickAsync(2);
+
+        harness.Engine.Post(new ArrivalCommand(Message("plant/boiler/temp", "21")));
+        await harness.Until(() => harness.Engine.Snapshot.Rules[0].Topics == 1, "the topic was learned");
+
+        await harness.TickAsync(5);
+
+        Assert.Equal(1, harness.Engine.Snapshot.Rules[0].Topics);
+    }
+
+    // Asked for on 2026-09-06, overruling the earlier behaviour this test used to pin: a broker
+    // that refused a filter refuses it again, so asking once a second for the life of the link is
+    // a wasted round trip a second — and some brokers count that as abuse.
+    [Fact]
+    public async Task A_filter_the_broker_refuses_is_not_asked_for_again_on_this_link()
     {
         await using var harness = Build(Document([Rule("a", "plant/a/#", Over90)]));
         harness.Subscriber.Refuse = new MessageRejectedException("The broker refused 'plant/a/#'.");
@@ -308,16 +360,48 @@ public class AlertEngineTests
         // A refusal is the broker's answer, not a fault in the engine: StartAsync comes back.
         await harness.Engine.StartAsync(CancellationToken.None);
 
-        // Asserted before the pump starts. The flag is left set so the next turn tries again, and
-        // every one of those turns adds a batch — counting them after Run() would be counting a
-        // race rather than the one attempt StartAsync made.
         Assert.Single(harness.Subscriber.Batches);
         Assert.Contains(harness.Log.Lines, line => line.Level == LogLevel.Warning);
 
+        // Let the broker change its mind. Nothing asks it, because nothing on this link has
+        // changed: not the rule set, and not the connection.
         harness.Run();
         harness.Subscriber.Refuse = null;
 
-        await harness.Until(() => harness.Subscriber.Filters.Count == 1, "the filter went up on a later turn");
+        await Task.Delay(80);
+        Assert.Single(harness.Subscriber.Batches);
+        Assert.Empty(harness.Subscriber.Filters);
+    }
+
+    // The rule the broker would not carry is a rule that is watching nothing, and the panel draws
+    // a faulted rule with its reason — so the reader is told rather than left with a rule whose
+    // every count stands still.
+    [Fact]
+    public async Task A_rule_whose_filter_was_refused_is_shown_as_faulted()
+    {
+        await using var harness = Build(Document([Rule("a", "plant/a/#", Over90)]));
+        harness.Subscriber.Refuse = new MessageRejectedException("The broker refused 'plant/a/#'.");
+
+        await harness.Engine.StartAsync(CancellationToken.None);
+
+        var rule = Assert.Single(harness.Engine.Snapshot.Rules);
+        Assert.True(rule.Faulted);
+        Assert.Contains("plant/a/#", rule.FaultReason);
+    }
+
+    // ...and a rule set the reader has edited is a new question, so the filter is offered again.
+    [Fact]
+    public async Task A_refused_filter_is_asked_for_again_once_the_rules_are_edited()
+    {
+        await using var harness = Build(Document([Rule("a", "plant/a/#", Over90)]));
+        harness.Subscriber.Refuse = new MessageRejectedException("The broker refused 'plant/a/#'.");
+        await harness.Engine.StartAsync(CancellationToken.None);
+        harness.Run();
+
+        harness.Subscriber.Refuse = null;
+        harness.Engine.Post(new RuleSetChangedCommand([Rule("a", "plant/a/#", Over90)]));
+
+        await harness.Until(() => harness.Subscriber.Filters.Count == 1, "the filter went up after the edit");
     }
 
     [Fact]

@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from
 import type { MqttTransport, SavedProfile } from '../../types/api';
 import {
   deleteProfile,
+  getConnectionDefaults,
   getSavedProfiles,
   getSavedSettings,
   saveProfile,
@@ -126,6 +127,17 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
   // edit that moves the address, since after that the form is no longer that broker.
   const [from, setFrom] = useState<string | null>(null);
   const { data: saved } = useQuery({ queryKey: queryKeys.savedSettings, queryFn: getSavedSettings });
+
+  // The client ID a fresh form suggests. It carries a suffix this install keeps, because MQTT
+  // allows one client of a given ID on a broker at a time and every install used to offer the
+  // same one — so two MQTTForges pointed at one broker took the link from each other, once a
+  // second, for as long as both were running. Only ever applied to a form nobody has typed into
+  // and that no saved broker has filled.
+  const { data: defaults } = useQuery({
+    queryKey: queryKeys.connectionDefaults,
+    queryFn: getConnectionDefaults,
+    staleTime: Infinity,
+  });
   const { data: profiles } = useQuery({
     queryKey: queryKeys.savedProfiles,
     queryFn: getSavedProfiles,
@@ -333,6 +345,17 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
 
     settle(formFromSaved(saved));
   }, [saved]);
+
+  // ...and if there is nothing saved, the client ID this install suggests. Only over the shipped
+  // stem, so a reader who has typed their own — or a saved broker that filled the box — is never
+  // overwritten by an answer that arrived a beat later.
+  useEffect(() => {
+    if (!defaults?.clientId) return;
+
+    setForm((current) =>
+      current.clientId === DEFAULTS.clientId ? { ...current, clientId: defaults.clientId } : current,
+    );
+  }, [defaults]);
 
   // Where a reader who opened this panel is going to type first. Not over a live link: that
   // panel was opened to read the summary or to end the connection, and a cursor in a box the

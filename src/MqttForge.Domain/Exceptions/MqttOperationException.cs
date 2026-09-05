@@ -38,6 +38,16 @@ public sealed class MessageRejectedException : MqttOperationException
 {
     public MessageRejectedException(string message, Exception? inner = null)
         : base(message, inner) { }
+
+    public MessageRejectedException(
+        string message, IReadOnlyList<string> filters, Exception? inner = null)
+        : base(message, inner) => Filters = filters;
+
+    /// <summary>The topic filters the broker would not have, when this was about subscribing.</summary>
+    // Named rather than left in the message, because a caller has to act on them: the alert
+    // engine stops asking for a filter the broker refused, and it cannot do that by reading a
+    // sentence. Empty for every other rejection — a payload too large names no filter.
+    public IReadOnlyList<string> Filters { get; } = [];
 }
 
 // The colour rules could not be written down. Unlike the connection settings, which are saved

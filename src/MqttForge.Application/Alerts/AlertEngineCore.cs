@@ -610,6 +610,23 @@ public sealed class AlertEngineCore
     /// <summary>
     /// The link is back at the same endpoint. Every clock the outage stopped is pulled to this moment.
     /// </summary>
+    /// <summary>Throws away everything learned from a broker that is no longer the one connected.</summary>
+    // A silence rule is the reason this exists. Its whole judgement is 'nothing has arrived on
+    // this topic for N seconds', and it keeps that per topic — so a console moved from one broker
+    // to another carried every topic it had learned at the first one into the second, where those
+    // topics do not exist and never will. Within N seconds each of them was ringing: alarms about
+    // devices on a broker nobody is watching any more, indistinguishable from a real failure.
+    //
+    // The windows go with it. A ring of readings is a history of one sensor at one broker, and
+    // averaging the new broker's values into the old broker's run is the same mistake more
+    // quietly. Active alarms go too: they were raised about the other broker's world.
+    public void ForgetTopics()
+    {
+        _pairs.Clear();
+        _history.Clear();
+        _readings = 0;
+    }
+
     private void Resume(DateTimeOffset now)
     {
         foreach (var state in _pairs.Values)
@@ -1046,6 +1063,15 @@ public sealed class AlertEngineCore
     private const int MaxFaultReason = 200;
 
     private bool IsFaulted(string ruleId) => _faults.ContainsKey(ruleId);
+
+    /// <summary>Says a rule is not watching, because the broker would not have its filter.</summary>
+    // The panel already draws a faulted rule and its reason, and a rule whose filter the broker
+    // refused is exactly that: it will be sent nothing, so every count on it stands still and a
+    // reader with no line to read concludes the rule is wrong rather than the broker's answer.
+    // It is cleared with the rest of the faults when the rule set is set again — see SetRules.
+    public void MarkFilterRefused(string ruleId, string filter) =>
+        _faults[ruleId] =
+            $"The broker refused this rule's filter '{filter}', so nothing is being watched for it.";
 
     private void Fault(AlertRule rule, string reason) =>
         _faults[rule.Id] = reason.Length <= MaxFaultReason ? reason : reason[..MaxFaultReason];

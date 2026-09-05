@@ -9,6 +9,7 @@ public static class StorePaths
     public const string AlertRulesFileName = "alert-rules.json";
     public const string AlertStateFileName = "alert-state.json";
     public const string ReconnectOptionFileName = "reconnect.json";
+    public const string InstallTokenFileName = "install-token.txt";
 
     public static string ConnectionSettings(IConfiguration config) =>
         config["MqttForge:SettingsPath"]
@@ -54,6 +55,12 @@ public static class StorePaths
     // "attempt 4, next in 16 seconds" would be describing a broker nobody has tried yet.
     public static string ReconnectOption(IConfiguration config) =>
         config["MqttForge:ReconnectOptionPath"] ?? Beside(config, ReconnectOptionFileName);
+
+    /// <summary>Where the token that makes this install's default client ID its own is kept.</summary>
+    // Beside the rest of the settings, so a container with a mounted data directory keeps the
+    // same identity across restarts and two containers with different volumes get different ones.
+    public static string InstallToken(IConfiguration config) =>
+        config["MqttForge:InstallTokenPath"] ?? Beside(config, InstallTokenFileName);
 
     private static string Beside(IConfiguration config, string fileName)
     {

@@ -1318,6 +1318,41 @@ describe('a broker that will not give you everything', () => {
 
 // The section at the foot used to hold eleven brokers somebody else runs. These are the ones the
 // reader kept, which is the whole difference: a list nobody wrote but them.
+// MQTT allows one client of a given ID on a broker at a time, and every install used to suggest
+// the same one — so two MQTTForges on one broker took the link from each other for ever.
+describe('the client ID a fresh form suggests', () => {
+  it('takes the suffix this install keeps', async () => {
+    server.use(
+      http.get('/api/connection/defaults', () =>
+        HttpResponse.json({ clientId: 'mqttforge-console-a7f3' }),
+      ),
+    );
+    renderPanel();
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Client ID')).toHaveValue('mqttforge-console-a7f3'),
+    );
+  });
+
+  // A box the reader has typed into is theirs, whatever answer arrives a beat later.
+  it('leaves a client ID the reader typed alone', async () => {
+    server.use(
+      http.get('/api/connection/defaults', async () => {
+        await delay(50);
+        return HttpResponse.json({ clientId: 'mqttforge-console-a7f3' });
+      }),
+    );
+    renderPanel();
+
+    const box = await screen.findByLabelText('Client ID');
+    await userEvent.clear(box);
+    await userEvent.type(box, 'plant-monitor');
+
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(box).toHaveValue('plant-monitor');
+  });
+});
+
 describe('the brokers you keep', () => {
   const savedProfile = (name: string, over: Record<string, unknown> = {}) => ({
     name,

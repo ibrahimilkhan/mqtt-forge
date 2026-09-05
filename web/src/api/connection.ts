@@ -39,6 +39,13 @@ export const setReconnectEnabled = (enabled: boolean) =>
   request<ReconnectStatus>('/api/connection/reconnect', { method: 'PUT', ...json({ enabled }) });
 
 /** Dials now, whatever the ladder was waiting for. Works with the option off. */
+/**
+ * What a form with nothing in it should suggest — the client ID, carrying this install's own
+ * suffix so two MQTTForges on one broker do not take the link from each other for ever.
+ */
+export const getConnectionDefaults = () =>
+  request<{ clientId: string }>('/api/connection/defaults');
+
 export const reconnectNow = () =>
   request<ReconnectStatus>('/api/connection/reconnect', { method: 'POST' });
 
