@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatBrokerAddress, parseBrokerAddress } from './address';
+import { formatBrokerAddress, formatEndpoint, parseBrokerAddress } from './address';
 
 // What a reader actually has in their hand is one string off a documentation page. These are the
 // shapes those strings come in.
@@ -179,6 +179,21 @@ describe('an address written back out', () => {
 
 // The log line is built out of this too — `Connected mqtt://[::1]:1883 · client` — and it is the
 // one place the brackets are load-bearing for a reader rather than for the parser.
+describe('an endpoint written for a reader', () => {
+  it('leaves an ordinary host alone', () => {
+    expect(formatEndpoint('broker.local', 1883)).toBe('broker.local:1883');
+  });
+
+  it('brackets an IPv6 literal, which is nothing but colons', () => {
+    expect(formatEndpoint('::1', 1883)).toBe('[::1]:1883');
+    expect(formatEndpoint('fe80::1%en0', 8883)).toBe('[fe80::1%en0]:8883');
+  });
+
+  it('does not bracket one that already is', () => {
+    expect(formatEndpoint('[::1]', 1883)).toBe('[::1]:1883');
+  });
+});
+
 describe('an address in a log line', () => {
   it('keeps the port findable beside an IPv6 host', () => {
     expect(`${formatBrokerAddress('mqtt', '::1')}:1883`).toBe('mqtt://[::1]:1883');

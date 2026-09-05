@@ -511,6 +511,7 @@ public sealed class BrokerLinkSupervisor : BackgroundService
     public static bool Declines(BrokerFailureReason? reason) => reason is
         BrokerFailureReason.CredentialsRequired
         or BrokerFailureReason.CredentialsRejected
+        or BrokerFailureReason.AuthenticationMethodUnsupported
         or BrokerFailureReason.Banned
         or BrokerFailureReason.ClientIdRejected
         or BrokerFailureReason.ProtocolVersionUnsupported

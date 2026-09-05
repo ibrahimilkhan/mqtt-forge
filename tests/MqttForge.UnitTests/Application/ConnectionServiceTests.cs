@@ -110,6 +110,71 @@ public class ConnectionServiceTests
         await _manager.Received(1).ConnectAsync(Arg.Any<BrokerConnectionSettings>(), Arg.Any<CancellationToken>());
     }
 
+    // One link, one dial. Two consoles pressing Connect in the same second used to send two
+    // CONNECTs at the broker, and the second tore down the link the first had just made.
+    [Fact]
+    public async Task Two_dials_at_once_reach_the_broker_one_after_the_other()
+    {
+        var inFlight = 0;
+        var overlapped = false;
+        var release = new TaskCompletionSource();
+
+        _manager.ConnectAsync(Arg.Any<BrokerConnectionSettings>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                if (Interlocked.Increment(ref inFlight) > 1) overlapped = true;
+                await release.Task;
+                Interlocked.Decrement(ref inFlight);
+            });
+
+        var sut = CreateSut();
+        var first = sut.ConnectAsync(_settings with { ClientId = "one" }, CancellationToken.None);
+        var second = sut.ConnectAsync(_settings with { ClientId = "two" }, CancellationToken.None);
+
+        release.SetResult();
+        await Task.WhenAll(
+            Record.ExceptionAsync(() => first),
+            Record.ExceptionAsync(() => second));
+
+        Assert.False(overlapped, "the two dials overlapped at the broker");
+        await _manager.Received(2).ConnectAsync(Arg.Any<BrokerConnectionSettings>(), Arg.Any<CancellationToken>());
+    }
+
+    // A person dialling supersedes whatever was in flight — most of all the supervisor's redial
+    // of a broker they are walking away from.
+    [Fact]
+    public async Task A_readers_dial_calls_off_the_one_already_running()
+    {
+        var started = new TaskCompletionSource();
+        CancellationToken redialToken = default;
+        var calls = 0;
+
+        _manager.ConnectAsync(Arg.Any<BrokerConnectionSettings>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                var token = call.Arg<CancellationToken>();
+
+                if (Interlocked.Increment(ref calls) == 1)
+                {
+                    redialToken = token;
+                    started.TrySetResult();
+                    await Task.Delay(Timeout.Infinite, token);
+                }
+            });
+
+        var sut = CreateSut();
+        var redial = sut.ConnectAsync(_settings, CancellationToken.None, ConnectOrigin.Supervisor);
+        await started.Task;
+
+        // The reader dials somewhere else, and the redial gives way rather than being queued behind.
+        await sut.ConnectAsync(_settings with { Port = 8883 }, CancellationToken.None);
+
+        await Record.ExceptionAsync(() => redial);
+
+        Assert.True(redialToken.IsCancellationRequested, "the redial should have been called off");
+        Assert.Equal(2, calls);
+    }
+
     [Fact]
     public async Task ConnectAsync_connects_via_manager()
     {

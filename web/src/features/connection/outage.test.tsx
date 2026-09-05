@@ -356,8 +356,12 @@ describe('a link that drops while the reader is elsewhere', () => {
     expect(await screen.findByText(/^Link dropped/)).toBeInTheDocument();
     expect(await screen.findByText('Try 1 failed')).toBeInTheDocument();
 
+    // The tries count up in one line rather than filing a new one each: a broker down overnight
+    // would otherwise push the drop they are all about off the end of the list.
     await supervising({ active: true, attempt: 2, nextAttemptAt: '2026-09-02T21:00:12.000Z' });
-    expect(await screen.findByText('Try 2 failed')).toBeInTheDocument();
+    expect(await screen.findByText('2 tries failed')).toBeInTheDocument();
+    expect(screen.queryByText('Try 1 failed')).not.toBeInTheDocument();
+    expect(screen.getByText(/^Link dropped/)).toBeInTheDocument();
 
     await says('Connected');
     expect(await screen.findByText(/^Link back/)).toBeInTheDocument();

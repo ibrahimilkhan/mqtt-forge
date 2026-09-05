@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { formatEndpoint } from './address';
 import { useEffect, useState } from 'react';
 import { reconnectNow, stopReconnecting } from '../../api/connection';
 import { queryKeys } from '../../api/queryKeys';
@@ -104,7 +105,7 @@ export function ReconnectNotice() {
   const blocking = watch.latest ?? failure ?? watch.failure ?? undefined;
   const now = face === 'back' ? broke : blocking;
   const why = now ? describeFailureReason(now.reason, now) : undefined;
-  const where = now ? `${now.host}:${now.port}` : undefined;
+  const where = now ? formatEndpoint(now.host, now.port) : undefined;
   const brokeWhy = broke ? describeFailureReason(broke.reason, broke) : undefined;
 
   return (

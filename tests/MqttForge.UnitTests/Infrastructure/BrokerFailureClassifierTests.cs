@@ -127,7 +127,7 @@ public class BrokerFailureClassifierTests
     [Theory]
     [InlineData(MqttClientConnectResultCode.BadUserNameOrPassword, BrokerFailureReason.CredentialsRejected)]
     [InlineData(MqttClientConnectResultCode.NotAuthorized, BrokerFailureReason.CredentialsRejected)]
-    [InlineData(MqttClientConnectResultCode.BadAuthenticationMethod, BrokerFailureReason.CredentialsRejected)]
+    [InlineData(MqttClientConnectResultCode.BadAuthenticationMethod, BrokerFailureReason.AuthenticationMethodUnsupported)]
     [InlineData(MqttClientConnectResultCode.Banned, BrokerFailureReason.Banned)]
     [InlineData(MqttClientConnectResultCode.ClientIdentifierNotValid, BrokerFailureReason.ClientIdRejected)]
     [InlineData(MqttClientConnectResultCode.ServerUnavailable, BrokerFailureReason.BrokerBusy)]
@@ -203,7 +203,7 @@ public class BrokerFailureClassifierTests
     [InlineData(MqttClientDisconnectReason.TopicFilterInvalid, BrokerFailureReason.FilterRefused)]
     // On a CONNACK this is genuinely about identity; on a live link it is still the one
     // disconnect reason that is, so it keeps its wording.
-    [InlineData(MqttClientDisconnectReason.BadAuthenticationMethod, BrokerFailureReason.CredentialsRejected)]
+    [InlineData(MqttClientDisconnectReason.BadAuthenticationMethod, BrokerFailureReason.AuthenticationMethodUnsupported)]
     [InlineData(MqttClientDisconnectReason.ServerBusy, BrokerFailureReason.BrokerBusy)]
     [InlineData(MqttClientDisconnectReason.MessageRateTooHigh, BrokerFailureReason.BrokerBusy)]
     [InlineData(MqttClientDisconnectReason.KeepAliveTimeout, BrokerFailureReason.Timeout)]

@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { formatEndpoint } from './address';
 import type { ReactNode } from 'react';
 import { queryKeys } from '../../api/queryKeys';
 import { getSubscriptions } from '../../api/subscriptions';
@@ -51,7 +52,7 @@ export function ConnectionSummary({ lead = false }: { lead?: boolean } = {}) {
         <span className={styles.lamp} aria-hidden="true" />
         Connected
       </p>
-      <p className={styles.linkWhere}>{`${link.host}:${link.port}`}</p>
+      <p className={styles.linkWhere}>{formatEndpoint(link.host, link.port)}</p>
     </div>
   );
 
@@ -63,7 +64,7 @@ export function ConnectionSummary({ lead = false }: { lead?: boolean } = {}) {
         data-lead={lead ? '' : undefined}
         aria-label="Connection details"
       >
-        {!lead && <Row label="Broker" value={`${link.host}:${link.port}`} />}
+        {!lead && <Row label="Broker" value={formatEndpoint(link.host, link.port)} />}
         {/* How, and in what. Both are answers rather than settings: with the version left on Auto
             the form holds a request and this holds what the broker agreed to, which is the only
             place that difference is visible. The scheme says the transport and the encryption in

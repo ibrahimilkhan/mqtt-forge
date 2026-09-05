@@ -1,4 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
+import { formatEndpoint } from './address';
 import { useEffect, useRef } from 'react';
 import { queryKeys } from '../../api/queryKeys';
 import { useConnectionState } from '../../api/useConnectionState';
@@ -86,7 +87,7 @@ export function useLinkWatch() {
       treeAtDrop.current = useTopicTreeStore.getState().generation;
       events.push({
         kind: 'fault',
-        what: failure ? `Link dropped · ${failure.host}:${failure.port}` : 'Link dropped',
+        what: failure ? `Link dropped · ${formatEndpoint(failure.host, failure.port)}` : 'Link dropped',
       });
     }
 
@@ -125,7 +126,7 @@ export function useLinkWatch() {
   useEffect(() => {
     if (!answered || state !== 'Connected' || !link) return;
 
-    const endpoint = `${link.host}:${link.port}`;
+    const endpoint = formatEndpoint(link.host, link.port);
     const tree = useTopicTreeStore.getState();
     const held = linkAt.current;
 
@@ -177,9 +178,14 @@ export function useLinkWatch() {
     // One line per try, not one per render: two announcements landing in one render batch
     // skipped a number, and a record reading 1, 2, 4 looks like a try that was never made.
     if (status.attempt > before && state === 'Faulted') {
-      for (let n = before + 1; n <= status.attempt; n++) {
-        useBrokerEventsStore.getState().push({ kind: 'fault', what: `Try ${n} failed` });
-      }
+      // One line for the run of tries, counting up in place — see BrokerEvent.key. A rung every
+      // thirty seconds is a hundred and twenty lines an hour, and the drop they are all about
+      // would be off the end of the list by the time anybody looked.
+      useBrokerEventsStore.getState().push({
+        kind: 'fault',
+        key: 'reconnect-tries',
+        what: status.attempt === 1 ? 'Try 1 failed' : `${status.attempt} tries failed`,
+      });
     }
   }, [status.attempt, statusAnswered, state]);
 

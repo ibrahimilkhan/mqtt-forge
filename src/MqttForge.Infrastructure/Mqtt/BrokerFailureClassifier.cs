@@ -93,7 +93,10 @@ public static class BrokerFailureClassifier
             or MqttClientConnectResultCode.NotAuthorized =>
             credentialsSupplied ? BrokerFailureReason.CredentialsRejected : BrokerFailureReason.CredentialsRequired,
 
-        MqttClientConnectResultCode.BadAuthenticationMethod => BrokerFailureReason.CredentialsRejected,
+        // Not a password problem: the broker is asking for an authentication method rather than
+        // refusing the credentials it was given.
+        MqttClientConnectResultCode.BadAuthenticationMethod =>
+            BrokerFailureReason.AuthenticationMethodUnsupported,
         MqttClientConnectResultCode.Banned => BrokerFailureReason.Banned,
         MqttClientConnectResultCode.ClientIdentifierNotValid => BrokerFailureReason.ClientIdRejected,
         MqttClientConnectResultCode.UnsupportedProtocolVersion => BrokerFailureReason.ProtocolVersionUnsupported,
@@ -152,8 +155,10 @@ public static class BrokerFailureClassifier
             MqttClientDisconnectReason.TopicFilterInvalid => BrokerFailureReason.FilterRefused,
 
             // The exception: a broker can only object to how we authenticated if authentication
-            // is what we were doing, so this one is about identity wherever it arrives.
-            MqttClientDisconnectReason.BadAuthenticationMethod => BrokerFailureReason.CredentialsRejected,
+            // is what we were doing, so this one is about identity wherever it arrives — and it
+            // is about the method rather than the secret, which is a different thing to go and fix.
+            MqttClientDisconnectReason.BadAuthenticationMethod =>
+                BrokerFailureReason.AuthenticationMethodUnsupported,
 
             MqttClientDisconnectReason.ServerBusy
                 or MqttClientDisconnectReason.ConnectionRateExceeded

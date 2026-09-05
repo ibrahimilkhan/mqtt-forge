@@ -152,6 +152,21 @@ function splitPort(authority: string): { host: string; port?: number } {
  * An empty host leaves the scheme standing alone — `mqtts://` — which is what a cloud preset
  * puts in the box, the port and the path being filled in and the address being yours.
  */
+/**
+ * A host and a port, written the way an address is: `host:1883`, `[::1]:1883`.
+ *
+ * An IPv6 literal is nothing but colons, so `::1:1883` cannot be read back and does not even
+ * look like an address with a port on it. Every place that named a broker built this string by
+ * hand — the summary, the rail, the notice, the events, the name a saved broker defaults to —
+ * and every one of them got IPv6 wrong. One function, so they cannot disagree again.
+ */
+export function formatEndpoint(host: string, port: number | string): string {
+  const trimmed = String(host).trim();
+  const bracketed = trimmed.includes(':') && !trimmed.startsWith('[');
+
+  return `${bracketed ? `[${trimmed}]` : trimmed}:${port}`;
+}
+
 export function formatBrokerAddress(scheme: Scheme, host: string): string {
   const trimmed = host.trim();
   if (trimmed === '') return `${scheme}://`;

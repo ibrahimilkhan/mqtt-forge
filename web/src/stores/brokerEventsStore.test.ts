@@ -49,6 +49,32 @@ describe('the broker events', () => {
     ]);
   });
 
+  // The ladder's tries: one line that counts up, so the drop they are about stays on screen.
+  it('a keyed line replaces the one it supersedes while that one is newest', () => {
+    useBrokerEventsStore.getState().push({ kind: 'fault', what: 'Link dropped' });
+    useBrokerEventsStore.getState().push({ kind: 'fault', key: 'tries', what: 'Try 1 failed' });
+    useBrokerEventsStore.getState().push({ kind: 'fault', key: 'tries', what: '2 tries failed' });
+    useBrokerEventsStore.getState().push({ kind: 'fault', key: 'tries', what: '3 tries failed' });
+
+    expect(useBrokerEventsStore.getState().events.map((e) => e.what)).toEqual([
+      '3 tries failed',
+      'Link dropped',
+    ]);
+  });
+
+  // ...and once anything else has happened, the old line is part of the story and stays.
+  it('a keyed line that is no longer newest is left where it is', () => {
+    useBrokerEventsStore.getState().push({ kind: 'fault', key: 'tries', what: '4 tries failed' });
+    useBrokerEventsStore.getState().push({ kind: 'ok', what: 'Link back' });
+    useBrokerEventsStore.getState().push({ kind: 'fault', key: 'tries', what: 'Try 1 failed' });
+
+    expect(useBrokerEventsStore.getState().events.map((e) => e.what)).toEqual([
+      'Try 1 failed',
+      'Link back',
+      '4 tries failed',
+    ]);
+  });
+
   it('are not written by traffic', () => {
     useLogStore.getState().push({ kind: 'recv', topic: 'plant/boiler/temp', body: '91' });
 

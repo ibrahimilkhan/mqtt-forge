@@ -24,6 +24,14 @@ public sealed class ConnectionService
     // disposed source throws, so the field has to be cleared and disposed as one step.
     private readonly Lock _attemptLock = new();
 
+    /// <summary>One dial at a time, whoever asked for it.</summary>
+    // There is one link, so there is one dial. Two consoles pressing Connect in the same second —
+    // the desktop window and the phone the QR code opened — sent two CONNECTs at one broker, and
+    // the second tore down the link the first had just made: the tree replayed twice, the
+    // subscriptions of whichever lost the race were gone, and the lamp went green, amber, green.
+    // The gate makes the second wait for the first to finish rather than run through it.
+    private readonly SemaphoreSlim _dialGate = new(1, 1);
+
     // The attempt currently running, or null when nothing is in flight
     private CancellationTokenSource? _attempt;
 
@@ -79,7 +87,21 @@ public sealed class ConnectionService
         // Ours, not the caller's: an abort has to reach the attempt from a different request,
         // which has no hold on this one's token.
         var attempt = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        lock (_attemptLock) _attempt = attempt;
+
+        CancellationTokenSource? standing;
+        lock (_attemptLock)
+        {
+            standing = _attempt;
+            _attempt = attempt;
+        }
+
+        // A person dialling supersedes whatever was in flight — another console's Connect, or the
+        // supervisor's redial of a broker they are walking away from. Waiting behind a 20-second
+        // redial for a broker they no longer want is the console ignoring them; and the supervisor
+        // is the one caller that must never do this, because its whole job is to give way.
+        if (origin == ConnectOrigin.Reader) standing?.Cancel();
+
+        await _dialGate.WaitAsync(ct);
 
         try
         {
@@ -95,9 +117,13 @@ public sealed class ConnectionService
         }
         finally
         {
+            _dialGate.Release();
+
             lock (_attemptLock)
             {
-                _attempt = null;
+                // Only if it is still ours. A dial that superseded this one has already written
+                // itself here, and clearing the field would leave that one unabortable.
+                if (ReferenceEquals(_attempt, attempt)) _attempt = null;
                 attempt.Dispose();
             }
         }

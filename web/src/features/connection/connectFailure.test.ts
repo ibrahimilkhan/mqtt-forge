@@ -137,7 +137,8 @@ describe('every reason the backend can send', () => {
   const REASONS = [
     'banned', 'blockedLocally', 'brokerBusy', 'brokerClosed', 'brokerRejected',
     'brokerShuttingDown', 'certificateFileUnreadable', 'clientCertificateRejected',
-    'clientCertificateRequired', 'clientIdRejected', 'connectionLost', 'credentialsRejected',
+    'authenticationMethodUnsupported', 'clientCertificateRequired', 'clientIdRejected',
+    'connectionLost', 'credentialsRejected',
     'credentialsRequired', 'filterRefused', 'hostNotFound', 'nameLookupFailed', 'noMqttResponse',
     'noSupportedProtocolVersion', 'notPermitted', 'protocolVersionUnsupported', 'refused',
     'kicked', 'sessionTakenOver', 'timeout', 'tlsCertExpired', 'tlsCertNameMismatch',
@@ -155,9 +156,25 @@ describe('every reason the backend can send', () => {
 
   // Kept in step with BrokerFailureReason.cs by hand, so the count is the thing that catches a
   // reason added on one side and not the other.
-  it('covers all thirty-two of them', () => {
-    expect(REASONS).toHaveLength(32);
-    expect(new Set(REASONS).size).toBe(32);
+  // An IPv6 literal is nothing but colons, so a sentence that wrote it bare gave an address
+  // nobody could read back: `::1:1883` is not `[::1]:1883`.
+  it('brackets an IPv6 literal wherever it names an endpoint', () => {
+    const six = { ...FORM, host: '::1', port: 1883 };
+
+    expect(describeFailureReason('refused', six)).toContain('[::1]:1883');
+    expect(describeFailureReason('timeout', six)).toContain('[::1]:1883');
+    expect(describeFailureReason('refused', six)).not.toMatch(/[^[]::1:1883/);
+  });
+
+  it('leaves an ordinary hostname unbracketed', () => {
+    expect(describeFailureReason('refused', { ...FORM, host: 'broker.local', port: 1883 })).toContain(
+      'broker.local:1883',
+    );
+  });
+
+  it('covers all thirty-three of them', () => {
+    expect(REASONS).toHaveLength(33);
+    expect(new Set(REASONS).size).toBe(33);
   });
 });
 

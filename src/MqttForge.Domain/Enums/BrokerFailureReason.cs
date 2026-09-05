@@ -44,6 +44,13 @@ public enum BrokerFailureReason
     // A broker answered, and said no
     CredentialsRequired,
     CredentialsRejected,
+
+    /// <summary>The broker wants an MQTT 5 authentication method rather than a password.</summary>
+    // Its own reason because the fix is not a password. A broker answering BadAuthenticationMethod
+    // is asking for an AUTH exchange — SCRAM, a cloud's own scheme — that this console does not
+    // speak, and a reader told their password was rejected goes and changes a password that was
+    // right. Nothing they can type in this panel will connect them.
+    AuthenticationMethodUnsupported,
     Banned,
     ClientIdRejected,
     BrokerBusy,

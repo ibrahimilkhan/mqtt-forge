@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
+import { formatEndpoint } from './features/connection/address';
 import styles from './App.module.css';
 import { AppearancePanel } from './features/appearance/AppearancePanel';
 import { Mark, Wordmark } from './features/brand/marks';
@@ -130,7 +131,7 @@ export function App({ hub }: { hub: Hub }) {
   // The live link names it while there is one; a failure names it while there is not. Without the
   // second, the row loses the address at the exact moment a reader wants to know which broker has
   // gone — see BrokerFailure, which carries the endpoint for this reason.
-  const pointedAt = where ?? (failure ? `${failure.host}:${failure.port}` : undefined);
+  const pointedAt = where ?? (failure ? formatEndpoint(failure.host, failure.port) : undefined);
   const hubStatus = useHubStatusStore((s) => s.status);
   const zoomed = useZoomStore((s) => s.zoomed);
   const zoomBox = useZoomStore((s) => s.box);

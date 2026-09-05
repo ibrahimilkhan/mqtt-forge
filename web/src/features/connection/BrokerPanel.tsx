@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { formatEndpoint } from './address';
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { MqttTransport, SavedProfile } from '../../types/api';
 import {
@@ -556,7 +557,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
             <button
               type="button"
               className={`ghost ${styles.iconButton}`}
-              onClick={() => setNaming(from ?? `${form.host}:${form.port}`)}
+              onClick={() => setNaming(from ?? formatEndpoint(form.host, form.port))}
             >
               <Save />
               Save
@@ -986,7 +987,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
           <button
             type="button"
             className={`ghost ${styles.iconButton}`}
-            onClick={() => setNaming(from ?? `${form.host}:${form.port}`)}
+            onClick={() => setNaming(from ?? formatEndpoint(form.host, form.port))}
           >
             <Save />
             Save
