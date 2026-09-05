@@ -502,6 +502,31 @@ public class BrokerLinkSupervisorTests
         Assert.True(sut.Status.Active);
     }
 
+    // The other half of the hurry-up: with no outage on, a failed dial is a failed dial. A reader
+    // who hung up and then mistyped a port used to be answered by a ladder dialling the broker
+    // they had just left — the saved settings — and the rail went green on it.
+    [Fact]
+    public async Task A_failed_dial_after_a_hand_disconnect_starts_no_ladder()
+    {
+        var sut = await WantedAsync();
+
+        // The hang-up. The outage, if any, is over and nothing is being worked on.
+        _manager.State.Returns(ConnectionState.Disconnected);
+        await PollAsync(sut);
+
+        // ...and then a mistyped port, refused where it was aimed.
+        var mistyped = Saved with { Port = 21999 };
+        await Record.ExceptionAsync(() => Service.ConnectAsync(mistyped, CancellationToken.None));
+        _manager.State.Returns(ConnectionState.Faulted);
+        _manager.Failure.Returns(Failure(BrokerFailureReason.Refused) with { Port = 21999 });
+        _attempts.Clear();
+
+        await PollAsync(sut, seconds: 60);
+
+        Assert.Empty(_attempts);
+        Assert.False(sut.Status.Active);
+    }
+
     // ...and a reader's dial that works is a link worth keeping up, exactly as before.
     [Fact]
     public async Task A_readers_dial_that_works_is_kept_up()

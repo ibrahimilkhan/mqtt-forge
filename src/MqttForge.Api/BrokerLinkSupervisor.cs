@@ -247,13 +247,19 @@ public sealed class BrokerLinkSupervisor : BackgroundService
         {
             _readerDialsSeen = dials;
 
-            // Unless the dial was at the very broker that is down. That is not leaving, it is a
-            // reader trying to hurry the ladder — and a ladder that stood down because they
-            // pressed Connect on the broker it was already climbing for left them with 'nothing
-            // is being tried' after they had just tried. Measured. The ladder keeps its place and
-            // its schedule; their attempt was one more rung, made by hand.
+            // Unless the dial was at the very broker of an outage this class is already working
+            // on. That is not leaving, it is a reader trying to hurry the ladder — and a ladder
+            // that stood down because they pressed Connect on the broker it was already climbing
+            // for left them with 'nothing is being tried' after they had just tried.
+            //
+            // `_since` is what makes it *an outage* rather than any fault at that address, and
+            // without it this exception swallowed every failed dial there is: a dial that fails
+            // leaves the fault standing at the endpoint it was aimed at, so the endpoints always
+            // matched. A reader who hung up and then mistyped a port was answered by a ladder
+            // that dialled the broker they had just left, and the rail went green on it.
             var failure = _connection.CurrentFailure;
-            var atTheOutage = failure is not null
+            var atTheOutage = _since is not null
+                && failure is not null
                 && _connection.LastReaderEndpoint == $"{failure.Host}:{failure.Port}";
 
             if (!atTheOutage)

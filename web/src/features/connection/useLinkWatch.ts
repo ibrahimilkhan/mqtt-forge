@@ -1,4 +1,6 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
+import { queryKeys } from '../../api/queryKeys';
 import { useConnectionState } from '../../api/useConnectionState';
 import { useReconnectStatus } from '../../api/useReconnectStatus';
 import { useBrokerEventsStore } from '../../stores/brokerEventsStore';
@@ -22,6 +24,7 @@ import type { ConnectionState } from '../../types/api';
 export function useLinkWatch() {
   const { state, failure, link, answered } = useConnectionState();
   const { status, answered: statusAnswered } = useReconnectStatus();
+  const queryClient = useQueryClient();
 
   // What was last seen, so that a transition can be told from a repeat. Undefined until the
   // API has answered once: a console reloaded over a broken link is looking at a drop that
@@ -40,6 +43,21 @@ export function useLinkWatch() {
    * longer holds is wrong in the one thing it is for.
    */
   const treeAtDrop = useRef<number | null>(null);
+
+  /**
+   * The broker the console last saw itself connected to, and the tree's generation at the time.
+   *
+   * One server holds one link, and more than one console can be looking at it — the desktop
+   * window and the phone the QR code opened, most often. When one of them moves the link to
+   * another broker, the others are simply told 'Connected' to somewhere else: their tree kept
+   * every topic of the broker that is gone and merged the new one's retained messages into it,
+   * under a root relabelled with the new address. A monitor showing one broker's readings under
+   * another broker's name is wrong in the way that matters most.
+   *
+   * The generation says whether this console's own Connect already started the tree again, so a
+   * link the reader moved themselves is not reset twice — see the recovery above.
+   */
+  const linkAt = useRef<{ endpoint: string; generation: number } | null>(null);
 
   useEffect(() => {
     // Before the API has answered, `state` is the standing-in Disconnected rather than an
@@ -87,12 +105,45 @@ export function useLinkWatch() {
       if (treeAtDrop.current === tree.generation) tree.reset();
       treeAtDrop.current = null;
 
+      // What the link came back listening to, asked again rather than assumed. The supervisor
+      // puts the console's filters back, and a broker can refuse them on the way — a tightened
+      // ACL is the ordinary way — in which case the panel's Filters chips and the summary's
+      // Subscriptions row were left showing what this console asked for rather than what it has.
+      // A reader looking at a green link and a quiet tree deserves to see the count that explains
+      // it. The reader's own Connect invalidates the same key; a redial had nobody to do it.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.subscriptions });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.connection });
+
       events.push({
         kind: 'ok',
         what: `Link back · gone for ${away(dropped)}`,
       });
     }
-  }, [state, failure, link, answered]);
+  }, [state, failure, link, answered, queryClient]);
+
+  // The link moved to another broker, by a hand that is not this console's.
+  useEffect(() => {
+    if (!answered || state !== 'Connected' || !link) return;
+
+    const endpoint = `${link.host}:${link.port}`;
+    const tree = useTopicTreeStore.getState();
+    const held = linkAt.current;
+
+    if (held && held.endpoint !== endpoint) {
+      // Nobody has started the tree again since this console last saw the old link, so the
+      // topics under it are the old broker's and this console is the one to clear them.
+      if (held.generation === tree.generation) {
+        tree.reset();
+        useBrokerEventsStore.getState().push({
+          kind: 'note',
+          what: `Link moved · ${endpoint}`,
+          detail: `Another console pointed this server at ${endpoint}; the topics of ${held.endpoint} are gone.`,
+        });
+      }
+    }
+
+    linkAt.current = { endpoint, generation: useTopicTreeStore.getState().generation };
+  }, [answered, state, link]);
 
   // The link is down with an outage the server is working on — or has stopped working on, which
   // is still an outage — and this console holds no record of it. It did not see it begin; the

@@ -108,6 +108,19 @@ describe('a link that drops while the reader is elsewhere', () => {
       });
     };
 
+    /** The other console pointing the one server at a different broker. */
+    const movesTo = async (host: string, port: number) => {
+      link = {
+        state: 'Connected',
+        failure: null,
+        connection: { ...CONNECTION, host, port },
+      };
+
+      await act(async () => {
+        hub.emit('connectionStateChanged', link);
+      });
+    };
+
     /** And what is being done about it. */
     const supervising = async (over: Partial<ReconnectStatus>) => {
       supervisor = { ...supervisor, ...over };
@@ -117,7 +130,7 @@ describe('a link that drops while the reader is elsewhere', () => {
       });
     };
 
-    return { ...view, says, supervising };
+    return { ...view, says, movesTo, supervising };
   }
 
   /** Somewhere that is not the Broker panel, which is where the reader has to be for any of this. */
@@ -397,6 +410,44 @@ describe('a link that drops while the reader is elsewhere', () => {
     await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Connected'));
 
     expect(useTopicTreeStore.getState().generation).toBe(after);
+  });
+
+  // One server, one link, and more than one console looking at it. When the other console moves
+  // the link, this one's tree is the old broker's and has to say so by going.
+  it('clears the tree when another console moves the link to a different broker', async () => {
+    const { says, movesTo } = renderApp();
+    await says('Connected');
+    await goElsewhere();
+
+    act(() => {
+      useTopicTreeStore.getState().apply([
+        {
+          topic: 'lab/oven',
+          payload: '210',
+          mode: 'text',
+          size: 3,
+          qos: 0,
+          retain: true,
+          receivedAt: '2026-09-02T21:00:00.000Z',
+        },
+      ]);
+    });
+    expect(useTopicTreeStore.getState().root.children.size).toBe(1);
+
+    await movesTo('other.broker', 8883);
+
+    await waitFor(() => expect(useTopicTreeStore.getState().root.children.size).toBe(0));
+  });
+
+  it('leaves the tree alone while the link stays on the same broker', async () => {
+    const { says } = renderApp();
+    await says('Connected');
+    await goElsewhere();
+    const before = useTopicTreeStore.getState().generation;
+
+    await says('Connected');
+
+    expect(useTopicTreeStore.getState().generation).toBe(before);
   });
 
   // A console that opens in the middle of an outage: the server says when it began and how many
