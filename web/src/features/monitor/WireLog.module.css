@@ -333,7 +333,11 @@ button.history:focus-visible { outline: 2px solid var(--signal); outline-offset:
 .tools {
   display: flex;
   align-items: center;
-  gap: 6px;
+  /* Right-aligned, because shut it is two marks and a word rather than a strip: at the reading
+     edge they would read as the head of the list under them, and they are not — they are what
+     is done to it. The box, when it is opened, grows leftward into the room they leave. */
+  justify-content: flex-end;
+  gap: 4px;
   margin-bottom: 8px;
 }
 /* The same chip as 'show all' on a row and 'Copy' on the events card: quiet, small, and plainly

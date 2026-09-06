@@ -659,7 +659,8 @@
   min-width: 0;
 }
 /* Same chip as the wire log's 'show all': small, quiet, and plainly a control rather than one of
-   the form's own buttons — this card is a record, and nothing on it sends anything anywhere. */
+   the form's own buttons — this card is a record, and nothing on it sends anything anywhere.
+   A mark on its own is drawn to the marks' own square; a word in one keeps the chip's padding. */
 .eventsAction {
   all: unset;
   display: inline-flex;
@@ -676,6 +677,9 @@
   color: var(--muted);
 }
 .eventsAction:hover:not(:disabled) { color: var(--ink); border-color: var(--muted); }
+/* It has just done what it was asked, and the mark changed to say so. */
+.eventsAction[data-said='yes'] { color: var(--live); border-color: var(--live); }
+.eventsAction[data-said='failed'] { color: var(--fault); border-color: var(--fault); }
 .eventsAction:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 .eventsAction:disabled { opacity: 0.45; cursor: default; }
 .eventsEmpty {

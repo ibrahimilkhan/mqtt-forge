@@ -21,21 +21,26 @@
   flex: 0 0 auto;
   color: var(--muted);
 }
-.input {
+/* Written against the box as well as itself, to outrank the console's own rule for every input
+   that is not a checkbox or a radio — which is an `:not()` of attribute selectors and beats a
+   bare class. What it has to overrule is the padding: these boxes open into a head band and have
+   to fit it, where a field in a form has room to breathe. */
+.box .input {
   flex: 1 1 auto;
   min-width: 0;
   /* Its own box is the row above; this is only the text in it. */
   border: 0;
   background: none;
-  padding: 4px 0;
+  padding: 1px 0;
   font-family: var(--mono);
   font-size: var(--t-small);
+  line-height: 1.3;
   color: var(--ink);
 }
-.input:focus { outline: none; }
+.box .input:focus { outline: none; }
 /* The browser's own cross would stand beside ours, and only in some browsers. */
-.input::-webkit-search-cancel-button,
-.input::-webkit-search-decoration {
+.box .input::-webkit-search-cancel-button,
+.box .input::-webkit-search-decoration {
   appearance: none;
 }
 .clear {
@@ -50,18 +55,59 @@
 .clear:hover { color: var(--ink); }
 .clear:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
-/* Where the search looks. Beside the box, in the same small mono as everything in these strips,
-   and narrow: it holds one of three short words. */
-.where {
-  flex: 0 0 auto;
-  min-width: 0;
-  width: auto;
-  padding: 3px 4px;
-  background: var(--paper);
+/* ---- the marks that open a search and choose where it looks ----
+
+   The size of every other mark in the row they stand in — the tree's expand and collapse, the
+   pause on a row — because that is the row they stand in, and a control drawn to its own size
+   there would read as belonging to something else. */
+.opener {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  cursor: pointer;
+  border-radius: var(--r-control);
+  color: var(--muted);
+  font-size: var(--t-small);
+}
+.opener:hover { color: var(--ink); background: var(--paper); }
+.opener[aria-expanded='true'] { color: var(--ink); background: var(--paper); }
+.opener:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+.menuWrap { position: relative; display: inline-flex; }
+
+/* Three answers, under the mark that asks. Out of the flow, so opening it moves nothing: the row
+   it hangs off is a row of a tree, and a menu that pushed the topics down would be a menu that
+   moved the thing the reader was about to click. */
+.menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  min-width: 7rem;
+  padding: 3px;
+  background: var(--surface);
   border: 1px solid var(--rule);
+  border-radius: var(--r-plate);
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--ink) 14%, transparent);
+}
+.choice {
+  all: unset;
+  cursor: pointer;
+  padding: 4px 8px;
   border-radius: var(--r-control);
   font-family: var(--mono);
-  font-size: var(--t-micro);
+  font-size: var(--t-small);
   color: var(--muted);
 }
-.where:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+.choice:hover { color: var(--ink); background: var(--paper); }
+.choice[aria-checked='true'] { color: var(--ink); }
+/* The one that is chosen wears the mark this console uses for a chosen thing everywhere else. */
+.choice[aria-checked='true']::before { content: '· '; }
+.choice[aria-checked='false']::before { content: '  '; }
+.choice:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }

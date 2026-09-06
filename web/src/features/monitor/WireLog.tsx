@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
-import { SearchBox } from '../../components/SearchBox';
-import { WhereSelect } from '../../components/WhereSelect';
+import { SearchBox, SearchOpener } from '../../components/SearchBox';
+import { WhereMenu } from '../../components/WhereMenu';
 import type { ColourRule } from '../../lib/topicColour';
 import { useRuleLookup } from '../../lib/useRuleLookup';
 import { clearTraffic } from '../../stores/clearTraffic';
@@ -93,15 +93,36 @@ export function WireLog() {
 function LogTools() {
   const { look, where } = useSearchStore((state) => state.log);
   const setLog = useSearchStore((state) => state.setLog);
+  const [open, setOpen] = useState(false);
 
   return (
     <div className={styles.tools}>
-      <SearchBox label="Search the log" value={look} onChange={(next) => setLog({ look: next })} />
-      <WhereSelect
-        label="Search the log in"
-        value={where}
-        onChange={(next) => setLog({ where: next })}
+      {/* The box grows into the room the marks leave, and only once it has been asked for. */}
+      {open && (
+        <SearchBox
+          label="Search the log"
+          value={look}
+          onChange={(next) => setLog({ look: next })}
+          focused
+        />
+      )}
+      <SearchOpener
+        label="Find in the log"
+        open={open}
+        onToggle={() => {
+          // Closing lets the search go: a hidden box that went on narrowing the pane would be a
+          // pane holding rows back with nothing on screen to say why.
+          if (open) setLog({ look: '' });
+          setOpen((shown) => !shown);
+        }}
       />
+      {open && (
+        <WhereMenu
+          label="Where to look in the log"
+          value={where}
+          onChange={(next) => setLog({ where: next })}
+        />
+      )}
       <button
         type="button"
         className={styles.tool}

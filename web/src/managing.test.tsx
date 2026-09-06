@@ -146,6 +146,13 @@ const pauseOn = (topic: string) =>
 
 const logRows = () => screen.queryAllByTestId('entry');
 
+/** Every search in the console is behind a mark, and so is where it looks. */
+const openFind = (label: string) => userEvent.click(screen.getByRole('button', { name: label }));
+const lookIn = async (which: RegExp, option: string) => {
+  await userEvent.click(screen.getByRole('button', { name: which }));
+  await userEvent.click(screen.getByRole('menuitemradio', { name: option }));
+};
+
 // A plant: two branches, a topic that is quiet, and one carrying words rather than numbers.
 const PLANT: Array<[string, string, boolean?]> = [
   ['plant/boiler/temp', '81'],
@@ -161,6 +168,7 @@ describe('finding one topic among many', () => {
     const { send } = await openConsole();
     send(...PLANT);
 
+    await openFind('Find a topic');
     await userEvent.type(screen.getByLabelText('Search the topics'), 'boiler');
 
     expect(topics()).toEqual([
@@ -179,8 +187,9 @@ describe('finding one topic among many', () => {
     const { send } = await openConsole();
     send(...PLANT);
 
+    await openFind('Find a topic');
     await userEvent.type(screen.getByLabelText('Search the topics'), 'fault');
-    await userEvent.selectOptions(screen.getByLabelText('Search the topics in'), 'body');
+    await lookIn(/^Where to look in the topics/, 'Message');
 
     expect(topics()).toEqual(['office/error/log']);
   });
@@ -191,12 +200,14 @@ describe('finding one topic among many', () => {
     send(...PLANT);
     send(['plant/boiler/state', 'burner off, cooling'], ['plant/boiler/state', 'burner on again']);
 
+    await openFind('Find a topic');
     await userEvent.type(screen.getByLabelText('Search the topics'), 'state');
     await pick('plant/boiler/state');
     await userEvent.click(screen.getByRole('button', { name: /in history/ }));
 
     expect(logRows().length).toBeGreaterThan(1);
 
+    await openFind('Find in the log');
     await userEvent.type(screen.getByLabelText('Search the log'), 'cooling');
 
     await waitFor(() => expect(logRows()).toHaveLength(1));
@@ -283,6 +294,7 @@ describe('emptying the console', () => {
     const { send } = await openConsole();
     send(...PLANT);
     await pick('temp');
+    await openFind('Find in the log');
     await userEvent.type(screen.getByLabelText('Search the log'), 'zzz');
 
     await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
@@ -355,6 +367,7 @@ describe('the record of what the link has done', () => {
     const broker = panelNamed('Broker panel');
     expect(broker.getByRole('heading', { name: /Broker events/ })).toHaveTextContent('(3)');
 
+    await userEvent.click(broker.getByRole('button', { name: 'Find in the record' }));
     await userEvent.type(broker.getByLabelText('Search broker events'), 'dropped');
 
     expect(broker.getByRole('heading', { name: /Broker events/ })).toHaveTextContent('(1 of 3)');

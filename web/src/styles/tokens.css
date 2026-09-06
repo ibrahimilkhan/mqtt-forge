@@ -73,4 +73,14 @@
     --t-body:  1rem;     /* 15px */
     --t-lead:  1.133rem; /* 17px */
     --t-title: 1.267rem; /* 19px */
+
+    /* The height of the band at the top of the rail — the mark, the name and the control that
+       narrows it — and of anything that has to line up with it.
+
+       Stated rather than left to the contents because two columns have to agree on it: the
+       rail's head, and the row the topic tree hangs off, which carries that pane's own controls.
+       A reader with both in front of them should see one line across the top of the console
+       rather than two bands ending a few pixels apart. The mark, the 19px of padding around it,
+       and the hairline under it. */
+    --head-band: calc(var(--t-title) * 1.15 + 20px);
   }

@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
-import { SearchBox } from '../../components/SearchBox';
+import { SearchBox, SearchOpener } from '../../components/SearchBox';
 import { carries } from '../../lib/sift';
 import { copyText } from '../../lib/copyText';
 import { useBrokerEventsStore, type BrokerEvent } from '../../stores/brokerEventsStore';
-import { Copy } from '../brand/icons';
+import { Check, Copy } from '../brand/icons';
 import styles from '../../styles/panel.module.css';
 
 /** How many of the newest are drawn. The store keeps more; the column is not a place to scroll. */
@@ -25,6 +25,7 @@ export function BrokerEvents() {
   const events = useBrokerEventsStore((state) => state.events);
   const clear = useBrokerEventsStore((state) => state.clear);
   const [look, setLook] = useState('');
+  const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState<'no' | 'yes' | 'failed'>('no');
 
   const found = useMemo(
@@ -52,18 +53,38 @@ export function BrokerEvents() {
         </h3>
 
         <div className={styles.eventsTools}>
-          <SearchBox label="Search broker events" value={look} onChange={setLook} />
+          {open && (
+            <SearchBox label="Search broker events" value={look} onChange={setLook} focused />
+          )}
+          <SearchOpener
+            label="Find in the record"
+            open={open}
+            onToggle={() => {
+              if (open) setLook('');
+              setOpen((shown) => !shown);
+            }}
+          />
 
+          {/* The mark alone. It said 'Copy' beside it, and in a card whose head already carries a
+              title, a count, a search and a way to empty it, the word was the widest thing on the
+              row for the least it said. What it has to say when it has something to say — that
+              this browser would not let it — it says in its own name, and out loud. */}
           <button
             type="button"
             className={styles.eventsAction}
-            aria-label="Copy the broker events shown"
-            title="Copy what is shown"
+            aria-label={
+              copied === 'no'
+                ? 'Copy the broker events shown'
+                : copied === 'yes'
+                  ? 'Copied'
+                  : 'Copy refused — press ⌘C'
+            }
+            title={copied === 'failed' ? 'This browser refused — press ⌘C' : 'Copy what is shown'}
+            data-said={copied === 'no' ? undefined : copied}
             onClick={copy}
             disabled={shown.length === 0}
           >
-            <Copy />
-            {copied === 'no' ? 'Copy' : copied === 'yes' ? 'Copied' : 'Press ⌘C'}
+            {copied === 'yes' ? <Check /> : <Copy />}
           </button>
 
           <button

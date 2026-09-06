@@ -44,6 +44,10 @@
   align-items: center;
   gap: 9px;
   padding: 10px 12px 9px;
+  /* Stated, so the topic tree's own head row can be told to end on the same line — see
+     `--head-band` in tokens.css. Left to its contents the two agreed at one type size and
+     nowhere else. */
+  height: var(--head-band);
   border-bottom: 1px solid var(--rule);
 }
 .rail:not([data-open]) .railHead {

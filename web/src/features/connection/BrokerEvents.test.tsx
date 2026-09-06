@@ -9,6 +9,9 @@ const happened = (what: string, detail?: string) =>
 
 const rows = () => screen.queryAllByRole('listitem');
 
+/** The box is behind a mark now: a reader who wants to search says so first. */
+const openSearch = () => userEvent.click(screen.getByRole('button', { name: 'Find in the record' }));
+
 beforeEach(() => useBrokerEventsStore.getState().clear());
 afterEach(() => Reflect.deleteProperty(navigator, 'clipboard'));
 
@@ -38,6 +41,7 @@ describe('the record of what the link has done', () => {
 
     it('keeps the lines that carry the words, whichever part of the line they are in', async () => {
       render(<BrokerEvents />);
+      await openSearch();
 
       await userEvent.type(screen.getByLabelText('Search broker events'), 'authorised');
 
@@ -47,6 +51,7 @@ describe('the record of what the link has done', () => {
 
     it('does not mind the case', async () => {
       render(<BrokerEvents />);
+      await openSearch();
 
       await userEvent.type(screen.getByLabelText('Search broker events'), 'CONNECTED');
 
@@ -55,6 +60,7 @@ describe('the record of what the link has done', () => {
 
     it('says how much of the record is being shown', async () => {
       render(<BrokerEvents />);
+      await openSearch();
 
       await userEvent.type(screen.getByLabelText('Search broker events'), 'dropped');
 
@@ -65,6 +71,7 @@ describe('the record of what the link has done', () => {
     // the reader who has just typed needs to know which one they are looking at.
     it('says so when nothing matches, rather than reading as an empty record', async () => {
       render(<BrokerEvents />);
+      await openSearch();
 
       await userEvent.type(screen.getByLabelText('Search broker events'), 'zzz');
 
@@ -74,6 +81,7 @@ describe('the record of what the link has done', () => {
 
     it('gives the whole record back when the box is cleared', async () => {
       render(<BrokerEvents />);
+      await openSearch();
       await userEvent.type(screen.getByLabelText('Search broker events'), 'dropped');
 
       await userEvent.click(screen.getByRole('button', { name: 'Clear search broker events' }));
@@ -109,6 +117,7 @@ describe('the record of what the link has done', () => {
       happened('Connected');
       happened('Link dropped');
       render(<BrokerEvents />);
+      await openSearch();
       await userEvent.type(screen.getByLabelText('Search broker events'), 'dropped');
 
       await userEvent.click(screen.getByRole('button', { name: 'Copy the broker events shown' }));
@@ -123,9 +132,8 @@ describe('the record of what the link has done', () => {
 
       await userEvent.click(screen.getByRole('button', { name: 'Copy the broker events shown' }));
 
-      expect(screen.getByRole('button', { name: 'Copy the broker events shown' })).toHaveTextContent(
-        'Copied',
-      );
+      // The mark alone says it, so what it says is its name.
+      expect(screen.getByRole('button', { name: 'Copied' })).toBeInTheDocument();
     });
 
     it('has nothing to offer on an empty record', () => {
@@ -152,6 +160,7 @@ describe('the record of what the link has done', () => {
     it('drops the search with it', async () => {
       happened('Link dropped');
       render(<BrokerEvents />);
+      await openSearch();
       await userEvent.type(screen.getByLabelText('Search broker events'), 'dropped');
 
       await userEvent.click(screen.getByRole('button', { name: 'Clear the broker events' }));

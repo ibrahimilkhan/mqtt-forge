@@ -1713,6 +1713,15 @@ describe('searching the log', () => {
 
   const search = () => screen.getByLabelText('Search the log');
 
+  /** The box is behind a mark now. */
+  const openSearch = () => userEvent.click(screen.getByRole('button', { name: 'Find in the log' }));
+
+  /** And where it looks is behind another, beside it. */
+  const lookIn = async (option: string) => {
+    await userEvent.click(screen.getByRole('button', { name: /^Where to look in the log/ }));
+    await userEvent.click(screen.getByRole('menuitemradio', { name: option }));
+  };
+
   beforeEach(() => {
     sent('sensors/temp', '21.5 degrees');
     sent('sensors/hum', '54 percent');
@@ -1722,6 +1731,7 @@ describe('searching the log', () => {
 
   it('keeps the rows that carry the words', async () => {
     render(<WireLog />);
+    await openSearch();
 
     await userEvent.type(search(), 'boiler');
 
@@ -1733,6 +1743,7 @@ describe('searching the log', () => {
   // into the box has already asked to see what matched.
   it('looks in the topic and the message together by default', async () => {
     render(<WireLog />);
+    await openSearch();
 
     await userEvent.type(search(), 'degrees');
 
@@ -1742,9 +1753,10 @@ describe('searching the log', () => {
 
   it('looks only at topics when the reader says so', async () => {
     render(<WireLog />);
+    await openSearch();
     await userEvent.type(search(), 'degrees');
 
-    await userEvent.selectOptions(screen.getByLabelText('Search the log in'), 'topic');
+    await lookIn('Topic');
 
     expect(screen.queryAllByTestId('entry')).toHaveLength(0);
     expect(screen.getByTestId('unfound')).toBeInTheDocument();
@@ -1752,9 +1764,10 @@ describe('searching the log', () => {
 
   it('looks only at messages when the reader says so', async () => {
     render(<WireLog />);
+    await openSearch();
     await userEvent.type(search(), 'sensors');
 
-    await userEvent.selectOptions(screen.getByLabelText('Search the log in'), 'body');
+    await lookIn('Message');
 
     expect(screen.queryAllByTestId('entry')).toHaveLength(0);
   });
@@ -1763,6 +1776,7 @@ describe('searching the log', () => {
   // box the reader has just typed into answers the wrong question.
   it('says nothing matched rather than saying the topic is quiet', async () => {
     render(<WireLog />);
+    await openSearch();
 
     await userEvent.type(search(), 'zzz');
 
@@ -1772,6 +1786,7 @@ describe('searching the log', () => {
 
   it('gives the run back when the box is emptied', async () => {
     render(<WireLog />);
+    await openSearch();
     await userEvent.type(search(), 'zzz');
 
     await userEvent.click(screen.getByRole('button', { name: 'Clear search the log' }));
@@ -1786,6 +1801,7 @@ describe('searching the log', () => {
         <WireLog />
       </>,
     );
+    await openSearch();
 
     await userEvent.type(search(), 'boiler');
 
@@ -1822,6 +1838,7 @@ describe('clearing the log', () => {
     useLogStore.getState().push({ kind: 'recv', topic: 'sensors/temp', body: '21.5' });
     useSelectionStore.getState().select({ label: 'everything', filter: '#' });
     render(<WireLog />);
+    await userEvent.click(screen.getByRole('button', { name: 'Find in the log' }));
     await userEvent.type(screen.getByLabelText('Search the log'), 'zzz');
 
     await userEvent.click(screen.getByRole('button', { name: 'Clear' }));

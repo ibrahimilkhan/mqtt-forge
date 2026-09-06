@@ -59,6 +59,17 @@
 /* Top-level rows only; every level would thin the spacing out in deep trees. */
 .tree > .node[data-depth="0"] { margin-top: 9px; }
 .tree > .node[data-depth="0"]:first-child { margin-top: 0; }
+
+/* The broker's row is this pane's head: it names what the tree is of, and it carries what is
+   done to the tree — find, where to look, open every branch, close every branch. So it is drawn
+   as a head band, and it ends on the same line as the rail's: `--head-band` less the pane's own
+   11px of top padding, which is the only thing standing above it.
+   Centred rather than baseline-aligned, because what is on it now is marks and a box rather than
+   a row of text. */
+.tree > .node[data-depth='0']:first-child {
+  min-height: calc(var(--head-band) - 11px);
+  align-items: center;
+}
 /* Lift on hover rather than tint, so no colour reads into the row. */
 .node:hover { box-shadow: 0 1px 4px rgb(19 26 36 / 0.14); }
 /* The only row that fills. The stripe takes the row's colour rule when one covers it, and the neutral grey otherwise.

@@ -925,6 +925,15 @@ describe('the pause on the selected row', () => {
 describe('searching the topics', () => {
   const search = () => screen.getByLabelText('Search the topics');
 
+  /** The box is behind a mark on the broker's row: a reader who wants it says so first. */
+  const openSearch = () => userEvent.click(screen.getByRole('button', { name: 'Find a topic' }));
+
+  /** And where it looks is behind a mark of its own, beside it. */
+  const lookIn = async (option: string) => {
+    await userEvent.click(screen.getByRole('button', { name: /^Where to look in the topics/ }));
+    await userEvent.click(screen.getByRole('menuitemradio', { name: option }));
+  };
+
   // The topic each row is drawn for, without the broker's own row at the head of them: under a
   // search that is the whole path; in the tree it is the one segment the row stands for.
   const rowNames = () => screen.getAllByTestId('segment').slice(1).map((one) => one.textContent);
@@ -942,6 +951,7 @@ describe('searching the topics', () => {
 
   it('finds the topics whose path carries the words, however deep they hang', async () => {
     render(<TopicTree broker="127.0.0.1:1883" />);
+    await openSearch();
 
     await userEvent.type(search(), 'boiler');
 
@@ -954,6 +964,7 @@ describe('searching the topics', () => {
   // reading 'temp', neither of them saying which.
   it('names each answer by its whole path', async () => {
     render(<TopicTree broker="127.0.0.1:1883" />);
+    await openSearch();
 
     await userEvent.type(search(), 'temp');
 
@@ -963,24 +974,27 @@ describe('searching the topics', () => {
 
   it('finds a topic by what it is carrying when the reader looks there', async () => {
     render(<TopicTree broker="127.0.0.1:1883" />);
+    await openSearch();
     await userEvent.type(search(), 'on');
 
-    await userEvent.selectOptions(screen.getByLabelText('Search the topics in'), 'body');
+    await lookIn('Message');
 
     expect(rowNames()).toEqual(['office/light']);
   });
 
   it('looks only at paths when the reader says so', async () => {
     render(<TopicTree broker="127.0.0.1:1883" />);
+    await openSearch();
     await userEvent.type(search(), '2.1');
 
-    await userEvent.selectOptions(screen.getByLabelText('Search the topics in'), 'topic');
+    await lookIn('Topic');
 
     expect(screen.getByTestId('no-topic-found')).toBeInTheDocument();
   });
 
   it('says nothing matched rather than reading as a broker with no topics', async () => {
     render(<TopicTree broker="127.0.0.1:1883" />);
+    await openSearch();
 
     await userEvent.type(search(), 'zzz');
 
@@ -990,6 +1004,7 @@ describe('searching the topics', () => {
 
   it('gives the tree back when the box is emptied', async () => {
     render(<TopicTree broker="127.0.0.1:1883" />);
+    await openSearch();
     await userEvent.type(search(), 'boiler');
 
     await userEvent.click(screen.getByRole('button', { name: 'Clear search the topics' }));
@@ -1003,6 +1018,7 @@ describe('searching the topics', () => {
   // which is what makes it predictable.
   it('answers with branches as well as leaves', async () => {
     render(<TopicTree broker="127.0.0.1:1883" />);
+    await openSearch();
 
     await userEvent.type(search(), 'plant');
 
@@ -1021,6 +1037,19 @@ describe('searching the topics', () => {
 
     render(<TopicTree broker="127.0.0.1:1883" />);
 
+    expect(screen.queryByRole('button', { name: 'Find a topic' })).not.toBeInTheDocument();
+  });
+
+  // A box that hid itself while still narrowing the tree would leave rows held back with nothing
+  // on screen to say why.
+  it('lets the search go when the box is shut again', async () => {
+    render(<TopicTree broker="127.0.0.1:1883" />);
+    await openSearch();
+    await userEvent.type(search(), 'boiler');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Find a topic' }));
+
     expect(screen.queryByLabelText('Search the topics')).not.toBeInTheDocument();
+    expect(rowNames()).toEqual(['office', 'plant']);
   });
 });

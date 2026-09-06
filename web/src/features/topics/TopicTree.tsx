@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useReducer } from 'react';
-import { SearchBox } from '../../components/SearchBox';
-import { WhereSelect } from '../../components/WhereSelect';
+import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
+import { SearchBox, SearchOpener } from '../../components/SearchBox';
+import { WhereMenu } from '../../components/WhereMenu';
 import { Fold, Unfold } from '../brand/icons';
 import { useRuleLookup } from '../../lib/useRuleLookup';
 import { matchesFilter, treeFilter } from '../../lib/topicMatch';
@@ -58,6 +58,8 @@ export function TopicTree({ broker }: { broker?: string }) {
   const { look, where } = useSearchStore((state) => state.tree);
   const setTree = useSearchStore((state) => state.setTree);
   const sought = look !== '';
+  /** Whether the box is on screen. The mark on the broker's row is what opens it. */
+  const [open, setOpen] = useState(false);
 
   /*
    * The rows: the open part of the tree, or — with something in the search box — every topic
@@ -328,39 +330,64 @@ export function TopicTree({ broker }: { broker?: string }) {
   // The broker's row keeps the two tree marks at its end whether it is picked or not, and takes
   // the pause in front of them when it is: picking it focuses the log on everything, which is a
   // run like any other and can be held like one.
+  /**
+   * The search, on the row the whole tree hangs off.
+   *
+   * Here rather than in a strip of its own above the tree, because this is the row that stands
+   * for the broker and the search is a question about everything under it — and because a strip
+   * would cost the pane a line of height on every console, including the ones nobody will ever
+   * search. The box opens to the left of the marks and ends where they begin.
+   */
+  const finding = (
+    <>
+      {open && (
+        <SearchBox
+          label="Search the topics"
+          value={look}
+          onChange={(next) => setTree({ look: next })}
+          focused
+        />
+      )}
+      <SearchOpener
+        label="Find a topic"
+        open={open}
+        onToggle={() => {
+          // Closing lets the search go: a box that hid itself while still narrowing the tree
+          // would leave rows held back with nothing on screen to say why.
+          if (open) setTree({ look: '' });
+          setOpen((shown) => !shown);
+        }}
+      />
+      {open && (
+        <WhereMenu
+          label="Where to look in the topics"
+          value={where}
+          onChange={(next) => setTree({ where: next })}
+        />
+      )}
+    </>
+  );
+
   const brokerActions = useMemo(
     () =>
       selectedFilter === EVERYTHING ? (
         <>
           {hold}
+          {finding}
           {treeActions}
         </>
       ) : (
-        treeActions
+        <>
+          {finding}
+          {treeActions}
+        </>
       ),
-    [selectedFilter, hold, treeActions],
+    [selectedFilter, hold, finding, treeActions],
   );
 
   return (
     <>
       <h2 className="srOnly">Topics</h2>
-
-      {/* Only once there is a tree to search. An empty console offering to find a topic in
-          nothing is a control that can only disappoint. */}
-      {root.subTopics > 0 && (
-        <div className={styles.tools}>
-          <SearchBox
-            label="Search the topics"
-            value={look}
-            onChange={(next) => setTree({ look: next })}
-          />
-          <WhereSelect
-            label="Search the topics in"
-            value={where}
-            onChange={(next) => setTree({ where: next })}
-          />
-        </div>
-      )}
 
       {root.subTopics === 0 ? (
         <p className="empty">No topics yet. Connect to a broker and its tree builds here.</p>
