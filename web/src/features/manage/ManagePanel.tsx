@@ -50,16 +50,11 @@ export function ManagePanel({ onClose }: { onClose: () => void }) {
     return () => clearInterval(timer);
   }, [holds]);
 
-  const [retained, setRetained] = useState<string[]>([]);
   const [asking, setAsking] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [said, setSaid] = useState<string | null>(null);
 
-  // The retained list is read when the panel opens and when the reader asks again, not on a
-  // timer: it is a walk of the whole tree, and it is answering 'what is on the broker', which
-  // does not change because a message arrived.
-  const look = () => setRetained(retainedTopics(useTopicTreeStore.getState().root));
-  useEffect(look, []);
+  const retained = reading.retained;
 
   const forget = async () => {
     setClearing(true);
@@ -71,7 +66,10 @@ export function ManagePanel({ onClose }: { onClose: () => void }) {
         ? `Told the broker to forget ${done} ${done === 1 ? 'topic' : 'topics'}.`
         : `Forgot ${done}; the broker refused ${failed}.`,
     );
-    look();
+    // The count is not put right here. What was cleared comes back down this console's own
+    // subscription as an empty retained message on each topic, and the reading below is what
+    // notices — which is the honest answer anyway: the count says what the broker is holding,
+    // as far as this console has been told, rather than what it was just asked to let go of.
   };
 
   return (
@@ -261,12 +259,18 @@ function count(holds: ReadonlyMap<string, { filter: string; entries: { id: numbe
   }));
   paused.sort((a, b) => a.label.localeCompare(b.label));
 
+  const root = useTopicTreeStore.getState().root;
+
   return {
     paused,
     held: log.held,
     weight: log.weight,
     full: log.capped,
-    topics: useTopicTreeStore.getState().root.subTopics,
+    topics: root.subTopics,
+    // Walked with the rest of it rather than read once when the panel opened: the answer changes
+    // under the reader — a retained message arrives, or the clear below empties one — and a
+    // figure that had to be reopened to be believed is worse than no figure.
+    retained: retainedTopics(root),
   };
 }
 

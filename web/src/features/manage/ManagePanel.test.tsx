@@ -173,6 +173,17 @@ describe('the screen for what is being held', () => {
       expect(screen.getByText('Retained').nextSibling).toHaveTextContent('2 topics');
     });
 
+    // The emptying arrives back down the console's own subscription, and an empty retained
+    // message is exactly what 'the broker is holding nothing' looks like on the wire.
+    it('stops counting a topic whose retained message has been emptied', () => {
+      landed(message('a/one', '1', true));
+      landed(message('a/one', '', true));
+
+      panel();
+
+      expect(screen.getByText('Retained').nextSibling).toHaveTextContent('0 topics');
+    });
+
     it('asks before it publishes anything', async () => {
       landed(message('a/one', '1', true));
       let sent = 0;

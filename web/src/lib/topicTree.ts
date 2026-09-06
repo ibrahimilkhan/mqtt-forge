@@ -457,6 +457,11 @@ export function flattenTree(
  * flag is what the publisher meant rather than an artefact of delivery. A topic that was
  * published retained and then published live reads as not retained here, and the broker is still
  * holding the old one — an honest limit of watching rather than a fault.
+ *
+ * An empty body is the one exception, and it is not an exception at all: a zero-length retained
+ * publish is how a broker is told to forget, so a topic whose newest retained message is empty is
+ * a topic the broker is holding nothing for. Without this the console goes on offering to clear
+ * what it has just cleared, because the emptying arrives back down its own subscription.
  */
 export function retainedTopics(root: TopicNode): string[] {
   const found: string[] = [];
@@ -465,7 +470,7 @@ export function retainedTopics(root: TopicNode): string[] {
     for (const name of node.order) {
       const child = node.children.get(name)!;
       const here = path === '' ? name : `${path}/${name}`;
-      if (child.hits > 0 && child.latestRetain) found.push(here);
+      if (child.hits > 0 && child.latestRetain && child.latestPayload) found.push(here);
       walk(child, here);
     }
   };

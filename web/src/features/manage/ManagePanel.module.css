@@ -4,10 +4,14 @@
   margin: 0 0 12px;
   padding: 0;
 }
+/* The topic takes its own line and the figures follow under it. Side by side, a path long
+   enough to matter — which is every path on a real broker — was broken mid-word to make room for
+   '2 held', and 'plant/boiler/te mp' is not a topic anybody can read. */
 .row {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 8px;
+  gap: 4px 8px;
   padding: 6px 0;
   border-top: 1px solid var(--rule);
 }
@@ -17,7 +21,7 @@
    what it does: it takes the reader to the run, it does not act on it. */
 .goTo {
   all: unset;
-  flex: 1 1 auto;
+  flex: 1 1 100%;
   min-width: 0;
   cursor: pointer;
   font-family: var(--mono);
@@ -30,7 +34,7 @@
 
 .figures {
   display: flex;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   gap: 8px;
   font-family: var(--mono);
   font-size: var(--t-micro);
