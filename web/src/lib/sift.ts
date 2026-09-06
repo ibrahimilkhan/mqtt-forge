@@ -18,12 +18,44 @@ export const WHERE_OPTIONS: ReadonlyArray<{ value: Where; label: string }> = [
   { value: 'body', label: 'Message' },
 ];
 
+/**
+ * Everything the letters of a word have in common, and nothing else.
+ *
+ * `toLowerCase` is the locale-invariant one, which is the right half of the answer: a Turkish
+ * machine must not decide that 'I' and 'i' are different letters for a reader searching English
+ * text. The half it does not give is that the two alphabets meet. 'FABRİKA'.toLowerCase() is
+ * 'fabri\u0307ka' — an i carrying a dot of its own — and it does not contain the 'fabrika' the
+ * reader typed; 'ısparta' does not contain 'isparta' either. To the person looking, all four are
+ * the same word, and a search box that finds three of them is broken in the way that is hardest
+ * to notice: it answers.
+ *
+ * So the letters are decomposed, their marks dropped, and the dotless ı said with an i. That is
+ * one rule rather than a Turkish special case, and it folds every Latin diacritic the same way —
+ * 'sicaklik' finds 'sıcaklık', 'ogretmen' finds 'öğretmen', 'uber' finds 'über'. Which is what a
+ * search box does everywhere it is not a filter, and this one is deliberately not a filter.
+ *
+ * ASCII, which nearly every topic is, takes the short way out: it has no marks to drop and no ı
+ * to say differently, so lowercasing it is the whole of the fold. That matters because this runs
+ * over every row of a tree that may hold fifty thousand of them, on every keystroke.
+ */
+const ASCII_ONLY = /^[\x00-\x7f]*$/;
+
+export function fold(text: string): string {
+  if (ASCII_ONLY.test(text)) return text.toLowerCase();
+
+  return text
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/\u0131/g, 'i');
+}
+
 /** Whether one piece of text carries the words looked for. An empty search matches everything. */
 export function carries(text: string | undefined | null, look: string): boolean {
   if (look === '') return true;
   if (!text) return false;
 
-  return text.toLowerCase().includes(look.toLowerCase());
+  return fold(text).includes(fold(look));
 }
 
 /**

@@ -1,4 +1,5 @@
 import { useMemo, useState, type CSSProperties } from 'react';
+import { carries } from '../../lib/sift';
 import { flattenTree } from '../../lib/topicTree';
 import { treeFilter } from '../../lib/topicMatch';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
@@ -62,12 +63,14 @@ export function TopicPicker({
    * their own paths are prefixes of a path that matched.
    */
   const shown = useMemo(() => {
-    const term = needle.trim().toLowerCase();
+    const term = needle.trim();
     if (term === '') return rows;
 
     const keep = new Set<string>();
     for (const row of rows) {
-      if (!row.path.toLowerCase().includes(term)) continue;
+      // Through the console's own search, so that a topic found in the tree is found here too —
+      // including the ones whose letters carry marks. See `carries` in lib/sift.
+      if (!carries(row.path, term)) continue;
 
       // The row, and every branch above it, so the indent still describes something real.
       const parts = row.path.split('/');
