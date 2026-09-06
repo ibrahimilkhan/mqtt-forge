@@ -444,3 +444,70 @@ describe('AlertsPanel', () => {
     expect(screen.queryByRole('button', { name: /^Sound/ })).not.toBeInTheDocument();
   });
 });
+
+/**
+ * Two consoles on one server. Everything in this panel is a whole-rule-set PUT, so a body built
+ * from a list this console read a minute ago is a body that deletes whatever anyone else has
+ * saved since — and the console that does it need only have flicked a switch.
+ */
+describe('when another console has saved a rule since this one last looked', () => {
+  /** What the server holds, changing under the panel the way another console changes it. */
+  function serverHolding(...rules: AlertRuleDto[]) {
+    server.use(
+      http.get('/api/alert-rules', () =>
+        HttpResponse.json({
+          rules,
+          allowWebhooks: false,
+          topicPrefix: 'mqttforge/alerts/',
+          unreadable: false,
+          skippedIds: [],
+        }),
+      ),
+    );
+  }
+
+  it('keeps the rule it never saw when a switch is flicked here', async () => {
+    holding(RULE);
+    answers({});
+    const sent: AlertRuleDto[][] = [];
+    server.use(
+      http.put('/api/alert-rules', async ({ request }) => {
+        const body = (await request.json()) as { rules: AlertRuleDto[] };
+        sent.push(body.rules);
+        return HttpResponse.json({ rules: body.rules, warnings: [] });
+      }),
+    );
+    renderPanel();
+    await screen.findByRole('checkbox', { name: 'Turn Kiln too hot off' });
+
+    // The other console saves a second rule. This one is not told and does not ask.
+    serverHolding(RULE, OTHER);
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Turn Kiln too hot off' }));
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toEqual([{ ...RULE, enabled: false }, OTHER]);
+  });
+
+  it('keeps it when a rule is removed here', async () => {
+    holding(RULE);
+    answers({});
+    const sent: AlertRuleDto[][] = [];
+    server.use(
+      http.put('/api/alert-rules', async ({ request }) => {
+        const body = (await request.json()) as { rules: AlertRuleDto[] };
+        sent.push(body.rules);
+        return HttpResponse.json({ rules: body.rules, warnings: [] });
+      }),
+    );
+    renderPanel();
+    await screen.findByRole('button', { name: 'Remove Kiln too hot' });
+
+    serverHolding(RULE, OTHER);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Remove Kiln too hot' }));
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toEqual([OTHER]);
+  });
+});

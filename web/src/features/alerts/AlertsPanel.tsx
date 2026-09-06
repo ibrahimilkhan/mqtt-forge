@@ -11,7 +11,6 @@ import panel from '../../styles/panel.module.css';
 import type {
   AlertDto,
   AlertRuleDto,
-  AlertRulesResponseDto,
   AlertSeverity,
   RuleDiagnosticDto,
 } from '../../types/api';
@@ -66,8 +65,30 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
     void load();
   }, [load]);
 
+  /**
+   * Every write is a whole rule set, so every write is built on the newest one there is.
+   *
+   * It used to be built on the query cache, and the cache is only ever as new as this console's
+   * last look. Two consoles is the ordinary arrangement — the QR panel exists to put a second one
+   * on a phone — and a switch flicked here half a minute after the phone saved a rule sent a list
+   * with that rule missing, which is a PUT that deletes it. Nobody edited anything; somebody
+   * turned a rule off, and another rule stopped existing.
+   *
+   * So the change is a function over the list rather than a list, and the list is fetched at the
+   * moment of the write. Two people editing the same rule is still last-write-wins, which is what
+   * a one-document PUT means and is a race between two people who both meant it. Two people
+   * editing different rules is no longer a race at all.
+   */
   const write = useMutation({
-    mutationFn: (rules: AlertRuleDto[]) => putAlertRules(rules, false),
+    mutationFn: async (change: (rules: AlertRuleDto[]) => AlertRuleDto[]) => {
+      const fresh = await queryClient.fetchQuery({
+        queryKey: queryKeys.alertRules,
+        queryFn: getAlertRules,
+        staleTime: 0,
+      });
+
+      return putAlertRules(change(fresh.rules), false);
+    },
     onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.alertRules });
 
@@ -100,19 +121,6 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
     capped.length > 0 ||
     faulted.length > 0 ||
     warming.length > 0;
-
-  /**
-   * The rule list as the cache holds it AT THE MOMENT OF THE CLICK.
-   *
-   * Three writers edit this list — this switch, this × and any number of editor windows — and a
-   * body compiled from anything older would undo whichever of them clicked first. The fallback
-   * is for the one render where the query has not answered yet: sending an empty list there
-   * would be a save, so nothing in this panel is clickable before the rules arrive anyway.
-   */
-  const held = () =>
-    queryClient.getQueryData<AlertRulesResponseDto>(queryKeys.alertRules) ?? {
-      rules: [] as AlertRuleDto[],
-    };
 
   /**
    * The rule being written, and the draft as it stood when the editor opened.
@@ -317,7 +325,7 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
                   checked={rule.enabled}
                   aria-label={`Turn ${rule.name} ${rule.enabled ? 'off' : 'on'}`}
                   onChange={() =>
-                    guardedWrite(saveRule(held().rules, { ...rule, enabled: !rule.enabled }))
+                    guardedWrite((rules) => saveRule(rules, { ...rule, enabled: !rule.enabled }))
                   }
                 />
 
@@ -363,7 +371,7 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
                     type="button"
                     className={styles.remove}
                     aria-label={`Remove ${rule.name}`}
-                    onClick={() => guardedWrite(removeRule(held().rules, rule.id ?? ''))}
+                    onClick={() => guardedWrite((rules) => removeRule(rules, rule.id ?? ''))}
                   >
                     ×
                   </button>

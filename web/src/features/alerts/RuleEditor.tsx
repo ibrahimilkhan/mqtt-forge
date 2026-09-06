@@ -96,11 +96,27 @@ export function RuleEditor({
   };
   const faults = faultsIn(draft, where);
 
+  /**
+   * The rule goes into the newest list there is, which is the server's rather than the cache's.
+   *
+   * The cache is only as new as this console's last look, and this window may have been open for
+   * minutes. Everything the panel's own switches did is in it; nothing another console did is —
+   * so saving a rule from here used to delete whatever a phone had saved meanwhile. The list is
+   * read at the write rather than at the render; see the same note in AlertsPanel.
+   */
   const save = useMutation({
     // Never discardUnreadable: a rules file the server could not read is a record, and an editor
     // that overwrote it would delete rules nobody has seen. The panel is where that decision is
     // offered, with the count of what would go.
-    mutationFn: (rules: AlertRuleDto[]) => putAlertRules(rules, false),
+    mutationFn: async (rule: AlertRuleDto) => {
+      const fresh = await queryClient.fetchQuery({
+        queryKey: queryKeys.alertRules,
+        queryFn: getAlertRules,
+        staleTime: 0,
+      });
+
+      return putAlertRules(saveRule(fresh.rules, rule), false);
+    },
     onSuccess: (result) => {
       const warning = result.warnings.find((one) => one.ruleId === draft.id);
 
@@ -612,15 +628,9 @@ export function RuleEditor({
           type="button"
           className={panel.trailing}
           disabled={!savable(faults) || save.isPending}
-          onClick={() => {
-            // Read at the click, and only here. Between this window opening and this press the
-            // panel may have flipped a switch, deleted a rule, or another editor may have saved —
-            // and a body compiled from anything older would quietly undo whichever of them was
-            // first. `saveRule` puts this one rule into that list and changes nothing else.
-            const held = queryClient.getQueryData<AlertRulesResponseDto>(queryKeys.alertRules);
-
-            guardedSave(saveRule(held?.rules ?? [], ruleOf(draft)));
-          }}
+          // One rule goes in; the list it joins is fetched inside the mutation, at the moment of
+          // the write rather than at the moment of the render. See the note on `save`.
+          onClick={() => guardedSave(ruleOf(draft))}
         >
           Save
         </button>
