@@ -7,6 +7,10 @@ import type { LogEntry } from './logStore';
  * megabyte payloads would hold the same five hundred as one sending twelve bytes — and a byte
  * budget alone gives a chatty small-payload topic a run so long the pane cannot use it. MQTT
  * Explorer's own history is bounded the same way, at a hundred messages or twenty kilobytes.
+ *
+ * The byte bound is off — `Infinity` — on a console that is not full. It is what the log reaches
+ * for when the whole of it has grown past its budget, and until then a topic sending megabytes
+ * keeps them: see the budget in logStore.
  */
 export type RingBounds = { maxItems: number; maxBytes: number };
 
@@ -56,6 +60,19 @@ export class TopicRing {
 
     // Once as much has been dropped as the ring can hold, the dead prefix is worth the one
     // copy it costs to remove. Held to twice the bound, never growing without end.
+    if (this.start >= this.bounds.maxItems) this.compact();
+  }
+
+  /**
+   * Puts a weight bound on this run, or takes one off, and cuts it back to fit at once.
+   *
+   * `Infinity` lifts it. The log turns these on together once it is holding more than its budget
+   * and off again when the reader raises that budget, so a run that gave up its old messages
+   * under pressure can grow again rather than staying cut for the life of the session.
+   */
+  capBytesTo(maxBytes: number): void {
+    this.bounds = { ...this.bounds, maxBytes };
+    while (this.bytes > maxBytes && this.length > 1) this.dropOldest();
     if (this.start >= this.bounds.maxItems) this.compact();
   }
 

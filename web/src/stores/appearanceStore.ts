@@ -34,6 +34,15 @@ export type AppearanceChoices = {
    * `features/alerts/alertSound.ts`.
    */
   alertSound: boolean;
+  /**
+   * How much traffic the console may hold before it starts cutting runs back, in megabytes.
+   *
+   * Here with the other choices because it is the same kind of choice — a fact about this
+   * reader's machine, stored in this browser, that nothing on the broker side knows or needs to.
+   * What it actually bounds lives in the log store; this is only where the answer is kept, so
+   * that it survives the panel being closed and the app being restarted.
+   */
+  loadMb: number;
 };
 type AppearanceState = AppearanceChoices & {
   setSans: (id: SansId) => void;
@@ -43,12 +52,22 @@ type AppearanceState = AppearanceChoices & {
   toggleReading: (id: ReadingId, shown: boolean) => void;
   setHealth: (shown: boolean) => void;
   setAlertSound: (on: boolean) => void;
+  setLoadMb: (mb: number) => void;
   /** Back to the catalogue's own answer for every reading. */
   resetReadings: () => void;
   reset: () => void;
 };
 
 export const STORAGE_KEY = 'mqttforge.appearance';
+
+/**
+ * What the reader may choose to give the console, in megabytes.
+ *
+ * A list rather than a free number: the answer is a rough one — how much of this machine is the
+ * console welcome to — and a box that takes 7 or 100000 invites both. Five hundred is the
+ * default and the middle of the list, generous enough that an ordinary broker never reaches it.
+ */
+export const LOADS = [100, 250, 500, 1000, 2000] as const;
 // The fonts' own defaults plus the chart's, which is where the two halves of 'appearance' meet.
 export const DEFAULTS: AppearanceChoices = {
   ...FONTS,
@@ -56,6 +75,7 @@ export const DEFAULTS: AppearanceChoices = {
   readings: {},
   health: false,
   alertSound: false,
+  loadMb: 500,
 };
 
 /** The stored switches, keeping only the ones that name a reading and say true or false. */
@@ -72,7 +92,10 @@ function switched(raw: unknown): Partial<Record<ReadingId, boolean>> {
 export function sanitize(raw: unknown): AppearanceChoices {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { ...DEFAULTS };
 
-  const { sans, mono, size, scale, readings, health, alertSound } = raw as Record<string, unknown>;
+  const { sans, mono, size, scale, readings, health, alertSound, loadMb } = raw as Record<
+    string,
+    unknown
+  >;
 
   return {
     sans: typeof sans === 'string' && sans in SANS ? (sans as SansId) : DEFAULTS.sans,
@@ -87,6 +110,12 @@ export function sanitize(raw: unknown): AppearanceChoices {
     // Field by field, which is what makes the version bump cheap: a store written by version 5
     // knows nothing of this one and keeps everything else it did know.
     alertSound: typeof alertSound === 'boolean' ? alertSound : DEFAULTS.alertSound,
+    // Any of the offered sizes, and the default for anything else: a hand-edited 20000 here
+    // would be a console promising memory the machine does not have.
+    loadMb:
+      typeof loadMb === 'number' && (LOADS as readonly number[]).includes(loadMb)
+        ? loadMb
+        : DEFAULTS.loadMb,
   };
 }
 // Client state, not fetched, so a store rather than the query cache. Only the stored
@@ -101,6 +130,7 @@ export const useAppearanceStore = create<AppearanceState>()(
       setScale: (scale) => set({ scale }),
       setHealth: (health) => set({ health }),
       setAlertSound: (alertSound) => set({ alertSound }),
+      setLoadMb: (loadMb) => set({ loadMb }),
       toggleReading: (id, shown) =>
         set((state) => ({ readings: { ...state.readings, [id]: shown } })),
       resetReadings: () => set({ readings: {} }),
@@ -108,11 +138,12 @@ export const useAppearanceStore = create<AppearanceState>()(
     }),
     {
       name: STORAGE_KEY,
-      // 6 since the sound preference joined the stored choices. `migrate` is `sanitize`, which
-      // reads field by field — so a store written by 5 keeps its font, its size, its scale, its
-      // readings and its health line, and gains the sound switched off.
-      version: 6,
-      partialize: ({ sans, mono, size, scale, readings, health, alertSound }) => ({
+      // 7 since how much the console may hold joined the stored choices. `migrate` is
+      // `sanitize`, which reads field by field — so a store written by 6 keeps its font, its
+      // size, its scale, its readings, its health line and its sound, and gains the default
+      // load.
+      version: 7,
+      partialize: ({ sans, mono, size, scale, readings, health, alertSound, loadMb }) => ({
         sans,
         mono,
         size,
@@ -120,6 +151,7 @@ export const useAppearanceStore = create<AppearanceState>()(
         readings,
         health,
         alertSound,
+        loadMb,
       }),
       merge: (persisted, current) => ({ ...current, ...sanitize(persisted) }),
       // Migrates rather than discarding on version bump; sanitize handles any shape.

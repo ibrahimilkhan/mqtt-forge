@@ -27,12 +27,36 @@ import { TopicRing } from './topicRing';
 export const TOPIC_DEPTH = 2000;
 
 /**
- * And how much weight, because a count is not a memory bound. A topic sending megabyte payloads
- * would otherwise hold TOPIC_DEPTH of them. MQTT Explorer bounds its own history the same way
- * and for the same reason, at a hundred messages or twenty kilobytes; this is more generous on
- * both, because this pane is the thing being used rather than a detail panel beside a tree.
+ * And how much weight — but only once the console is full.
+ *
+ * This used to bound every run all the time, and it was the wrong shape of answer: a topic
+ * sending megabyte payloads on a console holding forty megabytes was giving up its history to
+ * save memory nobody needed saving. A count is still not a memory bound, so the bound is real;
+ * it is just held in reserve and applied to every run at once when the log as a whole passes
+ * LOAD_BYTES below. Until then a run is bounded by TOPIC_DEPTH and nothing else, and a topic
+ * sending megabytes keeps them.
+ *
+ * MQTT Explorer bounds its own history at a hundred messages or twenty kilobytes, always. This
+ * is far more generous on both, and only under pressure.
  */
 export const TOPIC_BYTES = 256 * 1024;
+
+/**
+ * How much the console may hold before it starts cutting runs back, in the characters bodies are
+ * held as — the reader's own answer to 'how much of this machine may a console watching a plant
+ * take', chosen in Settings and stored with the other choices.
+ *
+ * Five hundred megabytes by default. It is a great deal to give a console, and that is the point:
+ * the caps under it exist for the machine, not for tidiness, so nothing should be thrown away
+ * while there is room for it. A console watching an ordinary broker never reaches this and so
+ * never loses a message at all; one pointed at a plant sending megabyte images fills it in
+ * minutes, and then the per-topic weight above comes on and every run keeps its newest quarter
+ * of a megabyte.
+ *
+ * Characters rather than bytes, like every weight here: a proxy that needs nothing decoded to
+ * be taken. For text it is the same number; for a hex body it is about twice the wire size.
+ */
+export const DEFAULT_LOAD_BYTES = 500 * 1024 * 1024;
 
 /**
  * The most the log holds across every topic, and the only bound that is about the machine
@@ -141,6 +165,24 @@ export type LogState = {
   byTopic: Map<string, TopicRing>;
   /** How many arrivals are held across every topic, for the ceiling above. */
   held: number;
+  /**
+   * And what they weigh, in the characters their bodies are held as.
+   *
+   * Kept running rather than walked, unlike everything else here that could be counted on
+   * demand: the budget has to be checked on the message that crosses it, and walking every ring
+   * to find that out would put the whole map on the path of every arrival. What it costs instead
+   * is one subtraction and one addition per message.
+   */
+  weight: number;
+  /** What the reader allows the console to hold, in those same characters. */
+  budget: number;
+  /**
+   * Whether the per-topic weight cap is on — the console has been over its budget and every run
+   * is bounded by TOPIC_BYTES until the reader gives it more room.
+   */
+  capped: boolean;
+  /** Sets what the console may hold, and cuts back — or lets grow again — at once. */
+  setBudget: (bytes: number) => void;
   /** Bumped on every change, because the two structures above are mutated rather than replaced. */
   version: number;
   push: (entry: NewLogEntry) => void;
@@ -163,6 +205,9 @@ export const useLogStore = create<LogState>((set) => ({
   commands: [],
   byTopic: new Map(),
   held: 0,
+  weight: 0,
+  budget: DEFAULT_LOAD_BYTES,
+  capped: false,
   version: 0,
 
   push: (entry) =>
@@ -172,7 +217,7 @@ export const useLogStore = create<LogState>((set) => ({
       // An arrival can arrive this way too — the renderer seeds the console with them — and it
       // belongs with the traffic wherever it came from.
       if (written.kind === 'recv' && written.topic) {
-        return { held: file(state, written, state.held), version: state.version + 1 };
+        return { ...file(state, written, state), version: state.version + 1 };
       }
 
       // Every command is a broker event as well, and the events are where it outlives this log:
@@ -194,10 +239,10 @@ export const useLogStore = create<LogState>((set) => ({
 
   appendReceived: (messages) =>
     set((state) => {
-      let held = state.held;
-      for (const message of messages) held = file(state, toEntry(message), held);
+      let load: Load = state;
+      for (const message of messages) load = file(state, toEntry(message), load);
 
-      return { held, version: state.version + 1 };
+      return { ...load, version: state.version + 1 };
     }),
 
   forgetTopics: (topics) =>
@@ -205,44 +250,132 @@ export const useLogStore = create<LogState>((set) => ({
       if (topics.length === 0) return state;
 
       let held = state.held;
+      let weight = state.weight;
       for (const topic of topics) {
         const ring = state.byTopic.get(topic);
         if (!ring) continue;
 
         held -= ring.length;
+        weight -= ring.weight;
         state.byTopic.delete(topic);
       }
 
-      return { held: Math.max(0, held), version: state.version + 1 };
+      return {
+        held: Math.max(0, held),
+        weight: Math.max(0, weight),
+        version: state.version + 1,
+      };
     }),
 
   clear: () =>
     set((state) => {
       state.byTopic.clear();
-      return { commands: [], held: 0, version: state.version + 1 };
+
+      return {
+        commands: [],
+        held: 0,
+        weight: 0,
+        // A console holding nothing is not a console under pressure. The runs it fills up with
+        // next are bounded by the count alone again, as they were before it ever filled.
+        capped: false,
+        version: state.version + 1,
+      };
+    }),
+
+  setBudget: (bytes) =>
+    set((state) => {
+      // Said again rather than changed. This is called on every stored-choice change, not only
+      // on this one, so the common case is a reader picking a font.
+      if (bytes === state.budget) return {};
+
+      // More room than there was, and enough of it: runs cut back under the old budget are free
+      // to grow again. Only on the way up — a console under pressure is under it until the
+      // reader says otherwise, and weight falling below the budget is what cutting back *does*.
+      if (bytes > state.budget && state.capped && bytes > state.weight) {
+        for (const ring of state.byTopic.values()) ring.capBytesTo(Number.POSITIVE_INFINITY);
+
+        return { budget: bytes, capped: false, version: state.version + 1 };
+      }
+
+      if (state.weight <= bytes) return { budget: bytes, version: state.version + 1 };
+
+      return { ...cutBack(state, bytes), budget: bytes, version: state.version + 1 };
     }),
 }));
 
+/** What the console is carrying: how many, what they weigh, and whether it is over its budget. */
+type Load = { held: number; weight: number; capped: boolean };
+
 /**
- * Puts an arrival in its topic's run, and keeps the console inside its ceiling.
+ * Puts an arrival in its topic's run, and keeps the console inside its ceilings.
  *
- * `held` is passed in rather than read off the state: a batch files its messages one after
- * another before the state is replaced, so the state's own count is the one from before the
+ * The load is passed in rather than read off the state: a batch files its messages one after
+ * another before the state is replaced, so the state's own counts are the ones from before the
  * batch started and every message in the batch but the last would be counted away.
  */
-function file(state: LogState, entry: LogEntry, held: number): number {
+function file(state: LogState, entry: LogEntry, load: Load): Load {
   const topic = entry.topic!;
   let ring = state.byTopic.get(topic);
   if (!ring) {
-    ring = new TopicRing({ maxItems: TOPIC_DEPTH, maxBytes: TOPIC_BYTES });
+    // A topic first heard from while the console is full is bounded like the rest of them.
+    ring = new TopicRing({
+      maxItems: TOPIC_DEPTH,
+      maxBytes: load.capped ? TOPIC_BYTES : Number.POSITIVE_INFINITY,
+    });
     state.byTopic.set(topic, ring);
   }
 
-  const before = ring.length;
+  const wasLong = ring.length;
+  const wasHeavy = ring.weight;
   ring.push(entry);
-  const now = held + (ring.length - before);
 
-  return now > MAX_LOG_ENTRIES ? narrowRuns(state.byTopic, now) : now;
+  let held = load.held + (ring.length - wasLong);
+  let weight = load.weight + (ring.weight - wasHeavy);
+
+  if (held > MAX_LOG_ENTRIES) {
+    held = narrowRuns(state.byTopic, held);
+    // Runs were cut to fit a count, which is a different measure; what that left them weighing
+    // has to be counted rather than guessed, and the walk it costs has just been paid anyway.
+    weight = heldWeight(state.byTopic);
+  }
+
+  return weight > state.budget
+    ? cutBack(state, state.budget)
+    : { held, weight, capped: load.capped };
+}
+
+/**
+ * Brings the console back inside its memory budget.
+ *
+ * This is where the per-topic weight cap comes on, and it comes on for every run at once. It is
+ * the bound the log holds in reserve: until the whole of it is over budget, a topic sending
+ * megabyte payloads keeps them, because there was room.
+ *
+ * Depth gives way before breadth here too — every run keeps its newest TOPIC_BYTES rather than
+ * some topics keeping everything and the rest nothing. Only when even that is more than the
+ * budget do whole topics go, and the ones that go are those whose newest message is oldest: a
+ * topic still moving is one somebody may be watching.
+ */
+function cutBack(state: LogState, budget: number): Load {
+  let held = 0;
+  let weight = 0;
+  for (const ring of state.byTopic.values()) {
+    ring.capBytesTo(TOPIC_BYTES);
+    held += ring.length;
+    weight += ring.weight;
+  }
+
+  if (weight <= budget) return { held, weight, capped: true };
+
+  const byAge = [...state.byTopic.entries()].sort((a, b) => a[1].newestId - b[1].newestId);
+  for (const [topic, ring] of byAge) {
+    if (weight <= budget) break;
+    held -= ring.length;
+    weight -= ring.weight;
+    state.byTopic.delete(topic);
+  }
+
+  return { held: Math.max(0, held), weight: Math.max(0, weight), capped: true };
 }
 
 /**
@@ -389,9 +522,10 @@ export function runFor(byTopic: ReadonlyMap<string, TopicRing>, filter: string):
 /**
  * What every run together weighs, in the characters their bodies are held as.
  *
- * Walked rather than kept running: it is asked for once a second by a line nobody has open most
- * of the time, and a total maintained on the hot path would be paid for on every arrival by
- * every reader instead.
+ * The store keeps this running now — the budget has to be checked on the message that crosses
+ * it, and walking every ring to find that out would put the whole map on the path of every
+ * arrival. This is how it is put right after a pass that cut runs back by a different measure,
+ * and it is what a test can check the running total against.
  */
 export function heldWeight(byTopic: ReadonlyMap<string, TopicRing>): number {
   let weight = 0;

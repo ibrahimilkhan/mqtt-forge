@@ -11,6 +11,9 @@ const DEFAULTS = {
   // Off, because a tool that makes a noise the first time it is opened is a tool that gets
   // muted at the operating system and then never heard again.
   alertSound: false,
+  // How much traffic the console may hold, in megabytes — a fact about the reader's machine,
+  // kept with the rest of what this browser remembers.
+  loadMb: 500,
 };
 
 beforeEach(() => {
@@ -98,8 +101,9 @@ describe('persistence', () => {
 
     await useAppearanceStore.persist.rehydrate();
 
-    const { sans, mono, size, scale, readings, health, alertSound } = useAppearanceStore.getState();
-    expect({ sans, mono, size, scale, readings, health, alertSound }).toEqual(DEFAULTS);
+    const { sans, mono, size, scale, readings, health, alertSound, loadMb } =
+      useAppearanceStore.getState();
+    expect({ sans, mono, size, scale, readings, health, alertSound, loadMb }).toEqual(DEFAULTS);
   });
 
   it('does not throw when the storage write fails, and the choice still applies to this tab', () => {
@@ -135,16 +139,41 @@ describe('persistence', () => {
 
     await useAppearanceStore.persist.rehydrate();
 
-    const { sans, mono, size, scale, readings, health, alertSound } = useAppearanceStore.getState();
-    expect({ sans, mono, size, scale, readings, health, alertSound }).toEqual(DEFAULTS);
+    const { sans, mono, size, scale, readings, health, alertSound, loadMb } =
+      useAppearanceStore.getState();
+    expect({ sans, mono, size, scale, readings, health, alertSound, loadMb }).toEqual(DEFAULTS);
   });
 
-  it('keeps the sound preference, and writes it under the storage key at version 6', () => {
+  it('keeps the sound preference, and writes it under the storage key at version 7', () => {
     useAppearanceStore.getState().setAlertSound(true);
 
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
-    expect(stored.version).toBe(6);
+    expect(stored.version).toBe(7);
     expect(stored.state).toEqual({ ...DEFAULTS, alertSound: true });
+  });
+
+  // The same point again, one version on. A choice about memory must not cost a reader the
+  // typography, the readings or the sound they had already chosen.
+  it('loads a version 6 store with its other settings intact, and the default load', async () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        state: { sans: 'system', size: 14, scale: 'extremes', health: true, alertSound: true },
+        version: 6,
+      }),
+    );
+
+    await useAppearanceStore.persist.rehydrate();
+
+    const { sans, size, scale, health, alertSound, loadMb } = useAppearanceStore.getState();
+    expect({ sans, size, scale, health, alertSound, loadMb }).toEqual({
+      sans: 'system',
+      size: 14,
+      scale: 'extremes',
+      health: true,
+      alertSound: true,
+      loadMb: 500,
+    });
   });
 
   // The point of the bump. One boolean must not cost a reader the typography they chose.
@@ -170,5 +199,23 @@ describe('persistence', () => {
       health: true,
     });
     expect(alertSound).toBe(false);
+  });
+});
+
+describe('the load the console may hold', () => {
+  it('starts at five hundred megabytes', () => {
+    expect(useAppearanceStore.getState().loadMb).toBe(500);
+  });
+
+  it('takes any of the offered sizes', () => {
+    useAppearanceStore.getState().setLoadMb(2000);
+
+    expect(useAppearanceStore.getState().loadMb).toBe(2000);
+  });
+
+  it('refuses a stored size that is not one of them', () => {
+    expect(sanitize({ loadMb: 20000 }).loadMb).toBe(500);
+    expect(sanitize({ loadMb: '500' }).loadMb).toBe(500);
+    expect(sanitize({ loadMb: 250 }).loadMb).toBe(250);
   });
 });

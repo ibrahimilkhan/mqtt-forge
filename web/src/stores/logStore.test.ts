@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { byteLength } from '../lib/payload';
 import type { DecodedMessage } from '../realtime/decodeIncoming';
 import {
+  DEFAULT_LOAD_BYTES,
   heldWeight,
   narrowRuns,
   MIN_TOPIC_ENTRIES,
@@ -32,7 +33,11 @@ const arrivals = () => runFor(useLogStore.getState().byTopic, '#');
 const on = (topic: string) => runFor(useLogStore.getState().byTopic, topic);
 const send = (...messages: DecodedMessage[]) => useLogStore.getState().appendReceived(messages);
 
-beforeEach(() => useLogStore.getState().clear());
+beforeEach(() => {
+  useLogStore.getState().clear();
+  // A budget one test lowered is not a budget the next one asked for.
+  useLogStore.setState({ budget: DEFAULT_LOAD_BYTES });
+});
 
 describe('what the log makes of an arrival', () => {
   it('keeps a batch in newest-first order', () => {
@@ -153,14 +158,14 @@ describe('what a topic keeps', () => {
     expect(on('crowd/7')).toHaveLength(1);
   });
 
-  // A count is not a memory bound. One topic sending megabytes would otherwise hold as many as
-  // one sending bytes.
-  it('stops on weight before it reaches the depth, when the payloads are heavy', () => {
+  // A count is not a memory bound — but the weight bound is the console's, not the topic's, and
+  // it is not spent until the console is full. Thirty heavy messages on a console holding eight
+  // megabytes is not a machine in trouble, and this used to keep eleven of them.
+  it('keeps every heavy message while the console has room for it', () => {
     const heavy = 'x'.repeat(TOPIC_BYTES / 10);
     send(...Array.from({ length: 30 }, () => message('fat', heavy)));
 
-    expect(on('fat').length).toBeLessThanOrEqual(11);
-    expect(on('fat').length).toBeGreaterThan(0);
+    expect(on('fat')).toHaveLength(30);
   });
 });
 
@@ -291,7 +296,11 @@ describe('a message far larger than the per-topic budget', () => {
     receivedAt: '2026-09-06T00:00:00.000Z',
   });
 
-  beforeEach(() => useLogStore.getState().clear());
+  beforeEach(() => {
+  useLogStore.getState().clear();
+  // A budget one test lowered is not a budget the next one asked for.
+  useLogStore.setState({ budget: DEFAULT_LOAD_BYTES });
+});
 
   it('is held whole', () => {
     const body = 'z'.repeat(1_000_000);
@@ -303,16 +312,156 @@ describe('a message far larger than the per-topic budget', () => {
     expect(held?.body).toBe(body);
   });
 
-  // ...and it is the newest that survives, which is the trade the byte budget makes: a topic
-  // sending megabytes keeps the last one rather than a prefix of several.
-  it('pushes the older messages of its own topic out rather than being cut', () => {
-    useLogStore.getState().appendReceived([
-      arrival('big', 'small'),
-      arrival('big', 'y'.repeat(1_000_000)),
-    ]);
+  // And what stood beside it stays. The old rule cut this run back to one message on the
+  // grounds that a megabyte is more than a topic's share — of a budget the console was nowhere
+  // near spending.
+  it('leaves the messages beside it alone', () => {
+    useLogStore
+      .getState()
+      .appendReceived([arrival('big', 'small'), arrival('big', 'y'.repeat(1_000_000))]);
 
     const run = useLogStore.getState().byTopic.get('big')?.newestFirst() ?? [];
-    expect(run).toHaveLength(1);
+    expect(run).toHaveLength(2);
     expect(run[0].body).toHaveLength(1_000_000);
+    expect(run[1].body).toBe('small');
+  });
+});
+
+/**
+ * The bound that is about the machine, and the only one the reader sets.
+ *
+ * Everything above holds while there is room. This is what happens when there is not: the
+ * per-topic weight cap comes on for every run at once, and whole topics go only if even that is
+ * not enough. The budget is in the store rather than a constant so a test can reach it without
+ * sending five hundred megabytes.
+ */
+describe('the memory budget', () => {
+  const heavy = (n: number) => 'x'.repeat(n);
+
+  it('holds everything while what it holds is under the budget', () => {
+    send(...Array.from({ length: 8 }, (_, i) => message('fat', heavy(TOPIC_BYTES) + i)));
+
+    expect(on('fat')).toHaveLength(8);
+    expect(useLogStore.getState().capped).toBe(false);
+  });
+
+  it('counts what it is holding as it goes', () => {
+    send(message('a', heavy(1000)), message('b', heavy(500)));
+
+    expect(useLogStore.getState().weight).toBe(1500);
+    expect(useLogStore.getState().weight).toBe(heldWeight(useLogStore.getState().byTopic));
+  });
+
+  it('cuts every run back to the per-topic weight once it is over', () => {
+    useLogStore.setState({ budget: TOPIC_BYTES * 3 });
+
+    // Two topics, four heavy messages each: eight times the per-topic weight in all.
+    for (let i = 0; i < 4; i++) send(message('one', heavy(TOPIC_BYTES)), message('two', heavy(TOPIC_BYTES)));
+
+    const state = useLogStore.getState();
+    expect(state.capped).toBe(true);
+    expect(state.byTopic.get('one')!.weight).toBeLessThanOrEqual(TOPIC_BYTES);
+    expect(state.byTopic.get('two')!.weight).toBeLessThanOrEqual(TOPIC_BYTES);
+    // Depth gave way; neither topic was dropped.
+    expect(on('one').length).toBeGreaterThan(0);
+    expect(on('two').length).toBeGreaterThan(0);
+  });
+
+  it('keeps the newest of what it cuts', () => {
+    useLogStore.setState({ budget: TOPIC_BYTES * 2 });
+
+    send(message('one', `first${heavy(TOPIC_BYTES)}`));
+    send(message('one', `second${heavy(TOPIC_BYTES)}`));
+    send(message('one', `third${heavy(TOPIC_BYTES)}`));
+
+    expect(on('one')[0].body!.startsWith('third')).toBe(true);
+  });
+
+  it('bounds a topic first heard from while it is full', () => {
+    useLogStore.setState({ budget: TOPIC_BYTES });
+    send(message('one', heavy(TOPIC_BYTES * 2)));
+    expect(useLogStore.getState().capped).toBe(true);
+
+    for (let i = 0; i < 4; i++) send(message('later', heavy(TOPIC_BYTES)));
+
+    expect(useLogStore.getState().byTopic.get('later')!.weight).toBeLessThanOrEqual(TOPIC_BYTES);
+  });
+
+  // The last resort, and the same rule the count ceiling uses: a topic still moving is one
+  // somebody may be watching, so the ones that go are those whose newest message is oldest.
+  it('drops the quietest topics when a run each is still too much', () => {
+    useLogStore.setState({ budget: TOPIC_BYTES * 2 });
+
+    for (let t = 0; t < 6; t++) send(message(`crowd/${t}`, heavy(TOPIC_BYTES)));
+
+    const kept = [...useLogStore.getState().byTopic.keys()];
+    expect(kept.length).toBeLessThan(6);
+    expect(kept).toContain('crowd/5');
+    expect(kept).not.toContain('crowd/0');
+  });
+
+  describe('when the reader changes it', () => {
+    // It is told the stored choice on every change of any stored choice, so the common call is
+    // one that changes nothing here.
+    it('does not lift the cap when it is told the same budget again', () => {
+      useLogStore.setState({ budget: TOPIC_BYTES });
+      send(...Array.from({ length: 4 }, () => message('fat', heavy(TOPIC_BYTES))));
+      expect(useLogStore.getState().capped).toBe(true);
+
+      useLogStore.getState().setBudget(TOPIC_BYTES);
+
+      expect(useLogStore.getState().capped).toBe(true);
+    });
+
+    it('cuts back at once on a budget the console is already past', () => {
+      send(...Array.from({ length: 6 }, () => message('fat', heavy(TOPIC_BYTES))));
+      expect(useLogStore.getState().capped).toBe(false);
+
+      useLogStore.getState().setBudget(TOPIC_BYTES * 2);
+
+      expect(useLogStore.getState().capped).toBe(true);
+      expect(useLogStore.getState().byTopic.get('fat')!.weight).toBeLessThanOrEqual(TOPIC_BYTES);
+    });
+
+    it('lets the runs grow again on a budget with room in it', () => {
+      useLogStore.setState({ budget: TOPIC_BYTES });
+      send(...Array.from({ length: 4 }, () => message('fat', heavy(TOPIC_BYTES))));
+      expect(useLogStore.getState().capped).toBe(true);
+
+      useLogStore.getState().setBudget(DEFAULT_LOAD_BYTES);
+      send(...Array.from({ length: 4 }, () => message('fat', heavy(TOPIC_BYTES))));
+
+      expect(useLogStore.getState().capped).toBe(false);
+      expect(useLogStore.getState().byTopic.get('fat')!.weight).toBeGreaterThan(TOPIC_BYTES);
+    });
+
+    it('leaves what is held alone when the new budget still fits it', () => {
+      send(message('a', heavy(1000)));
+
+      useLogStore.getState().setBudget(TOPIC_BYTES);
+
+      expect(on('a')).toHaveLength(1);
+      expect(useLogStore.getState().capped).toBe(false);
+      expect(useLogStore.getState().budget).toBe(TOPIC_BYTES);
+    });
+  });
+
+  it('is not under pressure once it is holding nothing', () => {
+    useLogStore.setState({ budget: TOPIC_BYTES });
+    send(message('one', heavy(TOPIC_BYTES * 2)));
+    expect(useLogStore.getState().capped).toBe(true);
+
+    useLogStore.getState().clear();
+
+    expect(useLogStore.getState().capped).toBe(false);
+    expect(useLogStore.getState().weight).toBe(0);
+  });
+
+  it('stops counting what a forgotten topic weighed', () => {
+    send(message('going', heavy(1000)), message('staying', heavy(500)));
+
+    useLogStore.getState().forgetTopics(['going']);
+
+    expect(useLogStore.getState().weight).toBe(500);
   });
 });

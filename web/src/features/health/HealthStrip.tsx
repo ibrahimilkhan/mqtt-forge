@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { heldWeight, useLogStore } from '../../stores/logStore';
+import { useLogStore } from '../../stores/logStore';
 import { useHealthStore } from '../../stores/healthStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import styles from './HealthStrip.module.css';
@@ -12,6 +12,8 @@ type Reading = {
   held: number;
   topics: number;
   weight: number;
+  /** Whether the console is holding as much as the reader allowed it, and cutting runs back. */
+  full: boolean;
   takingMs: number;
   fps: number;
   /** What the server's queue had to drop because this console was behind. */
@@ -50,7 +52,8 @@ export function HealthStrip() {
         arriving: arrived,
         held: log.held,
         topics: useTopicTreeStore.getState().root.subTopics,
-        weight: heldWeight(log.byTopic),
+        weight: log.weight,
+        full: log.capped,
         takingMs: arrived > 0 ? spentMs : 0,
         fps: drawn,
         dropped: useHealthStore.getState().dropped,
@@ -79,7 +82,9 @@ export function HealthStrip() {
             slot={18}
             value={`${count(reading.held)} on ${count(reading.topics)} topics`}
           />
-          <Cell label="payload" slot={7} value={weigh(reading.weight)} />
+          {/* Tense once the console is full, because that is the reading that has stopped being
+              only a fact: past the budget in Settings, runs are being cut back to fit. */}
+          <Cell label="payload" slot={7} value={weigh(reading.weight)} tense={reading.full} />
           <Cell label="taking" slot={9} value={`${reading.takingMs.toFixed(1)} ms/s`} />
           {/* Only once there are any. A cell reading 'dropped 0' on every console that has never
               dropped anything is four characters of reassurance nobody asked for; one that

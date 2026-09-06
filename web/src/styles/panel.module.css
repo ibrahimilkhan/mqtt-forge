@@ -230,24 +230,6 @@
   color: var(--fault);
 }
 
-/* The control on a note that offers to do what the note is explaining — draw a body the form is
-   holding whole but showing in part. The wire log's own 'show all' is this chip, and this is the
-   same offer about the same message, so it is that shape: a button of the form's usual size would
-   sit next to Publish and read as something that sends. */
-.reveal {
-  all: unset;
-  display: inline-block;
-  cursor: pointer;
-  padding: 2px 5px;
-  border: 1px solid var(--rule);
-  border-radius: var(--r-control);
-  font-family: var(--mono);
-  font-size: var(--t-micro);
-  letter-spacing: 0.06em;
-  color: var(--muted);
-}
-.reveal:hover { color: var(--ink); border-color: var(--muted); }
-.reveal:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 /* The live link, under the form that would replace it. A rule sets it apart from the controls
    above; the mono face and the fixed label column let the values be read as a column. */

@@ -2,13 +2,13 @@ import { Field } from '../../components/Field';
 import { PanelShell } from '../../components/PanelShell';
 import { SoundButton } from '../alerts/SoundButton';
 import panel from '../../styles/panel.module.css';
-import { useAppearanceStore } from '../../stores/appearanceStore';
+import { LOADS, useAppearanceStore } from '../../stores/appearanceStore';
 import styles from './AppearancePanel.module.css';
 import { SANS, SIZE, type SansId } from './fonts';
 
 // No selector: the panel shows every value, so it must re-render on any change.
 export function AppearancePanel({ onClose }: { onClose: () => void }) {
-  const { sans, size, health, setSans, setSize, setHealth, reset } =
+  const { sans, size, health, loadMb, setSans, setSize, setHealth, setLoadMb, reset } =
     useAppearanceStore();
 
   return (
@@ -51,6 +51,34 @@ export function AppearancePanel({ onClose }: { onClose: () => void }) {
           </div>
         </Field>
       </div>
+
+      {/* Not appearance, and the panel is Settings rather than Appearance for this among other
+          reasons. It belongs on this screen because it is the same kind of fact as the rest of
+          them: an answer about this reader's own machine, kept in this browser. */}
+      <div className={panel.row}>
+        <Field label="Memory for held messages" htmlFor="load-mb">
+          <select
+            id="load-mb"
+            className={styles.select}
+            value={loadMb}
+            onChange={(event) => setLoadMb(Number(event.target.value))}
+          >
+            {LOADS.map((mb) => (
+              <option key={mb} value={mb}>
+                {mb >= 1000 ? `${mb / 1000} GB` : `${mb} MB`}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
+
+      {/* The whole point of the number above, said in one line: nothing is thrown away under it.
+          A reader who has watched a console lose history wants to know what stops that, and a
+          reader who has not should know what the console will do when it has to. */}
+      <p className={panel.pickNote}>
+        Nothing is dropped until the console is holding this much. Past it, every topic keeps its
+        newest 256 kB.
+      </p>
 
       <div className={panel.checks}>
         <label>

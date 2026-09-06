@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useAppearanceStore } from '../../stores/appearanceStore';
+import { useLogStore } from '../../stores/logStore';
 import { NOT_READY } from '../alerts/alertSound';
 import { AppearancePanel } from './AppearancePanel';
 import { startApplyingAppearance } from './applyAppearance';
@@ -126,6 +127,26 @@ describe('AppearancePanel', () => {
 
     expect(root().style.getPropertyValue('--sans')).toBe(SANS.inter.stack);
     expect(screen.getByLabelText('Font')).toHaveValue('inter');
+    stop();
+  });
+});
+
+describe('how much the console may hold', () => {
+  it('offers the reader a size and remembers the one they pick', async () => {
+    render(<AppearancePanel onClose={() => {}} />);
+
+    await userEvent.selectOptions(screen.getByLabelText('Memory for held messages'), '1000');
+
+    expect(useAppearanceStore.getState().loadMb).toBe(1000);
+  });
+
+  it('tells the log what it may hold', async () => {
+    const stop = startApplyingAppearance();
+    render(<AppearancePanel onClose={() => {}} />);
+
+    await userEvent.selectOptions(screen.getByLabelText('Memory for held messages'), '250');
+
+    expect(useLogStore.getState().budget).toBe(250 * 1024 * 1024);
     stop();
   });
 });
