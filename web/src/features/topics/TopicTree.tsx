@@ -391,11 +391,6 @@ export function TopicTree({ broker }: { broker?: string }) {
 
       {root.subTopics === 0 ? (
         <p className="empty">No topics yet. Connect to a broker and its tree builds here.</p>
-      ) : sought && rows.length === 0 ? (
-        <p className="empty" data-testid="no-topic-found">
-          No topic {where === 'body' ? 'is carrying' : where === 'topic' ? 'is named for' : 'says'}{' '}
-          “{look}”.
-        </p>
       ) : (
         <div className={styles.tree}>
           {/* One root for the whole broker, so the totals are readable without expanding
@@ -416,6 +411,18 @@ export function TopicTree({ broker }: { broker?: string }) {
             onToggle={toggleBroker}
             onSelect={pickBroker}
           />
+
+          {/* A search that matched nothing says so under the broker's row rather than in place of
+              the tree. In place of it, the row went too — and the row is where the search box and
+              the mark that shuts it live, so a reader who mistyped was left looking at a sentence
+              with no way back to the tree it was about. */}
+          {sought && rows.length === 0 && (
+            <p className="empty" data-testid="no-topic-found">
+              No topic{' '}
+              {where === 'body' ? 'is carrying' : where === 'topic' ? 'is named for' : 'says'} “
+              {look}”.
+            </p>
+          )}
 
           {rows.map((row) => {
             const over = covering(row.path);

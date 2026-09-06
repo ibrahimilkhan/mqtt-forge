@@ -1002,6 +1002,23 @@ describe('searching the topics', () => {
     expect(screen.queryByText(/No topics yet/)).not.toBeInTheDocument();
   });
 
+  // The marks ride on the broker's row, and a search matching nothing used to take the whole
+  // tree away with it — that row included. A reader who mistyped was left with a sentence and no
+  // way back to the tree it was about.
+  it('keeps the way back when nothing matches', async () => {
+    render(<TopicTree broker="127.0.0.1:1883" />);
+    await openSearch();
+
+    await userEvent.type(search(), 'zzz');
+
+    expect(screen.getByLabelText('Search the topics')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Where to look in the topics/ })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Find a topic' }));
+
+    expect(rowNames()).toEqual(['office', 'plant']);
+  });
+
   it('gives the tree back when the box is emptied', async () => {
     render(<TopicTree broker="127.0.0.1:1883" />);
     await openSearch();
