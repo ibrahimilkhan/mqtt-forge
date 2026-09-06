@@ -591,21 +591,17 @@
     grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
     column-gap: 0;
     align-items: stretch;
-    /* The whole of what the spread was given, so the record fills its share top to bottom and
-       the form has room to stand in the middle of its own. */
+    /* The whole of what the spread was given, so the record fills its share top to bottom. */
     flex: 1 1 auto;
   }
 
-  /* `margin: auto` rather than centring the container's items: it centres in both directions at
-     once, and it is the one way of centring that never pushes the top of a tall form off the
-     edge of what it is centred in. The cap is back on here — the panel takes the window off the
-     form's cap (see `[data-panel='full'] .form`), and the share this stands in is the answer to
-     'how wide' now. */
-  /* Vertical only: the share is taller than the form once the panel reaches the foot of the
-     window, and the middle of it is where the form belongs. Horizontally it is already centred
-     by the rules outside this query, which hold at every width. */
-  .formSide > :first-child { margin-top: auto; }
-  .formSide > :last-child { margin-bottom: auto; }
+  /* The form is centred across its share and starts at the top of it.
+     
+     It stood in the middle of the share in both directions for a while, and vertically that was
+     wrong: a form is read from its first line down, and one floating in the middle of a tall
+     page starts wherever the page happens to end rather than where the reader's eye lands. The
+     record beside it starts at the top too, so the two now begin on the same line. Horizontal
+     centring is `align-items` on the side itself, outside this query, and holds at every width. */
   /* Beside the form rather than under it, so the line that set the events apart from the form
      above has nothing above it to be set apart from. The heading does that job on its own. */
   /* First in the aside, so nothing stands above it to be spaced off — but the card keeps its
