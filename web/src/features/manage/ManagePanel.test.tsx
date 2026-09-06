@@ -250,3 +250,40 @@ describe('the screen for what is being held', () => {
     });
   });
 });
+
+/**
+ * The retained figure is counted off this console's own tree, and that tree has a ceiling. A
+ * broker holding more topics than it hands every one of them over and the quietest are dropped
+ * as they arrive — so under a heading that says what the BROKER is holding, the figure is short
+ * by however many were dropped, and the button beside it would clear only what it could see.
+ */
+describe('when the tree has given topics up to its ceiling', () => {
+  it('says the retained figure is only what this console has seen', async () => {
+    landed(message('plant/boiler/temp', '81', true));
+    act(() => useTopicTreeStore.setState({ forgotten: 11_006 }));
+
+    render(<ManagePanel onClose={() => {}} />);
+
+    const note = await screen.findByTestId('retained-short');
+    expect(note).toHaveTextContent(/what this console has seen/);
+    expect(note).toHaveTextContent(/11,006 quiet topics/);
+  });
+
+  it('says nothing of the sort while the tree has kept everything', async () => {
+    landed(message('plant/boiler/temp', '81', true));
+
+    render(<ManagePanel onClose={() => {}} />);
+
+    await screen.findByText('Retained');
+    expect(screen.queryByTestId('retained-short')).not.toBeInTheDocument();
+  });
+
+  it('writes the counts with the separators the rest of the panel uses', async () => {
+    const many = Array.from({ length: 1200 }, (_, i) => message(`t/${i}`, '1', true));
+    landed(...many);
+
+    render(<ManagePanel onClose={() => {}} />);
+
+    expect(await screen.findByText('1,200 topics')).toBeInTheDocument();
+  });
+});

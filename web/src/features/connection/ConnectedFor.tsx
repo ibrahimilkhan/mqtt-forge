@@ -19,10 +19,13 @@ export function ConnectedFor({ since }: { since: string }) {
   return <time dateTime={since}>{`${wallClock(startedAt)} · ${howLong(elapsed)}`}</time>;
 }
 
-// Local time with seconds, 24-hour whatever the locale prefers: this is a stopwatch reading,
-// not a date, and it has to line up with the count beside it.
+// Local time with seconds, 24-hour: this is a stopwatch reading, not a date, and it has to line
+// up with the count beside it — and with the log's own rows, which is the reason for naming a
+// locale rather than taking the machine's. `hour12: false` fixes the clock but not the shape of
+// it: a machine set to fr-CA writes '00 h 05 min 00 s' where every other time in this console
+// reads '00:05:00', and the two sitting a pane apart look like two different kinds of fact.
 function wallClock(startedAt: number): string {
-  return new Date(startedAt).toLocaleTimeString(undefined, {
+  return new Date(startedAt).toLocaleTimeString('en-GB', {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',

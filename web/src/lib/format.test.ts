@@ -49,3 +49,30 @@ describe('duration', () => {
     expect(duration(90_000)).toBe('1.5 min');
   });
 });
+
+/**
+ * The far end of the scale, which a JSON body reaches without trying: one topic sending
+ * `{"buyuk": 1e308}` put `1.6666666666666666e+307` under a chart as an axis label.
+ */
+describe('short, past where a double stops writing digits', () => {
+  it('gives three figures and an exponent rather than every figure it holds', () => {
+    expect(short(1.6666666666666666e307)).toBe('1.67e+307');
+    expect(short(-1.6666666666666666e307)).toBe('-1.67e+307');
+  });
+
+  it('leaves no trailing zeros on the mantissa', () => {
+    expect(short(1e308)).toBe('1e+308');
+    expect(short(1e21)).toBe('1e+21');
+    expect(short(1.5e22)).toBe('1.5e+22');
+  });
+
+  it('still writes the ordinary sizes the way it always did', () => {
+    expect(short(1e20)).toBe('100000000000000000000');
+    expect(short(12345)).toBe('12345');
+    expect(short(21.53)).toBe('21.53');
+  });
+
+  it('says the small end in figures a reader can count', () => {
+    expect(short(5e-324)).toBe('4.94e-324');
+  });
+});

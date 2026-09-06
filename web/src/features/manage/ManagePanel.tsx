@@ -37,6 +37,10 @@ export function ManagePanel({ onClose }: { onClose: () => void }) {
   const events = useBrokerEventsStore((state) => state.events);
   const clearEvents = useBrokerEventsStore((state) => state.clear);
   const loadMb = useAppearanceStore((state) => state.loadMb);
+  // How many topics the tree has given up to its ceiling this connection. Read here because the
+  // retained figure below is counted off that tree, and a tree that has forgotten is a figure
+  // that is short. See the note beside it.
+  const forgotten = useTopicTreeStore((state) => state.forgotten);
 
   // Worked out on a timer rather than from a subscription: every number here walks a run or a
   // tree, and a panel that did that on every arrival would cost the most on the brokers where
@@ -196,10 +200,26 @@ export function ManagePanel({ onClose }: { onClose: () => void }) {
           <div>
             <dt>Retained</dt>
             <dd>
-              {retained.length} {retained.length === 1 ? 'topic' : 'topics'}
+              {retained.length.toLocaleString('en-GB')}{' '}
+              {retained.length === 1 ? 'topic' : 'topics'}
             </dd>
           </div>
         </dl>
+
+        {/* The figure above is counted off this console's own tree, and that tree has a ceiling:
+            a broker holding more retained topics than MAX_TREE_TOPICS hands over every one of
+            them and the quietest are forgotten as they arrive. Under a heading that says 'what
+            the broker is holding' the shortfall would be read as the broker's, and the button
+            below would then report clearing a broker it had only partly cleared. Said here, once,
+            rather than in the counts: what is wrong is not the number but what it is a number of. */}
+        {forgotten > 0 && (
+          <p className={panel.note} data-testid="retained-short">
+            This is what this console has seen. The tree gave up{' '}
+            {forgotten.toLocaleString('en-GB')} quiet{' '}
+            {forgotten === 1 ? 'topic' : 'topics'} to its ceiling, so the broker is holding at
+            least that many more, and clearing from here would leave them.
+          </p>
+        )}
 
         {said && <p className={panel.note}>{said}</p>}
 
@@ -208,14 +228,14 @@ export function ManagePanel({ onClose }: { onClose: () => void }) {
             {/* Named, up to a point a reader can still read: this is the one control here that
                 reaches past the console and changes what everybody else's client will see. */}
             <p className={panel.note}>
-              This clears the retained message on {retained.length}{' '}
+              This clears the retained message on {retained.length.toLocaleString('en-GB')}{' '}
               {retained.length === 1 ? 'topic' : 'topics'}
               {retained.length <= 6 ? `: ${retained.join(', ')}` : ''}. Every other client sees it
               too, and nothing here can put them back.
             </p>
             <div className={panel.actions}>
               <button type="button" onClick={forget} disabled={clearing}>
-                {clearing ? 'Clearing…' : `Yes, clear ${retained.length}`}
+                {clearing ? 'Clearing…' : `Yes, clear ${retained.length.toLocaleString('en-GB')}`}
               </button>
               <button type="button" className="ghost" onClick={() => setAsking(false)}>
                 Cancel
