@@ -91,4 +91,84 @@ public class MqttnetSubscribeTests : IClassFixture<MosquittoFixture>
 
         Assert.Empty(subscriber.ActiveFilters);
     }
+
+    /// <summary>
+    /// Two filters that overlap, one message, one delivery.
+    /// </summary>
+    // The broker's part of this is not a bug and cannot be argued with: a client with two
+    // subscriptions matching a topic is sent the message twice, because each subscription is its
+    // own standing order. What was a bug is asking twice — 'listen to every topic' is on by
+    // default and every filter chip and every alert rule adds a narrower filter under it, so the
+    // ordinary console doubled the counts, the plots and the rates for exactly the part of the
+    // tree somebody had named.
+    //
+    // Against a real broker rather than a substitute, because what is being asserted is what
+    // mosquitto does with the packets, not what this class thinks it sent.
+    [Fact]
+    public async Task A_filter_under_a_wider_one_is_delivered_once()
+    {
+        var arrived = new List<MqttMessage>();
+        var notifier = Substitute.For<IMessageNotifier>();
+        notifier.NotifyMessageReceivedAsync(Arg.Do<MqttMessage>(m => { lock (arrived) arrived.Add(m); }))
+            .Returns(Task.CompletedTask);
+
+        using var provider = new MqttnetClientProvider();
+        var manager = new MqttnetConnectionManager(provider, Substitute.For<IConnectionStateNotifier>());
+        var subscriber = new MqttnetSubscriber(provider, notifier);
+
+        await manager.ConnectAsync(Settings("overlap-test"), CancellationToken.None);
+        await subscriber.SubscribeAsync([new SubscriptionRequest("#", 0)], CancellationToken.None);
+        await subscriber.SubscribeAsync([new SubscriptionRequest("plant/#", 0)], CancellationToken.None);
+
+        using var external = new MqttClientFactory().CreateMqttClient();
+        await external.ConnectAsync(new MqttClientOptionsBuilder()
+            .WithTcpServer(_broker.Host, _broker.Port).Build());
+        await external.PublishStringAsync("plant/boiler/temp", "81");
+
+        // Long enough that a second copy would have landed. There is no event for 'nothing else
+        // is coming', so the wait is the assertion.
+        await Task.Delay(TimeSpan.FromSeconds(2));
+
+        lock (arrived)
+        {
+            Assert.Single(arrived, m => m.Topic == "plant/boiler/temp");
+            Assert.Contains("plant/#", subscriber.ActiveFilters);
+        }
+    }
+
+    /// <summary>And the narrow one starts arriving on its own when the wide one goes.</summary>
+    // The other half, and the half that makes the first one safe: turning off 'listen to every
+    // topic' with a filter chip underneath it must not leave the chip listening to nothing.
+    [Fact]
+    public async Task What_a_departing_filter_was_covering_keeps_arriving()
+    {
+        var arrived = new List<MqttMessage>();
+        var notifier = Substitute.For<IMessageNotifier>();
+        notifier.NotifyMessageReceivedAsync(Arg.Do<MqttMessage>(m => { lock (arrived) arrived.Add(m); }))
+            .Returns(Task.CompletedTask);
+
+        using var provider = new MqttnetClientProvider();
+        var manager = new MqttnetConnectionManager(provider, Substitute.For<IConnectionStateNotifier>());
+        var subscriber = new MqttnetSubscriber(provider, notifier);
+
+        await manager.ConnectAsync(Settings("uncover-test"), CancellationToken.None);
+        await subscriber.SubscribeAsync([new SubscriptionRequest("#", 0)], CancellationToken.None);
+        await subscriber.SubscribeAsync([new SubscriptionRequest("lab/#", 0)], CancellationToken.None);
+        await subscriber.UnsubscribeAsync("#", CancellationToken.None);
+
+        using var external = new MqttClientFactory().CreateMqttClient();
+        await external.ConnectAsync(new MqttClientOptionsBuilder()
+            .WithTcpServer(_broker.Host, _broker.Port).Build());
+        await external.PublishStringAsync("lab/oven/temp", "230");
+        await external.PublishStringAsync("plant/boiler/temp", "81");
+
+        await Task.Delay(TimeSpan.FromSeconds(2));
+
+        lock (arrived)
+        {
+            Assert.Single(arrived, m => m.Topic == "lab/oven/temp");
+            // And nothing else: '#' is gone, so the rest of the tree is not this console's any more.
+            Assert.DoesNotContain(arrived, m => m.Topic == "plant/boiler/temp");
+        }
+    }
 }

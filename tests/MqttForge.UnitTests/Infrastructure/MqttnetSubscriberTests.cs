@@ -248,4 +248,165 @@ public class MqttnetSubscriberTests
         Assert.Contains("sensors/#", sut.ActiveFilters);
         Assert.DoesNotContain("$SYS/#", sut.ActiveFilters);
     }
+
+    /// <summary>
+    /// One message, two standing orders, two copies. A broker is required to send a copy per
+    /// matching subscription, so a console listening to '#' that also holds 'plant/#' — a filter
+    /// chip, or any saved alert rule — counts everything under plant twice.
+    /// </summary>
+    public class NotAskingTwice
+    {
+        private readonly IMqttClient _client = Substitute.For<IMqttClient>();
+
+        private MqttnetSubscriber CreateSut()
+        {
+            _client.IsConnected.Returns(true);
+            Answers();
+            return new MqttnetSubscriber(new MqttnetClientProvider(_client), Substitute.For<IMessageNotifier>());
+        }
+
+        /// <summary>A broker that grants whatever it is asked for.</summary>
+        private void Answers() =>
+            _client
+                .SubscribeAsync(Arg.Any<MqttClientSubscribeOptions>(), Arg.Any<CancellationToken>())
+                .Returns(call =>
+                {
+                    var options = (MqttClientSubscribeOptions)call[0]!;
+                    var filters = options.TopicFilters ?? [];
+
+                    return new MqttClientSubscribeResult(
+                        packetIdentifier: 1,
+                        [.. filters.Select(filter =>
+                            new MqttClientSubscribeResultItem(filter, MqttClientSubscribeResultCode.GrantedQoS0))],
+                        reasonString: string.Empty,
+                        []);
+                });
+
+        private List<string> Asked() =>
+        [
+            .. _client.ReceivedCalls()
+                .Where(call => call.GetMethodInfo().Name == nameof(IMqttClient.SubscribeAsync))
+                .SelectMany(call => ((MqttClientSubscribeOptions)call.GetArguments()[0]!).TopicFilters ?? [])
+                .Select(filter => filter.Topic),
+        ];
+
+        /// <summary>
+        /// What was let go of at the broker. The string overload of UnsubscribeAsync is an
+        /// extension, so what the substitute sees is the options object it builds.
+        /// </summary>
+        private List<string> Dropped() =>
+        [
+            .. _client.ReceivedCalls()
+                .Where(call => call.GetMethodInfo().Name == nameof(IMqttClient.UnsubscribeAsync))
+                .SelectMany(call => ((MqttClientUnsubscribeOptions)call.GetArguments()[0]!).TopicFilters ?? []),
+        ];
+
+        private static IReadOnlyList<SubscriptionRequest> Asking(params string[] filters) =>
+            [.. filters.Select(filter => new SubscriptionRequest(filter, 0))];
+
+        [Fact]
+        public async Task A_filter_a_live_one_already_covers_is_not_asked_for()
+        {
+            var sut = CreateSut();
+
+            await sut.SubscribeAsync(Asking("#"), CancellationToken.None);
+            await sut.SubscribeAsync(Asking("plant/#"), CancellationToken.None, SubscriptionOwner.Rules);
+
+            Assert.Equal(["#"], Asked());
+        }
+
+        [Fact]
+        public async Task But_the_console_goes_on_holding_it()
+        {
+            var sut = CreateSut();
+
+            await sut.SubscribeAsync(Asking("#"), CancellationToken.None);
+            await sut.SubscribeAsync(Asking("plant/#"), CancellationToken.None, SubscriptionOwner.Rules);
+
+            Assert.Contains("plant/#", sut.ActiveFilters);
+        }
+
+        [Fact]
+        public async Task A_batch_is_sifted_against_itself_too_since_a_redial_restores_it_whole()
+        {
+            var sut = CreateSut();
+
+            await sut.SubscribeAsync(Asking("plant/#", "#", "plant/boiler/temp"), CancellationToken.None);
+
+            Assert.Equal(["#"], Asked());
+            Assert.Equal(3, sut.ActiveFilters.Count);
+        }
+
+        [Fact]
+        public async Task A_filter_that_covers_a_live_one_takes_it_down()
+        {
+            var sut = CreateSut();
+
+            await sut.SubscribeAsync(Asking("plant/#"), CancellationToken.None, SubscriptionOwner.Rules);
+            await sut.SubscribeAsync(Asking("#"), CancellationToken.None);
+
+            Assert.Equal(["plant/#", "#"], Asked());
+            Assert.Equal(["plant/#"], Dropped());
+            Assert.Contains("plant/#", sut.ActiveFilters);
+        }
+
+        [Fact]
+        public async Task What_a_departing_filter_was_covering_is_asked_for_properly()
+        {
+            var sut = CreateSut();
+
+            await sut.SubscribeAsync(Asking("#"), CancellationToken.None);
+            await sut.SubscribeAsync(Asking("plant/#"), CancellationToken.None, SubscriptionOwner.Rules);
+
+            await sut.UnsubscribeAsync("#", CancellationToken.None);
+
+            Assert.Equal(["#", "plant/#"], Asked());
+            Assert.Equal(["plant/#"], sut.ActiveFilters);
+        }
+
+        [Fact]
+        public async Task Letting_go_of_a_covered_filter_sends_no_packet_about_it()
+        {
+            var sut = CreateSut();
+
+            await sut.SubscribeAsync(Asking("#"), CancellationToken.None);
+            await sut.SubscribeAsync(Asking("plant/#"), CancellationToken.None, SubscriptionOwner.Rules);
+
+            await sut.UnsubscribeAsync("plant/#", CancellationToken.None, SubscriptionOwner.Rules);
+
+            Assert.Empty(Dropped());
+            Assert.DoesNotContain("plant/#", sut.ActiveFilters);
+        }
+
+        /// <summary>
+        /// A wide filter only stands in for a narrow one if it carries the traffic as firmly. A
+        /// reader who asked for QoS 1 under a '#' taken at QoS 0 asked for something the '#'
+        /// cannot give them.
+        /// </summary>
+        [Fact]
+        public async Task A_lower_QoS_does_not_cover_a_higher_one()
+        {
+            var sut = CreateSut();
+
+            await sut.SubscribeAsync(Asking("#"), CancellationToken.None);
+            await sut.SubscribeAsync([new SubscriptionRequest("plant/#", 1)], CancellationToken.None);
+
+            Assert.Equal(["#", "plant/#"], Asked());
+        }
+
+        /// <summary>
+        /// The one wildcard that reaches nothing: a filter beginning with '#' or '+' cannot match
+        /// a topic beginning with '$', which is why the console asks for the broker's statistics
+        /// separately. Reading '#' as covering them would turn the box off.
+        /// </summary>
+        [Fact]
+        public async Task The_brokers_own_tree_is_asked_for_even_under_a_hash()
+        {
+            var sut = CreateSut();
+
+            await sut.SubscribeAsync(Asking("#", "$SYS/#"), CancellationToken.None);
+
+            Assert.Equal(["#", "$SYS/#"], Asked());
+        }
+    }
 }

@@ -50,6 +50,28 @@ public sealed class MqttnetSubscriber : IMqttSubscriber, ISubscriptionRestorer
     // reader dropped an hour ago is not in it, and neither is one from a broker they left.
     private volatile IReadOnlyList<SubscriptionRequest> _heldAtDrop = [];
 
+    /**
+     * The filters this console holds that were never asked of the broker, because one already up
+     * covers them.
+     *
+     * A broker treats each of a client's filters as its own standing order and sends one copy of
+     * a message per filter that matches it — the specification requires it to. So a console
+     * listening to '#' that also holds 'plant/#' is handed everything under plant twice, and
+     * every count, plot, rate and mean doubles for exactly the part of the tree somebody named.
+     * It is not an exotic arrangement: 'listen to every topic' is on by default, and both the
+     * filter chips and every saved alert rule add a second filter under it.
+     *
+     * The console goes on holding the filter — it is in the list, its chip is on screen, and
+     * letting go of it works — it is simply not asked for twice. When the filter covering it goes
+     * away, whatever it was covering is asked for properly; see ResubscribeUncoveredAsync.
+     */
+    private readonly ConcurrentDictionary<string, byte> _quiet = new(StringComparer.Ordinal);
+
+    // The QoS each filter was asked at, whoever asked. Covering only holds if the wide filter
+    // carries the narrow one's messages at least as firmly: a '#' at QoS 0 does not stand in for
+    // a 'plant/#' at QoS 1.
+    private readonly ConcurrentDictionary<string, int> _qosAtBroker = new(StringComparer.Ordinal);
+
     public MqttnetSubscriber(
         MqttnetClientProvider provider, IMessageNotifier notifier, TimeProvider? timeProvider = null)
     {
@@ -77,6 +99,26 @@ public sealed class MqttnetSubscriber : IMqttSubscriber, ISubscriptionRestorer
         EnsureConnected();
 
         if (requests.Count == 0) return;
+
+        // What is worth asking for, out of what was asked of us. See _quiet: a filter already
+        // covered by one that is up would only make the broker send everything under it twice.
+        var (asking, quiet) = Sift(requests);
+
+        foreach (var request in quiet)
+        {
+            // Recorded at the covering filter's grant moment rather than at this one. Nothing is
+            // going to the broker, so no retained backlog is coming, and a fresh window here
+            // would read two seconds of live traffic as replay.
+            Record(request.TopicFilter, owner, CoveredBy(request)?.GrantedAt ?? _time.GetUtcNow());
+            _quiet[request.TopicFilter] = 0;
+
+            if (owner.HasFlag(SubscriptionOwner.Console))
+                _consoleQos[request.TopicFilter] = request.Qos;
+        }
+
+        if (asking.Count == 0) return;
+
+        requests = asking;
 
         // Retain as published, where the link can carry it.
         //
@@ -175,6 +217,10 @@ public sealed class MqttnetSubscriber : IMqttSubscriber, ISubscriptionRestorer
                 // what the reader asked for rather than for what the last broker allowed.
                 if (owner.HasFlag(SubscriptionOwner.Console))
                     _consoleQos[item.TopicFilter.Topic] = asked.GetValueOrDefault(item.TopicFilter.Topic);
+
+                _quiet.TryRemove(item.TopicFilter.Topic, out _);
+                _qosAtBroker[item.TopicFilter.Topic] = asked.GetValueOrDefault(item.TopicFilter.Topic);
+                await QuietenCoveredAsync(item.TopicFilter.Topic, ct);
             }
             else
             {
@@ -238,10 +284,139 @@ public sealed class MqttnetSubscriber : IMqttSubscriber, ISubscriptionRestorer
 
             // The last claim. The broker is told first: if the UNSUBSCRIBE throws, the filter is
             // still up and the record has to go on saying so.
+            //
+            // Unless it was never asked for — a filter covered by a wider one has no standing
+            // order of its own, and an UNSUBSCRIBE for it would be a packet about nothing.
+            if (_quiet.TryRemove(topicFilter, out _))
+            {
+                _filters.TryRemove(new KeyValuePair<string, ActiveFilter>(topicFilter, held));
+                return;
+            }
+
             await _client.UnsubscribeAsync(topicFilter, ct);
             _filters.TryRemove(new KeyValuePair<string, ActiveFilter>(topicFilter, held));
+            _qosAtBroker.TryRemove(topicFilter, out _);
+
+            // Whatever this one was covering has to start arriving on its own now.
+            await ResubscribeUncoveredAsync(ct);
             return;
         }
+    }
+
+
+    /// <summary>
+    /// Splits what was asked for into what the broker has to hear and what it would only answer
+    /// twice.
+    /// </summary>
+    // Two passes, and the batch is sifted against itself as well as against what is up: a redial
+    // restores every console filter in one call, so '#' and 'plant/#' arrive together and neither
+    // of them is 'already active' when the other is looked at. Widest first, so that when two
+    // requests in a batch cover each other it is the wide one that goes.
+    private (List<SubscriptionRequest> Asking, List<SubscriptionRequest> Quiet) Sift(
+        IReadOnlyList<SubscriptionRequest> requests)
+    {
+        var asking = new List<SubscriptionRequest>();
+        var quiet = new List<SubscriptionRequest>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var request in requests.OrderByDescending(r => Width(r.TopicFilter)))
+        {
+            // The same filter twice in one batch is one filter. Without this the second copy
+            // would be read as covered by the first and quietly recorded as one nobody asked for.
+            if (!seen.Add(request.TopicFilter)) continue;
+
+            var covered =
+                CoveredBy(request) is not null ||
+                asking.Any(other =>
+                    other.Qos >= request.Qos &&
+                    TopicFilterCover.Covers(other.TopicFilter, request.TopicFilter));
+
+            (covered ? quiet : asking).Add(request);
+        }
+
+        return (asking, quiet);
+    }
+
+    /// <summary>The filter that is up and already brings in everything this one would, if any.</summary>
+    private ActiveFilter? CoveredBy(SubscriptionRequest request) =>
+        _filters.Values.FirstOrDefault(held =>
+            !_quiet.ContainsKey(held.Filter) &&
+            !string.Equals(held.Filter, request.TopicFilter, StringComparison.Ordinal) &&
+            _qosAtBroker.GetValueOrDefault(held.Filter) >= request.Qos &&
+            TopicFilterCover.Covers(held.Filter, request.TopicFilter));
+
+    /// <summary>How much of the tree a filter reaches, roughly, for ordering a batch.</summary>
+    // A '#' outranks a '+' outranks a name, and a short filter outranks a long one. It decides
+    // nothing on its own — Covers does that — it only decides which of two filters is looked at
+    // first, and getting the order wrong costs a duplicate subscription rather than a message.
+    private static int Width(string filter) =>
+        (filter.Contains('#') ? 1_000_000 : 0) + filter.Count(c => c == '+') * 1_000 - filter.Length;
+
+    /// <summary>
+    /// Takes down the filters a newly granted one now covers, so the broker stops sending their
+    /// traffic a second time.
+    /// </summary>
+    // The other order of the same story: the engine's rule goes up before the reader ticks
+    // 'listen to every topic', or a restore puts a narrow filter back first. Without this the
+    // doubling would depend on which of two subscriptions happened to be made first, which is not
+    // a thing anybody could be asked to reason about.
+    //
+    // The record stays exactly as it is. Only the standing order at the broker goes: the console
+    // still holds the filter, its chip is still on screen, and letting go of it still works.
+    private async Task QuietenCoveredAsync(string wide, CancellationToken ct)
+    {
+        foreach (var held in _filters.Values)
+        {
+            if (string.Equals(held.Filter, wide, StringComparison.Ordinal)) continue;
+            if (_quiet.ContainsKey(held.Filter)) continue;
+            if (_qosAtBroker.GetValueOrDefault(wide) < _qosAtBroker.GetValueOrDefault(held.Filter)) continue;
+            if (!TopicFilterCover.Covers(wide, held.Filter)) continue;
+
+            // Quiet first. If the UNSUBSCRIBE throws, the worst of it is a filter the broker is
+            // still sending and this console has stopped asking for — a duplicate, which is the
+            // state it was already in. Marking it after would leave the reverse: nobody asking
+            // and nobody sending.
+            _quiet[held.Filter] = 0;
+            _qosAtBroker.TryRemove(held.Filter, out _);
+
+            try
+            {
+                await _client.UnsubscribeAsync(held.Filter, ct);
+            }
+            catch (MqttCommunicationException)
+            {
+                // The link is the thing that is wrong, and every filter goes with it anyway.
+            }
+        }
+    }
+
+    /// <summary>
+    /// Asks for the filters that were being covered by one that has just gone.
+    /// </summary>
+    // Called after the broker has been told to stop sending a filter, and it is what makes the
+    // suppression safe: 'listen to every topic' can be turned off with alert rules and filter
+    // chips underneath it, and each of them has to start arriving on its own.
+    private async Task ResubscribeUncoveredAsync(CancellationToken ct)
+    {
+        var orphans = _filters.Values
+            .Where(held => _quiet.ContainsKey(held.Filter))
+            .Select(held => new SubscriptionRequest(held.Filter, _consoleQos.GetValueOrDefault(held.Filter)))
+            .Where(request => CoveredBy(request) is null)
+            .ToList();
+
+        if (orphans.Count == 0) return;
+
+        foreach (var orphan in orphans) _quiet.TryRemove(orphan.TopicFilter, out _);
+
+        // Through the ordinary path, so the batch is sifted against itself: two orphans left by
+        // one departure may well cover each other.
+        var owners = orphans.ToDictionary(
+            o => o.TopicFilter,
+            o => _filters.TryGetValue(o.TopicFilter, out var held) ? held.Owners : SubscriptionOwner.Console,
+            StringComparer.Ordinal);
+
+        foreach (var group in orphans.GroupBy(o => owners[o.TopicFilter]))
+            await SubscribeAsync([.. group], ct, group.Key);
     }
 
     private void EnsureConnected()
@@ -330,6 +505,10 @@ public sealed class MqttnetSubscriber : IMqttSubscriber, ISubscriptionRestorer
 
         _filters.Clear();
         _consoleQos.Clear();
+        // Subscriptions die with the connection, and so does the question of which of them the
+        // broker was told about.
+        _quiet.Clear();
+        _qosAtBroker.Clear();
         return Task.CompletedTask;
     }
 }
