@@ -31,6 +31,23 @@
   border: 1px solid var(--rule);
 }
 
+/* The panel that takes the window is the one place where what is inside it should reach the
+   bottom of it: its two columns are a form and a record, and a record that stopped at the height
+   of the form beside it left a third of the page ruled off and empty. A flex column here, and the
+   block inside it taking what is left, is what gives the grid a height to fill — see `.spreadGrid`
+   in panel.module.css. The other six panels are columns of blocks and keep growing as they did. */
+[data-panel='full'] .panel { display: flex; flex-direction: column; }
+/* `width: 100%` and not stretch: what is inside is a container query, which by definition
+   contributes no inline size of its own, so a box that sized itself to its contents here would
+   be a box of nothing wide. */
+[data-panel='full'] .block {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
 /* Forced colours drop the fill this panel is told apart by. */
 @media (forced-colors: active) {
   .panel { outline: 1px solid; outline-offset: -1px; }

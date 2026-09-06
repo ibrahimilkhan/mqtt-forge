@@ -656,7 +656,9 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
           the link and the record of what the link has done. See `.spread`. */}
       <div className={styles.spread}>
       <div className={styles.spreadGrid}>
-      <div>
+      {/* The settings side of the split. It is two thirds of the page and the form does not want
+          two thirds of a page, so the form sits in the middle of it — see `.formSide`. */}
+      <div className={styles.formSide}>
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <div className={styles.form} onKeyDown={onEnter}>
         <section className={styles.group}>

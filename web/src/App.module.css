@@ -33,7 +33,12 @@
 
 .rail[data-open] { width: 196px; }
 
-/* Mark, name and the control that changes the width. Shut, the three stack instead. */
+/* Mark, name and the control that changes the width. Shut, the name goes and the other two stay
+   in the row.
+   They used to stack, which put the way back to the rail a line below the mark and made the head
+   band taller shut than open — the one band that should not grow when everything else narrows.
+   The mark and a 24px target fit side by side inside 52px with room to spare, so the head keeps
+   its shape at both widths and only loses the word. */
 .railHead {
   display: flex;
   align-items: center;
@@ -41,7 +46,11 @@
   padding: 10px 12px 9px;
   border-bottom: 1px solid var(--rule);
 }
-.rail:not([data-open]) .railHead { flex-direction: column; gap: 8px; padding: 11px 0 9px; }
+.rail:not([data-open]) .railHead {
+  justify-content: center;
+  gap: 2px;
+  padding: 11px 2px 9px;
+}
 
 /* The mark is drawn at 1em, so its size is set here — off the type scale, so a reader who turns
    the base size up gets a mark that grows with the name beside it rather than one stranded next

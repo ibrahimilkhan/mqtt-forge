@@ -544,6 +544,10 @@
    split at the same point, and over a live link the panel is a column and never splits at all.
    Below the break the aside falls under the form. */
 .spread { container-type: inline-size; }
+/* Takes what is left of the panel's height, so the record beside the form can have a height to
+   fill. Only ever tall inside the panel that takes the window; in a column the block above it
+   is content-sized and this is content-sized with it. */
+[data-panel='full'] .spread { flex: 1 1 auto; display: flex; flex-direction: column; }
 .spreadGrid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -552,7 +556,37 @@
 }
 .aside { min-width: 0; }
 @container (min-width: 900px) {
-  .spreadGrid { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); align-items: stretch; }
+  /* Two thirds and a third, and the two thirds is not a measure — it is a share of the page. The
+     form takes the reading measure it takes anywhere else and stands in the middle of its share;
+     the record takes the whole of its own, which is what a list of lines wants and a form does
+     not. The gap between them is nothing, because each side keeps its own air: the form by being
+     centred in a share wider than itself, the record by the 5px it is inset from its edges. */
+  .spreadGrid {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    column-gap: 0;
+    align-items: stretch;
+    /* The whole of what the spread was given, so the record fills its share top to bottom and
+       the form has room to stand in the middle of its own. */
+    flex: 1 1 auto;
+  }
+
+  /* `margin: auto` rather than centring the container's items: it centres in both directions at
+     once, and it is the one way of centring that never pushes the top of a tall form off the
+     edge of what it is centred in. The cap is back on here — the panel takes the window off the
+     form's cap (see `[data-panel='full'] .form`), and the share this stands in is the answer to
+     'how wide' now. */
+  .formSide { display: flex; flex-direction: column; align-items: center; }
+  /* The three of them — the fields, the two switches and the buttons — are one thing, and it is
+     the whole thing that stands in the middle. Capping only the form would have left the
+     Connect button ranging across a share of the page the form does not use. */
+  .formSide > * { width: 100%; max-width: 46rem; }
+  /* Said again, and louder, for the form itself: the panel takes the cap off it while it has the
+     whole window (see `[data-panel='full'] .form`), and that is the rule this share of the page
+     is the answer to. Without this the fields run the width of two thirds of a screen while the
+     switches and the buttons under them stop at the measure. */
+  [data-panel='full'] .formSide > .form { max-width: 46rem; }
+  .formSide > :first-child { margin-top: auto; }
+  .formSide > :last-child { margin-bottom: auto; }
   /* Beside the form rather than under it, so the line that set the events apart from the form
      above has nothing above it to be set apart from. The heading does that job on its own. */
   /* First in the aside, so nothing stands above it to be spaced off — but the card keeps its
@@ -571,7 +605,10 @@
      The floor is what the card used to be capped at, so a short form does not make the record
      smaller than it was before it could grow. */
   .aside { position: relative; min-height: 21rem; }
-  .asideStack { position: absolute; inset: 0; }
+  /* Filling its share, less five pixels at each side: the card is a plate lying on the page and a
+     plate flat against the edge of its own area reads as a plate that has been cut off. Top and
+     bottom it does reach, because what it holds is a list that wants the height. */
+  .asideStack { position: absolute; inset: 0 5px; }
   .asideStack > .events { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
   .asideStack > .events:first-child { margin-top: 0; }
   .asideStack .eventList { max-height: none; flex: 1 1 auto; }
