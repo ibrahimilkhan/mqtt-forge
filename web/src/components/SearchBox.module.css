@@ -1,0 +1,67 @@
+/* One search box, wherever the console offers a search.
+
+   A row rather than a bare input: the mark says what the box is for without a label taking a
+   line above it, which matters because every place this stands is a header strip beside a title
+   and a button or two. The clear cross only appears once there is something to clear — a control
+   that does nothing is a control a reader has to test to learn that. */
+.box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 8rem;
+  min-width: 0;
+  padding: 0 6px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+}
+.box:focus-within { border-color: var(--signal); }
+.mark {
+  display: flex;
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+.input {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* Its own box is the row above; this is only the text in it. */
+  border: 0;
+  background: none;
+  padding: 4px 0;
+  font-family: var(--mono);
+  font-size: var(--t-small);
+  color: var(--ink);
+}
+.input:focus { outline: none; }
+/* The browser's own cross would stand beside ours, and only in some browsers. */
+.input::-webkit-search-cancel-button,
+.input::-webkit-search-decoration {
+  appearance: none;
+}
+.clear {
+  all: unset;
+  flex: 0 0 auto;
+  cursor: pointer;
+  padding: 0 2px;
+  font-family: var(--mono);
+  font-size: var(--t-small);
+  color: var(--muted);
+}
+.clear:hover { color: var(--ink); }
+.clear:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+/* Where the search looks. Beside the box, in the same small mono as everything in these strips,
+   and narrow: it holds one of three short words. */
+.where {
+  flex: 0 0 auto;
+  min-width: 0;
+  width: auto;
+  padding: 3px 4px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  color: var(--muted);
+}
+.where:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }

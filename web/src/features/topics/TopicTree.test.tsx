@@ -7,6 +7,7 @@ import { renderWithClient as render } from '../../test/renderWithClient';
 import { server } from '../../test/server';
 import { MAX_TREE_ROWS } from '../../lib/topicTree';
 import { useComposeStore } from '../../stores/composeStore';
+import { useSearchStore } from '../../stores/searchStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import type { DecodedMessage } from '../../realtime/decodeIncoming';
@@ -27,6 +28,7 @@ beforeEach(() => {
   useTopicTreeStore.getState().reset();
   useSelectionStore.getState().clear();
   useComposeStore.setState({ draft: null });
+  useSearchStore.getState().clear();
 });
 
 // Scanning a broker for what is moving means opening every numeric topic in turn, in every other
@@ -910,5 +912,115 @@ describe('the pause on the selected row', () => {
     const broker = screen.getAllByTestId('tree-row')[0];
     expect(within(broker).getByRole('button', { name: 'Pause the pane' })).toBeInTheDocument();
     expect(within(broker).getByRole('button', { name: 'Expand all' })).toBeInTheDocument();
+  });
+});
+
+/**
+ * Finding a topic on a broker that has thousands of them.
+ *
+ * The answer is a flat list rather than a narrowed tree: a reader who types `boiler` wants the
+ * topics with boiler in them, and opening three branches to reach each one is the work the box
+ * exists to save.
+ */
+describe('searching the topics', () => {
+  const search = () => screen.getByLabelText('Search the topics');
+
+  // The topic each row is drawn for, without the broker's own row at the head of them: under a
+  // search that is the whole path; in the tree it is the one segment the row stands for.
+  const rowNames = () => screen.getAllByTestId('segment').slice(1).map((one) => one.textContent);
+
+  beforeEach(() => {
+    useTopicTreeStore
+      .getState()
+      .apply([
+        message('plant/boiler/temp', '81'),
+        message('plant/boiler/pressure', '2.1'),
+        message('plant/pump/temp', '19'),
+        message('office/light', 'on'),
+      ]);
+  });
+
+  it('finds the topics whose path carries the words, however deep they hang', async () => {
+    render(<TopicTree broker="127.0.0.1:1883" />);
+
+    await userEvent.type(search(), 'boiler');
+
+    // The branch is an answer too: its own path carries the word, and picking it focuses the log
+    // on everything under it.
+    expect(rowNames()).toEqual(['plant/boiler', 'plant/boiler/pressure', 'plant/boiler/temp']);
+  });
+
+  // Without it a flat list of matches would be a column of bare last segments — two rows both
+  // reading 'temp', neither of them saying which.
+  it('names each answer by its whole path', async () => {
+    render(<TopicTree broker="127.0.0.1:1883" />);
+
+    await userEvent.type(search(), 'temp');
+
+    expect(screen.getByText('plant/boiler/temp')).toBeInTheDocument();
+    expect(screen.getByText('plant/pump/temp')).toBeInTheDocument();
+  });
+
+  it('finds a topic by what it is carrying when the reader looks there', async () => {
+    render(<TopicTree broker="127.0.0.1:1883" />);
+    await userEvent.type(search(), 'on');
+
+    await userEvent.selectOptions(screen.getByLabelText('Search the topics in'), 'body');
+
+    expect(rowNames()).toEqual(['office/light']);
+  });
+
+  it('looks only at paths when the reader says so', async () => {
+    render(<TopicTree broker="127.0.0.1:1883" />);
+    await userEvent.type(search(), '2.1');
+
+    await userEvent.selectOptions(screen.getByLabelText('Search the topics in'), 'topic');
+
+    expect(screen.getByTestId('no-topic-found')).toBeInTheDocument();
+  });
+
+  it('says nothing matched rather than reading as a broker with no topics', async () => {
+    render(<TopicTree broker="127.0.0.1:1883" />);
+
+    await userEvent.type(search(), 'zzz');
+
+    expect(screen.getByTestId('no-topic-found')).toBeInTheDocument();
+    expect(screen.queryByText(/No topics yet/)).not.toBeInTheDocument();
+  });
+
+  it('gives the tree back when the box is emptied', async () => {
+    render(<TopicTree broker="127.0.0.1:1883" />);
+    await userEvent.type(search(), 'boiler');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear search the topics' }));
+
+    // Two branches at the top level again, folded, rather than four flat answers.
+    expect(rowNames()).toEqual(['office', 'plant']);
+  });
+
+  // A branch whose own path carries the words is an answer like any other, and so is everything
+  // under it: the path of a child carries whatever its parent's did. Plain substring matching,
+  // which is what makes it predictable.
+  it('answers with branches as well as leaves', async () => {
+    render(<TopicTree broker="127.0.0.1:1883" />);
+
+    await userEvent.type(search(), 'plant');
+
+    expect(rowNames()).toEqual([
+      'plant',
+      'plant/boiler',
+      'plant/boiler/pressure',
+      'plant/boiler/temp',
+      'plant/pump',
+      'plant/pump/temp',
+    ]);
+  });
+
+  it('is not offered on a console with no tree at all', () => {
+    useTopicTreeStore.getState().reset();
+
+    render(<TopicTree broker="127.0.0.1:1883" />);
+
+    expect(screen.queryByLabelText('Search the topics')).not.toBeInTheDocument();
   });
 });

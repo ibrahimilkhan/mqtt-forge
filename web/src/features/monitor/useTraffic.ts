@@ -5,6 +5,8 @@ import { snapshotUnder, type TopicNode } from '../../lib/topicTree';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import { runFor, runsFor, runsOf, useLogStore, type LogEntry } from '../../stores/logStore';
 import { useSelectionStore } from '../../stores/selectionStore';
+import { useSearchStore } from '../../stores/searchStore';
+import { found } from '../../lib/sift';
 
 /**
  * The run of traffic the right column is reading, and the hold over it.
@@ -270,3 +272,26 @@ export function useTraffic(): Traffic {
   };
 }
 
+/**
+ * The rows the log pane draws: the run the selection holds, narrowed by what the reader is
+ * looking for.
+ *
+ * Only the rows. The chart under the pane goes on drawing the whole run, and it should: a search
+ * is a reader finding a line, not a reader changing what the console is watching, and a shape
+ * that redrew itself every time somebody typed a letter into a box would be answering a question
+ * nobody asked of it.
+ */
+export function useShownEntries(): { entries: LogEntry[]; all: number; sought: boolean } {
+  const { entries } = useTraffic();
+  const { look, where } = useSearchStore((state) => state.log);
+
+  const shown = useMemo(
+    () =>
+      look === ''
+        ? entries
+        : entries.filter((entry) => found({ topic: entry.topic, body: entry.body }, look, where)),
+    [entries, look, where],
+  );
+
+  return { entries: shown, all: entries.length, sought: look !== '' };
+}

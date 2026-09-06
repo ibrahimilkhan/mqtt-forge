@@ -628,8 +628,12 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
             everything the link has done. Beside the summary where there is room, under it where
             there is not: the link is the news, and what it went through is the note. */}
         <aside className={styles.aside}>
-          <ReconnectNotice />
-          <BrokerEvents />
+          {/* A stack of its own inside the column, so that where there is room for two columns
+              it can be lifted out of the flow and fill the one it is in — see `.asideStack`. */}
+          <div className={styles.asideStack}>
+            <ReconnectNotice />
+            <BrokerEvents />
+          </div>
         </aside>
         </div>
         </div>
@@ -1114,8 +1118,12 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
           box, and the form is the answer to it: a dropped link is put back by the same Connect
           button as the first one was. */}
       <aside className={styles.aside}>
-        <ReconnectNotice />
-        <BrokerEvents />
+        {/* Lifted out of the flow where there are two columns, so the record fills this one
+            rather than growing the page down past the saved brokers. See `.asideStack`. */}
+        <div className={styles.asideStack}>
+          <ReconnectNotice />
+          <BrokerEvents />
+        </div>
       </aside>
       </div>
       </div>

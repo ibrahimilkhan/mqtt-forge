@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer } from 'react';
+import { SearchBox } from '../../components/SearchBox';
+import { WhereSelect } from '../../components/WhereSelect';
 import { Fold, Unfold } from '../brand/icons';
 import { useRuleLookup } from '../../lib/useRuleLookup';
 import { matchesFilter, treeFilter } from '../../lib/topicMatch';
@@ -7,12 +9,14 @@ import {
   flattenTree,
   MAX_TREE_ROWS,
   nodeAt,
+  searchRows,
   type TopicNode,
   type TopicRow,
 } from '../../lib/topicTree';
 import { HoldButton } from '../monitor/HoldButton';
 import { useHoldStore } from '../monitor/useTraffic';
 import { useComposeStore } from '../../stores/composeStore';
+import { useSearchStore } from '../../stores/searchStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { useLogStore } from '../../stores/logStore';
 import { isPathOpen, useTopicTreeStore } from '../../stores/topicTreeStore';
@@ -51,13 +55,26 @@ export function TopicTree({ broker }: { broker?: string }) {
   // alone and only the rows whose node object actually changed re-render.
   const forgotten = useTopicTreeStore((state) => state.forgotten);
 
-  const { rows, hidden } = useMemo(
-    () =>
-      brokerOpen
-        ? flattenTree(root, (path) => isPathOpen({ openPaths, defaultOpen }, path), MAX_TREE_ROWS)
-        : { rows: [], hidden: 0 },
-    [root, openPaths, defaultOpen, brokerOpen],
-  );
+  const { look, where } = useSearchStore((state) => state.tree);
+  const setTree = useSearchStore((state) => state.setTree);
+  const sought = look !== '';
+
+  /*
+   * The rows: the open part of the tree, or — with something in the search box — every topic
+   * that answers it, flat.
+   *
+   * A search is not a fold. Narrowing the tree in place would leave the reader opening three
+   * branches to reach each match, which is the work the box exists to save, so under a search
+   * every match stands at the top level under its whole path and the tree comes back the moment
+   * the box is emptied. It also means the broker's own row keeps its meaning: what hangs off it
+   * is the tree, and what replaces it is a list of answers.
+   */
+  const { rows, hidden } = useMemo(() => {
+    if (!brokerOpen) return { rows: [] as TopicRow[], hidden: 0 };
+    if (sought) return searchRows(root, look, where, MAX_TREE_ROWS);
+
+    return flattenTree(root, (path) => isPathOpen({ openPaths, defaultOpen }, path), MAX_TREE_ROWS);
+  }, [root, openPaths, defaultOpen, brokerOpen, sought, look, where]);
 
   // treeFilter only ever appends '/#', so peeling it off compares paths without allocating per row.
   const selectedPath = selectedFilter?.endsWith('/#') ? selectedFilter.slice(0, -2) : null;
@@ -261,12 +278,36 @@ export function TopicTree({ broker }: { broker?: string }) {
     <>
       <h2 className="srOnly">Topics</h2>
 
+      {/* Only once there is a tree to search. An empty console offering to find a topic in
+          nothing is a control that can only disappoint. */}
+      {root.subTopics > 0 && (
+        <div className={styles.tools}>
+          <SearchBox
+            label="Search the topics"
+            value={look}
+            onChange={(next) => setTree({ look: next })}
+          />
+          <WhereSelect
+            label="Search the topics in"
+            value={where}
+            onChange={(next) => setTree({ where: next })}
+          />
+        </div>
+      )}
+
       {root.subTopics === 0 ? (
         <p className="empty">No topics yet. Connect to a broker and its tree builds here.</p>
+      ) : sought && rows.length === 0 ? (
+        <p className="empty" data-testid="no-topic-found">
+          No topic {where === 'body' ? 'is carrying' : where === 'topic' ? 'is named for' : 'says'}{' '}
+          “{look}”.
+        </p>
       ) : (
         <div className={styles.tree}>
           {/* One root for the whole broker, so the totals are readable without expanding
-              anything — and so collapsing it puts the entire tree away in one click. */}
+              anything — and so collapsing it puts the entire tree away in one click. It stands
+              over a search's answers too: it is still the broker they came from, it is still
+              how a reader gets back to everything, and its counts are still the tree's. */}
           <TreeNode
             // The broker's row is above every topic there is, so it too counts what is held.
             node={behind ? discount(root, behind) : root}
@@ -294,8 +335,12 @@ export function TopicTree({ broker }: { broker?: string }) {
                 key={row.path}
                 node={node}
                 path={row.path}
-                depth={row.depth + 1}
-                isBranch={row.isBranch}
+                // Under a search a row stands for itself rather than for a place in a tree, so
+                // it is drawn at one depth and named by its whole path — a bare last segment in
+                // a flat list of matches names nothing a reader can act on.
+                label={sought ? row.path : undefined}
+                depth={sought ? 1 : row.depth + 1}
+                isBranch={sought ? false : row.isBranch}
                 open={row.open}
                 active={lastHitOf(row, node) > activeSince}
                 selected={row.path === selectedPath}
@@ -311,7 +356,8 @@ export function TopicTree({ broker }: { broker?: string }) {
 
       {(hidden > 0 || forgotten > 0) && (
         <p className={styles.capped}>
-          {hidden > 0 && `${hidden} more ${hidden === 1 ? 'topic' : 'topics'} not shown`}
+          {hidden > 0 &&
+            `${hidden} more ${hidden === 1 ? 'topic' : 'topics'} ${sought ? 'matched' : 'not shown'}`}
           {hidden > 0 && forgotten > 0 && ' · '}
           {/* Not the same thing as the line before it, and the difference is the whole reason it
               is said: those are on screen's other side, these are gone. A tree that forgets is

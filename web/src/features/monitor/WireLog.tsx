@@ -1,9 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { SearchBox } from '../../components/SearchBox';
+import { WhereSelect } from '../../components/WhereSelect';
 import type { ColourRule } from '../../lib/topicColour';
 import { useRuleLookup } from '../../lib/useRuleLookup';
+import { clearTraffic } from '../../stores/clearTraffic';
 import { MIN_TOPIC_ENTRIES, type LogEntry } from '../../stores/logStore';
+import { useSearchStore } from '../../stores/searchStore';
 import { LogEntryRow } from './LogEntryRow';
-import { useHoldStore, useTraffic, useTrafficCount } from './useTraffic';
+import { useHoldStore, useShownEntries, useTraffic, useTrafficCount } from './useTraffic';
 import styles from './WireLog.module.css';
 
 /**
@@ -24,7 +28,8 @@ const TAIL = 3;
  * the run behind it is doing.
  */
 export function WireLog() {
-  const { selected, entries, fault } = useTraffic();
+  const { selected, fault } = useTraffic();
+  const { entries, all, sought } = useShownEntries();
 
   return (
     <>
@@ -33,13 +38,27 @@ export function WireLog() {
           furniture over a list that already says what it is about. */}
       <h2 className="srOnly">Logs</h2>
 
+      {/* Two things a reader does to a log: find a line in it, and start it again. Only once
+          there is a selection — with nothing picked there are no rows to search and nothing the
+          console is holding that this pane is answering for. */}
+      {selected && <LogTools />}
+
       {!selected && (
         <p className="empty">
           Pick a topic — click a subscription chip or a tree node to see its traffic here.
         </p>
       )}
 
-      {selected && entries.length === 0 && (
+      {/* A search that matches nothing is not a quiet topic, and the sentence about a quiet
+          topic under a box the reader has just typed into is the console answering the wrong
+          question. */}
+      {selected && all > 0 && entries.length === 0 && (
+        <p className="empty" data-testid="unfound">
+          Nothing in this run says what you are looking for.
+        </p>
+      )}
+
+      {selected && all === 0 && (
         /* A silent topic and a refused subscription look identical from here, and only one of
            them is the broker's doing. When the console has recorded a command that failed on
            this selection and has not since succeeded, that is the answer to why nothing is
@@ -55,9 +74,43 @@ export function WireLog() {
         )
       )}
 
-      {/* Keying on the filter remounts the list on focus change, folding it back to the newest. */}
-      {selected && entries.length > 0 && <EntryList key={selected.filter} />}
+      {/* Keying on the filter remounts the list on focus change, folding it back to the newest.
+          The search is part of the key for the same reason: a run narrowed to three rows should
+          open at its newest rather than at wherever the unnarrowed run had been stepped to. */}
+      {selected && entries.length > 0 && (
+        <EntryList key={`${selected.filter}${sought ? '\u0000sought' : ''}`} />
+      )}
     </>
+  );
+}
+
+/**
+ * The strip over the rows: what to look for, where to look for it, and the way to empty the lot.
+ *
+ * Above the rows rather than in the region's own head, which is one control already — the whole
+ * strip folds the region, and a search box inside a button is a control a reader cannot use.
+ */
+function LogTools() {
+  const { look, where } = useSearchStore((state) => state.log);
+  const setLog = useSearchStore((state) => state.setLog);
+
+  return (
+    <div className={styles.tools}>
+      <SearchBox label="Search the log" value={look} onChange={(next) => setLog({ look: next })} />
+      <WhereSelect
+        label="Search the log in"
+        value={where}
+        onChange={(next) => setLog({ where: next })}
+      />
+      <button
+        type="button"
+        className={styles.tool}
+        title="Let go of every message the console is holding, and the tree of topics with it"
+        onClick={clearTraffic}
+      >
+        Clear
+      </button>
+    </div>
   );
 }
 
@@ -74,8 +127,13 @@ export function WireLog() {
  */
 export function LogCount() {
   const count = useTrafficCount();
+  const { entries, sought } = useShownEntries();
 
-  return count > 0 ? <>({count})</> : null;
+  if (count === 0) return null;
+
+  // Under a search it says both numbers, for the reason the broker events card does: a reader
+  // who has narrowed a run wants to know how much of it they are being shown.
+  return sought ? <>({entries.length} of {count})</> : <>({count})</>;
 }
 
 function EntryList() {
@@ -83,8 +141,13 @@ function EntryList() {
   // for the selection — up to five thousand of them, mounted at once into a region measured for
   // one row, on the broker selection people leave up while watching a whole broker. A step at a
   // time instead, starting at the run this codebase already calls readable.
-  const [count, setCount] = useState(1);
-  const { entries, single } = useTraffic();
+  const { single } = useTraffic();
+  const { entries, sought } = useShownEntries();
+  // One row is right for a pane nobody has asked anything of: the newest value, and the rest on
+  // request. A reader who has typed into the search box has asked, and a single row under a
+  // search that matched twelve is the console making them press for what they already asked for.
+  // The remount on the search going on and off (see the key) is what makes this the start again.
+  const [count, setCount] = useState(sought ? MIN_TOPIC_ENTRIES : 1);
   const release = useHoldStore((state) => state.release);
   const ruleOf = useRuleLookup();
   // What the pane says out loud when a row is put in the publish form. The form is a region of

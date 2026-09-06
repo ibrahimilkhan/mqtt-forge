@@ -320,3 +320,35 @@ button.history:focus-visible { outline: 2px solid var(--signal); outline-offset:
 }
 .open:hover { color: var(--ink); border-color: var(--rule); }
 .open:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+/* ---- the strip over the rows ----
+
+   What a reader does to a log that is not reading it: find a line, and start it again. It stands
+   inside the pane rather than on the region's head, which is itself one control — the whole strip
+   folds the region — and a search box inside a button cannot be used at all.
+
+   It scrolls away with the rows deliberately. Pinned, it would cost the pane a line of height in
+   the one region a reader most often narrows to a couple of rows; the reader who wants it back is
+   the reader scrolling to the newest, which is where it is. */
+.tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+/* The same chip as 'show all' on a row and 'Copy' on the events card: quiet, small, and plainly
+   not one of the form buttons that send something. */
+.tool {
+  all: unset;
+  flex: 0 0 auto;
+  cursor: pointer;
+  padding: 3px 6px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.tool:hover { color: var(--ink); border-color: var(--muted); }
+.tool:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }

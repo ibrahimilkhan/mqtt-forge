@@ -11,7 +11,9 @@ import type { DecodedMessage } from '../../realtime/decodeIncoming';
 import { useAppearanceStore } from '../../stores/appearanceStore';
 import { useComposeStore } from '../../stores/composeStore';
 import { MAX_LOG_ENTRIES, MIN_TOPIC_ENTRIES, runFor, useLogStore } from '../../stores/logStore';
+import { useSearchStore } from '../../stores/searchStore';
 import { useSelectionStore } from '../../stores/selectionStore';
+import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import { HoldButton } from './HoldButton';
 import { TrafficPane } from './TrafficPane';
 import { useHoldStore } from './useTraffic';
@@ -51,6 +53,8 @@ beforeEach(() => {
   useSelectionStore.getState().clear();
   useComposeStore.setState({ draft: null });
   useHoldStore.getState().release();
+  // A search one test typed is not a search the next one asked for.
+  useSearchStore.getState().clear();
   // The chart's detail is a stored preference, so a test that changes it would leak into the next.
   useAppearanceStore.getState().reset();
 });
@@ -1198,10 +1202,12 @@ describe('choosing what the chart draws', () => {
     bodies.forEach((body) => useLogStore.getState().push({ kind: 'recv', topic, body }));
 
   // Tabbing rather than focusing: that the plot is *reachable* from the keyboard is half of what
-  // is being checked, and counting tabs would tie the test to everything else in the pane.
+  // is being checked, and counting tabs would tie the test to everything else in the pane. The
+  // bound is only a stop against a test that would otherwise hang; it has to stay well clear of
+  // however many controls the pane happens to carry above the plot.
   const reachPlot = async () => {
     const plot = screen.getByTestId('plotArea');
-    for (let step = 0; step < 12 && document.activeElement !== plot; step++) await userEvent.tab();
+    for (let step = 0; step < 30 && document.activeElement !== plot; step++) await userEvent.tab();
     return plot;
   };
 
@@ -1691,5 +1697,141 @@ describe('a payload too big to draw', () => {
     render(<Monitor />);
 
     expect(screen.getByTestId('body').textContent).toHaveLength(ordinary.length);
+  });
+});
+
+/**
+ * Finding one line in a run, and letting the whole lot go.
+ *
+ * The two things a reader does to a log that are not reading it. The search narrows what is drawn
+ * and nothing else: the chart under the pane goes on drawing the whole run, because a reader
+ * looking for a line has not asked the console to watch something different.
+ */
+describe('searching the log', () => {
+  const sent = (topic: string, body: string) =>
+    useLogStore.getState().push({ kind: 'recv', topic, body });
+
+  const search = () => screen.getByLabelText('Search the log');
+
+  beforeEach(() => {
+    sent('sensors/temp', '21.5 degrees');
+    sent('sensors/hum', '54 percent');
+    sent('boiler/state', 'degrees rising');
+    useSelectionStore.getState().select({ label: 'everything', filter: '#' });
+  });
+
+  it('keeps the rows that carry the words', async () => {
+    render(<WireLog />);
+
+    await userEvent.type(search(), 'boiler');
+
+    expect(screen.getAllByTestId('entry')).toHaveLength(1);
+    expect(screen.getByTestId('entry')).toHaveTextContent('boiler/state');
+  });
+
+  // And it opens the run rather than showing one row of what was found: a reader who has typed
+  // into the box has already asked to see what matched.
+  it('looks in the topic and the message together by default', async () => {
+    render(<WireLog />);
+
+    await userEvent.type(search(), 'degrees');
+
+    // One by its topic's payload, one by its own: 'degrees' is in both bodies here.
+    expect(screen.getAllByTestId('entry')).toHaveLength(2);
+  });
+
+  it('looks only at topics when the reader says so', async () => {
+    render(<WireLog />);
+    await userEvent.type(search(), 'degrees');
+
+    await userEvent.selectOptions(screen.getByLabelText('Search the log in'), 'topic');
+
+    expect(screen.queryAllByTestId('entry')).toHaveLength(0);
+    expect(screen.getByTestId('unfound')).toBeInTheDocument();
+  });
+
+  it('looks only at messages when the reader says so', async () => {
+    render(<WireLog />);
+    await userEvent.type(search(), 'sensors');
+
+    await userEvent.selectOptions(screen.getByLabelText('Search the log in'), 'body');
+
+    expect(screen.queryAllByTestId('entry')).toHaveLength(0);
+  });
+
+  // A run narrowed to nothing is not a quiet topic, and the sentence about a quiet topic under a
+  // box the reader has just typed into answers the wrong question.
+  it('says nothing matched rather than saying the topic is quiet', async () => {
+    render(<WireLog />);
+
+    await userEvent.type(search(), 'zzz');
+
+    expect(screen.getByTestId('unfound')).toBeInTheDocument();
+    expect(screen.queryByText(/No traffic on/)).not.toBeInTheDocument();
+  });
+
+  it('gives the run back when the box is emptied', async () => {
+    render(<WireLog />);
+    await userEvent.type(search(), 'zzz');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear search the log' }));
+
+    expect(screen.getByTestId('entry')).toBeInTheDocument();
+  });
+
+  it('says how much of the run it is showing, beside the region name', async () => {
+    render(
+      <>
+        <LogCount />
+        <WireLog />
+      </>,
+    );
+
+    await userEvent.type(search(), 'boiler');
+
+    expect(screen.getByText('(1 of 3)')).toBeInTheDocument();
+  });
+});
+
+describe('clearing the log', () => {
+  it('lets go of the traffic and the tree together', async () => {
+    useLogStore.getState().push({ kind: 'recv', topic: 'sensors/temp', body: '21.5' });
+    useTopicTreeStore.getState().apply([
+      {
+        topic: 'sensors/temp',
+        payload: '21.5',
+        mode: 'text',
+        size: 4,
+        qos: 0,
+        retain: false,
+        receivedAt: '2026-09-06T10:00:00Z',
+      },
+    ]);
+    useSelectionStore.getState().select({ label: 'everything', filter: '#' });
+    render(<WireLog />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+
+    expect(useLogStore.getState().held).toBe(0);
+    expect(useTopicTreeStore.getState().root.subTopics).toBe(0);
+  });
+
+  // Otherwise the pane comes back saying 'nothing says boiler' about a pane that is empty for a
+  // quite different reason.
+  it('drops the search with it', async () => {
+    useLogStore.getState().push({ kind: 'recv', topic: 'sensors/temp', body: '21.5' });
+    useSelectionStore.getState().select({ label: 'everything', filter: '#' });
+    render(<WireLog />);
+    await userEvent.type(screen.getByLabelText('Search the log'), 'zzz');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+
+    expect(screen.getByLabelText('Search the log')).toHaveValue('');
+  });
+
+  it('is not offered when nothing is selected', () => {
+    render(<WireLog />);
+
+    expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument();
   });
 });

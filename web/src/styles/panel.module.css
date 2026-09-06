@@ -552,13 +552,33 @@
 }
 .aside { min-width: 0; }
 @container (min-width: 900px) {
-  .spreadGrid { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); }
+  .spreadGrid { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); align-items: stretch; }
   /* Beside the form rather than under it, so the line that set the events apart from the form
      above has nothing above it to be set apart from. The heading does that job on its own. */
   /* First in the aside, so nothing stands above it to be spaced off — but the card keeps its
      own frame; only the gap that would have pushed it below the form's top goes. */
   .aside > .events:first-child { margin-top: 0; }
+
+  /* With room for two columns, the record takes the whole of its own.
+     
+     It used to be a card of about a dozen rows with the rest of the column empty under it, which
+     wasted the half of the page this layout exists to use and made an afternoon of events a
+     scroll inside a small box beside a tall form. Now the column is the box: the aside is only
+     as tall as the form beside it — the stack inside is taken out of the flow, so a thousand
+     events cannot make the row any taller — and the card fills it from top to bottom with the
+     list scrolling inside.
+     
+     The floor is what the card used to be capped at, so a short form does not make the record
+     smaller than it was before it could grow. */
+  .aside { position: relative; min-height: 21rem; }
+  .asideStack { position: absolute; inset: 0; }
+  .asideStack > .events { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  .asideStack > .events:first-child { margin-top: 0; }
+  .asideStack .eventList { max-height: none; flex: 1 1 auto; }
 }
+
+/* Under the break it is an ordinary column: the notice, then the card, under the form. */
+.asideStack { display: flex; flex-direction: column; min-height: 0; }
 
 /* ---- what the link has been doing ----
 
@@ -574,7 +594,53 @@
   border: 1px solid var(--rule);
   border-radius: var(--r-plate);
 }
-.eventsTitle { composes: savedTitle; }
+
+/* The card's head: what this is, and the three things done with it. It wraps, because the column
+   is five twelfths of the panel and the search box has a floor of its own — a strip that refused
+   to wrap would push the buttons off the card at the narrow end of the range. */
+.eventsHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-bottom: 10px;
+}
+.eventsTitle { composes: savedTitle; margin-bottom: 0; flex: 0 0 auto; }
+/* The number, not the word: quieter than the title it rides on, and steady in a mono face so a
+   count changing under the eye does not move the title beside it. */
+.eventsCount {
+  font-family: var(--mono);
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+.eventsTools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+/* Same chip as the wire log's 'show all': small, quiet, and plainly a control rather than one of
+   the form's own buttons — this card is a record, and nothing on it sends anything anywhere. */
+.eventsAction {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  cursor: pointer;
+  padding: 3px 6px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.eventsAction:hover:not(:disabled) { color: var(--ink); border-color: var(--muted); }
+.eventsAction:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+.eventsAction:disabled { opacity: 0.45; cursor: default; }
 .eventsEmpty {
   margin: 0;
   font-family: var(--mono);

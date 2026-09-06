@@ -1,5 +1,6 @@
 import { asReading } from './number';
 import type { BodyMode } from './payload';
+import { found, type Where } from './sift';
 import { matchesFilter } from './topicMatch';
 
 export type TopicNode = {
@@ -441,6 +442,59 @@ export function flattenTree(
   const hidden = rows.length < limit ? 0 : Math.max(root.subTopics - shown, 0);
 
   return { rows, hidden };
+}
+
+/**
+ * The topics that answer a search, as a flat list of rows.
+ *
+ * Flat, deliberately. Under a search the shape of the tree is not the answer: a reader who types
+ * `boiler` wants the topics with boiler in them, wherever they hang, and a filtered *tree* would
+ * make them open three branches to reach each one — which is the work the box exists to save.
+ * So every match is drawn at the top level, by its whole path, and the tree comes back the
+ * moment the box is emptied.
+ *
+ * What a message search reads is the newest message on each topic, and only the front of it: the
+ * tree keeps one payload per topic, cut at MAX_TREE_PAYLOAD, because it keeps one for every
+ * topic there is. The log is where a whole run is searched, and it has its own box.
+ *
+ * Iterative for the reason every other walk here is: a deep broker would overflow a recursive
+ * one. Capped for the reason the flatten above is: past the cap the walk stops rather than
+ * building rows nothing will draw.
+ */
+export function searchRows(
+  root: TopicNode,
+  look: string,
+  where: Where,
+  limit: number,
+): { rows: TopicRow[]; hidden: number } {
+  const rows: TopicRow[] = [];
+  let matched = 0;
+
+  const stack: Array<{ node: TopicNode; path: string }> = [];
+  const descend = (node: TopicNode, path: string) => {
+    const { order, children } = node;
+    for (let i = order.length - 1; i >= 0; i--) {
+      const child = children.get(order[i])!;
+      stack.push({ node: child, path: path === '' ? child.name : `${path}/${child.name}` });
+    }
+  };
+
+  descend(root, '');
+
+  while (stack.length > 0) {
+    const { node, path } = stack.pop()!;
+
+    if (found({ topic: path, body: node.latestPayload }, look, where)) {
+      matched++;
+      if (rows.length < limit) {
+        rows.push({ node, path, depth: 0, isBranch: node.children.size > 0, open: false });
+      }
+    }
+
+    descend(node, path);
+  }
+
+  return { rows, hidden: Math.max(matched - rows.length, 0) };
 }
 
 // What a branch is carrying; nothing for leaves, whose own payload is on the row already.

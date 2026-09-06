@@ -181,3 +181,18 @@
 /* Noise once the branch is open and its children already show the detail. */
 .node[data-open="true"][data-branch="true"] > .pick > .meta { display: none; }
 
+
+/* ---- finding a topic ----
+
+   Over the tree, in the same shape the log's own strip takes, because it is the same gesture on
+   the other half of the console: type, and what is drawn narrows to what carries the words.
+
+   It scrolls with the tree rather than being pinned to the top of the pane. The pane is a column
+   the reader is already scrolling, and a strip that stayed put would cost it a line of height on
+   every broker — including the ones with six topics, where nobody will ever search at all. */
+.tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
