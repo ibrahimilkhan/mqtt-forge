@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { SearchBox } from '../../components/SearchBox';
 import { WhereSelect } from '../../components/WhereSelect';
 import type { ColourRule } from '../../lib/topicColour';
@@ -7,7 +7,7 @@ import { clearTraffic } from '../../stores/clearTraffic';
 import { MIN_TOPIC_ENTRIES, type LogEntry } from '../../stores/logStore';
 import { useSearchStore } from '../../stores/searchStore';
 import { LogEntryRow } from './LogEntryRow';
-import { useHoldStore, useShownEntries, useTraffic, useTrafficCount } from './useTraffic';
+import { useShownEntries, useTraffic, useTrafficCount } from './useTraffic';
 import styles from './WireLog.module.css';
 
 /**
@@ -148,18 +148,12 @@ function EntryList() {
   // search that matched twelve is the console making them press for what they already asked for.
   // The remount on the search going on and off (see the key) is what makes this the start again.
   const [count, setCount] = useState(sought ? MIN_TOPIC_ENTRIES : 1);
-  const release = useHoldStore((state) => state.release);
+
   const ruleOf = useRuleLookup();
   // What the pane says out loud when a row is put in the publish form. The form is a region of
   // its own and can be folded away entirely, so without this the action can have no observable
   // result at all.
   const [loaded, setLoaded] = useState('');
-
-  // A hold outlives the pane that controls it: fold the Log region and the workspace unmounts
-  // this, taking the only control that releases it, while the chart below goes on drawing a run
-  // frozen at whatever moment the fold happened. The console-wide pause in the rail is the one
-  // that survives a fold, and it is in the rail precisely so that it can.
-  useEffect(() => release, [release]);
 
   const shown = entries.slice(0, count);
   const all = count >= entries.length;

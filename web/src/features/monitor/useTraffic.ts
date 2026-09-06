@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import { create } from 'zustand';
 import { matchesFilter } from '../../lib/topicMatch';
-import { snapshotUnder, type TopicNode } from '../../lib/topicTree';
+import { filterPath, snapshotUnder, type TopicNode } from '../../lib/topicTree';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import { runFor, runsFor, runsOf, useLogStore, type LogEntry } from '../../stores/logStore';
 import { useSelectionStore } from '../../stores/selectionStore';
@@ -25,25 +25,43 @@ import { found } from '../../lib/sift';
  */
 type Held = { filter: string; entries: LogEntry[]; nodes: Map<string, TopicNode> };
 
+/**
+ * Every hold the reader is keeping, by the filter it was taken on.
+ *
+ * One at a time was the first shape and it was the wrong one. A reader watching a plant holds
+ * the row they are reading, goes to look at another topic, and wants to come back to the reading
+ * they stopped — which the old shape could not do at all: picking another topic let the hold go,
+ * on the grounds that a hold is 'over the run in front of the reader'. It is not. It is over a
+ * topic, and the reader looking somewhere else is exactly when it is worth having.
+ *
+ * So they accumulate, and the pane draws whichever one covers what is selected. What lets them
+ * go is the reader — on the row, or from the Manage panel, which is where a reader who has
+ * paused six topics finds out that they did.
+ */
 type HoldState = {
-  held: Held | null;
+  held: ReadonlyMap<string, Held>;
   hold: (filter: string, entries: LogEntry[], nodes: Map<string, TopicNode>) => void;
-  release: () => void;
+  /** One hold, by its filter — or every one of them, which is what a fresh tree does. */
+  release: (filter?: string) => void;
 };
 
 export const useHoldStore = create<HoldState>((set) => ({
-  held: null,
+  held: new Map(),
 
-  hold: (filter, entries, nodes) => set({ held: { filter, entries, nodes } }),
-  release: () => set({ held: null }),
+  hold: (filter, entries, nodes) =>
+    set((state) => ({ held: new Map(state.held).set(filter, { filter, entries, nodes }) })),
+
+  release: (filter) =>
+    set((state) => {
+      if (filter === undefined) return state.held.size === 0 ? {} : { held: new Map() };
+      if (!state.held.has(filter)) return {};
+
+      const rest = new Map(state.held);
+      rest.delete(filter);
+
+      return { held: rest };
+    }),
 }));
-
-// A hold is over the run in front of the reader, so picking a different topic lets it go: what
-// was being kept still is not on screen any more, and a column that came back held would be
-// holding a run nobody asked it to.
-useSelectionStore.subscribe((state, previous) => {
-  if (state.selected?.filter !== previous.selected?.filter) useHoldStore.getState().release();
-});
 
 // Connecting starts the tree again, and what a hold froze belonged to the tree that has gone.
 // Left standing it would go on drawing a session that has ended — and, because a row it covers
@@ -52,6 +70,44 @@ useSelectionStore.subscribe((state, previous) => {
 useTopicTreeStore.subscribe((state, previous) => {
   if (state.generation !== previous.generation) useHoldStore.getState().release();
 });
+
+/**
+ * The hold on one filter, or nothing.
+ *
+ * A function rather than a lookup at each call site because what a reader means by 'this run is
+ * paused' is not only the hold taken on this exact filter: a pane showing `plant/boiler/temp`
+ * under a hold taken on `plant/boiler/#` is showing a held run, and it has to read as one.
+ * Exact first, since that is the common case and costs nothing.
+ */
+export function holdOver(held: ReadonlyMap<string, Held>, filter: string | undefined): Held | null {
+  if (!filter || held.size === 0) return null;
+
+  const exact = held.get(filter);
+  if (exact) return exact;
+
+  for (const one of held.values()) {
+    if (coversFilter(one.filter, filter)) return one;
+  }
+
+  return null;
+}
+
+/**
+ * Whether a hold taken on one filter covers a selection of another.
+ *
+ * A path under a held branch is covered; the branch under a held leaf is not. `filterPath`
+ * peels the '/#' off a tree row's filter, which is every filter a hold can be taken on here;
+ * anything else falls back to the matcher.
+ */
+function coversFilter(hold: string, filter: string): boolean {
+  if (hold === filter) return true;
+
+  const branch = filterPath(hold);
+  const under = filterPath(filter) ?? filter;
+  if (branch === null) return matchesFilter(hold, under);
+
+  return under === branch || under.startsWith(`${branch}/`);
+}
 
 /**
  * The newest command that failed on this selection, and is still failing.
@@ -162,7 +218,7 @@ export function useTrafficCount(): number {
 
   // Held, the count answers for what is on screen rather than for what has arrived behind it —
   // the same rule the pane keeps, and the reason a hold reads as a hold.
-  const held = holding && holding.filter === selected?.filter ? holding.entries : null;
+  const held = holdOver(holding, selected?.filter)?.entries ?? null;
 
   return useMemo(
     () => {
@@ -184,7 +240,7 @@ export function useTrafficCount(): number {
  * does not put a walk of the log on the path of every arrival for the sake of a badge that is
  * usually not there. Taking the hold reads the run once, at the click.
  */
-export function useHoldControl(): {
+export function useHoldControl(over?: string): {
   can: boolean;
   held: boolean;
   arrived: number;
@@ -196,21 +252,26 @@ export function useHoldControl(): {
   // A number, so this costs a comparison per arrival rather than a run.
   const changed = useLogStore((state) => state.version);
 
-  const held = holding !== null && holding.filter === selected?.filter;
+  // The filter this control is about: the one it was given, or whatever is selected. A control
+  // on a row that is not the selected one is how a reader lets go of a topic they paused and
+  // then went to look at something else — which is the whole reason holds accumulate.
+  const filter = over ?? selected?.filter;
+  const mine = filter === undefined ? null : (holding.get(filter) ?? null);
+  const held = mine !== null;
 
   const arrived = useMemo(() => {
-    if (!held || holding === null || holding.entries.length === 0) return 0;
+    if (mine === null || mine.entries.length === 0) return 0;
 
     // Ids only go up, so what has arrived behind the hold is what is newer than its newest.
-    const newest = holding.entries[0].id;
+    const newest = mine.entries[0].id;
 
-    return runFor(byTopic, holding.filter).filter((entry) => entry.id > newest).length;
+    return runFor(byTopic, mine.filter).filter((entry) => entry.id > newest).length;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `changed` is the signal, see above
-  }, [held, holding, byTopic, changed]);
+  }, [mine, byTopic, changed]);
 
   const toggle = useCallback(() => {
-    if (held) return useHoldStore.getState().release();
-    if (!selected) return;
+    if (filter === undefined) return;
+    if (held) return useHoldStore.getState().release(filter);
 
     // Read at the click rather than kept in state: both are only needed the moment they are
     // frozen, and keeping them current would put a walk of the log and of the tree on the path
@@ -218,13 +279,13 @@ export function useHoldControl(): {
     useHoldStore
       .getState()
       .hold(
-        selected.filter,
-        runFor(byTopic, selected.filter),
-        snapshotUnder(useTopicTreeStore.getState().root, selected.filter),
+        filter,
+        runFor(byTopic, filter),
+        snapshotUnder(useTopicTreeStore.getState().root, filter),
       );
-  }, [held, selected, byTopic]);
+  }, [held, filter, byTopic]);
 
-  return { can: selected !== null, held, arrived, toggle };
+  return { can: filter !== undefined, held, arrived, toggle };
 }
 
 export function useTraffic(): Traffic {
@@ -244,9 +305,9 @@ export function useTraffic(): Traffic {
     [commands, selected, live.length],
   );
 
-  // The filter is checked as well as the hold: the release above runs on the store rather than
-  // in a render, so for one render the hold can still be the old selection's.
-  const held = holding && holding.filter === selected?.filter ? holding.entries : null;
+  // Whichever hold covers what is selected — the one taken on this very filter, or the one on a
+  // branch above it.
+  const held = holdOver(holding, selected?.filter)?.entries ?? null;
 
   // Held, the chart goes on drawing what it was drawing. The hold keeps one sequence because
   // the log beside it reads that way; grouping it back into runs costs one pass, paid when the

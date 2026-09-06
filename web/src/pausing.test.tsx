@@ -126,6 +126,10 @@ const streamControl = () =>
 /** The control on the selected row, if that row is carrying one. */
 const holdControl = () => screen.getByRole('button', { name: /Pause the pane|Let the pane go/ });
 
+/** The control on one particular row — every paused row carries one, not only the selected. */
+const holdOn = (segment: string) =>
+  within(rowOf(segment)).getByRole('button', { name: /Pause the pane|Let the pane go/ });
+
 /** What the chart says it is drawing, which is the third pane a hold has to reach. */
 const onChart = () => screen.getByTestId('reading-n').textContent;
 
@@ -300,7 +304,13 @@ describe('the hold on a topic row', () => {
     expect(screen.getByTestId('body')).toHaveTextContent('99');
   });
 
-  it('lets go when another row is picked, since what was held is not on screen', async () => {
+  /*
+   * It used to let go here, on the argument that a hold is over the run in front of the reader
+   * and picking another row puts a different run there. That was the wrong reading of what a
+   * hold is about: it is about a topic, not about the pane, and the reader who goes to look at
+   * something else is exactly the reader who wants to come back to the reading they stopped.
+   */
+  it('keeps its hold when another row is picked, and is still holding it on the way back', async () => {
     const { send } = renderConsole();
     send(['sensors/temp', '21'], ['sensors/humidity', '55']);
     await pick('temp');
@@ -309,8 +319,46 @@ describe('the hold on a topic row', () => {
     await pick('humidity');
     send(['sensors/temp', '99']);
 
-    expect(useHoldStore.getState().held).toBeNull();
-    expect(rowOf('temp')).toHaveTextContent('99');
+    // The row stays where it was put, wherever the reader has gone since.
+    expect(rowOf('temp')).toHaveTextContent('21');
+    expect(useHoldStore.getState().held.size).toBe(1);
+
+    await pick('temp');
+    expect(screen.getByTestId('body')).toHaveTextContent('21');
+  });
+
+  it('holds two topics at once, each at its own moment', async () => {
+    const { send } = renderConsole();
+    send(['sensors/temp', '21'], ['sensors/humidity', '55']);
+
+    await pick('temp');
+    await userEvent.click(holdOn('temp'));
+    await pick('humidity');
+    await userEvent.click(holdOn('humidity'));
+
+    send(['sensors/temp', '99'], ['sensors/humidity', '80']);
+
+    expect(useHoldStore.getState().held.size).toBe(2);
+    expect(rowOf('temp')).toHaveTextContent('21');
+    expect(rowOf('humidity')).toHaveTextContent('55');
+  });
+
+  // A hold with nothing on screen to undo it is a trap. The row wears its own control wherever
+  // the reader has gone since, so the one they paused an hour ago is the one they can let go.
+  it('carries its own control on a row that is not the selected one', async () => {
+    const { send } = renderConsole();
+    send(['sensors/temp', '21'], ['sensors/humidity', '55']);
+    await pick('temp');
+    await userEvent.click(holdControl());
+
+    await pick('humidity');
+
+    // Two now: the paused row's, and the selected row's own.
+    const controls = screen.getAllByRole('button', { name: /Pause the pane|Let the pane go/ });
+    expect(controls).toHaveLength(2);
+
+    await userEvent.click(screen.getByRole('button', { name: /Let the pane go/ }));
+    expect(useHoldStore.getState().held.size).toBe(0);
   });
 });
 
@@ -441,7 +489,7 @@ describe('the two pauses against the link', () => {
 
     expect(usePauseStore.getState().waiting).toBe(0);
     expect(usePauseStore.getState().lost).toBe(2);
-    expect(useHoldStore.getState().held).toBeNull();
+    expect(useHoldStore.getState().held.size).toBe(0);
 
     // And the new session fills the new tree, with nothing of the old one written over it.
     await act(async () => {

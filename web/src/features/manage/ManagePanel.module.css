@@ -1,0 +1,72 @@
+/* One paused topic per line: what it is, how much it is holding, and the way to let it go. */
+.list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+}
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--rule);
+}
+.row:first-child { border-top: none; padding-top: 0; }
+
+/* The topic, and the way back to it. A link rather than a button to look at, because that is
+   what it does: it takes the reader to the run, it does not act on it. */
+.goTo {
+  all: unset;
+  flex: 1 1 auto;
+  min-width: 0;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: var(--t-small);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.goTo:hover { text-decoration: underline; }
+.goTo:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+.figures {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  color: var(--muted);
+}
+/* How far behind the pause has fallen is the one figure here that is news rather than furniture. */
+.behind { color: var(--signal); }
+
+/* The same quiet chip the log and the events card use for what is not a form button. */
+.action {
+  all: unset;
+  flex: 0 0 auto;
+  cursor: pointer;
+  padding: 2px 6px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.action:hover { color: var(--ink); border-color: var(--muted); }
+.action:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+/* Counts, as a column of label and value — the same shape the connection summary uses, for the
+   same reason: they are read by glancing at the same place twice. */
+.figuresList {
+  margin: 0 0 12px;
+  font-family: var(--mono);
+  font-size: var(--t-small);
+}
+.figuresList > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+}
+.figuresList dt { color: var(--muted); }
+.figuresList dd { margin: 0; color: var(--ink); font-variant-numeric: tabular-nums; }

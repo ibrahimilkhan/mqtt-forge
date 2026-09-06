@@ -56,6 +56,26 @@ export const Antenna = () => (
   </Glyph>
 );
 
+/**
+ * Manage: what the console and the broker are holding, and the way to let go of it.
+ *
+ * A broom, which is Lucide's `brush-cleaning` cut down to what survives sixteen pixels: the
+ * handle, the head, and three strokes of sweeping under it. The alternative was a bin, and a bin
+ * is the wrong promise — most of that panel is about what is being held and paused rather than
+ * about deleting anything.
+ */
+export const Broom = () => (
+  <Glyph>
+    <>
+      <path d="M15.5 3.5 9 10" />
+      <path d="M7.2 11.8a2 2 0 0 1 2.8 0l2.2 2.2a2 2 0 0 1 0 2.8l-1.1 1.1-5-5z" />
+      <path d="M6 20.5v-2" />
+      <path d="M10 21v-2" />
+      <path d="M14 20.5v-2" />
+    </>
+  </Glyph>
+);
+
 /** Filters: everything the broker has, narrowed to what was asked for. */
 export const Funnel = () => (
   <Glyph>

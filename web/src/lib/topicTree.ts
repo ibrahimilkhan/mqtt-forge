@@ -445,6 +445,39 @@ export function flattenTree(
 }
 
 /**
+ * Every topic whose newest message arrived retained, in path order.
+ *
+ * What it is for: telling a broker to forget them. A retained message is the broker's, not the
+ * console's — it outlives every connection and is handed to the next subscriber — so a reader
+ * who has been publishing test messages all afternoon leaves a mess behind them that no amount
+ * of clearing the log will touch.
+ *
+ * It reads the retain flag of the newest message on each topic, which is as close as a console
+ * can get without asking the broker: this one subscribes asking for retain-as-published, so the
+ * flag is what the publisher meant rather than an artefact of delivery. A topic that was
+ * published retained and then published live reads as not retained here, and the broker is still
+ * holding the old one — an honest limit of watching rather than a fault.
+ */
+export function retainedTopics(root: TopicNode): string[] {
+  const found: string[] = [];
+
+  const walk = (node: TopicNode, path: string) => {
+    for (const name of node.order) {
+      const child = node.children.get(name)!;
+      const here = path === '' ? name : `${path}/${name}`;
+      if (child.hits > 0 && child.latestRetain) found.push(here);
+      walk(child, here);
+    }
+  };
+
+  // Recursive where the rest of this file is iterative, and it can be: it is called by a reader
+  // pressing a button, once, not on the path of a message.
+  walk(root, '');
+
+  return found;
+}
+
+/**
  * The topics that answer a search, as a flat list of rows.
  *
  * Flat, deliberately. Under a search the shape of the tree is not the answer: a reader who types

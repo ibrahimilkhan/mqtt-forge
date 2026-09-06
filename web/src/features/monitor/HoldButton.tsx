@@ -17,9 +17,13 @@ import { useHoldControl } from './useTraffic';
  *
  * Nothing is drawn when no topic has been picked: there is no run to hold, and a dead control
  * reads as something broken rather than as something waiting.
+ *
+ * Given a filter it is about that filter instead of about the selection. That is how a row the
+ * reader paused and then walked away from keeps a control of its own: holds accumulate now, and
+ * one with no way to undo it from where it can be seen is a trap rather than a feature.
  */
-export function HoldButton() {
-  const { can, held, arrived, toggle } = useHoldControl();
+export function HoldButton({ over }: { over?: string } = {}) {
+  const { can, held, arrived, toggle } = useHoldControl(over);
 
   if (!can) return null;
 

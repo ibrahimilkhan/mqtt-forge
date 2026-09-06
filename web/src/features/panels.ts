@@ -1,7 +1,15 @@
 import type { ReactElement } from 'react';
-import { Antenna, Bell, Blend, ChartLine, Funnel, QrCode, Settings } from './brand/icons';
+import { Antenna, Bell, Blend, Broom, ChartLine, Funnel, QrCode, Settings } from './brand/icons';
 
-export type PanelId = 'broker' | 'subscribe' | 'colours' | 'chart' | 'alerts' | 'mobile' | 'settings';
+export type PanelId =
+  | 'broker'
+  | 'subscribe'
+  | 'colours'
+  | 'chart'
+  | 'alerts'
+  | 'manage'
+  | 'mobile'
+  | 'settings';
 
 /**
  * What the panel is for, rather than what it is called.
@@ -37,6 +45,10 @@ export const PANELS: ReadonlyArray<Panel> = [
   { id: 'chart', label: 'Chart', group: 'Reading', icon: ChartLine },
   { id: 'colours', label: 'Colours', group: 'Reading', icon: Blend },
   { id: 'alerts', label: 'Alerts', group: 'Reading', icon: Bell },
+  // What the console and the broker are holding, and what the reader has paused, on one screen.
+  // Under Tools rather than Reading: none of it is about watching a topic, all of it is about
+  // the state the console has got itself into after an afternoon of watching several.
+  { id: 'manage', label: 'Manage', group: 'Tools', icon: Broom },
   { id: 'mobile', label: 'QR', group: 'Tools', icon: QrCode },
   { id: 'settings', label: 'Settings', group: 'Tools', icon: Settings },
 ];

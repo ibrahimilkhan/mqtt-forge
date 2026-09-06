@@ -2,6 +2,7 @@ import { Fragment, useEffect, useLayoutEffect, useState, type ReactNode } from '
 import { formatEndpoint } from './features/connection/address';
 import styles from './App.module.css';
 import { AppearancePanel } from './features/appearance/AppearancePanel';
+import { ManagePanel } from './features/manage/ManagePanel';
 import { Mark, Wordmark } from './features/brand/marks';
 import { ChartPanel } from './features/chart/ChartPanel';
 import { ColoursPanel } from './features/colours/ColoursPanel';
@@ -52,6 +53,7 @@ const PANEL_VIEWS: Record<PanelId, (props: PanelProps) => ReactNode> = {
   colours: ColoursPanel,
   chart: ChartPanel,
   alerts: AlertsPanel,
+  manage: ManagePanel,
   mobile: MobilePanel,
   settings: AppearancePanel,
 };

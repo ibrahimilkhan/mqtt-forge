@@ -61,7 +61,7 @@ describe('the pause on one run', () => {
     render(<HoldButton />);
     await userEvent.click(screen.getByRole('button', { name: 'Pause the pane' }));
 
-    expect(useHoldStore.getState().held?.filter).toBe('sensors/#');
+    expect([...useHoldStore.getState().held.keys()]).toEqual(['sensors/#']);
   });
 
   // On a tree row there is room for the figure, and it is the whole reason to look at the
