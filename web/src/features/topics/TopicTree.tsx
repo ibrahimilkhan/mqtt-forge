@@ -392,7 +392,7 @@ export function TopicTree({ broker }: { broker?: string }) {
       {root.subTopics === 0 ? (
         <p className="empty">No topics yet. Connect to a broker and its tree builds here.</p>
       ) : (
-        <div className={styles.tree}>
+        <div className={styles.tree} data-finding={open ? '' : undefined}>
           {/* One root for the whole broker, so the totals are readable without expanding
               anything — and so collapsing it puts the entire tree away in one click. It stands
               over a search's answers too: it is still the broker they came from, it is still

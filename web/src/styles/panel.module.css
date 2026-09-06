@@ -545,6 +545,10 @@
   width: 100%;
   max-width: 46rem;
 }
+/* Except the brokers the reader kept, which take the whole share. They are a row of chips, and a
+   row of chips wants width where a form wants a measure — the two are not the same kind of thing
+   and holding them to the same width only made the chips wrap sooner. */
+.formSide > .saved { max-width: none; }
 
 /* The same measure for the other face of this side. Connected, the settings are a report rather
    than a form — the summary, and the two buttons under it — and a report of eight short rows

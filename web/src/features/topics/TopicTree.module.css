@@ -69,7 +69,18 @@
 .tree > .node[data-depth='0']:first-child {
   min-height: calc(var(--head-band) - 11px);
   align-items: center;
+  /* Every other row skips layout and paint until it is scrolled to; this one is never off
+     screen, and `content-visibility` costs it something it cannot afford: paint containment
+     clips to the row's own box, which is where the menu under the filter mark was going. It
+     opened, and nothing appeared. */
+  content-visibility: visible;
+  contain-intrinsic-size: auto none;
 }
+
+/* With the box open the row is the search: the broker's own counts stood beside it, and at the
+   width the box takes they ran into each other. What they say — how many topics, how many
+   messages — is a summary of a tree the reader is in the middle of narrowing anyway. */
+.tree[data-finding] > .node[data-depth='0'] .meta { display: none; }
 /* Lift on hover rather than tint, so no colour reads into the row. */
 .node:hover { box-shadow: 0 1px 4px rgb(19 26 36 / 0.14); }
 /* The only row that fills. The stripe takes the row's colour rule when one covers it, and the neutral grey otherwise.

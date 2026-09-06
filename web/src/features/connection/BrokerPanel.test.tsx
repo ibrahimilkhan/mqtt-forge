@@ -1369,6 +1369,23 @@ describe('the brokers you keep', () => {
     expect(screen.queryByRole('group', { name: 'Saved brokers' })).not.toBeInTheDocument();
   });
 
+  /*
+   * They stand under the form, inside the settings side of the page, rather than under both
+   * columns at the foot of it. That is what lets the record of the link beside them reach the
+   * bottom of the window: a list wants every line of height it can have, and these are chips
+   * that want width — which they have, the side being two thirds of the page.
+   */
+  it('stands under the form, inside the settings side of the page', async () => {
+    withProfiles(savedProfile('Lab broker'));
+    renderPanel();
+
+    const kept = await screen.findByRole('group', { name: 'Saved brokers' });
+    const side = screen.getByLabelText('Address').closest('div[class*="formSide"]');
+
+    expect(side).not.toBeNull();
+    expect(side!.contains(kept)).toBe(true);
+  });
+
   it('names each one, and offers to forget it', async () => {
     withProfiles(savedProfile('Lab broker'), savedProfile('Staging'));
     renderPanel();

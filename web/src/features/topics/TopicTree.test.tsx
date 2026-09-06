@@ -1002,6 +1002,25 @@ describe('searching the topics', () => {
     expect(screen.queryByText(/No topics yet/)).not.toBeInTheDocument();
   });
 
+  /*
+   * The broker's row is the search's own row now, and with the box open there is not room on it
+   * for the tree's summary as well: '4 topics · 4 messages' ran into the box at the width it
+   * takes. The tree says it is being searched and the row's counts stand down — a summary of a
+   * tree the reader is in the middle of narrowing anyway.
+   */
+  it('says it is being searched, so the head row can put its counts away', async () => {
+    render(<TopicTree broker="127.0.0.1:1883" />);
+    const tree = screen.getAllByTestId('tree-row')[0].parentElement!;
+
+    expect(tree).not.toHaveAttribute('data-finding');
+
+    await openSearch();
+    expect(tree).toHaveAttribute('data-finding');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Find a topic' }));
+    expect(tree).not.toHaveAttribute('data-finding');
+  });
+
   // The marks ride on the broker's row, and a search matching nothing used to take the whole
   // tree away with it — that row included. A reader who mistyped was left with a sentence and no
   // way back to the tree it was about.

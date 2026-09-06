@@ -1110,6 +1110,24 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
+      {/* At the foot of the settings, across the whole of their share, and only once there is
+          something to put here. It used to stand under both columns at the foot of the page,
+          which is what stopped the record beside it reaching the bottom of the window: the
+          record is a list and wants every line of height it can have, and these are chips that
+          want width. They have the width here — the share is two thirds of the page — and the
+          record has the height. */}
+      {profiles !== undefined && profiles.length > 0 && (
+        <div className={styles.saved}>
+          <h3 className={styles.savedTitle}>Saved brokers</h3>
+          <SavedBrokers
+            profiles={profiles}
+            active={from}
+            onPick={usePicked}
+            onForget={(name) => forgetMutation.mutate(name)}
+          />
+        </div>
+      )}
+
       </div>
 
       {/* Beside the form where there is room, under it where there is not; either way after it.
@@ -1130,20 +1148,6 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
       </div>
       </div>
 
-      {/* At the foot of the page, across both columns, and only once there is something to put
-          here. It used to hold eleven brokers somebody else runs; these are the ones the reader
-          kept. A row of chips wants the width, not a column. */}
-      {profiles !== undefined && profiles.length > 0 && (
-        <div className={styles.saved}>
-          <h3 className={styles.savedTitle}>Saved brokers</h3>
-          <SavedBrokers
-            profiles={profiles}
-            active={from}
-            onPick={usePicked}
-            onForget={(name) => forgetMutation.mutate(name)}
-          />
-        </div>
-      )}
     </PanelShell>
   );
 }
