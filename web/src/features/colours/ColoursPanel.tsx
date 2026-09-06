@@ -41,10 +41,41 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
   // one into the cache would recolour the tree behind the panel on every keystroke.
   const [draft, setDraft] = useState<DraftRule[] | null>(null);
 
-  // Seeded once. A refetch after saving must not throw away what is on screen.
+  /**
+   * The stored rules the draft was made from.
+   *
+   * It is how a draft nobody has typed into is told from one somebody has, and it exists because
+   * the server's answer can change while the panel is open. Comparing the draft against `data`
+   * cannot do that job: `data` is the thing that moved.
+   */
+  const [seed, setSeed] = useState<readonly ColourRule[] | null>(null);
+
+  /**
+   * Seeded on arrival, and seeded again for as long as nobody has typed.
+   *
+   * It used to be seeded once, and once was right for a console on its own: the cache is the
+   * server's answer and a refetch after saving must not throw away what is on screen. It is
+   * wrong for two, and two is what the QR panel is for. The panel opens on whatever the cache
+   * holds and the fetch lands a moment later — so a console whose cache was written before the
+   * phone saved a rule showed an empty list, called it 'Not saved yet', and offered a Save that
+   * put its own emptiness over the rule. A person who had opened a panel and touched nothing
+   * could delete somebody else's work in two clicks.
+   *
+   * So: while the draft still says exactly what it was seeded with, the newest answer replaces
+   * it. Once anything has been typed the draft stands, unsaved edits are announced honestly, and
+   * saving is the last-write-wins it has always been — which is a race between two people who
+   * both meant it, rather than one between somebody and nobody.
+   */
   useEffect(() => {
-    if (draft === null && data) setDraft(draftFrom(data));
-  }, [data, draft]);
+    if (!data) return;
+    // Typed into since it was seeded: what is on screen is somebody's work and stays.
+    if (draft !== null && seed !== null && differs(draft, seed)) return;
+    // Already showing this answer. The guard that stops the seeding from re-seeding itself.
+    if (draft !== null && !differs(draft, data)) return;
+
+    setDraft(draftFrom(data));
+    setSeed(data);
+  }, [data, draft, seed]);
 
   /**
    * A row that has not been saved is still being decided on, so it follows the topic picked in
@@ -81,6 +112,10 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
       });
       // Settles every row: what the server took is no longer a draft that follows the tree.
       setDraft((current) => (current === null ? current : allSaved(current)));
+      // And the draft is now made from what was saved, so a later answer from the server is
+      // free to replace it again. Without this the panel would count itself edited for the rest
+      // of its life and stop hearing the other console.
+      setSeed(rules);
       void queryClient.invalidateQueries({ queryKey: queryKeys.colourRules });
     },
     // The draft is left as it was: what was typed is the only copy of it.

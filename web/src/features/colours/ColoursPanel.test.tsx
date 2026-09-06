@@ -2,6 +2,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { queryKeys } from '../../api/queryKeys';
 import { useLogStore } from '../../stores/logStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
@@ -944,6 +945,58 @@ describe('the message colour', () => {
 
     await waitFor(() => expect(rows()).toHaveLength(1));
     expect(within(rows()[0]).getByTestId('body-swatch')).toHaveAttribute('data-none');
+    expect(screen.getByText(/Not saved yet/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * Two consoles on one server, which is the ordinary arrangement rather than the strange one: the
+ * QR panel exists to put a second one on a phone. The panel opens on the cache and the fetch
+ * lands after it, so what the other console saved arrives underneath a draft already made.
+ */
+describe('when another console has saved since this one last looked', () => {
+  it('shows the rule that arrived rather than the emptiness it opened with', async () => {
+    const { queryClient } = renderPanel();
+    expect(await screen.findByText(/No colour rules yet/)).toBeInTheDocument();
+
+    // The other console saves, and this one refetches — a window regaining focus, a panel
+    // reopening, any of the ordinary reasons react-query asks again.
+    stored({ filter: 'cift/#', colour: '#e0575b' });
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.colourRules });
+    });
+
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(filterBox(rows()[0])).toHaveValue('cift/#');
+  });
+
+  it('does not call an untouched panel unsaved, so Save cannot put the emptiness back', async () => {
+    const { queryClient } = renderPanel();
+    expect(await screen.findByText(/No colour rules yet/)).toBeInTheDocument();
+
+    stored({ filter: 'cift/#', colour: '#e0575b' });
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.colourRules });
+    });
+
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(screen.queryByText(/Not saved yet/)).not.toBeInTheDocument();
+  });
+
+  it('leaves a draft somebody has typed into alone, and says it is unsaved', async () => {
+    stored({ filter: 'a/#', colour: '#b45309' });
+    const { queryClient } = renderPanel();
+    await waitFor(() => expect(rows()).toHaveLength(1));
+
+    await userEvent.clear(filterBox(rows()[0]));
+    await userEvent.type(filterBox(rows()[0]), 'benim/#');
+
+    stored({ filter: 'onun/#', colour: '#e0575b' });
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.colourRules });
+    });
+
+    expect(filterBox(rows()[0])).toHaveValue('benim/#');
     expect(screen.getByText(/Not saved yet/)).toBeInTheDocument();
   });
 });

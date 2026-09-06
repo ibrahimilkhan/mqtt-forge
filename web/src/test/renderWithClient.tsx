@@ -14,10 +14,15 @@ import type { ReactElement, ReactNode } from 'react';
 export function renderWithClient(ui: ReactElement, options?: Omit<RenderOptions, 'wrapper'>) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
-  return render(ui, {
-    ...options,
-    wrapper: ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    ),
-  });
+  // The client comes back with the render result so a test can do to it what the world does —
+  // invalidate a key because another console saved, and watch the panel answer the new figure.
+  return {
+    ...render(ui, {
+      ...options,
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      ),
+    }),
+    queryClient,
+  };
 }
