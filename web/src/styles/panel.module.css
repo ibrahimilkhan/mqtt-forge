@@ -280,6 +280,26 @@
   background: currentColor;
 }
 
+/* The same line, over a console that cannot reach its own server: the facts under it were true
+   when they arrived and nobody can say whether they still are. Amber rather than green, which is
+   what the rail does with the same fact, and hollow rather than filled — a lamp that is on says
+   'this is so', and the whole of this state is that nothing can say so. */
+.linkState[data-stale] {
+  color: var(--warn);
+}
+
+.linkState[data-stale] .lamp {
+  background: none;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
+
+.linkStale {
+  margin: 6px 0 0;
+  font-size: var(--t-note);
+  line-height: 1.45;
+  color: var(--warn);
+}
+
 /* The address, at the size the panel's own headings are read at. It leaves the list below rather
    than being said twice — a block that led with the broker and repeated it two lines later would
    read as two brokers to anyone scanning. */

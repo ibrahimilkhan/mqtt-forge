@@ -5,6 +5,7 @@ import { queryKeys } from '../../api/queryKeys';
 import { getSavedSettings } from '../../api/connection';
 import { getSubscriptions } from '../../api/subscriptions';
 import { useConnectionState } from '../../api/useConnectionState';
+import { useHubStatusStore } from '../../stores/hubStatusStore';
 import styles from '../../styles/panel.module.css';
 import type { BrokerLink } from '../../types/api';
 import { ConnectedFor } from './ConnectedFor';
@@ -27,6 +28,19 @@ const NOTHING = '—';
  */
 export function ConnectionSummary({ lead = false }: { lead?: boolean } = {}) {
   const { link } = useConnectionState();
+  /**
+   * Whether this console can currently reach its own server.
+   *
+   * Nothing else on this panel can tell. The link's state arrives over the hub and is then held
+   * in the query cache, so a hub that has gone leaves the last answer standing — and the last
+   * answer is 'Connected', in green, over a stopwatch that goes on counting. The server can be
+   * shut down and the panel will say the broker is up for as long as the tab is left open.
+   *
+   * The rail knows: it colours itself amber and reads 'reconnecting' the moment the socket goes.
+   * But the rail is a lamp at the edge of the window, and this panel is what somebody opened to
+   * ask the question. It has to answer with the same word.
+   */
+  const lost = useHubStatusStore((state) => state.status) === 'reconnecting';
   // What was asked for, as against what the link agreed to. Only one row reads it, and only to
   // say that one of the things asked for could not be carried.
   const { data: saved } = useQuery({
@@ -57,11 +71,20 @@ export function ConnectionSummary({ lead = false }: { lead?: boolean } = {}) {
    */
   const head = lead && (
     <div className={styles.linkHead}>
-      <p className={styles.linkState}>
+      <p className={styles.linkState} data-stale={lost ? '' : undefined}>
         <span className={styles.lamp} aria-hidden="true" />
-        Connected
+        {lost ? 'Last heard: connected' : 'Connected'}
       </p>
       <p className={styles.linkWhere}>{formatEndpoint(link.host, link.port)}</p>
+      {/* Said in the head rather than beside the rows it makes doubtful, because it is doubtful
+          about all of them: the keep-alive, the session, the count of filters and the stopwatch
+          are each the last thing this console was told. */}
+      {lost && (
+        <p className={styles.linkStale} data-testid="link-stale">
+          This console has lost its own server and is trying to get it back. Everything here is
+          the last thing it heard.
+        </p>
+      )}
     </div>
   );
 

@@ -2,8 +2,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { server } from '../../test/server';
+import { useHubStatusStore } from '../../stores/hubStatusStore';
 import { ConnectionSummary } from './ConnectionSummary';
 
 const LINK = {
@@ -33,6 +34,22 @@ function renderSummary(connection: unknown = LINK, subscriptions: string[] = [])
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
   return render(<ConnectionSummary />, { wrapper });
+}
+
+/** The same, as the panel draws it over a live link: the head with the state in words. */
+function renderLead(connection: unknown = LINK) {
+  server.use(
+    http.get('/api/connection', () =>
+      HttpResponse.json({ state: connection ? 'Connected' : 'Disconnected', connection }),
+    ),
+    http.get('/api/subscriptions', () => HttpResponse.json([])),
+  );
+
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
+  return render(<ConnectionSummary lead />, { wrapper });
 }
 
 // Each label owns one value, so read the value out of the row its label sits in.
@@ -150,5 +167,30 @@ describe('ConnectionSummary', () => {
     renderSummary(LINK, ['sensors/#', 'devices/+/state']);
 
     await waitFor(async () => expect(await readValue('Subscriptions')).toHaveTextContent('2'));
+  });
+});
+
+/**
+ * The console's own server, not the broker's. A tab left open across a restart of the API — or a
+ * laptop whose wifi went — keeps the last answer in the query cache, and the last answer is that
+ * everything is fine.
+ */
+describe('when the console has lost its own server', () => {
+  afterEach(() => useHubStatusStore.setState({ status: 'live' }));
+
+  it('stops calling the link connected, and says what it can still vouch for', async () => {
+    useHubStatusStore.setState({ status: 'reconnecting' });
+    renderLead();
+
+    expect(await screen.findByText(/Last heard: connected/)).toBeInTheDocument();
+    expect(screen.getByTestId('link-stale')).toHaveTextContent(/lost its own server/);
+    expect(screen.queryByText(/^Connected$/)).not.toBeInTheDocument();
+  });
+
+  it('says Connected plainly again once the hub is back', async () => {
+    renderLead();
+
+    expect(await screen.findByText('Connected')).toBeInTheDocument();
+    expect(screen.queryByTestId('link-stale')).not.toBeInTheDocument();
   });
 });
