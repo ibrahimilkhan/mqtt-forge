@@ -243,7 +243,7 @@ describe('the reconnect notice', () => {
       renderWithClient(<ReconnectNotice />);
 
       expect(await screen.findByText('Not reconnecting')).toBeInTheDocument();
-      expect(screen.getByText(/not something reconnecting would fix/)).toBeInTheDocument();
+      expect(screen.getByText(/Reconnecting would not fix this/)).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Try now' })).toBeInTheDocument();
     });
 

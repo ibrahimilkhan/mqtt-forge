@@ -79,7 +79,7 @@ function Small({
       // The leaf, not the whole path: the branch the reader picked is the part every row here
       // has in common, and repeating it on all six of them costs the width the tail needs. The
       // range comes with it, since the row itself has no height to spare for an axis.
-      title={`${series.topic} — ${short(read.domain.low)} to ${short(read.domain.high)}, ${series.readings.length} readings. Chart this topic on its own.`}
+      title={`${series.topic} — ${short(read.domain.low)} to ${short(read.domain.high)}, ${series.readings.length} readings`}
       onClick={() => onFocus(series.topic)}
       style={colour ? { color: colour } : undefined}
     >

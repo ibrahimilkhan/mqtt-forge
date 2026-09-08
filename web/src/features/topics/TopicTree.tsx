@@ -390,7 +390,7 @@ export function TopicTree({ broker }: { broker?: string }) {
       <h2 className="srOnly">Topics</h2>
 
       {root.subTopics === 0 ? (
-        <p className="empty">No topics yet. Connect to a broker and its tree builds here.</p>
+        <p className="empty">No topics yet.</p>
       ) : (
         <div className={styles.tree} data-finding={open ? '' : undefined}>
           {/* One root for the whole broker, so the totals are readable without expanding

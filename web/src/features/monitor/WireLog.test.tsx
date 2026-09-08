@@ -114,7 +114,7 @@ describe('WireLog', () => {
     render(<Monitor />);
 
     expect(
-      screen.getByText('Pick a topic — click a subscription chip or a tree node to see its traffic here.'),
+      screen.getByText('Pick a topic to see its traffic.'),
     ).toBeInTheDocument();
     expect(screen.queryByTestId('entry')).not.toBeInTheDocument();
   });
@@ -721,7 +721,7 @@ describe('holding the pane still', () => {
 
     expect(screen.getByRole('button', { name: 'Pause the pane' })).toHaveAttribute(
       'title',
-      'Pause the pane — the rows stop where they are, and the traffic behind them carries on arriving',
+      'Pause the pane — traffic carries on behind it',
     );
 
     await userEvent.click(screen.getByRole('button', { name: 'Pause the pane' }));
@@ -729,7 +729,7 @@ describe('holding the pane still', () => {
 
     expect(screen.getByRole('button', { name: /Let the pane go/ })).toHaveAttribute(
       'title',
-      'Paused — 2 arrived behind it. Click to catch up.',
+      'Paused — 2 behind it',
     );
   });
 

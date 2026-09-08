@@ -402,7 +402,7 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
               that costs the rules, and this panel is where a reader asks that. */}
           {blindSeconds > 0 && (
             <p className={styles.engineRow} data-severity="warn" data-testid="engine-row">
-              {`No broker link, so no rule is judging anything — ${blindFor(blindSeconds)} so far.`}
+              {`No broker link — nothing judged for ${blindFor(blindSeconds)}.`}
             </p>
           )}
           {dropped > 0 && (

@@ -57,7 +57,7 @@ describe('picking a topic filter off the broker', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Show topics on the broker' }));
 
-    expect(screen.getByText(/Nothing has arrived yet/)).toBeInTheDocument();
+    expect(screen.getByText('No topics yet.')).toBeInTheDocument();
   });
 
   it('writes a leaf into the filter box as the topic itself', async () => {

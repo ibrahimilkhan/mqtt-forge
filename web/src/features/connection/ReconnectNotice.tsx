@@ -173,17 +173,16 @@ export function ReconnectNotice() {
           )}
           <p className={styles.was}>
             {status.declined
-              ? 'This is not something reconnecting would fix, so it is left for you. Change what ' +
-                'the fault was about and Connect, or press Try now to attempt it once as it is.'
+              ? 'Reconnecting would not fix this. Change what the fault was about and Connect, or ' +
+                'press Try now to attempt it as it stands.'
               : !status.enabled
-                ? 'Auto-reconnect is off, so nothing is being tried. Connect puts it back.'
+                ? 'Auto-reconnect is off. Connect puts it back.'
                 : status.gaveUp
-                  ? 'Reconnecting was stopped, so nothing is being tried. Connect puts it back.'
+                  ? 'Reconnecting was stopped. Connect puts it back.'
                   : // Enabled, not stopped, not declined, and still nothing: the reader dialled
                     // somewhere else, and that took over from the ladder. Saying 'was stopped'
                     // here named a thing nobody did.
-                    'Your own Connect took over, so nothing is tried for this link on its own. ' +
-                    'Connect puts it back.'}
+                    'Your own Connect took over. Connect puts it back.'}
           </p>
           {/* Try now is offered on a declined outage — the reader may know something the reason
               code does not, or want to see the failure again — and never on a plainly stopped

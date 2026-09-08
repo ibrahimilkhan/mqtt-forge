@@ -45,7 +45,7 @@ export function WireLog() {
 
       {!selected && (
         <p className="empty">
-          Pick a topic — click a subscription chip or a tree node to see its traffic here.
+          Pick a topic to see its traffic.
         </p>
       )}
 
@@ -126,7 +126,7 @@ function LogTools() {
       <button
         type="button"
         className={styles.tool}
-        title="Let go of every message the console is holding, and the tree of topics with it"
+        title="Clear the traffic and the topic tree"
         onClick={clearTraffic}
       >
         Clear

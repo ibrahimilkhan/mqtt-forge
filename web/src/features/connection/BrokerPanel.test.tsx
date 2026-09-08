@@ -627,13 +627,36 @@ describe('what the panel shows first', () => {
 
   // Six fields the great majority of connections never need. The client ID is not among them
   // any more: brokers refuse connections over it and log by it.
-  it('keeps the certificates behind a line, and nothing else', async () => {
+  // The form is an address and three folds. A bench broker needs nothing but the address; a name,
+  // a subscription list and a certificate are each one line away.
+  it('keeps the user, the subscription and the certificates behind lines', async () => {
     renderPanel();
 
     await screen.findByRole('button', { name: 'Connect' });
+    expect(fold('User').open).toBe(false);
+    expect(fold('Subscription').open).toBe(false);
     expect(fold('Encryption').open).toBe(false);
-    expect(screen.getByLabelText('Client ID')).toBeVisible();
+    expect(screen.getByLabelText('Address')).toBeVisible();
     expect(screen.queryByText('Client and session')).not.toBeInTheDocument();
+  });
+
+  // Folding a section hides the sentence under the field it is about, and a client ID the server
+  // refuses is exactly what a saved broker carries without anybody having opened the fold.
+  it('opens the fold holding a field the server named', async () => {
+    server.use(
+      http.post('/api/connection', () =>
+        HttpResponse.json(
+          { title: 'Invalid', errors: { ClientId: ['Client ID is already taken.'] } },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+
+    await waitFor(() => expect(fold('User').open).toBe(true));
+    expect(screen.getByText('Client ID is already taken.')).toBeInTheDocument();
   });
 
   // Auto offers 5.0, then 3.1.1, then 3.1, and keeps the first the broker takes. The reader is

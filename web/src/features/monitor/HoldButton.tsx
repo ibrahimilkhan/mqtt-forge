@@ -44,9 +44,9 @@ export function HoldButton({ over }: { over?: string } = {}) {
       title={
         held
           ? waiting
-            ? `Paused — ${arrived} arrived behind it. Click to catch up.`
-            : 'Paused — the traffic is still arriving behind it. Click to catch up.'
-          : 'Pause the pane — the rows stop where they are, and the traffic behind them carries on arriving'
+            ? `Paused — ${arrived} behind it`
+            : 'Paused — click to catch up'
+          : 'Pause the pane — traffic carries on behind it'
       }
       onClick={toggle}
     >

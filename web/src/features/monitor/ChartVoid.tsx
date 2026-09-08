@@ -27,8 +27,8 @@ export function ChartVoid({
     return (
       <p className="empty" data-testid="unchartable" data-reason="too-few">
         {reason.have === 0
-          ? 'Nothing has arrived on this topic yet.'
-          : 'One message so far. A line needs two — the next one draws it.'}
+          ? 'Nothing on this topic yet.'
+          : 'One message — a line needs two.'}
       </p>
     );
   }

@@ -106,7 +106,7 @@ export function SubscribePanel({ onClose }: { onClose: () => void }) {
               kind: 'ok',
               verb: 'Claim dropped',
               topic: filter,
-              body: 'An alert rule still holds this filter, so the subscription stays up.',
+              body: 'Held by an alert rule.',
             }
           : { kind: 'ok', verb: 'Unsubscribed', topic: filter },
       );

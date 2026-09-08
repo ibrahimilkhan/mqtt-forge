@@ -241,8 +241,8 @@ export function ConditionFields({ condition, onChange, id }: Props) {
           </div>
           <p className={panel.note}>
             {condition.method === 'tukey'
-              ? 'k multiplies the interquartile range — the box. 1.5 is the textbook fence; the range is 0.5 to 5.'
-              : 'k is a number of deviations. 3 is what every control chart is drawn at; the range is 1 to 10.'}
+              ? 'k × IQR. 1.5 is the textbook fence; 0.5 to 5.'
+              : 'k × σ. 3 is the control-chart default; 1 to 10.'}
           </p>
         </>
       );

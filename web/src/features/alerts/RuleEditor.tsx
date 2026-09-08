@@ -272,8 +272,8 @@ export function RuleEditor({
                panel, and which level the rail's count wears while it is up. */
             note={
               draft.severity === 'critical'
-                ? 'A critical alarm stands at the top of the Alerts panel while it is alarming.'
-                : 'An info or warn alarm stands below the criticals while it is alarming.'
+                ? 'Criticals stand at the top of the Alerts panel.'
+                : 'Below the criticals in the Alerts panel.'
             }
           />
         </div>

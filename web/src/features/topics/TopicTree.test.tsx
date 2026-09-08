@@ -145,7 +145,7 @@ describe('TopicTree', () => {
     render(<TopicTree broker="broker:1883" />);
 
     expect(
-      screen.getByText('No topics yet. Connect to a broker and its tree builds here.'),
+      screen.getByText('No topics yet.'),
     ).toBeInTheDocument();
   });
 

@@ -326,8 +326,8 @@ describe('AlertsPanel', () => {
     answers({ blindSeconds: 31 });
     renderPanel();
 
-    expect(await screen.findByText(/no rule is judging anything/)).toBeInTheDocument();
-    expect(screen.getByText(/31s so far/)).toBeInTheDocument();
+    expect(await screen.findByText(/nothing judged for/)).toBeInTheDocument();
+    expect(screen.getByText(/nothing judged for 31s/)).toBeInTheDocument();
   });
 
   it('says nothing about it while the link is up', async () => {
@@ -335,7 +335,7 @@ describe('AlertsPanel', () => {
     renderPanel();
 
     await screen.findByRole('heading', { name: 'Rules' });
-    expect(screen.queryByText(/no rule is judging anything/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/nothing judged for/)).not.toBeInTheDocument();
   });
 
   // Rounded the way the outage notice rounds: a reader wants 'an hour', not 3 615 seconds.
@@ -343,7 +343,7 @@ describe('AlertsPanel', () => {
     answers({ blindSeconds: 5400 });
     renderPanel();
 
-    expect(await screen.findByText(/2h so far/)).toBeInTheDocument();
+    expect(await screen.findByText(/nothing judged for 2h/)).toBeInTheDocument();
   });
 
   it('names a rule the engine has stopped trusting', async () => {

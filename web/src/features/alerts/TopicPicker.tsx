@@ -106,7 +106,7 @@ export function TopicPicker({
 
       {root.subTopics === 0 ? (
         <p className="empty">
-          Nothing has arrived yet. Connect to a broker and its topics are listed here.
+          No topics yet.
         </p>
       ) : shown.length === 0 ? (
         <p className="empty">No topic here carries &lsquo;{needle.trim()}&rsquo;.</p>

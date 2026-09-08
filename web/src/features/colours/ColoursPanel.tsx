@@ -191,8 +191,8 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
           disabled={draft === null || full}
           title={
             selectedTopic
-              ? `Add a rule for ${selectedTopic}. Until it is saved it follows the tree.`
-              : 'Add a rule. Until it is saved it follows the topic you pick in the tree.'
+              ? `Add a rule for ${selectedTopic}`
+              : 'Add a rule — an unsaved one follows the tree'
           }
           onClick={() =>
             setDraft((current) => [
@@ -214,7 +214,7 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
       {draft !== null && rules.length === 0 && (
         <div className={panel.nothingYet}>
           <p>
-            No colour rules yet. Press <b>New rule</b> and say which topics should be told apart.
+            No colour rules yet.
           </p>
         </div>
       )}

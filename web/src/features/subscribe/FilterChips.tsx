@@ -69,7 +69,7 @@ const Chip = memo(function Chip({ filter, selected, pending, held, onPick, onRem
         aria-label={
           held ? `${filter} is held by an alert rule` : `Unsubscribe from ${filter}`
         }
-        title={held ? 'An alert rule asked for this filter. Disable the rule to drop it.' : undefined}
+        title={held ? 'Held by an alert rule — disable it to drop this.' : undefined}
       >
         ×
       </button>

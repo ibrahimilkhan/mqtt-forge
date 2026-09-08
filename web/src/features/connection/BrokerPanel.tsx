@@ -135,6 +135,18 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
    */
   const [subscriptions, setSubscriptions] = useState(EVERYTHING);
 
+  /**
+   * Whether the folds holding a field the server can object to are open.
+   *
+   * Folding a section hides the sentence under the field it is about, and a refused client ID or
+   * ALPN protocol is exactly the kind of thing a saved broker carries without anybody having
+   * opened the fold to type it. So a fold whose field the server named opens itself, once, and
+   * the reader can shut it again — the toggle writes back, so it is their answer either way.
+   */
+  const [userOpen, setUserOpen] = useState(false);
+  const [encryptionOpen, setEncryptionOpen] = useState(false);
+
+
   // The one reading of the box, and the same one the Filters panel's list goes through: lines and
   // commas both separate, and a filter written twice is one filter.
   const wanted = parseFilters(subscriptions);
@@ -191,6 +203,12 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
   });
   const files = useCertificateFile();
   const { connectMutation, disconnectMutation, abortMutation } = useConnectionActions();
+
+  useEffect(() => {
+    if (fieldError(connectMutation.error, 'ClientId')) setUserOpen(true);
+    if (fieldError(connectMutation.error, 'Tls.AlpnProtocol')) setEncryptionOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectMutation.error]);
   const { isOnline, isConnecting, failure: faulted, link, answered } = useConnectionState();
   const guardedConnect = useGuardedMutate(connectMutation);
   const guardedDisconnect = useGuardedMutate(disconnectMutation);
@@ -785,8 +803,16 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
           )}
         </section>
 
-        <section className={styles.group}>
-          <h3 className={styles.groupTitle}>User</h3>
+        {/* A fold, like the two under it. Most brokers on a bench want none of this — an
+            anonymous listener takes an address and nothing else — and a client ID the console
+            invents for itself is an answer rather than a question. Open it when there is a name
+            and a password to give, or a client ID to pin. */}
+        <details
+          className={styles.groupFold}
+          open={userOpen}
+          onToggle={(e) => setUserOpen(e.currentTarget.open)}
+        >
+          <summary>User</summary>
           <div className={styles.row}>
             <Field label="Username" htmlFor="username">
               <input
@@ -854,7 +880,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
               </Field>
             </div>
           )}
-        </section>
+        </details>
 
         {/* What the console should be listening to the moment the link is up, which is a question
             about the connection and belongs with the ones that make it. It used to be two
@@ -867,8 +893,8 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
             that put it there. Two controls over one answer that can disagree is the commonest way
             a form lies about itself; there is nothing to keep in step here because there is only
             one thing. */}
-        <section className={styles.group}>
-          <h3 className={styles.groupTitle}>Subscription</h3>
+        <details className={styles.groupFold}>
+          <summary>Subscription</summary>
 
           <div className={styles.checks}>
             <label>
@@ -921,7 +947,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
                 : `${wanted.length} ${wanted.length === 1 ? 'filter' : 'filters'}, subscribed on connect.`}
             </p>
           </details>
-        </section>
+        </details>
 
         {/* The third of the three, and a fold rather than a block: six fields the great majority
             of connections never need would otherwise stand between the password and the button
@@ -949,7 +975,11 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
             start. That is not this panel any more — the box is one line above the fold, always on
             screen, always operable — and a fold that cannot be typed into while encryption is off
             cannot flip encryption on by being typed into. So setTls goes with it. */}
-        <details className={styles.groupFold}>
+        <details
+          className={styles.groupFold}
+          open={encryptionOpen}
+          onToggle={(e) => setEncryptionOpen(e.currentTarget.open)}
+        >
           <summary>Encryption</summary>
 
           <fieldset className={styles.foldFields} disabled={!encrypted}>

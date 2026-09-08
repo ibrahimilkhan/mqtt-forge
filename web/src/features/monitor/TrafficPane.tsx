@@ -103,7 +103,7 @@ function WindowBar({ label, filter }: { label?: string; filter?: string }) {
             type="button"
             className={floating.pin}
             aria-label={`Pin ${label ?? filter}`}
-            title={`Pin ${label ?? filter} — it opens a window that keeps drawing this topic while the console moves on`}
+            title={`Pin ${label ?? filter} — opens a window that keeps drawing it`}
             onClick={keep}
           >
             <Pin />

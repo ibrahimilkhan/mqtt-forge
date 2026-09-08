@@ -83,8 +83,7 @@ export function ManagePanel({ onClose }: { onClose: () => void }) {
 
         {reading.paused.length === 0 ? (
           <p className={panel.note}>
-            Nothing is paused. The control on a topic's row in the tree stops that row and the run
-            it stands for; every other row carries on.
+            Nothing is paused.
           </p>
         ) : (
           <>
@@ -170,7 +169,7 @@ export function ManagePanel({ onClose }: { onClose: () => void }) {
             type="button"
             className="ghost"
             disabled={reading.held === 0 && reading.topics === 0}
-            title="Let go of every message the console is holding, and the tree of topics with it"
+            title="Clear the traffic and the topic tree"
             onClick={clearTraffic}
           >
             Clear the traffic

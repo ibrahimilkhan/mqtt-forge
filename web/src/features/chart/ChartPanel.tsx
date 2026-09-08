@@ -148,7 +148,7 @@ export function ChartPanel({ onClose }: { onClose: () => void }) {
           >
             {exporter.canChoose
               ? (exporter.folder ?? 'Not set — csv will ask the first time')
-              : 'This browser has no folder dialog, so csv comes down as a download'}
+              : 'No folder dialog — csv downloads instead.'}
           </span>
           {exporter.canChoose && (
             <button

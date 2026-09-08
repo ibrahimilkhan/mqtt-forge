@@ -108,7 +108,7 @@ describe('k means two things', () => {
   it("says what k is measuring, in the method's own words", () => {
     draw({ type: 'outlier', method: 'sigma', k: '3', window: '' });
 
-    expect(screen.getByText(/deviations/i)).toBeInTheDocument();
+    expect(screen.getByText(/control-chart default/i)).toBeInTheDocument();
   });
 });
 

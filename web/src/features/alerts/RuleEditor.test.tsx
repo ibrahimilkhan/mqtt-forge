@@ -83,13 +83,13 @@ describe('the rule editor', () => {
     openEditor(boiler);
 
     expect(
-      screen.getByText('A critical alarm stands at the top of the Alerts panel while it is alarming.'),
+      screen.getByText('Criticals stand at the top of the Alerts panel.'),
     ).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('radio', { name: 'warn' }));
 
     expect(
-      screen.getByText('An info or warn alarm stands below the criticals while it is alarming.'),
+      screen.getByText('Below the criticals in the Alerts panel.'),
     ).toBeInTheDocument();
   });
 

@@ -68,14 +68,14 @@ export function StreamPause({ compact = false, live = false }: Props) {
       }
       title={
         idle
-          ? 'Nothing to stop — the console is not connected to a broker'
+          ? 'Not connected'
           : paused
             ? waiting > 0
-              ? `Stopped — ${waiting} waiting${lost > 0 ? `, ${lost} past the ceiling and dropped` : ''}. Click to take them in.`
-              : 'Stopped — nothing is reaching the log, the tree or the charts. Click to start again.'
+              ? `Stopped — ${waiting} waiting${lost > 0 ? `, ${lost} dropped` : ''}`
+              : 'Stopped — click to start again'
             : waiting > 0
-              ? `${waiting} still coming in. Click to stop again — what is left stays queued.`
-              : 'Stop taking messages — the console holds still, and what arrives meanwhile is queued rather than lost'
+              ? `${waiting} still coming in`
+              : 'Stop taking messages — what arrives is queued'
       }
       onClick={toggle}
     >
