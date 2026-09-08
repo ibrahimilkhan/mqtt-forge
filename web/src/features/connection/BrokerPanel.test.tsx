@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
@@ -1413,7 +1413,7 @@ describe('the brokers you keep', () => {
     withProfiles(savedProfile('Lab broker'), savedProfile('Staging'));
     renderPanel();
 
-    expect(await screen.findByRole('button', { name: 'Lab broker' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /^Lab broker/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Forget Staging' })).toBeInTheDocument();
   });
 
@@ -1476,7 +1476,7 @@ describe('the brokers you keep', () => {
     withProfiles(savedProfile('Lab broker', { host: 'lab.example', port: 8883, useTls: true }));
     renderPanel();
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Lab broker' }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Lab broker/ }));
 
     expect(screen.getByLabelText('Address')).toHaveValue('lab.example');
     expect(screen.getByLabelText('Port')).toHaveValue(8883);
@@ -1488,16 +1488,16 @@ describe('the brokers you keep', () => {
     withProfiles(savedProfile('Lab broker', { host: 'lab.example' }));
     renderPanel();
 
-    const chip = await screen.findByRole('button', { name: 'Lab broker' });
+    const chip = await screen.findByRole('button', { name: /^Lab broker/ });
     await userEvent.click(chip);
-    expect(chip.closest('span')).toHaveAttribute('data-active');
+    expect(chip.closest('div[class*="chip"]')).toHaveAttribute('data-active');
 
     const address = screen.getByLabelText('Address');
     await userEvent.clear(address);
     await userEvent.type(address, 'somewhere.else');
     fireEvent.blur(address);
 
-    await waitFor(() => expect(chip.closest('span')).not.toHaveAttribute('data-active'));
+    await waitFor(() => expect(chip.closest('div[class*="chip"]')).not.toHaveAttribute('data-active'));
   });
 
   it('forgets one when its cross is pressed', async () => {
@@ -1733,5 +1733,35 @@ describe('the subscription list, remembered', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
 
     await waitFor(() => expect(sent?.subscriptions).toEqual(['lab/oven/#']));
+  });
+});
+
+/**
+ * A saved broker says where it points.
+ *
+ * The name alone was a card you had to press to find out what it meant, and pressing it
+ * overwrites the form — so the only way to read the list was to spend it.
+ */
+describe('what a saved broker shows', () => {
+  const withProfiles = (...profiles: unknown[]) =>
+    server.use(http.get('/api/connection/profiles', () => HttpResponse.json(profiles)));
+
+  it('writes the address under the name, the way the log writes one', async () => {
+    withProfiles({
+      name: 'Lab broker',
+      connection: savedConnection({ host: 'lab.example', port: 8883, useTls: true }),
+    });
+    renderPanel();
+
+    const card = await screen.findByRole('button', { name: /^Lab broker/ });
+    expect(within(card).getByText('mqtts://lab.example:8883')).toBeInTheDocument();
+  });
+
+  it('brackets an IPv6 host, so the port can still be found', async () => {
+    withProfiles({ name: 'Six', connection: savedConnection({ host: '::1', port: 1883 }) });
+    renderPanel();
+
+    const card = await screen.findByRole('button', { name: /^Six/ });
+    expect(within(card).getByText('mqtt://[::1]:1883')).toBeInTheDocument();
   });
 });

@@ -1,55 +1,111 @@
-/* The chip borrows its face from the scheme picker's — same size, same border, same way of
-   saying which one is on — because they are the same gesture. Two ways of drawing a pickable
-   word in one panel is one too many. */
+/* The brokers somebody kept, as a row of small plates.
 
-.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+   They were pills carrying a name and nothing else, which made the list unreadable in the one way
+   that matters: 'Lab', 'Old one' and 'Ali's' are all the same chip until you press one, and
+   pressing one overwrites the form. Two lines and a plate each — the name as it was typed, the
+   address under it — and the list can be read instead of tried.
 
-/* One chip, two buttons. The border belongs to the pair, so the seam between them is a rule
-   inside a single shape rather than two shapes touching. */
+   Everything else is the panel's own language rather than a new one: surface on paper, a hairline
+   border, the control radius, mono type, and the signal ring for the one the form is holding. */
+
+.chips {
+  display: grid;
+  /* Even columns rather than a ragged wrap: these are the same kind of thing at the same weight,
+     and a row of different-width pills reads as a list of different-sized answers. Three across
+     the settings side at its usual width, two on a narrow one, one on a phone. */
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 8px;
+}
+
 .chip {
-  display: inline-flex;
-  align-items: stretch;
+  position: relative;
+  display: flex;
   background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: var(--r-control);
-  overflow: hidden;
 }
 
 .chip:hover { border-color: var(--muted); }
 
-/* Stated by the border, not a fill: a filled block pulls the eye off the fields the chip is
+/* Stated by the border, not a fill: a filled block pulls the eye off the fields the card is
    about. The same call the preset chips made before these replaced them. */
 .chip[data-active] {
   border-color: var(--signal);
   box-shadow: inset 0 0 0 1px var(--signal);
 }
 
-.name,
-.forget {
-  font-family: var(--mono);
-  font-size: var(--t-small);
-  letter-spacing: 0.04em;
+/* The card body is the button, so the whole plate is the target and the × is the only part of it
+   that is not. Room kept at the end of the first line for that ×, or a long name runs under it. */
+.pick {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  justify-items: start;
+  /* A shade more under the address than over the name: the second line is set smaller, so an
+     even measure leaves the card looking bottom-light. */
+  padding: 7px 30px 8px 10px;
   background: none;
   border: 0;
-  color: var(--ink);
+  border-radius: inherit;
   cursor: pointer;
+  text-align: left;
 }
 
 /* The reader's own capitalisation, against the global rule that shouts every button. A name
-   somebody typed is theirs — "Lab mosquitto" is not "LAB MOSQUITTO", and a list of brokers all
-   in capitals is a list you read letter by letter. */
-.name { padding: 5px 9px; text-transform: none; font-weight: 400; }
+   somebody typed is theirs — 'Lab mosquitto' is not 'LAB MOSQUITTO', and a list of brokers all in
+   capitals is a list you read letter by letter. */
+.name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: var(--t-small);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--ink);
+}
 
-/* Narrower, and behind a rule of its own: this one is destructive and a mis-hit on it takes the
-   only copy of something that was typed by hand. Muted until it is pointed at, so the eye going
-   down the list reads names rather than a column of crosses. */
-.forget {
-  padding: 5px 7px;
-  border-left: 1px solid var(--rule);
+/* Under it, and quieter: it is what the name means rather than a second name. Truncated from the
+   end, since a host that is too long to draw is still recognisable by how it starts. */
+.where {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  letter-spacing: 0.02em;
+  text-transform: none;
   color: var(--muted);
 }
 
-.forget:hover { color: var(--fault); background: var(--paper); }
+/* In the corner rather than beside the name, and muted until it is pointed at: this one is
+   destructive and a mis-hit on it takes the only copy of something that was typed by hand, so the
+   eye going down the list reads names rather than a column of crosses. */
+.forget {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  padding: 3px 6px;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: var(--t-small);
+  line-height: 1.2;
+  color: var(--muted);
+  cursor: pointer;
+}
 
-.name:focus-visible,
+/* A ground under it on hover, so the thing being pointed at is a button rather than a character
+   that happens to have gone red. */
+.forget:hover {
+  color: var(--fault);
+  background: var(--paper);
+}
+
+.pick:focus-visible,
 .forget:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
