@@ -102,7 +102,7 @@
   color: var(--muted);
   border-bottom: 1px solid transparent;
 }
-.regionHead:hover { color: var(--ink); background: var(--paper); }
+.regionHead:hover:not(:disabled) { color: var(--ink); background: var(--paper); }
 /* Folded, the strip is the whole plate — so a hover fill in the channel's own colour made the
    plate disappear into the channel. The ink the line above already brings is enough. */
 .region:not([data-open]) .regionHead:hover { background: none; }

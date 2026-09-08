@@ -29,7 +29,7 @@
   color: var(--ink);
   overflow-wrap: anywhere;
 }
-.goTo:hover { text-decoration: underline; }
+.goTo:hover:not(:disabled) { text-decoration: underline; background: none; }
 .goTo:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
 
 .figures {
@@ -56,7 +56,7 @@
   letter-spacing: 0.06em;
   color: var(--muted);
 }
-.action:hover { color: var(--ink); border-color: var(--muted); }
+.action:hover:not(:disabled) { color: var(--ink); border-color: var(--muted); background: none; }
 .action:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 /* Counts, as a column of label and value — the same shape the connection summary uses, for the

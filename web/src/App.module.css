@@ -115,7 +115,7 @@
   border-radius: var(--r-control);
 }
 .rail:not([data-open]) .railToggle { margin-left: 0; }
-.railToggle:hover { color: var(--ink); background: var(--paper); }
+.railToggle:hover:not(:disabled) { color: var(--ink); background: var(--paper); }
 .railToggle:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 /* ---- the link's state, and what it is a link to ---- */
@@ -194,7 +194,7 @@
   width: 34px;
   padding: 0;
 }
-.menuBtn:hover { color: var(--ink); background: var(--paper); }
+.menuBtn:hover:not(:disabled) { color: var(--ink); background: var(--paper); }
 /* The one that is open, in the console's own blue rather than in its ink.
    The segmented control has picked its selection out in --signal since it was written, and this
    was the last selected thing on the screen still painting itself black — two answers to one
@@ -206,9 +206,14 @@
   background: var(--signal);
   border-color: var(--signal);
 }
-.menuBtn[aria-expanded="true"]:hover {
-  background: var(--muted);
-  border-color: var(--muted);
+/* Hovered, it stays its own blue and goes a shade deeper. It used to go grey — 'what everything
+   else here does when it is already on' — and grey is where this row's two colours both stop
+   working: the label is drawn in --surface, which needs a dark ground, and the glyph is drawn in
+   the link's own colour, which on that grey is a green nobody can see. A darker blue says the
+   same 'yes, this one' and leaves both of them legible. */
+.menuBtn[aria-expanded="true"]:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--signal) 86%, var(--ink));
+  border-color: color-mix(in srgb, var(--signal) 86%, var(--ink));
 }
 /* Waiting on the user to pick a column, so the button reads as armed rather than open. */
 .menuBtn[data-pending] {
@@ -404,13 +409,30 @@
   background: color-mix(in srgb, var(--fault) 6%, transparent);
 }
 
-/* The open row is already ink on surface, which is a louder statement than any of these and
-   would fight them. The glyph keeps the colour, so the state survives being looked at. */
-.menuBtn[aria-expanded='true'][data-link='Connected'] svg { color: var(--live); }
+/* The open row is already the console's blue, which is a louder statement than any of these and
+   would fight them. The glyph keeps the colour, so the state survives being looked at.
+
+   The row's own colour has to be said again here, and that is not belt and braces: the state
+   rules above are `.menuBtn[data-link=…]` and the open row's is `.menuBtn[aria-expanded=…]`, the
+   same specificity — so the later of the two won, and the open Broker row was drawn in --live on
+   --signal. Green on navy is 2:1, which is a colour you can see and cannot read. */
+.menuBtn[aria-expanded='true'][data-link] { color: var(--surface); }
+
+/* Lightened, because the ground under them is the console's blue rather than its paper. Each of
+   the three is picked to hold 4.5:1 on white — see tokens.css — and on --signal they are 2:1,
+   which is a lamp you can find only if you already know it is on. The mix keeps the hue: this is
+   the same green, said loudly enough for the ground it is on. */
+.menuBtn[aria-expanded='true'][data-link='Connected'] svg {
+  color: color-mix(in srgb, var(--live) 62%, white);
+}
 .menuBtn[aria-expanded='true'][data-link='Waiting'] svg,
-.menuBtn[aria-expanded='true'][data-link='Retrying'] svg { color: var(--warn); }
+.menuBtn[aria-expanded='true'][data-link='Retrying'] svg {
+  color: color-mix(in srgb, var(--warn) 62%, white);
+}
 .menuBtn[aria-expanded='true'][data-link='Faulted'] svg,
-.menuBtn[aria-expanded='true'][data-link='Reconnecting'] svg { color: var(--fault); }
+.menuBtn[aria-expanded='true'][data-link='Reconnecting'] svg {
+  color: color-mix(in srgb, var(--fault) 62%, white);
+}
 .menuBtn[aria-expanded='true'][data-link='Faulted'],
 .menuBtn[aria-expanded='true'][data-link='Reconnecting'],
 .menuBtn[aria-expanded='true'][data-link='Retrying'],

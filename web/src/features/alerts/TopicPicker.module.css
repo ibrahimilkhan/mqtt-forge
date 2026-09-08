@@ -53,7 +53,7 @@
   transition: transform 120ms ease;
 }
 .twisty[data-open='true'] { transform: none; }
-.twisty:hover { color: var(--ink); }
+.twisty:hover:not(:disabled) { color: var(--ink); background: none; }
 .twisty:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 .pick {
@@ -70,7 +70,7 @@
   cursor: pointer;
   color: var(--ink);
 }
-.pick:hover { background: var(--paper); }
+.pick:hover:not(:disabled) { background: var(--paper); }
 .pick:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 .seg { font-weight: 600; white-space: nowrap; }

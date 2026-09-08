@@ -69,7 +69,7 @@
   /* The pane's own surface behind it, so the corner of a plot drawn under it stays readable. */
   background: var(--surface);
 }
-.zoom:hover { color: var(--ink); border-color: var(--rule); }
+.zoom:hover:not(:disabled) { color: var(--ink); border-color: var(--rule); background: var(--surface); }
 .zoom:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 .zoom[aria-pressed='true'] { color: var(--ink); border-color: var(--ink); }
 
@@ -202,7 +202,7 @@
 }
 .along[data-side='start'] { left: 0; }
 .along[data-side='end'] { right: 0; }
-.along:hover { color: var(--ink); border-color: var(--muted); }
+.along:hover:not(:disabled) { color: var(--ink); border-color: var(--muted); background: var(--surface); }
 .along:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 /* What range the plot is drawn in — the left-hand group, beside the fields it applies to. */
@@ -289,7 +289,7 @@
   min-width: 24px;
   line-height: 16px;
 }
-.chip:hover { color: var(--ink); border-color: var(--rule); }
+.chip:hover:not(:disabled) { color: var(--ink); border-color: var(--rule); background: none; }
 .chip:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 .chip[aria-pressed="true"] { color: var(--signal); border-color: var(--signal); }
 
@@ -547,7 +547,7 @@
   line-height: 1;
   color: var(--muted);
 }
-.detailClose:hover { color: var(--fault); background: var(--paper); }
+.detailClose:hover:not(:disabled) { color: var(--fault); background: var(--paper); }
 .detailClose:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 /* Label left, value right, one pair a line: this is a column of pairs, so it aligns as one —
@@ -825,7 +825,7 @@
   padding: 2px 4px;
   border-radius: var(--r-control);
 }
-.small:hover { background: var(--paper); }
+.small:hover:not(:disabled) { background: var(--paper); }
 /* Nothing reaches into the row above or below: the rows are shorter than a plot's own floor. */
 .small { overflow: hidden; }
 .small:focus-visible { outline: 2px solid var(--signal); outline-offset: -1px; }

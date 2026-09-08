@@ -44,7 +44,7 @@
 }
 .fold::before { content: '▸'; }
 .fold[aria-expanded='true']::before { content: '▾'; }
-.fold:hover { color: var(--ink); }
+.fold:hover:not(:disabled) { color: var(--ink); background: none; }
 .fold:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 /* Breaks inside a value rather than pushing the window out. A payload holds base64, tokens and

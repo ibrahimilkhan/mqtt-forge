@@ -318,7 +318,7 @@ button.history:focus-visible { outline: 2px solid var(--signal); outline-offset:
   color: var(--muted);
   cursor: pointer;
 }
-.open:hover { color: var(--ink); border-color: var(--rule); }
+.open:hover:not(:disabled) { color: var(--ink); border-color: var(--rule); background: none; }
 .open:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 /* ---- the strip over the rows ----
@@ -354,5 +354,5 @@ button.history:focus-visible { outline: 2px solid var(--signal); outline-offset:
   letter-spacing: 0.06em;
   color: var(--muted);
 }
-.tool:hover { color: var(--ink); border-color: var(--muted); }
+.tool:hover:not(:disabled) { color: var(--ink); border-color: var(--muted); background: none; }
 .tool:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }

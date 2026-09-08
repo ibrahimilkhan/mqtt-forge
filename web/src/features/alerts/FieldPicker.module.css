@@ -66,7 +66,7 @@
   font-size: var(--t-code);
   color: var(--ink);
 }
-.pick:hover { background: var(--paper); }
+.pick:hover:not(:disabled) { background: var(--paper); }
 .pick:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 .path {

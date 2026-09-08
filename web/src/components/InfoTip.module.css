@@ -22,7 +22,7 @@
   flex: none;
 }
 
-.mark:hover { color: var(--ink); }
+.mark:hover:not(:disabled) { color: var(--ink); background: none; }
 
 /* Open is a state worth seeing from across the form: with three of these on one page, the one
    that is answering a question should not look like the two that are not. */

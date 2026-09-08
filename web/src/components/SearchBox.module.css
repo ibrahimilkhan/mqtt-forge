@@ -52,7 +52,7 @@
   font-size: var(--t-small);
   color: var(--muted);
 }
-.clear:hover { color: var(--ink); }
+.clear:hover:not(:disabled) { color: var(--ink); background: none; }
 .clear:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 /* ---- the marks that open a search and choose where it looks ----
@@ -73,7 +73,7 @@
   color: var(--muted);
   font-size: var(--t-small);
 }
-.opener:hover { color: var(--ink); background: var(--paper); }
+.opener:hover:not(:disabled) { color: var(--ink); background: var(--paper); }
 .opener[aria-expanded='true'] { color: var(--ink); background: var(--paper); }
 .opener:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
@@ -105,7 +105,7 @@
   font-size: var(--t-small);
   color: var(--muted);
 }
-.choice:hover { color: var(--ink); background: var(--paper); }
+.choice:hover:not(:disabled) { color: var(--ink); background: var(--paper); }
 .choice[aria-checked='true'] { color: var(--ink); }
 /* The one that is chosen wears the mark this console uses for a chosen thing everywhere else. */
 .choice[aria-checked='true']::before { content: '· '; }

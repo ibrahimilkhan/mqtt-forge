@@ -101,7 +101,7 @@
   color: var(--muted);
   flex: none;
 }
-.pin:hover { color: var(--ink); border-color: var(--rule); }
+.pin:hover:not(:disabled) { color: var(--ink); border-color: var(--rule); background: none; }
 .pin:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 /* Pinned. The window only exists because this is pressed, so it says so plainly — filled rather
    than outlined, since what it has to be is unmistakable from across the console: a pin that
@@ -111,7 +111,15 @@
   background: var(--signal);
   border-color: var(--signal);
 }
-.pin[aria-pressed='true']:hover { background: var(--muted); border-color: var(--muted); }
+/* Pressed and pointed at: its own blue, a shade deeper. Grey was what this said before, and it
+   stopped working the moment the rule above learnt to beat the global fill — a hover that is more
+   specific than the pressed state takes its ink with it, and dark ink on grey is a label nobody
+   reads. The colour is restated here for that reason. */
+.pin[aria-pressed='true']:hover:not(:disabled) {
+  color: var(--surface);
+  background: color-mix(in srgb, var(--signal) 86%, var(--ink));
+  border-color: color-mix(in srgb, var(--signal) 86%, var(--ink));
+}
 
 /* The far end of the bar, which is where a window's close has been since windows had corners.
    Quiet: it is the one control here that cannot be undone, so it should be found when it is
@@ -132,7 +140,7 @@
   line-height: 1;
   color: var(--muted);
 }
-.close:hover { color: var(--fault); border-color: color-mix(in srgb, var(--fault) 40%, transparent); }
+.close:hover:not(:disabled) { color: var(--fault); border-color: color-mix(in srgb, var(--fault) 40%, transparent); background: none; }
 .close:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 /* Out to the whole screen and back. Drawn like the close beside it and standing in front of it,
@@ -158,7 +166,7 @@
   line-height: 1;
   color: var(--muted);
 }
-.swell:hover { color: var(--ink); border-color: var(--rule); }
+.swell:hover:not(:disabled) { color: var(--ink); border-color: var(--rule); background: none; }
 .swell:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 /* Filling the screen, and therefore cornerless. A plate has corners and a lift because something

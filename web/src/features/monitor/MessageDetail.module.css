@@ -176,7 +176,7 @@
   color: var(--muted);
   cursor: pointer;
 }
-.mark:hover { color: var(--ink); border-color: var(--rule); }
+.mark:hover:not(:disabled) { color: var(--ink); border-color: var(--rule); background: none; }
 .mark:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 /* The mark in the corner, and the corner is what makes it findable: everything else in this group
@@ -200,7 +200,7 @@
   color: var(--muted);
   cursor: pointer;
 }
-.copy:hover { color: var(--ink); border-color: var(--rule); }
+.copy:hover:not(:disabled) { color: var(--ink); border-color: var(--rule); background: none; }
 .copy:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 /* The same box the row's own open-in-place control wears, so the two read as one control in two
@@ -217,7 +217,7 @@
   padding: 2px 5px;
   cursor: pointer;
 }
-.toggle:hover { color: var(--ink); border-color: var(--muted); }
+.toggle:hover:not(:disabled) { color: var(--ink); border-color: var(--muted); background: none; }
 .toggle:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 /* Pressed, it is filled rather than outlined — the same answer the window's pin gives to the
    same question, and for the same reason: this is the one control here whose state decides what
@@ -228,7 +228,14 @@
   background: var(--signal);
   border-color: var(--signal);
 }
-.toggle[aria-pressed='true']:hover { background: var(--muted); border-color: var(--muted); }
+/* The same answer the window's pin gives, and for the same reason: pressed and pointed at is
+   its own blue a shade deeper, with the label restated — the plain hover above is the more
+   specific rule now and would otherwise put ink on it. */
+.toggle[aria-pressed='true']:hover:not(:disabled) {
+  color: var(--surface);
+  background: color-mix(in srgb, var(--signal) 86%, var(--ink));
+  border-color: color-mix(in srgb, var(--signal) 86%, var(--ink));
+}
 
 /* Why it is not being shown as JSON, in the colour the console reports faults in. */
 .fault {

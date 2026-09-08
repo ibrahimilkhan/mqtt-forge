@@ -62,7 +62,7 @@
   font-size: var(--t-lead);
   line-height: 0;
 }
-.markBtn:hover { color: var(--ink); border-color: var(--muted); }
+.markBtn:hover:not(:disabled) { color: var(--ink); border-color: var(--muted); background: var(--surface); }
 .markBtn:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 /* The one in force wears the ink, the way a pressed chip on the chart does. */
 .markBtn[aria-pressed='true'] {
