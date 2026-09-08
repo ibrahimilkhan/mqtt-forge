@@ -17,7 +17,11 @@ public record ConnectRequestDto(
     string? WebSocketPath = null,
     bool CleanSession = true,
     uint? SessionExpiryInterval = null,
-    TlsOptionsDto? Tls = null);
+    TlsOptionsDto? Tls = null,
+
+    // What the console will subscribe to once this is up. The server keeps it with the rest of
+    // the settings and does nothing else with it; the subscribing is the console's own.
+    IReadOnlyList<string>? Subscriptions = null);
 
 // The parts of TLS that need a field. Sent as its own object rather than flattened, so a form
 // that shows none of this sends nothing at all rather than seven nulls.

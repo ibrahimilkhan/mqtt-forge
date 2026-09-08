@@ -1,5 +1,7 @@
 import type { ConnectRequest, SavedConnection, TlsOptions } from '../../types/api';
+import { parseFilters } from '../subscribe/parseFilters';
 import { parseBrokerAddress } from './address';
+import { EVERYTHING } from './useConnectionActions';
 import {
   choiceOf,
   isEncrypted,
@@ -35,6 +37,15 @@ export type BrokerForm = {
   clientCertPassword: string;
   sniHost: string;
   alpnProtocol: string;
+  /**
+   * What to subscribe to once the link is up, as the reader writes it: one filter to a line.
+   *
+   * A string rather than an array because that is what the textarea holds and what a half-typed
+   * list is; `parseFilters` is the one reading of it. In the form rather than beside it so that
+   * it goes wherever the form goes — into a connect request, into a saved broker, and back out
+   * of both.
+   */
+  subscriptions: string;
 };
 
 /**
@@ -64,6 +75,10 @@ export function buildConnectRequest(form: BrokerForm): ConnectRequest {
     cleanSession: form.cleanSession,
     sessionExpiryInterval: sessionExpiry(form),
     tls: isEncrypted(form.scheme) && hasTlsMaterial(form) ? tlsOptions(form) : null,
+    // Sent so the server keeps it with the rest of the settings; the subscribing itself is the
+    // console's own. An empty list is a real answer — 'connect and listen to nothing' — so it
+    // travels as an empty array rather than being dropped.
+    subscriptions: parseFilters(form.subscriptions),
   };
 }
 
@@ -156,6 +171,9 @@ export function formFromSaved(saved: SavedConnection): BrokerForm {
     clientCertPassword: '',
     sniHost: saved.tls?.sniHost ?? '',
     alpnProtocol: saved.tls?.alpnProtocol ?? '',
+    // Null is a settings file written before the list existed: the console asked for '#' then,
+    // so that is what it means. An empty array is a reader who asked for nothing, and stays that.
+    subscriptions: (saved.subscriptions ?? [EVERYTHING]).join('\n'),
   };
 }
 

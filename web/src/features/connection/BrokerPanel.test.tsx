@@ -629,11 +629,11 @@ describe('what the panel shows first', () => {
   // any more: brokers refuse connections over it and log by it.
   // The form is an address and three folds. A bench broker needs nothing but the address; a name,
   // a subscription list and a certificate are each one line away.
-  it('keeps the user, the subscription and the certificates behind lines', async () => {
+  it('keeps the client, the subscription and the certificates behind lines', async () => {
     renderPanel();
 
     await screen.findByRole('button', { name: 'Connect' });
-    expect(fold('User').open).toBe(false);
+    expect(fold('Client').open).toBe(false);
     expect(fold('Subscription').open).toBe(false);
     expect(fold('Encryption').open).toBe(false);
     expect(screen.getByLabelText('Address')).toBeVisible();
@@ -655,7 +655,7 @@ describe('what the panel shows first', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
 
-    await waitFor(() => expect(fold('User').open).toBe(true));
+    await waitFor(() => expect(fold('Client').open).toBe(true));
     expect(screen.getByText('Client ID is already taken.')).toBeInTheDocument();
   });
 
@@ -1656,5 +1656,82 @@ describe('what to listen to the moment the link is up', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
 
     await waitFor(() => expect(asked).toEqual(['#']));
+  });
+});
+
+/**
+ * The list survives a reload, because it is saved with the rest of the settings.
+ *
+ * Two checkboxes were state the panel forgot on every load, and nobody minded because the answer
+ * was one of two. A list somebody typed is work, and work the console loses is work nobody does
+ * twice.
+ */
+describe('the subscription list, remembered', () => {
+  const saved = (subscriptions: string[] | null) =>
+    server.use(
+      http.get('/api/connection/settings', () =>
+        HttpResponse.json({
+          host: 'broker.example',
+          port: 1883,
+          clientId: 'console',
+          username: null,
+          hasPassword: false,
+          useTls: false,
+          transport: 'tcp',
+          protocolVersion: 'auto',
+          webSocketPath: null,
+          cleanSession: true,
+          sessionExpiryInterval: null,
+          tls: null,
+          subscriptions,
+        }),
+      ),
+    );
+
+  it('comes back as it was written', async () => {
+    saved(['plant/+/temp', '$SYS/#']);
+    renderPanel();
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('One per line')).toHaveValue('plant/+/temp\n$SYS/#'),
+    );
+    expect(screen.getByLabelText(/Subscribe \$SYS/)).toBeChecked();
+    expect(screen.getByLabelText(/Subscribe #/)).not.toBeChecked();
+  });
+
+  // Settings written before the list existed. The console asked for '#' then, so that is what
+  // they meant — an empty box would silently stop a saved broker listening to anything.
+  it('reads a settings file that predates it as the old default', async () => {
+    saved(null);
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByLabelText('One per line')).toHaveValue('#'));
+  });
+
+  // And empty is a real answer, kept as one.
+  it('keeps an empty list empty', async () => {
+    saved([]);
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByLabelText('One per line')).toHaveValue(''));
+  });
+
+  it('sends the list with the connect, so the server keeps it', async () => {
+    let sent: { subscriptions?: string[] } | undefined;
+    server.use(
+      http.post('/api/connection', async ({ request }) => {
+        sent = (await request.json()) as { subscriptions?: string[] };
+        return HttpResponse.json({ state: 'Connected' });
+      }),
+      http.post('/api/subscriptions', () => new HttpResponse(null, { status: 202 })),
+    );
+    renderPanel();
+
+    const list = await screen.findByLabelText('One per line');
+    await userEvent.clear(list);
+    await userEvent.type(list, 'lab/oven/#');
+    await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
+
+    await waitFor(() => expect(sent?.subscriptions).toEqual(['lab/oven/#']));
   });
 });

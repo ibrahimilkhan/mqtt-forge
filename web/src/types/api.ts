@@ -130,6 +130,13 @@ export type SavedConnection = {
   sessionExpiryInterval: number | null;
   /** Null when the connection never touched the encryption fields at all. */
   tls: SavedTlsOptions | null;
+  /**
+   * What to subscribe to once this broker is up, in the order it was written.
+   *
+   * Null is a settings file written before the list existed, and the panel reads it as the old
+   * default of '#'. An empty array is a reader who asked for nothing.
+   */
+  subscriptions: string[] | null;
 };
 
 export type SavedTlsOptions = {
@@ -159,6 +166,8 @@ export type ConnectRequest = {
   cleanSession?: boolean;
   sessionExpiryInterval?: number | null;
   tls?: TlsOptions | null;
+  /** Kept with the settings so a reload, and a saved broker, remember what to listen to. */
+  subscriptions?: string[];
 };
 
 /** The parts of TLS that need a field. Sent whole or not at all. */

@@ -37,7 +37,19 @@ public record BrokerConnectionSettings(
     // Null means "say nothing", which the broker reads as zero.
     uint? SessionExpiryInterval = null,
 
-    BrokerTlsSettings? Tls = null)
+    BrokerTlsSettings? Tls = null,
+
+    // What to subscribe to once this broker is up, in the order the reader wrote it.
+    //
+    // Not something the connection needs — the console does its own subscribing, and the server
+    // never reads this. It is here because this record is the console's memory of a broker, and
+    // 'which filters do I want from this one' is as much a part of that as which port it answers
+    // on. Kept with the settings rather than in the browser so that the phone the QR code opens
+    // sees the list the desktop wrote, and so that a saved broker carries its own.
+    //
+    // Null and empty are different: null is a settings file written before this existed, and the
+    // console reads it as its old default of '#'. Empty is a reader who asked for nothing.
+    IReadOnlyList<string>? Subscriptions = null)
 {
     // Never null at the point of use, so nothing downstream has to check.
     public BrokerTlsSettings TlsSettings => Tls ?? BrokerTlsSettings.None;

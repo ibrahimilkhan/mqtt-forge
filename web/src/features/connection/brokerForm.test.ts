@@ -20,6 +20,7 @@ const FORM: BrokerForm = {
   clientCertPassword: '',
   sniHost: '',
   alpnProtocol: '',
+  subscriptions: '#',
 };
 
 describe('the scheme, as the API sees it', () => {
@@ -124,6 +125,7 @@ describe('a saved connection, back in the form', () => {
       sniHost: 'real.example',
       alpnProtocol: null,
     },
+    subscriptions: ['#'],
   };
 
   it('comes back as the scheme it was made with', () => {
@@ -371,10 +373,11 @@ describe('the whole form, as the API receives it', () => {
     clientCertPassword: 'certpass',
     sniHost: 'real.example',
     alpnProtocol: 'x-amzn-mqtt-ca',
+  subscriptions: '#',
   };
 
-  it('carries all sixteen fields', () => {
-    expect(Object.keys(FULL)).toHaveLength(16);
+  it('carries all seventeen fields', () => {
+    expect(Object.keys(FULL)).toHaveLength(17);
 
     expect(buildConnectRequest(FULL)).toEqual({
       host: 'broker.example',
@@ -397,6 +400,7 @@ describe('the whole form, as the API receives it', () => {
         sniHost: 'real.example',
         alpnProtocol: 'x-amzn-mqtt-ca',
       },
+      subscriptions: ['#'],
     });
   });
 
@@ -424,6 +428,7 @@ describe('the whole form, as the API receives it', () => {
         sniHost: 'real.example',
         alpnProtocol: 'x-amzn-mqtt-ca',
       },
+      subscriptions: ['#'],
     });
 
     // Everything but the two passwords, which the API never sends back.

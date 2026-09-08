@@ -17,7 +17,8 @@ public record SavedConnectionDto(
     string? WebSocketPath,
     bool CleanSession,
     uint? SessionExpiryInterval,
-    SavedTlsOptionsDto? Tls)
+    SavedTlsOptionsDto? Tls,
+    IReadOnlyList<string>? Subscriptions)
 {
     /// <summary>The settings as the console is allowed to see them.</summary>
     public static SavedConnectionDto Of(BrokerConnectionSettings settings) =>
@@ -34,7 +35,8 @@ public record SavedConnectionDto(
                 settings.Tls.ClientCertificateKeyPath,
                 HasClientCertificatePassword: !string.IsNullOrEmpty(settings.Tls.ClientCertificatePassword),
                 settings.Tls.SniHost,
-                settings.Tls.AlpnProtocol));
+                settings.Tls.AlpnProtocol),
+            settings.Subscriptions);
 }
 
 /// <summary>A saved connection, under the name it was saved with.</summary>

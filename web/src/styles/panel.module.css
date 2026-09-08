@@ -517,6 +517,16 @@
 }
 .groupFold[open] > summary { margin-bottom: 12px; }
 
+/* The line that closes the last fold.
+   What stands under it is not part of Encryption and is not a section of its own: it is what the
+   console does about a link that goes, and it belongs between the form and the button that makes
+   one. Without the rule it read as the encryption fold's own last checkbox. */
+.afterGroups {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule);
+}
+
 /* Everything the Encryption fold can be given, following the one box above it.
 
    A fieldset because the rule is about all of them at once: under a plain scheme the server is

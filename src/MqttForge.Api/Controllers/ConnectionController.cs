@@ -166,7 +166,7 @@ public sealed class ConnectionController : ControllerBase
     private static BrokerConnectionSettings Settings(ConnectRequestDto dto) =>
         new(dto.Host, dto.Port, dto.ClientId, dto.Username, dto.Password, dto.UseTls,
             dto.Transport, dto.ProtocolVersion, dto.WebSocketPath,
-            dto.CleanSession, dto.SessionExpiryInterval, Tls(dto.Tls));
+            dto.CleanSession, dto.SessionExpiryInterval, Tls(dto.Tls), dto.Subscriptions);
 
     private static BrokerTlsSettings? Tls(TlsOptionsDto? dto)
     {

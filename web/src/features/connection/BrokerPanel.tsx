@@ -73,6 +73,7 @@ const DEFAULTS: BrokerForm = {
   clientCertPassword: '',
   sniHost: '',
   alpnProtocol: '',
+  subscriptions: EVERYTHING,
 };
 
 /**
@@ -132,8 +133,10 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
    * Text rather than an array because it is what a textarea holds and a reader edits, and because
    * a list halfway through being typed is not a list of filters yet. `parseFilters` is the one
    * reading of it, and it is the same one the Filters panel's own box goes through.
+   *
+   * It lives in the form rather than beside it because it is saved with the rest of it: a reload,
+   * and a saved broker, come back listening to what they were told to listen to.
    */
-  const [subscriptions, setSubscriptions] = useState(EVERYTHING);
 
   /**
    * Whether the folds holding a field the server can object to are open.
@@ -149,11 +152,14 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
 
   // The one reading of the box, and the same one the Filters panel's list goes through: lines and
   // commas both separate, and a filter written twice is one filter.
-  const wanted = parseFilters(subscriptions);
+  const wanted = parseFilters(form.subscriptions);
 
   /** Puts a filter in the list or takes it out, which is the whole of what the two boxes do. */
   const askFor = (filter: string, on: boolean) =>
-    setSubscriptions((held) => (on ? appendFilter(held, filter) : removeFilter(held, filter)));
+    set(
+      'subscriptions',
+      on ? appendFilter(form.subscriptions, filter) : removeFilter(form.subscriptions, filter),
+    );
   // The name box, and whether it is on screen at all. Null is "not saving"; a string is the name
   // as far as it has been typed. Two states in one, because "empty box open" and "no box" are
   // different things and a boolean beside a string would let them disagree.
@@ -803,16 +809,20 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
           )}
         </section>
 
-        {/* A fold, like the two under it. Most brokers on a bench want none of this — an
-            anonymous listener takes an address and nothing else — and a client ID the console
-            invents for itself is an answer rather than a question. Open it when there is a name
-            and a password to give, or a client ID to pin. */}
+        {/* Everything that says who is connecting: the name and password the broker asks for,
+            the ID it files the session under, and whether that session survives the link going.
+            'User' named half of it — a clean session is not a fact about a username — and the
+            half it left out is the half that is keyed on the ID sitting in the same fold.
+
+            A fold, like the two under it: most brokers on a bench want none of this, an anonymous
+            listener takes an address and nothing else, and a client ID the console invents for
+            itself is an answer rather than a question. */}
         <details
           className={styles.groupFold}
           open={userOpen}
           onToggle={(e) => setUserOpen(e.currentTarget.open)}
         >
-          <summary>User</summary>
+          <summary>Client</summary>
           <div className={styles.row}>
             <Field label="Username" htmlFor="username">
               <input
@@ -936,8 +946,8 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
                 rows={4}
                 spellCheck={false}
                 placeholder={`${EVERYTHING}\nplant/+/temp`}
-                value={subscriptions}
-                onChange={(e) => setSubscriptions(e.target.value)}
+                value={form.subscriptions}
+                onChange={(e) => set('subscriptions', e.target.value)}
               />
             </Field>
 
@@ -1090,7 +1100,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
           The two subscription boxes stood here too, on the reasoning that all three are 'what
           this console does around a connection'. They are in the Subscription section now, with
           the list they are the first two lines of. */}
-      <div className={styles.checks}>
+      <div className={`${styles.checks} ${styles.afterGroups}`}>
         <AutoReconnectSwitch id="brokerAutoReconnect" />
       </div>
 
