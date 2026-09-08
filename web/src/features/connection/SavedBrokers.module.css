@@ -25,7 +25,17 @@
   border-radius: var(--r-control);
 }
 
+/* The card is a plate, and pointing at it darkens its edge. It does NOT fill: `button:hover` in
+   global.css paints every button --muted, which over two lines of type is a grey card with grey
+   type on it — the address disappeared into it entirely. Written with the same `:not(:disabled)`
+   the global rule carries, because without it this loses on specificity and reads as though it
+   were never here. */
 .chip:hover { border-color: var(--muted); }
+
+.pick:hover:not(:disabled) {
+  background: none;
+  border-color: transparent;
+}
 
 /* Stated by the border, not a fill: a filled block pulls the eye off the fields the card is
    about. The same call the preset chips made before these replaced them. */
@@ -101,10 +111,11 @@
 }
 
 /* A ground under it on hover, so the thing being pointed at is a button rather than a character
-   that happens to have gone red. */
-.forget:hover {
+   that happens to have gone red. The same `:not(:disabled)` as above, and for the same reason. */
+.forget:hover:not(:disabled) {
   color: var(--fault);
   background: var(--paper);
+  border-color: transparent;
 }
 
 .pick:focus-visible,

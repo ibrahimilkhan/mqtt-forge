@@ -86,7 +86,9 @@
   cursor: pointer;
   flex: none;
 }
-.rowMark:hover { color: var(--ink); }
+/* No ground of its own: the row it sits in tints on hover, and this should let that through
+   rather than draw a second shape over it. :not(:disabled) to beat the global button:hover fill. */
+.rowMark:hover:not(:disabled) { color: var(--ink); background: none; }
 .rowMark[aria-expanded='true'] {
   color: var(--signal);
   background: color-mix(in srgb, var(--signal) 12%, transparent);
@@ -205,7 +207,9 @@
   white-space: nowrap;
   cursor: pointer;
 }
-.noColour:hover { color: var(--ink); }
+/* :not(:disabled) to beat the global button:hover fill, which would put this on a grey block in
+   the middle of a popover of colours. */
+.noColour:hover:not(:disabled) { color: var(--ink); background: none; }
 .noColour[aria-pressed='true'] { color: var(--ink); }
 .noColour:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 

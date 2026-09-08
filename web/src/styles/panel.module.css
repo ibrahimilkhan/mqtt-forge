@@ -843,7 +843,9 @@
 }
 /* It destroys something, so it says so on the way — and only on the way. A control drawn in the
    fault colour at rest is a block that looks like it is reporting a fault. */
-.subRemove:hover { color: var(--fault); background: var(--surface); }
+/* :not(:disabled) matches the global button:hover fill's specificity, which would otherwise
+   paint this --muted and put a red mark on a grey square. */
+.subRemove:hover:not(:disabled) { color: var(--fault); background: var(--surface); }
 .subRemove:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 /* The three parts a rule is written in: what it watches, when it fires, and everything else.
