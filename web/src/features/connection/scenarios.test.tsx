@@ -464,7 +464,7 @@ describe('a connection that does not come up', () => {
       const asked = watchSubscribes();
       renderPanel();
 
-      await userEvent.click(await screen.findByLabelText(/Include \$SYS/));
+      await userEvent.click(await screen.findByLabelText(/Subscribe \$SYS/));
       await connect();
 
       await waitFor(() => expect(asked).toEqual(['#', '$SYS/#']));
@@ -485,7 +485,7 @@ describe('a connection that does not come up', () => {
       );
       renderPanel();
 
-      await userEvent.click(await screen.findByLabelText(/Include \$SYS/));
+      await userEvent.click(await screen.findByLabelText(/Subscribe \$SYS/));
       await connect();
 
       await waitFor(() =>
@@ -496,14 +496,18 @@ describe('a connection that does not come up', () => {
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
 
-    // Nothing at all is asked for when the box above it is off, so the second one has nothing to
-    // add and says so by not being pressable.
-    it('cannot be asked for on its own', async () => {
+    // It used to be unpressable with the box above it off, because nothing at all was asked for
+    // then and this one had nothing to add to it. They are two lines of one list now, and a
+    // console watching only what the broker says about itself is a real thing to want.
+    it('can be asked for on its own', async () => {
+      const asked = watchSubscribes();
       renderPanel();
 
-      await userEvent.click(await screen.findByLabelText('Listen to every topic on connect'));
+      await userEvent.click(await screen.findByLabelText(/Subscribe #/));
+      await userEvent.click(await screen.findByLabelText(/Subscribe \$SYS/));
+      await connect();
 
-      expect(screen.getByLabelText(/Include \$SYS/)).toBeDisabled();
+      await waitFor(() => expect(asked).toEqual(['$SYS/#']));
     });
   });
 

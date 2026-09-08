@@ -360,6 +360,13 @@
    one-line field until someone pastes more into it. */
 .filterInput { min-height: 0; resize: vertical; }
 
+/* What a box does, in the words a reader would use for it, on the same line as its label.
+   Quieter than the label and in the same size, because it is the second half of one sentence
+   rather than a note about it: 'Subscribe # (every topic the broker carries)'. */
+.hint {
+  color: var(--muted);
+}
+
 /* A block of fields most connections never touch, folded away until they do. Drawn as a quiet
    line rather than a heading: it is a way in, not a section of the form, and it sits between
    the password and the button that uses it. */

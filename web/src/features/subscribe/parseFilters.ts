@@ -33,6 +33,26 @@ export function appendFilter(text: string, filter: string): string {
   return held ? `${held}\n${wanted}` : wanted;
 }
 
+/**
+ * Takes one filter out of what the box holds, wherever it is written.
+ *
+ * The other half of `appendFilter`, and it exists for the broker panel's two boxes: 'Subscribe #'
+ * and 'Subscribe $SYS' are ticked when the list holds their filter and put it there when pressed,
+ * so unticking has to be able to take it out again — including out of a line that carried it
+ * beside others under a comma.
+ *
+ * Read through parseFilters rather than by cutting the text, so the answer does not depend on how
+ * the reader happened to punctuate their list. What comes back is one filter per line, which is
+ * how the box writes a list it has changed.
+ */
+export function removeFilter(text: string, filter: string): string {
+  const unwanted = filter.trim();
+
+  return parseFilters(text)
+    .filter((held) => held !== unwanted)
+    .join('\n');
+}
+
 // Measured against test.mosquitto.org with 600 filters: one packet of 200 costs about the same
 // round trip as one of 10, so this is where the win flattens out. Kept in step with the API's
 // own per-batch limit — a bigger chunk would simply be refused.

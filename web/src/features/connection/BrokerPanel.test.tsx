@@ -680,7 +680,7 @@ describe('what the panel shows first', () => {
   /**
    * The switch is a setting, and a setting about a thing that is not happening is clutter.
    *
-   * It stands beside 'Listen to every topic on connect', which is the same kind of answer — what
+   * It stands beside the Subscription section's own boxes, which are the same kind of answer — what
    * this console should do around the connection, as opposed to what the connection is made of —
    * and it is only ever on screen while there is no link. Over one, the panel's whole job is to
    * report what is up, and this would have been the only control on it.
@@ -1260,11 +1260,11 @@ describe('a broker that will not give you everything', () => {
       ),
     );
 
-  it('asks for everything, and says so in one box', () => {
+  it('asks for everything, and says so in the first line of the list', () => {
     renderPanel();
 
-    expect(screen.getByLabelText('Listen to every topic on connect')).toBeChecked();
-    expect(screen.queryByLabelText('On-connect filter')).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/Subscribe #/)).toBeChecked();
+    expect(screen.getByLabelText('One filter to a line')).toHaveValue('#');
   });
 
   it('subscribes to # when the box is ticked', async () => {
@@ -1294,7 +1294,7 @@ describe('a broker that will not give you everything', () => {
     );
 
     renderPanel();
-    await userEvent.click(screen.getByLabelText('Listen to every topic on connect'));
+    await userEvent.click(screen.getByLabelText(/Subscribe #/));
     await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Connect' })).toBeEnabled());
@@ -1537,5 +1537,101 @@ describe('the encryption fields, as far as they apply', () => {
 
     expect(screen.getByText('Server name and ALPN')).toBeInTheDocument();
     expect(screen.getByLabelText('ALPN protocol')).toBeInTheDocument();
+  });
+});
+
+/**
+ * The Subscription section: two boxes and the list they are the first two lines of.
+ *
+ * The pair is one fact deliberately — a box says whether its filter is in the list, and pressing
+ * it puts the filter in or takes it out — so there is nothing to keep in step and no way for the
+ * two controls to disagree about the one answer they both describe.
+ */
+describe('what to listen to the moment the link is up', () => {
+  const list = () => screen.getByLabelText('One filter to a line');
+  const everything = () => screen.getByLabelText(/Subscribe #/);
+  const system = () => screen.getByLabelText(/Subscribe \$SYS/);
+
+  /** Every filter the panel asked the server for, in the order it asked. */
+  function watchAsks() {
+    const asked: string[] = [];
+    server.use(
+      http.post('/api/connection', () => HttpResponse.json({ state: 'Connected' })),
+      http.post('/api/subscriptions', async ({ request }) => {
+        asked.push(((await request.json()) as { topicFilter: string }).topicFilter);
+        return new HttpResponse(null, { status: 202 });
+      }),
+    );
+
+    return asked;
+  }
+
+  it('opens asking for everything and nothing else', () => {
+    renderPanel();
+
+    expect(everything()).toBeChecked();
+    expect(system()).not.toBeChecked();
+    expect(list()).toHaveValue('#');
+  });
+
+  it('puts a filter into the list when its box is pressed, and takes it out again', async () => {
+    renderPanel();
+
+    await userEvent.click(system());
+    expect(list()).toHaveValue('#\n$SYS/#');
+
+    await userEvent.click(system());
+    expect(list()).toHaveValue('#');
+  });
+
+  // The rule the boxes exist under: they report the list rather than holding an opinion of their
+  // own, so a filter deleted by hand unticks the box that put it there.
+  it('unticks a box when its filter is deleted from the list', async () => {
+    renderPanel();
+    await userEvent.click(system());
+    expect(everything()).toBeChecked();
+    expect(system()).toBeChecked();
+
+    await userEvent.clear(list());
+    await userEvent.type(list(), 'plant/+/temp');
+
+    expect(everything()).not.toBeChecked();
+    expect(system()).not.toBeChecked();
+  });
+
+  it('asks for what the reader wrote, in the order they wrote it', async () => {
+    const asked = watchAsks();
+    renderPanel();
+
+    await userEvent.clear(list());
+    await userEvent.type(list(), 'plant/+/temp{enter}lab/oven/#');
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+
+    await waitFor(() => expect(asked).toEqual(['plant/+/temp', 'lab/oven/#']));
+  });
+
+  it('asks for nothing when the list is empty, and says so', async () => {
+    const asked = watchAsks();
+    renderPanel();
+
+    await userEvent.clear(list());
+    expect(screen.getByText(/listening to nothing/)).toBeInTheDocument();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Connect' })).toBeEnabled());
+    expect(asked).toEqual([]);
+  });
+
+  // A filter written twice is one filter, the same way the Filters panel reads its own box.
+  it('asks once for a filter written twice', async () => {
+    const asked = watchAsks();
+    renderPanel();
+
+    await userEvent.clear(list());
+    await userEvent.type(list(), '#{enter}#');
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+
+    await waitFor(() => expect(asked).toEqual(['#']));
   });
 });

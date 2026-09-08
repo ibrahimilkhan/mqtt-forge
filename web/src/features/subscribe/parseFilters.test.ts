@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appendFilter, chunkFilters, MAX_PER_BATCH, parseFilters } from './parseFilters';
+import { MAX_PER_BATCH, appendFilter, chunkFilters, parseFilters, removeFilter } from './parseFilters';
 
 describe('parseFilters', () => {
   it('reads a single filter as one', () => {
@@ -85,5 +85,24 @@ describe('appendFilter', () => {
 
   it('ignores a click carrying nothing', () => {
     expect(appendFilter('sensors/#', '  ')).toBe('sensors/#');
+  });
+});
+
+describe('removeFilter', () => {
+  it('takes the filter out and leaves the rest, one to a line', () => {
+    expect(removeFilter('#\n$SYS/#\nplant/#', '$SYS/#')).toBe('#\nplant/#');
+  });
+
+  it('finds it however the list was punctuated', () => {
+    expect(removeFilter('#, $SYS/#', '#')).toBe('$SYS/#');
+    expect(removeFilter('  #  ', '#')).toBe('');
+  });
+
+  it('changes nothing when the filter is not in there', () => {
+    expect(removeFilter('#\nplant/#', 'lab/#')).toBe('#\nplant/#');
+  });
+
+  it('is the undo of appendFilter', () => {
+    expect(removeFilter(appendFilter('plant/#', '$SYS/#'), '$SYS/#')).toBe('plant/#');
   });
 });

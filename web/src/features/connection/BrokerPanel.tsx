@@ -32,8 +32,9 @@ import { AutoReconnectSwitch } from './AutoReconnectSwitch';
 import { BrokerEvents } from './BrokerEvents';
 import { ReconnectNotice } from './ReconnectNotice';
 import { SavedBrokers } from './SavedBrokers';
+import { appendFilter, parseFilters, removeFilter } from '../subscribe/parseFilters';
 import { useCertificateFile } from './useCertificateFile';
-import { useConnectionActions } from './useConnectionActions';
+import { EVERYTHING, SYSTEM, useConnectionActions } from './useConnectionActions';
 import {
   choiceOf,
   isEncrypted,
@@ -114,17 +115,33 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
   // what splitting on the way out of the box exists to avoid.
   const [addressText, setAddressText] = useState(DEFAULTS.host);
   const addressRef = useRef<HTMLInputElement>(null);
-  const [autoSubscribe, setAutoSubscribe] = useState(true);
   /**
-   * Whether to ask the broker about itself as well as about the traffic.
+   * What to listen to the moment the link is up, as the reader writes it: one filter to a line.
    *
-   * Off, and the box beside it is on, and the difference is not an opinion about which matters
-   * more. '#' does not reach $SYS — MQTT reserves topics beginning with '$' from wildcard
-   * filters — so this is a second SUBSCRIBE rather than a wider first one, and what it brings
-   * back is republished on a timer. A reader who did not ask for it would find a subtree they
-   * never subscribed to churning through their log all day.
+   * It was two checkboxes — everything, and the broker's own statistics — and they are still the
+   * first two lines of it, because those are the two answers nearly everybody wants and neither
+   * should cost any typing. What they were not was a list: a reader who wanted three branches of
+   * a plant and nothing else had to connect to everything first and narrow it afterwards, in
+   * another panel, after the flood had already arrived.
+   *
+   * One list, and the boxes are a view of it rather than a second copy: a box is ticked when the
+   * list holds its filter, ticking puts it in and unticking takes it out — so deleting '#' from
+   * the list unticks the box by itself, which is the only way two controls over one fact can be
+   * kept honest.
+   *
+   * Text rather than an array because it is what a textarea holds and a reader edits, and because
+   * a list halfway through being typed is not a list of filters yet. `parseFilters` is the one
+   * reading of it, and it is the same one the Filters panel's own box goes through.
    */
-  const [includeSystem, setIncludeSystem] = useState(false);
+  const [subscriptions, setSubscriptions] = useState(EVERYTHING);
+
+  // The one reading of the box, and the same one the Filters panel's list goes through: lines and
+  // commas both separate, and a filter written twice is one filter.
+  const wanted = parseFilters(subscriptions);
+
+  /** Puts a filter in the list or takes it out, which is the whole of what the two boxes do. */
+  const askFor = (filter: string, on: boolean) =>
+    setSubscriptions((held) => (on ? appendFilter(held, filter) : removeFilter(held, filter)));
   // The name box, and whether it is on screen at all. Null is "not saving"; a string is the name
   // as far as it has been typed. Two states in one, because "empty box open" and "no box" are
   // different things and a boolean beside a string would let them disagree.
@@ -471,7 +488,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
   const submit = () => {
     const resolved = applyAddress(form, addressText);
     settle(resolved);
-    guardedConnect({ request: buildConnectRequest(resolved), autoSubscribe, includeSystem });
+    guardedConnect({ request: buildConnectRequest(resolved), filters: wanted });
   };
 
   /**
@@ -504,7 +521,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
     const current = applyAddress(form, addressText);
     const next = { ...current, scheme, port: portFor(current.scheme, scheme, current.port) };
     settle(next);
-    guardedConnect({ request: buildConnectRequest(next), autoSubscribe, includeSystem });
+    guardedConnect({ request: buildConnectRequest(next), filters: wanted });
   };
 
   /**
@@ -839,6 +856,76 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
           )}
         </section>
 
+        {/* What the console should be listening to the moment the link is up, which is a question
+            about the connection and belongs with the ones that make it. It used to be two
+            checkboxes down beside Connect, along with the reconnect switch — 'things this console
+            does around a connection' — and that grouping hid what they really are: the first two
+            lines of a list, and the only two most readers ever want.
+
+            The boxes and the list are one fact. A box is ticked when the list holds its filter,
+            pressing it puts the filter in or takes it out, and deleting a line unticks the box
+            that put it there. Two controls over one answer that can disagree is the commonest way
+            a form lies about itself; there is nothing to keep in step here because there is only
+            one thing. */}
+        <section className={styles.group}>
+          <h3 className={styles.groupTitle}>Subscription</h3>
+
+          <div className={styles.checks}>
+            <label>
+              <input
+                type="checkbox"
+                checked={wanted.includes(EVERYTHING)}
+                onChange={(e) => askFor(EVERYTHING, e.target.checked)}
+              />
+              {' Subscribe # '}
+              <span className={styles.hint}>(every topic the broker carries)</span>
+            </label>
+
+            {/* Its own line because it is its own SUBSCRIBE: a filter that begins with a wildcard
+                is not allowed to match a topic that begins with '$', so a console listening to
+                everything is still blind to what the broker says about itself. Off by default,
+                and the reason is the traffic rather than the value — these are republished on a
+                timer, so a reader who did not ask would find a subtree they never subscribed to
+                churning through their log all day. */}
+            <label>
+              <input
+                type="checkbox"
+                checked={wanted.includes(SYSTEM)}
+                onChange={(e) => askFor(SYSTEM, e.target.checked)}
+              />
+              {' Subscribe $SYS '}
+              <span className={styles.hint}>(what the broker says about itself)</span>
+            </label>
+          </div>
+
+          {/* Shut, because the two boxes above are the answer for nearly everybody and a textarea
+              standing open says otherwise. Open, it is the whole list — the boxes' own filters
+              included, since they are lines in it like any other. */}
+          <details className={styles.more}>
+            <summary>Topics to subscribe on connect</summary>
+
+            <Field label="One filter to a line" htmlFor="onConnectFilters">
+              <textarea
+                id="onConnectFilters"
+                rows={4}
+                spellCheck={false}
+                placeholder={`${EVERYTHING}\nplant/+/temp`}
+                value={subscriptions}
+                onChange={(e) => setSubscriptions(e.target.value)}
+              />
+            </Field>
+
+            <p className={styles.note}>
+              {wanted.length === 0
+                ? 'Nothing is asked for, so the link comes up listening to nothing. The Filters ' +
+                  'panel can ask for something afterwards.'
+                : `${wanted.length} ${wanted.length === 1 ? 'filter' : 'filters'}, asked for in ` +
+                  'this order the moment the link is up. One the broker refuses is a line in the ' +
+                  'log; the rest are still asked for.'}
+            </p>
+          </details>
+        </section>
+
         {/* The third of the three, and a fold rather than a block: six fields the great majority
             of connections never need would otherwise stand between the password and the button
             that uses it. It stands in the stack with the other two — third, where it was asked
@@ -968,43 +1055,15 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
         </details>
       </div>
 
-      {/* Not one of the three questions above — it is what happens the moment they are answered
-          — so it stands with the button that answers them rather than among the client's own
-          fields, where it used to sit between a client ID and a clean session and belonged to
-          neither.
+      {/* What the console does about a link that goes, which is not a question about the link
+          itself — so it stands with the button that makes one rather than among the fields that
+          describe it. It is only ever on screen here: over a live link it would be a switch about
+          a thing that is not happening, on a panel whose job at that moment is to report.
 
-          What it asks for is everything. It used to carry a filter box beside it, because a
-          bare # is refused by a good many brokers out on the internet — one of them by closing
-          the session. That is now answered where it happens rather than guarded against here:
-          the refusal says so, and hands over a button to the panel that fixes it. */}
+          The two subscription boxes stood here too, on the reasoning that all three are 'what
+          this console does around a connection'. They are in the Subscription section now, with
+          the list they are the first two lines of. */}
       <div className={styles.checks}>
-        <label>
-          <input
-            type="checkbox"
-            checked={autoSubscribe}
-            onChange={(e) => setAutoSubscribe(e.target.checked)}
-          />
-          {' Listen to every topic on connect'}
-        </label>
-
-        {/* Its own box because it is its own SUBSCRIBE. '#' cannot reach these — a filter that
-            starts with a wildcard is not allowed to match a topic that starts with '$' — so a
-            console listening to everything is still blind to what the broker says about itself,
-            which is a thing readers coming from MQTT Explorer expect to see. */}
-        <label>
-          <input
-            type="checkbox"
-            checked={includeSystem}
-            disabled={!autoSubscribe}
-            onChange={(e) => setIncludeSystem(e.target.checked)}
-          />
-          {' Include $SYS broker statistics'}
-        </label>
-
-        {/* Beside it, because the two are the same kind of answer: what this console should do
-            around the connection, as opposed to what the connection is made of. It is only ever
-            on screen here — over a live link it would be a switch about a thing that is not
-            happening, on a panel whose job at that moment is to report. */}
         <AutoReconnectSwitch id="brokerAutoReconnect" />
       </div>
 

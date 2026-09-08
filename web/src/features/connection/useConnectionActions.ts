@@ -22,7 +22,14 @@ import { schemeOf } from './scheme';
 const endpoint = ({ transport, useTls, host, port }: ConnectRequest) =>
   `${formatBrokerAddress(schemeOf(transport ?? 'tcp', useTls), host)}:${port}`;
 
-type ConnectVars = { request: ConnectRequest; autoSubscribe: boolean; includeSystem: boolean };
+/**
+ * What a Connect carries: where to, and what to listen to once it is up.
+ *
+ * The filters were two booleans — everything, and the broker's own statistics. They are a list
+ * now, written in the panel's Subscription section, because those two were only ever the two
+ * commonest lines of one.
+ */
+type ConnectVars = { request: ConnectRequest; filters: readonly string[] };
 
 export function useConnectionActions() {
   const queryClient = useQueryClient();
@@ -41,7 +48,7 @@ export function useConnectionActions() {
       return result;
     },
 
-    onSuccess: async (result, { request, autoSubscribe, includeSystem }) => {
+    onSuccess: async (result, { request, filters }) => {
       ours.current = undefined;
       // Refetch, don't write the response: the hub may have already pushed a newer state.
       void queryClient.invalidateQueries({ queryKey: queryKeys.connection });
@@ -64,7 +71,7 @@ export function useConnectionActions() {
         body: `${endpoint(request)} · ${request.clientId}`,
       });
 
-      if (autoSubscribe) await subscribeOnConnect(includeSystem, queryClient);
+      if (filters.length > 0) await subscribeOnConnect(filters, queryClient);
 
       void queryClient.invalidateQueries({ queryKey: queryKeys.subscriptions });
       void queryClient.invalidateQueries({ queryKey: queryKeys.savedSettings });
@@ -114,8 +121,8 @@ export function useConnectionActions() {
   return { connectMutation, disconnectMutation, abortMutation };
 }
 
-/** Everything, which is what the box beside Connect asks for. */
-const EVERYTHING = '#';
+/** Everything, which is what the first box in the Subscription section asks for. */
+export const EVERYTHING = '#';
 
 /**
  * Everything the broker says about itself, which '#' does not cover.
@@ -131,7 +138,7 @@ const EVERYTHING = '#';
  * for them would find a subtree they never subscribed to churning through their log for as long
  * as the console was open.
  */
-const SYSTEM = '$SYS/#';
+export const SYSTEM = '$SYS/#';
 
 /**
  * And at the highest ceiling, which is what makes the log's QoS mean anything.
@@ -151,24 +158,31 @@ const SYSTEM = '$SYS/#';
 const EVERYTHING_QOS = 2;
 
 /**
- * What to listen to the moment the link is up.
+ * What to listen to the moment the link is up: the reader's own list, in their own order.
  *
- * Everything, and then $SYS if it was asked for. A good many brokers out on the internet refuse a
- * bare '#' — mqtt.hsl.fi by closing the session — and either way of refusing is reported where it
- * happens: a closed session is a fault on the link, and a refused SUBACK is a line in the log.
+ * A good many brokers out on the internet refuse a bare '#' — mqtt.hsl.fi by closing the session
+ * — and either way of refusing is reported where it happens: a closed session is a fault on the
+ * link, and a refused SUBACK is a line in the log. One filter refused does not stop the rest
+ * being asked for, which is the whole reason a list is worth having: three branches of a plant
+ * and one typo is three subscriptions and one sentence.
  *
  * There used to be a third thing here: a flag that held the panel open over a link that was up
  * and listening to nothing, and offered the Filters panel as the way out. It is gone. The refusal
  * is a command that failed, and the log is where commands that failed are read.
  */
-async function subscribeOnConnect(includeSystem: boolean, queryClient: QueryClient): Promise<void> {
-  await ask(EVERYTHING);
+async function subscribeOnConnect(
+  filters: readonly string[],
+  queryClient: QueryClient,
+): Promise<void> {
+  for (const filter of filters) {
+    const granted = await ask(filter);
 
-  // After the one that matters. A broker that refuses this one — EMQX answers NotAuthorized —
-  // says so in the SUBACK, and ask logs it. The quieter case is the one watched for: HiveMQ CE
-  // grants the filter and has no $SYS tree to publish under it, so the log said 'Subscribed' and
-  // nothing ever arrived, and nothing said which of the two was the odd one.
-  if (includeSystem && (await ask(SYSTEM))) watchForSystem(queryClient);
+    // The quiet failure, and the reason $SYS is watched rather than merely asked for: HiveMQ CE
+    // grants the filter and has no $SYS tree to publish under it, so the log said 'Subscribed'
+    // and nothing ever arrived, and nothing said which of the two was the odd one. EMQX is the
+    // loud version — it answers NotAuthorized, which `ask` logs like any other refusal.
+    if (granted && filter === SYSTEM) watchForSystem(queryClient);
+  }
 }
 
 /**

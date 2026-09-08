@@ -102,15 +102,23 @@ A failed connection names the cause and what to do about it.
 
 Once a link is up the panel stops asking and starts reporting: the state in words, the address,
 and what the broker agreed to — version, session, keep-alive, how many filters are up. The form
-is not there, because none of it is a question any more.
+is not there, because none of it is a question any more. The panel is the window either way,
+and the tree is behind it until you close it.
 
-**Listen to every topic on connect** subscribes `#`. **Include $SYS broker statistics** is a
-second subscription and a separate box, because `#` cannot reach it: MQTT does not let a filter
-starting with a wildcard match a topic starting with `$`. It is off by default — those topics are
-republished on a timer, so a console that asked for them without being told would fill its log
-with a subtree nobody wanted. MQTT Explorer asks for both and has this one on. Not every broker
-has the tree: EMQX refuses the subscription and the log says so, and HiveMQ CE accepts it and
-publishes nothing — after 20 seconds with nothing under `$SYS/`, the log says that too.
+**Subscription** is what the console listens to the moment the link is up: a list of topic
+filters, one to a line, asked for in the order you wrote them. **Subscribe #** and **Subscribe
+$SYS** are the first two lines of it, since those are the two answers most people want — a box is
+ticked when the list holds its filter, and deleting the line unticks it. Open **Topics to
+subscribe on connect** to write your own.
+
+`$SYS` is a second subscription rather than part of `#`, because `#` cannot reach it: MQTT does
+not let a filter starting with a wildcard match a topic starting with `$`. It is off by default —
+those topics are republished on a timer, so a console that asked for them without being told
+would fill its log with a subtree nobody wanted. MQTT Explorer asks for both and has this one on.
+Not every broker has the tree: EMQX refuses the subscription and the log says so, and HiveMQ CE
+accepts it and publishes nothing — after 20 seconds with nothing under `$SYS/`, the log says that
+too. A filter the broker refuses is a line in the log and nothing more; the rest are still asked
+for.
 
 ### When the link drops
 
