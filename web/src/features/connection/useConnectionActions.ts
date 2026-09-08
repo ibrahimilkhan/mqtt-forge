@@ -4,6 +4,7 @@ import { cancelConnect, connect, disconnect } from '../../api/connection';
 import { queryKeys } from '../../api/queryKeys';
 import { subscribe } from '../../api/subscriptions';
 import { describeError } from '../../lib/problemDetails';
+import { useLinkWatchStore } from '../../stores/linkWatchStore';
 import { logFault, useLogStore } from '../../stores/logStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import type { ConnectRequest, ConnectionStateResponse } from '../../types/api';
@@ -27,6 +28,12 @@ export function useConnectionActions() {
   const queryClient = useQueryClient();
 
   const connectMutation = useMutation({
+    // Before the request rather than after it: the link may be up, and the state on its way over
+    // the hub, before this mutation's own answer arrives. What it says is that whatever comes up
+    // next was put up by the reader — so it ends the outage instead of being announced as a
+    // recovery of it. See `dialled` in linkWatchStore.
+    onMutate: () => useLinkWatchStore.getState().dialling(),
+
     // Success means the connection itself succeeded; auto-subscribe failure doesn't count against it.
     mutationFn: async ({ request }: ConnectVars) => {
       const result = await connect(request);

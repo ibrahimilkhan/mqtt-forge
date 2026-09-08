@@ -52,6 +52,21 @@ export type LinkWatchState = {
   wasUp: boolean;
 
   /**
+   * The reader has pressed Connect on this outage, so whatever comes up next is theirs.
+   *
+   * 'Reconnected' is news about something the console did while nobody was looking: it went away,
+   * something was tried, it came back. A reader who stopped the ladder and dialled the broker
+   * themselves is not being told anything by that — they are watching the button they just
+   * pressed, and a notice announcing their own click as a recovery reads as the console taking
+   * credit for it. Worse, it is the wrong sentence: nothing reconnected, somebody connected.
+   *
+   * So a dial the reader started ends the outage rather than recovering from it. Set when this
+   * console asks for a connection with an outage on record, cleared when the dial ends — well by
+   * the link coming up, badly by a fault, and either way by a hang-up.
+   */
+  dialled: boolean;
+
+  /**
    * One connection state, and what it means for the three above.
    *
    * The whole transition table lives here rather than in an effect in a component, because two
@@ -75,6 +90,9 @@ export type LinkWatchState = {
    */
   resume: (failure: BrokerFailure | null | undefined, droppedAt: number) => void;
 
+  /** This console is dialling by hand. Nothing to note when there is no outage to take over. */
+  dialling: () => void;
+
   /** The reader has read the notice. Clears the recovery, not the memory of the outage. */
   dismiss: () => void;
 
@@ -89,6 +107,7 @@ export const useLinkWatchStore = create<LinkWatchState>((set, get) => ({
   recoveredAt: null,
   openedByFault: false,
   wasUp: false,
+  dialled: false,
 
   saw: (state, failure, now = Date.now(), link) => {
     const current = get();
@@ -111,6 +130,11 @@ export const useLinkWatchStore = create<LinkWatchState>((set, get) => ({
         // drop's own reason is kept as it was — a recovery reports what broke the link — and the
         // newest one is kept beside it for the faces that describe a link still down.
         if (failure) set({ latest: failure, ...(current.failure ? {} : { failure }) });
+
+        // And a dial the reader started has ended, badly. What comes up after this one is the
+        // ladder's again, or another console's, and either of those is a recovery worth saying.
+        if (current.dialled) set({ dialled: false });
+
         return;
       }
 
@@ -153,6 +177,15 @@ export const useLinkWatchStore = create<LinkWatchState>((set, get) => ({
         return;
       }
 
+      // And only a link the console put back on its own. This one was dialled by the reader —
+      // they stopped the ladder, or overtook it, and pressed Connect — so the outage is over
+      // rather than recovered from, and there is nothing to announce to somebody who is looking
+      // at the button they pressed. See `dialled`.
+      if (current.dialled) {
+        set({ ...rested, wasUp: true });
+        return;
+      }
+
       set({ recoveredAt: now });
 
       return;
@@ -178,6 +211,14 @@ export const useLinkWatchStore = create<LinkWatchState>((set, get) => ({
     set({ failure: failure ?? null, droppedAt, recoveredAt: null, openedByFault: true, wasUp: false });
   },
 
+  // Only against an outage. With none on record there is nothing to take over, and a flag left
+  // standing from an ordinary first connect would swallow the notice for a drop hours later.
+  dialling: () => {
+    if (get().droppedAt === null) return;
+
+    set({ dialled: true });
+  },
+
   dismiss: () => set({ ...rested, wasUp: get().wasUp }),
 
   released: () => set({ openedByFault: false }),
@@ -197,6 +238,7 @@ const rested = {
   recoveredAt: null,
   openedByFault: false,
   wasUp: false,
+  dialled: false,
 } as const;
 
 /**
@@ -215,4 +257,5 @@ export const resetLinkWatch = () =>
     recoveredAt: null,
     openedByFault: false,
     wasUp: false,
+    dialled: false,
   });

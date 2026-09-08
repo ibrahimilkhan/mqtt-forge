@@ -5,6 +5,7 @@ import { http, HttpResponse } from 'msw';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { App } from '../../App';
 import { createFakeHub } from '../../realtime/fakeHub';
+import { useBrokerEventsStore } from '../../stores/brokerEventsStore';
 import { resetLinkWatch } from '../../stores/linkWatchStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import { server } from '../../test/server';
@@ -415,6 +416,49 @@ describe('a link that drops while the reader is elsewhere', () => {
 
     expect(useTopicTreeStore.getState().generation).toBe(after);
   });
+
+
+  /**
+   * The reader stopped the ladder and dialled the broker themselves.
+   *
+   * Nothing reconnected: somebody connected. 'Reconnected · gone for 4m' over a button the reader
+   * has just pressed reads as the console taking credit for their click, and the record repeating
+   * it as 'Link back' dates one act twice under two names.
+   */
+  it('says nothing about a recovery when the reader stopped the ladder and dialled', async () => {
+    server.use(
+      http.post('/api/connection', () => HttpResponse.json({ state: 'Connected', dial: 1 })),
+      http.delete('/api/connection/reconnect', () => {
+        supervisor = { ...supervisor, active: false, gaveUp: true };
+        return HttpResponse.json(supervisor);
+      }),
+    );
+
+    const { says, supervising } = renderApp();
+    await says('Connected');
+    await goElsewhere();
+    await says('Faulted');
+    await supervising({ active: true, attempt: 2, nextAttemptAt: '2026-09-02T21:00:08.000Z' });
+
+    // The panel a fault opened, with the ladder counting down in it.
+    expect(await screen.findByRole('heading', { name: 'Reconnecting' })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Stop trying' }));
+    await screen.findByRole('heading', { name: 'Not reconnecting' });
+
+    // Their own Connect, on the form under the notice.
+    await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await says('Connected');
+
+    expect(screen.queryByRole('heading', { name: 'Reconnected' })).not.toBeInTheDocument();
+    expect(
+      useBrokerEventsStore.getState().events.some((event) => event.what.startsWith('Link back')),
+    ).toBe(false);
+  });
+
+  // The other half is the test above — 'does not close the panel when the link comes back' — which
+  // is the same sequence with nobody dialling, and still finds the word. It is what makes the
+  // flag a rule about who put the link back rather than a way of never saying anything.
 
   // One server, one link, and more than one console looking at it. When the other console moves
   // the link, this one's tree is the old broker's and has to say so by going.

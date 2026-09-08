@@ -282,3 +282,94 @@ describe('what the console remembers about a link', () => {
     expect(watch().failure?.reason).toBe('timeout');
   });
 });
+
+/**
+ * A link the reader put back themselves.
+ *
+ * 'Reconnected · gone for 4m' is news about something that happened while nobody was looking. A
+ * reader who pressed Stop trying and then Connect is looking at the button they pressed, and the
+ * notice reads as the console taking credit for their click — over a sentence that is not even
+ * true: nothing reconnected, somebody connected.
+ */
+describe('a dial the reader made during an outage', () => {
+  beforeEach(resetLinkWatch);
+
+  const watch = () => useLinkWatchStore.getState();
+  const saw = (state: Parameters<ReturnType<typeof watch>['saw']>[0],
+               failure: BrokerFailure | null = null) =>
+    useLinkWatchStore.getState().saw(state, failure);
+
+  const broke = (): BrokerFailure => ({
+    reason: 'brokerClosed',
+    host: 'broker.local',
+    port: 1883,
+    clientId: 'console',
+    useTls: false,
+    transport: 'tcp',
+    protocolVersion: 'v311',
+  });
+
+  /** A link that was up and has gone: the state every case here starts from. */
+  const anOutage = () => {
+    saw('Connected');
+    saw('Faulted', broke());
+  };
+
+  it('ends the outage instead of recovering from it', () => {
+    anOutage();
+    watch().dialling();
+
+    saw('Connecting');
+    saw('Connected');
+
+    expect(watch().recoveredAt).toBeNull();
+    expect(watch().droppedAt).toBeNull();
+    // And the link is up, so the next fault is a drop again.
+    expect(watch().wasUp).toBe(true);
+  });
+
+  it('leaves a link that came back on its own to say so', () => {
+    anOutage();
+
+    saw('Connecting');
+    saw('Connected');
+
+    expect(watch().recoveredAt).not.toBeNull();
+  });
+
+  it('is forgotten when the dial fails, so the ladder can still report a recovery', () => {
+    anOutage();
+    watch().dialling();
+
+    // The reader's Connect went to a broker that is still down.
+    saw('Faulted', broke());
+    expect(watch().dialled).toBe(false);
+    expect(watch().droppedAt).not.toBeNull();
+
+    // And the rung that finally works is a recovery, because nobody dialled this one.
+    saw('Connected');
+    expect(watch().recoveredAt).not.toBeNull();
+  });
+
+  it('is not remembered from a connect made with no outage on', () => {
+    // The console's very first Connect. Nothing has dropped, so there is nothing to take over —
+    // and a flag left standing here would swallow the notice for a drop an hour later.
+    watch().dialling();
+    saw('Connected');
+    expect(watch().dialled).toBe(false);
+
+    saw('Faulted', broke());
+    saw('Connected');
+
+    expect(watch().recoveredAt).not.toBeNull();
+  });
+
+  it('goes with a hang-up', () => {
+    anOutage();
+    watch().dialling();
+
+    saw('Disconnected');
+
+    expect(watch().dialled).toBe(false);
+  });
+});

@@ -73,6 +73,9 @@ export function useLinkWatch() {
     // about the outage the watch was holding, and `saw` closes that outage.
     const watch = useLinkWatchStore.getState();
     const dropped = watch.droppedAt !== null && watch.recoveredAt === null ? watch.droppedAt : null;
+    // Read here for the same reason, and used for the opposite decision: a link the reader dialled
+    // themselves is not a link that came back. See `dialled` in linkWatchStore.
+    const dialled = watch.dialled;
 
     watch.saw(state, failure, undefined, link);
 
@@ -125,10 +128,14 @@ export function useLinkWatch() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.subscriptions });
       void queryClient.invalidateQueries({ queryKey: queryKeys.connection });
 
-      events.push({
-        kind: 'ok',
-        what: `Link back · gone for ${away(dropped)}`,
-      });
+      // 'Link back' is the record of something happening on its own while nobody was looking.
+      // The reader's own Connect is already in the record, written by the mutation that made it,
+      // and a second line calling it a recovery would date the same act twice under two names.
+      if (!dialled)
+        events.push({
+          kind: 'ok',
+          what: `Link back · gone for ${away(dropped)}`,
+        });
     }
   }, [state, failure, link, answered, queryClient]);
 
