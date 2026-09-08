@@ -105,11 +105,10 @@ and what the broker agreed to — version, session, keep-alive, how many filters
 is not there, because none of it is a question any more. The panel is the window either way,
 and the tree is behind it until you close it.
 
-**Subscription** is what the console listens to the moment the link is up: a list of topic
-filters, one to a line, asked for in the order you wrote them. **Subscribe #** and **Subscribe
-$SYS** are the first two lines of it, since those are the two answers most people want — a box is
-ticked when the list holds its filter, and deleting the line unticks it. Open **Topics to
-subscribe on connect** to write your own.
+**Subscription** is what the console subscribes to on connect: topic filters, one per line, in
+the order you write them. **Subscribe #** and **Subscribe $SYS** are the first two lines of that
+list — a box is ticked when the list holds its filter, and deleting the line unticks it. Open
+**Topic filters** to write your own.
 
 `$SYS` is a second subscription rather than part of `#`, because `#` cannot reach it: MQTT does
 not let a filter starting with a wildcard match a topic starting with `$`. It is off by default —

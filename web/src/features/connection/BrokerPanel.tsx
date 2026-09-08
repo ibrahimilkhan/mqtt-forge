@@ -878,7 +878,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
                 onChange={(e) => askFor(EVERYTHING, e.target.checked)}
               />
               {' Subscribe # '}
-              <span className={styles.hint}>(every topic the broker carries)</span>
+              <span className={styles.hint}>(all topics)</span>
             </label>
 
             {/* Its own line because it is its own SUBSCRIBE: a filter that begins with a wildcard
@@ -894,7 +894,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
                 onChange={(e) => askFor(SYSTEM, e.target.checked)}
               />
               {' Subscribe $SYS '}
-              <span className={styles.hint}>(what the broker says about itself)</span>
+              <span className={styles.hint}>(broker statistics)</span>
             </label>
           </div>
 
@@ -902,9 +902,9 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
               standing open says otherwise. Open, it is the whole list — the boxes' own filters
               included, since they are lines in it like any other. */}
           <details className={styles.more}>
-            <summary>Topics to subscribe on connect</summary>
+            <summary>Topic filters</summary>
 
-            <Field label="One filter to a line" htmlFor="onConnectFilters">
+            <Field label="One per line" htmlFor="onConnectFilters">
               <textarea
                 id="onConnectFilters"
                 rows={4}
@@ -917,11 +917,8 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
 
             <p className={styles.note}>
               {wanted.length === 0
-                ? 'Nothing is asked for, so the link comes up listening to nothing. The Filters ' +
-                  'panel can ask for something afterwards.'
-                : `${wanted.length} ${wanted.length === 1 ? 'filter' : 'filters'}, asked for in ` +
-                  'this order the moment the link is up. One the broker refuses is a line in the ' +
-                  'log; the rest are still asked for.'}
+                ? 'No filters — nothing is subscribed on connect.'
+                : `${wanted.length} ${wanted.length === 1 ? 'filter' : 'filters'}, subscribed on connect.`}
             </p>
           </details>
         </section>

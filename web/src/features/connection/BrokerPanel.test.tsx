@@ -1264,7 +1264,7 @@ describe('a broker that will not give you everything', () => {
     renderPanel();
 
     expect(screen.getByLabelText(/Subscribe #/)).toBeChecked();
-    expect(screen.getByLabelText('One filter to a line')).toHaveValue('#');
+    expect(screen.getByLabelText('One per line')).toHaveValue('#');
   });
 
   it('subscribes to # when the box is ticked', async () => {
@@ -1548,7 +1548,7 @@ describe('the encryption fields, as far as they apply', () => {
  * two controls to disagree about the one answer they both describe.
  */
 describe('what to listen to the moment the link is up', () => {
-  const list = () => screen.getByLabelText('One filter to a line');
+  const list = () => screen.getByLabelText('One per line');
   const everything = () => screen.getByLabelText(/Subscribe #/);
   const system = () => screen.getByLabelText(/Subscribe \$SYS/);
 
@@ -1615,7 +1615,7 @@ describe('what to listen to the moment the link is up', () => {
     renderPanel();
 
     await userEvent.clear(list());
-    expect(screen.getByText(/listening to nothing/)).toBeInTheDocument();
+    expect(screen.getByText('No filters — nothing is subscribed on connect.')).toBeInTheDocument();
 
     await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
 
