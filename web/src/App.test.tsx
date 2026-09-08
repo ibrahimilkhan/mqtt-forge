@@ -51,22 +51,22 @@ describe('App', () => {
     ).not.toBeInTheDocument();
   });
 
-  // The same panel over a live link is a report rather than a form, and a report is read beside
-  // the tree and the log it describes — so it comes back into the column, and the columns come
-  // back with it.
-  it('gives the broker panel a column once the link is up', async () => {
+  // It used to come back into a column over a live link, on the reasoning that a panel with a
+  // form in it is a form and a panel with a summary in it is a report. One panel with two sizes
+  // is a panel that changes shape under a reader who has done nothing but connect — and the rule
+  // deciding which size, and when it was read, was two more things to know about a window. It is
+  // the window either way now.
+  it('keeps the broker panel at the window over a live link', async () => {
     server.use(http.get('/api/connection', () => HttpResponse.json({ state: 'Connected' })));
     renderApp();
 
-    await menu().findByRole('button', { name: 'Broker' });
-    await waitFor(() => expect(screen.getByTestId('layout')).toHaveAttribute('data-panel', 'open'));
-    expect(screen.getByRole('separator', { name: 'Panel and topics boundary' })).toBeInTheDocument();
+    await menu().findByRole('button', { name: /^Broker/ });
+    await waitFor(() => expect(screen.getByTestId('layout')).toHaveAttribute('data-panel', 'full'));
+    expect(
+      screen.queryByRole('separator', { name: 'Panel and topics boundary' }),
+    ).not.toBeInTheDocument();
   });
 
-  // The shape is decided when the panel opens, not on every change of the link. Read live, the
-  // first Connect turned the window-sized form into a column the instant the link came up, a
-  // second before the panel stepped aside — a big panel shutting and a small one opening and
-  // shutting, for one button press.
   it('keeps the window while a link the reader is making comes up', async () => {
     server.use(
       http.get('/api/connection', () => HttpResponse.json({ state: 'Disconnected' })),

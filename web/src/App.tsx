@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { formatEndpoint } from './features/connection/address';
 import styles from './App.module.css';
 import { AppearancePanel } from './features/appearance/AppearancePanel';
@@ -82,31 +82,8 @@ export function App({ hub }: { hub: Hub }) {
   // Read once, on the first render — a reader who opens it should keep it open through a resize.
   const [menuOpen, setMenuOpen] = useState(() => !window.matchMedia?.(NARROW).matches);
 
-  const { state, failure, answered } = useConnectionState();
+  const { state, failure } = useConnectionState();
 
-  /**
-   * Whether the broker panel takes the window or a column — decided when it opens, not on every
-   * change of the link.
-   *
-   * Over a live link the panel is a report and belongs in a column beside the tree and the log it
-   * describes; with no link it is a form and takes the window. That much is read off the state.
-   * What is not is *when* to read it. Read on every render, the first successful Connect turned
-   * the window-sized form into a column-sized summary the instant the link came up, a second
-   * before the panel stepped aside altogether — a big panel closing, a small one opening and
-   * closing, for a reader who had pressed one button. So it is read once, on opening, and the
-   * panel keeps that shape until it is shut. For the panel the console opens on, 'opening' is the
-   * moment the API first says what the link is: before that the state is a stand-in.
-   *
-   * A layout effect rather than an effect, so the shape is settled before the frame is painted —
-   * a rail click over a live link should show a column, not a window that becomes one.
-   */
-  const [brokerWide, setBrokerWide] = useState<'full' | undefined>('full');
-  useLayoutEffect(() => {
-    if (openPanel !== 'broker' || !answered) return;
-    setBrokerWide(state === 'Connected' ? undefined : 'full');
-    // `state` is deliberately not a dependency: the shape is decided on opening.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openPanel, answered]);
   const health = useAppearanceStore((state) => state.health);
   // What is alarming, read here rather than only in the panel: the panel is shut most of the
   // time and the health strip is off by default, so the rail is the one place a standing alarm
@@ -327,14 +304,20 @@ export function App({ hub }: { hub: Hub }) {
 
       <Workspace
         panel={Panel ? <Panel onClose={close} open={setOpenPanel} /> : undefined}
-        // Three of the seven, for two different reasons. See Workspace's own note on both, and
-        // brokerWide above for why the broker's is a decision rather than a reading.
+        // Three of the seven, for two different reasons; see Workspace's own note on both.
+        //
+        // The broker's is unconditional. It used to shrink into a column once the link was up,
+        // on the reasoning that a live panel is a report rather than a form — and the shape was
+        // therefore decided on opening rather than on every render, or the first Connect resized
+        // the panel a second before it stepped aside. One panel with two sizes and a rule about
+        // when the size is read is three things to know about a window; the same panel at the
+        // same size is none. It is the window either way now.
         wide={
-          openPanel === 'broker'
-            ? brokerWide
-            : openPanel === 'alerts' || openPanel === 'colours'
-              ? 'fill'
-              : undefined
+          openPanel === 'broker' || openPanel === 'alerts' || openPanel === 'colours'
+            ? openPanel === 'broker'
+              ? 'full'
+              : 'fill'
+            : undefined
         }
         tree={
           <section className={styles.treePane}>

@@ -95,9 +95,10 @@ async function openConsole() {
     act(() => runFrames());
   };
 
-  // The workspace does not draw the tree until the console knows what the link is: before the
-  // connection query answers, the broker panel is the whole window. Every journey below starts
-  // after that, which is where a reader starts too.
+  // The console opens on the Broker panel and the Broker panel takes the whole window, link or
+  // no link — so the tree is behind it until it is shut. Every journey below is about the tree,
+  // so they all start where a reader starts: by closing the panel they have finished with.
+  await userEvent.click(await screen.findByRole('button', { name: 'Close Broker panel' }));
   await screen.findByRole('heading', { name: 'Topics' });
 
   return { hub, send };
@@ -113,7 +114,9 @@ const menu = () => within(screen.getByRole('navigation', { name: 'Panels' }));
  */
 const goTo = async (panel: string) => {
   if (screen.queryByRole('region', { name: `${panel} panel` }) === null) {
-    await userEvent.click(menu().getByRole('button', { name: panel }));
+    // By prefix: the Broker row says what the link is doing as well as its name — 'Broker,
+    // connected' — so an exact match finds every row but the one this console opens on.
+    await userEvent.click(menu().getByRole('button', { name: new RegExp(`^${panel}`) }));
   }
 
   return within(await screen.findByRole('region', { name: `${panel} panel` }));
