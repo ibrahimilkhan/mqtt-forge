@@ -451,6 +451,35 @@ describe('a chip row wider than the pane', () => {
     expect(strip.scrollBy).toHaveBeenCalledWith({ left: 240 - 16, behavior: 'smooth' });
     done();
   });
+
+  // Sequential focus navigation counts a chip hanging half off the end as visible and leaves it
+  // exactly there — focused, its name under the count, its ring cut off at the scroller's edge.
+  it('brings a chip tabbed onto fully onto the row', () => {
+    const done = laidOut(200, 60);
+    render(<TrafficChart runs={asRuns(wide())} />);
+
+    const strip = screen.getByTestId('field-strip');
+    const chip = strip.children[3] as HTMLElement;
+    chip.scrollIntoView = vi.fn();
+
+    fireEvent.focusIn(chip);
+
+    expect(chip.scrollIntoView).toHaveBeenCalledWith({ inline: 'nearest', block: 'nearest' });
+    done();
+  });
+
+  it('leaves the row where it is when what took focus was not a chip', () => {
+    const done = laidOut(200, 60);
+    render(<TrafficChart runs={asRuns(wide())} />);
+
+    const away = screen.getByRole('button', { name: 'Put the field chips away' });
+    away.scrollIntoView = vi.fn();
+
+    fireEvent.focusIn(away);
+
+    expect(away.scrollIntoView).not.toHaveBeenCalled();
+    done();
+  });
 });
 
 /**

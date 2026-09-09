@@ -148,7 +148,8 @@
   /* A swipe along the chips stays on the chips rather than carrying the pane — or the browser's
      back gesture — along with it. */
   overscroll-behavior-inline: contain;
-  /* Tab lands a chip clear of a count rather than under one. */
+  /* Tab lands a chip clear of a count rather than under one — see the focusin handler in
+     useAlong, which is what actually does the scrolling. */
   scroll-padding-inline: 44px;
   /* The focus ring is 2px at 1px offset and the strip clips at its own edge. */
   padding-block: 3px;

@@ -375,7 +375,23 @@ function useAlong(strip: React.RefObject<HTMLDivElement | null>, walked: string)
       setAhead(on);
     };
 
+    /* Tab does not do this by itself.
+     *
+     * A chip hanging half off the end of the row counts as visible to sequential focus
+     * navigation, so the browser scrolls to a chip it cannot see at all and leaves a chip it can
+     * see part of exactly where it is: focused, with its name under the count and its ring cut
+     * off at the scroller's edge. `nearest` and the row's own scroll-padding put it clear of the
+     * count — the alignment the padding was always for — and do nothing whatever to a chip that
+     * is already wholly on the row, which is every chip a mouse ever lands on. */
+    const reveal = (event: FocusEvent) => {
+      const chip = event.target;
+      if (chip instanceof HTMLElement && chip.parentElement === shelf) {
+        chip.scrollIntoView?.({ inline: 'nearest', block: 'nearest' });
+      }
+    };
+
     recount();
+    shelf.addEventListener('focusin', reveal);
     shelf.addEventListener('scroll', recount, { passive: true });
     const watch = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(recount);
     watch?.observe(shelf);
@@ -385,6 +401,7 @@ function useAlong(strip: React.RefObject<HTMLDivElement | null>, walked: string)
 
     return () => {
       live = false;
+      shelf.removeEventListener('focusin', reveal);
       shelf.removeEventListener('scroll', recount);
       watch?.disconnect();
     };
