@@ -90,6 +90,17 @@
   margin-block: -3px;
   border-radius: var(--r-control);
 }
+/* Twenty-four pixels of it, on a glyph drawn at eighteen.
+   The × is what a reader on a phone reaches for most in a panel and it was the smallest thing in
+   one — eighteen by sixteen, the glyph's box and its five pixels of padding, with nothing to
+   spare either side. The reach is painted nowhere and takes no room, the way the grab area on a
+   pane's seam does, so the row above the fields is exactly where it was. */
+.close { position: relative; }
+.close::after {
+  content: '';
+  position: absolute;
+  inset: -5px -3px;
+}
 /* all: unset misses the global button:hover fill; :not(:disabled) matches its specificity so this wins. */
 .close:hover:not(:disabled) { color: var(--fault); background: var(--surface); }
 .close:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
