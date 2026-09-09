@@ -732,7 +732,14 @@
   letter-spacing: 0.06em;
   color: var(--muted);
 }
-.eventsAction:hover:not(:disabled) { color: var(--ink); border-color: var(--muted); }
+/* `all: unset` misses the global fill, and this keeps its own ink — so without a ground of its
+   own it took the console's blue with near-black type on it. A wash of that blue instead, which
+   is what a ghost button does for the same reason. */
+.eventsAction:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--muted);
+  background: color-mix(in srgb, var(--signal) 12%, var(--surface));
+}
 /* It has just done what it was asked, and the mark changed to say so. */
 .eventsAction[data-said='yes'] { color: var(--live); border-color: var(--live); }
 .eventsAction[data-said='failed'] { color: var(--fault); border-color: var(--fault); }
