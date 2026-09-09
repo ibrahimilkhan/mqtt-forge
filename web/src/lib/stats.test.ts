@@ -161,6 +161,32 @@ describe('cycle', () => {
     expect(cycle(noise)).toBeNull();
   });
 
+  /**
+   * The one this was written to catch.
+   *
+   * A run repeating every fifty readings, ten times over, was reported as repeating every two —
+   * because the strength at a lag was divided by the whole run's power while only the overlap's
+   * products were summed, so every long lag was docked the readings it could not reach and the
+   * shortest lag on offer always won.
+   */
+  it('finds a long period in a long run rather than the shortest lag it is offered', () => {
+    expect(cycle(sine(50, 500))).toBe(50);
+    expect(cycle(sine(40, 400))).toBe(40);
+  });
+
+  // Lag two used to be waved past the peak test, and lag two is exactly where a slow run lands:
+  // every reading resembles the one two before it when the run takes three hundred to come round.
+  it('calls a slow swing no period at all rather than a two-reading one', () => {
+    expect(cycle(sine(314, 500))).toBeNull();
+    expect(cycle(sine(200, 500))).toBeNull();
+  });
+
+  // And the run that really does alternate is still found: it looks least like itself one reading
+  // apart, which is what the peak test compares.
+  it('finds the two-reading period of a run that alternates', () => {
+    expect(cycle(Array.from({ length: 72 }, (_, i) => (i % 2 ? 25 : 20)))).toBe(2);
+  });
+
   it('finds no period in a run that never moved', () => {
     expect(cycle(Array(72).fill(21))).toBeNull();
   });

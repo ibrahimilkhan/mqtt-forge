@@ -175,11 +175,34 @@ export function cycle(values: number[]): number | null {
   const middle = (n - 1) / 2;
   const left = values.map((value, index) => value - (level + slope * (index - middle)));
 
-  const power = left.reduce((sum, value) => sum + value * value, 0);
-  if (power === 0) return null;
+  if (left.every((value) => value === 0)) return null;
 
-  const at = (lag: number) =>
-    left.slice(0, n - lag).reduce((sum, value, index) => sum + value * left[index + lag], 0) / power;
+  /**
+   * How much the run at this lag looks like itself, between −1 and 1.
+   *
+   * Over the overlap's own power rather than the whole run's, and that is the difference between
+   * a period and a wrong answer. Dividing by the whole run penalises long lags for the readings
+   * they cannot reach — at lag 50 of 500 only 450 products are summed and all 500 squares are
+   * divided by — so a smooth run's strongest lag was always the shortest one it was offered. A
+   * sine repeating every fifty readings, ten times over, was reported as repeating every two.
+   */
+  const at = (lag: number) => {
+    const head = left.slice(0, n - lag);
+    const tail = left.slice(lag);
+    let cross = 0;
+    let headPower = 0;
+    let tailPower = 0;
+
+    for (let index = 0; index < head.length; index++) {
+      cross += head[index] * tail[index];
+      headPower += head[index] * head[index];
+      tailPower += tail[index] * tail[index];
+    }
+
+    const power = Math.sqrt(headPower * tailPower);
+
+    return power === 0 ? 0 : cross / power;
+  };
 
   let best: { lag: number; strength: number } | null = null;
   for (let lag = 2; lag <= longest; lag++) {
@@ -191,7 +214,12 @@ export function cycle(values: number[]): number | null {
 
   // A peak rather than a shoulder: a lag that only beats its neighbours by being further along a
   // slow rise is not a period, it is the run being slow.
-  return at(best.lag) > at(best.lag - 1) || best.lag === 2 ? best.lag : null;
+  //
+  // Lag two is held to the same test as every other. It used to be waved through — and it is the
+  // lag a slow run always lands on, since every reading resembles the one two before it when the
+  // run takes three hundred to come back round. A run that really does alternate still passes:
+  // it looks least like itself one reading apart, which is exactly what this compares.
+  return at(best.lag) > at(best.lag - 1) ? best.lag : null;
 }
 
 export type Cadence = {
