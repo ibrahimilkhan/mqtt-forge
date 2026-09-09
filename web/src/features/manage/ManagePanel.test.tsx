@@ -5,7 +5,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { server } from '../../test/server';
 import type { DecodedMessage } from '../../realtime/decodeIncoming';
 import { useBrokerEventsStore } from '../../stores/brokerEventsStore';
+import { useHealthStore } from '../../stores/healthStore';
 import { useLogStore } from '../../stores/logStore';
+import { usePauseStore } from '../../stores/pauseStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import { useHoldStore } from '../monitor/useTraffic';
@@ -27,6 +29,9 @@ const landed = (...messages: DecodedMessage[]) => {
 };
 
 /** What a paused row is: a filter, the run frozen under it, and the tree beneath it. */
+/** One figure cell: its label, its number and whatever word stands under them. */
+const figure = (label: string) => screen.getByText(label).closest('div');
+
 const pause = (path: string) =>
   useHoldStore
     .getState()
@@ -37,6 +42,9 @@ const pause = (path: string) =>
     );
 
 beforeEach(() => {
+  // Module singletons: a figure left over from one test is a figure the next one reports.
+  useHealthStore.setState({ dropped: 0 });
+  usePauseStore.setState({ lost: 0 });
   useLogStore.getState().clear();
   useTopicTreeStore.getState().reset();
   useHoldStore.getState().release();
@@ -126,17 +134,20 @@ describe('the screen for what is being held', () => {
 
       panel();
 
-      expect(screen.getByText('Messages').nextSibling).toHaveTextContent('2');
-      expect(screen.getByText('Topics').nextSibling).toHaveTextContent('2');
-      expect(screen.getByText('Payload').nextSibling).toHaveTextContent('2 kB of 500 MB');
-      expect(screen.getByText('Broker events').nextSibling).toHaveTextContent('1');
+      expect(figure('Messages')).toHaveTextContent('2');
+      expect(figure('Topics')).toHaveTextContent('2');
+      // Two elements, so two assertions: the figure is the figure and the ceiling is the note
+      // under it, which is what keeps a number a number.
+      expect(figure('Payload')).toHaveTextContent('2 kB');
+      expect(figure('Payload')).toHaveTextContent('of 500 MB');
+      expect(figure('Broker events')).toHaveTextContent('1');
     });
 
     it('lets go of the traffic and the tree together', async () => {
       landed(message('a/one'));
       panel();
 
-      await userEvent.click(screen.getByRole('button', { name: 'Clear the traffic' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Clear traffic' }));
 
       expect(useLogStore.getState().held).toBe(0);
       expect(useTopicTreeStore.getState().root.subTopics).toBe(0);
@@ -146,7 +157,7 @@ describe('the screen for what is being held', () => {
       useBrokerEventsStore.getState().push({ kind: 'ok', what: 'Connected' });
       panel();
 
-      await userEvent.click(screen.getByRole('button', { name: 'Clear the events' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Clear events' }));
 
       expect(useBrokerEventsStore.getState().events).toEqual([]);
     });
@@ -154,8 +165,8 @@ describe('the screen for what is being held', () => {
     it('offers nothing to clear when it is holding nothing', () => {
       panel();
 
-      expect(screen.getByRole('button', { name: 'Clear the traffic' })).toBeDisabled();
-      expect(screen.getByRole('button', { name: 'Clear the events' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Clear traffic' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Clear events' })).toBeDisabled();
     });
   });
 
@@ -170,7 +181,8 @@ describe('the screen for what is being held', () => {
 
       panel();
 
-      expect(screen.getByText('Retained').nextSibling).toHaveTextContent('2 topics');
+      expect(figure('Retained')).toHaveTextContent('2');
+      expect(figure('Retained')).toHaveTextContent('topics');
     });
 
     // The emptying arrives back down the console's own subscription, and an empty retained
@@ -181,7 +193,8 @@ describe('the screen for what is being held', () => {
 
       panel();
 
-      expect(screen.getByText('Retained').nextSibling).toHaveTextContent('0 topics');
+      expect(figure('Retained')).toHaveTextContent('0');
+      expect(figure('Retained')).toHaveTextContent('topics');
     });
 
     it('asks before it publishes anything', async () => {
@@ -195,7 +208,7 @@ describe('the screen for what is being held', () => {
       );
       panel();
 
-      await userEvent.click(screen.getByRole('button', { name: 'Clear retained messages' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Clear retained' }));
 
       expect(sent).toBe(0);
       expect(screen.getByText(/Every other client sees it too/)).toBeInTheDocument();
@@ -212,7 +225,7 @@ describe('the screen for what is being held', () => {
       );
       panel();
 
-      await userEvent.click(screen.getByRole('button', { name: 'Clear retained messages' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Clear retained' }));
       await userEvent.click(screen.getByRole('button', { name: 'Yes, clear 2' }));
 
       await waitFor(() => expect(sent).toHaveLength(2));
@@ -226,7 +239,7 @@ describe('the screen for what is being held', () => {
       server.use(http.post('/api/publish', () => new HttpResponse(null, { status: 403 })));
       panel();
 
-      await userEvent.click(screen.getByRole('button', { name: 'Clear retained messages' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Clear retained' }));
       await userEvent.click(screen.getByRole('button', { name: 'Yes, clear 1' }));
 
       expect(await screen.findByText(/the broker refused 1/)).toBeInTheDocument();
@@ -236,17 +249,17 @@ describe('the screen for what is being held', () => {
       landed(message('a/one', '1', true));
       panel();
 
-      await userEvent.click(screen.getByRole('button', { name: 'Clear retained messages' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Clear retained' }));
       await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
-      expect(screen.getByRole('button', { name: 'Clear retained messages' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Clear retained' })).toBeInTheDocument();
     });
 
     it('offers nothing when the broker is holding nothing retained', () => {
       landed(message('a/one', '1', false));
       panel();
 
-      expect(screen.getByRole('button', { name: 'Clear retained messages' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Clear retained' })).toBeDisabled();
     });
   });
 });
@@ -284,6 +297,48 @@ describe('when the tree has given topics up to its ceiling', () => {
 
     render(<ManagePanel onClose={() => {}} />);
 
-    expect(await screen.findByText('1,200 topics')).toBeInTheDocument();
+    await waitFor(() => expect(figure('Topics')).toHaveTextContent('1,200'));
+  });
+});
+
+/**
+ * The two figures the panel could not say.
+ *
+ * 'Am I seeing everything' is the question a monitoring console is opened with, and the answers
+ * lived in two other places: the tree's foot counted what its ceiling had forgotten, and the log
+ * wrote a line when the server's queue dropped something. Neither is where a reader looks for a
+ * figure, and a zero in each is the reassurance they came for.
+ */
+describe('what never reached the console', () => {
+  it('counts the topics the tree gave up to its ceiling', async () => {
+    landed(message('a/one'));
+    act(() => useTopicTreeStore.setState({ forgotten: 11_006 }));
+
+    render(<ManagePanel onClose={() => {}} />);
+
+    expect(figure('Topics')).toHaveTextContent('11,006 forgotten to the ceiling');
+  });
+
+  it('counts what the server dropped and what the queue let go, together', async () => {
+    landed(message('a/one'));
+    act(() => {
+      useHealthStore.setState({ dropped: 1_200 });
+      usePauseStore.getState().lose(40);
+    });
+
+    render(<ManagePanel onClose={() => {}} />);
+
+    expect(figure('Dropped')).toHaveTextContent('1,240');
+    expect(figure('Dropped')).toHaveTextContent('never reached the log');
+  });
+
+  it('says nothing under a zero, because nothing is what it means', async () => {
+    landed(message('a/one'));
+
+    render(<ManagePanel onClose={() => {}} />);
+
+    expect(figure('Dropped')).toHaveTextContent('0');
+    expect(figure('Dropped')).not.toHaveTextContent('never reached');
+    expect(figure('Topics')).not.toHaveTextContent('forgotten');
   });
 });

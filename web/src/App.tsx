@@ -313,11 +313,11 @@ export function App({ hub }: { hub: Hub }) {
         // when the size is read is three things to know about a window; the same panel at the
         // same size is none. It is the window either way now.
         wide={
-          openPanel === 'broker' || openPanel === 'alerts' || openPanel === 'colours'
-            ? openPanel === 'broker'
-              ? 'full'
-              : 'fill'
-            : undefined
+          openPanel === 'broker'
+            ? 'full'
+            : openPanel === 'alerts' || openPanel === 'colours'
+              ? 'fill'
+              : undefined
         }
         tree={
           <section className={styles.treePane}>

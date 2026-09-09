@@ -59,18 +59,81 @@
 .action:hover:not(:disabled) { color: var(--ink); border-color: var(--muted); background: none; }
 .action:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
-/* Counts, as a column of label and value — the same shape the connection summary uses, for the
-   same reason: they are read by glancing at the same place twice. */
-.figuresList {
+/* Counts, as cells rather than a column of 'label ……… value'.
+   Five of those rows is a form to read; five cells is a set of numbers to sweep, and they sweep
+   two at a time in the width this panel has. The panel keeps its column: five figures and a
+   short list do not want the whole workspace, and in the column they stand beside the tree and
+   the log they are counting. */
+.counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  margin: 0 0 14px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+  overflow: hidden;
+}
+
+/* The hairlines belong to the cells rather than to a gap the ground shows through: five figures
+   in a two-column grid leave a sixth slot empty, and a gap-drawn grid paints that hole in the
+   rule's own colour — a grey square where a number should be. Borders on the cells leave it the
+   surface it is. */
+.count {
+  display: grid;
+  gap: 2px;
+  align-content: start;
+  padding: 9px 12px 10px;
+  border-right: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--mono);
+}
+
+.count dt {
+  font-size: var(--t-micro);
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.count dd {
+  margin: 0;
+  font-size: var(--t-lead);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The unit, the ceiling, or what the number means — never a second figure. */
+.countNote {
+  margin: 0;
+  font-size: var(--t-micro);
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+/* The two clears sit side by side while they fit and go one under the other when they do not.
+   Without this the row keeps them side by side and breaks their labels instead: 'CLEAR' over
+   'TRAFFIC' is two words a reader has to put back together. */
+.clears {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.clears > button { white-space: nowrap; }
+
+/* One figure on its own line: a label and a value, the way the connection summary writes a row.
+   Anything with a second figure beside it goes in .counts instead. */
+.one {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
   margin: 0 0 12px;
   font-family: var(--mono);
   font-size: var(--t-small);
 }
-.figuresList > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 3px 0;
+.one dt {
+  font-size: var(--t-micro);
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
-.figuresList dt { color: var(--muted); }
-.figuresList dd { margin: 0; color: var(--ink); font-variant-numeric: tabular-nums; }
+.one dd { margin: 0; color: var(--ink); font-variant-numeric: tabular-nums; }

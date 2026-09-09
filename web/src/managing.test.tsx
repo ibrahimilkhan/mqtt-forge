@@ -106,6 +106,10 @@ async function openConsole() {
 
 const menu = () => within(screen.getByRole('navigation', { name: 'Panels' }));
 
+/** The Manage panel's Retained cell: its label, its figure and the word under them. */
+const retained = (manage: ReturnType<typeof within>) =>
+  manage.getByText('Retained').closest('div');
+
 /**
  * Opens a panel from the rail, or leaves it open when it already is.
  *
@@ -287,7 +291,7 @@ describe('emptying the console', () => {
     await pick('temp');
 
     await goTo('Manage');
-    await userEvent.click(panelNamed('Manage panel').getByRole('button', { name: 'Clear the traffic' }));
+    await userEvent.click(panelNamed('Manage panel').getByRole('button', { name: 'Clear traffic' }));
 
     expect(useLogStore.getState().held).toBe(0);
     expect(within(tree()).getByText(/No topics yet/)).toBeInTheDocument();
@@ -321,11 +325,12 @@ describe('telling the broker to forget what it is holding', () => {
 
     await goTo('Manage');
     const manage = panelNamed('Manage panel');
-    await waitFor(() =>
-      expect(manage.getByText('Retained').nextSibling).toHaveTextContent('2 topics'),
-    );
+    // The cell is a label, a figure and the word under it — three elements, so the number is
+    // asserted on its own rather than as a sentence the DOM never writes.
+    await waitFor(() => expect(retained(manage)).toHaveTextContent('2'));
+    expect(retained(manage)).toHaveTextContent('topics');
 
-    await userEvent.click(manage.getByRole('button', { name: 'Clear retained messages' }));
+    await userEvent.click(manage.getByRole('button', { name: 'Clear retained' }));
     expect(sent).toHaveLength(0);
     expect(manage.getByText(/Every other client sees it too/)).toBeInTheDocument();
 
@@ -345,15 +350,12 @@ describe('telling the broker to forget what it is holding', () => {
 
     await goTo('Manage');
     const manage = panelNamed('Manage panel');
-    await userEvent.click(manage.getByRole('button', { name: 'Clear retained messages' }));
+    await userEvent.click(manage.getByRole('button', { name: 'Clear retained' }));
     await userEvent.click(manage.getByRole('button', { name: 'Yes, clear 2' }));
 
     send(['office/light', '', true], ['plant/boiler/state', '', true]);
 
-    await waitFor(
-      () => expect(manage.getByText('Retained').nextSibling).toHaveTextContent('0 topics'),
-      { timeout: 3000 },
-    );
+    await waitFor(() => expect(retained(manage)).toHaveTextContent('0'), { timeout: 3000 });
   });
 });
 
@@ -396,7 +398,7 @@ describe('choosing how much of the machine the console may use', () => {
     expect(useLogStore.getState().budget).toBe(100 * 1024 * 1024);
 
     const manage = await goTo('Manage');
-    expect(manage.getByText('Payload').nextSibling).toHaveTextContent('of 100 MB');
+    expect(manage.getByText('Payload').closest('div')).toHaveTextContent('of 100 MB');
     stop();
   });
 

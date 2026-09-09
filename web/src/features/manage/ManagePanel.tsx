@@ -6,6 +6,8 @@ import { useAppearanceStore } from '../../stores/appearanceStore';
 import { useBrokerEventsStore } from '../../stores/brokerEventsStore';
 import { clearTraffic } from '../../stores/clearTraffic';
 import { useSelectionStore } from '../../stores/selectionStore';
+import { useHealthStore } from '../../stores/healthStore';
+import { usePauseStore } from '../../stores/pauseStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import { useHoldStore } from '../monitor/useTraffic';
 import { clearRetained } from './clearRetained';
@@ -78,6 +80,66 @@ export function ManagePanel({ onClose }: { onClose: () => void }) {
 
   return (
     <PanelShell title="Manage" onClose={onClose}>
+      {/* First, because it is what the panel is opened for: how much is this console carrying,
+          and is any of it missing. The two figures that answer the second question — what the
+          server had to drop, and what the tree gave up — used to be sayable only in the tree's
+          own foot and the log's, so a reader asking 'am I seeing everything' had to know where
+          to look. A zero in either cell is the answer they came for. */}
+      <section className={panel.group}>
+        <h3 className={panel.groupTitle}>Held by this console</h3>
+
+        <dl className={styles.counts} data-testid="console-figures">
+          <Figure label="Messages" value={reading.held.toLocaleString('en-GB')} />
+          <Figure
+            label="Topics"
+            value={reading.topics.toLocaleString('en-GB')}
+            note={
+              reading.forgotten > 0
+                ? `${reading.forgotten.toLocaleString('en-GB')} forgotten to the ceiling`
+                : undefined
+            }
+          />
+          <Figure
+            label="Payload"
+            value={weigh(reading.weight)}
+            note={`of ${loadMb >= 1000 ? `${loadMb / 1000} GB` : `${loadMb} MB`}`}
+          />
+          <Figure
+            label="Dropped"
+            value={(reading.dropped + reading.lost).toLocaleString('en-GB')}
+            note={reading.dropped + reading.lost > 0 ? 'never reached the log' : undefined}
+          />
+          <Figure label="Broker events" value={events.length.toLocaleString('en-GB')} />
+        </dl>
+
+        {reading.full && (
+          <p className={panel.note} data-testid="load-full">
+            Full — every topic keeps its newest 256 kB. Settings chooses the ceiling.
+          </p>
+        )}
+
+        <div className={`${panel.actions} ${styles.clears}`}>
+          <button
+            type="button"
+            className="ghost"
+            disabled={reading.held === 0 && reading.topics === 0}
+            title="Clear the traffic and the topic tree"
+            onClick={clearTraffic}
+          >
+            Clear traffic
+          </button>
+          <button
+            type="button"
+            className="ghost"
+            disabled={events.length === 0}
+            title="Clear the record of what the link has been doing"
+            onClick={clearEvents}
+          >
+            Clear events
+          </button>
+        </div>
+      </section>
+
       <section className={panel.group}>
         <h3 className={panel.groupTitle}>Paused topics</h3>
 
@@ -134,81 +196,26 @@ export function ManagePanel({ onClose }: { onClose: () => void }) {
       </section>
 
       <section className={panel.group}>
-        <h3 className={panel.groupTitle}>What this console is holding</h3>
+        <h3 className={panel.groupTitle}>Held by the broker</h3>
 
-        <dl className={styles.figuresList}>
-          <div>
-            <dt>Messages</dt>
-            <dd>{reading.held.toLocaleString('en-GB')}</dd>
-          </div>
-          <div>
-            <dt>Topics</dt>
-            <dd>{reading.topics.toLocaleString('en-GB')}</dd>
-          </div>
-          <div>
-            <dt>Payload</dt>
-            <dd>
-              {weigh(reading.weight)} of {loadMb >= 1000 ? `${loadMb / 1000} GB` : `${loadMb} MB`}
-            </dd>
-          </div>
-          <div>
-            <dt>Broker events</dt>
-            <dd>{events.length}</dd>
-          </div>
-        </dl>
+        {/* What a retained message is belongs where it is about to be destroyed — the paragraph
+            that stood here explained the concept to a reader who had not asked for it, and left
+            the sentence that matters ('every other client sees this too') to the confirmation.
+            The figure and the button are the whole of the section now.
 
-        {reading.full && (
-          <p className={panel.note}>
-            Full: every topic is keeping its newest 256 kB and the rest is being let go. Settings
-            is where that ceiling is chosen.
-          </p>
-        )}
-
-        <div className={panel.actions}>
-          <button
-            type="button"
-            className="ghost"
-            disabled={reading.held === 0 && reading.topics === 0}
-            title="Clear the traffic and the topic tree"
-            onClick={clearTraffic}
-          >
-            Clear the traffic
-          </button>
-          <button
-            type="button"
-            className="ghost"
-            disabled={events.length === 0}
-            title="Clear the record of what the link has been doing"
-            onClick={clearEvents}
-          >
-            Clear the events
-          </button>
-        </div>
-      </section>
-
-      <section className={panel.group}>
-        <h3 className={panel.groupTitle}>What the broker is holding</h3>
-
-        <p className={panel.note}>
-          A retained message belongs to the broker, not to this console: it outlives every
-          connection and is handed to whoever subscribes next. Clearing one means publishing an
-          empty message in its place, which is how MQTT says forget this.
-        </p>
-
-        <dl className={styles.figuresList}>
-          <div>
-            <dt>Retained</dt>
-            <dd>
-              {retained.length.toLocaleString('en-GB')}{' '}
-              {retained.length === 1 ? 'topic' : 'topics'}
-            </dd>
-          </div>
+            A line rather than a cell: one number does not need a card, and a card holding one
+            number stretches to the width of a panel that has five. */}
+        <dl className={styles.one} data-testid="broker-figures">
+          <dt>Retained</dt>
+          <dd>
+            {retained.length.toLocaleString('en-GB')} {retained.length === 1 ? 'topic' : 'topics'}
+          </dd>
         </dl>
 
         {/* The figure above is counted off this console's own tree, and that tree has a ceiling:
             a broker holding more retained topics than MAX_TREE_TOPICS hands over every one of
-            them and the quietest are forgotten as they arrive. Under a heading that says 'what
-            the broker is holding' the shortfall would be read as the broker's, and the button
+            them and the quietest are forgotten as they arrive. Under a heading that says the
+            broker is holding them the shortfall would be read as the broker's, and the button
             below would then report clearing a broker it had only partly cleared. Said here, once,
             rather than in the counts: what is wrong is not the number but what it is a number of. */}
         {forgotten > 0 && (
@@ -227,7 +234,12 @@ export function ManagePanel({ onClose }: { onClose: () => void }) {
             {/* Named, up to a point a reader can still read: this is the one control here that
                 reaches past the console and changes what everybody else's client will see. */}
             <p className={panel.note}>
-              This clears the retained message on {retained.length.toLocaleString('en-GB')}{' '}
+              A retained message belongs to the broker rather than to this console: it outlives
+              every connection and is handed to whoever subscribes next. Clearing one means
+              publishing an empty message in its place.
+            </p>
+            <p className={panel.note}>
+              This clears {retained.length.toLocaleString('en-GB')}{' '}
               {retained.length === 1 ? 'topic' : 'topics'}
               {retained.length <= 6 ? `: ${retained.join(', ')}` : ''}. Every other client sees it
               too, and nothing here can put them back.
@@ -252,12 +264,30 @@ export function ManagePanel({ onClose }: { onClose: () => void }) {
                 setAsking(true);
               }}
             >
-              Clear retained messages
+              Clear retained
             </button>
           </div>
         )}
       </section>
     </PanelShell>
+  );
+}
+
+/**
+ * One figure: what it is, how much of it there is, and a word under it when the number alone
+ * would raise the question it answers.
+ *
+ * A cell rather than a row of label-and-value, because five of these are read by sweeping across
+ * them once. The note is where a number's units, its ceiling or its meaning go — 'of 500 MB',
+ * 'never reached the log' — so the figure itself stays a figure.
+ */
+function Figure({ label, value, note }: { label: string; value: string; note?: string }) {
+  return (
+    <div className={styles.count}>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+      {note && <p className={styles.countNote}>{note}</p>}
+    </div>
   );
 }
 
@@ -278,7 +308,8 @@ function count(holds: ReadonlyMap<string, { filter: string; entries: { id: numbe
   }));
   paused.sort((a, b) => a.label.localeCompare(b.label));
 
-  const root = useTopicTreeStore.getState().root;
+  const tree = useTopicTreeStore.getState();
+  const root = tree.root;
 
   return {
     paused,
@@ -286,6 +317,12 @@ function count(holds: ReadonlyMap<string, { filter: string; entries: { id: numbe
     weight: log.weight,
     full: log.capped,
     topics: root.subTopics,
+    /** Topics the tree gave up to its ceiling this connection. */
+    forgotten: tree.forgotten,
+    /** Messages that never left the server because this console was behind. */
+    dropped: useHealthStore.getState().dropped,
+    /** And messages let go of on this side, by a queue past its own ceiling. */
+    lost: usePauseStore.getState().lost,
     // Walked with the rest of it rather than read once when the panel opened: the answer changes
     // under the reader — a retained message arrives, or the clear below empties one — and a
     // figure that had to be reopened to be believed is worse than no figure.
