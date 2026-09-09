@@ -24,6 +24,32 @@ export function short(value: number): string {
   return trim(value.toPrecision(3));
 }
 
+/**
+ * The two ends of a scale, written so that they can be told apart.
+ *
+ * `short` gives three figures, which is the right answer for a label and the wrong one for a run
+ * that moves in the fourth: a topic reading 21.500001 to 21.500031 drew a plainly rising line
+ * between an axis marked 21.5 at the top and 21.5 at the bottom. The plot said one thing and the
+ * numbers beside it said another, and the reader is left to decide which of the two is broken.
+ *
+ * So the figures are raised until the two strings differ. Twelve is the cap — past that a double
+ * is writing its own rounding error rather than the reading — and a pair that still matches there
+ * is a run whose two ends really are the same number, which the caller draws as one label.
+ */
+export function ends(low: number, high: number): [string, string] {
+  const short_ = [short(low), short(high)] as [string, string];
+  if (short_[0] !== short_[1] || low === high) return short_;
+
+  // Untrimmed, and both at the same figure: trimming one end and not the other gives '21.5' and
+  // '21.50003', which is a pair of numbers rather than the two ends of one scale.
+  for (let figures = 4; figures <= 12; figures++) {
+    const written: [string, string] = [low.toPrecision(figures), high.toPrecision(figures)];
+    if (written[0] !== written[1]) return written;
+  }
+
+  return short_;
+}
+
 /** How long a wait was, in the largest unit that leaves it readable. */
 export function duration(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)} ms`;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { duration, short } from './format';
+import { duration, ends, short } from './format';
 
 describe('short', () => {
   it('leaves a whole number whole', () => {
@@ -74,5 +74,35 @@ describe('short, past where a double stops writing digits', () => {
 
   it('says the small end in figures a reader can count', () => {
     expect(short(5e-324)).toBe('4.94e-324');
+  });
+});
+
+/**
+ * A run that moves in the fourth figure.
+ *
+ * `short` gives three, which is right for a label and wrong for an axis: a topic reading
+ * 21.500001 to 21.500031 drew a plainly rising line between 21.5 at the top and 21.5 at the
+ * bottom, and left the reader to decide which of the two was broken.
+ */
+describe('ends', () => {
+  it('gives three figures when three tell the two apart', () => {
+    expect(ends(20, 30)).toEqual(['20', '30']);
+    expect(ends(21.53, 22.61)).toEqual(['21.53', '22.61']);
+  });
+
+  it('raises the figures until they differ, and raises both', () => {
+    // Both at the same figure: one end trimmed and the other not reads as two numbers rather
+    // than as the two ends of one scale.
+    expect(ends(21.500001, 21.500031)).toEqual(['21.50000', '21.50003']);
+  });
+
+  it('leaves a run that never moved with one figure said twice', () => {
+    // The caller draws one label for this; what it must not do is invent a difference.
+    expect(ends(21.5, 21.5)).toEqual(['21.5', '21.5']);
+  });
+
+  it('holds at the far ends of a double', () => {
+    expect(ends(5e-324, 9.9e-323)).toEqual(['4.94e-324', '9.88e-323']);
+    expect(ends(1e300, 2.9e300)[1]).toBe('2.9e+300');
   });
 });

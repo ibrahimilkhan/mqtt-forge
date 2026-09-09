@@ -8,7 +8,7 @@ import {
   type MouseEvent,
   type PointerEvent,
 } from 'react';
-import { short } from '../../lib/format';
+import { ends, short } from '../../lib/format';
 import { PlotGrid } from './PlotGrid';
 import { ReadingDetail } from './ReadingDetail';
 import { pinned, positionIn, type Domain } from '../../lib/scale';
@@ -276,6 +276,10 @@ export function TrafficLine({
     [],
   );
 
+  // The two ends of the axis, as figures that differ. `short` alone gives three of them, which a
+  // run moving in its fourth turns into the same label twice — see `ends`.
+  const scale = ends(domain.low, domain.high);
+
   return (
     <div className={styles.frame}>
       {/* The line says the shape and the labels say the size of it, which is the one thing a
@@ -294,14 +298,14 @@ export function TrafficLine({
         aria-hidden="true"
       >
         <span>
-          {short(domain.high)}
+          {scale[1]}
           {/* An arrow, not a footnote: the reader has to know at a glance that the plot's edge
               is not the run's, or they will read the pinned line as the highest reading. */}
           {domain.over > 0 && <b className={styles.pinCount}>↑{domain.over}</b>}
         </span>
         {domain.high !== domain.low && (
           <span>
-            {short(domain.low)}
+            {scale[0]}
             {domain.under > 0 && <b className={styles.pinCount}>↓{domain.under}</b>}
           </span>
         )}
