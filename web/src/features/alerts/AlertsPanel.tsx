@@ -39,6 +39,15 @@ export function worst(alerts: readonly AlertDto[]): AlertSeverity | null {
   return found;
 }
 
+/**
+ * How often the engine's own report is read again while the panel is open.
+ *
+ * Three seconds: long enough that a panel left open is not a poll every frame, short enough that
+ * a reader publishing a test message to see whether a rule matches it does not conclude the
+ * panel is dead. Nothing here is watched — the alarms themselves arrive on the hub.
+ */
+const EVERY_MS = 3000;
+
 export function AlertsPanel({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
   const { data, isError } = useQuery({ queryKey: queryKeys.alertRules, queryFn: getAlertRules });
@@ -53,16 +62,27 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
   const load = useAlertStore((state) => state.load);
 
   /**
-   * Read once when the panel opens.
+   * Read when the panel opens, and again while somebody is looking at it.
    *
-   * The bridge already loads on connect, and this is the second chance rather than a duplicate:
-   * a console whose first load failed, or that was opened before the hub came up, would
-   * otherwise show an empty panel that never corrects itself and looks exactly like a quiet
-   * broker. `load()` replaces rather than merges, so a second call costs one request and settles
-   * nothing else.
+   * The bridge already loads on connect, and the read on open is the second chance rather than a
+   * duplicate: a console whose first load failed, or that was opened before the hub came up,
+   * would otherwise show an empty panel that never corrects itself and looks exactly like a
+   * quiet broker. `load()` replaces rather than merges, so a second call costs one request and
+   * settles nothing else.
+   *
+   * Reading it again is what the Seeing column needs. The hub sends alarms — raised, resolved,
+   * silenced — and nothing else, so what a rule has *seen* only arrives with a whole snapshot:
+   * how many topics it matched, how many readings it judged, when it last fired. A reader who
+   * opened this panel to find out why a rule was quiet, published a test message and watched the
+   * line go on saying 'matched no topic' was reading a sentence written before they started —
+   * while the engine, three feet away, had matched the topic and fired on it. Read on a tick
+   * like the Manage panel's counts, which answer the same kind of question.
    */
   useEffect(() => {
     void load();
+    const timer = setInterval(() => void load(), EVERY_MS);
+
+    return () => clearInterval(timer);
   }, [load]);
 
   /**

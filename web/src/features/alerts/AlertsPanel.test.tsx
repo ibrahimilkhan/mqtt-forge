@@ -267,6 +267,25 @@ describe('AlertsPanel', () => {
     expect(await screen.findByText(/^3 topics · 1\.2k readings · last fired \d\d:\d\d$/)).toBeInTheDocument();
   });
 
+  // The panel used to read the engine's report once, when it opened. So a reader who opened it
+  // to find out why a rule was quiet, published a test message and watched — saw 'matched no
+  // topic' go on standing there while the engine matched the topic and fired on it. The alarms
+  // arrive on the hub; what a rule has seen does not.
+  it('reads what a rule has seen again while it is open', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    holding(RULE);
+    answers({ rules: [{ ...SEEING, topics: 0, evaluated: 0, lastFiredAt: null }] });
+    renderPanel();
+
+    expect(await screen.findByText('matched no topic')).toBeInTheDocument();
+
+    answers({ rules: [{ ...SEEING, topics: 1, evaluated: 4, lastFiredAt: null }] });
+    await vi.advanceTimersByTimeAsync(3100);
+
+    expect(await screen.findByText('1 topic · 4 readings · never fired')).toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
   it('says so when a rule has matched no topic at all', async () => {
     holding(RULE);
     answers({ rules: [{ ...SEEING, topics: 0, evaluated: 0, lastFiredAt: null }] });
