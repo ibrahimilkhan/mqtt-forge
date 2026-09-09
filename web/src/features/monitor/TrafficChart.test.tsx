@@ -199,6 +199,80 @@ describe('a body with its numbers nested', () => {
  * pinning it into a window was the only way to get the readings back, because a window mounts a
  * chart from scratch. That is what was reported.
  */
+/**
+ * A topic that changed shape half way through.
+ *
+ * A device whose firmware started wrapping its reading in a body publishes both shapes for as
+ * long as the older half of the run survives, and the two of them are two different series. The
+ * chart drew whichever half was larger, said how many messages it had stepped over — and offered
+ * no way whatever to see the other half: the chip row asks which field, and one field is not a
+ * question worth a row, so with a single field in the bodies there was no row at all.
+ */
+describe('a topic that sends bare numbers and bodies both', () => {
+  let id = 0;
+  const both = (bare: number, bodies: number): LogEntry[] => [
+    // Newest first, so the bodies are the shape the topic has now.
+    ...Array.from({ length: bodies }, (_, i) => ({
+      id: id++,
+      kind: 'recv' as const,
+      at: new Date(Date.parse('2026-08-21T01:00:00Z') - i * 1000),
+      topic: 'sensors/temp',
+      body: JSON.stringify({ celsius: 22 + i * 0.1 }),
+    })),
+    ...Array.from({ length: bare }, (_, i) => ({
+      id: id++,
+      kind: 'recv' as const,
+      at: new Date(Date.parse('2026-08-21T00:00:00Z') - i * 1000),
+      topic: 'sensors/temp',
+      body: `${20 + i * 0.1}`,
+    })),
+  ];
+
+  it('offers the field beside the body when it is drawing the body', () => {
+    render(<TrafficChart runs={asRuns(both(20, 20))} />);
+
+    expect(screen.getByRole('button', { name: 'Chart the message itself' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Chart celsius' })).toBeInTheDocument();
+  });
+
+  it('charts the field, and comes back to the body again', async () => {
+    render(<TrafficChart runs={asRuns(both(20, 20))} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Chart celsius' }));
+
+    expect(screen.getByTestId('reading-n').textContent).toBe('20');
+    expect(screen.getByRole('button', { name: 'Chart celsius' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Chart the message itself' }));
+
+    expect(screen.getByRole('button', { name: 'Chart the message itself' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  // The row is for choosing, and a run of one shape has nothing to choose between.
+  it('offers no body chip to a topic that only ever sends bodies', () => {
+    render(<TrafficChart runs={asRuns(both(0, 20))} />);
+
+    expect(
+      screen.queryByRole('button', { name: 'Chart the message itself' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('offers no row at all to a topic that only ever sends numbers', () => {
+    render(<TrafficChart runs={asRuns(both(20, 0))} />);
+
+    expect(screen.queryByRole('group', { name: 'Field to chart' })).not.toBeInTheDocument();
+  });
+});
+
 describe('a chart that changes what it is drawing', () => {
   let id = 0;
   const short = (count: number): LogEntry[] =>

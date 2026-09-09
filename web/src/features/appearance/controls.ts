@@ -14,6 +14,7 @@ import { SCALES, type ScaleId } from '../../lib/scale';
  * explanation cannot drift apart.
  */
 export type ControlId =
+  | 'body'
   | 'field'
   | 'into'
   | 'up'
@@ -45,6 +46,12 @@ export const CONTROL_GROUP_TITLES: Record<ControlGroup, { title: string; about: 
 };
 
 export const CONTROLS: Record<ControlId, Control & { group: ControlGroup }> = {
+  body: {
+    label: 'body',
+    group: 'what',
+    what: 'The message itself, read as a number.',
+    when: 'When a topic sends both bare numbers and bodies.',
+  },
   field: {
     label: 'temp, hum, …',
     group: 'what',

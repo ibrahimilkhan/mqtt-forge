@@ -133,8 +133,7 @@ export function numericFields(entries: LogEntry[]): string[] {
  */
 function pick(entries: LogEntry[]): string | null {
   const sample = entries.slice(0, SAMPLE);
-  const plain = sample.filter((entry) => readingOf(entry, null) !== null).length;
-  if (plain * 2 >= sample.length) return null;
+  if (bareAmong(sample) * 2 >= sample.length) return null;
 
   const fields = numericFields(entries);
   if (fields.length < 2) return fields[0] ?? null;
@@ -152,6 +151,23 @@ function pick(entries: LogEntry[]): string | null {
   return tied.reduce((leader, field) =>
     movement(runs.get(field)!) > movement(runs.get(leader)!) ? field : leader,
   );
+}
+
+/**
+ * How many of these messages are a reading in themselves, rather than a body with one in it.
+ *
+ * A topic sends one shape or the other, so this is nearly always all of them or none. It is the
+ * exceptions the chart has to say something about: a device whose firmware started wrapping its
+ * number in a body publishes both shapes for as long as the older half of the run survives, and
+ * during that time the run has two readings in it that no single field name reaches.
+ */
+export function bareAmong(entries: readonly LogEntry[]): number {
+  let bare = 0;
+  for (const entry of entries.slice(0, SAMPLE)) {
+    if (readingOf(entry, null) !== null) bare += 1;
+  }
+
+  return bare;
 }
 
 /**

@@ -3,7 +3,7 @@ import { chartable } from '../../lib/chartable';
 import { fitDistribution } from '../../lib/distribution';
 import { above, branchesUnder, clip, named } from '../../lib/fieldTree';
 import { domainFor, SCALES, type ScaleId } from '../../lib/scale';
-import { numericFields, sampleOfRuns, type Series } from '../../lib/series';
+import { bareAmong, numericFields, sampleOfRuns, type Series } from '../../lib/series';
 import { shapeOf } from '../../lib/shape';
 import { cadence, changePoint, cycle, summarise } from '../../lib/stats';
 import { useNow } from '../../lib/useNow';
@@ -133,12 +133,17 @@ export function TrafficChart({
   // leaving it looking at nothing.
   const shown = narrowed.length > 0 ? narrowed : runs;
 
-  const fields = useMemo(() => numericFields(sampleOfRuns(shown)), [shown]);
+  // One sample, two questions: which fields the run carries, and whether it also carries
+  // readings that are numbers on their own.
+  const sample = useMemo(() => sampleOfRuns(shown), [shown]);
+  const fields = useMemo(() => numericFields(sample), [sample]);
+  const bare = useMemo(() => bareAmong(sample) > 0, [sample]);
   const drawn = useMemo(() => chartable(shown, field), [shown, field]);
 
   const controls = (
     <Controls
       fields={fields}
+      bare={bare}
       field={drawn.kind === 'one' ? drawn.series.field : field}
       onField={setField}
       view={view}
@@ -439,6 +444,7 @@ function useAlong(strip: React.RefObject<HTMLDivElement | null>, walked: string)
  */
 function Controls({
   fields,
+  bare,
   field,
   onField,
   view,
@@ -452,8 +458,10 @@ function Controls({
   onBranch,
 }: {
   fields: string[];
+  /** The run also carries readings that are numbers in themselves, so the body is a choice. */
+  bare: boolean;
   field: string | null | undefined;
-  onField: (field: string) => void;
+  onField: (field: string | null) => void;
   view: View;
   onView: (view: View) => void;
   range: ScaleId | null;
@@ -532,8 +540,13 @@ function Controls({
           So the list is walked rather than shown: one level of segments at a time, a step in and a
           step back out, which is the shape the message already has and the shape the reader is
           holding in their head while they hunt for one number in it. A body with two flat numbers
-          in it is unaffected — its top level is both of them. */}
-      {fields.length > 1 && (
+          in it is unaffected — its top level is both of them.
+
+          One field and no bare readings is not a choice, and a row holding the only answer is
+          furniture. One field beside bare readings is: a device that started wrapping its number
+          in a body has both in the run, and the half the chart is not drawing is the half it
+          reports as skipped — with, until now, nothing anywhere to reach it by. */}
+      {(fields.length > 1 || (bare && fields.length > 0)) && (
         <div
           className={styles.fields}
           // A nested body's chip row changes on every step of the walk — six segments, then two,
@@ -605,6 +618,23 @@ function Controls({
                       question one group over. */}
                   <span className={styles.split} aria-hidden="true" />
                 </>
+              )}
+
+              {/* The body itself, where the run has readings that are numbers on their own. It
+                  leads because it is what the chart opens on whenever half the run or more is
+                  bare, and it stands at the top level only: a field's own group is a question
+                  about what is inside the body, and the body is not inside itself. */}
+              {bare && level.under === '' && (
+                <button
+                  type="button"
+                  className={styles.chip}
+                  aria-label="Chart the message itself"
+                  aria-pressed={field === null}
+                  title={CONTROLS.body.what}
+                  onClick={() => onField(null)}
+                >
+                  {CONTROLS.body.label}
+                </button>
               )}
 
               {level.shown.map((branch) =>
