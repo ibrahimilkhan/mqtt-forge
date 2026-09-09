@@ -38,11 +38,6 @@ export function WireLog() {
           furniture over a list that already says what it is about. */}
       <h2 className="srOnly">Logs</h2>
 
-      {/* Two things a reader does to a log: find a line in it, and start it again. Only once
-          there is a selection — with nothing picked there are no rows to search and nothing the
-          console is holding that this pane is answering for. */}
-      {selected && <LogTools />}
-
       {!selected && (
         <p className="empty">
           Pick a topic to see its traffic.
@@ -85,15 +80,27 @@ export function WireLog() {
 }
 
 /**
- * The strip over the rows: what to look for, where to look for it, and the way to empty the lot.
+ * What to look for, where to look for it, and the way to empty the lot.
  *
- * Above the rows rather than in the region's own head, which is one control already — the whole
- * strip folds the region, and a search box inside a button is a control a reader cannot use.
+ * At the end of the region's own strip, beside the name and the count. It used to stand on a line
+ * of its own above the rows, because the strip was one control from end to end — a search box
+ * inside a button is a control a reader cannot use — and a line of chrome over every list of
+ * messages is a line the messages do not get. The strip holds both now: see Region, where the
+ * fold is a button that takes whatever the tools leave rather than the whole row.
+ *
+ * Nothing at all without a selection: no rows to search, and nothing this pane is answering for.
  */
-function LogTools() {
+export function LogTools() {
+  const { selected } = useTraffic();
   const { look, where } = useSearchStore((state) => state.log);
   const setLog = useSearchStore((state) => state.setLog);
   const [open, setOpen] = useState(false);
+  /* Emptying the console is not undoable and does not stop at this topic — it takes every run and
+     the tree with them. One press asks, the next does it. */
+  const [asking, setAsking] = useState(false);
+  const held = useTrafficCount();
+
+  if (!selected) return null;
 
   return (
     <div className={styles.tools}>
@@ -123,14 +130,35 @@ function LogTools() {
           onChange={(next) => setLog({ where: next })}
         />
       )}
-      <button
-        type="button"
-        className={styles.tool}
-        title="Clear the traffic and the topic tree"
-        onClick={clearTraffic}
-      >
-        Clear
-      </button>
+      {asking ? (
+        <>
+          <button
+            type="button"
+            className={styles.tool}
+            data-grave=""
+            title="Every topic, not only this one. Nothing here can put them back."
+            onClick={() => {
+              clearTraffic();
+              setAsking(false);
+            }}
+          >
+            Yes, clear {held.toLocaleString('en-GB')}
+          </button>
+          <button type="button" className={styles.tool} onClick={() => setAsking(false)}>
+            Cancel
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          className={styles.tool}
+          disabled={held === 0}
+          title="Clear the traffic and the topic tree"
+          onClick={() => setAsking(true)}
+        >
+          Clear
+        </button>
+      )}
     </div>
   );
 }

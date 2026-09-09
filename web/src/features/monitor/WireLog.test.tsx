@@ -17,7 +17,7 @@ import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import { HoldButton } from './HoldButton';
 import { TrafficPane } from './TrafficPane';
 import { useHoldStore } from './useTraffic';
-import { LogCount, WireLog } from './WireLog';
+import { LogCount, LogTools, WireLog } from './WireLog';
 
 const chip = { label: 'sensors/#', filter: 'sensors/#' };
 
@@ -25,8 +25,17 @@ const chip = { label: 'sensors/#', filter: 'sensors/#' };
 // workspace stacks them; here they are rendered together for the same reason.
 const Monitor = () => (
   <>
+    <LogTools />
     <WireLog />
     <TrafficPane />
+  </>
+);
+
+/** The pane with the controls that stand in the region's strip above it — see App. */
+const Wire = () => (
+  <>
+    <LogTools />
+    <WireLog />
   </>
 );
 
@@ -1730,7 +1739,7 @@ describe('searching the log', () => {
   });
 
   it('keeps the rows that carry the words', async () => {
-    render(<WireLog />);
+    render(<Wire />);
     await openSearch();
 
     await userEvent.type(search(), 'boiler');
@@ -1742,7 +1751,7 @@ describe('searching the log', () => {
   // And it opens the run rather than showing one row of what was found: a reader who has typed
   // into the box has already asked to see what matched.
   it('looks in the topic and the message together by default', async () => {
-    render(<WireLog />);
+    render(<Wire />);
     await openSearch();
 
     await userEvent.type(search(), 'degrees');
@@ -1752,7 +1761,7 @@ describe('searching the log', () => {
   });
 
   it('looks only at topics when the reader says so', async () => {
-    render(<WireLog />);
+    render(<Wire />);
     await openSearch();
     await userEvent.type(search(), 'degrees');
 
@@ -1763,7 +1772,7 @@ describe('searching the log', () => {
   });
 
   it('looks only at messages when the reader says so', async () => {
-    render(<WireLog />);
+    render(<Wire />);
     await openSearch();
     await userEvent.type(search(), 'sensors');
 
@@ -1775,7 +1784,7 @@ describe('searching the log', () => {
   // A run narrowed to nothing is not a quiet topic, and the sentence about a quiet topic under a
   // box the reader has just typed into answers the wrong question.
   it('says nothing matched rather than saying the topic is quiet', async () => {
-    render(<WireLog />);
+    render(<Wire />);
     await openSearch();
 
     await userEvent.type(search(), 'zzz');
@@ -1785,7 +1794,7 @@ describe('searching the log', () => {
   });
 
   it('gives the run back when the box is emptied', async () => {
-    render(<WireLog />);
+    render(<Wire />);
     await openSearch();
     await userEvent.type(search(), 'zzz');
 
@@ -1798,7 +1807,7 @@ describe('searching the log', () => {
     render(
       <>
         <LogCount />
-        <WireLog />
+        <Wire />
       </>,
     );
     await openSearch();
@@ -1824,12 +1833,30 @@ describe('clearing the log', () => {
       },
     ]);
     useSelectionStore.getState().select({ label: 'everything', filter: '#' });
-    render(<WireLog />);
+    render(<Wire />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Yes, clear 1' }));
 
     expect(useLogStore.getState().held).toBe(0);
     expect(useTopicTreeStore.getState().root.subTopics).toBe(0);
+  });
+
+  // Every run and the tree with them, and nothing here can put them back. One press asks.
+  it('asks before it does, and does nothing until it is answered', async () => {
+    useLogStore.getState().push({ kind: 'recv', topic: 'sensors/temp', body: '21.5' });
+    useSelectionStore.getState().select({ label: 'everything', filter: '#' });
+    render(<Wire />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+
+    expect(useLogStore.getState().held).toBe(1);
+    expect(screen.getByRole('button', { name: 'Yes, clear 1' })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(useLogStore.getState().held).toBe(1);
+    expect(screen.getByRole('button', { name: 'Clear' })).toBeInTheDocument();
   });
 
   // Otherwise the pane comes back saying 'nothing says boiler' about a pane that is empty for a
@@ -1837,17 +1864,18 @@ describe('clearing the log', () => {
   it('drops the search with it', async () => {
     useLogStore.getState().push({ kind: 'recv', topic: 'sensors/temp', body: '21.5' });
     useSelectionStore.getState().select({ label: 'everything', filter: '#' });
-    render(<WireLog />);
+    render(<Wire />);
     await userEvent.click(screen.getByRole('button', { name: 'Find in the log' }));
     await userEvent.type(screen.getByLabelText('Search the log'), 'zzz');
 
     await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    await userEvent.click(screen.getByRole('button', { name: /^Yes, clear/ }));
 
     expect(screen.getByLabelText('Search the log')).toHaveValue('');
   });
 
   it('is not offered when nothing is selected', () => {
-    render(<WireLog />);
+    render(<Wire />);
 
     expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument();
   });

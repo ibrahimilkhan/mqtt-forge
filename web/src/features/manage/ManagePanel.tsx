@@ -57,6 +57,8 @@ export function ManagePanel({ onClose }: { onClose: () => void }) {
   }, [holds]);
 
   const [asking, setAsking] = useState(false);
+  /** Which of the two clears above is being asked about, and null while neither is. */
+  const [emptying, setEmptying] = useState<'traffic' | 'events' | null>(null);
   const [clearing, setClearing] = useState(false);
   const [said, setSaid] = useState<string | null>(null);
 
@@ -118,26 +120,57 @@ export function ManagePanel({ onClose }: { onClose: () => void }) {
           </p>
         )}
 
-        <div className={`${panel.actions} ${styles.clears}`}>
-          <button
-            type="button"
-            className="ghost"
-            disabled={reading.held === 0 && reading.topics === 0}
-            title="Clear the traffic and the topic tree"
-            onClick={clearTraffic}
-          >
-            Clear traffic
-          </button>
-          <button
-            type="button"
-            className="ghost"
-            disabled={events.length === 0}
-            title="Clear the record of what the link has been doing"
-            onClick={clearEvents}
-          >
-            Clear events
-          </button>
-        </div>
+        {/* Both of these throw away a session's worth of what the console has seen, and neither
+            can be undone — the traffic is not the broker's to give back, and the record of what
+            the link did is written nowhere else. So each is asked before it is done, in the same
+            two-button shape the retained section below has always used. */}
+        {emptying ? (
+          <>
+            <p className={panel.note}>
+              {emptying === 'traffic'
+                ? 'Every topic, and the tree with it. Nothing here can put them back.'
+                : 'The record of what the link has been doing. It is written nowhere else.'}
+            </p>
+            <div className={`${panel.actions} ${styles.clears}`}>
+              <button
+                type="button"
+                onClick={() => {
+                  if (emptying === 'traffic') clearTraffic();
+                  else clearEvents();
+                  setEmptying(null);
+                }}
+              >
+                {emptying === 'traffic'
+                  ? `Yes, clear ${reading.held.toLocaleString('en-GB')} messages`
+                  : `Yes, clear ${events.length.toLocaleString('en-GB')} events`}
+              </button>
+              <button type="button" className="ghost" onClick={() => setEmptying(null)}>
+                Cancel
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className={`${panel.actions} ${styles.clears}`}>
+            <button
+              type="button"
+              className="ghost"
+              disabled={reading.held === 0 && reading.topics === 0}
+              title="Clear the traffic and the topic tree"
+              onClick={() => setEmptying('traffic')}
+            >
+              Clear traffic
+            </button>
+            <button
+              type="button"
+              className="ghost"
+              disabled={events.length === 0}
+              title="Clear the record of what the link has been doing"
+              onClick={() => setEmptying('events')}
+            >
+              Clear events
+            </button>
+          </div>
+        )}
       </section>
 
       <section className={panel.group}>

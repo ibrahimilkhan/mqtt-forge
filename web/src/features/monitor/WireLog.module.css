@@ -330,15 +330,14 @@ button.history:focus-visible { outline: 2px solid var(--signal); outline-offset:
    It scrolls away with the rows deliberately. Pinned, it would cost the pane a line of height in
    the one region a reader most often narrows to a couple of rows; the reader who wants it back is
    the reader scrolling to the newest, which is where it is. */
+/* In the region's own strip now, at the end of it, beside the name and the count. The margin
+   under it went with the line it used to stand on. */
 .tools {
   display: flex;
   align-items: center;
-  /* Right-aligned, because shut it is two marks and a word rather than a strip: at the reading
-     edge they would read as the head of the list under them, and they are not — they are what
-     is done to it. The box, when it is opened, grows leftward into the room they leave. */
   justify-content: flex-end;
   gap: 4px;
-  margin-bottom: 8px;
+  min-width: 0;
 }
 /* The same chip as 'show all' on a row and 'Copy' on the events card: quiet, small, and plainly
    not one of the form buttons that send something. */
@@ -356,3 +355,7 @@ button.history:focus-visible { outline: 2px solid var(--signal); outline-offset:
 }
 .tool:hover:not(:disabled) { color: var(--ink); border-color: var(--muted); background: none; }
 .tool:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+/* The one that does the thing there is no way back from, while it is being asked. Named for what
+   it costs rather than for its colour, so the same mark can be used wherever that is true. */
+.tool[data-grave] { color: var(--fault); border-color: color-mix(in srgb, var(--fault) 45%, var(--rule)); }
+.tool[data-grave]:hover:not(:disabled) { color: var(--fault); border-color: var(--fault); background: none; }

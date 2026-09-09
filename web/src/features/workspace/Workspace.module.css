@@ -87,13 +87,25 @@
 /* The whole strip is the control, so the target is the width of the column rather than a
    chevron. Quiet: it names a region that is already obvious from what is under it, and its job
    is to be findable, not to be read. */
+/* The strip: the fold, and what the region keeps at the end of it.
+   The fold takes every pixel the tools leave, so a region with none is a strip that is entirely
+   the control it always was. */
+.regionStrip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 8px;
+}
+
 .regionHead {
   all: unset;
   display: flex;
   align-items: center;
   gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
   cursor: pointer;
-  padding: 4px 20px 4px 12px;
+  padding: 4px 8px 4px 12px;
   font-family: var(--mono);
   font-size: var(--t-micro);
   font-weight: 600;
@@ -120,6 +132,17 @@
    sideways as the number gets a digit is a strip that flickers. */
 .regionCount { flex: none; font-variant-numeric: tabular-nums; }
 .regionLabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Held against the end of the strip, and never squeezed: what is in here is a search box that
+   grows when it is opened and a control or two beside it, and the name they stand next to is the
+   part that can afford to be cut. */
+.regionTools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
 
 /* ---- narrower than three columns ---- */
 

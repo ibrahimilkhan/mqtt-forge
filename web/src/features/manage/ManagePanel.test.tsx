@@ -148,9 +148,26 @@ describe('the screen for what is being held', () => {
       panel();
 
       await userEvent.click(screen.getByRole('button', { name: 'Clear traffic' }));
+      await userEvent.click(screen.getByRole('button', { name: /^Yes, clear/ }));
 
       expect(useLogStore.getState().held).toBe(0);
       expect(useTopicTreeStore.getState().root.subTopics).toBe(0);
+    });
+
+    // A session's worth of what the console has seen, and the broker cannot give it back.
+    it('asks before it empties either of them, and takes Cancel for an answer', async () => {
+      landed(message('a/one'));
+      panel();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Clear traffic' }));
+
+      expect(useLogStore.getState().held).toBe(1);
+      expect(screen.getByText(/Nothing here can put them back/)).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      expect(useLogStore.getState().held).toBe(1);
+      expect(screen.getByRole('button', { name: 'Clear traffic' })).toBeInTheDocument();
     });
 
     it('clears the record of what the link has done', async () => {
@@ -158,6 +175,7 @@ describe('the screen for what is being held', () => {
       panel();
 
       await userEvent.click(screen.getByRole('button', { name: 'Clear events' }));
+      await userEvent.click(screen.getByRole('button', { name: /^Yes, clear/ }));
 
       expect(useBrokerEventsStore.getState().events).toEqual([]);
     });

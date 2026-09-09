@@ -17,7 +17,7 @@ import { HealthStrip } from './features/health/HealthStrip';
 import { useAppearanceStore } from './stores/appearanceStore';
 import { TrafficPane } from './features/monitor/TrafficPane';
 import { useZoomStore } from './features/monitor/useZoom';
-import { LogCount, WireLog } from './features/monitor/WireLog';
+import { LogCount, LogTools, WireLog } from './features/monitor/WireLog';
 import { TopicTree } from './features/topics/TopicTree';
 import { Warning } from './features/brand/icons';
 import { PANELS, type PanelId } from './features/panels';
@@ -331,6 +331,7 @@ export function App({ hub }: { hub: Hub }) {
           </section>
         }
         logCount={<LogCount />}
+        logTools={<LogTools />}
         chart={
           // Thrown open, the region leaves the column and takes the window. The strip that folds
           // it stays where it was, so the column does not rearrange itself underneath.

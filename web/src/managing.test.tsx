@@ -292,6 +292,7 @@ describe('emptying the console', () => {
 
     await goTo('Manage');
     await userEvent.click(panelNamed('Manage panel').getByRole('button', { name: 'Clear traffic' }));
+    await userEvent.click(panelNamed('Manage panel').getByRole('button', { name: /^Yes, clear/ }));
 
     expect(useLogStore.getState().held).toBe(0);
     expect(within(tree()).getByText(/No topics yet/)).toBeInTheDocument();
@@ -305,6 +306,7 @@ describe('emptying the console', () => {
     await userEvent.type(screen.getByLabelText('Search the log'), 'zzz');
 
     await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    await userEvent.click(screen.getByRole('button', { name: /^Yes, clear/ }));
 
     expect(useLogStore.getState().held).toBe(0);
     expect(screen.getByLabelText('Search the log')).toHaveValue('');

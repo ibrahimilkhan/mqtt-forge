@@ -43,6 +43,8 @@ type Props = {
   wide?: 'full' | 'fill';
   tree: ReactNode;
   log: ReactNode;
+  /** The log's own two controls, which stand at the end of its strip. */
+  logTools?: ReactNode;
   /**
    * A word beside the Log region's own name in its strip — its count, and the only thing the
    * strip says while the region is folded and the pane is gone.
@@ -105,7 +107,7 @@ const clamp = (value: number, low: number, high: number) => Math.min(high, Math.
  */
 const CEILING = 1 - 2 * MIN_SHARE;
 
-export function Workspace({ panel, wide, tree, log, logCount, chart, publish }: Props) {
+export function Workspace({ panel, wide, tree, log, logCount, logTools, chart, publish }: Props) {
   // Held as the row looks with a panel open, so closing and reopening one puts it back as it was.
   const [widths, setWidths] = useState<Widths>(START);
 
@@ -454,6 +456,7 @@ export function Workspace({ panel, wide, tree, log, logCount, chart, publish }: 
           id="log"
           label="Log"
           count={logCount}
+          tools={logTools}
           open={open('log')}
           alone={alone}
           onFold={fold}
@@ -536,6 +539,7 @@ function Region({
   id,
   label,
   count,
+  tools,
   open,
   alone,
   onFold,
@@ -546,6 +550,8 @@ function Region({
   label: string;
   /** Beside the name, for a region that has a count to give. */
   count?: ReactNode;
+  /** At the far end of the strip, for a region with something to do to what is under it. */
+  tools?: ReactNode;
   open: boolean;
   /** Folding this one would leave the column empty, so the control says so rather than doing it. */
   alone: boolean;
@@ -565,6 +571,11 @@ function Region({
       // over it to reach whatever does. See ResizeHandle's own measurement.
       data-folded={open ? undefined : ''}
     >
+    {/* The strip is the fold and whatever the region keeps at the end of it. The fold used to be
+        the whole strip, and the log's own two controls stood on a second line under it — a line
+        of chrome above every list of messages. The fold still takes everything the tools leave,
+        which is all of the strip on the two regions that have none. */}
+    <div className={styles.regionStrip}>
       <button
         type="button"
         className={styles.regionHead}
@@ -588,6 +599,10 @@ function Region({
             lie. */}
         {count !== undefined && <span className={styles.regionCount}>{count}</span>}
       </button>
+
+      {/* Only while the region is open: there is nothing to search or empty under a folded one. */}
+      {open && tools !== undefined && <div className={styles.regionTools}>{tools}</div>}
+    </div>
 
       {/* Unmounted rather than hidden: a folded log is a list of a thousand rows that no longer
           has to be laid out on every arrival. */}
