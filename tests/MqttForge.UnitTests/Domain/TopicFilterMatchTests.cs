@@ -54,15 +54,25 @@ public class TopicFilterMatchTests
     }
 
     [Fact]
-    public void A_dollar_topic_is_matched_by_a_bare_wildcard()
+    public void A_dollar_topic_is_not_matched_by_a_filter_that_opens_with_a_wildcard()
     {
-        // MQTT says a broker should not deliver $SYS to a wildcard subscription, and topicMatch.ts
-        // carries no rule about it. Neither does this, and deliberately: this function is asked
-        // about messages that have already arrived, so the broker has already had its say. A '$'
-        // rule here would make the engine ignore traffic the broker chose to send us, and a
-        // silence rule over a filter the log is visibly full of would sit there saying nothing.
-        Assert.True(TopicFilterMatch.Matches("#", "$SYS/broker/uptime"));
-        Assert.True(TopicFilterMatch.Matches("+/broker/uptime", "$SYS/broker/uptime"));
+        // This used to answer true, on the grounds that the function is asked about messages that
+        // have already arrived and the broker has therefore already had its say about them. The
+        // broker's say is per subscription, and the engine does not have one per rule: every rule
+        // and the console itself share a connection, so what arrives under the console's own
+        // '$SYS/#' is offered to every rule there is. Tick Subscribe $SYS — a box in the Broker
+        // panel, not a filter somebody had to type — and a rule reading '+/broker/#' was handed
+        // twenty-nine of the broker's statistics and stood an alarm on each of them.
+        //
+        // A rule that names the tree still reaches it, which is the case the old note was
+        // protecting: only a filter that opens with a wildcard is turned away, exactly as a broker
+        // turns one away. TopicFilterCover has always said so; these two now agree with it.
+        Assert.False(TopicFilterMatch.Matches("#", "$SYS/broker/uptime"));
+        Assert.False(TopicFilterMatch.Matches("+/broker/uptime", "$SYS/broker/uptime"));
+        Assert.True(TopicFilterMatch.Matches("$SYS/#", "$SYS/broker/uptime"));
+        Assert.True(TopicFilterMatch.Matches("$SYS/+/uptime", "$SYS/broker/uptime"));
+        // The rule is about the first level only: a '$' deeper in a topic is an ordinary segment.
+        Assert.True(TopicFilterMatch.Matches("#", "plant/$odd/temp"));
     }
 
     [Fact]

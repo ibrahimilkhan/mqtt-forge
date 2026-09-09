@@ -40,6 +40,20 @@ public static class TopicFilterMatch
         // written, and a rule carrying one should be silent rather than deafening.
         if (string.IsNullOrEmpty(filter)) return false;
 
+        // A filter that opens with a wildcard cannot reach a topic that opens with '$'.
+        //
+        // The specification's rule, and the engine has to keep it because the broker does: no
+        // broker delivers '$SYS/broker/uptime' under '#', so the only way one reaches this method
+        // is the console's own second subscription — and a rule reading '+/broker/#' was then
+        // handed twenty-nine of the broker's own statistics and stood an alarm on each. See
+        // TopicFilterCover, which has had this rule since it was written, and topicMatch.ts,
+        // which is this method in TypeScript and carries the same three lines.
+        var opens = filter[0];
+        if ((opens == '#' || opens == '+')
+            && (filter.Length == 1 || filter[1] == '/')
+            && topic.StartsWith('$'))
+            return false;
+
         var f = 0;
         var t = 0;
         var topicDone = false;

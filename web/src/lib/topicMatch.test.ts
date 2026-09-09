@@ -30,6 +30,27 @@ describe('matchesFilter', () => {
     expect(matchesFilter('#', 'sensors/room/temp')).toBe(true);
   });
 
+  // The specification's rule, and the console keeps it because the broker does: nobody's
+  // statistics arrive under '#', which is why Subscribe $SYS is a filter of its own. Without it
+  // the two subscriptions the console holds were handed to each other's rules — a colour rule
+  // reading '+/broker/#' painted the broker's own tree, and an alert rule with that filter stood
+  // an alarm on every load average under it.
+  it('keeps a filter that opens with a wildcard off the broker\'s own tree', () => {
+    expect(matchesFilter('#', '$SYS/broker/uptime')).toBe(false);
+    expect(matchesFilter('+/broker/uptime', '$SYS/broker/uptime')).toBe(false);
+  });
+
+  it('reaches that tree for a filter that names it', () => {
+    expect(matchesFilter('$SYS/#', '$SYS/broker/uptime')).toBe(true);
+    expect(matchesFilter('$SYS/+/uptime', '$SYS/broker/uptime')).toBe(true);
+  });
+
+  // The rule is about the first level only: a '$' deeper in a topic is an ordinary segment.
+  it('leaves a $ below the first level alone', () => {
+    expect(matchesFilter('#', 'plant/$odd/temp')).toBe(true);
+    expect(matchesFilter('plant/+/temp', 'plant/$odd/temp')).toBe(true);
+  });
+
   it('rejects a topic shorter than the filter', () => {
     expect(matchesFilter('sensors/room/temp', 'sensors/room')).toBe(false);
   });
