@@ -1,4 +1,4 @@
-import { fireEvent, screen } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithClient as render } from '../../test/renderWithClient';
@@ -531,5 +531,58 @@ describe('the distribution of a run that never moved', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Distribution' }));
 
     expect(screen.getAllByTestId('bin').length).toBeGreaterThan(1);
+  });
+});
+
+/**
+ * The header of the file the chart writes.
+ *
+ * The column is named after a topic or a JSON field, and neither is this console's to choose:
+ * MQTT allows a comma in a topic name and JSON allows one in a key. Written straight into the
+ * header, one of those turns one column into two for every reader of the file.
+ */
+describe('the csv a chart saves', () => {
+  const withTopic = (topic: string): LogEntry[] =>
+    Array.from({ length: 4 }, (_, i) => ({
+      id: nextId++,
+      kind: 'recv' as const,
+      at: new Date(Date.UTC(2026, 0, 1, 12, 0, i)),
+      topic,
+      body: `${20 + i}`,
+    }));
+
+  /** What the chart hands the exporter, read off the download it falls back to. */
+  async function saved(topic: string): Promise<string> {
+    let written = '';
+    const create = vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+      void (blob as Blob).text().then((text) => (written = text));
+      return 'blob:csv';
+    });
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+
+    render(<TrafficChart runs={asRuns(withTopic(topic))} />);
+    await userEvent.click(screen.getByRole('button', { name: /csv/i }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    await waitFor(() => expect(written).not.toBe(''));
+
+    return written;
+  }
+
+  it('quotes a topic carrying a comma, so the column stays one column', async () => {
+    const text = await saved('plant/boiler,spare/temp');
+
+    expect(text.split('\n')[0]).toBe('time,"plant/boiler,spare/temp"');
+  });
+
+  it('doubles a quote inside the name', async () => {
+    const text = await saved('plant/"main"/temp');
+
+    expect(text.split('\n')[0]).toBe('time,"plant/""main""/temp"');
+  });
+
+  it('leaves an ordinary name alone', async () => {
+    const text = await saved('plant/boiler/temp');
+
+    expect(text.split('\n')[0]).toBe('time,plant/boiler/temp');
   });
 });

@@ -788,8 +788,20 @@ const fileName = (series: Series) =>
 function csv(series: Series): string {
   const rows = series.readings.map((reading) => `${reading.at.toISOString()},${reading.value}`);
 
-  return [`time,${series.field ?? series.topic}`, ...rows].join('\n');
+  return [`time,${cell(series.field ?? series.topic)}`, ...rows].join('\n');
 }
+
+/**
+ * One CSV cell, quoted when it has to be.
+ *
+ * The column this names is a topic or a JSON field, and neither is under this console's control:
+ * MQTT allows a comma in a topic name and JSON allows one in a key, and a comma written straight
+ * into the header turns one column into two for every reader of the file. Quotes are doubled and
+ * the whole thing wrapped, which is RFC 4180 and what every spreadsheet expects. The readings
+ * themselves are an instant and a number, so nothing below the header can need this.
+ */
+const cell = (text: string): string =>
+  /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 
 /** Whether a name is longer than a chip holds, and so is drawn with two dots on the end. */
 const clipped = (name: string) => clip(name) !== name;
