@@ -212,6 +212,11 @@
    the link's own colour, which on that grey is a green nobody can see. A darker blue says the
    same 'yes, this one' and leaves both of them legible. */
 .menuBtn[aria-expanded="true"]:hover:not(:disabled) {
+  /* The label with it. `.menuBtn:hover` sets `color: var(--ink)` and outranks the open row's own
+     `color: var(--surface)` by a pseudo-class, so pointing at the panel you already have open
+     put near-black type on deep blue: 1.5:1, which is a row with nothing readable on it. Said
+     here, where the specificity is the open row's and the hover's both. */
+  color: var(--surface);
   background: color-mix(in srgb, var(--signal) 86%, var(--ink));
   border-color: color-mix(in srgb, var(--signal) 86%, var(--ink));
 }

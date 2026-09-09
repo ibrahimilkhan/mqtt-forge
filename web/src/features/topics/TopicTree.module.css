@@ -94,6 +94,14 @@
 .node[data-selected="true"]:hover {
   box-shadow: inset 2px 0 0 var(--rule-colour, var(--muted)), 0 1px 4px rgb(19 26 36 / 0.14);
 }
+/* The secondary ink on the one row that fills.
+   Everything faint on a row is written for the pane's own ground; on the selected row it stands
+   on --rule instead, where --muted comes to 3.4:1 — under the line for type this size — and the
+   '=' between a topic and its value is drawn in --rule itself and disappears altogether. Each is
+   moved by exactly the distance the ground moved. */
+.node[data-selected="true"] .meta,
+.node[data-selected="true"] .twisty { color: color-mix(in srgb, var(--muted) 55%, var(--ink)); }
+.node[data-selected="true"] .val:not(:empty)::before { color: var(--muted); }
 /* Two buttons, both need the app's reset: twisty opens the branch, the rest picks it. */
 .twisty,
 .pick { all: unset; cursor: pointer; }

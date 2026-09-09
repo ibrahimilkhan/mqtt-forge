@@ -157,9 +157,20 @@
   p, h1, h2, h3, h4, li, dt, dd, td, th, code, pre,
   input, textarea, [data-copy] { user-select: text; }
 
-  button:hover:not(:disabled) { background: var(--muted); border-color: var(--muted); }
+  /* Hovering strengthens.
+     Both of these used to land on --muted, which is the one value in the palette that is wrong
+     for either ink: white on it is 4.8:1 and near-black on it is 3.6:1, so the console's own
+     Publish went from 17.5:1 at rest to 4.8:1 under the pointer — the primary action fading as
+     the reader reached for it — and every bare button that kept its own dark ink fell below the
+     line. A filled button takes the console's blue, which is what it already wears when it is
+     on; a ghost takes a wash of that blue and keeps the ink it had. */
+  button:hover:not(:disabled) { background: var(--signal); border-color: var(--signal); }
   button.ghost { background: transparent; color: var(--ink); }
-  button.ghost:hover:not(:disabled) { background: var(--muted); border-color: var(--muted); color: var(--surface); }
+  button.ghost:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--signal) 12%, var(--surface));
+    border-color: var(--signal);
+    color: var(--ink);
+  }
   button:disabled { opacity: 0.35; cursor: not-allowed; }
 
   /* .note lives in styles/panel.module.css: every consumer is inside a panel. */
