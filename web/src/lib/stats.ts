@@ -237,7 +237,14 @@ export type Cadence = {
  * average of them: one reconnection should not turn a second-by-second sensor into a slow one.
  */
 export function cadence(times: Date[]): Cadence | null {
-  if (times.length < 2) return null;
+  // Three gaps, not one.
+  //
+  // A median over a single number is that number, so two arrivals a millisecond apart were a
+  // topic 'publishing every millisecond' — and a topic with a rhythm is a topic whose silence
+  // means something, so the next reading of it was three milliseconds overdue and the chart said
+  // so for as long as it was on screen. Two messages back to back and then nothing is the
+  // ordinary shape of a retained pair, not a sensor that has stopped.
+  if (times.length < 4) return null;
 
   const gaps: number[] = [];
   for (let i = 1; i < times.length; i++) gaps.push(times[i].getTime() - times[i - 1].getTime());

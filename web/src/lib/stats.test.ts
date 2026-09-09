@@ -218,6 +218,15 @@ describe('cadence', () => {
     expect(cadence(at(0))).toBeNull();
   });
 
+  // One gap is a coincidence: the median of a single number is that number, and a pair of
+  // arrivals a millisecond apart was read as a topic publishing every millisecond — which then
+  // counted as overdue three milliseconds later, for as long as the chart was on screen.
+  it('has nothing to say until there are three gaps to take the middle of', () => {
+    expect(cadence(at(0, 1))).toBeNull();
+    expect(cadence(at(0, 1, 2))).toBeNull();
+    expect(cadence(at(0, 1, 2, 3))?.every).toBe(1000);
+  });
+
   // Batched arrivals share a timestamp, and 'every 0ms' is not a cadence.
   it('has nothing to say when every arrival shares one instant', () => {
     expect(cadence(at(0, 0, 0))).toBeNull();
