@@ -33,6 +33,22 @@ export function TrafficHistogram({
   const tallest = Math.max(...bins.map((bin) => bin.count));
   const width = SIDE / bins.length;
 
+  /*
+   * A run with no spread has no distribution to draw.
+   *
+   * One bin holding everything is a rectangle the width and the height of the plot — a grey block
+   * with an axis reading 21.5 at both ends, which is what a broken chart looks like rather than
+   * what forty identical readings look like. The line view says this in words already ('one
+   * message', 'not sending numbers'); this is the same answer for the same reason.
+   */
+  if (summary.high === summary.low) {
+    return (
+      <p className="empty" data-testid="unchartable" data-reason="no-spread">
+        No spread — every reading is {short(summary.low)}.
+      </p>
+    );
+  }
+
   return (
     <div className={styles.frame}>
       {/* Counts, not readings: the axis changed with the view, so the labels on it change too. */}

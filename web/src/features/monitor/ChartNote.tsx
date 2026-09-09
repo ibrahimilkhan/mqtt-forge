@@ -315,7 +315,7 @@ function offScale(domain: Domain): Slot {
     title:
       outside === 0
         ? `every reading fits between ${short(domain.low)} and ${short(domain.high)}`
-        : `${outside} reading${outside === 1 ? '' : 's'} outside ${short(domain.low)} to ${short(domain.high)}, drawn on the edge they went past — switch the range to Extremes to see them where they are`,
+        : `${outside} reading${outside === 1 ? '' : 's'} outside ${short(domain.low)} to ${short(domain.high)}, drawn on the edge they went past; a wider range puts them back where they are`,
     tone: outside === 0 ? 'reading' : 'alarm',
   };
 }

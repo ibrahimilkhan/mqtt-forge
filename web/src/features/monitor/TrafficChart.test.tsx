@@ -490,3 +490,46 @@ describe('the range that was asked for, and the one that was drawn', () => {
     expect(screen.getByTestId('reading-scale').textContent).toBe('—');
   });
 });
+
+/**
+ * A run with no spread has no distribution.
+ *
+ * One bin holding every reading is a rectangle the width and the height of the plot: a grey block
+ * under an axis reading 21.5 at both ends, which is what a broken chart looks like rather than
+ * what forty identical readings look like.
+ */
+describe('the distribution of a run that never moved', () => {
+  const flat = (count = 12): LogEntry[] =>
+    Array.from({ length: count }, (_, i) => ({
+      id: nextId++,
+      kind: 'recv' as const,
+      at: new Date(Date.now() - i * 1000),
+      topic: 'sensors/temp',
+      body: '21.5',
+    }));
+
+  it('says so rather than drawing one bin over the whole plot', async () => {
+    render(<TrafficChart runs={asRuns(flat())} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Distribution' }));
+
+    expect(screen.getByTestId('unchartable')).toHaveTextContent('No spread — every reading is 21.5.');
+    expect(screen.queryByTestId('bin')).not.toBeInTheDocument();
+  });
+
+  it('still draws the bars when there is a spread to draw', async () => {
+    const spread = Array.from({ length: 12 }, (_, i) => ({
+      id: nextId++,
+      kind: 'recv' as const,
+      at: new Date(Date.now() - i * 1000),
+      topic: 'sensors/temp',
+      body: `${20 + i}`,
+    }));
+
+    render(<TrafficChart runs={asRuns(spread)} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Distribution' }));
+
+    expect(screen.getAllByTestId('bin').length).toBeGreaterThan(1);
+  });
+});
