@@ -199,6 +199,16 @@ export type PublishRequest = {
   userProperties?: ReadonlyArray<{ name: string; value: string }>;
 };
 
+/** What MQTT 5 carried with a message, in either direction. Absent on nearly every message. */
+export type MessageProperties = {
+  contentType?: string | null;
+  responseTopic?: string | null;
+  /** Bytes on the wire; the server hands them over as the text they spell. */
+  correlationData?: string | null;
+  messageExpiryInterval?: number | null;
+  userProperties?: ReadonlyArray<{ name: string; value: string }> | null;
+};
+
 export type MqttMessage = {
   topic: string;
   payload: string;
@@ -207,6 +217,8 @@ export type MqttMessage = {
   qos: number;
   retain: boolean;
   receivedAt: string;
+  /** Left off the frame entirely where the message carried none, which is the ordinary case. */
+  properties?: MessageProperties;
 };
 
 // ---- alerting ----

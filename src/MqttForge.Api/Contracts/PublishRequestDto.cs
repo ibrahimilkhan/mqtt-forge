@@ -46,9 +46,9 @@ public record PublishRequestDto(
     /// blank is a field they did not fill in, and sending `contentType: ""` says something about
     /// the payload that is not true.
     /// </summary>
-    private PublishProperties? Properties()
+    private MessageProperties? Properties()
     {
-        var properties = new PublishProperties(
+        var properties = new MessageProperties(
             Said(ContentType),
             Said(ResponseTopic),
             Said(CorrelationData) is { } correlation ? Encoding.UTF8.GetBytes(correlation) : null,

@@ -4,6 +4,7 @@ import { describeError } from '../lib/problemDetails';
 import { matchesFilter } from '../lib/topicMatch';
 import type { BodyMode } from '../lib/payload';
 import type { DecodedMessage } from '../realtime/decodeIncoming';
+import type { MessageProperties } from '../types/api';
 import { TopicRing } from './topicRing';
 
 /**
@@ -139,6 +140,13 @@ export type LogEntry = {
    * A window that opens one message has to be able to say 1024 bytes.
    */
   size?: number;
+  /**
+   * What MQTT 5 sent with the message.
+   *
+   * Absent on nearly every entry — every one on a 3.1.1 link, and most on a 5.0 one — so it costs
+   * a run of five thousand messages one undefined field each rather than an object each.
+   */
+  properties?: MessageProperties;
 };
 
 type NewLogEntry = Omit<LogEntry, 'id' | 'at'>;
@@ -486,6 +494,7 @@ function toEntry(message: DecodedMessage): LogEntry {
     mode: message.mode,
     // Counted where the bytes were still bytes — see payloadSize below, and `size` on the type.
     size: message.size,
+    properties: message.properties,
   };
 }
 

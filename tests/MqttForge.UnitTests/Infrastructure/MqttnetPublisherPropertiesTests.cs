@@ -38,10 +38,10 @@ public class MqttnetPublisherPropertiesTests
             .First(call => call.GetMethodInfo().Name == nameof(IMqttClient.PublishAsync))
             .GetArguments()[0]!;
 
-    private static PublishRequest Message(PublishProperties? properties) =>
+    private static PublishRequest Message(MessageProperties? properties) =>
         new("sensors/temp", "23.5"u8.ToArray(), 0, false, properties);
 
-    private static readonly PublishProperties Everything = new(
+    private static readonly MessageProperties Everything = new(
         "application/json",
         "sensors/temp/reply",
         "abc-123"u8.ToArray(),

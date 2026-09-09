@@ -7,12 +7,14 @@ import { server } from '../../test/server';
 import { byteLength } from '../../lib/payload';
 import type { DecodedMessage } from '../../realtime/decodeIncoming';
 import { useComposeStore } from '../../stores/composeStore';
-import { useLogStore } from '../../stores/logStore';
+import { useLogStore, type LogEntry } from '../../stores/logStore';
 import { useSelectionStore } from '../../stores/selectionStore';
+import type { MessageProperties } from '../../types/api';
 import { useWindows } from './useWindows';
 import { useZoomStore } from './useZoom';
 import { WireLog } from './WireLog';
 import { Windows } from './Windows';
+import { MessageDetail } from './MessageDetail';
 
 const chip = { label: 'sensors/#', filter: 'sensors/#' };
 
@@ -577,5 +579,80 @@ describe('the message colour in an opened window', () => {
 
     await waitFor(() => expect(screen.getByTestId('summary')).toHaveTextContent('sensors/#'));
     expect(body().style.color).toBe('');
+  });
+});
+
+/**
+ * What MQTT 5 sent with the message.
+ *
+ * The console can send all five from the publish form; a reader who sends a request with a
+ * correlation id and a reply-to needs to read them back off the reply, or the round trip is only
+ * half a tool.
+ */
+describe('the properties an arrival carried', () => {
+  const arrival = (properties?: MessageProperties): LogEntry => ({
+    id: 1,
+    kind: 'recv',
+    at: new Date('2026-09-10T01:00:00Z'),
+    topic: 'mqtt5/istek',
+    body: '{"c":21.5}',
+    qos: 0,
+    retain: false,
+    size: 10,
+    properties,
+  });
+
+  it('says nothing at all about a message that carried none', () => {
+    render(<MessageDetail entry={arrival()} />);
+
+    expect(screen.queryByTestId('message-properties')).not.toBeInTheDocument();
+  });
+
+  it('names the four the specification names', () => {
+    render(
+      <MessageDetail
+        entry={arrival({
+          contentType: 'application/json',
+          responseTopic: 'mqtt5/cevap',
+          correlationData: btoa('istek-42'),
+          messageExpiryInterval: 120,
+        })}
+      />,
+    );
+
+    const block = within(screen.getByTestId('message-properties'));
+    expect(block.getByText('content type')).toBeInTheDocument();
+    expect(block.getByText('application/json')).toBeInTheDocument();
+    expect(block.getByText('reply to')).toBeInTheDocument();
+    expect(block.getByText('correlation')).toBeInTheDocument();
+    // Read as the request id the bytes spell, not as the base64 they arrived in.
+    expect(block.getByText('istek-42')).toBeInTheDocument();
+    expect(block.getByText('120 s')).toBeInTheDocument();
+  });
+
+  it('lists the names and values the device sent, under them', () => {
+    render(
+      <MessageDetail
+        entry={arrival({
+          userProperties: [
+            { name: 'source', value: 'gateway' },
+            { name: 'trace', value: '91a4' },
+          ],
+        })}
+      />,
+    );
+
+    const block = within(screen.getByTestId('message-properties'));
+    expect(block.getByText('source')).toBeInTheDocument();
+    expect(block.getByText('gateway')).toBeInTheDocument();
+    expect(block.getByText('trace')).toBeInTheDocument();
+  });
+
+  // Zero is the default for the interval and means 'no expiry', which is not a fact about the
+  // message worth a line of its own.
+  it('leaves out an expiry of nought', () => {
+    render(<MessageDetail entry={arrival({ messageExpiryInterval: 0 })} />);
+
+    expect(screen.queryByTestId('message-properties')).not.toBeInTheDocument();
   });
 });

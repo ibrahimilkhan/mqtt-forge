@@ -320,3 +320,28 @@
 @container detail (width < 24rem) {
   .index { display: none; }
 }
+
+/* What MQTT 5 sent with the message: a label and a value a line at a time, between the head and
+   the payload. A grid rather than a flow, so the values line up down the left however long the
+   labels beside them are — and a label column that takes only what the longest label needs, since
+   `content type` is the longest one the specification names and a device's own may be a word. */
+.properties {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 12px;
+  margin: 0 0 12px;
+  font-family: var(--mono);
+  font-size: var(--t-small);
+}
+.properties > div { display: contents; }
+.properties dt {
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.properties dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}

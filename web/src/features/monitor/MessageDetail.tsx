@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Check, Copy, Fold, Unfold } from '../brand/icons';
 import { copyText } from '../../lib/copyText';
+import { correlationText } from '../../lib/correlation';
 import { checkJson, formatJson } from '../../lib/payload';
 import { useRuleLookup } from '../../lib/useRuleLookup';
 import type { LogEntry } from '../../stores/logStore';
+import type { MessageProperties } from '../../types/api';
 import { branches, JsonTree, MOST_ROWS, rowCount, topOf, type Json, type Top } from './JsonTree';
 import { Topic } from './LogEntryRow';
 import styles from './MessageDetail.module.css';
@@ -78,8 +80,52 @@ export function MessageDetail({ entry }: { entry: LogEntry }) {
         )}
       </div>
 
+      <Properties of={entry.properties} />
+
       <Payload entry={entry} bodyColour={rule?.bodyColour ?? null} />
     </div>
+  );
+}
+
+/**
+ * What MQTT 5 sent with the message.
+ *
+ * Between the head and the payload, and only when there is something to say: the great majority
+ * of messages carry none of this, and a block of empty rows over every arrival would be five
+ * lines saying nothing on a window opened to read one line that says something.
+ *
+ * The names and values last, because they are the open-ended half — a device may send a dozen —
+ * and the four the specification names are the ones a reader is looking for.
+ */
+function Properties({ of }: { of: MessageProperties | undefined }) {
+  if (!of) return null;
+
+  const named = of.userProperties ?? [];
+  const rows: Array<[string, ReactNode]> = [
+    ...(of.contentType ? ([['content type', of.contentType]] as Array<[string, ReactNode]>) : []),
+    ...(of.responseTopic
+      ? ([['reply to', <Topic key="reply" topic={of.responseTopic} />]] as Array<[string, ReactNode]>)
+      : []),
+    ...(of.correlationData
+      ? ([['correlation', correlationText(of.correlationData)]] as Array<[string, ReactNode]>)
+      : []),
+    ...(of.messageExpiryInterval
+      ? ([['expiry', `${of.messageExpiryInterval.toLocaleString('en-GB')} s`]] as Array<[string, ReactNode]>)
+      : []),
+    ...named.map(({ name, value }) => [name, value] as [string, ReactNode]),
+  ];
+
+  if (rows.length === 0) return null;
+
+  return (
+    <dl className={styles.properties} data-testid="message-properties">
+      {rows.map(([label, value], at) => (
+        <div key={`${label}-${at}`}>
+          <dt>{label}</dt>
+          <dd data-copy>{value}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 

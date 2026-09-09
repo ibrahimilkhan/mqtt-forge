@@ -1,5 +1,5 @@
 import { byteLength, hexFromBase64, type BodyMode } from '../lib/payload';
-import type { MqttMessage } from '../types/api';
+import type { MessageProperties, MqttMessage } from '../types/api';
 
 /** An arrival as the rest of the app holds it: a body to show, and how that body is written. */
 export type DecodedMessage = {
@@ -11,6 +11,8 @@ export type DecodedMessage = {
   qos: number;
   retain: boolean;
   receivedAt: string;
+  /** What MQTT 5 sent with it. Absent on nearly every message, and on all of them on 3.1.1. */
+  properties?: MessageProperties;
 };
 
 /**
@@ -18,11 +20,11 @@ export type DecodedMessage = {
  * from here, so neither has to know the wire carries two kinds of body.
  */
 export function decodeIncoming(message: MqttMessage): DecodedMessage {
-  const { topic, qos, retain, receivedAt } = message;
+  const { topic, qos, retain, receivedAt, properties } = message;
 
   if (message.payloadEncoding === 'base64') {
     const { text, size } = hexFromBase64(message.payload);
-    return { topic, payload: text, mode: 'hex', size, qos, retain, receivedAt };
+    return { topic, payload: text, mode: 'hex', size, qos, retain, receivedAt, properties };
   }
 
   return {
@@ -33,5 +35,6 @@ export function decodeIncoming(message: MqttMessage): DecodedMessage {
     qos,
     retain,
     receivedAt,
+    properties,
   };
 }

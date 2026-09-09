@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 using MqttForge.Domain;
 using MqttForge.Domain.Abstractions;
 using MqttForge.Domain.Enums;
@@ -437,9 +438,35 @@ public sealed class MqttnetSubscriber : IMqttSubscriber, ISubscriptionRestorer
             (int)e.ApplicationMessage.QualityOfServiceLevel,
             e.ApplicationMessage.Retain,
             now,
-            Replay: e.ApplicationMessage.Retain && JustSubscribed(e.ApplicationMessage.Topic, now));
+            Replay: e.ApplicationMessage.Retain && JustSubscribed(e.ApplicationMessage.Topic, now),
+            Properties: PropertiesOf(e.ApplicationMessage));
 
         return _notifier.NotifyMessageReceivedAsync(message);
+    }
+
+    /// <summary>
+    /// What MQTT 5 sent with the message, and null where it sent none.
+    ///
+    /// Null rather than an object of nulls, and the reason is the wire: a console watching a
+    /// firehose reads two thousand messages in a frame, and an empty properties object in each of
+    /// them is a field nobody asked for two thousand times. MQTTnet leaves every one of these
+    /// unset on a 3.1.1 link, so this answers null there without asking about the version.
+    /// </summary>
+    private static MessageProperties? PropertiesOf(MqttApplicationMessage message)
+    {
+        var properties = new MessageProperties(
+            message.ContentType,
+            message.ResponseTopic,
+            message.CorrelationData?.ToArray(),
+            // Zero is the default and means 'no expiry', which is not the same fact as a message
+            // that was given one — and a console reporting `expiry 0` on every arrival would be
+            // reporting the absence of a property as a property.
+            message.MessageExpiryInterval == 0 ? null : message.MessageExpiryInterval,
+            message.UserProperties?
+                .Select(one => new UserProperty(one.Name, Encoding.UTF8.GetString(one.ValueBuffer.Span)))
+                .ToList());
+
+        return properties.Any ? properties : null;
     }
 
     /// <summary>Whether a filter covering this topic was granted inside the replay window.</summary>
