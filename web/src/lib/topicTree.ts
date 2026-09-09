@@ -468,6 +468,15 @@ export function retainedTopics(root: TopicNode): string[] {
 
   const walk = (node: TopicNode, path: string) => {
     for (const name of node.order) {
+      // The broker's own tree is not the reader's to clear. Mosquitto publishes every one of its
+      // `$SYS` statistics retained, so a console that has ticked Subscribe $SYS counted fifty-six
+      // of them among what the broker is holding, offered to clear them, and reported clearing
+      // them: a client may not publish under `$`, so the empty messages went nowhere, the broker
+      // republished the lot ten seconds later, and the figure sat where it was under a sentence
+      // saying it had been emptied. Skipped at the root, since `$SYS/broker` is only reserved
+      // because `$SYS` is.
+      if (path === '' && name.startsWith('$')) continue;
+
       const child = node.children.get(name)!;
       const here = path === '' ? name : `${path}/${name}`;
       if (child.hits > 0 && child.latestRetain && child.latestPayload) found.push(here);

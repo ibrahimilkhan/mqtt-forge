@@ -341,6 +341,22 @@ describe('telling the broker to forget what it is holding', () => {
     expect(sent.every((one) => one.payload === '' && one.retain === true)).toBe(true);
   });
 
+  // Mosquitto publishes every one of its statistics retained, so a console that has ticked
+  // Subscribe $SYS counted them among what the broker is holding and offered to clear them. A
+  // client may not publish under `$`: the empty messages went nowhere, the broker republished the
+  // lot ten seconds later, and the figure sat where it was under a sentence saying it had been
+  // emptied.
+  it('leaves the broker\'s own tree out of what it offers to clear', async () => {
+    const { send } = await openConsole();
+    send(...PLANT, ['$SYS/broker/clients/connected', '3', true], ['$SYS/broker/uptime', '90 seconds', true]);
+
+    await goTo('Manage');
+    const manage = panelNamed('Manage panel');
+
+    await waitFor(() => expect(retained(manage)).toHaveTextContent('2'));
+    expect(manage.getByRole('button', { name: 'Clear retained' })).toBeEnabled();
+  });
+
   // The emptying comes back down the console's own subscription, and that is what puts the
   // count right — the figure says what the broker is holding as far as this console was told.
   it('stops counting the topics once the emptying arrives back', async () => {
