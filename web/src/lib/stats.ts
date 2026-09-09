@@ -47,14 +47,20 @@ export function summarise(values: number[]): Summary | null {
     q1,
     q3,
     fences,
-    // A run that never moved has no box to measure a fence against, so nothing is far from it.
-    outliers:
-      iqr === 0
-        ? []
-        : values.reduce<number[]>((found, value, index) => {
-            if (value < fences.low || value > fences.high) found.push(index);
-            return found;
-          }, []),
+    /* Readings outside the fences, which is what the note says this is — including where the
+     * fences have closed to a point.
+     *
+     * A run whose middle half is one value used to be exempted, on the grounds that a run which
+     * never moved has no box to measure a fence against. A run that never moved has nothing
+     * outside its fences either, so the exemption never protected that run: what it caught was
+     * the run that moves rarely — a valve at rest that opens twice an hour, a queue at zero with
+     * a spike in it — where the excursion is the one thing in the run worth counting, and the
+     * note said `fences 2–2` and `outliers 0` in the same breath. */
+    outliers: values.reduce<number[]>((found, value, index) => {
+      if (value < fences.low || value > fences.high) found.push(index);
+
+      return found;
+    }, []),
     slope: slopeOf(values),
   };
 }

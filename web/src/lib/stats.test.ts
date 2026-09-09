@@ -50,9 +50,18 @@ describe('summarise', () => {
     expect(summarise([10, 11, 12, 11, 10, 12])!.outliers).toEqual([]);
   });
 
-  // A run that never moves has no box to measure a fence against, so nothing is far from it.
   it('marks nothing in a run that never moved', () => {
     expect(summarise([7, 7, 7, 7])!.outliers).toEqual([]);
+  });
+
+  // The valve at rest that opens twice an hour: the middle half of the run is one value, so the
+  // fences close to a point — and the excursion is the whole of what the run has to say. It used
+  // to be exempted along with the run that never moves, which left the note saying `fences 2–2`
+  // and `outliers 0` about a run reaching a hundred.
+  it('marks a rare excursion out of a run that otherwise sits still', () => {
+    const values = Array.from({ length: 40 }, (_, i) => (i === 12 || i === 13 ? 100 : 2));
+
+    expect(summarise(values)!.outliers).toEqual([12, 13]);
   });
 
   it('says which way the readings are going', () => {
