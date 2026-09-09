@@ -189,6 +189,14 @@ export type PublishRequest = {
   payloadEncoding: 'text' | 'base64';
   qos: number;
   retain: boolean;
+  /* What MQTT 5 lets a message carry besides its payload. Absent on every publish that asked for
+     none of it, which is most of them — and refused by the API on a link speaking 3.1.1, which
+     has no room for any of it. */
+  contentType?: string;
+  responseTopic?: string;
+  correlationData?: string;
+  messageExpiryInterval?: number;
+  userProperties?: ReadonlyArray<{ name: string; value: string }>;
 };
 
 export type MqttMessage = {

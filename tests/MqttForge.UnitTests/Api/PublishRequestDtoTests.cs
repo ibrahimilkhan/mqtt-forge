@@ -1,5 +1,6 @@
 using System.Text;
 using MqttForge.Api.Contracts;
+using MqttForge.Domain.Models;
 
 namespace MqttForge.UnitTests.Api;
 
@@ -49,5 +50,54 @@ public class PublishRequestDtoTests
         Assert.Equal("sensors/temp", request.Topic);
         Assert.Equal(2, request.Qos);
         Assert.True(request.Retain);
+    }
+
+    [Fact]
+    public void A_message_that_asked_for_nothing_carries_no_properties()
+    {
+        var dto = new PublishRequestDto("sensors/temp", "23.5", null, 0, false);
+
+        Assert.Null(dto.ToRequest().Properties);
+    }
+
+    // A field opened and left blank is a field nobody filled in. Sending `contentType: ""` says
+    // something about the payload that is not true, and a broker has to carry it either way.
+    [Fact]
+    public void Fields_left_blank_are_absent_rather_than_empty()
+    {
+        var dto = new PublishRequestDto("sensors/temp", "23.5", null, 0, false,
+            ContentType: "", ResponseTopic: "", CorrelationData: "", UserProperties: []);
+
+        Assert.Null(dto.ToRequest().Properties);
+    }
+
+    [Fact]
+    public void What_mqtt5_lets_a_message_carry_reaches_the_request()
+    {
+        var dto = new PublishRequestDto("sensors/temp", "23.5", null, 0, false,
+            ContentType: "application/json",
+            ResponseTopic: "sensors/temp/reply",
+            CorrelationData: "abc-123",
+            MessageExpiryInterval: 60,
+            UserProperties: [new UserPropertyDto("source", "console")]);
+
+        var properties = dto.ToRequest().Properties;
+
+        Assert.NotNull(properties);
+        Assert.Equal("application/json", properties.ContentType);
+        Assert.Equal("sensors/temp/reply", properties.ResponseTopic);
+        Assert.Equal("abc-123"u8.ToArray(), properties.CorrelationData);
+        Assert.Equal(60u, properties.MessageExpiryInterval);
+        Assert.Equal([new UserProperty("source", "console")], properties.UserProperties);
+    }
+
+    // The form sends a line at a time and a half-typed line has a value and no name yet.
+    [Fact]
+    public void A_user_property_with_no_name_is_dropped()
+    {
+        var dto = new PublishRequestDto("sensors/temp", "x", null, 0, false,
+            UserProperties: [new UserPropertyDto("", "orphan"), new UserPropertyDto("kept", "yes")]);
+
+        Assert.Equal([new UserProperty("kept", "yes")], dto.ToRequest().Properties!.UserProperties);
     }
 }

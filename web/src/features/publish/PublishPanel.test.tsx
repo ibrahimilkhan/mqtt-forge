@@ -9,9 +9,31 @@ import { useLogStore } from '../../stores/logStore';
 import { server } from '../../test/server';
 import { PublishPanel } from './PublishPanel';
 
-function renderPanel() {
+/** A live link, and which MQTT it settled on — the fold below is offered on one of them only. */
+function renderPanel(speaking?: 'v500' | 'v311') {
   // Publish button is disabled without a live broker.
-  server.use(http.get('/api/connection', () => HttpResponse.json({ state: 'Connected' })));
+  server.use(
+    http.get('/api/connection', () =>
+      HttpResponse.json({
+        state: 'Connected',
+        ...(speaking && {
+          connection: {
+            host: 'localhost',
+            port: 1883,
+            clientId: 'console',
+            username: null,
+            useTls: false,
+            connectedAt: '2026-09-10T00:00:00Z',
+            sessionPresent: false,
+            assignedClientId: null,
+            serverKeepAlive: null,
+            transport: 'tcp',
+            protocolVersion: speaking,
+          },
+        }),
+      }),
+    ),
+  );
 
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const wrapper = ({ children }: { children: ReactNode }) => (
@@ -353,4 +375,88 @@ describe('PublishPanel', () => {
     });
   });
 
+});
+
+/**
+ * What MQTT 5 lets a message carry.
+ *
+ * Offered on a 5.0 link and nowhere else: the API refuses a message carrying any of it over
+ * 3.1.1 rather than sending one that has quietly lost its correlation id, so a form that let a
+ * reader fill it in there would be a form that collects an error.
+ */
+describe('the MQTT 5 fold', () => {
+  const sends = () => {
+    const sent: unknown[] = [];
+    server.use(
+      http.post('/api/publish', async ({ request }) => {
+        sent.push(await request.json());
+        return new HttpResponse(null, { status: 202 });
+      }),
+    );
+
+    return sent;
+  };
+
+  it('is not offered on a link speaking 3.1.1', async () => {
+    renderPanel('v311');
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Publish' })).toBeEnabled());
+    expect(screen.queryByTestId('mqtt5')).not.toBeInTheDocument();
+  });
+
+  it('is there, and shut, on a link speaking 5.0', async () => {
+    renderPanel('v500');
+
+    const fold = await screen.findByTestId('mqtt5');
+    expect(fold).not.toHaveAttribute('open');
+    expect(screen.getByText('MQTT 5')).toBeInTheDocument();
+  });
+
+  it('sends what was filled in, and nothing that was not', async () => {
+    const sent = sends();
+    renderPanel('v500');
+    await userEvent.click(await screen.findByText('MQTT 5'));
+
+    await userEvent.type(screen.getByLabelText('Content type'), 'application/json');
+    await userEvent.type(screen.getByLabelText('Expiry'), '60');
+    await userEvent.type(screen.getByLabelText('Response topic'), 'sensors/temp/reply');
+    await userEvent.type(screen.getByLabelText('Correlation'), 'abc-123');
+    await userEvent.type(
+      screen.getByLabelText('Properties'),
+      'source: console',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toEqual({
+      topic: 'sensors/temp',
+      payload: '23.5',
+      payloadEncoding: 'text',
+      qos: 0,
+      retain: false,
+      contentType: 'application/json',
+      messageExpiryInterval: 60,
+      responseTopic: 'sensors/temp/reply',
+      correlationData: 'abc-123',
+      userProperties: [{ name: 'source', value: 'console' }],
+    });
+  });
+
+  // A fold opened and left alone is a fold nobody filled in.
+  it('sends an ordinary publish when the fold was opened and nothing typed', async () => {
+    const sent = sends();
+    renderPanel('v500');
+    await userEvent.click(await screen.findByText('MQTT 5'));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toEqual({
+      topic: 'sensors/temp',
+      payload: '23.5',
+      payloadEncoding: 'text',
+      qos: 0,
+      retain: false,
+    });
+  });
 });

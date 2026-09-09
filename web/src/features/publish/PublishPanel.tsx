@@ -5,6 +5,7 @@ import { Field } from '../../components/Field';
 import { PanelShell } from '../../components/PanelShell';
 import { QosSelect } from '../../components/QosSelect';
 import { encodePayload, formatJson, type PayloadMode } from '../../lib/payload';
+import { parseUserProperties } from '../../lib/userProperties';
 import styles from '../../styles/panel.module.css';
 import { useComposeStore } from '../../stores/composeStore';
 import { logFault } from '../../stores/logStore';
@@ -28,7 +29,17 @@ export function PublishPanel() {
   const retain = useComposeStore((state) => state.retain);
   const setQos = useComposeStore((state) => state.setQos);
   const setRetain = useComposeStore((state) => state.setRetain);
-  const { isOnline } = useConnectionState();
+  const { isOnline, link } = useConnectionState();
+  /* Offered only where they can go out. 3.1.1 has no room for any of this — the API refuses a
+     message carrying it rather than dropping it quietly — so on such a link the fold is not
+     there to be opened and filled in. The live link's own version, not the one asked for: 'auto'
+     walks 5.0 down to 3.1.1 on a broker that refuses it. */
+  const five = link?.protocolVersion === 'v500';
+  const [expiry, setExpiry] = useState('');
+  const [contentType, setContentType] = useState('');
+  const [responseTopic, setResponseTopic] = useState('');
+  const [correlation, setCorrelation] = useState('');
+  const [properties, setProperties] = useState('');
 
   // Clicking a topic in the tree, or a message in the wire log, loads it here to be sent back.
   const draft = useComposeStore((state) => state.draft);
@@ -55,12 +66,25 @@ export function PublishPanel() {
     mutationFn: () => {
       if (!encoded.ok) throw new Error(encoded.error);
 
+      const named = parseUserProperties(properties);
+      const seconds = Number(expiry);
+
       return publish({
         topic,
         payload: encoded.payload,
         payloadEncoding: encoded.payloadEncoding,
         qos,
         retain,
+        // Sent only where they would mean something, and only when they were filled in: an empty
+        // box is a box nobody typed in, and `contentType: ''` says something about the payload
+        // that is not true.
+        ...(five && {
+          ...(contentType.trim() && { contentType: contentType.trim() }),
+          ...(responseTopic.trim() && { responseTopic: responseTopic.trim() }),
+          ...(correlation.trim() && { correlationData: correlation.trim() }),
+          ...(expiry.trim() && Number.isFinite(seconds) && { messageExpiryInterval: seconds }),
+          ...(named.length > 0 && { userProperties: named }),
+        }),
       });
     },
     /*
@@ -132,6 +156,77 @@ export function PublishPanel() {
           {' Retain'}
         </label>
       </div>
+
+      {/* What MQTT 5 adds to a message, shut until it is wanted.
+
+          Shut because none of it is needed to publish and most messages carry none — and where
+          the link is 3.1.1 it is not here at all, since the API refuses a message carrying any of
+          it rather than sending one that has quietly lost its correlation id. */}
+      {five && (
+        <details className={styles.groupFold} data-testid="mqtt5">
+          <summary>MQTT 5</summary>
+
+          <div className={styles.row}>
+            <Field label="Content type" htmlFor="contentType">
+              <input
+                id="contentType"
+                type="text"
+                spellCheck={false}
+                placeholder="application/json"
+                value={contentType}
+                onChange={(e) => setContentType(e.target.value)}
+              />
+            </Field>
+            <Field label="Expiry" htmlFor="expiry">
+              <input
+                id="expiry"
+                type="number"
+                min={0}
+                step={1}
+                placeholder="seconds"
+                value={expiry}
+                onChange={(e) => setExpiry(e.target.value)}
+              />
+            </Field>
+          </div>
+
+          <div className={styles.row}>
+            <Field label="Response topic" htmlFor="responseTopic">
+              <input
+                id="responseTopic"
+                type="text"
+                spellCheck={false}
+                placeholder="sensors/temp/reply"
+                value={responseTopic}
+                onChange={(e) => setResponseTopic(e.target.value)}
+              />
+            </Field>
+            <Field label="Correlation" htmlFor="correlation">
+              <input
+                id="correlation"
+                type="text"
+                spellCheck={false}
+                placeholder="request id"
+                value={correlation}
+                onChange={(e) => setCorrelation(e.target.value)}
+              />
+            </Field>
+          </div>
+
+          <div className={styles.row}>
+            <Field label="Properties" htmlFor="userProperties">
+              <textarea
+                id="userProperties"
+                rows={3}
+                spellCheck={false}
+                placeholder={'source: console\ntrace: 91a4'}
+                value={properties}
+                onChange={(e) => setProperties(e.target.value)}
+              />
+            </Field>
+          </div>
+        </details>
+      )}
 
       <div className={styles.actions}>
         <button
