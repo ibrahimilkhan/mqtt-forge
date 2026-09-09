@@ -51,6 +51,11 @@
     width: auto;
     height: var(--channel);
   }
+  /* And no reach. The grab area is five pixels either side of the bar's own length, which was
+     written for a bar standing up in a column — turned on its side it became five pixels either
+     end of a row as wide as the page, and a phone could drag the whole console two pixels
+     sideways for a target that is hidden and takes no pointer anyway. */
+  .handle::after { content: none; }
 }
 
 /* Nothing either side of it to divide. Kept in the grid rather than removed, so the column's five
