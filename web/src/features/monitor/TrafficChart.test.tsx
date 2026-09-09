@@ -452,3 +452,41 @@ describe('a chip row wider than the pane', () => {
     done();
   });
 });
+
+/**
+ * A range the run cannot be drawn in.
+ *
+ * A log axis has no place for zero and no answer for a negative, so a run that reaches either is
+ * drawn on its extremes — the right thing to do, and until now done in silence. Two topics under
+ * 'Logarithmic', one positive and one not, were two plots on two different scales that said so
+ * nowhere.
+ */
+describe('the range that was asked for, and the one that was drawn', () => {
+  const climbing = (from: number, count = 10): LogEntry[] =>
+    Array.from({ length: count }, (_, i) => ({
+      id: nextId++,
+      kind: 'recv' as const,
+      at: new Date(Date.now() - i * 1000),
+      topic: 'sensors/temp',
+      body: `${from + i}`,
+    }));
+
+  it('says which range it fell back to when the run reaches zero', () => {
+    useAppearanceStore.setState({ scale: 'log' });
+
+    render(<TrafficChart runs={asRuns(climbing(0))} />);
+
+    const chip = screen.getByTestId('reading-scale');
+    expect(chip.textContent).toContain('extremes');
+    // The explanation is on the cell; the value carries its own text for when it is cut short.
+    expect(chip.parentElement?.getAttribute('title')).toContain('Logarithmic could not be used');
+  });
+
+  it('says nothing when the range asked for is the range drawn', () => {
+    useAppearanceStore.setState({ scale: 'log' });
+
+    render(<TrafficChart runs={asRuns(climbing(10))} />);
+
+    expect(screen.getByTestId('reading-scale').textContent).toBe('—');
+  });
+});

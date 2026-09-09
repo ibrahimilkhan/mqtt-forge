@@ -1,7 +1,7 @@
 import { READINGS, showsReading, type ReadingId } from '../appearance/readings';
 import type { Fit } from '../../lib/distribution';
 import { duration, short } from '../../lib/format';
-import type { Domain } from '../../lib/scale';
+import { SCALES, type Domain, type ScaleId } from '../../lib/scale';
 import type { Pulses, Shape } from '../../lib/shape';
 import type { Cadence, Change, Summary } from '../../lib/stats';
 import styles from './TrafficChart.module.css';
@@ -52,6 +52,7 @@ export function ChartNote({
   of = null,
   silence = null,
   chosen = {},
+  asked,
 }: {
   summary: Summary;
   /** What kind of run this is, which decides which of the readings below mean anything. */
@@ -75,6 +76,8 @@ export function ChartNote({
   silence?: number | null;
   /** The readings the reader has switched on or off in the Chart panel. */
   chosen?: Partial<Record<ReadingId, boolean>>;
+  /** The range that was asked for, which is not always the range that could be used. */
+  asked: ScaleId;
 }) {
   const counted =
     shape.id === 'state' || shape.id === 'pulse'
@@ -101,6 +104,7 @@ export function ChartNote({
   const run: Slot[] = [
     arrivals(pace),
     offScale(domain),
+    drawnOn(domain, asked),
     {
       id: 'window',
       // A window is not the whole run, and 'n 500' beside a history of five thousand, without
@@ -179,6 +183,31 @@ export function ChartNote({
       )}
     </figcaption>
   );
+}
+
+/**
+ * The range that was drawn, when it is not the range that was asked for.
+ *
+ * A log axis has no place for zero and no answer for a negative, so a run that reaches either is
+ * drawn on its extremes instead — the right thing to do, and until now done in silence. Two
+ * topics under 'Logarithmic', one of them positive and one of them not, were two plots on two
+ * different scales that said so nowhere, and a reader comparing their shapes was comparing a log
+ * plot with a linear one.
+ *
+ * Empty whenever the answer is the question, which is nearly always.
+ */
+function drawnOn(domain: Domain, asked: ScaleId): Slot {
+  const fell = domain.mode !== asked;
+
+  return {
+    id: 'scale',
+    value: fell ? SCALES[domain.mode].label.split(' —')[0].toLowerCase() : null,
+    title: fell
+      ? `${SCALES[asked].label.split(' —')[0]} could not be used on this run, so it is drawn on ` +
+        `its ${SCALES[domain.mode].label.split(' —')[0].toLowerCase()}: ${SCALES[asked].hint}`
+      : `drawn on its ${SCALES[domain.mode].label.split(' —')[0].toLowerCase()}`,
+    tone: 'reading',
+  };
 }
 
 /** What the readings are, counted and averaged — the readings of a quantity. */
@@ -286,7 +315,7 @@ function offScale(domain: Domain): Slot {
     title:
       outside === 0
         ? `every reading fits between ${short(domain.low)} and ${short(domain.high)}`
-        : `${outside} reading${outside === 1 ? '' : 's'} outside ${short(domain.low)} to ${short(domain.high)}, drawn on the edge they went past — switch the range to 'ends' to see them where they are`,
+        : `${outside} reading${outside === 1 ? '' : 's'} outside ${short(domain.low)} to ${short(domain.high)}, drawn on the edge they went past — switch the range to Extremes to see them where they are`,
     tone: outside === 0 ? 'reading' : 'alarm',
   };
 }

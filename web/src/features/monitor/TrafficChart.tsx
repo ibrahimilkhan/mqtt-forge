@@ -306,6 +306,7 @@ function Single({
           of={series.of}
           silence={silence}
           chosen={readings}
+          asked={scale}
         />
       )}
     </figure>

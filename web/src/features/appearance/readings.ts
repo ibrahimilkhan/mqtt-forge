@@ -28,6 +28,7 @@ export type ReadingId =
   | 'period'
   | 'every'
   | 'offScale'
+  | 'scale'
   | 'window'
   | 'skipped'
   | 'silence';
@@ -126,6 +127,11 @@ export const READINGS: Record<ReadingId, Reading> = {
   offScale: {
     label: 'off scale',
     what: "Readings past the plot's range, drawn on its edge.",
+    group: 'run',
+  },
+  scale: {
+    label: 'scale',
+    what: 'Said when the range asked for could not be used, and what was drawn instead.',
     group: 'run',
   },
   window: {
