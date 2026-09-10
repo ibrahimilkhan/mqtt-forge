@@ -1818,3 +1818,56 @@ describe('the controls while the console has lost its own server', () => {
     expect(await screen.findByRole('button', { name: 'Disconnect' })).toBeEnabled();
   });
 });
+
+/**
+ * What the panel says while it is dialling.
+ *
+ * A dial against a host that answers nothing runs for twenty seconds — the deadline on one
+ * CONNECT — and for all twenty the panel was the form it had been, with Connect swapped for
+ * Abort. A dial in progress and a form that ignored the press looked the same.
+ */
+describe('while an attempt is running', () => {
+  const dialling = () => {
+    let answer: (value: unknown) => void = () => {};
+    const held = new Promise((resolve) => { answer = resolve; });
+    server.use(
+      http.get('/api/connection', () => HttpResponse.json({ state: 'Disconnected' })),
+      http.post('/api/connection', async () => {
+        await held;
+        return HttpResponse.json({ state: 'Connected' });
+      }),
+    );
+
+    return { answer };
+  };
+
+  it('names what it is dialling, and counts', async () => {
+    dialling();
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+
+    const said = await screen.findByTestId('dialling');
+    expect(said).toHaveTextContent('Connecting to localhost:1883');
+    expect(said).toHaveTextContent(/· \d+s/);
+  });
+
+  it('says nothing once there is nothing being dialled', async () => {
+    server.use(http.get('/api/connection', () => HttpResponse.json({ state: 'Disconnected' })));
+    renderPanel();
+
+    await screen.findByRole('button', { name: 'Connect' });
+    expect(screen.queryByTestId('dialling')).not.toBeInTheDocument();
+  });
+
+  // The one control on the row is the one that stops it.
+  it('offers Abort in place of Connect', async () => {
+    dialling();
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+
+    expect(await screen.findByRole('button', { name: 'Abort' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Connect' })).not.toBeInTheDocument();
+  });
+});

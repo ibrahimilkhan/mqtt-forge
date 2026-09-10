@@ -10,6 +10,7 @@ import {
   saveProfile,
 } from '../../api/connection';
 import { queryKeys } from '../../api/queryKeys';
+import { useNow } from '../../lib/useNow';
 import { useHubStatusStore } from '../../stores/hubStatusStore';
 import { Cross, Link, Save, Unlink } from '../brand/icons';
 import { Field } from '../../components/Field';
@@ -234,6 +235,14 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
   // fires, before the API has been asked anything; isConnecting is the only one a panel that
   // was closed when the attempt started — or reopened since — has to go on.
   const attemptRunning = isConnecting || connectMutation.isPending;
+  /* What the running attempt is aimed at, and when it started. `variables` is what this panel
+     sent; the form is what a panel opened mid-dial has to go on, and the two agree in every case
+     but that one. `submittedAt` is 0 until this panel fires, which is the same question asked
+     the other way. */
+  const dialled = connectMutation.variables?.request ?? form;
+  const startedAt = connectMutation.submittedAt > 0 ? connectMutation.submittedAt : null;
+  // A beat only while something is being counted; see useNow.
+  const now = useNow(attemptRunning && startedAt !== null ? 1000 : null);
 
 
   /**
@@ -1187,6 +1196,23 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
       </div>
 
       {nameBox}
+
+      {/* What the attempt is doing, while it is doing it.
+          A dial against a host that answers nothing takes twenty seconds — the deadline on one
+          CONNECT — and for all twenty of them the panel was the form it had been, with Connect
+          swapped for Abort and nothing else changed. A reader cannot tell a dial in progress from
+          a form that ignored the press. The address is what is being tried; the count is the part
+          that says it is still going.
+
+          The seconds only where this panel fired the attempt. A panel opened after one had
+          started knows the dial is running — the API says so — and not when it began, and a
+          counter started at the moment somebody opened a panel would be counting the wrong thing. */}
+      {attemptRunning && (
+        <p className={styles.note} data-testid="dialling" role="status">
+          Connecting to {formatEndpoint(dialled.host, dialled.port)}
+          {startedAt !== null && ` · ${Math.max(0, Math.round((now - startedAt) / 1000))}s`}
+        </p>
+      )}
 
       {failure && (!noticeUp || ownAttemptFailed) && (
         <p className={styles.fault} role="alert">
