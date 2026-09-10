@@ -205,6 +205,14 @@ export type LogState = {
    * eviction is a different budget and answers to itself.
    */
   forgetTopics: (topics: readonly string[]) => void;
+  /**
+   * Cuts the runs of these topics back to their newest message.
+   *
+   * What a reader means by clearing a pane and keeping the value on it: the history goes, the
+   * reading stays, and the topic goes on collecting as deeply as it did before — see
+   * TopicRing.keepNewest, which is careful not to leave a ceiling behind.
+   */
+  keepNewestOn: (topics: readonly string[]) => void;
 };
 
 let nextId = 0;
@@ -266,6 +274,30 @@ export const useLogStore = create<LogState>((set) => ({
         held -= ring.length;
         weight -= ring.weight;
         state.byTopic.delete(topic);
+      }
+
+      return {
+        held: Math.max(0, held),
+        weight: Math.max(0, weight),
+        version: state.version + 1,
+      };
+    }),
+
+  keepNewestOn: (topics) =>
+    set((state) => {
+      if (topics.length === 0) return state;
+
+      let held = state.held;
+      let weight = state.weight;
+      for (const topic of topics) {
+        const ring = state.byTopic.get(topic);
+        if (!ring || ring.length <= 1) continue;
+
+        const wasLong = ring.length;
+        const wasHeavy = ring.weight;
+        ring.keepNewest();
+        held -= wasLong - ring.length;
+        weight -= wasHeavy - ring.weight;
       }
 
       return {

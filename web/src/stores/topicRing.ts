@@ -89,6 +89,19 @@ export class TopicRing {
     if (this.start >= maxItems) this.compact();
   }
 
+  /**
+   * Everything but the newest, dropped, with the bounds left exactly as they were.
+   *
+   * `narrowTo` above is the other way of shortening a run and the wrong one for this: it sets a
+   * new ceiling, so a run cut to its last message would go on holding one message for the rest of
+   * the session. This is a reader emptying a pane and keeping the value on it, not the console
+   * making room — the next arrival fills the run as deeply as it ever could.
+   */
+  keepNewest(): void {
+    while (this.length > 1) this.dropOldest();
+    if (this.start >= this.bounds.maxItems) this.compact();
+  }
+
   /** The run, newest first — the order every reader of it wants. */
   newestFirst(): LogEntry[] {
     const held = this.items.slice(this.start);

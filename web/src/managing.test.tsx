@@ -298,7 +298,14 @@ describe('emptying the console', () => {
     expect(within(tree()).getByText(/No topics yet/)).toBeInTheDocument();
   });
 
-  it('lets go of them from the log pane too, and drops the search with them', async () => {
+  /**
+   * The log pane's own Clear answers for the pane, and the pane is one selection.
+   *
+   * It used to call the same thing the Manage screen does, so emptying the pane on one topic took
+   * the tree with it: every other topic on the broker, every branch the reader had opened, gone
+   * because they wanted one run out of the way.
+   */
+  it('takes the selection it is standing over, and leaves the rest of the tree', async () => {
     const { send } = await openConsole();
     send(...PLANT);
     await pick('temp');
@@ -306,10 +313,30 @@ describe('emptying the console', () => {
     await userEvent.type(screen.getByLabelText('Search the log'), 'zzz');
 
     await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
-    await userEvent.click(screen.getByRole('button', { name: /^Yes, clear/ }));
+    await userEvent.click(screen.getByRole('button', { name: /^Clear \d/ }));
 
-    expect(useLogStore.getState().held).toBe(0);
+    // PLANT is six messages on six topics; one of them was selected and is gone.
+    expect(useLogStore.getState().held).toBe(5);
+    expect(within(tree()).queryByText(/No topics yet/)).not.toBeInTheDocument();
+    expect(within(tree()).getByText('pump')).toBeInTheDocument();
     expect(screen.getByLabelText('Search the log')).toHaveValue('');
+  });
+
+  // The pane cleared with the reading left on it, which is the other half of what a reader means.
+  it('can leave the newest message standing', async () => {
+    const { send } = await openConsole();
+    send(...PLANT);
+    send(['plant/boiler/temp', '82'], ['plant/boiler/temp', '83']);
+    await pick('temp');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Keep the last' }));
+
+    // The run is one message deep and it is the newest; everything else is untouched.
+    const kept = useLogStore.getState().byTopic.get('plant/boiler/temp');
+    expect(kept?.length).toBe(1);
+    expect(kept?.newestFirst()[0].body).toBe('83');
+    expect(useLogStore.getState().held).toBe(6);
   });
 });
 

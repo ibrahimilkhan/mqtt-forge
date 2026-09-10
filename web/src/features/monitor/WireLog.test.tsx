@@ -1836,13 +1836,13 @@ describe('clearing the log', () => {
     render(<Wire />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Yes, clear 1' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Clear 1' }));
 
     expect(useLogStore.getState().held).toBe(0);
     expect(useTopicTreeStore.getState().root.subTopics).toBe(0);
   });
 
-  // Every run and the tree with them, and nothing here can put them back. One press asks.
+  // Not undoable, so one press asks and the next does it.
   it('asks before it does, and does nothing until it is answered', async () => {
     useLogStore.getState().push({ kind: 'recv', topic: 'sensors/temp', body: '21.5' });
     useSelectionStore.getState().select({ label: 'everything', filter: '#' });
@@ -1851,7 +1851,7 @@ describe('clearing the log', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
 
     expect(useLogStore.getState().held).toBe(1);
-    expect(screen.getByRole('button', { name: 'Yes, clear 1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Clear 1' })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
@@ -1869,7 +1869,7 @@ describe('clearing the log', () => {
     await userEvent.type(screen.getByLabelText('Search the log'), 'zzz');
 
     await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
-    await userEvent.click(screen.getByRole('button', { name: /^Yes, clear/ }));
+    await userEvent.click(screen.getByRole('button', { name: /^Clear \d/ }));
 
     expect(screen.getByLabelText('Search the log')).toHaveValue('');
   });
@@ -1878,5 +1878,51 @@ describe('clearing the log', () => {
     render(<Wire />);
 
     expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument();
+  });
+
+  // The complaint that started this: a reader clearing the pane on one topic lost the tree.
+  it('leaves every topic the selection does not cover', async () => {
+    for (const topic of ['sensors/temp', 'sensors/hum', 'boiler/state']) {
+      useLogStore.getState().push({ kind: 'recv', topic, body: '1' });
+      useTopicTreeStore.getState().apply([
+        { topic, payload: '1', mode: 'text', size: 1, qos: 0, retain: false,
+          receivedAt: '2026-09-06T10:00:00Z' },
+      ]);
+    }
+    useSelectionStore.getState().select({ label: 'sensors/temp', filter: 'sensors/temp/#' });
+    render(<Wire />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Clear 1' }));
+
+    expect(useLogStore.getState().held).toBe(2);
+    expect(useTopicTreeStore.getState().root.subTopics).toBe(2);
+  });
+
+  it('offers to keep the newest, and keeps exactly that', async () => {
+    for (const body of ['20', '21', '22']) {
+      useLogStore.getState().push({ kind: 'recv', topic: 'sensors/temp', body });
+    }
+    useSelectionStore.getState().select({ label: 'sensors/temp', filter: 'sensors/temp/#' });
+    render(<Wire />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Keep the last' }));
+
+    const run = useLogStore.getState().byTopic.get('sensors/temp');
+    expect(run?.length).toBe(1);
+    expect(run?.newestFirst()[0].body).toBe('22');
+  });
+
+  // One message is the newest message: there is no history to lose and no second answer to give.
+  it('offers no second answer when the run is one message deep', async () => {
+    useLogStore.getState().push({ kind: 'recv', topic: 'sensors/temp', body: '21' });
+    useSelectionStore.getState().select({ label: 'sensors/temp', filter: 'sensors/temp/#' });
+    render(<Wire />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+
+    expect(screen.getByRole('button', { name: 'Clear 1' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Keep the last' })).not.toBeInTheDocument();
   });
 });

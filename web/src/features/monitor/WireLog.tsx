@@ -3,7 +3,7 @@ import { SearchBox, SearchOpener } from '../../components/SearchBox';
 import { WhereMenu } from '../../components/WhereMenu';
 import type { ColourRule } from '../../lib/topicColour';
 import { useRuleLookup } from '../../lib/useRuleLookup';
-import { clearTraffic } from '../../stores/clearTraffic';
+import { clearSelection } from '../../stores/clearTraffic';
 import { MIN_TOPIC_ENTRIES, type LogEntry } from '../../stores/logStore';
 import { useSearchStore } from '../../stores/searchStore';
 import { LogEntryRow } from './LogEntryRow';
@@ -95,8 +95,9 @@ export function LogTools() {
   const { look, where } = useSearchStore((state) => state.log);
   const setLog = useSearchStore((state) => state.setLog);
   const [open, setOpen] = useState(false);
-  /* Emptying the console is not undoable and does not stop at this topic — it takes every run and
-     the tree with them. One press asks, the next does it. */
+  /* Not undoable, so one press asks and the next does it — and what it does is bounded by the
+     selection this pane is showing. It used to empty the console: every topic, every branch, the
+     whole tree, because a reader wanted one run out of the way. */
   const [asking, setAsking] = useState(false);
   const held = useTrafficCount();
 
@@ -132,18 +133,36 @@ export function LogTools() {
       )}
       {asking ? (
         <>
+          {/* All of it, and the topic goes from the tree with its run: a row whose messages are
+              gone is the fault this console's shape exists to prevent. */}
           <button
             type="button"
             className={styles.tool}
             data-grave=""
-            title="Every topic, not only this one. Nothing here can put them back."
+            title={`Clear ${selected.label} and take it off the tree. Nothing here can put it back.`}
             onClick={() => {
-              clearTraffic();
+              clearSelection(selected.filter, 'nothing');
               setAsking(false);
             }}
           >
-            Yes, clear {held.toLocaleString('en-GB')}
+            Clear {held.toLocaleString('en-GB')}
           </button>
+          {/* Or the pane cleared with the reading left on it, which is the one every console
+              wants half the time: the history goes and the current value stays. Only worth
+              offering while there is history to lose. */}
+          {held > 1 && (
+            <button
+              type="button"
+              className={styles.tool}
+              title="Clear the run and leave the newest message on it."
+              onClick={() => {
+                clearSelection(selected.filter, 'the newest');
+                setAsking(false);
+              }}
+            >
+              Keep the last
+            </button>
+          )}
           <button type="button" className={styles.tool} onClick={() => setAsking(false)}>
             Cancel
           </button>
@@ -153,7 +172,7 @@ export function LogTools() {
           type="button"
           className={styles.tool}
           disabled={held === 0}
-          title="Clear the traffic and the topic tree"
+          title={`Clear the traffic on ${selected.label}`}
           onClick={() => setAsking(true)}
         >
           Clear
