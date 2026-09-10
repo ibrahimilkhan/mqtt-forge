@@ -28,6 +28,7 @@ import {
   describeConnectFailure,
   describeFailureReason,
   suggestScheme,
+  wasAborted,
 } from './connectFailure';
 import { ConnectionSummary } from './ConnectionSummary';
 import { AutoReconnectSwitch } from './AutoReconnectSwitch';
@@ -506,9 +507,19 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
   // a reader who dialled a second broker mid-outage and was refused saw nothing about it at all.
   const ownAttemptFailed = connectMutation.isError;
 
-  const failure =
-    (attempted && describeConnectFailure(connectMutation.error, attempted)) ??
-    (faulted && describeFailureReason(faulted.reason, faulted));
+  /* The last thing this panel did, said once.
+   *
+   * `describeConnectFailure` refuses to speak about an attempt the reader called off — they know
+   * what happened and nothing went wrong — and without the second line here the standing failure
+   * underneath took its place. A dial called off leaves the link exactly where it found it, so on
+   * a second try after a failed first one that is the FIRST attempt's red line, reappearing at
+   * the instant Abort was pressed and reading as though the abort had caused it. Nothing on
+   * screen from a dial nobody completed; the record keeps both attempts, in order, with the
+   * words for each. */
+  const failure = wasAborted(connectMutation.error)
+    ? undefined
+    : (attempted && describeConnectFailure(connectMutation.error, attempted)) ??
+      (faulted && describeFailureReason(faulted.reason, faulted));
 
   // Only ever beside the sentence it answers, and about the same attempt that sentence is about
   // — never the form, which the reader may have edited since. An offer to switch to a scheme

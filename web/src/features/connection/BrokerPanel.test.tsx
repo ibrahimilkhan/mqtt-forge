@@ -1895,3 +1895,66 @@ describe('while an attempt is running', () => {
     expect(screen.queryByRole('button', { name: 'Connect' })).not.toBeInTheDocument();
   });
 });
+
+/**
+ * What is on screen after the reader calls a dial off.
+ *
+ * A dial that is called off leaves the link exactly where it found it — which after one failed
+ * attempt is Faulted, with that attempt's sentence. The panel put that sentence back at the
+ * instant Abort was pressed, where it read as the abort's own result: a red line about a broker
+ * that 'did not answer', arriving because the reader said stop.
+ */
+describe('after an attempt is called off', () => {
+  const failsThenHangs = () => {
+    let attempts = 0;
+    let held: (value: unknown) => void = () => {};
+
+    server.use(
+      http.get('/api/connection', () =>
+        HttpResponse.json(
+          attempts === 0
+            ? { state: 'Disconnected' }
+            : { state: 'Faulted', failure: { reason: 'timeout', host: 'nowhere.example', port: 1883 } },
+        ),
+      ),
+      http.post('/api/connection', async () => {
+        attempts += 1;
+        if (attempts === 1) {
+          return HttpResponse.json(
+            { title: 'Broker unreachable', detail: 'nowhere.example:1883 did not answer.', reason: 'timeout' },
+            { status: 502 },
+          );
+        }
+
+        await new Promise((resolve) => { held = resolve; });
+
+        return HttpResponse.json(
+          { title: 'Connect aborted', detail: 'The attempt was cancelled.', reason: 'aborted' },
+          { status: 409 },
+        );
+      }),
+      http.delete('/api/connection/attempt', () => {
+        held(null);
+
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+  };
+
+  it('puts no red line back up about the attempt before it', async () => {
+    failsThenHangs();
+    renderPanel();
+
+    // The first dial fails, and says so. The line is the panel's own alert, not the record's
+    // copy of the same words — the record keeps every attempt, which is what it is for.
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/did not answer|didn.t respond/i);
+
+    // The second is called off.
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Abort' }));
+
+    await screen.findByRole('button', { name: 'Connect' });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+});
