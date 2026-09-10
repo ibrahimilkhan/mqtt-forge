@@ -1958,3 +1958,49 @@ describe('after an attempt is called off', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });
+
+/**
+ * Save is an offer to keep something, and a thing already kept is not one.
+ *
+ * The button stood over a form filled straight off a saved card — the reader picks Lab mosquitto,
+ * the form fills with it, and the panel offers to save what it has just been handed.
+ */
+describe('offering to keep a broker', () => {
+  const kept = {
+    name: 'Lab',
+    connection: savedConnection({ host: 'broker.example', port: 1883, clientId: 'mqttforge-console' }),
+  };
+
+  const withProfiles = (...profiles: unknown[]) =>
+    server.use(http.get('/api/connection/profiles', () => HttpResponse.json(profiles)));
+
+  it('offers it for a form the console does not hold', async () => {
+    withProfiles();
+    renderPanel();
+
+    expect(await screen.findByRole('button', { name: 'Save' })).toBeInTheDocument();
+  });
+
+  it('says nothing about a form it already holds', async () => {
+    withProfiles(kept);
+    server.use(http.get('/api/connection/settings', () => HttpResponse.json(kept.connection)));
+    renderPanel();
+
+    await screen.findByRole('button', { name: 'Connect' });
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument());
+  });
+
+  // Change anything and it is a different thing to keep.
+  it('offers it again the moment the form stops being that broker', async () => {
+    withProfiles(kept);
+    server.use(http.get('/api/connection/settings', () => HttpResponse.json(kept.connection)));
+    renderPanel();
+
+    await screen.findByRole('button', { name: 'Connect' });
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument());
+
+    await userEvent.type(screen.getByLabelText('Client ID'), '-2');
+
+    expect(await screen.findByRole('button', { name: 'Save' })).toBeInTheDocument();
+  });
+});

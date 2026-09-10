@@ -47,7 +47,13 @@ import {
   schemeOf,
   type Scheme,
 } from './scheme';
-import { applyAddress, buildConnectRequest, formFromSaved, type BrokerForm } from './brokerForm';
+import {
+  alreadySaved,
+  applyAddress,
+  buildConnectRequest,
+  formFromSaved,
+  type BrokerForm,
+} from './brokerForm';
 
 /**
  * How long a link has to hold before this panel steps aside for it, in milliseconds.
@@ -500,6 +506,19 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
    */
   const live = isOnline && !settling;
 
+  /* Whether what is on screen is a broker the console already holds.
+   *
+   * Save is an offer to keep something, and a thing already kept is not one: the button stood
+   * over a form filled straight off a saved card, offering to save it again. Two entries on one
+   * broker under two client IDs are still two things, so this is field by field rather than by
+   * address — change anything and the offer comes back. See alreadySaved.
+   *
+   * The live link is asked the same question through the settings that made it, which is what
+   * the API calls the last connect that worked. */
+  const kept = profiles ?? [];
+  const formIsSaved = alreadySaved(form, kept);
+  const linkIsSaved = saved ? alreadySaved(formFromSaved(saved), kept) : false;
+
   const attempted = connectMutation.variables?.request;
 
   // The reader pressed Connect and it failed. That sentence is theirs whatever else is on the
@@ -694,6 +713,10 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
           <ConnectionSummary lead />
 
           <div className={styles.actions}>
+            {/* Not for a link the console already holds. Saving is most obviously worth offering
+                once a broker has connected — and least worth offering when the broker that
+                connected is the one the reader picked off a card to connect with. */}
+            {!linkIsSaved && (
             <button
               type="button"
               className={`ghost ${styles.iconButton}`}
@@ -709,6 +732,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
               <Save />
               Save
             </button>
+            )}
 
             {/* The same mark as Connect with the join taken out of it, which is the whole of
                 what this button does. */}
@@ -1196,7 +1220,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
             Every button on this row wears a mark now, which is the rule rather than a decoration:
             one marked button beside a bare one reads as the marked one being special, and none of
             these is. */}
-        {naming === null && (
+        {naming === null && !formIsSaved && (
           <button
             type="button"
             className={`ghost ${styles.iconButton}`}

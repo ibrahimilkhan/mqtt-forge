@@ -1,4 +1,4 @@
-import type { ConnectRequest, SavedConnection, TlsOptions } from '../../types/api';
+import type { ConnectRequest, SavedConnection, SavedProfile, TlsOptions } from '../../types/api';
 import { parseFilters } from '../subscribe/parseFilters';
 import { parseBrokerAddress } from './address';
 import { EVERYTHING } from './useConnectionActions';
@@ -176,6 +176,32 @@ export function formFromSaved(saved: SavedConnection): BrokerForm {
     subscriptions: (saved.subscriptions ?? [EVERYTHING]).join('\n'),
   };
 }
+
+/**
+ * Whether the console already holds this broker among its saved ones.
+ *
+ * Every field of the form but the two passwords. The API never sends a password back, so a saved
+ * broker read into the form always comes back with those boxes empty — comparing them would say
+ * 'not saved' about the very broker the reader has just picked off a card.
+ *
+ * Field by field against what each saved broker would fill in, rather than by address alone: two
+ * entries on one broker under two client IDs are two different things to connect as, and a reader
+ * writing the second one needs somewhere to put it. Written this way round — the profile turned
+ * back into a form — so that a field added to the form is compared from the day it is added,
+ * without anybody having to remember this function.
+ */
+export function alreadySaved(form: BrokerForm, profiles: readonly SavedProfile[]): boolean {
+  return profiles.some((profile) => {
+    const kept = formFromSaved(profile.connection);
+
+    return (Object.keys(kept) as Array<keyof BrokerForm>).every(
+      (field) => SECRET.has(field) || kept[field] === form[field],
+    );
+  });
+}
+
+/** What the API will not hand back, and so cannot be compared. */
+const SECRET = new Set<keyof BrokerForm>(['password', 'clientCertPassword']);
 
 // A scheme, any scheme, in front of the rest. Only used to tell the two things
 // `parseBrokerAddress` returns null for apart from each other: a bare hostname, which belongs

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { applyAddress, buildConnectRequest, formFromSaved, type BrokerForm } from './brokerForm';
+import {
+  alreadySaved,
+  applyAddress,
+  buildConnectRequest,
+  formFromSaved,
+  type BrokerForm,
+} from './brokerForm';
 import { SCHEMES, portFor, schemeForPort, schemeOf, versionName } from './scheme';
 import type { SavedConnection } from '../../types/api';
 
@@ -433,5 +439,80 @@ describe('the whole form, as the API receives it', () => {
 
     // Everything but the two passwords, which the API never sends back.
     expect(back).toEqual({ ...FULL, password: '', clientCertPassword: '' });
+  });
+});
+
+/**
+ * Whether the console already holds this broker.
+ *
+ * Save is an offer to keep something, and a thing already kept is not one — the button used to
+ * stand over a form filled straight off a saved card, offering to save it again.
+ */
+describe('alreadySaved', () => {
+  const profile = (over: Partial<SavedConnection> = {}, name = 'Lab') => ({
+    name,
+    connection: {
+      host: 'broker.local',
+      port: 1883,
+      clientId: 'console',
+      username: null,
+      hasPassword: false,
+      useTls: false,
+      transport: 'tcp' as const,
+      protocolVersion: 'auto' as const,
+      webSocketPath: null,
+      cleanSession: true,
+      sessionExpiryInterval: null,
+      tls: null,
+      subscriptions: ['#'],
+      ...over,
+    },
+  });
+
+  it('says nothing is saved when nothing is', () => {
+    expect(alreadySaved(FORM, [])).toBe(false);
+  });
+
+  it('knows the form it filled itself from', () => {
+    const kept = profile();
+
+    expect(alreadySaved(formFromSaved(kept.connection), [kept])).toBe(true);
+  });
+
+  // The API never sends a password back, so a saved broker read into the form always comes back
+  // with the box empty. Comparing it would call the reader's own card unsaved.
+  it('does not ask about the passwords it can never see', () => {
+    const kept = profile({ hasPassword: true });
+    const typed = { ...formFromSaved(kept.connection), password: 'hunter2' };
+
+    expect(alreadySaved(typed, [kept])).toBe(true);
+  });
+
+  // Two entries on one broker under two client IDs are two different things to connect as.
+  it('offers to keep the same broker under a different client id', () => {
+    const kept = profile();
+    const other = { ...formFromSaved(kept.connection), clientId: 'second-console' };
+
+    expect(alreadySaved(other, [kept])).toBe(false);
+  });
+
+  it('offers to keep a different address', () => {
+    const kept = profile();
+    const elsewhere = { ...formFromSaved(kept.connection), host: 'other.local' };
+
+    expect(alreadySaved(elsewhere, [kept])).toBe(false);
+  });
+
+  it('notices a change anywhere in the form, not only in the address', () => {
+    const kept = profile();
+    const changed = { ...formFromSaved(kept.connection), subscriptions: '#\nplant/+/temp' };
+
+    expect(alreadySaved(changed, [kept])).toBe(false);
+  });
+
+  it('finds it among several', () => {
+    const kept = [profile({ host: 'one.local' }, 'One'), profile({ host: 'two.local' }, 'Two')];
+
+    expect(alreadySaved(formFromSaved(kept[1].connection), kept)).toBe(true);
   });
 });
