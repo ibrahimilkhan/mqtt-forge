@@ -160,7 +160,7 @@ export function LogTools() {
                 setAsking(false);
               }}
             >
-              Keep the last
+              Keep newest
             </button>
           )}
           <button type="button" className={styles.tool} onClick={() => setAsking(false)}>

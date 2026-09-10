@@ -330,7 +330,7 @@ describe('emptying the console', () => {
     await pick('temp');
 
     await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Keep the last' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Keep newest' }));
 
     // The run is one message deep and it is the newest; everything else is untouched.
     const kept = useLogStore.getState().byTopic.get('plant/boiler/temp');

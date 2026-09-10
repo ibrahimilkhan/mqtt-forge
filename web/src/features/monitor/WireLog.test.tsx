@@ -1907,7 +1907,7 @@ describe('clearing the log', () => {
     render(<Wire />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Keep the last' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Keep newest' }));
 
     const run = useLogStore.getState().byTopic.get('sensors/temp');
     expect(run?.length).toBe(1);
@@ -1923,6 +1923,6 @@ describe('clearing the log', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
 
     expect(screen.getByRole('button', { name: 'Clear 1' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Keep the last' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Keep newest' })).not.toBeInTheDocument();
   });
 });
