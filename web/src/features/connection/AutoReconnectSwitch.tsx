@@ -43,7 +43,10 @@ export function AutoReconnectSwitch({ id }: { id: string }) {
         disabled={option.isPending}
         onChange={(e) => option.mutate(e.target.checked)}
       />
-      <span>Reconnect automatically if the link drops</span>
+      {/* Two words, because the third and fourth were the console telling itself what
+          reconnecting is. Nothing else reconnects, and 'Reconnecting' and 'Not reconnecting' are
+          already the words the panel a few inches up uses for the state this switch decides. */}
+      <span>Reconnect automatically</span>
     </label>
   );
 }
