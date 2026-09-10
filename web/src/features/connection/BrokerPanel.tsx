@@ -10,6 +10,7 @@ import {
   saveProfile,
 } from '../../api/connection';
 import { queryKeys } from '../../api/queryKeys';
+import { useHubStatusStore } from '../../stores/hubStatusStore';
 import { Cross, Link, Save, Unlink } from '../brand/icons';
 import { Field } from '../../components/Field';
 import { PanelShell } from '../../components/PanelShell';
@@ -216,6 +217,15 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectMutation.error]);
   const { isOnline, isConnecting, failure: faulted, link, answered } = useConnectionState();
+  /* Whether this console can reach its own server at all.
+   *
+   * The summary above already says so in a sentence — 'lost its own server … everything here is
+   * the last thing it heard' — and the two controls under it went on offering to do things that
+   * have to go through that server. Pressing Disconnect sent a request nothing was going to
+   * answer: the button disabled itself for the wait and stayed disabled, because a fetch to a
+   * server that accepts the connection and then says nothing does not fail, it waits. Said on the
+   * control now, which is where somebody about to press it is looking. */
+  const lostServer = useHubStatusStore((state) => state.status) === 'reconnecting';
   const guardedConnect = useGuardedMutate(connectMutation);
   const guardedDisconnect = useGuardedMutate(disconnectMutation);
   const guardedAbort = useGuardedMutate(abortMutation);
@@ -655,7 +665,12 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
               type="button"
               className={`ghost ${styles.iconButton} ${styles.trailing}`}
               onClick={() => guardedDisconnect()}
-              disabled={disconnectMutation.isPending}
+              disabled={disconnectMutation.isPending || lostServer}
+              title={
+                lostServer
+                  ? 'The console cannot reach its own server, so it cannot end the link either.'
+                  : undefined
+              }
             >
               <Unlink />
               Disconnect

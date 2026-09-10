@@ -3,7 +3,8 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useHubStatusStore } from '../../stores/hubStatusStore';
 import { useLogStore } from '../../stores/logStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import { queryKeys } from '../../api/queryKeys';
@@ -1763,5 +1764,57 @@ describe('what a saved broker shows', () => {
 
     const card = await screen.findByRole('button', { name: /^Six/ });
     expect(within(card).getByText('mqtt://[::1]:1883')).toBeInTheDocument();
+  });
+});
+
+/**
+ * The console's own server, not the broker's.
+ *
+ * The summary says the state in a sentence — 'lost its own server … everything here is the last
+ * thing it heard' — and Disconnect went on being offered under it. Pressing it sent a request
+ * nothing was going to answer, so the button disabled itself for the wait and stayed disabled:
+ * a fetch to a server that accepts the connection and then says nothing does not fail, it waits.
+ */
+describe('the controls while the console has lost its own server', () => {
+  afterEach(() => useHubStatusStore.setState({ status: 'live' }));
+
+  /** A link that is up, as the API reports one. */
+  const live = () =>
+    server.use(
+      http.get('/api/connection', () =>
+        HttpResponse.json({
+          state: 'Connected',
+          connection: {
+            host: 'broker.example',
+            port: 1883,
+            clientId: 'mqttforge-console',
+            username: null,
+            useTls: false,
+            connectedAt: new Date().toISOString(),
+            sessionPresent: false,
+            assignedClientId: null,
+            serverKeepAlive: null,
+            transport: 'tcp',
+            protocolVersion: 'v500',
+          },
+        }),
+      ),
+    );
+
+  it('does not offer to end a link it cannot reach the server to end', async () => {
+    live();
+    useHubStatusStore.setState({ status: 'reconnecting' });
+    renderPanel();
+
+    const disconnect = await screen.findByRole('button', { name: 'Disconnect' });
+    expect(disconnect).toBeDisabled();
+    expect(disconnect).toHaveAttribute('title', expect.stringContaining('cannot reach its own server'));
+  });
+
+  it('offers it again the moment the server is back', async () => {
+    live();
+    renderPanel();
+
+    expect(await screen.findByRole('button', { name: 'Disconnect' })).toBeEnabled();
   });
 });

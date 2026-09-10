@@ -1,7 +1,8 @@
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../lib/problemDetails';
 import { server } from '../test/server';
+import { request } from './client';
 import { connect, disconnect, getConnectionState, getSavedSettings } from './connection';
 import { subscribe, unsubscribe } from './subscriptions';
 
@@ -75,5 +76,40 @@ describe('api client', () => {
     server.use(http.delete('/api/connection', () => new HttpResponse(null, { status: 204 })));
 
     await expect(disconnect()).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * A request that is never answered.
+ *
+ * `fetch` has no timeout, so a server that accepts the connection and then says nothing — one
+ * paused by the operating system, one whose host went to sleep, a proxy holding the socket —
+ * leaves the promise pending for the life of the tab. The Disconnect button on a console that had
+ * lost its server was pressed, disabled itself for the wait, and stayed disabled: no answer, no
+ * error, nothing anywhere saying why.
+ */
+describe('a server that does not answer', () => {
+  it('gives up and says so, rather than waiting for ever', async () => {
+    server.use(http.get('/api/connection', async () => { await delay('infinite'); }));
+
+    const error = await request('/api/connection', undefined, { timeoutMs: 20 }).catch(
+      (thrown: unknown) => thrown,
+    );
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).message).toBe('The console’s own server did not answer.');
+  });
+
+  it('lets a slow answer through while it is still coming', async () => {
+    server.use(
+      http.get('/api/connection', async () => {
+        await delay(10);
+        return HttpResponse.json({ state: 'Connected' });
+      }),
+    );
+
+    await expect(request('/api/connection', undefined, { timeoutMs: 2_000 })).resolves.toEqual({
+      state: 'Connected',
+    });
   });
 });

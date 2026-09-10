@@ -16,8 +16,20 @@ export const getConnectionState = () => request<ConnectionStateResponse>('/api/c
 export const getSavedSettings = async (): Promise<SavedConnection | null> =>
   (await request<SavedConnection | undefined>('/api/connection/settings')) ?? null;
 
+/**
+ * Dialling, which is the one call whose length is the broker's business rather than the server's.
+ *
+ * A ladder walks 5.0 down to 3.1.1 on a broker that refuses the first, and each rung is a TCP
+ * connect, a TLS handshake and a CONNECT packet against a host that may simply not be there. Two
+ * minutes is past the API's own bound on all of it, so this still cannot hang for ever — it just
+ * does not give up while the server is plainly still working.
+ */
 export const connect = (body: ConnectRequest) =>
-  request<ConnectionStateResponse>('/api/connection', { method: 'POST', ...json(body) });
+  request<ConnectionStateResponse>(
+    '/api/connection',
+    { method: 'POST', ...json(body) },
+    { timeoutMs: 120_000 },
+  );
 
 export const disconnect = () => request<void>('/api/connection', { method: 'DELETE' });
 

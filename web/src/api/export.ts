@@ -12,9 +12,16 @@ export type ExportFolder = { folder: string | null; canChoose: boolean };
 
 export const getExportFolder = () => request<ExportFolder>('/api/export/folder');
 
-/** Opens the host's dialog. A dismissed dialog comes back as the folder unchanged. */
+/**
+ * Opens the host's dialog. A dismissed dialog comes back as the folder unchanged.
+ *
+ * The wait here is a person deciding, not a server thinking, so the ordinary patience is the
+ * wrong measure: somebody who opened the dialog, went to make tea and came back to a folder they
+ * had already chosen would be told the console's server never answered. An hour, which is a
+ * bound rather than a guess — the promise cannot outlive the tab.
+ */
 export const chooseExportFolder = () =>
-  request<ExportFolder>('/api/export/folder', { method: 'POST' });
+  request<ExportFolder>('/api/export/folder', { method: 'POST' }, { timeoutMs: 3_600_000 });
 
 /** Writes one file into the chosen folder, and says where it landed. */
 export const saveCsv = (name: string, content: string) =>
