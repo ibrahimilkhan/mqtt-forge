@@ -530,3 +530,37 @@ describe('when another console has saved a rule since this one last looked', () 
     expect(sent[0]).toEqual([OTHER]);
   });
 });
+
+/**
+ * A write that did not take.
+ *
+ * Every switch and every × here sends the whole rule list, and a write that fails leaves the rows
+ * exactly as they were: the switch flicks and flicks back. The reason was written to the broker's
+ * own record, which is a panel away — so from here it looked like a switch that does not work.
+ */
+describe('when the rules cannot be saved', () => {
+  it('says so, where the switch was flicked', async () => {
+    holding(RULE);
+    answers({});
+    server.use(
+      http.put('/api/alert-rules', () =>
+        HttpResponse.json({ title: 'No answer', detail: 'The console’s own server did not answer.' }, { status: 503 }),
+      ),
+    );
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Turn Kiln too hot off' }));
+
+    expect(await screen.findByTestId('write-fault')).toHaveTextContent('Not saved.');
+    expect(screen.getByTestId('write-fault')).toHaveTextContent('did not answer');
+  });
+
+  it('says nothing while every change is taking', async () => {
+    holding(RULE);
+    answers({});
+    renderPanel();
+
+    await screen.findByTestId('alert-rule');
+    expect(screen.queryByTestId('write-fault')).not.toBeInTheDocument();
+  });
+});

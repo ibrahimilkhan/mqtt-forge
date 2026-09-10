@@ -7,6 +7,7 @@ import { Plus } from '../brand/icons';
 import { useGuardedMutate } from '../../lib/useGuardedMutate';
 import { useAlertStore } from '../../stores/alertStore';
 import { logFault, useLogStore } from '../../stores/logStore';
+import { describeError } from '../../lib/problemDetails';
 import panel from '../../styles/panel.module.css';
 import type {
   AlertDto,
@@ -286,6 +287,15 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
         <p className={panel.fault}>
           The alert rules could not be read. Nothing here has been changed, and saving is off
           until they can be.
+        </p>
+      )}
+
+      {/* A change that did not take. Every switch and every × here writes the whole list, and a
+          write that fails leaves the rows exactly as they were — a switch flicked and flicked
+          back, with the reason a panel away in the broker's record. */}
+      {write.isError && (
+        <p className={panel.fault} data-testid="write-fault">
+          Not saved. {describeError(write.error)}
         </p>
       )}
 

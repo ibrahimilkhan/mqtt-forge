@@ -1000,3 +1000,30 @@ describe('when another console has saved since this one last looked', () => {
     expect(screen.getByText(/Not saved yet/)).toBeInTheDocument();
   });
 });
+
+/**
+ * A save that did not happen.
+ *
+ * The button comes back enabled with the same list still on screen, which is exactly what a save
+ * that worked looks like — and the reason was written to the broker's own record, a panel away.
+ */
+describe('when the rules cannot be saved', () => {
+  it('says so, where the button was pressed', async () => {
+    server.use(
+      http.put('/api/colour-rules', () =>
+        HttpResponse.json(
+          { title: 'No answer', detail: 'The console’s own server did not answer.' },
+          { status: 503 },
+        ),
+      ),
+    );
+    stored({ filter: 'sensors/+/temp', colour: '#b45309' });
+    renderPanel();
+    await waitFor(() => expect(rows()).toHaveLength(1));
+
+    await userEvent.type(filterBox(rows()[0]), '/x');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByTestId('save-fault')).toHaveTextContent('Not saved.');
+  });
+});

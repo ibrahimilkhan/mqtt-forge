@@ -7,6 +7,7 @@ import { InfoBody, InfoMark, Example } from '../../components/InfoTip';
 import { QosSelect } from '../../components/QosSelect';
 import { Segmented } from '../../components/Segmented';
 import { Braces, Search } from '../brand/icons';
+import { describeError } from '../../lib/problemDetails';
 import { useGuardedMutate } from '../../lib/useGuardedMutate';
 import { logFault, useLogStore } from '../../stores/logStore';
 import panel from '../../styles/panel.module.css';
@@ -620,6 +621,17 @@ export function RuleEditor({
           There was a Close here once, and it went because it called onDone — the panel's 'forget
           the draft and go back' — so it threw away a filled-in rule without the question. This is
           not that button back again. onBack is the panel's own Back, which asks. */}
+      {/* A save that did not happen, where the reader pressed.
+          The editor stays open on a failure and the draft is still in it, so nothing is lost —
+          but nothing said so either: the button disabled itself for the write, came back, and the
+          form looked exactly as it had. A reader with a server that has gone would close this
+          believing the rule was saved. */}
+      {save.isError && (
+        <p className={panel.fault} data-testid="save-fault">
+          Not saved. {describeError(save.error)}
+        </p>
+      )}
+
       <div className={`${panel.actions} ${styles.footer}`}>
         <button type="button" className="ghost" onClick={onBack}>
           &larr; Back

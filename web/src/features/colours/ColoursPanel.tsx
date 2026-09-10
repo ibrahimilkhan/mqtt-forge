@@ -8,6 +8,7 @@ import { useGuardedMutate } from '../../lib/useGuardedMutate';
 import { logFault, useLogStore } from '../../stores/logStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
+import { describeError } from '../../lib/problemDetails';
 import panel from '../../styles/panel.module.css';
 import { Plus, Search } from '../brand/icons';
 import { TopicPicker } from '../alerts/TopicPicker';
@@ -354,6 +355,15 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
           does a draft that was never read: there the button is present and refuses, which is the
           panel saying it will not overwrite rules it could not load. Absent, it would look like a
           panel that had simply finished. */}
+      {/* A save that did not happen, where the reader pressed. It is in the broker's record too,
+          which is a panel away — and a Save that comes back enabled with the same list still on
+          screen is indistinguishable from one that worked. */}
+      {save.isError && (
+        <p className={panel.fault} data-testid="save-fault">
+          Not saved. {describeError(save.error)}
+        </p>
+      )}
+
       {(draft === null || rules.length > 0 || unsaved) && (
       <div className={`${panel.actions} ${styles.footer}`}>
         <button
