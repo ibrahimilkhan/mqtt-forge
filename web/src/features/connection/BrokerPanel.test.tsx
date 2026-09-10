@@ -9,7 +9,7 @@ import { useLogStore } from '../../stores/logStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import { queryKeys } from '../../api/queryKeys';
 import { server } from '../../test/server';
-import { BrokerPanel, SETTLE } from './BrokerPanel';
+import { BrokerPanel, SAY_AFTER, SETTLE } from './BrokerPanel';
 
 // A saved connection as the API sends one. Written here rather than inline in six places so a
 // test says only what it is about — the host, or the filter, or the password — and the rest of
@@ -1841,15 +1841,39 @@ describe('while an attempt is running', () => {
     return { answer };
   };
 
-  it('names what it is dialling, and counts', async () => {
+  it('names what it is dialling, and counts, once it has run long enough', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     dialling();
     renderPanel();
 
     await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
 
+    // Nothing yet: a broker on this machine answers inside ten milliseconds and a line that came
+    // and went in that time would be a flicker on a panel where nothing went wrong.
+    expect(screen.queryByTestId('dialling')).not.toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SAY_AFTER + 100);
+    });
+
     const said = await screen.findByTestId('dialling');
     expect(said).toHaveTextContent('Connecting to localhost:1883');
     expect(said).toHaveTextContent(/· \d+s/);
+    vi.useRealTimers();
+  });
+
+  // The ordinary connect, which is over before a reader can look at it.
+  it('says nothing at all about a dial that answers at once', async () => {
+    server.use(
+      http.get('/api/connection', () => HttpResponse.json({ state: 'Disconnected' })),
+      http.post('/api/connection', () => HttpResponse.json({ state: 'Connected' })),
+      http.post('/api/subscriptions', () => new HttpResponse(null, { status: 202 })),
+    );
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+
+    expect(screen.queryByTestId('dialling')).not.toBeInTheDocument();
   });
 
   it('says nothing once there is nothing being dialled', async () => {

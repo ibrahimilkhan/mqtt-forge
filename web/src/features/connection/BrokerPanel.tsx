@@ -58,6 +58,18 @@ import { applyAddress, buildConnectRequest, formFromSaved, type BrokerForm } fro
  */
 export const SETTLE = 300;
 
+/**
+ * How long a dial has to run before the panel says anything about it, in milliseconds.
+ *
+ * Measured against the brokers to hand: one on this machine answers in 1–10ms, one in a container
+ * in 140, one across the internet in 190 — and that same broker over TLS in six seconds, which is
+ * slow and perfectly healthy, since a certificate chain has to be fetched and verified before the
+ * CONNECT can go. So the line has to clear the first group without coming anywhere near the
+ * second. A second is five times the slowest connect that is over before a reader can look at it,
+ * and it still leaves nineteen of the twenty a stalled dial runs for with the line up.
+ */
+export const SAY_AFTER = 1000;
+
 const DEFAULTS: BrokerForm = {
   scheme: 'mqtt',
   host: 'localhost',
@@ -241,8 +253,27 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
      the other way. */
   const dialled = connectMutation.variables?.request ?? form;
   const startedAt = connectMutation.submittedAt > 0 ? connectMutation.submittedAt : null;
-  // A beat only while something is being counted; see useNow.
-  const now = useNow(attemptRunning && startedAt !== null ? 1000 : null);
+  // A beat while a dial is running, which is the only thing on this panel that changes on its own.
+  const now = useNow(attemptRunning ? 1000 : null);
+  /* When this panel first saw a dial running, which is not always when the dial started: a panel
+     opened over one already in progress knows only the second. It decides when to speak, and
+     nothing else — the count below is drawn from the attempt's own instant or not at all. */
+  const [sawDial, setSawDial] = useState<number | null>(null);
+  useEffect(() => {
+    if (!attemptRunning) {
+      setSawDial(null);
+
+      return;
+    }
+
+    setSawDial((first) => first ?? Date.now());
+  }, [attemptRunning]);
+
+  /* Said only once the dial has run long enough to be worth saying. A local broker answers inside
+     ten milliseconds, and a line that appeared and went again in that time is a flicker on a
+     panel where nothing went wrong. */
+  const dialTakingTime =
+    attemptRunning && (startedAt ?? sawDial) !== null && now - (startedAt ?? sawDial)! >= SAY_AFTER;
 
 
   /**
@@ -1197,17 +1228,21 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
 
       {nameBox}
 
-      {/* What the attempt is doing, while it is doing it.
+      {/* What the attempt is doing, once it has been doing it long enough to be worth saying.
           A dial against a host that answers nothing takes twenty seconds — the deadline on one
           CONNECT — and for all twenty of them the panel was the form it had been, with Connect
           swapped for Abort and nothing else changed. A reader cannot tell a dial in progress from
           a form that ignored the press. The address is what is being tried; the count is the part
           that says it is still going.
 
+          Not for the first second, though: a broker on this machine answers inside ten
+          milliseconds, and a line that appears and goes again in that time is a flicker on a
+          panel where nothing went wrong. See SAY_AFTER.
+
           The seconds only where this panel fired the attempt. A panel opened after one had
           started knows the dial is running — the API says so — and not when it began, and a
           counter started at the moment somebody opened a panel would be counting the wrong thing. */}
-      {attemptRunning && (
+      {dialTakingTime && (
         <p className={styles.note} data-testid="dialling" role="status">
           Connecting to {formatEndpoint(dialled.host, dialled.port)}
           {startedAt !== null && ` · ${Math.max(0, Math.round((now - startedAt) / 1000))}s`}
