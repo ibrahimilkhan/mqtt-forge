@@ -679,8 +679,15 @@
      Shared this way round because a plate has to clear the rule above it: eight of those pixels
      are the gap between the head band's line and the card's top edge, and taking them out of the
      padding instead would hang the card off the rule. Checked in the renderer's
-     console-broker-form page, which is the one picture with both columns in it. */
-  .asideStack { position: absolute; inset: -12px 0 0 5px; }
+     console-broker-form page, which is the one picture with both columns in it.
+
+     Twelve out to the right as well, into the pane's own 20px gutter. The gutter is the right
+     number for the form, which is type on paper and wants air around it; it is too much for a
+     plate, which carries its own edge and its own 16px inside that — and the head band's rule
+     runs the full width above, so the strip of paper between the card and the end of that line
+     was the only place on the page where two edges that should agree did not. Eight pixels are
+     left, which is enough that the card is plainly not flush with the pane. */
+  .asideStack { position: absolute; inset: -12px -12px 0 5px; }
   .asideStack > .events { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
   .asideStack > .events:first-child { margin-top: 0; padding-top: 8px; }
   .asideStack .eventList { max-height: none; flex: 1 1 auto; }
