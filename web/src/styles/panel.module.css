@@ -681,13 +681,20 @@
      padding instead would hang the card off the rule. Checked in the renderer's
      console-broker-form page, which is the one picture with both columns in it.
 
-     The whole of the gutter on the right, so the card ends where the pane does. The gutter is
-     the right number for the form, which is type on paper and wants air around it; on this side
-     there is no type — there is a plate that carries its own edge and its own 16px inside it,
-     and past that only the last few pixels of the window. The head band's rule already runs the
-     full width above; the card runs to the same place, and the strip of paper that stood down
-     the right of the page is gone. */
-  .asideStack { position: absolute; inset: -12px -20px 0 5px; }
+     The whole of the gutter on the right and the whole of it at the foot, so the card ends
+     where the pane does on both. The gutter is the right number for the form, which is type on
+     paper and wants air around it, and the 24px under it is scroll-end room for a column that
+     is read to its last line; neither is the right number for a plate. A plate carries its own
+     edge and its own sixteen pixels inside it, and past that there is nothing on these two sides
+     but the pane's hairline and the three pixels of channel — four in all, which is the slack
+     every other plate in the console shows and all this one shows now. The head band's rule
+     already runs the full width above; the card runs to the same place, and the strips of paper
+     that stood down the right of the page and under it are gone.
+
+     The foot is exact rather than generous on purpose: -24px reaches the pane's padding box and
+     not a pixel past it, so a card that fills its column cannot give the pane a scrollbar it did
+     not have. */
+  .asideStack { position: absolute; inset: -12px -20px -24px 5px; }
   .asideStack > .events { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
   .asideStack > .events:first-child { margin-top: 0; padding-top: 8px; }
   .asideStack .eventList { max-height: none; flex: 1 1 auto; }
