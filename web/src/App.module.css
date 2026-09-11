@@ -80,13 +80,14 @@
   color: var(--ink);
   flex: none;
 }
-/* Shut, the band's own button lies over this — it is the whole band — and a positioned box
-   later in the markup paints over an in-flow one, so hovering filled the band and took the mark
-   with it. The mark stands above instead and lets the press through: it is `aria-hidden`
-   decoration, so nothing is lost by making it untouchable, and the ground then arrives behind
-   it the way a ground should. */
-.rail:not([data-open]) .mark {
-  font-size: var(--t-title);
+.rail:not([data-open]) .mark { font-size: var(--t-title); }
+
+/* Both of these stand over the band's own button — which is the whole band — and let the press
+   through to it. A positioned box later in the markup paints over an in-flow one, so without
+   this, hovering filled the band and took the mark and the name with it. Nothing is lost by
+   making them untouchable: one is `aria-hidden` decoration and the other is a word. */
+.mark,
+.wordmark {
   position: relative;
   z-index: 1;
   pointer-events: none;
@@ -134,54 +135,30 @@
    without taking any room. */
 .railToggle {
   all: unset;
+  /* The band is the button, at both widths.
+     It was a 24px box in the corner, which is the smallest thing a finger should be asked to
+     find — and shut, where the strip is 52px and the centred mark takes nineteen, there was not
+     even room for that. The answer to a target that is too small is a bigger one, not a smaller
+     glyph: the mark, the name, the chevron and the white between them are one thing to press,
+     and the only thing in this band to press at all. Pressing the name to narrow the rail is the
+     same instruction as pressing the chevron, and a reader who tried it was right. */
   position: absolute;
-  top: 50%;
-  /* Zero is the rail's own edge, not the band's text margin: an absolute offset resolves against
-     the containing block's padding box, and the band's 12px of side padding is for the things
-     standing in its flow. */
-  right: 0;
-  transform: translateY(-50%);
+  inset: 0;
+  display: flex;
+  align-items: center;
+  /* The chevron stays at the end, where a 24px box centred on the rail's edge used to put it. */
+  justify-content: flex-end;
+  padding-right: 7px;
   font-family: var(--mono);
   font-size: var(--t-lead);
   line-height: 1;
   color: var(--muted);
   cursor: pointer;
-  /* The 24px a finger needs, which one chevron does not reach on its own. */
-  min-width: 24px;
-  min-height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   border-radius: var(--r-control);
 }
-/* Shut, the band is the button.
-
-   The strip is 52px and the centred mark takes nineteen, so there was never room for the 24px a
-   finger needs beside it — and the answer is not a smaller target, it is a bigger one. A reader
-   who has narrowed the rail wants the width back at the top of it: the mark, the chevron and the
-   white between them are one thing to press, and the only thing in the band to press. So the
-   button takes the whole of it and keeps the glyph at the end, which is where it was.
-
-   The mark sits under it, which costs nothing: it is `aria-hidden` decoration and the button
-   paints no ground until the pointer is on it. What the pointer then gets is the whole band
-   filling, which is the plainest way a band can say it is pressable. */
-.rail:not([data-open]) .railToggle {
-  inset: 0;
-  width: auto;
-  min-width: 0;
-  transform: none;
-  justify-content: flex-end;
-  /* Half of what the 15px box used to put either side of the glyph, so the chevron does not move
-     when the band grows around it. */
-  padding-right: 2px;
-}
-/* Open, the button is a chevron in a 24px box and the reach is what makes that box 24px around a
-   glyph that is not. Shut it needs none: the band itself is the target. */
-.rail[data-open] .railToggle::after {
-  content: '';
-  position: absolute;
-  inset: -6px 0 -6px -9px;
-}
+/* Shut, the glyph keeps two pixels off the rail's edge rather than the seven a 24px box used to
+   leave around it. Nothing else changes: the band is the button at both widths. */
+.rail:not([data-open]) .railToggle { padding-right: 2px; }
 .railToggle:hover:not(:disabled) { color: var(--ink); background: var(--paper); }
 .railToggle:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 

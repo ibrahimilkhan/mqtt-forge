@@ -124,10 +124,16 @@
   position: absolute;
   inset: 0;
 }
-/* The two things on the row that are not the pick keep their own presses. Positioned, so they
-   stand above the sheet rather than under it — the twisty already was, for its own reach. */
-.twisty { z-index: 1; }
-.rowActions { position: relative; z-index: 1; }
+/* Everything else on the row stands above that sheet and keeps its own press: the twisty, the
+   glass that opens the search, the hold, and the tree's own controls at the right end of the
+   broker row. Written as 'not the pick' rather than as a list of them, because the list was
+   written as a list once and two controls were left under the sheet — and what that looks like
+   is a button that lights up under the pointer and does nothing when it is pressed, which is
+   the kind of failure nobody reports as a bug in a stylesheet. */
+.node > *:not(.pick) {
+  position: relative;
+  z-index: 1;
+}
 /* all: unset misses the global button:hover fill, which would paint the row.
    :not(:disabled) matches that rule's specificity so this one wins. */
 .twisty:hover:not(:disabled),
