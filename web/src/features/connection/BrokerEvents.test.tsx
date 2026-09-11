@@ -29,7 +29,7 @@ describe('the record of what the link has done', () => {
     render(<BrokerEvents />);
 
     expect(screen.getByRole('heading', { name: /^Events/ })).toHaveTextContent('(0)');
-    expect(screen.getByText('Nothing has happened yet.')).toBeInTheDocument();
+    expect(screen.getByText('No events recorded yet.')).toBeInTheDocument();
   });
 
   describe('searching it', () => {
@@ -76,7 +76,7 @@ describe('the record of what the link has done', () => {
       await userEvent.type(screen.getByLabelText('Search broker events'), 'zzz');
 
       expect(screen.getByText(/No event says/)).toBeInTheDocument();
-      expect(screen.queryByText('Nothing has happened yet.')).not.toBeInTheDocument();
+      expect(screen.queryByText('No events recorded yet.')).not.toBeInTheDocument();
     });
 
     it('gives the whole record back when the box is cleared', async () => {
@@ -152,7 +152,7 @@ describe('the record of what the link has done', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Clear the broker events' }));
 
       expect(useBrokerEventsStore.getState().events).toEqual([]);
-      expect(screen.getByText('Nothing has happened yet.')).toBeInTheDocument();
+      expect(screen.getByText('No events recorded yet.')).toBeInTheDocument();
     });
 
     // Otherwise the card comes back saying 'no event says dropped' about a record that is empty
@@ -166,7 +166,7 @@ describe('the record of what the link has done', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Clear the broker events' }));
 
       expect(screen.getByLabelText('Search broker events')).toHaveValue('');
-      expect(screen.getByText('Nothing has happened yet.')).toBeInTheDocument();
+      expect(screen.getByText('No events recorded yet.')).toBeInTheDocument();
     });
 
     it('offers nothing to clear on an empty record', () => {

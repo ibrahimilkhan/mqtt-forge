@@ -108,7 +108,10 @@ export function BrokerEvents() {
       </div>
 
       {events.length === 0 ? (
-        <p className={styles.eventsEmpty}>Nothing has happened yet.</p>
+        // In the voice the other empty panes use — 'No traffic on X yet.' — rather than 'Nothing
+        // has happened yet', which read as the console making conversation. What this card holds
+        // is a record, and an empty record says it has nothing in it.
+        <p className={styles.eventsEmpty}>No events recorded yet.</p>
       ) : found.length === 0 ? (
         // A search that matches nothing is not the same as a record with nothing in it, and a
         // reader who has just typed needs to be told which of the two they are looking at.

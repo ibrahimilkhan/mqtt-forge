@@ -661,12 +661,28 @@
      The floor is what the card used to be capped at, so a short form does not make the record
      smaller than it was before it could grow. */
   .aside { position: relative; min-height: 21rem; }
-  /* Filling its share, less five pixels at each side: the card is a plate lying on the page and a
-     plate flat against the edge of its own area reads as a plate that has been cut off. Top and
-     bottom it does reach, because what it holds is a list that wants the height. */
-  .asideStack { position: absolute; inset: 0 5px; }
+  /* Filling its share, less five pixels on the side that faces the form: the card is a plate
+     lying on the page and a plate flat against the share next to it reads as one that has been
+     cut off. Not on the outer side — there is nothing out there to be cut off against, only the
+     pane's own 20px gutter, and five more inside it made the gap beside the record half again
+     the gap every other edge on the page keeps. It showed the moment the head band's rule ran
+     full bleed and gave the eye a line to measure the card against. Top and bottom it reaches,
+     because what it holds is a list that wants the height. */
+  /* Lifted twelve pixels above the form's first line, and the card's top padding cut from 14 to
+     8, so that EVENTS lands on the same line as ADDRESS and PORT beside it. The two columns are
+     read across, and a head sitting eighteen pixels under the labels it stands beside made the
+     record look like a second thing starting late rather than the other half of one page.
+
+     The two numbers are one number. The card's head is centred in a row 24px tall — the Clear
+     button sets that — so the name's middle lands at `lift + 1 + padding + 12`, and the label's
+     at 9.4 below the form's top, which leaves -3.75 to share between the lift and the padding.
+     Shared this way round because a plate has to clear the rule above it: eight of those pixels
+     are the gap between the head band's line and the card's top edge, and taking them out of the
+     padding instead would hang the card off the rule. Checked in the renderer's
+     console-broker-form page, which is the one picture with both columns in it. */
+  .asideStack { position: absolute; inset: -12px 0 0 5px; }
   .asideStack > .events { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-  .asideStack > .events:first-child { margin-top: 0; }
+  .asideStack > .events:first-child { margin-top: 0; padding-top: 8px; }
   .asideStack .eventList { max-height: none; flex: 1 1 auto; }
 }
 

@@ -425,7 +425,7 @@ describe('the record of what the link has done', () => {
 
     await userEvent.click(broker.getByRole('button', { name: 'Clear the broker events' }));
 
-    expect(broker.getByText('Nothing has happened yet.')).toBeInTheDocument();
+    expect(broker.getByText('No events recorded yet.')).toBeInTheDocument();
     expect(broker.getByLabelText('Search broker events')).toHaveValue('');
   });
 });
