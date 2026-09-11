@@ -177,11 +177,18 @@ export function App({ hub }: { hub: Hub }) {
 
   return (
     <>
-      <div className={styles.body}>
+      {/* data-rail carries the rail's width to the row, because two things need it now: the rail
+          itself, and the control that changes it, which stands on the seam outside the rail and
+          has to know where that seam is. One custom property, set here — see `--rail-width`. */}
+      <div className={styles.body} data-rail={menuOpen ? 'open' : 'shut'}>
       {/* Never removed, only narrowed. With no bar above it, a rail that vanished would take the
           way back to itself with it. */}
       <div className={styles.rail} data-open={menuOpen ? '' : undefined}>
-        {/* What this is. */}
+        {/* What this is, and nothing else on the row: the mark and the name stand in the middle
+            of the band at both widths. They shared it with the control that narrows the rail,
+            which pushed the lockup off centre by half that button — and worse shut, where the
+            strip is 52px and the mark was the thing a reader looks for to know what they have
+            open. */}
         <div className={styles.railHead}>
           <span className={styles.mark} aria-hidden="true">
             <Mark />
@@ -191,17 +198,6 @@ export function App({ hub }: { hub: Hub }) {
               <Wordmark />
             </h1>
           )}
-          <button
-            type="button"
-            className={styles.railToggle}
-            aria-expanded={menuOpen}
-            aria-controls="panel-menu"
-            aria-label="Panel menu"
-            title={menuOpen ? 'Narrow the rail' : 'Open the rail'}
-            onClick={() => setMenuOpen((open) => !open)}
-          >
-            {menuOpen ? '‹' : '›'}
-          </button>
         </div>
 
         {/* Kept at both widths. Shut, the labels go and the icons stay, so narrowing the rail
@@ -301,6 +297,24 @@ export function App({ hub }: { hub: Hub }) {
           <StreamPause compact={!menuOpen} live={state === 'Connected'} />
         </div>
       </div>
+
+      {/* On the seam it moves, halfway down it. It sat in the rail's head band, which is where a
+          reader looks for the name of the tool rather than for a control — and it was a chevron
+          in the corner of a band whose other half is a wordmark. The seam is the thing it acts
+          on: press it and that line moves. Outside the rail in the markup because the rail
+          clips, and this straddles its edge; after it, so it follows the rail's own contents for
+          anyone arriving by keyboard. */}
+      <button
+        type="button"
+        className={styles.railToggle}
+        aria-expanded={menuOpen}
+        aria-controls="panel-menu"
+        aria-label="Panel menu"
+        title={menuOpen ? 'Narrow the rail' : 'Open the rail'}
+        onClick={() => setMenuOpen((open) => !open)}
+      >
+        {menuOpen ? '‹' : '›'}
+      </button>
 
       <Workspace
         panel={Panel ? <Panel onClose={close} open={setOpenPanel} /> : undefined}
