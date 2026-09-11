@@ -243,17 +243,12 @@ export function App({ hub }: { hub: Hub }) {
                   (menuOpen ? (
                     <h2 className={styles.menuGroup}>{panel.group}</h2>
                   ) : (
-                    /* At every boundary the open rail puts a heading at, the first included —
-                       where the rule itself is left off, since a line there would stand a few
-                       pixels under the head band's own and read as a second one. It is drawn for
-                       its height either way: the same box as the heading it stands in for, so
-                       narrowing the rail does not move a single icon. A reader who shuts the rail
-                       has shut it to get the width back, not to hunt for Colours again. */
-                    <span
-                      className={styles.menuSplit}
-                      data-first={index === 0 ? '' : undefined}
-                      aria-hidden="true"
-                    />
+                    /* At every boundary the open rail puts a heading at, the first included:
+                       three groups, three divisions, whichever width the rail is. It is the same
+                       box as the heading it stands in for, so narrowing the rail does not move a
+                       single icon — a reader who shuts the rail has shut it to get the width
+                       back, not to hunt for Colours again. */
+                    <span className={styles.menuSplit} aria-hidden="true" />
                   ))}
                 <button
                   type="button"

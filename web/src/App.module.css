@@ -232,9 +232,12 @@
   height: 1px;
   background: var(--rule);
 }
-/* Nothing above the first group but the head band's own rule, which is two pixels of hairline in
-   a row saying one thing. The box stays; the line goes. */
-.menuSplit[data-first]::before { content: none; }
+/* The first group's rule was left off once, on the reasoning that a hairline there would stand a
+   few pixels under the head band's own and read as a second one. It does not: it lands eighteen
+   pixels below it — the menu's 4px of top padding plus half the band — and it is a 20px mark
+   centred in a 52px strip against a rule that runs the strip's whole width, which is two plainly
+   different things. What the exception actually made was a menu with three groups and two
+   divisions, which is one short of what the open rail draws. */
 
 .menuBtn {
   display: flex;
