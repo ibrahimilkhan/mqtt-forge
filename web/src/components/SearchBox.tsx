@@ -48,7 +48,11 @@ export function SearchBox({ label, value, onChange, placeholder = 'Search', focu
         <button
           type="button"
           className={styles.clear}
-          aria-label={`Clear ${label.toLowerCase()}`}
+          /* Built from what the box searches rather than from the box's own label, which is a
+             sentence: 'Search the log' made this 'Clear search the log'. Naming the thing alone
+             would be worse — 'Clear the log' and 'Clear broker events' are two other buttons on
+             the same screens, and they empty what this only stops narrowing. */
+          aria-label={`Clear the search in ${label.replace(/^Search /i, '')}`}
           onClick={() => onChange('')}
         >
           ×

@@ -84,7 +84,7 @@ describe('the record of what the link has done', () => {
       await openSearch();
       await userEvent.type(screen.getByLabelText('Search broker events'), 'dropped');
 
-      await userEvent.click(screen.getByRole('button', { name: 'Clear search broker events' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Clear the search in broker events' }));
 
       expect(rows()).toHaveLength(3);
     });

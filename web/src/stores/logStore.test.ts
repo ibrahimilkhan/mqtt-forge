@@ -10,6 +10,7 @@ import {
   TOPIC_BYTES,
   TOPIC_DEPTH,
   useLogStore,
+  stampMeaning,
 } from './logStore';
 import { TopicRing } from './topicRing';
 
@@ -463,5 +464,32 @@ describe('the memory budget', () => {
     useLogStore.getState().forgetTopics(['going']);
 
     expect(useLogStore.getState().weight).toBe(500);
+  });
+});
+
+/**
+ * The chips say what a copy arrived as; this says what the chip means. It is one string in one
+ * place because the log row and the window bar both read from it — so when it goes stale it goes
+ * stale in both at once, and neither of them looks wrong.
+ */
+describe('what a stamp means', () => {
+  // It said 'this console listens to everything at QoS 0' for as long as it did. The on-connect
+  // subscription was raised to QoS 2 precisely so the stamp would be the publisher's own answer
+  // rather than a constant this console had written itself — see EVERYTHING_QOS — and the
+  // sentence explaining the stamp went on contradicting the reason the stamp is worth reading.
+  it('does not tell a reader the console listens at QoS 0', () => {
+    const said = stampMeaning('QoS 2');
+
+    expect(said).toBeDefined();
+    expect(said).not.toMatch(/listens to everything at QoS 0/);
+    expect(said).toMatch(/QoS 2 on connect/);
+  });
+
+  it('says the same thing for every level, because the chip is about the copy', () => {
+    expect(stampMeaning('QoS 0')).toBe(stampMeaning('QoS 2'));
+  });
+
+  it('has nothing to say about a stamp it does not know', () => {
+    expect(stampMeaning('WHATEVER')).toBeUndefined();
   });
 });

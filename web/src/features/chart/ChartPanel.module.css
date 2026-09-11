@@ -69,6 +69,11 @@
 .reading input {
   /* Lines the box up with the first line of the label rather than the middle of the block. */
   margin: 3px 0 0;
+  /* The console's blue, like every other box in it — see panel.module.css `.checks input` and
+     the three beside it. Without this the tick is whatever accent the operating system is set
+     to, which on a machine with a pink or green accent is the one control in the app wearing a
+     colour the console never chose. */
+  accent-color: var(--signal);
 }
 
 .readingText { display: flex; flex-direction: column; gap: 1px; min-width: 0; }

@@ -185,7 +185,7 @@ describe('finding one topic among many', () => {
       'plant/boiler/temp',
     ]);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Clear search the topics' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Clear the search in the topics' }));
 
     expect(topics()).toEqual(expect.arrayContaining(['office', 'plant']));
   });

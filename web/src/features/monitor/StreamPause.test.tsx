@@ -29,14 +29,14 @@ describe('stopping the console taking messages', () => {
       usePauseStore.setState({ paused: true });
       render(<StreamPause />);
 
-      expect(screen.getByRole('button', { name: 'Take messages again' })).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Resume' })).toBeEnabled();
     });
   });
 
   it('offers to stop while it is running', () => {
     render(<StreamPause live />);
 
-    expect(screen.getByRole('button', { name: 'Stop taking messages' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Stop stream' })).toBeInTheDocument();
   });
 
   // At the foot of the rail it has the width for words, and a red box with two bars in it is a
@@ -44,9 +44,7 @@ describe('stopping the console taking messages', () => {
   it('says what pressing it does', () => {
     render(<StreamPause live />);
 
-    expect(screen.getByRole('button', { name: 'Stop taking messages' })).toHaveTextContent(
-      'Stop stream',
-    );
+    expect(screen.getByRole('button', { name: 'Stop stream' })).toHaveTextContent('Stop stream');
   });
 
   it('drops the words with the rail, keeping them on the element', () => {
@@ -59,23 +57,23 @@ describe('stopping the console taking messages', () => {
 
   it('stops the flow when it is pressed', async () => {
     render(<StreamPause live />);
-    await userEvent.click(screen.getByRole('button', { name: 'Stop taking messages' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Stop stream' }));
 
     expect(usePauseStore.getState().paused).toBe(true);
   });
 
   it('offers the way back once it is stopped', async () => {
     render(<StreamPause live />);
-    await userEvent.click(screen.getByRole('button', { name: 'Stop taking messages' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Stop stream' }));
 
-    expect(screen.getByRole('button', { name: 'Take messages again' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Resume' })).toBeInTheDocument();
   });
 
   it('starts the flow again, leaving the queue to drain', async () => {
     render(<StreamPause live />);
-    await userEvent.click(screen.getByRole('button', { name: 'Stop taking messages' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Stop stream' }));
     act(() => usePauseStore.getState().track(40));
-    await userEvent.click(screen.getByRole('button', { name: /Take messages again/ }));
+    await userEvent.click(screen.getByRole('button', { name: /Resume/ }));
 
     expect(usePauseStore.getState().paused).toBe(false);
     // Not cleared here: the queue is the bridge's, and the number falls as it lands.
@@ -94,7 +92,7 @@ describe('stopping the console taking messages', () => {
       act(() => void vi.advanceTimersByTime(500));
 
       expect(
-        screen.getByRole('button', { name: 'Take messages again, 1200 waiting' }),
+        screen.getByRole('button', { name: 'Resume, 1200 waiting' }),
       ).toHaveTextContent('1.2k');
     });
 
@@ -130,14 +128,14 @@ describe('stopping the console taking messages', () => {
       // rather than what is being held back.
       act(() => usePauseStore.getState().toggle());
 
-      expect(screen.getByRole('button', { name: 'Stop taking messages' })).toHaveTextContent(
+      expect(screen.getByRole('button', { name: 'Stop stream' })).toHaveTextContent(
         'Stop stream2.4k',
       );
 
       act(() => usePauseStore.getState().track(0));
       act(() => void vi.advanceTimersByTime(500));
 
-      expect(screen.getByRole('button', { name: 'Stop taking messages' })).toHaveTextContent(
+      expect(screen.getByRole('button', { name: 'Stop stream' })).toHaveTextContent(
         'Stop stream',
       );
     });

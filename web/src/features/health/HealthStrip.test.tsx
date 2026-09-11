@@ -41,6 +41,21 @@ describe('what the console is carrying', () => {
     expect(screen.getByText('measuring…')).toBeInTheDocument();
   });
 
+  // One message on one topic is the ordinary state a second after a connection comes up, and the
+  // strip read '1 on 1 topics' through all of it.
+  it('earns the s on the topics it is spread over', () => {
+    send(message('plant/one', '21'));
+    render(<HealthStrip />);
+    aSecond();
+
+    expect(screen.getByText('1 on 1 topic')).toBeInTheDocument();
+
+    send(message('plant/two', '22'));
+    aSecond();
+
+    expect(screen.getByText('2 on 2 topics')).toBeInTheDocument();
+  });
+
   it('counts what the log holds and what it is spread over', () => {
     send(message('plant/one', '21'), message('plant/two', '22'), message('plant/one', '23'));
     render(<HealthStrip />);

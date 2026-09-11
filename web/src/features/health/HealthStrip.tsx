@@ -80,7 +80,9 @@ export function HealthStrip() {
           <Cell
             label="held"
             slot={18}
-            value={`${count(reading.held)} on ${count(reading.topics)} topics`}
+            /* The noun earns its s. One message on one topic is the ordinary state a second
+               after a connection comes up, and the strip said '1 on 1 topics' through it. */
+            value={`${count(reading.held)} on ${count(reading.topics)} ${reading.topics === 1 ? 'topic' : 'topics'}`}
           />
           {/* Tense once the console is full, because that is the reading that has stopped being
               only a fact: past the budget in Settings, runs are being cut back to fit. */}

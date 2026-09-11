@@ -437,12 +437,12 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
           )}
           {dropped > 0 && (
             <p className={styles.engineRow} data-severity="critical" data-testid="engine-row">
-              {`${dropped} messages went past unjudged — the engine was behind.`}
+              {`${dropped} ${dropped === 1 ? 'message' : 'messages'} went past unjudged — the engine was behind.`}
             </p>
           )}
           {webhooksDropped > 0 && (
             <p className={styles.engineRow} data-severity="critical" data-testid="engine-row">
-              {`${webhooksDropped} webhook calls were dropped — more were owed than could be sent.`}
+              {`${webhooksDropped} webhook ${webhooksDropped === 1 ? 'call was' : 'calls were'} dropped — more were owed than could be sent.`}
             </p>
           )}
           {/* A list, not a count: the engine names each rule that hit its ceiling and says how

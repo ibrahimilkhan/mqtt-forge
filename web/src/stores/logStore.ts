@@ -493,7 +493,7 @@ export const logFault = (verb: string, error: unknown, topic?: string) =>
  */
 export function stampMeaning(stamp: string): string | undefined {
   if (stamp.startsWith('QoS'))
-    return 'The QoS this copy was delivered at. A subscription caps the QoS of every copy sent under it, so a QoS 2 publish arrives at QoS 0 on a QoS 0 subscription — and this console listens to everything at QoS 0.';
+    return 'The QoS this copy was delivered at. A subscription caps the QoS of every copy sent under it, so a QoS 2 publish arrives at QoS 0 on a QoS 0 subscription. This console subscribes at QoS 2 on connect, so the level here is the publisher\'s own; a filter you add yourself arrives at the level you gave it.';
 
   if (stamp === 'RETAINED')
     return 'The broker sent this copy out of the message it had stored, because a subscription had just been made.';

@@ -59,12 +59,23 @@ export function StreamPause({ compact = false, live = false }: Props) {
       data-compact={compact ? '' : undefined}
       disabled={idle}
       aria-pressed={paused}
+      /* Two names for two shapes, and the reason is WCAG's 'label in name': shut, the rail draws
+         the mark alone and this is the only name there is, so it says what pressing it does.
+         Open, the word is on the button — and an accessible name that replaced it left anyone
+         driving by voice saying 'click stop stream' at a control by that name that answered to
+         another. The tooltip carries the explanation either way. */
       aria-label={
         paused
           ? waiting > 0
-            ? `Take messages again, ${waiting} waiting`
-            : 'Take messages again'
-          : 'Stop taking messages'
+            ? compact
+              ? `Take messages again, ${waiting} waiting`
+              : `Resume, ${waiting} waiting`
+            : compact
+              ? 'Take messages again'
+              : 'Resume'
+          : compact
+            ? 'Stop taking messages'
+            : 'Stop stream'
       }
       title={
         idle

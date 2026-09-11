@@ -1085,7 +1085,7 @@ describe('searching the topics', () => {
     await openSearch();
     await userEvent.type(search(), 'boiler');
 
-    await userEvent.click(screen.getByRole('button', { name: 'Clear search the topics' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Clear the search in the topics' }));
 
     // Two branches at the top level again, folded, rather than four flat answers.
     expect(rowNames()).toEqual(['office', 'plant']);

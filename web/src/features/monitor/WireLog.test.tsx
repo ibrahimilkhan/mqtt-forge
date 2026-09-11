@@ -1798,7 +1798,7 @@ describe('searching the log', () => {
     await openSearch();
     await userEvent.type(search(), 'zzz');
 
-    await userEvent.click(screen.getByRole('button', { name: 'Clear search the log' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Clear the search in the log' }));
 
     expect(screen.getByTestId('entry')).toBeInTheDocument();
   });

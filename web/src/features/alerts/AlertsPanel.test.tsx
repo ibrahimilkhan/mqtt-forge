@@ -338,6 +338,16 @@ describe('AlertsPanel', () => {
     expect(screen.getByText(/1 rule reached a ceiling/)).toBeInTheDocument();
   });
 
+  // Every one of these is a running total from the server and every one of them passes through 1
+  // on its way up, so the sentence has to survive being about one thing.
+  it('says one of each in the singular', async () => {
+    answers({ dropped: 1, webhooksDropped: 1 });
+    renderPanel();
+
+    expect(await screen.findByText(/^1 message went past unjudged/)).toBeInTheDocument();
+    expect(screen.getByText(/^1 webhook call was dropped/)).toBeInTheDocument();
+  });
+
   // Asked for on 2026-09-06, overruling the earlier decision that the rail saying 'no link' was
   // enough. It says there is no link; it does not say what that costs the rules, and a panel full
   // of ticks and counts over a stopped watch is the reading a person actually takes from it.

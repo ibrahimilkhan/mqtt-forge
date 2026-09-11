@@ -295,7 +295,11 @@
 
 .linkStale {
   margin: 6px 0 0;
-  font-size: var(--t-note);
+  /* `--t-note` was never a token. A var() that resolves to nothing is invalid at computed-value
+     time, which does not fall back to the declaration it overrode — it falls back to `inherit`,
+     so this sentence has been printing at whatever the panel's body size is rather than at a
+     note's. --t-small is what `.note` above is set in, and this is a note. */
+  font-size: var(--t-small);
   line-height: 1.45;
   color: var(--warn);
 }

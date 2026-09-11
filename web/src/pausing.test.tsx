@@ -121,7 +121,7 @@ const pick = (segment: string) => userEvent.click(tree().getByText(segment));
 
 /** The control in the rail. */
 const streamControl = () =>
-  screen.getByRole('button', { name: /Stop taking messages|Take messages again/ });
+  screen.getByRole('button', { name: /Stop stream|Resume/ });
 
 /** The control on the selected row, if that row is carrying one. */
 const holdControl = () => screen.getByRole('button', { name: /Pause the pane|Let the pane go/ });
@@ -414,7 +414,7 @@ describe('both pauses at once', () => {
 
     // A held row is not a queue: the messages were taken in, they are simply not drawn here.
     expect(usePauseStore.getState().waiting).toBe(0);
-    expect(streamControl()).toHaveAccessibleName('Stop taking messages');
+    expect(streamControl()).toHaveAccessibleName('Stop stream');
   });
 
   it('leaves a held row held when the console is stopped and started again', async () => {
@@ -443,7 +443,7 @@ describe('the two pauses against the link', () => {
     await pick('temp');
 
     // Nothing is arriving, so there is nothing to stop.
-    expect(screen.getByRole('button', { name: 'Stop taking messages' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Stop stream' })).toBeDisabled();
     // The row's hold is about what is drawn, not about the link, so it is offered either way.
     await userEvent.click(holdControl());
     expect(useHoldStore.getState().held).not.toBeNull();
@@ -460,7 +460,7 @@ describe('the two pauses against the link', () => {
     // back, and a console left holding a queue nobody can release would ignore the traffic when
     // the link returned.
     render(<StreamPause live={false} />);
-    const [, offline] = screen.getAllByRole('button', { name: /Take messages again/ });
+    const [, offline] = screen.getAllByRole('button', { name: /Resume/ });
 
     expect(offline).toBeEnabled();
 
