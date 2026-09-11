@@ -390,7 +390,15 @@ export function TopicTree({ broker }: { broker?: string }) {
       <h2 className="srOnly">Topics</h2>
 
       {root.subTopics === 0 ? (
-        <p className="empty">No topics yet.</p>
+        // Two different nothings, and 'No topics yet' answered both with one sentence: a console
+        // nobody has connected yet, and a broker that has not said anything. The first is the
+        // reader's move to make and the sentence says so; the second is the broker's, and naming
+        // it is what tells a reader the console is listening to the one they meant.
+        <div className={styles.emptyBand}>
+          <p className="empty">
+            {broker ? `No topics from ${broker} yet.` : 'Connect a broker to see its topics.'}
+          </p>
+        </div>
       ) : (
         <div className={styles.tree} data-finding={open ? '' : undefined}>
           {/* One root for the whole broker, so the totals are readable without expanding
@@ -407,6 +415,10 @@ export function TopicTree({ broker }: { broker?: string }) {
             open={brokerOpen}
             active={false}
             selected={selectedFilter === EVERYTHING}
+            // Only with a live link behind it. Without one the row still stands — the tree keeps
+            // what it has heard — but it says 'Not connected', and filling a row that is naming
+            // an absence would be the console looking pleased about it.
+            root={Boolean(broker)}
             actions={brokerActions}
             onToggle={toggleBroker}
             onSelect={pickBroker}

@@ -295,7 +295,7 @@ describe('emptying the console', () => {
     await userEvent.click(panelNamed('Manage panel').getByRole('button', { name: /^Yes, clear/ }));
 
     expect(useLogStore.getState().held).toBe(0);
-    expect(within(tree()).getByText(/No topics yet/)).toBeInTheDocument();
+    expect(within(tree()).getByText(/No topics from/)).toBeInTheDocument();
   });
 
   /**
@@ -317,7 +317,7 @@ describe('emptying the console', () => {
 
     // PLANT is six messages on six topics; one of them was selected and is gone.
     expect(useLogStore.getState().held).toBe(5);
-    expect(within(tree()).queryByText(/No topics yet/)).not.toBeInTheDocument();
+    expect(within(tree()).queryByText(/No topics from/)).not.toBeInTheDocument();
     expect(within(tree()).getByText('pump')).toBeInTheDocument();
     expect(screen.getByLabelText('Search the log')).toHaveValue('');
   });

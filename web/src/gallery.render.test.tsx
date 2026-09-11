@@ -372,6 +372,7 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
     'console-broker.html',
     'console-broker-form.html',
     'console-filters.html',
+    'console-empty.html',
     'console-colours.html',
     'console-painted.html',
     'console-zoomed.html',
@@ -401,6 +402,8 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
                 ? 'Broker form'
               : href === 'console-filters.html'
                 ? 'A panel in the column'
+              : href === 'console-empty.html'
+                ? 'Nothing connected'
               : href === 'console-colours.html'
                 ? 'Colour rules'
               : href === 'console-painted.html'
@@ -453,6 +456,14 @@ ${inner}
   writeFileSync(`${OUT}/console-broker.html`, console_(client, { panel: 'broker' }));
   // The same panel with nothing connected, which is what a reader actually opens the console on.
   writeFileSync(`${OUT}/console-broker-form.html`, console_(client, { panel: 'broker', link: false }));
+  // The console as it stands the moment it is opened: nothing connected, nothing heard. Every
+  // other page here is of a console in use, and the empty state is a state too — it is the first
+  // one every reader sees, and the only one where the panes say what they are for rather than
+  // what they hold.
+  writeFileSync(
+    `${OUT}/console-empty.html`,
+    console_(client, { panel: null, link: false, traffic: false }),
+  );
   // One of the six that open in a column rather than over the workspace. The renderer had no
   // picture of that shape at all, and it is the one the head band is narrowest in.
   writeFileSync(`${OUT}/console-filters.html`, console_(client, { panel: 'subscribe' }));
@@ -782,7 +793,7 @@ function detail() {
  * a fake hub satisfies the bridge. What this writes is the real layout with real components in
  * it, at whatever size the window opens — which is what a screenshot of the console is.
  */
-function console_(client, { zoomed = false, pinned = false, opened = false, panel = 'broker', rail = 'open', colours = false, link = true } = {}) {
+function console_(client, { zoomed = false, pinned = false, opened = false, panel = 'broker', rail = 'open', colours = false, link = true, traffic = true } = {}) {
   // Primed rather than fetched. Rendering here is one synchronous pass, so a query that has to
   // go and ask would still be pending when the HTML is taken — and the page would show a console
   // that had not connected to anything.
@@ -825,13 +836,13 @@ function console_(client, { zoomed = false, pinned = false, opened = false, pane
   // card — and so the head over it can be seen doing what it is there to do: the word on the
   // clock, the count on the lines.
   useBrokerEventsStore.setState({ events: [] });
-  for (const event of [
+  for (const event of traffic ? [
     { kind: 'ok', what: 'Subscribed', detail: '#' },
     { kind: 'ok', what: 'Connected', detail: 'localhost:1883' },
     { kind: 'note', what: 'Try 3 succeeded' },
     { kind: 'fault', what: 'Try 2 failed', detail: 'Connection refused' },
     { kind: 'fault', what: 'Link dropped', detail: 'The broker closed the connection' },
-  ].reverse()) {
+  ].reverse() : []) {
     useBrokerEventsStore.getState().push(event);
   }
   useZoomStore.setState({ zoomed, box: null });
@@ -860,7 +871,7 @@ function console_(client, { zoomed = false, pinned = false, opened = false, pane
   });
   // A broker with enough on it to look like one: three branches, a few kinds of reading, and the
   // colour rules above landing on more than one row.
-  const traffic = [
+  const arrivals = [
     ['sensors/livingroom/temp', wobble(60, 21.6, 1.4)],
     ['sensors/livingroom/humidity', wobble(60, 48, 3)],
     ['sensors/garage/temp', wobble(60, 12.6, 0.8)],
@@ -878,7 +889,7 @@ function console_(client, { zoomed = false, pinned = false, opened = false, pane
     ['alerts/door/back', repeat(10, '0')],
     ['alerts/smoke/kitchen', repeat(8, 'clear')],
   ];
-  for (const [topic, bodies] of traffic) {
+  for (const [topic, bodies] of traffic ? arrivals : []) {
     for (const body of bodies) useLogStore.getState().push({ kind: 'recv', topic, body, qos: 0, stamps: ['qos 0'] });
 
     // The tree is built from arrivals the same way the live one is, so what it shows is a real

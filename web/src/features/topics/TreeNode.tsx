@@ -16,6 +16,8 @@ type Props = {
   selected: boolean;
   /** The colour rule covering this row's topic, or null when none does. */
   rule?: ColourRule | null;
+  /** Whether this is the broker's own row, with a live link behind it. It fills, faintly. */
+  root?: boolean;
   /** Controls parked at the row's right end. Siblings of the pick button, never inside it. */
   actions?: ReactNode;
   onToggle: (path: string) => void;
@@ -44,6 +46,7 @@ export const TreeNode = memo(function TreeNode({
   active,
   selected,
   rule,
+  root = false,
   actions,
   onToggle,
   onSelect,
@@ -66,6 +69,7 @@ export const TreeNode = memo(function TreeNode({
       data-branch={isBranch}
       data-active={active}
       data-selected={selected}
+      data-root={root ? '' : undefined}
       data-depth={depth}
       style={rowStyle(depth, rule)}
     >

@@ -52,6 +52,14 @@
   content-visibility: auto;
   contain-intrinsic-size: auto 22px;
 }
+/* The broker's row: the top of the tree, faintly filled so that it reads as the thing every
+   other row hangs off rather than as the first of a list of equals. The console's own blue at
+   four percent — enough to separate it from the paper under a row of white ones, and far too
+   little to compete with the two fills that mean something is happening: the traffic marker
+   below and the selected row's own. Those are written after this and at the same weight, so a
+   row that is taking messages or is the one the log is about says that instead. */
+.node[data-root] { background: color-mix(in srgb, var(--signal) 4%, transparent); }
+
 /* Traffic marker. Deliberately not animated: every row used to run its own 700ms fade out of
    phase with its neighbours, and a busy broker turned that into a screen-wide strobe. A row
    receiving messages simply stays this colour until it falls quiet. */
@@ -59,6 +67,20 @@
 /* Top-level rows only; every level would thin the spacing out in deep trees. */
 .tree > .node[data-depth="0"] { margin-top: 9px; }
 .tree > .node[data-depth="0"]:first-child { margin-top: 0; }
+
+/* Nothing in the tree at all, so the sentence saying so stands where the tree's own head row
+   would: lifted out of the pane's 11px of top padding and as tall as the rail's band. A reader
+   with an empty console sees one line across the top of it rather than a sentence floating a
+   centimetre below everything else on the screen. */
+.emptyBand {
+  margin-top: -11px;
+  min-height: var(--head-band);
+  display: flex;
+  align-items: center;
+}
+/* The paragraph keeps the stripe and the ink `.empty` gives it, and gives up the margins a `p`
+   arrives with: the band is what places it now. */
+.emptyBand > p { margin: 0; }
 
 /* The broker's row is this pane's head: it names what the tree is of, and it carries what is
    done to the tree — find, where to look, open every branch, close every branch. So it is drawn

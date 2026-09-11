@@ -105,9 +105,9 @@ export function TopicPicker({
       </div>
 
       {root.subTopics === 0 ? (
-        <p className="empty">
-          No topics yet.
-        </p>
+        // Not 'connect a broker', which is what the tree says: a reader here is writing an alert
+        // rule, and the console is not asking them to go and do something else first.
+        <p className="empty">No topics to pick from yet.</p>
       ) : shown.length === 0 ? (
         <p className="empty">No topic here carries &lsquo;{needle.trim()}&rsquo;.</p>
       ) : (

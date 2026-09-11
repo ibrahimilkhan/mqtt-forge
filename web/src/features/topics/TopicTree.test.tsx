@@ -141,12 +141,17 @@ describe('rooted at the broker', () => {
 });
 
 describe('TopicTree', () => {
-  it('explains itself while empty', () => {
+  // Two different nothings, and one sentence used to answer both.
+  it('names the broker it has heard nothing from', () => {
     render(<TopicTree broker="broker:1883" />);
 
-    expect(
-      screen.getByText('No topics yet.'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('No topics from broker:1883 yet.')).toBeInTheDocument();
+  });
+
+  it('asks for a broker when there is none', () => {
+    render(<TopicTree />);
+
+    expect(screen.getByText('Connect a broker to see its topics.')).toBeInTheDocument();
   });
 
   const branchOf = (name: string) => screen.getByText(name).closest<HTMLElement>('[data-open]');
