@@ -706,7 +706,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
    */
   if (live) {
     return (
-      <PanelShell title="Broker" onClose={releaseThenClose}>
+      <PanelShell title="Broker" named onClose={releaseThenClose}>
         <div className={styles.spread}>
         <div className={styles.spreadGrid}>
         <div className={styles.live}>
@@ -773,7 +773,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <PanelShell title="Broker" onClose={releaseThenClose}>
+    <PanelShell title="Broker" named onClose={releaseThenClose}>
       {/* One column, in the order the questions arrive: where to point it, who it says it is
           when it gets there, and how the channel is secured.
 
@@ -793,14 +793,14 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <div className={styles.form} onKeyDown={onEnter}>
         <section className={styles.group}>
-          {/* Named, now that the three blocks stand one under another rather than in columns a
-              reader could take in at a glance. A heading each is what tells a scrolling eye which
-              question it has arrived at. */}
-          <h3 className={styles.groupTitle}>Broker</h3>
-          {/* The address, first, because it is the only thing the reader actually has. Labelled
-              with the half of its name the heading above does not already say — BROKER over
-              BROKER ADDRESS put the same word on screen twice, in two different voices, one line
-              apart. The way in stands at the head of it, where a scheme stands in a URL — and it is two words rather
+          {/* No heading of its own. The three that follow are folds and say their names on the
+              line you press; this one is what the page opens on, and the page says BROKER across
+              the top of itself — see PanelShell's band. A second BROKER here, a centimetre under
+              the first and in the same voice, named nothing that was not already named.
+              The address, first, because it is the only thing the reader actually has. Labelled
+              with the half of its name the band above does not already say — BROKER over BROKER
+              ADDRESS put the same word on screen twice, in two different voices, one line apart.
+              The way in stands at the head of it, where a scheme stands in a URL — and it is two words rather
               than four, because mqtt against mqtts was never one question. It was two, multiplied
               together and asked in a letter nobody can see. */}
           <div className={styles.row}>

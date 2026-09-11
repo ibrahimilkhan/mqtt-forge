@@ -22,13 +22,13 @@ describe('the record of what the link has done', () => {
 
     render(<BrokerEvents />);
 
-    expect(screen.getByRole('heading', { name: /Broker events/ })).toHaveTextContent('(2)');
+    expect(screen.getByRole('heading', { name: /^Events/ })).toHaveTextContent('(2)');
   });
 
   it('counts nothing as nothing', () => {
     render(<BrokerEvents />);
 
-    expect(screen.getByRole('heading', { name: /Broker events/ })).toHaveTextContent('(0)');
+    expect(screen.getByRole('heading', { name: /^Events/ })).toHaveTextContent('(0)');
     expect(screen.getByText('Nothing has happened yet.')).toBeInTheDocument();
   });
 
@@ -64,7 +64,7 @@ describe('the record of what the link has done', () => {
 
       await userEvent.type(screen.getByLabelText('Search broker events'), 'dropped');
 
-      expect(screen.getByRole('heading', { name: /Broker events/ })).toHaveTextContent('(1 of 3)');
+      expect(screen.getByRole('heading', { name: /^Events/ })).toHaveTextContent('(1 of 3)');
     });
 
     // A record with nothing in it and a search matching nothing are two different answers, and
@@ -182,7 +182,7 @@ describe('the record of what the link has done', () => {
     render(<BrokerEvents />);
 
     expect(rows()).toHaveLength(40);
-    expect(screen.getByRole('heading', { name: /Broker events/ })).toHaveTextContent('(60)');
+    expect(screen.getByRole('heading', { name: /^Events/ })).toHaveTextContent('(60)');
     expect(within(rows()[0]).getByText('Try 59 failed')).toBeInTheDocument();
   });
 });

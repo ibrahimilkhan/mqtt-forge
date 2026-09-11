@@ -415,12 +415,12 @@ describe('the record of what the link has done', () => {
 
     await goTo('Broker');
     const broker = panelNamed('Broker panel');
-    expect(broker.getByRole('heading', { name: /Broker events/ })).toHaveTextContent('(3)');
+    expect(broker.getByRole('heading', { name: /^Events/ })).toHaveTextContent('(3)');
 
     await userEvent.click(broker.getByRole('button', { name: 'Find in the record' }));
     await userEvent.type(broker.getByLabelText('Search broker events'), 'dropped');
 
-    expect(broker.getByRole('heading', { name: /Broker events/ })).toHaveTextContent('(1 of 3)');
+    expect(broker.getByRole('heading', { name: /^Events/ })).toHaveTextContent('(1 of 3)');
     expect(broker.getAllByRole('listitem')).toHaveLength(1);
 
     await userEvent.click(broker.getByRole('button', { name: 'Clear the broker events' }));

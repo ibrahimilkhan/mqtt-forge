@@ -368,6 +368,7 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
     'gallery-log.html',
     'console.html',
     'console-broker.html',
+    'console-broker-form.html',
     'console-colours.html',
     'console-painted.html',
     'console-zoomed.html',
@@ -393,6 +394,8 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
                 ? 'The console'
               : href === 'console-broker.html'
                 ? 'Broker panel'
+              : href === 'console-broker-form.html'
+                ? 'Broker form'
               : href === 'console-colours.html'
                 ? 'Colour rules'
               : href === 'console-painted.html'
@@ -443,6 +446,8 @@ ${inner}
   writeFileSync(`${OUT}/console-painted.html`, console_(client, { panel: null, colours: true }));
   // The panel the console opens on, which is the one page that shows the broker form whole.
   writeFileSync(`${OUT}/console-broker.html`, console_(client, { panel: 'broker' }));
+  // The same panel with nothing connected, which is what a reader actually opens the console on.
+  writeFileSync(`${OUT}/console-broker-form.html`, console_(client, { panel: 'broker', link: false }));
   // The same console with the chart thrown open, which is the state a static page can show and
   // a click cannot be recorded in.
   writeFileSync(`${OUT}/console-zoomed.html`, console_(client, { zoomed: true, panel: null }));
@@ -769,22 +774,30 @@ function detail() {
  * a fake hub satisfies the bridge. What this writes is the real layout with real components in
  * it, at whatever size the window opens — which is what a screenshot of the console is.
  */
-function console_(client, { zoomed = false, pinned = false, opened = false, panel = 'broker', rail = 'open', colours = false } = {}) {
+function console_(client, { zoomed = false, pinned = false, opened = false, panel = 'broker', rail = 'open', colours = false, link = true } = {}) {
   // Primed rather than fetched. Rendering here is one synchronous pass, so a query that has to
   // go and ask would still be pending when the HTML is taken — and the page would show a console
   // that had not connected to anything.
-  client.setQueryData(queryKeys.connection, {
-    state: 'Connected',
-    connection: {
-      host: 'localhost',
-      port: 1883,
-      clientId: 'mqttforge',
-      tls: false,
-      connectedAt: '2026-08-19T04:16:08.000Z',
-      subscriptions: 1,
-      sessionPresent: false,
-    },
-  });
+  client.setQueryData(
+    queryKeys.connection,
+    link
+      ? {
+          state: 'Connected',
+          connection: {
+            host: 'localhost',
+            port: 1883,
+            clientId: 'mqttforge',
+            tls: false,
+            connectedAt: '2026-08-19T04:16:08.000Z',
+            subscriptions: 1,
+            sessionPresent: false,
+          },
+        }
+      : // The console before anything has been done to it. The broker panel wears its other face
+        // here — the form rather than the summary — and that is the one page in this renderer
+        // where the head band stands over a stack of fields rather than a report.
+        { state: 'Disconnected' },
+  );
   // Only on the page that is about them. Every other picture of this console is of the console,
   // and a tree painted in three colours in a shot meant to show the tree is a shot about colour.
   client.setQueryData(

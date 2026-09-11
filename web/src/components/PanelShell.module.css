@@ -53,26 +53,61 @@
   .panel { outline: 1px solid; outline-offset: -1px; }
 }
 
-/* Holds the close button alone now that the title is off screen. No rule under it: with nothing
-   but the × on the row, a line only drew a box around the empty space beside it. */
+/* Holds the close button alone on the six panels that stand in a column, where the title is off
+   screen. No rule under it there: with nothing but the × on the row, a line only drew a box
+   around the empty space beside it. The panel that is a page has a name to put on the row and
+   takes `.band` below with it. */
 .panelHead {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-bottom: 7px;
 }
-.panelHead h2 {
+
+/* The head of the panel that is a page: its name across the top, and a rule under it that ends
+   on the same line as the rail's own.
+
+   `--head-band` is the height of the band at the top of the rail — the mark, the name, and the
+   hairline under them — stated in tokens.css exactly so that a second column can be told to
+   agree with it. It is measured from the rail's own top edge, and the rail has nothing above its
+   band; this pane has two things, so both come off the number: its 1px border and its 11px of
+   top padding. The topic tree's head row does the same arithmetic for the same reason — a reader
+   with the rail, the page and the tree in front of them should see one line across the top of the
+   console rather than three bands ending a few pixels apart.
+
+   Full bleed, not inset by the pane's gutter: the rail's band runs the width of the rail, and a
+   rule held 20px off each edge of this one would read as a divider inside a card rather than as
+   the same band carried across. The negative margins reach exactly to the pane's padding box and
+   no further, so nothing here can scroll sideways. */
+.band {
+  display: grid;
+  /* Two equal outer tracks, so the name in the middle one is centred on the page rather than in
+     what is left of the row beside the ×. */
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  min-height: calc(var(--head-band) - 12px);
+  margin-inline: -20px;
+  padding-inline: 20px;
+  border-bottom: 1px solid var(--rule);
+  /* The rule is the division; what follows it needs room to read as being under it rather than
+     stuck to it. */
+  margin-bottom: 20px;
+}
+
+/* The panel's own name. The voice the block headings inside it use — mono, letterspaced, in ink
+   — because it is the same kind of thing one size up: what the section under it is about. */
+.panelTitle {
+  grid-column: 2;
   margin: 0;
   font-family: var(--mono);
-  font-size: var(--t-label);
+  font-size: var(--t-small);
   font-weight: 600;
   letter-spacing: 0.13em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--ink);
   /* No leading: one line of uppercase mono needs none. */
   line-height: 1;
 }
-
 .close {
   all: unset;
   margin-left: auto;
@@ -89,6 +124,14 @@
      as the headings in the panes beside it. */
   margin-block: -3px;
   border-radius: var(--r-control);
+}
+/* On the band the row has a height of its own and the × is placed in it rather than setting it,
+   so the overhang above and below would only pull the glyph off the name's line. It keeps the
+   reach into the gutter, which is what puts it in the corner it closes. */
+.band .close {
+  grid-column: 3;
+  justify-self: end;
+  margin-block: 0;
 }
 /* Twenty-four pixels of it, on a glyph drawn at eighteen.
    The × is what a reader on a phone reaches for most in a panel and it was the smallest thing in
@@ -128,9 +171,19 @@
 @media (min-width: 1181px) {
   [data-panel='full'] .panelHead {
     position: sticky;
-    top: 0;
+    /* The lift's other half, and not a rounding of zero. Chrome resolves `top` against the
+       scrollport's content box, which is already 11px down — so `top: 0` pinned the row back at
+       the foot of the padding it had just been lifted out of and quietly cancelled the margin
+       above. Measured: the row sat at 15 with `top: 0` and at 4 with this, where 4 is the inner
+       edge of the pane's border and the place the margin puts it in ordinary flow. */
+    top: -11px;
     margin-top: -11px;
     padding-top: 11px;
     background: var(--paper);
   }
+  /* Lifted, the row starts at the inner edge of the pane's border rather than 11px below it, so
+     the border is all that is still above it and the padding comes back off the subtraction. Two
+     numbers for one line, because the row stands in two places — and the name and the rule land
+     on the same pixel either way, which is the point of writing the second. */
+  [data-panel='full'] .band { min-height: calc(var(--head-band) - 1px); }
 }

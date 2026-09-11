@@ -46,7 +46,10 @@ export function BrokerEvents() {
             says both numbers: a reader who has typed something wants to know how much of the
             record they are looking at, and the total is what tells them. */}
         <h3 className={styles.eventsTitle}>
-          Broker events{' '}
+          {/* Just the word. The card stands inside the Broker panel, under a page that says
+              BROKER across the top of itself — 'Broker events' said the panel's name again to
+              make a heading two words long out of one. */}
+          Events{' '}
           <span className={styles.eventsCount}>
             ({look === '' ? events.length : `${found.length} of ${events.length}`})
           </span>

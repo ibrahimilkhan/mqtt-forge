@@ -707,9 +707,13 @@
   letter-spacing: 0;
   color: var(--muted);
 }
+/* Held to the right end of the row, with the heading at the left. The three of them sat against
+   the title with the whole of the rest of the row empty after them, which read as four things in
+   a line rather than as a name and the controls over what it names. */
 .eventsTools {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
   flex: 1 1 12rem;
   min-width: 0;
