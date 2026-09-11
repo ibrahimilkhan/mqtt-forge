@@ -579,10 +579,12 @@ describe('the range that was asked for, and the one that was drawn', () => {
 
     render(<TrafficChart runs={asRuns(climbing(0))} />);
 
+    // By the word on the chip a reader can press, not by a word only the catalogue knows: the
+    // note used to say 'drawn on its logarithmic', which is neither grammar nor a control.
     const chip = screen.getByTestId('reading-scale');
-    expect(chip.textContent).toContain('extremes');
+    expect(chip.textContent).toContain('ends');
     // The explanation is on the cell; the value carries its own text for when it is cut short.
-    expect(chip.parentElement?.getAttribute('title')).toContain('Logarithmic could not be used');
+    expect(chip.parentElement?.getAttribute('title')).toContain('log could not be used');
   });
 
   it('says nothing when the range asked for is the range drawn', () => {

@@ -1,3 +1,4 @@
+import { CHIP } from '../appearance/controls';
 import { READINGS, showsReading, type ReadingId } from '../appearance/readings';
 import type { Fit } from '../../lib/distribution';
 import { duration, short } from '../../lib/format';
@@ -199,13 +200,18 @@ export function ChartNote({
 function drawnOn(domain: Domain, asked: ScaleId): Slot {
   const fell = domain.mode !== asked;
 
+  // By the word on the chip, not by the first half of the catalogue's label. Two of those three
+  // are adjectives — the note read 'drawn on its typical' and 'drawn on its logarithmic' — and
+  // none of the three is a word any control on this console shows, so a reader who read the note
+  // had nothing to press. The hint that follows is the scale that was ASKED for, which is the
+  // answer to why it could not be used.
   return {
     id: 'scale',
-    value: fell ? SCALES[domain.mode].label.split(' —')[0].toLowerCase() : null,
+    value: fell ? CHIP[domain.mode] : null,
     title: fell
-      ? `${SCALES[asked].label.split(' —')[0]} could not be used on this run, so it is drawn on ` +
-        `its ${SCALES[domain.mode].label.split(' —')[0].toLowerCase()}: ${SCALES[asked].hint}`
-      : `drawn on its ${SCALES[domain.mode].label.split(' —')[0].toLowerCase()}`,
+      ? `${CHIP[asked]} could not be used on this run, so it is drawn on ${CHIP[domain.mode]}: ` +
+        `${SCALES[asked].hint}`
+      : `drawn on ${CHIP[domain.mode]}`,
     tone: 'reading',
   };
 }

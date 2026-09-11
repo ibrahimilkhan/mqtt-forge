@@ -746,7 +746,10 @@ function Controls({
         <button
           type="button"
           className={styles.chip}
-          aria-label="Range to suit the run"
+          /* Starting with the word on the chip. Named 'Range to suit the run' it shared no word
+             with the thing a reader sees or says, which is WCAG's label-in-name — four chips in
+             a row of it, and the group above them already says these are the range. */
+          aria-label={`${CONTROLS.auto.label} — range to suit the run`}
           title={CONTROLS.auto.what}
           aria-pressed={range === null}
           onClick={() => onRange(null)}
@@ -758,7 +761,7 @@ function Controls({
             key={id}
             type="button"
             className={styles.chip}
-            aria-label={SCALES[id].label}
+            aria-label={`${CHIP[id]} — ${SCALES[id].hint}`}
             title={SCALES[id].hint}
             aria-pressed={range === id}
             onClick={() => onRange(id)}

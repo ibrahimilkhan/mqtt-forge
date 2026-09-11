@@ -70,7 +70,7 @@ describe('the range the plot is drawn in', () => {
     readings('sensors/temp', ...spiked);
     show();
 
-    await userEvent.click(screen.getByRole('button', { name: /Extremes/ }));
+    await userEvent.click(screen.getByRole('button', { name: /^ends/ }));
 
     expect(screen.queryByTestId('pinned')).not.toBeInTheDocument();
     expect(screen.getByTestId('scale').textContent).toContain('4000');
