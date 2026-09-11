@@ -38,7 +38,7 @@ export function ChartPanel({ onClose }: { onClose: () => void }) {
   const exporter = useExport();
 
   return (
-    <PanelShell title="Chart" onClose={onClose}>
+    <PanelShell title="Chart" named onClose={onClose}>
       <div className={panel.row}>
         <Field label="Range" htmlFor="chart-range">
           <select

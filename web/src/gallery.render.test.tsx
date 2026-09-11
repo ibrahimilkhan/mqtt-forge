@@ -16,6 +16,7 @@ import './styles/global.css';
 import chartStyles from './features/monitor/TrafficChart.module.css';
 import { App } from './App';
 import { BrokerPanel } from './features/connection/BrokerPanel';
+import { PANELS } from './features/panels';
 import { useBrokerEventsStore } from './stores/brokerEventsStore';
 import { ChartPanel } from './features/chart/ChartPanel';
 import { WireLog } from './features/monitor/WireLog';
@@ -370,6 +371,7 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
     'console.html',
     'console-broker.html',
     'console-broker-form.html',
+    'console-filters.html',
     'console-colours.html',
     'console-painted.html',
     'console-zoomed.html',
@@ -397,6 +399,8 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
                 ? 'Broker panel'
               : href === 'console-broker-form.html'
                 ? 'Broker form'
+              : href === 'console-filters.html'
+                ? 'A panel in the column'
               : href === 'console-colours.html'
                 ? 'Colour rules'
               : href === 'console-painted.html'
@@ -449,6 +453,9 @@ ${inner}
   writeFileSync(`${OUT}/console-broker.html`, console_(client, { panel: 'broker' }));
   // The same panel with nothing connected, which is what a reader actually opens the console on.
   writeFileSync(`${OUT}/console-broker-form.html`, console_(client, { panel: 'broker', link: false }));
+  // One of the six that open in a column rather than over the workspace. The renderer had no
+  // picture of that shape at all, and it is the one the head band is narrowest in.
+  writeFileSync(`${OUT}/console-filters.html`, console_(client, { panel: 'subscribe' }));
   // The same console with the chart thrown open, which is the state a static page can show and
   // a click cannot be recorded in.
   writeFileSync(`${OUT}/console-zoomed.html`, console_(client, { zoomed: true, panel: null }));
@@ -1078,7 +1085,10 @@ function console_(client, { zoomed = false, pinned = false, opened = false, pane
     );
   if (panel !== 'broker') {
     act(() => fireEvent.click(menu('Broker')));
-    if (panel) act(() => fireEvent.click(menu(panel[0].toUpperCase() + panel.slice(1))));
+    // By the row's own label and not by the id with a capital on it: two of the eight are not
+    // named after themselves — 'subscribe' opens Filters and 'mobile' opens QR — and the
+    // capitalised id found no button at all for either.
+    if (panel) act(() => fireEvent.click(menu(PANELS.find((p) => p.id === panel).label)));
   }
 
   // Same click, for the same reason: the strip is a state the reader puts the rail in.

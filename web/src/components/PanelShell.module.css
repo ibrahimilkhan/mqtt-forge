@@ -53,10 +53,9 @@
   .panel { outline: 1px solid; outline-offset: -1px; }
 }
 
-/* Holds the close button alone on the six panels that stand in a column, where the title is off
-   screen. No rule under it there: with nothing but the × on the row, a line only drew a box
-   around the empty space beside it. The panel that is a page has a name to put on the row and
-   takes `.band` below with it. */
+/* The head row itself. On its own it holds the close button and nothing else, and draws no rule:
+   with nothing but the × on the row, a line only drew a box around the empty space beside it.
+   Every panel the menu opens takes `.band` below with it and has a name to put on the row. */
 .panelHead {
   display: flex;
   align-items: center;
@@ -64,8 +63,9 @@
   margin-bottom: 7px;
 }
 
-/* The head of the panel that is a page: its name across the top, and a rule under it that ends
-   on the same line as the rail's own.
+/* The head of a panel: its name across the top, and a rule under it that ends on the same line
+   as the rail's own — so the rail, the page and the topic tree beside them draw one line across
+   the top of the console rather than three bands ending a few pixels apart.
 
    `--head-band` is the height of the band at the top of the rail — the mark, the name, and the
    hairline under them — stated in tokens.css exactly so that a second column can be told to
@@ -91,12 +91,23 @@
   margin-top: -11px;
   margin-inline: -20px;
   padding-inline: 20px;
-  min-height: calc(var(--head-band) - 1px);
+  min-height: var(--head-band);
   border-bottom: 1px solid var(--rule);
   /* The rule is the division; what follows it needs room to read as being under it rather than
      stuck to it. */
   margin-bottom: 20px;
 }
+
+/* Less the pane's own border, where the pane draws one.
+
+   `--head-band` is measured from the rail's top edge and the rail has nothing above its band, so
+   whatever stands between this pane's edge and this row has to come off the number. The 11px of
+   top padding is handled by the lift above, which is the same everywhere; the border is not —
+   the panel column and the panel that takes the window are outlined, the two that fill the
+   workspace are not. Without this the rule under Colours and Alerts sat one pixel above the
+   rail's, which is exactly the kind of miss this whole band exists to prevent. */
+[data-panel='open'] .band,
+[data-panel='full'] .band { min-height: calc(var(--head-band) - 1px); }
 
 /* The panel's own name. The voice the block headings inside it use — mono, letterspaced, in ink
    — because it is the same kind of thing one size up: what the section under it is about. */

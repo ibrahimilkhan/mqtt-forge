@@ -12,7 +12,7 @@ export function AppearancePanel({ onClose }: { onClose: () => void }) {
     useAppearanceStore();
 
   return (
-    <PanelShell title="Settings" onClose={onClose}>
+    <PanelShell title="Settings" named onClose={onClose}>
       <div className={panel.row}>
         <Field label="Font" htmlFor="sans-font">
           <select

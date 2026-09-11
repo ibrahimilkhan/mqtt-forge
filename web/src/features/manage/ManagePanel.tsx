@@ -81,7 +81,7 @@ export function ManagePanel({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <PanelShell title="Manage" onClose={onClose}>
+    <PanelShell title="Manage" named onClose={onClose}>
       {/* First, because it is what the panel is opened for: how much is this console carrying,
           and is any of it missing. The two figures that answer the second question — what the
           server had to drop, and what the tree gave up — used to be sayable only in the tree's

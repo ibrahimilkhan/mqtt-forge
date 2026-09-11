@@ -17,7 +17,7 @@ export function MobilePanel({ onClose }: { onClose: () => void }) {
   const label = { idle: 'Copy address', copied: 'Copied', failed: 'Copy failed' }[state];
 
   return (
-    <PanelShell title="QR" onClose={onClose}>
+    <PanelShell title="QR" named onClose={onClose}>
       {target.kind === 'loopback' ? (
         <p className={panel.note}>
           This page was opened on a loopback address, which no other device can reach. Open it at

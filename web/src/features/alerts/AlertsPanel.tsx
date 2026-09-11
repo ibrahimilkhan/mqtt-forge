@@ -212,7 +212,7 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
   // under a form is an invitation to click something that will be gone in a moment.
   if (editing !== null) {
     return (
-      <PanelShell title="Alerts" onClose={onClose}>
+      <PanelShell title="Alerts" named onClose={onClose}>
         {/* Back is inside the editor now, on the row Save is on: it is the other answer to the
             question that row asks, not a way of navigating away from the panel. What is left here
             is the question it can raise, and that has to be BELOW the editor — it is about a
@@ -247,7 +247,7 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <PanelShell title="Alerts" onClose={onClose}>
+    <PanelShell title="Alerts" named onClose={onClose}>
       {/* 'Alerting now' stood here, above the rules: every standing alarm, how long it had been
           up, and the control that muted the pair it was about. The panel is what is being watched
           FOR now, and nothing about what is wrong — those are two different questions, and this

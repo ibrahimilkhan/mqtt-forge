@@ -133,7 +133,7 @@ export function SubscribePanel({ onClose }: { onClose: () => void }) {
   const guardedUnsubscribe = useGuardedKeyedMutate(unsubscribeMutation);
 
   return (
-    <PanelShell title="Filters" onClose={onClose}>
+    <PanelShell title="Filters" named onClose={onClose}>
       <div className={styles.row}>
         {/* The panel is about nothing else, so the box goes unlabelled on screen and carries
             its name for screen readers only.

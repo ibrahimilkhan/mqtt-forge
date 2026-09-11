@@ -171,7 +171,7 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
   const painting = useMemo(() => paintedBy(root, painted), [root, key]);
 
   return (
-    <PanelShell title="Colours" onClose={onClose}>
+    <PanelShell title="Colours" named onClose={onClose}>
       {/* Not an empty list: a save from a panel that never read the rules would replace them
           with whatever happened to be on screen. So it offers nothing until it has them. */}
       {isError && draft === null && (

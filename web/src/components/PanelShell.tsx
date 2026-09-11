@@ -8,11 +8,14 @@ type Props = {
    * Whether the panel says its own name across the top of itself, on a band that ends on the
    * same line as the rail's.
    *
-   * Only the panel that takes the whole window does. That one is a page: it is what the console
-   * opens on, it fills everything the rail does not, and a page whose top edge is whichever field
-   * happens to come first has no top edge at all. The six that sit in a column do not — they
-   * stand a rail's width from the row that opened them, which says which panel is open and stays
-   * lit while it is, and the same word again inside the column is one label twice an inch apart.
+   * Every panel the menu opens does. A panel is a page: it is opened by name, it is read on its
+   * own, and one whose top edge is whichever field happens to come first has no top edge at all.
+   * The rail's own row says which is open, but it says it a rail's width away and in a list of
+   * eight; the band says it where the reading starts.
+   *
+   * The one that does not is the publish form, which is not a page. It has a fixed place in the
+   * workspace under the chart, it is never opened or closed, and the region it sits in has a
+   * strip of its own with its name already on it.
    */
   named?: boolean;
   onClose?: () => void;
@@ -22,10 +25,9 @@ type Props = {
 export function PanelShell({ title, named = false, onClose, children }: Props) {
   return (
     <section className={styles.panel} aria-label={`${title} panel`}>
-      {/* Off screen except on the panel that is a page, where the head band below carries this
-          same heading somewhere it can be read. The head row is drawn only when something has to
-          sit on it — the name, the close button, or both. A pane with a fixed place has neither,
-          and an empty bordered row would leave a rule with nothing above it. */}
+      {/* Off screen only where there is no band to carry it — a pane with a fixed place, which
+          has no name to say and no button to close. The head row is drawn when something has to
+          sit on it, and an empty bordered row would leave a rule with nothing above it. */}
       {!named && <h2 className="srOnly">{title}</h2>}
       {/* data-head marks this row so the workspace can tell it from the content under it. A bare
           attribute rather than the class, because the class name is hashed by CSS Modules and
