@@ -661,13 +661,17 @@
      The floor is what the card used to be capped at, so a short form does not make the record
      smaller than it was before it could grow. */
   .aside { position: relative; min-height: 21rem; }
-  /* Filling its share, less five pixels on the side that faces the form: the card is a plate
-     lying on the page and a plate flat against the share next to it reads as one that has been
-     cut off. Not on the outer side — there is nothing out there to be cut off against, only the
-     pane's own 20px gutter, and five more inside it made the gap beside the record half again
-     the gap every other edge on the page keeps. It showed the moment the head band's rule ran
-     full bleed and gave the eye a line to measure the card against. Top and bottom it reaches,
-     because what it holds is a list that wants the height. */
+  /* One rule for all four sides: the card is flush with the pane on the three it faces the
+     window across, and keeps a full gutter on the one it faces the form across.
+
+     Outward there is nothing to stand off from — only the pane's own hairline and the three
+     pixels of channel, which is the slack every plate in this console shows. Inward there is a
+     column of type, and the two have to read as two columns. It was five pixels, which looked
+     like a decision at 1440 and was not one: the form is capped at its reading measure and
+     centred in a share wider than that, so above about 1280 the eye saw the centring slack and
+     below it the two columns closed to those five. Twenty is the pane's own gutter — the number
+     this console uses for 'a thing, and the thing next to it' — and it is the same at every
+     width. */
   /* Lifted twelve pixels above the form's first line, and the card's top padding cut from 14 to
      8, so that EVENTS lands on the same line as ADDRESS and PORT beside it. The two columns are
      read across, and a head sitting eighteen pixels under the labels it stands beside made the
@@ -694,7 +698,7 @@
      The foot is exact rather than generous on purpose: -24px reaches the pane's padding box and
      not a pixel past it, so a card that fills its column cannot give the pane a scrollbar it did
      not have. */
-  .asideStack { position: absolute; inset: -12px -20px -24px 5px; }
+  .asideStack { position: absolute; inset: -12px -20px -24px 20px; }
   .asideStack > .events { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
   .asideStack > .events:first-child { margin-top: 0; padding-top: 8px; }
   .asideStack .eventList { max-height: none; flex: 1 1 auto; }
