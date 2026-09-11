@@ -30,6 +30,9 @@ const TAIL = 3;
 export function WireLog() {
   const { selected, fault } = useTraffic();
   const { entries, all, sought } = useShownEntries();
+  // What was typed and where it was looked for, so the pane can quote it back when it finds
+  // nothing — the same pair the box and the menu above the pane are driven by.
+  const { look, where } = useSearchStore((state) => state.log);
 
   return (
     <>
@@ -49,7 +52,16 @@ export function WireLog() {
           question. */}
       {selected && all > 0 && entries.length === 0 && (
         <p className="empty" data-testid="unfound">
-          Nothing in this run says what you are looking for.
+          {/* Named, like the three other panes that answer an empty search — the tree, the events
+              card and the alerts picker all quote the term back. This one said 'what you are
+              looking for', which is the console talking about the reader rather than about what
+              it looked through, and leaves anyone who has typed twice unsure which of the two
+              found nothing. The wording follows the menu beside the box. */}
+          {where === 'body'
+            ? `No message in this run carries \u201C${look}\u201D.`
+            : where === 'topic'
+              ? `No topic in this run is named for \u201C${look}\u201D.`
+              : `Nothing in this run says \u201C${look}\u201D.`}
         </p>
       )}
 

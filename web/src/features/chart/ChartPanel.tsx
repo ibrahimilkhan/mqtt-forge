@@ -154,7 +154,11 @@ export function ChartPanel({ onClose }: { onClose: () => void }) {
             <button
               type="button"
               className="ghost"
-              aria-labelledby="save-folder-label"
+              /* Named for what pressing it does, and starting with the word on it: pointed at
+                 the label alone it answered to 'Save folder', which is a noun with no verb in
+                 it and does not contain the word a reader sees — so anyone driving by voice
+                 said 'click choose' at a control by that name that answered to another. */
+              aria-label={exporter.folder ? 'Change the save folder' : 'Choose a save folder'}
               disabled={exporter.choosing}
               onClick={() => exporter.choose()}
             >

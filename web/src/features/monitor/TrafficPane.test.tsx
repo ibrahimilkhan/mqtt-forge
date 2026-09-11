@@ -170,7 +170,7 @@ describe('throwing the chart open', () => {
       h: window.innerHeight,
     });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Put the chart back to its size' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Leave full screen' }));
     expect(useZoomStore.getState().full).toBe(false);
     expect(useZoomStore.getState().box).toEqual({ x: 40, y: 30, w: 420, h: 300 });
   });

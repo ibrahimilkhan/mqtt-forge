@@ -244,7 +244,7 @@ describe('the screen for what is being held', () => {
       panel();
 
       await userEvent.click(screen.getByRole('button', { name: 'Clear retained' }));
-      await userEvent.click(screen.getByRole('button', { name: 'Yes, clear 2' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Yes, clear 2 topics' }));
 
       await waitFor(() => expect(sent).toHaveLength(2));
       expect(sent.map((one) => one.topic).sort()).toEqual(['a/one', 'c/three']);
@@ -258,9 +258,27 @@ describe('the screen for what is being held', () => {
       panel();
 
       await userEvent.click(screen.getByRole('button', { name: 'Clear retained' }));
-      await userEvent.click(screen.getByRole('button', { name: 'Yes, clear 1' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Yes, clear 1 topic' }));
 
-      expect(await screen.findByText(/the broker refused 1/)).toBeInTheDocument();
+      // Not 'Forgot 0; the broker refused 1', which is a strange way to say nothing happened —
+      // and this is the ordinary answer from a broker that does not let this client publish.
+      expect(await screen.findByText('The broker refused the topic.')).toBeInTheDocument();
+    });
+
+    it('says how many it let go and how many it kept when it is some of each', async () => {
+      landed(message('a/one', '1', true), message('a/two', '2', true));
+      let seen = 0;
+      server.use(
+        http.post('/api/publish', () =>
+          (seen += 1) === 1 ? HttpResponse.json({}) : new HttpResponse(null, { status: 403 }),
+        ),
+      );
+      panel();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Clear retained' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Yes, clear 2 topics' }));
+
+      expect(await screen.findByText('Forgot 1; the broker refused 1.')).toBeInTheDocument();
     });
 
     it('backs out when the reader cancels', async () => {

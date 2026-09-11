@@ -204,7 +204,17 @@ export function describeConnectFailure(error: unknown, attempt: Attempt): string
 }
 
 /** A scheme to offer instead, and the one line saying what makes it worth offering. */
-export type SchemeSuggestion = { scheme: Scheme; why: string };
+/**
+ * The other scheme to try, and — where the failure sentence has not already said it — the reason
+ * the offer makes sense at all.
+ *
+ * `why` is optional because one of the three cases does not need it: a broker that says it does
+ * not take encrypted connections is told so in the sentence above the button, and a line
+ * repeating it under that sentence would be one fact said twice on one screen, which reads as two
+ * things having gone wrong. The other two are guesses from a port number, and a guess with no
+ * reason attached is a button a reader has to take on faith.
+ */
+export type SchemeSuggestion = { scheme: Scheme; why?: string };
 
 // Along the encryption axis, never across the transport — the same rule `schemeForPort` keeps,
 // and for the same reason. None of these reasons announces a wrong transport, and offering one
@@ -246,12 +256,9 @@ export function suggestScheme(
 
   const scheme = schemeOf(attempt.transport ?? 'tcp', attempt.useTls);
 
-  if (reason === 'tlsNotOffered' && attempt.useTls) {
-    return {
-      scheme: TWIN[scheme],
-      why: `${formatEndpoint(attempt.host, attempt.port)} doesn't accept encrypted connections.`,
-    };
-  }
+  // No `why`: `tlsNotOffered`'s own sentence already says the broker refuses encryption, and
+  // says what to do about it.
+  if (reason === 'tlsNotOffered' && attempt.useTls) return { scheme: TWIN[scheme] };
 
   if (SILENCE.has(reason) && !attempt.useTls && attempt.port === choiceOf(TWIN[scheme]).defaultPort) {
     return {

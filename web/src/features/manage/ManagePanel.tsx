@@ -72,7 +72,11 @@ export function ManagePanel({ onClose }: { onClose: () => void }) {
     setSaid(
       failed === 0
         ? `Told the broker to forget ${done} ${done === 1 ? 'topic' : 'topics'}.`
-        : `Forgot ${done}; the broker refused ${failed}.`,
+        : done === 0
+          // The ordinary answer from a broker that does not let this client publish, and 'Forgot
+          // 0' is a strange way to say nothing happened.
+          ? `The broker refused ${failed === 1 ? 'the topic' : `all ${failed} topics`}.`
+          : `Forgot ${done}; the broker refused ${failed}.`,
     );
     // The count is not put right here. What was cleared comes back down this console's own
     // subscription as an empty retained message on each topic, and the reading below is what
@@ -279,7 +283,9 @@ export function ManagePanel({ onClose }: { onClose: () => void }) {
             </p>
             <div className={panel.actions}>
               <button type="button" onClick={forget} disabled={clearing}>
-                {clearing ? 'Clearing…' : `Yes, clear ${retained.length.toLocaleString('en-GB')}`}
+                {clearing
+                  ? 'Clearing…'
+                  : `Yes, clear ${retained.length.toLocaleString('en-GB')} ${retained.length === 1 ? 'topic' : 'topics'}`}
               </button>
               <button type="button" className="ghost" onClick={() => setAsking(false)}>
                 Cancel

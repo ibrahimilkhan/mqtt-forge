@@ -928,6 +928,37 @@ describe('a failure that names the scheme it should have been', () => {
     expect(await screen.findByRole('button', { name: 'Try mqtts:// instead' })).toBeInTheDocument();
   });
 
+  // The offer used to arrive with nothing behind it: 'Nothing is listening at
+  // broker.example:8883' and then, out of nowhere, a button about a scheme nobody mentioned. The
+  // sentence explaining it was being built by suggestScheme and thrown away by the panel.
+  it('says why the other scheme is worth trying', async () => {
+    failWith('timeout');
+    renderPanel();
+
+    await writeAddress('mqtt://broker.example:8883');
+    await connect();
+
+    expect(
+      await screen.findByText('8883 is the port brokers listen for encrypted connections on.'),
+    ).toBeInTheDocument();
+  });
+
+  // The one case that needs no reason: the sentence above the button already carries it, and the
+  // console does not say one thing twice on one screen.
+  it('does not repeat a reason the failure already gave', async () => {
+    failWith('tlsNotOffered');
+    renderPanel();
+
+    await writeAddress('mqtts://broker.example:8883');
+    await connect();
+
+    await screen.findByRole('button', { name: 'Try mqtt:// instead' });
+    expect(screen.queryByText(/is the port brokers listen/)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/doesn't accept encrypted connections/),
+    ).toBeInTheDocument();
+  });
+
   it('retries on the scheme it offered', async () => {
     let sent: Record<string, unknown> | undefined;
     server.use(

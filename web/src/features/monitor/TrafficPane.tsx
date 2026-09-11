@@ -119,7 +119,10 @@ function WindowBar({ label, filter }: { label?: string; filter?: string }) {
           className={floating.swell}
           data-testid="swell-chart"
           aria-pressed={full}
-          aria-label={full ? 'Put the chart back to its size' : 'Fill the screen with the chart'}
+          /* Not 'Put the chart back to its size', which is one word from the close button's own
+             name standing next to it — two neighbours that read alike and do entirely different
+             things: this one leaves full screen, that one puts the chart away. */
+          aria-label={full ? 'Leave full screen' : 'Fill the screen with the chart'}
           title={full ? 'Put it back' : 'Fill the screen'}
           onClick={() => swell(!full)}
         >

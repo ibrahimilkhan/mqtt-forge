@@ -363,7 +363,7 @@ describe('telling the broker to forget what it is holding', () => {
     expect(sent).toHaveLength(0);
     expect(manage.getByText(/Every other client sees it too/)).toBeInTheDocument();
 
-    await userEvent.click(manage.getByRole('button', { name: 'Yes, clear 2' }));
+    await userEvent.click(manage.getByRole('button', { name: 'Yes, clear 2 topics' }));
 
     await waitFor(() => expect(sent).toHaveLength(2));
     expect(sent.map((one) => one.topic).sort()).toEqual(['office/light', 'plant/boiler/state']);
@@ -396,7 +396,7 @@ describe('telling the broker to forget what it is holding', () => {
     await goTo('Manage');
     const manage = panelNamed('Manage panel');
     await userEvent.click(manage.getByRole('button', { name: 'Clear retained' }));
-    await userEvent.click(manage.getByRole('button', { name: 'Yes, clear 2' }));
+    await userEvent.click(manage.getByRole('button', { name: 'Yes, clear 2 topics' }));
 
     send(['office/light', '', true], ['plant/boiler/state', '', true]);
 

@@ -1310,11 +1310,18 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
       {/* Under the sentence that explains the failure, not beside the button that caused it:
           it is the answer to what just happened, and it only exists because of it. */}
       {suggestion && !attemptRunning && (
-        <div className={styles.actions}>
-          <button type="button" className="ghost" onClick={() => retryOn(suggestion.scheme)}>
-            {`Try ${suggestion.scheme}:// instead`}
-          </button>
-        </div>
+        <>
+          {/* The reason the offer makes sense, where the sentence above has not already given it.
+              Without this the panel put a bare 'Try mqtts:// instead' under 'Nothing is listening
+              at broker.example:8883' — an offer out of nowhere, and the sentence that would have
+              explained it was being built and thrown away. */}
+          {suggestion.why && <p className={styles.note}>{suggestion.why}</p>}
+          <div className={styles.actions}>
+            <button type="button" className="ghost" onClick={() => retryOn(suggestion.scheme)}>
+              {`Try ${suggestion.scheme}:// instead`}
+            </button>
+          </div>
+        </>
       )}
 
       {/* At the foot of the settings, across the whole of their share, and only once there is
