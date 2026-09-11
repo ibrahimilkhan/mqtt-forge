@@ -45,11 +45,12 @@ export function BrokerEvents() {
         {/* The count is on the title because the title is the thing it counts. Under a search it
             says both numbers: a reader who has typed something wants to know how much of the
             record they are looking at, and the total is what tells them. */}
+        {/* The head is the list's own two columns, said once at the top: the word over the
+            clock, the count over the lines it counts. Just the word, too — the card stands
+            inside the Broker panel, under a page that says BROKER across the top of itself, and
+            'Broker events' said the panel's name again to make a heading two words out of one. */}
         <h3 className={styles.eventsTitle}>
-          {/* Just the word. The card stands inside the Broker panel, under a page that says
-              BROKER across the top of itself — 'Broker events' said the panel's name again to
-              make a heading two words long out of one. */}
-          Events{' '}
+          <span className={styles.eventsName}>Events</span>{' '}
           <span className={styles.eventsCount}>
             ({look === '' ? events.length : `${found.length} of ${events.length}`})
           </span>

@@ -698,11 +698,30 @@
   gap: 6px 10px;
   margin-bottom: 10px;
 }
-.eventsTitle { composes: savedTitle; margin-bottom: 0; flex: 0 0 auto; }
+/* The list's own two tracks, so the head reads as the head of the columns under it rather than
+   as a caption floating over them: the word centred on the clock, the count starting exactly
+   where every line of the record starts.
+
+   The font size is here for the tracks and not for the type. `ch` is the width of a zero in the
+   element's own font, and the rows are set a step up the scale from this heading — so 8ch here
+   came out six pixels short of 8ch there and the count missed the lines by that much. The track
+   is measured at the rows' size and the two spans are put back at the heading's. */
+.eventsTitle {
+  composes: savedTitle;
+  margin-bottom: 0;
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: 8ch auto;
+  gap: 10px;
+  align-items: baseline;
+  font-size: var(--t-small);
+}
+.eventsName { font-size: var(--t-label); text-align: center; }
 /* The number, not the word: quieter than the title it rides on, and steady in a mono face so a
    count changing under the eye does not move the title beside it. */
 .eventsCount {
   font-family: var(--mono);
+  font-size: var(--t-label);
   font-weight: 400;
   letter-spacing: 0;
   color: var(--muted);

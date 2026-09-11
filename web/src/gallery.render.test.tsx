@@ -16,6 +16,7 @@ import './styles/global.css';
 import chartStyles from './features/monitor/TrafficChart.module.css';
 import { App } from './App';
 import { BrokerPanel } from './features/connection/BrokerPanel';
+import { useBrokerEventsStore } from './stores/brokerEventsStore';
 import { ChartPanel } from './features/chart/ChartPanel';
 import { WireLog } from './features/monitor/WireLog';
 import { ReadingDetail } from './features/monitor/ReadingDetail';
@@ -813,6 +814,19 @@ function console_(client, { zoomed = false, pinned = false, opened = false, pane
 
   useLogStore.getState().clear();
   useTopicTreeStore.getState().reset();
+  // An afternoon of one broker, so the record beside the form is a record rather than an empty
+  // card — and so the head over it can be seen doing what it is there to do: the word on the
+  // clock, the count on the lines.
+  useBrokerEventsStore.setState({ events: [] });
+  for (const event of [
+    { kind: 'ok', what: 'Subscribed', detail: '#' },
+    { kind: 'ok', what: 'Connected', detail: 'localhost:1883' },
+    { kind: 'note', what: 'Try 3 succeeded' },
+    { kind: 'fault', what: 'Try 2 failed', detail: 'Connection refused' },
+    { kind: 'fault', what: 'Link dropped', detail: 'The broker closed the connection' },
+  ].reverse()) {
+    useBrokerEventsStore.getState().push(event);
+  }
   useZoomStore.setState({ zoomed, box: null });
   // Two runs on screen at once, which is the thing one chart in one column cannot do. Placed by
   // hand here; in the console they are placed by whoever dragged them there.
