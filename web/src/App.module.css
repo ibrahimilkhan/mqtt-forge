@@ -14,10 +14,7 @@
 .rail {
   display: flex;
   flex-direction: column;
-  /* Stated on the row rather than here, because the control that changes it stands outside the
-     rail now and has to place itself on the seam — see `--rail-width` on `.body`. One number,
-     two readers, and no way for the seam and the thing sitting on it to drift apart. */
-  width: var(--rail-width);
+  width: 52px;
   flex: none;
   background: var(--surface);
   /* A plate, not the wall the plates hang on. It was welded to the workspace with a border down
@@ -34,6 +31,8 @@
   .rail { outline: 1px solid; outline-offset: -1px; }
 }
 
+.rail[data-open] { width: 196px; }
+
 
 /* Mark, name and the control that changes the width. Shut, the name goes and the other two stay
    in the row.
@@ -45,8 +44,15 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  /* The containing block for the control at its end, which is taken out of the flow so that
+     being at one edge costs the lockup nothing at the centre. */
+  position: relative;
   gap: 9px;
-  padding: 10px 12px 9px;
+  /* Even, so that what stands in the band's flow sits on the band's own centre — which is where
+     the control at its end is placed from. It was a pixel heavier at the top, and the mark and
+     the chevron beside it disagreed by that pixel. The height is stated below, so the bottom
+     number changes nothing but this. */
+  padding: 10px 12px;
   /* Stated, so the topic tree's own head row can be told to end on the same line — see
      `--head-band` in tokens.css. Left to its contents the two agreed at one type size and
      nowhere else. */
@@ -54,10 +60,10 @@
   border-bottom: 1px solid var(--rule);
 }
 /* Shut, the band holds the mark alone, so the gap and most of the padding have nothing to
-   separate. Centred is now said once, above, for both widths. */
+   separate. Centred is said once, above, for both widths. */
 .rail:not([data-open]) .railHead {
   gap: 0;
-  padding: 11px 2px 9px;
+  padding: 10px 2px;
 }
 
 /* The mark is drawn at 1em, so its size is set here — off the type scale, so a reader who turns
@@ -102,49 +108,55 @@
 }
 .wordmark span { color: var(--signal); }
 
-/* The one control that changes the rail's width, standing on the line it moves.
+/* The one control that changes the rail's width, at the end of the band the width is most
+   obvious in.
 
-   It used to sit in the head band, in the corner beside the wordmark, which is the one place on
-   the screen a reader looks to be told what the tool is rather than offered something to press —
-   and it pushed the lockup off centre by half a button while it was there. The seam is what this
-   does: press it and that line moves. Halfway down it, where a drawer's handle is, and reached
-   from either side because it straddles the channel rather than sitting in the rail.
+   Out of the flow, which is the whole of what lets it be at an edge and the lockup be at the
+   centre. As a flex item it took half its own width out of the middle of the row, and the mark —
+   the thing a reader glances at to know which tool they have open — sat left of centre so a
+   chevron could have the rest. It spent a version on the seam between the rail and the
+   workspace, where the geometry was honest and the hand was not: the corner of the thing that
+   moves is where a reader reaches for it.
 
-   Placed against the row, not the rail: `--rail-width` plus half the channel is the middle of
-   the seam at either width, and the translate takes the button's own size out of it. The rail
-   clips its contents and this hangs over its edge, so it cannot live inside it. */
+   Right against the rail's own edge, past the band's padding, because that edge is what it
+   moves. Shut, the strip is 52px and the centred mark takes nineteen of them, so the button
+   narrows to what the glyph needs and gives up its touch box; the reach below puts that back
+   without taking any room. */
 .railToggle {
   all: unset;
   position: absolute;
   top: 50%;
-  left: calc(var(--rail-width) + var(--channel) / 2);
-  transform: translate(-50%, -50%);
-  /* Over the rail when the rail is lying on the workspace at 760 and under, where the rail takes
-     300 and paints a scrim past that. */
-  z-index: 310;
+  /* Zero is the rail's own edge, not the band's text margin: an absolute offset resolves against
+     the containing block's padding box, and the band's 12px of side padding is for the things
+     standing in its flow. */
+  right: 0;
+  transform: translateY(-50%);
   font-family: var(--mono);
   font-size: var(--t-lead);
   line-height: 1;
   color: var(--muted);
   cursor: pointer;
-  /* A tab on the line rather than a glyph floating over it: the channel is 3px of --paper and a
-     bare chevron on it read as a mark someone had left behind. Its own plate, in the console's
-     own surface and hairline, the width a finger needs and tall enough to be aimed at without
-     being a bar down the seam. */
+  /* The 24px a finger needs, which one chevron does not reach on its own. */
+  min-width: 24px;
+  min-height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 17px;
-  height: 40px;
-  background: var(--surface);
-  border: 1px solid var(--rule);
   border-radius: var(--r-control);
 }
-/* The reach, which is painted nowhere: the tab is 17px wide and a finger is not. */
+/* Shut, the strip is 52px and the centred mark takes nineteen of them, so the button gives up
+   the 24 it cannot have and keeps what the glyph needs. The reach below puts the target back. */
+.rail:not([data-open]) .railToggle {
+  min-width: 0;
+  width: 15px;
+}
+/* Painted nowhere and taking no room, so the 24px stays reachable at the width where the button
+   itself cannot be 24px wide. Held inside the rail on the right, where three pixels more would
+   be three pixels of sideways scroll. */
 .railToggle::after {
   content: '';
   position: absolute;
-  inset: -4px -6px;
+  inset: -6px 0 -6px -9px;
 }
 .railToggle:hover:not(:disabled) { color: var(--ink); background: var(--paper); }
 .railToggle:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
@@ -305,13 +317,7 @@
 .body {
   display: flex;
   flex: 1;
-  /* The rail's two widths, said once. The rail takes it, and so does the control that changes it
-     — which stands on the seam outside the rail and would otherwise carry its own copy of both
-     numbers. */
-  --rail-width: 52px;
-  /* The containing block for that control, which is placed against this row rather than against
-     the rail: the rail clips, and the tab hangs over its edge. Under 760 this was already here
-     for the rail lying over the workspace; it is unconditional now. */
+  /* The rail lies over the workspace at 760 and under, and is absolutely placed to do it. */
   position: relative;
   /* Stops a tall pane from pushing the row past the viewport. */
   min-height: 0;
@@ -322,7 +328,6 @@
      rail and the tree read as two things rather than one white surface with a hairline in it. */
   gap: var(--channel);
 }
-.body[data-rail='open'] { --rail-width: 196px; }
 
 /* Open, the rail would eat a narrow screen, so it lies over the workspace instead of beside it.
    Shut it still sits in the row: 52px is cheaper than the gesture needed to get it back.
