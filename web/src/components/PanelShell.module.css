@@ -130,13 +130,19 @@
   border-radius: var(--r-control);
 }
 /* On the band the row has a height of its own and the × is placed in it rather than setting it,
-   so the overhang above and below would only pull the glyph off the name's line. It keeps the
-   reach into the gutter, which is what puts it in the corner it closes. */
+   so the overhang above and below would only pull the glyph off the name's line. Sideways it
+   takes the whole of the pane's gutter rather than twelve of it: the corner it closes is the
+   corner of the page, and the record below it ends on the same line. */
 .band .close {
   grid-column: 3;
   justify-self: end;
   margin-block: 0;
+  margin-right: -20px;
 }
+/* The reach, clipped to the side it cannot have. Everywhere else it is 3px of invisible target
+   past the glyph on either side; out here that would be 3px past the pane's own padding box,
+   which is 3px of sideways scroll in a pane that has no business having any. */
+.band .close::after { inset: -5px 0 -5px -3px; }
 /* Twenty-four pixels of it, on a glyph drawn at eighteen.
    The × is what a reader on a phone reaches for most in a panel and it was the smallest thing in
    one — eighteen by sixteen, the glyph's box and its five pixels of padding, with nothing to
