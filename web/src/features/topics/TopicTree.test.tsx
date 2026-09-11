@@ -408,10 +408,11 @@ describe('TopicTree', () => {
     expect(useSelectionStore.getState().selected).toEqual({ label: 'sensors', filter: 'sensors/#', topic: 'sensors/#' });
   });
 
-  // Every click is the reader's now, the repeat one included: it loads the topic into publish
-  // again. Nothing is lost by that — the two clicks of a double click are milliseconds apart and
-  // carry the same message, so what the second overwrites is what the first had just written.
-  it('loads the topic into publish on each click of the row', async () => {
+  // Once per gesture, not once per click: the repeat click of a pair belongs to the pair, and
+  // passing it on would load the topic into publish a second time over whatever had been typed
+  // since. Two separate clicks are two gestures and load it twice, which is what a reader asked
+  // for both times.
+  it('loads the topic into publish once per gesture', async () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
     render(<TopicTree broker="broker:1883" />);
 
@@ -420,6 +421,17 @@ describe('TopicTree', () => {
     await userEvent.click(screen.getByText('sensors'));
 
     expect(useComposeStore.getState().draft!.serial).toBe(loaded + 1);
+  });
+
+  it('does not load it again on the repeat click of a double click', async () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    await userEvent.click(screen.getByText('sensors'));
+    const loaded = useComposeStore.getState().draft!.serial;
+    fireEvent.click(screen.getByText('sensors'), { detail: 2 });
+
+    expect(useComposeStore.getState().draft!.serial).toBe(loaded);
   });
 
   it('folds the whole tree away from the broker row twisty', async () => {

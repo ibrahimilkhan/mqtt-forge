@@ -209,8 +209,17 @@
 
 /* One weight for every level; the twisty already marks it as a branch. */
 /* The topic and its newest value. Inside the button that selects the row, but a name someone
-   pastes into a filter or a publish form — so it is text before it is part of a control. */
-.seg, .val { user-select: text; }
+   pastes into a filter or a publish form — so it is text before it is part of a control.
+
+   Above the sheet `.pick::after` lays over the row, for the same reason the twisty and the row's
+   controls are: a sheet over a name is a name nobody can drag across, and the tooltip saying
+   which colour rule painted it belongs to this span rather than to the sheet, so it never
+   opened. The press still lands — these are inside the button that takes it. */
+.seg, .val {
+  user-select: text;
+  position: relative;
+  z-index: 1;
+}
 .seg { flex: none; color: var(--ink); }
 
 /* The mark standing in for a level with no name of its own. Muted, so it reads as the shape of

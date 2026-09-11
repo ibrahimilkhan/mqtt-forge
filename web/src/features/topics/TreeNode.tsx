@@ -114,11 +114,13 @@ export const TreeNode = memo(function TreeNode({
           // The repeat click belongs to the pair rather than to the reader: passing it on would
           // load the topic into publish a second time, over whatever had been typed since.
           if (!pair) onSelect(path, node);
-          if (!isBranch) return;
 
-          // A quick second click starts a selection run, which would leave the segment
-          // highlighted behind the row.
+          // A quick second click starts a selection run, which would leave the topic highlighted
+          // behind the row. Above the branch test, because a leaf is a row a reader double
+          // clicks too — the name is selectable on purpose — and the leaf path used to return
+          // before this and leave the highlight standing.
           window.getSelection()?.removeAllRanges();
+          if (!isBranch) return;
 
           if (!pair) {
             openedRun.current = !open;
