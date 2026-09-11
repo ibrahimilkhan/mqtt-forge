@@ -313,15 +313,57 @@ describe('TopicTree', () => {
     expect(screen.getByText('temp')).toBeInTheDocument();
   });
 
-  // It opens and it does not shut. A reader clicks a branch to watch what is under it, and a row
-  // that toggled would hide it again every other time they did.
-  it('leaves an open branch open, however often the row is clicked', async () => {
+  // One click never shuts one. A reader clicks a branch to look at what is under it, and a row
+  // that toggled would hide the thing they had just asked for.
+  it('leaves an open branch open when the row is clicked', async () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
     render(<TopicTree broker="broker:1883" />);
 
     await userEvent.click(screen.getByText('sensors'));
     await userEvent.click(screen.getByText('sensors'));
+
+    expect(branchOf('sensors')).toHaveAttribute('data-open', 'true');
+  });
+
+  // Asking for it back is a deliberate gesture, and a deliberate gesture can cost two clicks.
+  it('folds an open branch on a double click', async () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    await userEvent.click(screen.getByText('sensors'));
     await userEvent.dblClick(screen.getByText('sensors'));
+
+    expect(branchOf('sensors')).toHaveAttribute('data-open', 'false');
+  });
+
+  // The pair that opened it is not the pair that folds it, or a double click on a shut branch
+  // would open and shut it inside one gesture and look like nothing had happened.
+  it('does not fold the branch its own double click just opened', async () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    await userEvent.dblClick(screen.getByText('sensors'));
+
+    expect(branchOf('sensors')).toHaveAttribute('data-open', 'true');
+  });
+
+  // With the pointer held still a browser does not start the count over: the second double click
+  // in the same spot arrives as clicks three and four. Each odd one starts a gesture, each even
+  // one closes the pair before it.
+  it('opens again on a second double click in the very same spot', () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    fireEvent.click(screen.getByText('sensors'), { detail: 1 });
+    expect(branchOf('sensors')).toHaveAttribute('data-open', 'true');
+    fireEvent.click(screen.getByText('sensors'), { detail: 2 });
+    expect(branchOf('sensors')).toHaveAttribute('data-open', 'true');
+
+    fireEvent.click(screen.getByText('sensors'), { detail: 3 });
+    fireEvent.click(screen.getByText('sensors'), { detail: 4 });
+    expect(branchOf('sensors')).toHaveAttribute('data-open', 'false');
+
+    fireEvent.click(screen.getByText('sensors'), { detail: 5 });
 
     expect(branchOf('sensors')).toHaveAttribute('data-open', 'true');
   });
@@ -337,18 +379,6 @@ describe('TopicTree', () => {
     await userEvent.click(within(branchOf('sensors')!).getByRole('button', { name: 'Collapse sensors' }));
 
     expect(branchOf('sensors')).toHaveAttribute('data-open', 'false');
-  });
-
-  // The browser's click count used to decide what the row did — one to pick, two to open — which
-  // meant a second double click in the same spot arrived as clicks three and four and was read
-  // as neither. Nothing counts them now.
-  it('opens whatever the browser calls the click', () => {
-    useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
-    render(<TopicTree broker="broker:1883" />);
-
-    fireEvent.click(screen.getByText('sensors'), { detail: 3 });
-
-    expect(branchOf('sensors')).toHaveAttribute('data-open', 'true');
   });
 
   // Enter on a focused row arrives as a click with no count at all, and it is the same

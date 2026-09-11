@@ -1,4 +1,4 @@
-import { memo, type CSSProperties, type ReactNode } from 'react';
+import { memo, useRef, type CSSProperties, type ReactNode } from 'react';
 import type { ColourRule } from '../../lib/topicColour';
 import { nodeSummary, type TopicNode } from '../../lib/topicTree';
 import { Sparkline } from './Sparkline';
@@ -55,6 +55,9 @@ export const TreeNode = memo(function TreeNode({
   // it was told to 'Collapse ', an instruction naming nothing.
   const spoken = label ?? (path === '' ? EMPTY_LEVEL : path);
 
+  /** Whether the click run in progress is the one that opened this branch. See the click below. */
+  const openedRun = useRef(false);
+
   return (
     <div
       className={styles.node}
@@ -86,28 +89,40 @@ export const TreeNode = memo(function TreeNode({
         type="button"
         className={styles.pick}
         aria-pressed={selected}
-        // One click, and the row does both the things it is for: it becomes what the wire log is
-        // about, and — if it is a shut branch — it opens.
+        // One click opens a shut branch; two fold an open one.
         //
-        // It used to take two, counted off `event.detail` rather than read from a dblclick
-        // handler. The twisty is a 10px glyph at the far left of an indented row, so the row
-        // carried the same instruction for anyone who would rather not aim at it; but a branch
-        // that only opens on the second click is a branch most readers never learn opens at all,
-        // and the first click had already done something else, which made the second read as a
-        // correction rather than as an instruction of its own.
+        // Opening used to take two as well, and a branch that only opens on the second click is
+        // one most readers never learn opens at all. Folding keeps the pair, because the two are
+        // not the same risk: a reader clicks a branch to look at what is under it, so a single
+        // click that shut it would hide the thing they had just asked for. Asking for it back is
+        // a deliberate gesture, and a deliberate gesture can cost two clicks.
         //
-        // It opens and it does not shut. Shutting belongs to the twisty, which is on the row and
-        // says which state it is in. A row that toggled would close half the times a reader
-        // clicked it to watch what is under it, and a click that sometimes hides what was asked
-        // for is worse than one that always shows it.
-        onClick={() => {
-          onSelect(path, node);
-          if (!isBranch || open) return;
+        // The count is the browser's, and the browser does not restart it while the pointer
+        // stays put: a second double click in the same spot arrives as clicks three and four.
+        // So the odd ones — and the countless zero an Enter on a focused row arrives with — are
+        // read as the start of a gesture, and each even one as the second half of the pair
+        // before it. `openedRun` is what that pair means: a pair that began on a shut branch has
+        // already opened it and must not shut it again, and one that began on an open branch is
+        // the fold. Without it, double-clicking a shut branch opened and shut it in one gesture.
+        onClick={(event) => {
+          const pair = event.detail !== 0 && event.detail % 2 === 0;
 
-          // A quick second click still starts a selection run, which would leave the segment
+          // The repeat click belongs to the pair rather than to the reader: passing it on would
+          // load the topic into publish a second time, over whatever had been typed since.
+          if (!pair) onSelect(path, node);
+          if (!isBranch) return;
+
+          // A quick second click starts a selection run, which would leave the segment
           // highlighted behind the row.
           window.getSelection()?.removeAllRanges();
-          onToggle(path);
+
+          if (!pair) {
+            openedRun.current = !open;
+            if (!open) onToggle(path);
+            return;
+          }
+
+          if (!openedRun.current) onToggle(path);
         }}
       >
         {/* The rule paints the segment itself rather than a mark beside it: nothing is added to

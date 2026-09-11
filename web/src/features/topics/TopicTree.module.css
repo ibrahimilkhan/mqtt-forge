@@ -111,6 +111,23 @@
 /* Two buttons, both need the app's reset: twisty opens the branch, the rest picks it. */
 .twisty,
 .pick { all: unset; cursor: pointer; }
+/* The row is the target, not the line of text in it.
+   The row paints hover and selection across its whole height and takes presses across the height
+   of one line of type, so there was a strip at the top and another at the bottom that looked live
+   and was not — three pixels on a topic row, ten and a half on the broker's, which is as tall as
+   the rail's head band. A reader aiming at a row and landing in the gap between two of them got
+   nothing.
+   No numbers: the sheet is absolutely placed and `.pick` is left static, so what it resolves
+   against is the row, and it covers whatever height that row happens to be. */
+.pick::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+/* The two things on the row that are not the pick keep their own presses. Positioned, so they
+   stand above the sheet rather than under it — the twisty already was, for its own reach. */
+.twisty { z-index: 1; }
+.rowActions { position: relative; z-index: 1; }
 /* all: unset misses the global button:hover fill, which would paint the row.
    :not(:disabled) matches that rule's specificity so this one wins. */
 .twisty:hover:not(:disabled),
