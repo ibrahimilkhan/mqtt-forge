@@ -554,7 +554,7 @@ describe('when the rules cannot be saved', () => {
     answers({});
     server.use(
       http.put('/api/alert-rules', () =>
-        HttpResponse.json({ title: 'No answer', detail: 'The console’s own server did not answer.' }, { status: 503 }),
+        HttpResponse.json({ title: 'No answer', detail: "The console's own server did not answer." }, { status: 503 }),
       ),
     );
     renderPanel();

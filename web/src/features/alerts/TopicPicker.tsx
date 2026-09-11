@@ -109,7 +109,7 @@ export function TopicPicker({
         // rule, and the console is not asking them to go and do something else first.
         <p className="empty">No topics to pick from yet.</p>
       ) : shown.length === 0 ? (
-        <p className="empty">No topic here carries &lsquo;{needle.trim()}&rsquo;.</p>
+        <p className="empty">No topic here carries &ldquo;{needle.trim()}&rdquo;.</p>
       ) : (
         <div className={styles.rows}>
           {shown.map((row) => (

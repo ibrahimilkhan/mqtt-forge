@@ -97,7 +97,7 @@ describe('a server that does not answer', () => {
     );
 
     expect(error).toBeInstanceOf(ApiError);
-    expect((error as ApiError).message).toBe('The console’s own server did not answer.');
+    expect((error as ApiError).message).toBe("The console's own server did not answer.");
   });
 
   it('lets a slow answer through while it is still coming', async () => {

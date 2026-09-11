@@ -37,7 +37,7 @@ export async function request<T>(
     // the fetch implementation, which in a test runner is a different realm from this module's,
     // and an `instanceof` across two realms is false however right it looks.
     if ((thrown as { name?: unknown } | null)?.name === 'TimeoutError')
-      throw new ApiError(0, 'The console’s own server did not answer.', 'No answer');
+      throw new ApiError(0, "The console's own server did not answer.", 'No answer');
 
     throw thrown;
   });

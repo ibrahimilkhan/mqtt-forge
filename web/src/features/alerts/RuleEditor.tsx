@@ -752,7 +752,7 @@ function WatchesHelp() {
       <p>
         <b>Topic filter</b> decides whose messages this rule reads. <code>+</code> stands for one
         level and <code>#</code> for the rest of the tree, so <code>plant/+/temp</code> is every
-        room&rsquo;s temperature and <code>plant/#</code> is the whole plant. Press the glass to
+        room's temperature and <code>plant/#</code> is the whole plant. Press the glass to
         pick one out of what the broker has actually sent.
       </p>
       <p>
@@ -762,7 +762,7 @@ function WatchesHelp() {
       </p>
       <p>
         <b>Severity</b> decides where a standing alarm sits in the panel and which colour the
-        rail&rsquo;s count wears. It changes nothing about when the rule fires.
+        rail's count wears. It changes nothing about when the rule fires.
       </p>
     </>
   );
@@ -779,7 +779,7 @@ function FiresHelp() {
       <p>
         <b>all</b> and <b>any</b> hold other conditions instead of a value of their own:{' '}
         <b>all</b> fires when every one of them is true, <b>any</b> when one of them is. That is
-        how &lsquo;hot <i>and</i> the pump is off&rsquo; is written.
+        how &ldquo;hot <i>and</i> the pump is off&rdquo; is written.
       </p>
       <p>
         A message that does not carry the Field at all is neither true nor false — it is skipped.

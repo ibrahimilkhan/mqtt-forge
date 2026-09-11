@@ -1012,7 +1012,7 @@ describe('when the rules cannot be saved', () => {
     server.use(
       http.put('/api/colour-rules', () =>
         HttpResponse.json(
-          { title: 'No answer', detail: 'The console’s own server did not answer.' },
+          { title: 'No answer', detail: "The console's own server did not answer." },
           { status: 503 },
         ),
       ),

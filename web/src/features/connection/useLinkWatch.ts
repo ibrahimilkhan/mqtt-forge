@@ -167,7 +167,7 @@ export function useLinkWatch() {
           what: moved ? `Link moved · ${endpoint}` : `New session · ${endpoint}`,
           detail: moved
             ? `Another console pointed this server at ${endpoint}; the topics of ${held.endpoint} are gone.`
-            : 'The link was made again while this console was not watching; the topics on screen were the old session’s.',
+            : 'The link was made again while this console was not watching; the topics on screen were the old session\'s.',
         });
       }
     }

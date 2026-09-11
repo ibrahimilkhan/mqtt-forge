@@ -258,7 +258,7 @@ export function ConditionFields({ condition, onChange, id }: Props) {
             />
           </div>
           <p className={panel.note}>
-            It fires once, at the moment it happens — so there is nothing here for &lsquo;For&rsquo;
+            It fires once, at the moment it happens — so there is nothing here for &ldquo;For&rdquo;
             to wait out, and it cannot be given with one.
           </p>
         </>

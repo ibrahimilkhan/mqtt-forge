@@ -15,7 +15,7 @@ import type { Summary } from './stats';
 export const SCALES = {
   extremes: {
     label: 'Extremes — every reading inside the plot',
-    hint: 'the lowest and highest readings are the plot’s top and bottom',
+    hint: "the lowest and highest readings are the plot's top and bottom",
   },
   typical: {
     label: 'Typical — scaled to where the readings mostly are',
