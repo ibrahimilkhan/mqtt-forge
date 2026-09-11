@@ -167,12 +167,26 @@
   padding: 4px 8px 6px;
   min-height: 0;
   flex: none;
+  /* The height of the box between one group and the next, whatever is drawn in it: the group's
+     name when the rail is open, a rule when it is shut, nothing at all at the first boundary
+     shut. Stated once here because two rules have to agree on it, and they have to agree exactly
+     — the whole point is that the menu is the same column of positions at both widths. The word
+     is what the number is made of: its line, at the global 1.55, and the 13px of padding around
+     it that `.menuGroup` sets. */
+  --menu-band: calc(var(--t-nano) * 1.55 + 13px);
 }
-.rail:not([data-open]) .menu { align-items: center; gap: 2px; padding: 8px 0; }
+/* Shut, the same box down a narrower strip. The padding is the open one's, not a rounder pair of
+   numbers, and there is no gap: a two-pixel gap between rows here and none there moved every
+   icon below the first by two pixels more than the one above it. */
+.rail:not([data-open]) .menu { align-items: center; gap: 0; padding: 4px 0 6px; }
 
 /* Six flat buttons was a list to read through; three groups of two is a list to point at. */
 .menuGroup {
   margin: 0;
+  /* Its own height rather than whatever its line and padding come to, so the box that replaces it
+     in the shut rail can be told the same number. It IS that number — see `--menu-band` — so
+     nothing here moves; it is written down so that something else can stand where it stands. */
+  height: var(--menu-band);
   font-family: var(--mono);
   font-size: var(--t-nano);
   font-weight: 400;
@@ -184,14 +198,30 @@
 /* Nothing above it but a rule, so it does not need the room the others put between groups. */
 .menuGroup:first-child { padding: 8px 12px 5px; }
 
-/* Shut, the same division with no room for a word. */
+/* Shut, the same division with no room for a word — and, more to the point, the same box. It was
+   a 1px rule with 5px of margin either side, 11px where the heading it stands in for is 28.5, and
+   the difference stacked: the first icon sat 24px high of where it does open, the last 42px. A
+   reader who narrows the rail is after the width, and paid for it by having to find every panel
+   again.
+
+   The rule is drawn inside the box rather than being the box, which is also what lets the first
+   boundary keep the height and drop the line. */
 .menuSplit {
+  height: var(--menu-band);
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.menuSplit::before {
+  content: '';
   width: 20px;
   height: 1px;
-  flex: none;
   background: var(--rule);
-  margin: 5px 0;
 }
+/* Nothing above the first group but the head band's own rule, which is two pixels of hairline in
+   a row saying one thing. The box stays; the line goes. */
+.menuSplit[data-first]::before { content: none; }
 
 .menuBtn {
   display: flex;
