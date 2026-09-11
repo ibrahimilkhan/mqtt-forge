@@ -243,6 +243,13 @@
     0 14px 38px color-mix(in srgb, var(--ink) 18%, transparent);
   overflow: hidden;
 }
+/* Forced colours drop every shadow, and this plate's whole edge is one — so a window that floats
+   over a console the reader is still using had nothing at all to say where it ended. Every other
+   plate in the app either draws a real border, which forced colours keep, or carries this same
+   fallback; this was the only one that did neither. */
+@media (forced-colors: active) {
+  .window { outline: 1px solid; outline-offset: -1px; }
+}
 
 /* The chart takes what the bar leaves — and scrolls rather than losing anything when the reader
    sizes the window below what the chart's own rows add up to. The note is the part that goes

@@ -13,14 +13,13 @@
 /* A column of groups, not a row of fields. */
 .readings { margin-top: 18px; }
 
+/* The same heading the saved brokers, the broker events and the colours panel use, said once
+   rather than copied out with one value changed: this block was `savedTitle` to the letter apart
+   from its weight, so the chart panel's section names came out bolder than every other panel's
+   at the same rank and the same size. */
 .heading {
+  composes: savedTitle from '../../styles/panel.module.css';
   margin: 0 0 5px;
-  font-family: var(--mono);
-  font-size: var(--t-label);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
 }
 
 /* A real fieldset, since these are groups of switches and the group's name is what says which

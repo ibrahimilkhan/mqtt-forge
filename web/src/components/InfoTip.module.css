@@ -40,7 +40,10 @@
    the thing beside it' — the same two pixels of --rule that a nested condition and an empty state
    are marked with, so a reader meets one idea in three places rather than three ideas. */
 .body {
-  border-left: 2px solid var(--signal);
+  /* --rule, which is what the comment above has always said and what the two places it names
+     actually use: `.empty` in global.css and a nested condition in the alerts editor. In
+     --signal it was a third thing wearing the accent, on a box whose job is to be quiet. */
+  border-left: 2px solid var(--rule);
   padding: 2px 0 2px 12px;
   margin: 0 0 14px;
   font-size: var(--t-small);
