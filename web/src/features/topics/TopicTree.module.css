@@ -67,7 +67,13 @@
    Centred rather than baseline-aligned, because what is on it now is marks and a box rather than
    a row of text. */
 .tree > .node[data-depth='0']:first-child {
-  min-height: calc(var(--head-band) - 11px);
+  /* Lifted out of the pane's 11px of top padding, so the row is the pane's own top edge down to
+     the line the rail's band ends on — and what stands in it is centred on that rather than 6px
+     below it. Ending on the same line was never the whole of it: a head band is a band, and the
+     broker's name should sit on the rail's own centre, not under it. Nothing below moves, because
+     the row gains exactly the height it gives up at the top. */
+  margin-top: -11px;
+  min-height: var(--head-band);
   align-items: center;
   /* Every other row skips layout and paint until it is scrolled to; this one is never off
      screen, and `content-visibility` costs it something it cannot afford: paint containment

@@ -149,7 +149,7 @@ describe('TopicTree', () => {
     ).toBeInTheDocument();
   });
 
-  const branchOf = (name: string) => screen.getByText(name).closest('[data-open]');
+  const branchOf = (name: string) => screen.getByText(name).closest<HTMLElement>('[data-open]');
 
   it('keeps a branch closed until it is opened', async () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
@@ -175,7 +175,9 @@ describe('TopicTree', () => {
     render(<TopicTree broker="broker:1883" />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Expand sensors' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Collapse sensors' }));
+    // Scoped to the row: the head row carries a 'Collapse sensors' of its own, which shuts
+    // every branch under it rather than the branch itself.
+    await userEvent.click(within(branchOf('sensors')!).getByRole('button', { name: 'Collapse sensors' }));
 
     expect(screen.queryByText('temp')).not.toBeInTheDocument();
   });
@@ -298,56 +300,60 @@ describe('TopicTree', () => {
     });
   });
 
-  it('leaves the branch closed when the row is clicked', async () => {
+  // The twisty is a 10px glyph at the far left of an indented row. The row carries the same
+  // instruction, on the part of it that is easy to hit — and it takes one click, because a
+  // branch that only opened on the second was one most readers never learnt opened at all.
+  it('opens a branch when the row is clicked', async () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
     render(<TopicTree broker="broker:1883" />);
 
     await userEvent.click(screen.getByText('sensors'));
 
-    expect(branchOf('sensors')).toHaveAttribute('data-open', 'false');
-  });
-
-  // The twisty is a 24px target at the far left of the row. Double-clicking the row itself is
-  // the same instruction, given to the part of the row that is easy to hit.
-  it('opens a branch on a double click, the way the twisty does', async () => {
-    useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
-    render(<TopicTree broker="broker:1883" />);
-
-    await userEvent.dblClick(screen.getByText('sensors'));
-
     expect(branchOf('sensors')).toHaveAttribute('data-open', 'true');
     expect(screen.getByText('temp')).toBeInTheDocument();
   });
 
-  it('closes an open branch on a second double click', async () => {
+  // It opens and it does not shut. A reader clicks a branch to watch what is under it, and a row
+  // that toggled would hide it again every other time they did.
+  it('leaves an open branch open, however often the row is clicked', async () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
     render(<TopicTree broker="broker:1883" />);
 
+    await userEvent.click(screen.getByText('sensors'));
+    await userEvent.click(screen.getByText('sensors'));
     await userEvent.dblClick(screen.getByText('sensors'));
-    await userEvent.dblClick(screen.getByText('sensors'));
+
+    expect(branchOf('sensors')).toHaveAttribute('data-open', 'true');
+  });
+
+  // What shuts it is the twisty, which is on the row and says which state it is in.
+  it('shuts the branch from the twisty', async () => {
+    useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
+    render(<TopicTree broker="broker:1883" />);
+
+    await userEvent.click(screen.getByText('sensors'));
+    // Scoped to the row: the head row carries a 'Collapse sensors' of its own, which shuts
+    // every branch under it rather than the branch itself.
+    await userEvent.click(within(branchOf('sensors')!).getByRole('button', { name: 'Collapse sensors' }));
 
     expect(branchOf('sensors')).toHaveAttribute('data-open', 'false');
   });
 
-  // With the pointer held still a browser does not start the count over — the second double
-  // click arrives as clicks three and four, and it need not re-announce them as a double click.
-  it('closes the branch on a second double click in the very same spot', () => {
+  // The browser's click count used to decide what the row did — one to pick, two to open — which
+  // meant a second double click in the same spot arrived as clicks three and four and was read
+  // as neither. Nothing counts them now.
+  it('opens whatever the browser calls the click', () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
     render(<TopicTree broker="broker:1883" />);
-
-    fireEvent.click(screen.getByText('sensors'), { detail: 1 });
-    fireEvent.click(screen.getByText('sensors'), { detail: 2 });
-    expect(branchOf('sensors')).toHaveAttribute('data-open', 'true');
 
     fireEvent.click(screen.getByText('sensors'), { detail: 3 });
-    fireEvent.click(screen.getByText('sensors'), { detail: 4 });
 
-    expect(branchOf('sensors')).toHaveAttribute('data-open', 'false');
+    expect(branchOf('sensors')).toHaveAttribute('data-open', 'true');
   });
 
-  // Enter on a focused row arrives as a click with no count at all. That is a pick, not a
-  // double click, and counting alone would read the zero as an even number and open the branch.
-  it('picks the row from the keyboard rather than opening it', async () => {
+  // Enter on a focused row arrives as a click with no count at all, and it is the same
+  // instruction: the row is picked, and a shut branch opens.
+  it('picks and opens the row from the keyboard', async () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
     render(<TopicTree broker="broker:1883" />);
 
@@ -355,36 +361,37 @@ describe('TopicTree', () => {
     await userEvent.keyboard('{Enter}');
 
     expect(useSelectionStore.getState().selected).toEqual({ label: 'sensors', filter: 'sensors/#', topic: 'sensors/#' });
-    expect(branchOf('sensors')).toHaveAttribute('data-open', 'false');
+    expect(branchOf('sensors')).toHaveAttribute('data-open', 'true');
   });
 
   it('leaves the wire log pointed at the branch it just opened', async () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
     render(<TopicTree broker="broker:1883" />);
 
-    await userEvent.dblClick(screen.getByText('sensors'));
+    await userEvent.click(screen.getByText('sensors'));
 
     expect(useSelectionStore.getState().selected).toEqual({ label: 'sensors', filter: 'sensors/#', topic: 'sensors/#' });
   });
 
-  // The repeat click belongs to the double click, not to the user. Passing it on would load the
-  // topic into publish a second time, overwriting whatever had been typed there since the first.
-  it('loads a double-clicked topic into publish once, not twice', async () => {
+  // Every click is the reader's now, the repeat one included: it loads the topic into publish
+  // again. Nothing is lost by that — the two clicks of a double click are milliseconds apart and
+  // carry the same message, so what the second overwrites is what the first had just written.
+  it('loads the topic into publish on each click of the row', async () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
     render(<TopicTree broker="broker:1883" />);
 
     await userEvent.click(screen.getByText('sensors'));
     const loaded = useComposeStore.getState().draft!.serial;
-    await userEvent.dblClick(screen.getByText('sensors'));
+    await userEvent.click(screen.getByText('sensors'));
 
     expect(useComposeStore.getState().draft!.serial).toBe(loaded + 1);
   });
 
-  it('folds the whole tree away on a double click of the broker row', async () => {
+  it('folds the whole tree away from the broker row twisty', async () => {
     useTopicTreeStore.getState().apply([message('sensors/temp', '21.5')]);
     render(<TopicTree broker="broker:1883" />);
 
-    await userEvent.dblClick(screen.getByText('broker:1883'));
+    await userEvent.click(within(branchOf('broker:1883')!).getByRole('button', { name: 'Collapse broker:1883' }));
 
     expect(screen.queryByText('sensors')).not.toBeInTheDocument();
   });

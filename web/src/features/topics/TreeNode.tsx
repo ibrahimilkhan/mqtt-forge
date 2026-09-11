@@ -86,23 +86,26 @@ export const TreeNode = memo(function TreeNode({
         type="button"
         className={styles.pick}
         aria-pressed={selected}
-        // The twisty is a small target at the far left, so a double click anywhere on the row
-        // is the same instruction, given to the part of it that is easy to hit.
+        // One click, and the row does both the things it is for: it becomes what the wire log is
+        // about, and — if it is a shut branch — it opens.
         //
-        // The clicks are counted here rather than read off a dblclick handler. A browser holds
-        // the count while the pointer stays put, so a second double click in the same spot is
-        // clicks three and four — and it does not have to call that a double click. Listening
-        // for the event meant the branch opened once and then would not close.
-        onClick={(event) => {
-          // Enter on a focused row arrives with no count. That is a pick, and zero is even.
-          if (event.detail <= 1) {
-            onSelect(path, node);
-            return;
-          }
+        // It used to take two, counted off `event.detail` rather than read from a dblclick
+        // handler. The twisty is a 10px glyph at the far left of an indented row, so the row
+        // carried the same instruction for anyone who would rather not aim at it; but a branch
+        // that only opens on the second click is a branch most readers never learn opens at all,
+        // and the first click had already done something else, which made the second read as a
+        // correction rather than as an instruction of its own.
+        //
+        // It opens and it does not shut. Shutting belongs to the twisty, which is on the row and
+        // says which state it is in. A row that toggled would close half the times a reader
+        // clicked it to watch what is under it, and a click that sometimes hides what was asked
+        // for is worse than one that always shows it.
+        onClick={() => {
+          onSelect(path, node);
+          if (!isBranch || open) return;
 
-          if (event.detail % 2 !== 0 || !isBranch) return;
-
-          // The run leaves the segment highlighted behind the row otherwise.
+          // A quick second click still starts a selection run, which would leave the segment
+          // highlighted behind the row.
           window.getSelection()?.removeAllRanges();
           onToggle(path);
         }}
