@@ -10,6 +10,7 @@ import { useConnectionState } from '../../api/useConnectionState';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import { useGuardedKeyedMutate, useGuardedMutate } from '../../lib/useGuardedMutate';
+import { describeError } from '../../lib/problemDetails';
 import { FilterChips } from './FilterChips';
 import { appendFilter, chunkFilters, parseFilters } from './parseFilters';
 
@@ -176,6 +177,17 @@ export function SubscribePanel({ onClose }: { onClose: () => void }) {
               ? 'Already subscribed to that filter.'
               : 'Already subscribed to all of these.'
             : `${alreadyUp} already subscribed — only the rest will be sent.`}
+        </p>
+      )}
+
+      {/* An unsubscribe that did not happen, named for the chip it was about.
+          It went only to `logFault`, which writes a command the wire log draws for the SELECTED
+          topic — and the chip is removed on success only, so on a failure the chip simply stayed
+          where it was and the × read as a press that had missed. */}
+      {unsubscribeMutation.isError && (
+        <p className={styles.fault} data-testid="unsubscribe-fault" role="alert">
+          Still subscribed to {String(unsubscribeMutation.variables)}.{' '}
+          {describeError(unsubscribeMutation.error)}
         </p>
       )}
 

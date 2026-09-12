@@ -155,6 +155,39 @@ describe('PublishPanel', () => {
     );
   });
 
+  // The log is a panel away and draws commands for the SELECTED topic, so a reader publishing to
+  // a topic they are not watching — which is most of them — got a 400 and a form that looked
+  // exactly as it had a moment before.
+  it('says at the button that the publish did not happen', async () => {
+    server.use(
+      http.post('/api/publish', () =>
+        HttpResponse.json(
+          { title: 'Not connected', detail: 'Connect to a broker before publishing.' },
+          { status: 400 },
+        ),
+      ),
+    );
+
+    renderPanel();
+    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+
+    const said = await screen.findByTestId('publish-fault');
+    expect(said).toHaveTextContent('Not sent.');
+    expect(said).toHaveTextContent('Connect to a broker before publishing.');
+    expect(said).toHaveAttribute('role', 'alert');
+  });
+
+  it('says nothing at the button when the publish is accepted', async () => {
+    let sent = false;
+    server.use(http.post('/api/publish', () => { sent = true; return HttpResponse.json({}); }));
+
+    renderPanel();
+    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+
+    await waitFor(() => expect(sent).toBe(true));
+    expect(screen.queryByTestId('publish-fault')).not.toBeInTheDocument();
+  });
+
   it('sends text bodies with the text encoding', async () => {
     let sent: unknown;
     server.use(

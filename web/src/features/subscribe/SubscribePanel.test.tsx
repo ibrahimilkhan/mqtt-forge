@@ -393,4 +393,30 @@ describe('picking a topic into the box', () => {
 
     await waitFor(() => expect(box()).not.toHaveValue('old/one'));
   });
+
+  // The chip is removed on success only, so on a failure it simply stayed where it was and the ×
+  // read as a press that had missed. The fault went to the log, which is a panel away and draws
+  // commands for the selected topic.
+  it('says which filter is still subscribed when the unsubscribe is refused', async () => {
+    server.use(
+      http.get('/api/subscriptions', () =>
+        HttpResponse.json([{ topicFilter: 'sensors/#', console: true, rules: false }]),
+      ),
+      http.delete('/api/subscriptions', () =>
+        HttpResponse.json(
+          { title: 'Not allowed', detail: 'The broker refused the unsubscribe.' },
+          { status: 403 },
+        ),
+      ),
+    );
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Unsubscribe from sensors/#' }));
+
+    const said = await screen.findByTestId('unsubscribe-fault');
+    expect(said).toHaveTextContent('Still subscribed to sensors/#.');
+    expect(said).toHaveTextContent('The broker refused the unsubscribe.');
+    // And the chip is still there, which is the truth it is explaining.
+    expect(screen.getByRole('button', { name: 'sensors/#' })).toBeInTheDocument();
+  });
 });

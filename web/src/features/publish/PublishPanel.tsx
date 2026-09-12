@@ -6,6 +6,7 @@ import { PanelShell } from '../../components/PanelShell';
 import { QosSelect } from '../../components/QosSelect';
 import { encodePayload, formatJson, type PayloadMode } from '../../lib/payload';
 import { parseUserProperties } from '../../lib/userProperties';
+import { describeError } from '../../lib/problemDetails';
 import styles from '../../styles/panel.module.css';
 import { useComposeStore } from '../../stores/composeStore';
 import { logFault } from '../../stores/logStore';
@@ -226,6 +227,17 @@ export function PublishPanel() {
             </Field>
           </div>
         </details>
+      )}
+
+      {/* A publish that did not happen, where the reader pressed.
+          It went only to `logFault`, which writes a command the wire log draws for the SELECTED
+          topic — so a reader publishing to a topic they are not watching, which is most of them,
+          got a 400 and a form that looked exactly as it had a moment before. The same line the
+          colours and alerts panels put under their own Save. */}
+      {publishMutation.isError && (
+        <p className={styles.fault} data-testid="publish-fault" role="alert">
+          Not sent. {describeError(publishMutation.error)}
+        </p>
       )}
 
       <div className={styles.actions}>
