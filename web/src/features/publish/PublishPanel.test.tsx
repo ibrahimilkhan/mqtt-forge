@@ -288,6 +288,41 @@ describe('PublishPanel', () => {
     expect(box).toHaveValue('{\n  "a": 1\n}');
   });
 
+  /**
+   * The count rides at the end of the label's own line.
+   *
+   * Under the box it pushed the next field a line further down the panel and read as a sentence
+   * about the form rather than as a property of the one box it belongs to. It is smaller than the
+   * label beside it because it is not a name: a label says what the box is for, a reading says
+   * what is in it.
+   */
+  it('puts the count on the label line, quieter than the label', async () => {
+    renderPanel();
+
+    const figure = screen.getByText('4 bytes');
+    const head = screen.getByText('Payload').parentElement!;
+    expect(head).toContainElement(figure);
+    expect(parseFloat(getComputedStyle(figure).fontSize) || 10.5).toBeLessThan(
+      parseFloat(getComputedStyle(screen.getByText('Payload')).fontSize) || 11.505,
+    );
+  });
+
+  // What the box will not encode is a sentence, not a figure, and it is the one thing here a
+  // reader has to act on — so it stays under the box, where aria-describedby points at it.
+  it('leaves what it cannot encode under the box, with the count gone', async () => {
+    renderPanel();
+
+    const payload = screen.getByLabelText('Payload');
+    await userEvent.clear(payload);
+    await userEvent.click(screen.getByRole('radio', { name: 'Hex' }));
+    await userEvent.type(payload, 'zz');
+
+    const said = screen.getByText(/hex/i, { selector: 'p' });
+    expect(said).toHaveAttribute('id', 'payload-message');
+    expect(payload).toHaveAttribute('aria-describedby', 'payload-message');
+    expect(screen.queryByText(/bytes$/)).not.toBeInTheDocument();
+  });
+
   it('counts the bytes that will go out, not the characters typed', async () => {
     renderPanel();
     const box = screen.getByLabelText('Payload');

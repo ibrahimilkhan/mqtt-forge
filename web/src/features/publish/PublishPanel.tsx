@@ -131,7 +131,16 @@ export function PublishPanel() {
       </div>
 
       <div className={styles.row}>
-        <Field label="Payload" htmlFor="payload">
+        {/* The count rides at the end of the label's line. It is the answer to "what actually
+            goes out": in UTF-8 it is not the number of characters typed, and in hex it is not the
+            number of digits either. */}
+        <Field
+          label="Payload"
+          htmlFor="payload"
+          aside={
+            encoded.ok ? <span className={styles.fieldFigure}>{encoded.size} bytes</span> : undefined
+          }
+        >
           <textarea
             id="payload"
             value={payload}
@@ -142,11 +151,9 @@ export function PublishPanel() {
         </Field>
       </div>
 
-      {/* The count is the answer to "what actually goes out": in UTF-8 it is not the number of
-          characters typed, and in hex it is not the number of digits either. */}
-      {encoded.ok ? (
-        <p className={styles.note}>{encoded.size} bytes</p>
-      ) : (
+      {/* What the box will not encode stays under it, and stays a sentence: it is the one thing
+          here a reader has to act on, and `aria-describedby` on the textarea points at it. */}
+      {!encoded.ok && (
         <p id="payload-message" className={styles.fault}>{encoded.error}</p>
       )}
 

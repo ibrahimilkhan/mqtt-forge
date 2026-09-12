@@ -47,6 +47,22 @@
 /* The gap below belongs to the head now. Left on the label it would be spent inside the row. */
 .fieldHead > label { margin-bottom: 0; }
 
+/* A figure the box below produced, at the far end of the label's own line.
+ *
+ * Not under the box, where it was: a reading pushed the next field a line further down the panel
+ * and read as a sentence about the form rather than as a property of the one box it belongs to.
+ * On the label's line it is where the eye already is when it looks at the field at all.
+ *
+ * Smaller than the label beside it, because it is not a name: a label says what the box is for
+ * and a reading says what is in it, and one of those is furniture the reader has already read. */
+.fieldFigure {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
 /* ---- a panel that is a list of rules ----
 
    Two of them now — alerts and colours — and they are the same page: a heading, one way to make
