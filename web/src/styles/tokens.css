@@ -2,7 +2,13 @@
     --paper:   #eaedf1;
     --surface: #ffffff;
     --ink:     #131a24;
-    --muted:   #67728a;
+    /* The quiet ink, and it is quiet on two grounds rather than one. It was tuned against
+       --surface, where #67728a is 4.83:1 — but every panel body in the console is --paper, and
+       there it fell to 4.11:1. That is the colour of every field label, every hint, every note,
+       every section title and every close ×, all of them at 10.5 to 12.75px, so the miss was not
+       in a corner: it was most of the small type in the product. #606b82 is 4.56 on the paper
+       and 5.35 on the surface, so both clear the line and nothing else has to move. */
+    --muted:   #606b82;
     --rule:    #d2d8e2;
     /* The mark's own plate, so the chrome and the icon are one blue rather than two that nearly
        agree. This was a navy at #1b3a7a until the mark was redrawn — deep and careful, but also
@@ -15,17 +21,24 @@
        wordmark's second half is drawn in this, which is the whole reason it has to be the
        plate's colour and not merely near it. */
     --signal:  #0e4260;
-    --live:    #0d7a63;
+    /* Half a hundredth under the line on the paper at #0d7a63 — 4.49 where 4.5 is asked — and
+       CONNECTED, the word this is spent on most, is drawn on the paper. A shade deeper clears it
+       on both grounds with room to spare, and the green is the same green. */
+    --live:    #0c7460;
     --fault:   #ab3520;
     /* The middle level, which had no colour of its own and wore --ink for it: a warn row was
        lettered exactly like the furniture around it, so the only thing saying an alarm was up was
        that a row had appeared. Three levels that are told apart by reading them are three levels
        nobody tells apart at a glance, which is the whole job of a level.
 
-       An ochre rather than a traffic-light amber. It has to hold 4.5:1 on the surface to be
-       lettering and not decoration — this is 4.6 — and a #f5a623 that would read as 'amber' on a
-       dark console is 2:1 on white, which is a colour you can see and cannot read. */
-    --warn:    #a4681c;
+       An ochre rather than a traffic-light amber. It has to hold 4.5:1 to be lettering and not
+       decoration — and on the ground it is actually spent on, which is the --paper every panel
+       body is drawn on and not the surface this was first measured against. #a4681c was 4.59 on
+       the surface and 3.91 on the paper, so the requirement written here was being met nowhere
+       the colour is used; #955e18 is 4.59 on the paper and 5.40 on the surface. A #f5a623 that
+       would read as 'amber' on a dark console is 2:1 on white, which is a colour you can see and
+       cannot read. */
+    --warn:    #955e18;
 
     /* ---- the chrome's own geometry ----
 

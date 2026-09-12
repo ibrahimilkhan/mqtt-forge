@@ -762,7 +762,12 @@
 
 /* Nothing to say here yet. Faint, and back to the label's own weight: a note full of bold
    dashes reads as a list of failures rather than as a quiet instrument. */
-.slot[data-empty] .slotValue { color: var(--rule); font-weight: 400; }
+/* --muted and not --rule: a hairline colour is 1.43:1 as lettering, which made the em dash
+   standing in for a missing reading the lowest-contrast text on the page by a factor of three —
+   a named slot with nothing legible in it, where a reader cannot tell 'nothing measured yet'
+   from 'this cell failed to draw'. The dropped weight beside it is what keeps a note full of
+   dashes from reading as a list of failures. */
+.slot[data-empty] .slotValue { color: var(--muted); font-weight: 400; }
 
 /* ---- what the plot could not fit ---- */
 
