@@ -1,3 +1,4 @@
+import { useEffect, useRef, type Ref } from 'react';
 import floating from './Floating.module.css';
 import { useFloating } from './floating';
 import { Corner, Expand, Shrink } from '../brand/icons';
@@ -25,6 +26,28 @@ export function TrafficPane() {
   useEscapeFromZoom();
   useFullFollowsScreen();
 
+  /**
+   * Where the keyboard goes when the chart is thrown open, and where it comes back to.
+   *
+   * Both of these controls unmount the button that was just pressed — the way in is gone once the
+   * chart is open, and the window bar's close goes with the window — so a browser handed focus to
+   * the body both times and the next Tab restarted from the top of the console. The same rule the
+   * rail's panels follow: the thing that opened it is where the reader comes back to.
+   */
+  const wayIn = useRef<HTMLButtonElement>(null);
+  const wasZoomed = useRef(zoomed);
+
+  useEffect(() => {
+    const opened = zoomed && !wasZoomed.current;
+    const closed = !zoomed && wasZoomed.current;
+    wasZoomed.current = zoomed;
+
+    // After the render that mounts the one being moved to, or the focus lands on a button that is
+    // then taken away again.
+    if (opened) requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid=zoom-close]')?.focus());
+    if (closed) requestAnimationFrame(() => wayIn.current?.focus());
+  }, [zoomed]);
+
   return (
     <>
       <h2 className="srOnly">Chart</h2>
@@ -35,7 +58,7 @@ export function TrafficPane() {
           The way in only. Open, the way back is the close at the end of the window bar, where a
           window's close has always been — and two controls for one gesture is one of them being
           guessed at. */}
-      {!zoomed && <Zoom />}
+      {!zoomed && <Zoom ref={wayIn} />}
 
       {/* Thrown open, the region is a window: it says what it is a chart of, it is moved by that
           line and sized by its corner, and the pin is where it stops following the selection and
@@ -174,13 +197,14 @@ function WindowBar({ label, filter }: { label?: string; filter?: string }) {
  * It sits over the top-right corner of the region, which is the corner it grows out of, and
  * stays there while it is open so the way back is where the way out was.
  */
-function Zoom() {
+function Zoom({ ref }: { ref?: Ref<HTMLButtonElement> }) {
   const zoomed = useZoomStore((state) => state.zoomed);
   const toggle = useZoomStore((state) => state.toggle);
 
   return (
     <button
       type="button"
+      ref={ref}
       className={styles.zoom}
       data-testid="zoom"
       aria-pressed={zoomed}

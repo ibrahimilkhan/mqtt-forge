@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithClient as render } from '../../test/renderWithClient';
@@ -97,6 +97,34 @@ describe('throwing the chart open', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Put the chart back' }));
     expect(useZoomStore.getState().zoomed).toBe(false);
+  });
+
+  /**
+   * And the keyboard goes with it.
+   *
+   * Both controls unmount the button that was just pressed — the way in is gone once the chart is
+   * open, and the window bar's close goes with the window — so focus landed on the body both
+   * times and the next Tab restarted from the top of the console. The same rule the rail's panels
+   * follow: the thing that opened it is where the reader comes back to.
+   */
+  it('takes the keyboard into the window and brings it back out', async () => {
+    run();
+    show();
+
+    const wayIn = screen.getByRole('button', { name: 'Open the chart over the console' });
+    wayIn.focus();
+    await userEvent.click(wayIn);
+
+    const back = await screen.findByRole('button', { name: 'Put the chart back' });
+    await waitFor(() => expect(document.activeElement).toBe(back));
+
+    await userEvent.click(back);
+
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: 'Open the chart over the console' }),
+      ),
+    );
   });
 
   /**
