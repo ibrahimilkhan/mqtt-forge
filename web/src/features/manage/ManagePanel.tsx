@@ -226,7 +226,7 @@ export function ManagePanel({ onClose }: { onClose: () => void }) {
               <div className={panel.actions}>
                 {/* Restorative, not destructive: letting go is what puts the rows back on
                     screen and the traffic back in the pane. */}
-                <button type="button" className="ghost starts" onClick={() => release()}>
+                <button type="button" className="ghost" onClick={() => release()}>
                   Let go of all {reading.paused.length}
                 </button>
               </div>

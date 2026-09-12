@@ -20,14 +20,14 @@ import { PANELS } from './features/panels';
  * `all: unset` without CSS, and jsdom has none: the first version of this test filtered on
  * `borderStyle` and quietly judged nothing at all.
  */
-const TONES: ReadonlyArray<[name: RegExp, tone: 'starts' | 'ends' | 'keeps']> = [
-  // Something begins.
-  [/^Connect$/, 'starts'],
-  [/^Publish$/, 'starts'],
-  [/^Subscribe$/, 'starts'],
-  [/^New rule$/, 'starts'],
-  [/^Add a condition$/, 'starts'],
-  [/^Try again$/, 'starts'],
+const TONES: ReadonlyArray<[name: RegExp, tone: 'acts' | 'ends' | 'keeps']> = [
+  // Something begins — the commonest case, and the one nobody has to remember to write.
+  [/^Connect$/, 'acts'],
+  [/^Publish$/, 'acts'],
+  [/^Subscribe$/, 'acts'],
+  [/^New rule$/, 'acts'],
+  [/^Add a condition$/, 'acts'],
+  [/^Try again$/, 'acts'],
   // Something goes.
   [/^Disconnect$/, 'ends'],
   [/^Abort$/, 'ends'],
@@ -35,7 +35,7 @@ const TONES: ReadonlyArray<[name: RegExp, tone: 'starts' | 'ends' | 'keeps']> = 
   [/^Clear events$/, 'ends'],
   [/^Clear retained$/, 'ends'],
   [/^Discard it$/, 'ends'],
-  // What is on screen is kept, which is neither.
+  // What is on screen is written down, which is neither of those.
   [/^Save$/, 'keeps'],
 ];
 
@@ -51,7 +51,7 @@ const openConsole = async () => {
 };
 
 const toneOf = (button: HTMLElement) =>
-  button.classList.contains('ends') ? 'ends' : button.classList.contains('starts') ? 'starts' : 'keeps';
+  button.classList.contains('ends') ? 'ends' : button.classList.contains('keeps') ? 'keeps' : 'acts';
 
 /** Every classified button on screen right now, with the tone it is actually wearing. */
 const onScreen = () =>
@@ -89,7 +89,7 @@ describe('a button says what pressing it does', () => {
     const seen = onScreen();
     expect(seen.map((one) => one.name).sort()).toEqual(['Connect', 'Save']);
     expect(seen.filter((one) => one.has !== one.want)).toEqual([]);
-    expect(new Set(seen.map((one) => one.want))).toEqual(new Set(['starts', 'keeps']));
+    expect(new Set(seen.map((one) => one.want))).toEqual(new Set(['acts', 'keeps']));
   });
 
   // And with a panel that leaves the workspace up, the publish form comes with it.
@@ -102,6 +102,6 @@ describe('a button says what pressing it does', () => {
 
     const seen = onScreen();
     expect(seen.map((one) => one.name).sort()).toEqual(['Publish', 'Subscribe']);
-    expect(seen.every((one) => one.has === 'starts')).toBe(true);
+    expect(seen.every((one) => one.has === 'acts')).toBe(true);
   });
 });

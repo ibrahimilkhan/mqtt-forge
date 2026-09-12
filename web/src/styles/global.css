@@ -129,10 +129,12 @@
    *
    * Three, and they answer one question — what happens when this is pressed:
    *
-   *   `.starts`  something begins. Connect, Publish, Subscribe, New rule, Add a condition, Try
-   *              again. --live, which is already this console's word for a link that is up.
-   *   (default)  what is on screen is kept. Save, and only Save. --signal, the mark's own blue:
-   *              the settled action, and the one a form's last row is usually for.
+   *   (default)  something begins. Connect, Publish, Subscribe, New rule, Add a condition, Try
+   *              again. --signal, the mark's own blue, because these are what the console is for
+   *              and the commonest case should be the one nobody has to remember to write.
+   *   `.keeps`   what is on screen is written down. Save, and only Save — a different kind of
+   *              act from the ones above: it changes nothing out there, it records what is here.
+   *              --live, the console's green, which is what it already says of a thing that held.
    *   `.ends`    something goes. Disconnect, Clear, Forget, Remove, Discard, Abort. --fault,
    *              which is already the colour a failure and a dropped link are written in.
    *
@@ -155,7 +157,7 @@
     color: var(--surface);
     cursor: pointer;
   }
-  button.starts { --tone: var(--live); }
+  button.keeps { --tone: var(--live); }
   button.ends { --tone: var(--fault); }
   /* ---- what can be selected, and what cannot ----
 

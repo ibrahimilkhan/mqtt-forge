@@ -543,7 +543,7 @@ export function RuleEditor({
 
             <button
               type="button"
-              className="ghost starts"
+              className="ghost"
               onClick={() =>
                 edit({
                   webhook: {
@@ -638,7 +638,7 @@ export function RuleEditor({
         </button>
         <button
           type="button"
-          className={panel.trailing}
+          className={`keeps ${panel.trailing}`}
           disabled={!savable(faults) || save.isPending}
           // One rule goes in; the list it joins is fetched inside the mutation, at the moment of
           // the write rather than at the moment of the render. See the note on `save`.

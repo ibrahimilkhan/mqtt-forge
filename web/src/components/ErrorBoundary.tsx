@@ -22,7 +22,7 @@ export class ErrorBoundary extends Component<Props, State> {
       <div style={{ padding: '40px 20px' }}>
         <h2>Something went wrong</h2>
         <p>{this.state.error.message}</p>
-        <button type="button" className="starts" onClick={() => this.setState({ error: null })}>
+        <button type="button" onClick={() => this.setState({ error: null })}>
           Try again
         </button>
       </div>

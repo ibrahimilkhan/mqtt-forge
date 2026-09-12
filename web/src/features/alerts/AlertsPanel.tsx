@@ -275,7 +275,7 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
 
         <button
           type="button"
-          className={`ghost starts ${panel.iconButton}`}
+          className={`ghost ${panel.iconButton}`}
           onClick={() => edit()}
         >
           <Plus />

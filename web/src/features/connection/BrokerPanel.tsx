@@ -684,6 +684,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
           <div className={styles.namingActions}>
             <button
               type="button"
+              className="keeps"
               onClick={keep}
               disabled={naming.trim() === '' || keepMutation.isPending}
             >
@@ -724,7 +725,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
             {!linkIsSaved && (
             <button
               type="button"
-              className={`ghost ${styles.iconButton}`}
+              className={`ghost keeps ${styles.iconButton}`}
               // The link's own address, not the form's: on this face the form is a draft the
               // reader may have typed during an outage and never connected to.
               onClick={() =>
@@ -1228,7 +1229,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
         {naming === null && !formIsSaved && (
           <button
             type="button"
-            className={`ghost ${styles.iconButton}`}
+            className={`ghost keeps ${styles.iconButton}`}
             onClick={() => setNaming(from ?? formatEndpoint(form.host, form.port))}
           >
             <Save />
@@ -1257,7 +1258,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
         {!attemptRunning && !isOnline && (
           <button
             type="button"
-            className={`starts ${styles.iconButton} ${styles.trailing}`}
+            className={`${styles.iconButton} ${styles.trailing}`}
             onClick={submit}
           >
             <Link />
@@ -1322,7 +1323,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
               explained it was being built and thrown away. */}
           {suggestion.why && <p className={styles.note}>{suggestion.why}</p>}
           <div className={styles.actions}>
-            <button type="button" className="ghost starts" onClick={() => retryOn(suggestion.scheme)}>
+            <button type="button" className="ghost" onClick={() => retryOn(suggestion.scheme)}>
               {`Try ${suggestion.scheme}:// instead`}
             </button>
           </div>

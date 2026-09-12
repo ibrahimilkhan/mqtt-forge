@@ -338,6 +338,7 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
         {(draft === null || rules.length > 0 || unsaved) && (
           <button
             type="button"
+            className="keeps"
             disabled={!savable || save.isPending}
             onClick={() =>
               guardedSave(rules.map(({ filter, colour, bodyColour }) => ({ filter, colour, bodyColour })))
@@ -349,7 +350,7 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
 
         <button
           type="button"
-          className={`ghost starts ${panel.iconButton} ${panel.trailing}`}
+          className={`ghost ${panel.iconButton} ${panel.trailing}`}
           disabled={draft === null || full}
           title={
             selectedTopic
