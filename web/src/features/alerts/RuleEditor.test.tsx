@@ -321,6 +321,27 @@ describe('what the editor refuses before the request', () => {
     expect(save()).toBeDisabled();
   });
 
+  /* The same row as the publish panel's, and the same reason: Retain is the one switch on it
+     that is not a QoS, so it sits at the end rather than fourth in a line of levels. */
+  it('keeps Retain at the far end of the QoS row', async () => {
+    api(boiler);
+    openEditor(boiler);
+
+    await userEvent.click(screen.getByLabelText('Publish'));
+
+    const retain = screen.getByLabelText('Retain');
+    const row = retain.closest('label')!.parentElement!;
+    const controls = Array.from(row.querySelectorAll('input'));
+
+    expect(controls.at(-1)).toBe(retain);
+    expect(controls.slice(0, -1).map((input) => input.getAttribute('aria-label'))).toEqual([
+      'QoS 0',
+      'QoS 1',
+      'QoS 2',
+    ]);
+    expect(retain.closest('label')!.className).toMatch(/trailing/);
+  });
+
   it('refuses a publish topic outside the tree this server publishes into', async () => {
     api(boiler);
     openEditor(boiler);

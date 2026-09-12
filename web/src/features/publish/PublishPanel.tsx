@@ -159,7 +159,9 @@ export function PublishPanel() {
 
       <div className={styles.checks}>
         <QosSelect name="qos" value={qos} onChange={setQos} />
-        <label>
+        {/* At the end of the row: it is the one switch here that is not a QoS, and beside them
+            it read as a fourth level. */}
+        <label className={styles.trailing}>
           <input type="checkbox" checked={retain} onChange={(e) => setRetain(e.target.checked)} />
           {' Retain'}
         </label>

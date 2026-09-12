@@ -173,7 +173,11 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 0;
+  /* Block only. The global label rule leaves a 6px gap under itself for the box it names, and a
+     label on this row names nothing below it — but `margin: 0` here also outranks `.trailing`'s
+     `margin-left: auto` on specificity, which is how Retain stayed put beside QoS 2 rather than
+     going to the end of the row. */
+  margin-block: 0;
   font-size: var(--t-small);
   letter-spacing: 0.04em;
   text-transform: none;
@@ -188,14 +192,18 @@
    An empty row still spends its margin, which reads as a gap somebody forgot to close. */
 .actions:empty { display: none; }
 
-/* The button the panel exists for, held to the right-hand end of its row.
+/* Whatever belongs at the right-hand end of its row.
 
-   The other thing you can do with a form — keep it — reads first, because it is the smaller
-   claim and the one a reader passes on the way to the other. The one that acts sits where a hand
-   reaching for the primary action goes, which on a form's last row is the right.
+   Usually the button the panel exists for. The other thing you can do with a form — keep it —
+   reads first, because it is the smaller claim and the one a reader passes on the way to the
+   other. The one that acts sits where a hand reaching for the primary action goes, which on a
+   form's last row is the right.
+
+   Also the odd control out on a row of like things: Retain is the one switch on the QoS row that
+   is not a QoS, and at the end of the row it stops reading as a fourth level.
 
    `margin-left: auto` rather than `justify-content: space-between` on the row itself: the row is
-   not always two buttons, and only this one belongs at the edge whatever else is beside it. */
+   not always two things, and only this one belongs at the edge whatever else is beside it. */
 .trailing { margin-left: auto; }
 
 /* A button with a mark in it. The mark leads, at the button's own type size — 1em, the same rule

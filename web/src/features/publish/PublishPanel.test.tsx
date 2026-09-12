@@ -510,6 +510,25 @@ describe('the MQTT 5 fold', () => {
     });
   });
 
+  /* Retain stands at the end of the row rather than fourth in a line of QoS levels.
+     Both halves are asserted: last in the row, and held out to the right — without the second,
+     a Retain that merely sat next to QoS 2, which is what it did before, would still pass. */
+  it('keeps Retain at the far end of the QoS row', () => {
+    renderPanel();
+
+    const retain = screen.getByLabelText('Retain');
+    const row = retain.closest('label')!.parentElement!;
+    const controls = Array.from(row.querySelectorAll('input'));
+
+    expect(controls.at(-1)).toBe(retain);
+    expect(controls.slice(0, -1).map((input) => input.getAttribute('aria-label'))).toEqual([
+      'QoS 0',
+      'QoS 1',
+      'QoS 2',
+    ]);
+    expect(retain.closest('label')!.className).toMatch(/trailing/);
+  });
+
   // A fold opened and left alone is a fold nobody filled in.
   it('sends an ordinary publish when the fold was opened and nothing typed', async () => {
     const sent = sends();

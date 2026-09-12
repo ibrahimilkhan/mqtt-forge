@@ -591,7 +591,8 @@ export function RuleEditor({
               value={draft.publish.qos}
               onChange={(qos) => edit({ publish: { ...draft.publish!, qos } })}
             />
-            <label>
+            {/* At the end of the row, for the reason panel.module.css gives beside `.trailing`. */}
+            <label className={panel.trailing}>
               <input
                 type="checkbox"
                 checked={draft.publish.retain}
