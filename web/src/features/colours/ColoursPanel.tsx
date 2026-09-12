@@ -349,7 +349,7 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
 
         <button
           type="button"
-          className={`ghost ${panel.iconButton} ${panel.trailing}`}
+          className={`ghost starts ${panel.iconButton} ${panel.trailing}`}
           disabled={draft === null || full}
           title={
             selectedTopic

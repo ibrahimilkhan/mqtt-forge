@@ -121,14 +121,28 @@
   }
 
 
-  /* Filled, in the console's own blue.
-     It was --ink, which is to say near-black, and that made the loudest control on every page the
-     one thing on it wearing a colour the console uses nowhere else as a fill. Connect, Publish,
-     Save, New rule: four black slabs in a chrome whose accent is petrol. The rail's open row gave
-     up its black for the same reason — see `.menuBtn[aria-expanded="true"]`, which was 'the last
-     selected thing on the screen still painting itself black'; these were the last filled ones.
-     White on --signal is 10.2:1, so nothing is lost in the trade. */
+  /* ---- what a press does, in three colours ----
+   *
+   * Every button in this console was one colour, so the only thing its colour said was 'this is a
+   * button'. A reader scanning a panel for the way out of it, or for the one control that cannot
+   * be undone, had to read every word on the row.
+   *
+   * Three, and they answer one question — what happens when this is pressed:
+   *
+   *   `.starts`  something begins. Connect, Publish, Subscribe, New rule, Add a condition, Try
+   *              again. --live, which is already this console's word for a link that is up.
+   *   (default)  what is on screen is kept. Save, and only Save. --signal, the mark's own blue:
+   *              the settled action, and the one a form's last row is usually for.
+   *   `.ends`    something goes. Disconnect, Clear, Forget, Remove, Discard, Abort. --fault,
+   *              which is already the colour a failure and a dropped link are written in.
+   *
+   * The colour is carried by one custom property, so it reaches the fill, the border and both
+   * hovers from one place — and a ghost, which gives up the fill and keeps the edge, says the
+   * same thing at a quieter weight without a second set of rules. Weight is a separate question
+   * from meaning: a filled Clear and an outlined Clear are both red, and the icon × on a row was
+   * already going red under the pointer before any of this. */
   button {
+    --tone: var(--signal);
     font-family: var(--mono);
     font-size: var(--t-small);
     font-weight: 600;
@@ -136,11 +150,13 @@
     text-transform: uppercase;
     padding: 10px 16px;
     border-radius: var(--r-control);
-    border: 1px solid var(--signal);
-    background: var(--signal);
+    border: 1px solid var(--tone);
+    background: var(--tone);
     color: var(--surface);
     cursor: pointer;
   }
+  button.starts { --tone: var(--live); }
+  button.ends { --tone: var(--fault); }
   /* ---- what can be selected, and what cannot ----
 
      This is an instrument, not a document. A press on the background of a pane — the empty half
@@ -169,21 +185,20 @@
      for either ink: white on it is 4.8:1 and near-black on it is 3.6:1, so the console's own
      Publish went from 17.5:1 at rest to 4.8:1 under the pointer — the primary action fading as
      the reader reached for it — and every bare button that kept its own dark ink fell below the
-     line. A filled button takes the console's blue, which is what it already wears when it is
-     on; a ghost takes a wash of that blue and keeps the ink it had.
+     line. A filled button takes its own tone a shade deeper; a ghost takes a wash of that tone
+     and keeps the ink it had.
 
-     The filled one now wears that blue at rest, so the pointer takes it a shade deeper instead —
-     the same mix, to the percentage point, that the rail's open row goes to under the pointer.
-     Deeper rather than lighter: white on it goes from 10.2:1 to 11.4:1, so the primary action
+     Deeper rather than lighter, and the same mix to the percentage point that the rail's open row
+     goes to under the pointer: white on the blue goes from 10.2:1 to 11.4:1, so the action
      strengthens as the reader reaches for it, which is the whole of what this block is about. */
   button:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--signal) 86%, var(--ink));
-    border-color: color-mix(in srgb, var(--signal) 86%, var(--ink));
+    background: color-mix(in srgb, var(--tone) 86%, var(--ink));
+    border-color: color-mix(in srgb, var(--tone) 86%, var(--ink));
   }
   button.ghost { background: transparent; color: var(--ink); }
   button.ghost:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--signal) 12%, var(--surface));
-    border-color: var(--signal);
+    background: color-mix(in srgb, var(--tone) 12%, var(--surface));
+    border-color: var(--tone);
     color: var(--ink);
   }
   button:disabled { opacity: 0.35; cursor: not-allowed; }

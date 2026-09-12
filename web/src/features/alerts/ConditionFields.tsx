@@ -404,7 +404,7 @@ export function ConditionFields({ condition, onChange, id }: Props) {
 
           <button
             type="button"
-            className="ghost"
+            className="ghost starts"
             onClick={() =>
               onChange({ ...condition, of: [...condition.of, blankCondition('threshold')] })
             }

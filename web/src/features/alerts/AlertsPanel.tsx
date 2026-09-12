@@ -236,7 +236,7 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
               <button type="button" className="ghost" onClick={() => setLeaving(false)}>
                 Keep writing
               </button>
-              <button type="button" onClick={leave}>
+              <button type="button" className="ends" onClick={leave}>
                 Discard it
               </button>
             </div>
@@ -275,7 +275,7 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
 
         <button
           type="button"
-          className={`ghost ${panel.iconButton}`}
+          className={`ghost starts ${panel.iconButton}`}
           onClick={() => edit()}
         >
           <Plus />

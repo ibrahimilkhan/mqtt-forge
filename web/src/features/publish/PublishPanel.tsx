@@ -243,6 +243,7 @@ export function PublishPanel() {
       <div className={styles.actions}>
         <button
           type="button"
+          className="starts"
           onClick={() => guardedPublish()}
           disabled={!isOnline || publishMutation.isPending || !encoded.ok}
         >

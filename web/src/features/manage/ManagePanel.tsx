@@ -138,6 +138,7 @@ export function ManagePanel({ onClose }: { onClose: () => void }) {
             <div className={`${panel.actions} ${styles.clears}`}>
               <button
                 type="button"
+                className="ends"
                 onClick={() => {
                   if (emptying === 'traffic') clearTraffic();
                   else clearEvents();
@@ -157,7 +158,7 @@ export function ManagePanel({ onClose }: { onClose: () => void }) {
           <div className={`${panel.actions} ${styles.clears}`}>
             <button
               type="button"
-              className="ghost"
+              className="ghost ends"
               disabled={reading.held === 0 && reading.topics === 0}
               title="Clear the traffic and the topic tree"
               onClick={() => setEmptying('traffic')}
@@ -166,7 +167,7 @@ export function ManagePanel({ onClose }: { onClose: () => void }) {
             </button>
             <button
               type="button"
-              className="ghost"
+              className="ghost ends"
               disabled={events.length === 0}
               title="Clear the record of what the link has been doing"
               onClick={() => setEmptying('events')}
@@ -223,7 +224,9 @@ export function ManagePanel({ onClose }: { onClose: () => void }) {
 
             {reading.paused.length > 1 && (
               <div className={panel.actions}>
-                <button type="button" className="ghost" onClick={() => release()}>
+                {/* Restorative, not destructive: letting go is what puts the rows back on
+                    screen and the traffic back in the pane. */}
+                <button type="button" className="ghost starts" onClick={() => release()}>
                   Let go of all {reading.paused.length}
                 </button>
               </div>
@@ -282,7 +285,7 @@ export function ManagePanel({ onClose }: { onClose: () => void }) {
               too, and nothing here can put them back.
             </p>
             <div className={panel.actions}>
-              <button type="button" onClick={forget} disabled={clearing}>
+              <button type="button" className="ends" onClick={forget} disabled={clearing}>
                 {clearing
                   ? 'Clearing…'
                   : `Yes, clear ${retained.length.toLocaleString('en-GB')} ${retained.length === 1 ? 'topic' : 'topics'}`}
@@ -296,7 +299,7 @@ export function ManagePanel({ onClose }: { onClose: () => void }) {
           <div className={panel.actions}>
             <button
               type="button"
-              className="ghost"
+              className="ghost ends"
               disabled={retained.length === 0}
               onClick={() => {
                 setSaid(null);

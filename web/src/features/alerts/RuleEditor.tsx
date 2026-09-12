@@ -543,7 +543,7 @@ export function RuleEditor({
 
             <button
               type="button"
-              className="ghost"
+              className="ghost starts"
               onClick={() =>
                 edit({
                   webhook: {

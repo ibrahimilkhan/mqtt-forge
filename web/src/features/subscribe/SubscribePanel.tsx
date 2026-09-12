@@ -161,6 +161,7 @@ export function SubscribePanel({ onClose }: { onClose: () => void }) {
       <div className={styles.actions}>
         <button
           type="button"
+          className="starts"
           onClick={() => guardedSubscribe()}
           disabled={!isOnline || subscribeMutation.isPending || fresh.length === 0}
         >

@@ -743,7 +743,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
                 what this button does. */}
             <button
               type="button"
-              className={`ghost ${styles.iconButton} ${styles.trailing}`}
+              className={`ghost ends ${styles.iconButton} ${styles.trailing}`}
               onClick={() => guardedDisconnect()}
               disabled={disconnectMutation.isPending || lostServer}
               title={
@@ -1239,7 +1239,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
         {attemptRunning && (
           <button
             type="button"
-            className={`${styles.iconButton} ${styles.trailing}`}
+            className={`ends ${styles.iconButton} ${styles.trailing}`}
             onClick={() => guardedAbort()}
             disabled={abortMutation.isPending}
           >
@@ -1257,7 +1257,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
         {!attemptRunning && !isOnline && (
           <button
             type="button"
-            className={`${styles.iconButton} ${styles.trailing}`}
+            className={`starts ${styles.iconButton} ${styles.trailing}`}
             onClick={submit}
           >
             <Link />
@@ -1322,7 +1322,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
               explained it was being built and thrown away. */}
           {suggestion.why && <p className={styles.note}>{suggestion.why}</p>}
           <div className={styles.actions}>
-            <button type="button" className="ghost" onClick={() => retryOn(suggestion.scheme)}>
+            <button type="button" className="ghost starts" onClick={() => retryOn(suggestion.scheme)}>
               {`Try ${suggestion.scheme}:// instead`}
             </button>
           </div>
