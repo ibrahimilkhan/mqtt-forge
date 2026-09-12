@@ -226,6 +226,49 @@ describe('ColoursPanel', () => {
     });
   });
 
+  /**
+   * One row at the foot, and the two things on it are two different scales.
+   *
+   * Save answers for the whole list and reads first; New rule adds one more to it and sits where
+   * a hand reaching past the list goes. They used to be a floor apart, with New rule hanging off
+   * a 'Rules' heading at the top — a second word saying these are the rules, on a panel that says
+   * COLOURS across the top of itself and holds nothing else.
+   */
+  it('puts Save and New rule on one row, in that order', async () => {
+    stored({ filter: 'a/#', colour: '#b45309' });
+    renderPanel();
+
+    await waitFor(() => expect(rows()).toHaveLength(1));
+
+    const row = saveButton().parentElement!;
+    expect(within(row).getByRole('button', { name: 'New rule' })).toBeInTheDocument();
+    // Document order is the reading order, and `.trailing` is what puts the second at the far end.
+    expect([...row.querySelectorAll('button')].map((b) => b.textContent?.trim())).toEqual([
+      'Save',
+      'New rule',
+    ]);
+  });
+
+  // The panel says COLOURS; a heading saying these are the rules said the only other thing it
+  // could have been about.
+  it('does not head the list with a word for the only thing in the panel', async () => {
+    stored({ filter: 'a/#', colour: '#b45309' });
+    renderPanel();
+
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(screen.queryByRole('heading', { name: 'Rules' })).not.toBeInTheDocument();
+  });
+
+  // The one place New rule matters most, and the one place the old Save row was not drawn at all.
+  it('offers New rule over an empty list, where Save has nothing to answer for', async () => {
+    stored();
+    renderPanel();
+
+    await waitFor(() => expect(addButton()).toBeEnabled());
+    expect(screen.getByText('No colour rules yet.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+  });
+
   it('leaves Save alone while nothing has been touched', async () => {
     stored({ filter: 'a/#', colour: '#b45309' });
     renderPanel();

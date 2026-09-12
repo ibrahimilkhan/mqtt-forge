@@ -180,38 +180,6 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
         </p>
       )}
 
-      {/* The heading and the one thing you can do to the list, on one line — the arrangement the
-          alerts panel uses, because this is the same kind of page: a list of rules somebody is
-          keeping, not a form somebody is filling in. */}
-      <div className={panel.sectionTop}>
-        <h3 className={panel.sectionTitle}>Rules</h3>
-
-        <button
-          type="button"
-          className={`ghost ${panel.iconButton}`}
-          disabled={draft === null || full}
-          title={
-            selectedTopic
-              ? `Add a rule for ${selectedTopic}`
-              : 'Add a rule — an unsaved one follows the tree'
-          }
-          onClick={() =>
-            setDraft((current) => [
-              ...current!,
-              {
-                ...newDraftRule(nextColour(current!.map((rule) => rule.colour))),
-                // The topic last picked in the tree is the one a new rule is usually for. Only
-                // the new row: an edit in progress above it is not the selection's business.
-                filter: selectedTopic ?? '',
-              },
-            ])
-          }
-        >
-          <Plus />
-          New rule
-        </button>
-      </div>
-
       {draft !== null && rules.length === 0 && (
         <div className={panel.nothingYet}>
           <p>
@@ -345,16 +313,6 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
 
       {unsaved && <p className={panel.note}>Not saved yet — closing this panel loses these edits.</p>}
 
-      {/* Save alone, at the right-hand end. Making a rule moved up to the heading — that is what
-          you do TO the list — and what is left on this row is the one thing you do to all of it
-          at once.
-
-          Not drawn over an empty list that nobody has touched: a rule across the panel with one
-          button under it is a floor under nothing. Emptying the list by hand is a different thing
-          — that is an edit, and it has to be saveable — so `unsaved` brings the row back. And so
-          does a draft that was never read: there the button is present and refuses, which is the
-          panel saying it will not overwrite rules it could not load. Absent, it would look like a
-          panel that had simply finished. */}
       {/* A save that did not happen, where the reader pressed. It is in the broker's record too,
           which is a panel away — and a Save that comes back enabled with the same list still on
           screen is indistinguishable from one that worked. */}
@@ -364,20 +322,56 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
         </p>
       )}
 
-      {(draft === null || rules.length > 0 || unsaved) && (
+      {/* One row at the foot, and the two things on it are two different scales: Save answers for
+          the whole list and reads first, New rule adds one more to it and sits where a hand
+          reaching past the list goes. The heading they used to hang off is gone — a panel that
+          says COLOURS across the top of itself does not need a second word saying these are the
+          rules, when rules are the only thing in it.
+
+          Save is not drawn over an empty list nobody has touched: a rule across the panel with
+          one dead button under it is a floor under nothing. Emptying the list by hand is a
+          different thing — that is an edit, and it has to be saveable — so `unsaved` brings it
+          back. And so does a draft that was never read: there it is present and refuses, which is
+          the panel saying it will not overwrite rules it could not load. New rule is on the row
+          either way, because an empty list is exactly where a reader wants it. */}
       <div className={`${panel.actions} ${styles.footer}`}>
+        {(draft === null || rules.length > 0 || unsaved) && (
+          <button
+            type="button"
+            disabled={!savable || save.isPending}
+            onClick={() =>
+              guardedSave(rules.map(({ filter, colour, bodyColour }) => ({ filter, colour, bodyColour })))
+            }
+          >
+            Save
+          </button>
+        )}
+
         <button
           type="button"
-          className={panel.trailing}
-          disabled={!savable || save.isPending}
+          className={`ghost ${panel.iconButton} ${panel.trailing}`}
+          disabled={draft === null || full}
+          title={
+            selectedTopic
+              ? `Add a rule for ${selectedTopic}`
+              : 'Add a rule — an unsaved one follows the tree'
+          }
           onClick={() =>
-            guardedSave(rules.map(({ filter, colour, bodyColour }) => ({ filter, colour, bodyColour })))
+            setDraft((current) => [
+              ...current!,
+              {
+                ...newDraftRule(nextColour(current!.map((rule) => rule.colour))),
+                // The topic last picked in the tree is the one a new rule is usually for. Only
+                // the new row: an edit in progress above it is not the selection's business.
+                filter: selectedTopic ?? '',
+              },
+            ])
           }
         >
-          Save
+          <Plus />
+          New rule
         </button>
       </div>
-      )}
     </PanelShell>
   );
 }
