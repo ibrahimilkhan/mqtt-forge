@@ -110,7 +110,15 @@
    Fractions rather than fixed widths on the four that hold prose, with a floor under each: a
    topic filter and a diagnostic sentence both grow with the window, and neither may squeeze the
    other out of existence when it does. */
-.rules { --rule-cols: 26px 30px minmax(190px, 1.5fr) 64px minmax(140px, 1fr) minmax(92px, 0.6fr) minmax(150px, 1.1fr) 76px; }
+.rules {
+  --rule-cols: 26px 30px minmax(190px, 1.5fr) 64px minmax(140px, 1fr) minmax(92px, 0.6fr) minmax(150px, 1.1fr) 76px;
+  /* It measures itself. The stack below used to be keyed to the window, and the constraint is
+     this table's own width: the panel is always narrower than the window by the rail, the two
+     channels and the pane's gutters, so there was a band — a 1024px laptop is in it — where the
+     media query had not fired and eight columns needing 857px were being drawn in 777, with EDIT
+     and the × pushed past the row's right edge and unreachable. */
+  container-type: inline-size;
+}
 
 /* The head carries the rows' own left border, transparent and unused: every row here is ruled
    down its left edge in the colour of its level, and a head without that border stood three
@@ -194,14 +202,19 @@
 /* Under the width where eight columns stop being eight columns, the table goes back to being a
    stack — the shape this file was written for. The header has nothing left to head, so it goes:
    a row of labels over a stack is a row of labels pointing at nothing. */
-@media (max-width: 900px) {
+@container (max-width: 860px) {
   .rulesHead { display: none; }
   .ruleRow {
     grid-template-columns: 26px 30px minmax(0, 1fr) auto;
     row-gap: 3px;
   }
+  /* `.marks` with them: the narrow grid re-places every other cell and never mentioned the row
+     of delivery chips, so auto-placement dropped it into track 1 — the 26px rule-number gutter —
+     where it sat under the number, 26px wide and scrolling. Document order already puts it
+     between the two, so it needs no `order` of its own. */
   .cellRule,
   .fires,
+  .marks,
   .seen { grid-column: 3 / -1; }
   .level { grid-column: 3 / -1; order: -1; }
   .rowActions { grid-row: 1; grid-column: 4; }

@@ -73,7 +73,16 @@
 .pick:hover:not(:disabled) { background: var(--paper); }
 .pick:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
-.seg { font-weight: 600; white-space: nowrap; }
+/* The same as the field picker's path: nowrap with nothing to clip it, so a long level pushed
+   past the picker and took the payload beside it — the one described in this file as being there
+   'for telling two identical-looking topics apart' — down to nothing. */
+.seg {
+  font-weight: 600;
+  white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* The `/#` a branch hands back, drawn as the machinery it is rather than as part of the name. */
 .wildcard { color: var(--muted); }

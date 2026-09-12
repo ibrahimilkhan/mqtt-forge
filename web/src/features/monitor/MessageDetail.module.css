@@ -327,7 +327,11 @@
    `content type` is the longest one the specification names and a device's own may be a word. */
 .properties {
   display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
+  /* `minmax(0, max-content)` and not bare `max-content`: a user-property name is whatever the
+     publisher chose, and an uncapped max-content track let one long name — `com.example.
+     correlation-context` is an ordinary one — take the whole width and leave 7px for every value
+     beside it. The floor on the value column is what keeps it readable when it does. */
+  grid-template-columns: minmax(0, max-content) minmax(12ch, 1fr);
   gap: 2px 12px;
   margin: 0 0 12px;
   font-family: var(--mono);
@@ -337,7 +341,9 @@
 .properties dt {
   color: var(--muted);
   letter-spacing: 0.04em;
-  white-space: nowrap;
+  /* Wraps rather than refusing to, now that the track it is in can be narrower than it wants.
+     A name with no spaces in it is the ordinary case, so it has to break anywhere. */
+  overflow-wrap: anywhere;
 }
 .properties dd {
   margin: 0;

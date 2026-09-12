@@ -69,9 +69,17 @@
 .pick:hover:not(:disabled) { background: var(--paper); }
 .pick:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
+/* A JSON path out of a real gateway payload is unbounded, and nowrap with nothing to clip it
+   meant the path took its full intrinsic width and shoved the NUMBER/TEXT badge and the sample
+   value off the row — the badge whose own comment below says it is what decides which conditions
+   can be written. Measured at the picker's real 317px column, two ordinary paths escaped it by
+   81 and 101 pixels. */
 .path {
   font-weight: 600;
   white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* What kind of value it is, which is what decides which conditions can be written about it: a

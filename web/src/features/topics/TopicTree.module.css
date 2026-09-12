@@ -220,7 +220,23 @@
   position: relative;
   z-index: 1;
 }
-.seg { flex: none; color: var(--ink); }
+/* The one unbounded string on the row, and it used to be the one thing that would not give
+   width back: `flex: none`. An MQTT level is whatever the publisher called it — a UUID, a serial,
+   a device id — and the broker's own row holds a hostname. At a 1000px window with the panel
+   column open the name ran 31px past where the tree's own search and fold controls begin and
+   printed over them.
+
+   It shrinks now, and the payload beside it yields first: what a reader is looking for in a long
+   row is which topic it is, and a value cut short still shows its first characters. 6ch is the
+   floor — below that an ellipsis is the whole cell and the row says nothing at all. */
+.seg {
+  flex: 0 1 auto;
+  min-width: 6ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+}
 
 /* The mark standing in for a level with no name of its own. Muted, so it reads as the shape of
    the gap rather than as a segment that happens to be called '/'. After .seg, which sets ink. */
@@ -232,6 +248,9 @@
 .val {
   color: var(--ink);
   font-weight: 400;
+  /* Eight times readier to give up its width than the topic name beside it. Both shrink; this is
+     the one that should go first. */
+  flex: 0 8 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
