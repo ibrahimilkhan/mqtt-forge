@@ -25,6 +25,21 @@ type Props = {
 };
 
 /**
+ * A colour this row is willing to paint with.
+ *
+ * The rules file is the reader's and can be hand-edited, so what arrives here is a string and not
+ * necessarily a colour. It used to reach a `style={{ color }}` and be rejected by the browser,
+ * which is a safety net rather than a decision — and it never covered `--rule-colour`, which the
+ * row has always set from the same unchecked string for the selected stripe to draw itself in.
+ * Checked once, here, so the stripe, the sparkline and the name all take the same answer.
+ */
+const HEX = /^#[0-9a-f]{6}$/i;
+
+function paintable(colour: string | null | undefined): string | undefined {
+  return colour && HEX.test(colour) ? colour : undefined;
+}
+
+/**
  * What stands in for a level with no name of its own.
  *
  * A topic beginning with '/' has an empty first level, and one written 'a//b' an empty middle
@@ -61,6 +76,9 @@ export const TreeNode = memo(function TreeNode({
   /** Whether the click run in progress is the one that opened this branch. See the click below. */
   const openedRun = useRef(false);
 
+  /** The rule's colour, once — the row, the name and the sparkline all draw from this one answer. */
+  const paint = paintable(rule?.colour);
+
   return (
     <div
       className={styles.node}
@@ -71,7 +89,7 @@ export const TreeNode = memo(function TreeNode({
       data-selected={selected}
       data-root={root ? '' : undefined}
       data-depth={depth}
-      style={rowStyle(depth, rule)}
+      style={rowStyle(depth, paint)}
     >
       {/* Sibling buttons: twisty toggles the branch, the rest selects it for the wire log. */}
       {isBranch ? (
@@ -138,15 +156,19 @@ export const TreeNode = memo(function TreeNode({
         <span
           className={nameless ? `${styles.seg} ${styles.empty}` : styles.seg}
           data-testid="segment"
-          style={rule ? { color: rule.colour } : undefined}
-          title={rule ? `Coloured by ${rule.filter}` : undefined}
+          // The colour comes off the row's own `--rule-colour` rather than being written here.
+          // An inline colour is the one thing a stylesheet cannot answer, and the selected row
+          // has to answer it: it is the only row that fills, and every one of these colours is
+          // tuned against the white the others stand on. See TopicTree.module.css.
+          data-ruled={paint ? '' : undefined}
+          title={paint ? `Coloured by ${rule!.filter}` : undefined}
         >
           {nameless ? EMPTY_LEVEL : segment}
         </span>
         <span className={styles.val}>{node.latestPayload ?? ''}</span>
         {/* Between the value and the counts: what the topic has been doing, for a reader
             scanning the tree rather than reading one row of it. */}
-        <Sparkline readings={node.readings} colour={rule?.colour} />
+        <Sparkline readings={node.readings} colour={paint} />
         <span className={styles.meta}>{nodeSummary(node)}</span>
       </button>
 
@@ -162,6 +184,6 @@ export const TreeNode = memo(function TreeNode({
  * row draws can name its own fallback: a custom property that is absent takes the fallback in
  * `var()`, one set to an empty value does not.
  */
-function rowStyle(depth: number, rule?: ColourRule | null): CSSProperties {
-  return { '--depth': depth, ...(rule && { '--rule-colour': rule.colour }) } as CSSProperties;
+function rowStyle(depth: number, colour?: string): CSSProperties {
+  return { '--depth': depth, ...(colour && { '--rule-colour': colour }) } as CSSProperties;
 }

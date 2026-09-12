@@ -130,6 +130,44 @@
 .node[data-selected="true"] .meta,
 .node[data-selected="true"] .twisty { color: color-mix(in srgb, var(--muted) 55%, var(--ink)); }
 .node[data-selected="true"] .val:not(:empty)::before { color: var(--muted); }
+
+/* ---- the reader's own colour, and the two grounds that were not tuned for ----
+
+   The rule's colour, wherever one covers the row. It is taken off `--rule-colour`, which the row
+   already carries for the selected stripe to draw itself in, rather than written onto the span as
+   an inline `color` — because an inline colour is the one thing a stylesheet cannot answer, and
+   two of this tree's row states need to answer it.
+
+   The palette says out loud what it is tuned for: 'the lightness is held where each one still
+   clears 4.5:1 against the white a row is drawn on'. Two rows are not white.
+
+   Each colour is moved toward the ink by the distance that ground moved, which is what the block
+   above already does for --muted and for the '=' between a topic and its value. What it cannot do
+   is save a colour that is light to begin with — a reader who picks yellow off the free picker
+   has 1.07:1 on the white rows too, and that is not this row's doing. */
+.seg[data-ruled] { color: var(--rule-colour); }
+
+/* The row the log is following: --ink at 9% over the pane, which is #eaeaeb. Measured there, the
+   worst of the eight is Rose at 4.06 and the best is Teal at 4.87 — five of the eight under the
+   line. 85% of the way from the ink holds the worst at 4.99, with 90% the last step that still
+   passes. */
+.node[data-active="true"] .seg[data-ruled] {
+  color: color-mix(in srgb, var(--rule-colour) 85%, var(--ink));
+}
+
+/* And the one row that fills, which is the worse of the two: on --rule every one of the eight
+   falls under the line — Rose and Lilac to 3.41, Clay 3.43, Cornflower 3.53, Storm 3.61, Orchid
+   3.70, Sage 3.93, Teal at best 4.09. That is the row a reader has deliberately picked, which is
+   where a topic name least ought to be the hardest thing on the page to read.
+
+   70% holds the worst at 5.08 and leaves each hue plainly itself; 75% is where the last of them
+   crosses 4.5, so this keeps a step of margin for a custom colour a shade lighter than Rose.
+   After the active rule, not before: a row can be both, the fill is what a reader sees, and the
+   two selectors weigh the same. */
+.node[data-selected="true"] .seg[data-ruled] {
+  color: color-mix(in srgb, var(--rule-colour) 70%, var(--ink));
+}
+
 /* Two buttons, both need the app's reset: twisty opens the branch, the rest picks it. */
 .twisty,
 .pick { all: unset; cursor: pointer; }

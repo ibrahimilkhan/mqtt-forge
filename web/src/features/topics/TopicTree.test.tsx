@@ -632,8 +632,24 @@ describe('colour rules', () => {
   const rules = (...rules: Array<{ filter: string; colour: string }>) =>
     server.use(http.get('/api/colour-rules', () => HttpResponse.json({ rules })));
 
-  // The segment span itself is what a rule paints now, so the text is the handle.
+  // The segment span itself is what a rule paints, so the text is the handle.
   const segOf = (segment: string) => screen.getByText(segment);
+
+  /**
+   * The colour the row is painting with, read off the row rather than off an inline `color`.
+   *
+   * It moved there so the selected row could answer it: that row is the only one that fills, and
+   * every colour in the palette is tuned against the white the others stand on — on --rule they
+   * all fall under 4.5:1. An inline colour is the one thing a stylesheet cannot override, so the
+   * name now takes `--rule-colour` like the stripe beside it, and the filled row darkens both.
+   */
+  const paintOf = (segment: string) => {
+    const row = segOf(segment).closest('[data-testid="tree-row"]') as HTMLElement;
+    return {
+      colour: row.style.getPropertyValue('--rule-colour'),
+      marked: segOf(segment).hasAttribute('data-ruled'),
+    };
+  };
 
   it('marks a row whose topic a rule covers', async () => {
     rules({ filter: 'sensors/+/temp', colour: '#b45309' });
@@ -641,7 +657,7 @@ describe('colour rules', () => {
     useTopicTreeStore.getState().apply([message('sensors/a/temp')]);
     render(<TopicTree broker="broker:1883" />);
 
-    await waitFor(() => expect(segOf('temp')).toHaveStyle({ color: '#b45309' }));
+    await waitFor(() => expect(paintOf('temp')).toEqual({ colour: '#b45309', marked: true }));
   });
 
   it('leaves a row no rule covers unmarked, but still drawn', async () => {
@@ -650,8 +666,8 @@ describe('colour rules', () => {
     useTopicTreeStore.getState().apply([message('sensors/a/temp'), message('sensors/a/hum')]);
     render(<TopicTree broker="broker:1883" />);
 
-    await waitFor(() => expect(segOf('temp')).toHaveStyle({ color: '#b45309' }));
-    expect(segOf('hum').style.color).toBe('');
+    await waitFor(() => expect(paintOf('temp')).toEqual({ colour: '#b45309', marked: true }));
+    expect(paintOf('hum')).toEqual({ colour: '', marked: false });
   });
 
   it('gives a row the colour of the most specific rule that covers it', async () => {
@@ -660,7 +676,7 @@ describe('colour rules', () => {
     useTopicTreeStore.getState().apply([message('sensors/a/temp')]);
     render(<TopicTree broker="broker:1883" />);
 
-    await waitFor(() => expect(segOf('temp')).toHaveStyle({ color: '#222222' }));
+    await waitFor(() => expect(paintOf('temp').colour).toBe('#222222'));
   });
 
   it('colours a branch by its own path, not by what sits under it', async () => {
@@ -669,8 +685,8 @@ describe('colour rules', () => {
     useTopicTreeStore.getState().apply([message('sensors/a/temp')]);
     render(<TopicTree broker="broker:1883" />);
 
-    await waitFor(() => expect(segOf('a')).toHaveStyle({ color: '#333333' }));
-    expect(segOf('temp').style.color).toBe('');
+    await waitFor(() => expect(paintOf('a').colour).toBe('#333333'));
+    expect(paintOf('temp')).toEqual({ colour: '', marked: false });
   });
 
   it('is unmarked throughout when there are no rules', async () => {
@@ -679,11 +695,18 @@ describe('colour rules', () => {
     render(<TopicTree broker="broker:1883" />);
 
     await waitFor(() => expect(segOf('temp')).toBeInTheDocument());
-    const segments = screen.getAllByTestId('tree-row').map((row) => within(row).getByTestId('segment'));
-    expect(segments.every((segment) => segment.style.color === '')).toBe(true);
+    const rows = screen.getAllByTestId('tree-row');
+    expect(rows.every((row) => row.style.getPropertyValue('--rule-colour') === '')).toBe(true);
+    expect(rows.every((row) => !within(row).getByTestId('segment').hasAttribute('data-ruled'))).toBe(
+      true,
+    );
   });
 
-  // A hand-edited file can hold anything; it must not reach a style attribute.
+  /* A hand-edited file can hold anything, and it must not reach the stylesheet.
+     This used to rest on the browser refusing an invalid `color`, which was a safety net rather
+     than a decision — and it never covered `--rule-colour` at all, which the row has set from the
+     same unchecked string since the stripe was written. Checked in `paintable` now, so neither
+     the name nor the stripe nor the sparkline is handed anything but a hex triple. */
   it('ignores a rule whose colour is not a hex triple', async () => {
     rules({ filter: 'sensors/#', colour: 'red; background: url(x)' });
     useTopicTreeStore.setState({ defaultOpen: true });
@@ -691,7 +714,7 @@ describe('colour rules', () => {
     render(<TopicTree broker="broker:1883" />);
 
     await waitFor(() => expect(segOf('temp')).toBeInTheDocument());
-    expect(segOf('temp').style.color).toBe('');
+    expect(paintOf('temp')).toEqual({ colour: '', marked: false });
   });
 
   it('carries on drawing the tree when the rules cannot be fetched', async () => {
@@ -701,7 +724,7 @@ describe('colour rules', () => {
     render(<TopicTree broker="broker:1883" />);
 
     expect(screen.getByText('temp')).toBeInTheDocument();
-    await waitFor(() => expect(segOf('temp').style.color).toBe(''));
+    await waitFor(() => expect(paintOf('temp').colour).toBe(''));
   });
 });
 
@@ -746,9 +769,11 @@ it('leaves the broker row unpainted even under a rule that covers everything', a
   render(<TopicTree broker="broker:1883" />);
 
   const brokerRow = screen.getAllByTestId('tree-row')[0];
+  const rowOfTemp = screen.getByText('temp').closest('[data-testid="tree-row"]') as HTMLElement;
 
-  await waitFor(() => expect(screen.getByText('temp')).toHaveStyle({ color: '#b45309' }));
-  expect(within(brokerRow).getByTestId('segment').style.color).toBe('');
+  await waitFor(() => expect(rowOfTemp.style.getPropertyValue('--rule-colour')).toBe('#b45309'));
+  expect(brokerRow.style.getPropertyValue('--rule-colour')).toBe('');
+  expect(within(brokerRow).getByTestId('segment')).not.toHaveAttribute('data-ruled');
 });
 
 // What a colour rule about the selection should cover. A leaf means itself; a branch means the
