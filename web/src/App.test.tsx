@@ -2,13 +2,18 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { server } from './test/server';
 import { App } from './App';
 import { createFakeHub } from './realtime/fakeHub';
 import { useHubStatusStore } from './stores/hubStatusStore';
 
-afterEach(() => useHubStatusStore.setState({ status: 'live' }));
+afterEach(() => {
+  useHubStatusStore.setState({ status: 'live' });
+  // The narrow-screen block stubs matchMedia, which jsdom does not implement — see the bottom of
+  // this file. Left standing it would decide the opening state of every test after it.
+  vi.unstubAllGlobals();
+});
 
 function renderApp() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -490,3 +495,81 @@ describe('the Broker row, as the only readout', () => {
     expect(menu().getByRole('button', { name: 'Broker, connection faulted' })).toBeInTheDocument();
   });
 });
+/**
+ * The console as it opens on a phone.
+ *
+ * `menuOpen` is decided once, on the first render, by `window.matchMedia('(max-width: 760px)')` —
+ * and jsdom does not implement matchMedia at all, so the optional call short-circuits and every
+ * other test in this suite runs the desktop branch. The whole narrow-screen opening state was
+ * unreachable: invert that condition and the app would ship opening on a phone with the rail
+ * lying over the console, with a green suite.
+ *
+ * Stubbed rather than skipped, because it is one line of state with a real consequence — at 760px
+ * and under the rail is `position: absolute` over the workspace, so a rail that opened by default
+ * would be two things covering the traffic before the reader had done anything.
+ */
+describe('the rail on a narrow screen', () => {
+  const atWidth = (matches: boolean) =>
+    vi.stubGlobal(
+      'matchMedia',
+      (query: string) => ({
+        matches,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      }),
+    );
+
+  it('opens with the rail narrowed, so nothing lies over the traffic', async () => {
+    atWidth(true);
+    renderApp();
+
+    await screen.findByRole('button', { name: 'Open the rail' });
+    expect(screen.getByRole('button', { name: 'Open the rail' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  it('opens with the rail open on anything wider', async () => {
+    atWidth(false);
+    renderApp();
+
+    await screen.findByRole('button', { name: 'Narrow the rail' });
+    expect(screen.getByRole('button', { name: 'Narrow the rail' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+  });
+
+  // Narrow or not, every panel is one press away — which is the promise the shut rail makes.
+  it('keeps all eight panels reachable while it is narrowed', async () => {
+    atWidth(true);
+    renderApp();
+
+    await screen.findByRole('button', { name: 'Open the rail' });
+    const rows = menu().getAllByRole('button');
+    expect(rows).toHaveLength(8);
+    rows.forEach((row) => expect(row).toBeEnabled());
+
+    await userEvent.click(menu().getByRole('button', { name: /^Chart/ }));
+
+    expect(await screen.findByRole('region', { name: 'Chart panel' })).toBeInTheDocument();
+  });
+
+  // A reader who opens it should keep it open through a resize: the state is read once, on the
+  // first render, and the comment in App says so.
+  it('stays open once the reader has opened it', async () => {
+    atWidth(true);
+    renderApp();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Open the rail' }));
+
+    expect(screen.getByRole('button', { name: 'Narrow the rail' })).toBeInTheDocument();
+  });
+});
+
