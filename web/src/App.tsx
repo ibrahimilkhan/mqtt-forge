@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { formatEndpoint } from './features/connection/address';
 import styles from './App.module.css';
 import { AppearancePanel } from './features/appearance/AppearancePanel';
@@ -131,7 +131,23 @@ export function App({ hub }: { hub: Hub }) {
     if (openedByFault) setOpenPanel('broker');
   }, [openedByFault]);
 
-  const close = () => setOpenPanel(null);
+  /**
+   * The rail's own rows, so shutting a panel can put the reader back where they opened it.
+   *
+   * A panel's × unmounts the button that was just pressed, and a browser hands focus to the body
+   * when that happens — so the next Tab restarted from the first control in the document. A
+   * reader who opened Settings, the last row in the rail, and closed it again was returned to
+   * the top of the console and had to walk the whole rail to get back. All eight panels did it.
+   */
+  const rows = useRef<Partial<Record<PanelId, HTMLButtonElement | null>>>({});
+
+  const close = () => {
+    const shutting = openPanel;
+    setOpenPanel(null);
+    // After the render that unmounts the panel, or the focus lands on a button and is then taken
+    // off it again by the browser's own cleanup.
+    if (shutting) requestAnimationFrame(() => rows.current[shutting]?.focus());
+  };
 
   /**
    * What the Broker row wears, which is now the only place the link's state is said.
@@ -264,6 +280,9 @@ export function App({ hub }: { hub: Hub }) {
                   // The broker it is pointed at, for a reader who wants it without opening the
                   // panel. It used to have a line of its own under the rail's readout.
                   title={hint}
+                  ref={(el) => {
+                    rows.current[panel.id] = el;
+                  }}
                   onClick={() => setOpenPanel((current) => (current === panel.id ? null : panel.id))}
                 >
                   <Icon />
