@@ -31,6 +31,7 @@ import {
   wasAborted,
 } from './connectFailure';
 import { ConnectionSummary } from './ConnectionSummary';
+import { LinkChip } from './LinkChip';
 import { AutoReconnectSwitch } from './AutoReconnectSwitch';
 import { BrokerEvents } from './BrokerEvents';
 import { ReconnectNotice } from './ReconnectNotice';
@@ -796,6 +797,13 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
       {/* The settings side of the split. It is two thirds of the page and the form does not want
           two thirds of a page, so the form sits in the middle of it — see `.formSide`. */}
       <div className={styles.formSide}>
+      {/* What the form is for, before the form. This face is the one somebody opens BECAUSE they
+          want to know, and it stated the connection nowhere at all: a dial in flight and a
+          console that had never been asked for a link drew the same page, distinguishable only
+          by which word the last button was wearing. */}
+      <div className={styles.stateRow}>
+        <LinkChip />
+      </div>
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <div className={styles.form} onKeyDown={onEnter}>
         <section className={styles.group}>

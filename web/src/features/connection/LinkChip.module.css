@@ -1,0 +1,88 @@
+/* The link's state, drawn as the box this console draws every small standing fact in.
+
+   A rectangle with a radius, which is what was asked for and also what was already here: there is
+   no corner in this app that is not --r-control's 2px or --r-plate's 3px, and the chips — the
+   subscription filters, the wire log's stamps, the alert marks — are all the 2px one. A softer
+   corner would be a badge from a component library, which is the single thing this console's
+   chrome is written against.
+
+   The box is the chips': a hairline, the surface lifted a shade off the panel's paper, 2px
+   corners. The voice is not theirs. This app has one voice for saying what the link is doing —
+   mono, --t-label, 600, .11em, shouted — and it is worn by the rail's Broker row and was worn by
+   the line of green capitals this replaces. Set at the stamps' --t-micro instead, the panel's
+   leading statement would sit a size BELOW the field labels under it, in the voice the wire log
+   keeps for 'qos 1'.
+
+   Nothing is filled and nothing is washed. Two reasons, and the second decides it:
+
+   - Every chip in this app that carries a state says it by moving its ink and its edge together
+     and leaving the ground alone — .mark[data-failed], .eventsAction[data-said], the chart's
+     dropped-message flags. Filling is reserved, by an explicit comment on each of the two things
+     that do it, for what has to be unmistakable from across the console.
+   - A wash would not survive the measurement. Mixed over --paper, which is the ground this panel
+     is printed on, --warn falls to 4.25:1 at six percent and --live to 4.36 at eight — under the
+     4.5 tokens.css tunes every one of these inks to hold on BOTH grounds. Mixed over --surface it
+     holds, but at twelve percent over white the wash is 1.0:1 against the paper around it, so the
+     box it is meant to draw is drawn by the border anyway. It buys a contrast risk and no ink. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  /* The rail row's own padding, and symmetric like the rail row's: the last capital carries
+     .11em of tracking after it, so the box is a pixel and a bit wider on the right than the left
+     — which .menuBtn, the global button and every uppercase chip in the app also are. One of them
+     compensating alone would be the odd one out. */
+  padding: 5px 11px;
+  /* One line. The widest word is CONSOLE OFFLINE, and in the panel column there is room for it
+     only until a reader turns the base size up — at which point a two-line box would leave the
+     lamp centred against nothing. */
+  white-space: nowrap;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+  font-family: var(--mono);
+  font-size: var(--t-label);
+  font-weight: 600;
+  letter-spacing: 0.11em;
+  line-height: 1.35;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Three tones for six states, read off `toneOf` — the same three the rail wears, and read from
+   the same place, so the lamp at the edge of the window and the chip in the middle of the panel
+   cannot end up disagreeing about one link.
+
+   The edge takes the ink rather than a colour of its own: `currentColor` is what makes this one
+   decision per state instead of two that can drift. */
+.chip[data-tone='live'] { color: var(--live); }
+.chip[data-tone='working'] { color: var(--warn); }
+.chip[data-tone='fault'] { color: var(--fault); }
+
+.chip[data-tone='live'],
+.chip[data-tone='working'],
+.chip[data-tone='fault'] {
+  border-color: currentColor;
+}
+
+/* And no tone at all for Disconnected, which is the oldest rule about this state in the console:
+   it opens here, having been asked to do nothing yet, and a red that is on at rest is a red
+   nobody looks at when it finally means something. It keeps --muted and --rule, which is to say
+   it is exactly the quiet chip the rest of the app is full of. */
+
+.lamp {
+  width: 0.6em;
+  height: 0.6em;
+  flex: none;
+  border-radius: 50%;
+  /* Hollow by default. The ring is drawn inside the circle rather than as a border so the lamp
+     keeps its size whether it is lit or not — a disc that grew by 3px on connecting would move
+     the word beside it. */
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
+
+.lamp[data-lit] {
+  background: currentColor;
+  box-shadow: none;
+}

@@ -9,6 +9,7 @@ import { useHubStatusStore } from '../../stores/hubStatusStore';
 import styles from '../../styles/panel.module.css';
 import type { BrokerLink } from '../../types/api';
 import { ConnectedFor } from './ConnectedFor';
+import { LinkChip } from './LinkChip';
 import { schemeOf, versionName } from './scheme';
 
 // Stands for a field the broker was asked about and said nothing to. The row stays either way,
@@ -61,20 +62,20 @@ export function ConnectionSummary({ lead = false }: { lead?: boolean } = {}) {
    * The one thing a list of facts cannot say: that there IS a link.
    *
    * Only in `lead`, which is the panel over a live connection — and it was the one face of that
-   * panel with no statement of state on it at all. Every other face has the reconnect block
-   * saying 'Reconnecting', 'Not reconnecting' or 'Reconnected' in words; this one had nine rows
-   * of true facts and nothing telling the reader what they added up to. The rail's lamp is green,
-   * but the rail is not where somebody who opened this panel is looking.
+   * panel with no statement of state on it at all: nine rows of true facts and nothing telling
+   * the reader what they added up to. The rail's lamp is green, but the rail is not where
+   * somebody who opened this panel is looking.
+   *
+   * The chip is the panel's, not this block's — the form face stands the same one above the
+   * address box — so what it says here about a console that has lost its own server is said in
+   * the same words there.
    *
    * The address comes with it, and leaves the list below — a block that led with the broker and
    * then repeated it two lines later would read as two different brokers to anyone scanning.
    */
   const head = lead && (
     <div className={styles.linkHead}>
-      <p className={styles.linkState} data-stale={lost ? '' : undefined}>
-        <span className={styles.lamp} aria-hidden="true" />
-        {lost ? 'Last heard: connected' : 'Connected'}
-      </p>
+      <LinkChip />
       <p className={styles.linkWhere}>{formatEndpoint(link.host, link.port)}</p>
       {/* Said in the head rather than beside the rows it makes doubtful, because it is doubtful
           about all of them: the keep-alive, the session, the count of filters and the stopwatch

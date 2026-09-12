@@ -182,7 +182,10 @@ describe('when the console has lost its own server', () => {
     useHubStatusStore.setState({ status: 'reconnecting' });
     renderLead();
 
-    expect(await screen.findByText(/Last heard: connected/)).toBeInTheDocument();
+    // The chip names what is actually wrong — this console, not the broker — and the sentence
+    // under it says what that costs every fact below. The word the summary must NOT still be
+    // wearing is the plain one: nothing here can vouch for the link any more.
+    expect(await screen.findByText('Console offline')).toBeInTheDocument();
     expect(screen.getByTestId('link-stale')).toHaveTextContent(/lost its own server/);
     expect(screen.queryByText(/^Connected$/)).not.toBeInTheDocument();
   });

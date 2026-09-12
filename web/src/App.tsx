@@ -7,10 +7,10 @@ import { Mark, Wordmark } from './features/brand/marks';
 import { ChartPanel } from './features/chart/ChartPanel';
 import { ColoursPanel } from './features/colours/ColoursPanel';
 import { BrokerPanel } from './features/connection/BrokerPanel';
+import { useLinkState } from './features/connection/linkState';
 import { useLinkWatch } from './features/connection/useLinkWatch';
 import { MobilePanel } from './features/mobile/MobilePanel';
 import { useBrokerAddress, useConnectionState } from './api/useConnectionState';
-import { useReconnectStatus } from './api/useReconnectStatus';
 import { Windows } from './features/monitor/Windows';
 import { StreamPause } from './features/monitor/StreamPause';
 import { HealthStrip } from './features/health/HealthStrip';
@@ -27,7 +27,6 @@ import { SubscribePanel } from './features/subscribe/SubscribePanel';
 import { Workspace } from './features/workspace/Workspace';
 import type { Hub } from './realtime/hub';
 import { useHubBridge } from './realtime/useHubBridge';
-import { useHubStatusStore } from './stores/hubStatusStore';
 import { AlertsPanel, worst } from './features/alerts/AlertsPanel';
 import { SoundPrompt } from './features/alerts/SoundButton';
 import { useSoundStore } from './features/alerts/alertSound';
@@ -95,23 +94,12 @@ export function App({ hub }: { hub: Hub }) {
   const soundWanted = useAppearanceStore((state) => state.alertSound);
   const soundArmed = useSoundStore((state) => state.armed);
 
-  /**
-   * Whether an outage is being worked on, which is a different thing from the link being down.
-   *
-   * Red is 'it is down and nobody is doing anything about it' — a failed connect, a link somebody
-   * closed. Amber is 'it is down and something is happening'. Before this the two were one colour,
-   * and a reader could not tell a broker that had gone for good from one that was three seconds
-   * from coming back.
-   */
-  const retrying = useReconnectStatus().status.active && state !== 'Connected';
-
   const where = useBrokerAddress();
   /** The broker the row is about, whether or not there is a link to it right now. */
   // The live link names it while there is one; a failure names it while there is not. Without the
   // second, the row loses the address at the exact moment a reader wants to know which broker has
   // gone — see BrokerFailure, which carries the endpoint for this reason.
   const pointedAt = where ?? (failure ? formatEndpoint(failure.host, failure.port) : undefined);
-  const hubStatus = useHubStatusStore((s) => s.status);
   const zoomed = useZoomStore((s) => s.zoomed);
   const zoomBox = useZoomStore((s) => s.box);
 
@@ -150,33 +138,17 @@ export function App({ hub }: { hub: Hub }) {
   };
 
   /**
-   * What the Broker row wears, which is now the only place the link's state is said.
+   * What the Broker row wears.
    *
-   * It used to be said twice: a lamp and a word at the top of the rail, and a tint on this row.
-   * One console, one link, one place to read it — and this is the row that leads to the panel
-   * that can do something about it.
+   * The rail used to say this twice over — a lamp and a word at the top of it, and a tint on this
+   * row — and one console with one link should have one place to read it. This row leads to the
+   * panel that can do something about the state, so this is the row that wears it.
    *
    * Green connected, red for the two that are wrong, and the rail's ordinary grey for the two
-   * that are neither. Not red for "not connected": the console opens disconnected, having been
-   * asked to do nothing yet, and a red that is on at rest is a red nobody looks at when it
-   * finally means something.
-   *
-   * Reconnecting is the hub rather than the broker, but the reader's question is the same one —
-   * is this console showing me anything real — and the answer is no either way.
+   * that are neither. Derived in `useLinkState`, which the broker panel's chip reads too: two
+   * readouts of one link deriving it separately would be free to disagree about it.
    */
-  const linkState =
-    hubStatus === 'reconnecting'
-      ? 'Reconnecting'
-      : // Ahead of Connecting, and that is the whole of what makes this state readable. A ladder
-        // puts the link through Faulted → Connecting → Faulted once a rung, so a row that read the
-        // link's own state would flash between two colours for the length of an outage — which
-        // says 'something keeps happening' where the truth is 'one thing is happening, still'.
-        // The supervisor's own answer does not flicker, so neither does the row.
-        retrying
-        ? 'Retrying'
-        : state === 'Connecting'
-          ? 'Waiting'
-          : state;
+  const linkState = useLinkState();
 
   /** Said out loud on the row, since nothing else says it any more. */
   // 'Retrying' names the broker and 'Reconnecting' does not, because the second one is the

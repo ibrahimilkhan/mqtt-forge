@@ -276,47 +276,20 @@
 }
 
 /* ---- the state a list of facts cannot state ---- */
-/* Only on the panel over a live link, which was the one face of the broker panel with no
-   statement of state on it: nine rows of true facts and nothing saying what they added up to. */
+/* The state itself is a chip now, and it has a stylesheet of its own beside the component that
+   owns it — see LinkChip.module.css. It used to be a line of green capitals written here, worn
+   by this block and by nothing else, which is what made it the one face of the panel with a
+   statement of state on it. What is left here is what stands under the chip. */
 .linkHead { margin: 0 0 2px; }
 
-.linkState {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  font-family: var(--mono);
-  font-size: var(--t-label);
-  font-weight: 600;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-  color: var(--live);
-}
+/* Said under the chip, over a console that cannot reach its own server: the facts below were
+   true when they arrived and nobody can say whether they still are.
 
-/* A disc rather than a tick or a word in green: the rail says this state with colour on a glyph,
-   and a reader moving from the rail to the panel should meet the same signal twice rather than
-   two different ones. Sized off the type so it grows with a reader who turns the base size up. */
-.lamp {
-  width: 0.6em;
-  height: 0.6em;
-  flex: none;
-  border-radius: 50%;
-  background: currentColor;
-}
-
-/* The same line, over a console that cannot reach its own server: the facts under it were true
-   when they arrived and nobody can say whether they still are. Amber rather than green, which is
-   what the rail does with the same fact, and hollow rather than filled — a lamp that is on says
-   'this is so', and the whole of this state is that nothing can say so. */
-.linkState[data-stale] {
-  color: var(--warn);
-}
-
-.linkState[data-stale] .lamp {
-  background: none;
-  box-shadow: inset 0 0 0 1.5px currentColor;
-}
-
+   In the panel's ordinary note voice rather than in a colour. The chip above it is already
+   drawn in the state's own red, and a sentence in --warn six pixels under a chip in --fault is
+   one fact lettered in two alarms; a sentence in --fault would letter a 'trying to get it back'
+   note exactly like `.fault`, which is what this panel uses to say a thing has failed outright.
+   It explains the chip. It does not also announce it. */
 .linkStale {
   margin: 6px 0 0;
   /* `--t-note` was never a token. A var() that resolves to nothing is invalid at computed-value
@@ -325,14 +298,23 @@
      note's. --t-small is what `.note` above is set in, and this is a note. */
   font-size: var(--t-small);
   line-height: 1.45;
-  color: var(--warn);
+  color: var(--muted);
 }
+
+/* The same chip on the other face, above the form it is the answer to.
+
+   18px, which is `.group`'s own step down this column — the form's sections are 18px apart and
+   the chip is the thing before the first of them, so it keeps the rhythm the form already has
+   rather than introducing a number of its own. */
+.stateRow { margin-bottom: 18px; }
 
 /* The address, at the size the panel's own headings are read at. It leaves the list below rather
    than being said twice — a block that led with the broker and repeated it two lines later would
    read as two brokers to anyone scanning. */
 .linkWhere {
-  margin: 4px 0 0;
+  /* 2px, where a bare line of green capitals above it wanted 4. The chip carries its own padding
+     and its own border, and the gap a reader sees is those plus this. */
+  margin: 2px 0 0;
   font-family: var(--mono);
   font-size: var(--t-lead);
   color: var(--ink);
