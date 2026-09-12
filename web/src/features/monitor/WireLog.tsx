@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { SearchBox, SearchOpener } from '../../components/SearchBox';
 import { WhereMenu } from '../../components/WhereMenu';
+import { useConnectionState } from '../../api/useConnectionState';
 import type { ColourRule } from '../../lib/topicColour';
 import { useRuleLookup } from '../../lib/useRuleLookup';
 import { clearSelection } from '../../stores/clearTraffic';
@@ -29,6 +30,7 @@ const TAIL = 3;
  */
 export function WireLog() {
   const { selected, fault } = useTraffic();
+  const { isOnline } = useConnectionState();
   const { entries, all, sought } = useShownEntries();
   // What was typed and where it was looked for, so the pane can quote it back when it finds
   // nothing — the same pair the box and the menu above the pane are driven by.
@@ -76,8 +78,14 @@ export function WireLog() {
             {fault.topic && <span className={styles.faultAt}> on {fault.topic}</span>}
             {fault.body && <span className={styles.faultWhy}>{fault.body}</span>}
           </p>
-        ) : (
+        ) : isOnline ? (
           <p className="empty">No traffic on {selected.label} yet.</p>
+        ) : (
+          /* A quiet topic and a console listening to nothing are not the same answer, and this
+             pane used to give the first for both. The tree beside it already tells the two
+             apart; a reader who had picked a topic off a tree left over from the last session
+             was being told the broker had gone quiet. */
+          <p className="empty">Connect a broker to see traffic on {selected.label}.</p>
         )
       )}
 

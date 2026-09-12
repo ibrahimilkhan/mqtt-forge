@@ -31,6 +31,23 @@ const Monitor = () => (
   </>
 );
 
+/**
+ * A link behind the panes.
+ *
+ * 'This topic is quiet' and 'nothing is connected' are two different answers, and the panes only
+ * give the first one when there is something to be quiet. Without this the API's own default
+ * stands, which is Disconnected.
+ */
+const linked = () =>
+  server.use(
+    http.get('/api/connection', () =>
+      HttpResponse.json({
+        state: 'Connected',
+        connection: { host: 'broker.example', port: 1883, clientId: 'c', tls: false },
+      }),
+    ),
+  );
+
 /** The pane with the controls that stand in the region's strip above it — see App. */
 const Wire = () => (
   <>
@@ -142,13 +159,35 @@ describe('WireLog', () => {
     expect(screen.getByTestId('topic')).toHaveTextContent('sensors/attic/temp');
   });
 
-  it('says the selected topic is quiet when nothing has matched it yet', () => {
+  it('says the selected topic is quiet when nothing has matched it yet', async () => {
+    linked();
     received('actuators/valve');
     useSelectionStore.getState().select(chip);
 
     render(<Monitor />);
 
-    expect(screen.getByText('No traffic on sensors/# yet.')).toBeInTheDocument();
+    expect(await screen.findByText('No traffic on sensors/# yet.')).toBeInTheDocument();
+  });
+
+  // The other half of it. A tree outlives the link that filled it, so a reader can pick a topic
+  // with no broker behind it at all — and 'no traffic yet' told them the broker had gone quiet
+  // when the truth is the console is listening to nothing.
+  it('asks for a broker rather than calling the topic quiet when there is no link', async () => {
+    received('actuators/valve');
+    useSelectionStore.getState().select(chip);
+
+    render(<Monitor />);
+
+    expect(await screen.findByText('Connect a broker to see traffic on sensors/#.')).toBeInTheDocument();
+    expect(screen.queryByText(/No traffic on/)).not.toBeInTheDocument();
+  });
+
+  it('says the same about the chart under it', async () => {
+    useSelectionStore.getState().select(chip);
+
+    render(<Monitor />);
+
+    expect(await screen.findByText('Connect a broker to chart sensors/#.')).toBeInTheDocument();
   });
 
   it('keeps only the entries matching the selected filter', async () => {
@@ -175,13 +214,14 @@ describe('WireLog', () => {
   });
 
   // A command's filter is not a topic, so a selection matching it says nothing about traffic.
-  it('calls the topic quiet when only commands have named it', () => {
+  it('calls the topic quiet when only commands have named it', async () => {
+    linked();
     useLogStore.getState().push({ kind: 'ok', verb: 'Subscribed', topic: 'sensors/#' });
     useSelectionStore.getState().select(chip);
 
     render(<Monitor />);
 
-    expect(screen.getByText('No traffic on sensors/# yet.')).toBeInTheDocument();
+    expect(await screen.findByText('No traffic on sensors/# yet.')).toBeInTheDocument();
   });
 
   it('shows the newest arrival alone, over the count the log holds', () => {
@@ -396,15 +436,16 @@ describe('what the pane says when nothing is arriving', () => {
   });
 
   // A failure that has since been retried and granted is not the reason for today's silence.
-  it('drops a fault a later success has answered', () => {
+  it('drops a fault a later success has answered', async () => {
+    linked();
     useLogStore.getState().push({ kind: 'fault', verb: 'Subscribe failed', topic: 'sensors/#', body: 'Not authorised (135)' });
     useLogStore.getState().push({ kind: 'ok', verb: 'Subscribed', topic: 'sensors/#' });
     useSelectionStore.getState().select(chip);
 
     render(<Monitor />);
 
+    expect(await screen.findByText(/No traffic on/)).toBeInTheDocument();
     expect(screen.queryByTestId('stalled')).not.toBeInTheDocument();
-    expect(screen.getByText(/No traffic on/)).toBeInTheDocument();
   });
 
   // The command was aimed at a filter and the reader is looking at another; neither direction of

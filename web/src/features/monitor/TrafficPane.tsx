@@ -7,6 +7,7 @@ import styles from './TrafficChart.module.css';
 import { useWindows } from './useWindows';
 import { useTraffic } from './useTraffic';
 import { useEscapeFromZoom, useFullFollowsScreen, useZoomStore } from './useZoom';
+import { useConnectionState } from '../../api/useConnectionState';
 
 /**
  * The middle of the right column: the shape of the run whose newest reading is above it.
@@ -19,6 +20,7 @@ import { useEscapeFromZoom, useFullFollowsScreen, useZoomStore } from './useZoom
  */
 export function TrafficPane() {
   const { selected, entries, runs, held } = useTraffic();
+  const { isOnline } = useConnectionState();
   const zoomed = useZoomStore((state) => state.zoomed);
   useEscapeFromZoom();
   useFullFollowsScreen();
@@ -44,7 +46,13 @@ export function TrafficPane() {
       {!selected && <p className="empty">The shape of a topic's readings is drawn here.</p>}
 
       {selected && entries.length === 0 && (
-        <p className="empty">Nothing on {selected.label} to chart yet.</p>
+        isOnline ? (
+          <p className="empty">Nothing on {selected.label} to chart yet.</p>
+        ) : (
+          // The same distinction the tree and the log make: nothing to chart, or nothing
+          // listening. See WireLog.
+          <p className="empty">Connect a broker to chart {selected.label}.</p>
+        )
       )}
 
       {/* Keyed like the entries above: a new selection is a new run, so the field being charted
