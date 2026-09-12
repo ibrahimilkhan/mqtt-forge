@@ -197,17 +197,25 @@ describe('every aria-controls names something that is there', () => {
     expect(dangling()).toEqual([]);
   });
 
-  // Opening one is what the attribute is for, and the half that was already right: it has to
-  // appear when the body does, not only disappear when it goes.
-  it('names the body of a disclosure that is open', async () => {
+  /**
+   * The alerts rule editor, which is where the marks are.
+   *
+   * Twenty of the twenty dangling references were in this one form, and none of them exist until
+   * a reader presses New rule — so a sweep of the panels alone walks straight past the thing it
+   * was written for. Both halves are held here: shut, a mark names nothing; open, it names the
+   * body that is now on screen.
+   */
+  it('holds in the rule editor, where every one of them was wrong', async () => {
     await openBusyConsole();
 
     const menu = within(screen.getByRole('navigation', { name: 'Panels' }));
     await userEvent.click(menu.getByRole('button', { name: /^Alerts/ }));
-    await screen.findByRole('region', { name: 'Alerts panel' });
+    const alerts = within(await screen.findByRole('region', { name: 'Alerts panel' }));
+    await userEvent.click(await alerts.findByRole('button', { name: /New rule/i }));
 
-    const marks = screen.queryAllByRole('button', { name: /^What .* means$/ });
-    if (marks.length === 0) return;
+    const marks = await screen.findAllByRole('button', { name: /means$/ });
+    expect(marks.length).toBeGreaterThanOrEqual(3);
+    expect(dangling()).toEqual([]);
 
     await userEvent.click(marks[0]);
 
