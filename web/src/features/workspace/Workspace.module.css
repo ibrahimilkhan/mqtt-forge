@@ -52,7 +52,12 @@
    a track that is itself content-sized has nothing definite to resolve against: rather than
    capping, every region rendered at exactly half its own track. */
 .right[data-fit='content'] {
-  grid-template-rows: min-content auto minmax(46px, 1fr) auto min-content;
+  /* `minmax(0, min-content)` on the two ends rather than a bare `min-content`, which cannot
+     shrink: their heights plus the chart's 46px floor and the two seams add up to 612px, so on a
+     window shorter than that the column pushed past the viewport and the whole PAGE scrolled —
+     which is the one thing global.css's `height: 100vh` is there to prevent. They still prefer
+     their content height; they can now give it up when the column has nothing to give them. */
+  grid-template-rows: minmax(0, min-content) auto minmax(46px, 1fr) auto minmax(0, min-content);
 }
 
 /* Panes bring their own background and padding; the cell only has to hold them. */

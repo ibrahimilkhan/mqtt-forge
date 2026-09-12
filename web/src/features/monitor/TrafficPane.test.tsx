@@ -99,6 +99,39 @@ describe('throwing the chart open', () => {
     expect(useZoomStore.getState().zoomed).toBe(false);
   });
 
+  /**
+   * And it follows the window it is open over.
+   *
+   * A chart filling the screen already did — that is a state, and the listener re-measured it.
+   * An ordinarily open one is placed in pixels when it opens and nothing re-measured that, so
+   * narrowing the window left the chart, its move bar and all three of its controls outside the
+   * viewport with no way back to them. The clamps are the two every pinned window's drag already
+   * goes through.
+   */
+  it('is pulled back inside a window that has narrowed under it', async () => {
+    run();
+    show();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open the chart over the console' }));
+    const opened = useZoomStore.getState().box!;
+    expect(opened.x + opened.w).toBeLessThanOrEqual(window.innerWidth);
+
+    // Half the width it was opened at, which is a window dragged narrow rather than a new one.
+    const was = window.innerWidth;
+    try {
+      Object.defineProperty(window, 'innerWidth', { value: Math.round(was / 2), configurable: true });
+      await act(async () => {
+        window.dispatchEvent(new Event('resize'));
+      });
+
+      const now = useZoomStore.getState().box!;
+      expect(now.x + now.w).toBeLessThanOrEqual(window.innerWidth);
+      expect(now.x).toBeGreaterThanOrEqual(0);
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { value: was, configurable: true });
+    }
+  });
+
   // Anything covering the whole window has to close on Escape, or a reader who did it by
   // accident is hunting for the control that undoes it.
   it('goes back on Escape', async () => {

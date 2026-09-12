@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { create } from 'zustand';
-import { fullBox, openingBox, type Box } from './floating';
+import { fullBox, moved, openingBox, sized, type Box } from './floating';
 
 /**
  * Whether the chart has been lifted out of its column.
@@ -92,23 +92,41 @@ export function useEscapeFromZoom() {
 }
 
 /**
- * A chart filling the screen follows the screen.
+ * A chart thrown open follows the screen.
  *
- * Held as a state rather than as the size it happens to have: a window resized while this is on
- * would otherwise leave the chart at the old viewport's measurements — a chart that filled the
- * screen until the reader touched the edge of theirs.
+ * Filling it is held as a state rather than as the size it happens to have: a window resized
+ * while that is on would otherwise leave the chart at the old viewport's measurements — a chart
+ * that filled the screen until the reader touched the edge of theirs.
+ *
+ * And the ordinary open state needs the same listener, which it did not have. That one is placed
+ * in pixels by `openingBox()` and nothing re-measured it, so narrowing the window left the chart,
+ * its move bar and all three of its controls outside the viewport with no way back to them. The
+ * two clamps here are the two the pinned windows already pass every drag through: `sized` pulls
+ * the far edges inside the viewport, `moved` pulls the near ones.
  */
 export function useFullFollowsScreen() {
+  const zoomed = useZoomStore((state) => state.zoomed);
   const full = useZoomStore((state) => state.full);
   const place = useZoomStore((state) => state.place);
 
   useEffect(() => {
-    if (!full) return;
+    if (!zoomed) return;
 
-    const settle = () => place(fullBox());
+    const settle = () => {
+      if (full) {
+        place(fullBox());
+        return;
+      }
+
+      const now = useZoomStore.getState().box;
+      if (now) place(moved(sized(now, 0, 0), 0, 0));
+    };
 
     window.addEventListener('resize', settle);
 
     return () => window.removeEventListener('resize', settle);
-  }, [full, place]);
+    // The box is read off the store inside `settle` rather than subscribed to, so the listener
+    // does not have to be torn down and rebuilt on every pixel of a drag.
+  }, [zoomed, full, place]);
+
 }
