@@ -251,14 +251,29 @@ function Countdown({ status }: { status: ReconnectView }) {
     return () => clearInterval(timer);
   }, [dueAt]);
 
+  /*
+   * `aria-live="off"`, inside a notice that is `aria-live="polite"`.
+   *
+   * This span changes twice a second for as long as an outage lasts, and the whole notice around
+   * it is a live region — so a screen reader read out "next try in 12s", "next try in 11s", "next
+   * try in 10s" over and over, for minutes, and the sentence saying what had actually happened
+   * was buried in it. The state change is what is worth announcing and the notice still announces
+   * it; the clock is for the eye. Off rather than hidden, because a reader who goes looking
+   * should still find the figure on the element.
+   */
   // No deadline is a real state — the attempt is running right now — and the honest thing to say
   // about a dial in flight is that it is in flight, not 'in 0s'.
-  if (dueAt === null) return <span className={styles.counter}>trying…</span>;
+  if (dueAt === null)
+    return (
+      <span className={styles.counter} aria-live="off">
+        trying…
+      </span>
+    );
 
   const left = secondsUntil(dueAt);
 
   return (
-    <span className={styles.counter}>
+    <span className={styles.counter} aria-live="off">
       {left === 0 ? 'trying…' : `next try in ${left}s`}
     </span>
   );

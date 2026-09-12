@@ -261,19 +261,42 @@ describe('App', () => {
   it('narrows the rail and opens it again from inside the rail', async () => {
     renderApp();
 
-    await userEvent.click(screen.getByRole('button', { name: 'Panel menu' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Narrow the rail' }));
 
-    expect(screen.getByRole('button', { name: 'Panel menu' })).toHaveAttribute(
-      'aria-expanded',
-      'false',
-    );
-
-    await userEvent.click(screen.getByRole('button', { name: 'Panel menu' }));
-
-    expect(screen.getByRole('button', { name: 'Panel menu' })).toHaveAttribute(
-      'aria-expanded',
+    expect(screen.getByRole('button', { name: 'Open the rail' })).toHaveAttribute(
+      'aria-pressed',
       'true',
     );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open the rail' }));
+
+    expect(screen.getByRole('button', { name: 'Narrow the rail' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+  });
+
+  /**
+   * And it does not claim to be a disclosure.
+   *
+   * It carried `aria-expanded` over `aria-controls="panel-menu"`, which says the menu is
+   * collapsed — and nothing is. The nav holds the same eight buttons at both widths, every one
+   * focusable, named and reachable; narrowing the rail costs the reader the words, not the way
+   * to any panel. A listener told 'collapsed' would open a menu that was never shut.
+   */
+  it('says the rail is narrowed rather than that the menu is closed', async () => {
+    renderApp();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Narrow the rail' }));
+
+    const toggle = screen.getByRole('button', { name: 'Open the rail' });
+    expect(toggle).not.toHaveAttribute('aria-expanded');
+    expect(toggle).not.toHaveAttribute('aria-controls');
+
+    // The proof of the claim: every panel is still one press away.
+    const rows = menu().getAllByRole('button');
+    expect(rows).toHaveLength(8);
+    rows.forEach((row) => expect(row).toBeEnabled());
   });
 
   // Narrowing the rail used to take the menu with it: every panel in the app was then behind the
@@ -281,7 +304,7 @@ describe('App', () => {
   // words rather than the way in.
   it('keeps every panel reachable with the rail narrowed', async () => {
     renderApp();
-    await userEvent.click(screen.getByRole('button', { name: 'Panel menu' }));
+    await userEvent.click(screen.getByRole('button', { name: /the rail$/ }));
 
     expect(menu().getAllByRole('button')).toHaveLength(8);
 
@@ -295,7 +318,7 @@ describe('App', () => {
     renderApp();
     expect(menu().getByRole('button', { name: 'Broker' })).toHaveTextContent('Broker');
 
-    await userEvent.click(screen.getByRole('button', { name: 'Panel menu' }));
+    await userEvent.click(screen.getByRole('button', { name: /the rail$/ }));
 
     expect(menu().getByRole('button', { name: 'Broker' })).toHaveTextContent('');
     expect(menu().queryByRole('heading', { name: 'Link' })).not.toBeInTheDocument();
@@ -462,7 +485,7 @@ describe('the Broker row, as the only readout', () => {
     renderApp();
     await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Faulted'));
 
-    await userEvent.click(screen.getByRole('button', { name: 'Panel menu' }));
+    await userEvent.click(screen.getByRole('button', { name: /the rail$/ }));
 
     expect(menu().getByRole('button', { name: 'Broker, connection faulted' })).toBeInTheDocument();
   });

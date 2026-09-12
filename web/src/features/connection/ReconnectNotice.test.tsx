@@ -362,4 +362,23 @@ describe('the reconnect notice', () => {
     });
   });
 
+
+  /**
+   * The clock is for the eye.
+   *
+   * The notice is a live region, and this figure changes twice a second for as long as the outage
+   * lasts — so a screen reader read "next try in 12s", "next try in 11s", "next try in 10s" over
+   * and over for minutes, and the sentence saying what had actually happened was buried in it.
+   */
+  it('does not read the countdown out, over and over, inside a live region', async () => {
+    dropped();
+    api('Faulted', { active: true, attempt: 1, nextAttemptAt: '2026-09-02T21:00:08.000Z' });
+
+    renderWithClient(<ReconnectNotice />);
+
+    const counter = await screen.findByText('next try in 8s');
+    expect(counter).toHaveAttribute('aria-live', 'off');
+    // And it really is inside the region that would otherwise announce it.
+    expect(counter.closest('[aria-live="polite"]')).not.toBeNull();
+  });
 });

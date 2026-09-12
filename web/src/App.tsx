@@ -214,9 +214,15 @@ export function App({ hub }: { hub: Hub }) {
           <button
             type="button"
             className={styles.railToggle}
-            aria-expanded={menuOpen}
-            aria-controls="panel-menu"
-            aria-label="Panel menu"
+            /* A toggle, not a disclosure. `aria-expanded` over `aria-controls="panel-menu"`
+               said the menu was collapsed — and nothing is: the nav holds the same eight
+               buttons at both widths, every one of them focusable, named and reachable, which
+               the menu's own comment below says out loud. A listener told 'collapsed' would
+               open it before using a menu that was never shut. What this control actually does
+               is change the rail's width, so it says that, and `aria-pressed` carries the state
+               that is real — the rail is narrowed, or it is not. */
+            aria-pressed={!menuOpen}
+            aria-label={menuOpen ? 'Narrow the rail' : 'Open the rail'}
             title={menuOpen ? 'Narrow the rail' : 'Open the rail'}
             onClick={() => setMenuOpen((open) => !open)}
           >

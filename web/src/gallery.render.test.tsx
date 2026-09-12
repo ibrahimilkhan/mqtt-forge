@@ -1107,7 +1107,7 @@ function console_(client, { zoomed = false, pinned = false, opened = false, pane
     act(() =>
       fireEvent.click(
         [...container.querySelectorAll('button')].find(
-          (button) => button.getAttribute('aria-label') === 'Panel menu',
+          (button) => /the rail$/.test(button.getAttribute('aria-label') ?? ''),
         ),
       ),
     );
