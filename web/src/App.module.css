@@ -575,3 +575,66 @@
    light instead. The state is the panel being open, and the mark is still a triangle. */
 .rail:not([data-open]) .menuBtn[aria-expanded='true'] .menuWarn { color: var(--paper); }
 .rail:not([data-open]) .menuBtn { position: relative; }
+
+/* How many alarms are standing, in the same corner of the same kind of row as the triangle above.
+
+   Boxed, where the triangle is bare, and the two are not inconsistent: they answer different
+   questions. A triangle says something is wrong here, and a shape is the whole of that. A count
+   has to be READ, and a bare number at the end of a row of capitals is read as part of the name —
+   ALERTS 3 was a row that looked like it was called that. The box is the console's ordinary chip,
+   drawn the way every other small standing fact in the app is: --r-control, a hairline, the
+   surface, and the ink and the edge moving together.
+
+   --t-nano, which is a step under the row's own --t-label. It is a note on the name, and a count
+   set at the name's size competes with it. */
+.menuCount {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  /* It grows with the count, and it grows leftward: held to the end of the row, a second digit
+     pushes the box's left edge out into the gap between the name and the edge rather than moving
+     anything. Measured, one digit is 16px and two are 23px, into 60-odd px of gap. */
+  padding: 1px 4px;
+  border: 1px solid currentColor;
+  border-radius: var(--r-control);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--t-nano);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.3;
+  color: var(--muted);
+}
+
+/* The loudest level standing, in the three colours the alerts panel and the wall already say the
+   levels in. Read off the same attribute they are, so a reader who has the panel open and the
+   rail beside it cannot be shown two different worsts. */
+.menuCount[data-severity='critical'] { color: var(--fault); }
+.menuCount[data-severity='warn'] { color: var(--warn); }
+.menuCount[data-severity='info'] { color: var(--signal); }
+
+/* Open, the row is the console's blue and the badge is a white box on it — which is legible as it
+   stands, and louder than it needs to be for a panel the reader is already looking at. The ground
+   goes, the edge goes with it, and what is left is the number in the same light the row's own
+   name is set in. */
+.menuBtn[aria-expanded='true'] .menuCount {
+  background: none;
+  border-color: transparent;
+  color: var(--surface);
+}
+
+/* Shut, the button is a 34px square with the glyph centred and there is no row to sit at the end
+   of, so the count goes in the corner of it — the triangle's corner, since no row has both.
+   Without the box: a bordered chip inside a 34px button is a box inside a box, which is the same
+   thing the triangle's old disc was doing here before it was taken off. */
+.rail:not([data-open]) .menuCount {
+  position: absolute;
+  inset: 2px 2px auto auto;
+  margin: 0;
+  padding: 0;
+  border-color: transparent;
+  background: none;
+}
+/* On the ink, for the reason the triangle takes the light on it: the levels are tuned against
+   paper and surface, and against the console's blue they are 2:1. */
+.rail:not([data-open]) .menuBtn[aria-expanded='true'] .menuCount { color: var(--paper); }

@@ -25,6 +25,36 @@
   line-height: 1;
   padding: 0 2px;
 }
+
+/* The filter itself, which is the chip's content rather than its furniture — so it is lettered in
+   the ink everything else in this app states a fact in, and the × beside it keeps the quiet one.
+   Both were --muted, and a chip whose subject and whose delete button are the same colour reads
+   as two controls rather than a thing with a way to drop it. */
+.pick { color: var(--ink); }
+
+/* The one that lets go, and the only one the red is for.
+   It was `.filter button:hover`, which is both of them: pointing at the filter's NAME turned it
+   the colour of a fault, as though reading it were the first half of deleting it. */
+.drop:hover:not(:disabled) { color: var(--fault); background: none; }
+
+/* A × that cannot be pressed, said in the only way `all: unset` leaves: the browser's own
+   disabled rendering went with everything else it reset, so a filter an alert rule holds — and
+   one already on its way out — drew a × that looked exactly like a live one and did nothing. */
+.drop:disabled { color: color-mix(in srgb, var(--muted) 40%, transparent); cursor: default; }
+
 /* all: unset misses the global button:hover fill; :not(:disabled) matches its specificity so this wins. */
-.filter button:hover:not(:disabled) { color: var(--fault); background: none; }
+.filter button:hover:not(:disabled) { background: none; }
 .filter button:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+/* The one being read right now. `data-selected` has been on this chip since it was written and
+   nothing ever answered it, so the filter whose traffic fills the log below was drawn exactly
+   like the three beside it.
+
+   Stated by the border and an inset ring rather than a fill — the same call the saved brokers
+   make, for the same reason: a filled chip in a row of them pulls the eye off the log the row is
+   about. The attribute is written by React as the string 'false' when it is not set, so it is
+   matched by value rather than by presence. */
+.filter[data-selected='true'] {
+  border-color: var(--signal);
+  box-shadow: inset 0 0 0 1px var(--signal);
+}

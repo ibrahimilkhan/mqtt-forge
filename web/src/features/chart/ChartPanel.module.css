@@ -122,6 +122,29 @@
 
 /* ---- where saved readings go ---- */
 
+/* The row's own label. A span rather than a <label>, because there is nothing here for `for` to
+   point at: the only control on the row is the button, and that is named for what pressing it
+   does — see its aria-label — rather than for the setting it changes.
+
+   Which is why it needed a class of its own, and why it had none: an unlabelled span inherits
+   the body, so SAVE FOLDER was printing at fifteen-point Inter in the panel's own ink, beside
+   RANGE and OPERATOR at eleven-and-a-half mono capitals in grey. It did not read as a label at
+   all. Set here exactly as the global `label` rule sets one, less the 6px it leaves under itself
+   for a box that in this row stands beside it rather than below.
+
+   `flex: 0 0 auto` against `.row > * { flex: 1 1 200px }`: two words were taking half the row,
+   and the path they are about — the part that actually varies — was being cut to fit the other
+   half. */
+.markLabel {
+  flex: 0 0 auto;
+  align-self: center;
+  font-family: var(--mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 /* The path and the control that changes it. The path takes what is left, since it is the part
    that varies and the button's label never does. */
 .folder {

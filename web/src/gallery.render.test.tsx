@@ -372,6 +372,7 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
     'console-broker.html',
     'console-broker-form.html',
     'console-filters.html',
+    'console-chart.html',
     'console-empty.html',
     'console-colours.html',
     'console-painted.html',
@@ -402,6 +403,8 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
                 ? 'Broker form'
               : href === 'console-filters.html'
                 ? 'A panel in the column'
+              : href === 'console-chart.html'
+                ? 'Chart settings'
               : href === 'console-empty.html'
                 ? 'Nothing connected'
               : href === 'console-colours.html'
@@ -467,6 +470,10 @@ ${inner}
   // One of the six that open in a column rather than over the workspace. The renderer had no
   // picture of that shape at all, and it is the one the head band is narrowest in.
   writeFileSync(`${OUT}/console-filters.html`, console_(client, { panel: 'subscribe' }));
+  // The chart's own settings, which no page showed at all — and the only place the save-folder
+  // row is drawn. A row whose label had never been styled sat there unlooked-at for exactly as
+  // long as there was no page with it on.
+  writeFileSync(`${OUT}/console-chart.html`, console_(client, { panel: 'chart' }));
   // The same console with the chart thrown open, which is the state a static page can show and
   // a click cannot be recorded in.
   writeFileSync(`${OUT}/console-zoomed.html`, console_(client, { zoomed: true, panel: null }));

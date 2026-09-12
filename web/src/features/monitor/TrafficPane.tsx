@@ -118,7 +118,7 @@ function WindowBar({ label, filter }: { label?: string; filter?: string }) {
   return (
     <>
       <div
-        className={`${floating.bar} ${floating.overChart}`}
+        className={floating.bar}
         // Filling the screen holds it still as surely as a pin does, and for a plainer reason:
         // there is nowhere left to move it to.
         {...(full ? {} : bar)}

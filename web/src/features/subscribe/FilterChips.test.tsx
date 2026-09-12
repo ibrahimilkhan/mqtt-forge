@@ -38,6 +38,38 @@ describe('FilterChips', () => {
     expect(screen.getByRole('button', { name: 'devices/+/state' })).toHaveAttribute('aria-pressed', 'false');
   });
 
+  /* `data-selected` was written on the chip from the day it was written and the stylesheet never
+     answered it, so the filter whose traffic filled the log below was drawn exactly like the
+     three beside it. `aria-pressed` above says it to a screen reader; this is the half a reader
+     with eyes gets, and the value is asserted as a string because React writes the attribute as
+     'false' rather than leaving it off. */
+  it('marks the selected chip for the eye as well as for the reader', async () => {
+    const { container } = render(<FilterChips filters={filters} onRemove={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'sensors/#' }));
+
+    const chips = [...container.querySelectorAll('[data-selected]')];
+    expect(chips.map((chip) => chip.getAttribute('data-selected'))).toEqual(['true', 'false']);
+    // And the stylesheet has something to say about it, which is the half no render can prove:
+    // see src/namedClasses.test.ts for why a class nobody wrote fails silently.
+    expect(chips[0].className).toMatch(/filter/);
+  });
+
+  /* The two buttons in a chip do different things and are lettered differently for it — the name
+     in the panel's ink, the × in the furniture's grey, and only the × turning red under the
+     pointer. They were one rule until the × was given a name of its own, and under it pointing at
+     a filter's NAME turned it the colour of a fault. */
+  it('gives the name and the dismiss button classes of their own', () => {
+    render(<FilterChips filters={filters} onRemove={vi.fn()} />);
+
+    const name = screen.getByRole('button', { name: 'sensors/#' });
+    const drop = screen.getByRole('button', { name: 'Unsubscribe from sensors/#' });
+
+    expect(name.className).toBeTruthy();
+    expect(drop.className).toBeTruthy();
+    expect(name.className).not.toBe(drop.className);
+  });
+
   it('still unsubscribes from the dismiss button', async () => {
     const onRemove = vi.fn();
     render(<FilterChips filters={filters} onRemove={onRemove} />);

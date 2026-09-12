@@ -64,6 +64,7 @@ const Chip = memo(function Chip({ filter, selected, pending, held, onPick, onRem
       </button>
       <button
         type="button"
+        className={styles.drop}
         onClick={() => onRemove(filter)}
         disabled={pending || held}
         aria-label={

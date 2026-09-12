@@ -134,9 +134,10 @@ export function ChartPanel({ onClose }: { onClose: () => void }) {
           own row rather than a line in that chip's explanation: it is a setting, it persists
           across saves, and changing it should not mean pressing the thing that uses it. */}
       <div className={panel.row}>
-        <span className={styles.markLabel} id="save-folder-label">
-          Save folder
-        </span>
+        {/* No id: it carried `save-folder-label` for an `aria-labelledby` that no longer
+            exists — the button beside it names itself now, for the reason its own comment
+            gives — and an id nothing points at is a promise to a reader nobody kept. */}
+        <span className={styles.markLabel}>Save folder</span>
         <div className={styles.folder}>
           <span
             className={styles.folderPath}
