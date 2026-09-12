@@ -34,6 +34,14 @@ export function InfoMark({
   label: string;
   open: boolean;
   /** The id of the body this opens, so a screen reader can be taken to it. */
+  /**
+   * The body this mark opens, while it is open.
+   *
+   * Only while: `aria-controls` naming an element that is not in the document is a promise a
+   * screen reader cannot keep — it offers the reader a way to the thing and lands them nowhere.
+   * Every InfoMark in the alerts editor was doing it, twenty at a time on one panel, because the
+   * body is mounted on `open` and the attribute was not. Pass it as `open ? id : undefined`.
+   */
   controls?: string;
   onToggle: () => void;
 }) {

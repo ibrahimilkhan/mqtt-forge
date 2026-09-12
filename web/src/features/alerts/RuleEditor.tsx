@@ -336,7 +336,7 @@ export function RuleEditor({
             <InfoMark
               label="its own clear rule"
               open={clearHelp}
-              controls={clearHelpId}
+              controls={clearHelp ? clearHelpId : undefined}
               onToggle={() => setClearHelp((shown) => !shown)}
             />
           </span>
@@ -688,7 +688,7 @@ function Part({
       <legend>
         <span className={panel.partHead}>
           {title}
-          <InfoMark label={title} open={open} controls={id} onToggle={() => setOpen(!open)} />
+          <InfoMark label={title} open={open} controls={open ? id : undefined} onToggle={() => setOpen(!open)} />
         </span>
       </legend>
 

@@ -12,8 +12,13 @@ import { useTopicTreeStore } from './stores/topicTreeStore';
 import type { MqttMessage } from './types/api';
 
 /**
- * One rule, swept over every control the console draws: a button that shows a word must answer
- * to it.
+ * Rules swept over the whole console rather than asserted one control at a time.
+ *
+ * Both of the ones here are habits rather than bugs — the next helpful aria-label will be written
+ * the same way, and the next disclosure will name a body that is not mounted — so a test that
+ * only knew today's controls would not be there to catch the next one.
+ *
+ * ---- a button that shows a word must answer to it ----
  *
  * This is WCAG 2.5.3, Label in Name, and it is not a formality — it is the difference between
  * 'click stop stream' working and not working for anybody driving the console by voice, and
@@ -160,5 +165,55 @@ describe('every control answers to the word printed on it', () => {
 
     expect(judged().length).toBeGreaterThanOrEqual(ENOUGH_WITH_THE_WORKSPACE_UP);
     expect(offenders()).toEqual([]);
+  });
+});
+
+/**
+ * An aria-controls has to name something that is in the document.
+ *
+ * A reference to an id that is not there is a promise a screen reader cannot keep: it offers the
+ * reader a way to the thing and lands them nowhere. Every InfoMark in the alerts editor was doing
+ * it — twenty dangling references on one panel — because the help body is mounted on `open` and
+ * the attribute was not, and the same was true of a folded region's strip.
+ */
+const dangling = () =>
+  [...document.querySelectorAll('[aria-controls]')]
+    .filter((el) => document.getElementById(el.getAttribute('aria-controls') ?? '') === null)
+    .map((el) => ({
+      id: el.getAttribute('aria-controls'),
+      name: (el.getAttribute('aria-label') || el.textContent || '').trim().slice(0, 40),
+    }));
+
+describe('every aria-controls names something that is there', () => {
+  it.each(PANELS.map((panel) => panel.label))('holds with the %s panel open', async (label) => {
+    await openBusyConsole();
+
+    const menu = within(screen.getByRole('navigation', { name: 'Panels' }));
+    if (screen.queryByRole('region', { name: `${label} panel` }) === null) {
+      await userEvent.click(menu.getByRole('button', { name: new RegExp(`^${label}`) }));
+    }
+    await screen.findByRole('region', { name: `${label} panel` });
+
+    expect(dangling()).toEqual([]);
+  });
+
+  // Opening one is what the attribute is for, and the half that was already right: it has to
+  // appear when the body does, not only disappear when it goes.
+  it('names the body of a disclosure that is open', async () => {
+    await openBusyConsole();
+
+    const menu = within(screen.getByRole('navigation', { name: 'Panels' }));
+    await userEvent.click(menu.getByRole('button', { name: /^Alerts/ }));
+    await screen.findByRole('region', { name: 'Alerts panel' });
+
+    const marks = screen.queryAllByRole('button', { name: /^What .* means$/ });
+    if (marks.length === 0) return;
+
+    await userEvent.click(marks[0]);
+
+    const named = marks[0].getAttribute('aria-controls');
+    expect(named).toBeTruthy();
+    expect(document.getElementById(named ?? '')).not.toBeNull();
+    expect(dangling()).toEqual([]);
   });
 });

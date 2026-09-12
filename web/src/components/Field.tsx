@@ -50,7 +50,7 @@ export function Field({ label, htmlFor, narrow = false, aside, help, children }:
           <InfoMark
             label={label}
             open={open}
-            controls={helpId}
+            controls={open ? helpId : undefined}
             onToggle={() => setOpen((shown) => !shown)}
           />
         )}

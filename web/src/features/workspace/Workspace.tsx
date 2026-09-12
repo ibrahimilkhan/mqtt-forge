@@ -580,7 +580,9 @@ function Region({
         type="button"
         className={styles.regionHead}
         aria-expanded={open}
-        aria-controls={`region-${id}`}
+        // Only while the body is mounted: folded, the pane is gone and an aria-controls naming
+        // it offers a listener a way to something that is not there. See InfoTip.
+        aria-controls={open ? `region-${id}` : undefined}
         disabled={locked}
         // Named for what it does rather than for what it says: the strip reads 'Chart', and a
         // control called 'Chart' tells a listener nothing about which way it is about to go.
