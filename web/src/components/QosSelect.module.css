@@ -1,0 +1,23 @@
+/* One word, then the levels.
+ *
+ * It said QoS three times on one line — the name of the thing repeated on every value of it,
+ * which is the shape of a legend rather than of a choice. A reader picking a level is reading
+ * three characters and the other nine were furniture, three times over.
+ *
+ * The word keeps the spelling it has in the specification rather than taking the uppercase every
+ * other field label in this console is set in: QOS is not a word anybody writes.
+ */
+.group {
+  display: flex;
+  align-items: center;
+  /* Closer than the 18px `.checks` puts between itself and whatever stands beside it: these three
+     belong to the word in front of them, and the gap has to say so. */
+  gap: 12px;
+}
+
+.name {
+  font-family: var(--mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
