@@ -392,6 +392,48 @@ describe('the colour popover', () => {
     expect(within(rows()[0]).getByTestId('swatch')).toHaveStyle({ background: SUGGESTED[0] });
   });
 
+  /**
+   * And the key goes no further.
+   *
+   * Escape is the gesture for 'put the innermost thing away', and three things in this console
+   * listen for it: this popover, the chart thrown open, and the stack of floating windows — which
+   * closes its topmost on the same key, on `window`, where every unstopped keydown arrives.
+   * Dismissing a swatch was therefore also destroying a chart a reader had pinned.
+   */
+  it('keeps the key to itself, so nothing else on the page acts on it', async () => {
+    const alsoListening = vi.fn();
+    window.addEventListener('keydown', alsoListening);
+    try {
+      renderPanel();
+      await waitFor(() => expect(addButton()).toBeEnabled());
+      await openPicker();
+      alsoListening.mockClear();
+
+      await userEvent.keyboard('{Escape}');
+
+      expect(screen.queryByLabelText('Custom colour')).not.toBeInTheDocument();
+      expect(alsoListening).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('keydown', alsoListening);
+    }
+  });
+
+  // With nothing open there is no listener, so the key belongs to whatever else wants it.
+  it('lets the key through when the popover is shut', async () => {
+    const alsoListening = vi.fn();
+    window.addEventListener('keydown', alsoListening);
+    try {
+      renderPanel();
+      await waitFor(() => expect(addButton()).toBeEnabled());
+
+      await userEvent.keyboard('{Escape}');
+
+      expect(alsoListening).toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('keydown', alsoListening);
+    }
+  });
+
   it('closes when the click lands somewhere else', async () => {
     renderPanel();
     await waitFor(() => expect(addButton()).toBeEnabled());

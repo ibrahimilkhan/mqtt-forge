@@ -672,7 +672,12 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
               // why both buttons are there too — these are for the hands already on the keys.
               onKeyDown={(e) => {
                 if (e.key === 'Enter') keep();
-                if (e.key === 'Escape') setNaming(null);
+                if (e.key !== 'Escape') return;
+
+                // And no further: the window stack closes its topmost floating window on the
+                // same key, so backing out of this box was also destroying a pinned chart.
+                e.stopPropagation();
+                setNaming(null);
               }}
             />
           </Field>

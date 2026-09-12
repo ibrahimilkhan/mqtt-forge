@@ -45,8 +45,20 @@ export function ColourPicker({
     const dismissOnClick = (event: MouseEvent) => {
       if (!container.current?.contains(event.target as Node)) setOpen(false);
     };
+    /**
+     * And it stops here.
+     *
+     * Escape is the gesture for 'put the innermost thing away', and this console has three things
+     * listening for it: this popover, the chart thrown open, and the stack of floating windows —
+     * which closes its topmost on the same key. Without stopping, dismissing a swatch also
+     * destroyed a chart window a reader had pinned, which is the reader's work rather than a
+     * menu. The zoomed chart already does this; see TrafficLine.
+     */
     const dismissOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key !== 'Escape') return;
+
+      event.stopPropagation();
+      setOpen(false);
     };
 
     document.addEventListener('mousedown', dismissOnClick);
