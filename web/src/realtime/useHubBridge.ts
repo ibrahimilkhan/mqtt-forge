@@ -67,6 +67,16 @@ export function useHubBridge(hub: Hub) {
       onOverflow: (lost) => usePauseStore.getState().lose(lost),
     });
 
+    // Clear and unsubscribe reach the queue through the pause store, which is where the console
+    // already says what is waiting — see clearTraffic's forgetTopics. Not counted as lost: the
+    // reader asked for these to go.
+    usePauseStore.setState({
+      dropQueued: (remove) => {
+        buffer.drop((message) => remove(message.topic));
+        usePauseStore.getState().track(buffer.waiting());
+      },
+    });
+
     // Stopping holds the queue rather than emptying it: what went past while the reader was
     // looking is what they stopped the console to look at.
     const stopWatching = usePauseStore.subscribe((state, previous) => {
@@ -172,6 +182,7 @@ export function useHubBridge(hub: Hub) {
       buffer.cancel();
       // The queue went with the buffer, so the figure the control reads has to go with it too.
       usePauseStore.getState().track(0);
+      usePauseStore.setState({ dropQueued: () => {} });
     };
   }, [hub, queryClient]);
 }

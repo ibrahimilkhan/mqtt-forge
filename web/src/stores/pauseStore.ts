@@ -34,6 +34,12 @@ type PauseState = {
   track: (waiting: number) => void;
   /** How many were let go of rather than taken in. */
   lose: (messages: number) => void;
+  /**
+   * Lets go of what is waiting behind the stop on topics the test says yes to. The hub bridge
+   * owns the queue and puts the real one here while it is mounted; with no bridge there is no
+   * queue, and nothing to let go of.
+   */
+  dropQueued: (remove: (topic: string) => boolean) => void;
 };
 
 export const usePauseStore = create<PauseState>((set, get) => ({
@@ -55,4 +61,6 @@ export const usePauseStore = create<PauseState>((set, get) => ({
   lose: (messages) => {
     get().lost += messages;
   },
+
+  dropQueued: () => {},
 }));

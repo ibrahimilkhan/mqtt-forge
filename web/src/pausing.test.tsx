@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StreamPause } from './features/monitor/StreamPause';
 import { TrafficPane } from './features/monitor/TrafficPane';
 import { useHoldStore } from './stores/holdStore';
+import { clearSelection } from './stores/clearTraffic';
 import { WireLog } from './features/monitor/WireLog';
 import { TopicTree } from './features/topics/TopicTree';
 import { createFakeHub } from './realtime/fakeHub';
@@ -431,6 +432,26 @@ describe('both pauses at once', () => {
 
     expect(useHoldStore.getState().held).not.toBeNull();
     expect(holdControl()).toHaveAccessibleName(/Let the pane go/);
+  });
+
+  it('does not bring back on resume a topic cleared while the console was stopped', async () => {
+    const { send } = renderConsole();
+    send(['sensors/temp', '21'], ['sensors/humidity', '55']);
+    await userEvent.click(streamControl());
+    send(['sensors/temp', '99'], ['sensors/humidity', '56']);
+
+    act(() => clearSelection('sensors/temp/#', 'nothing'));
+
+    expect(usePauseStore.getState().waiting).toBe(1);
+
+    await act(async () => {
+      await userEvent.click(streamControl());
+    });
+    act(() => runFrames());
+
+    expect(rowFor('temp')).toBeNull();
+    expect(rowOf('humidity')).toHaveTextContent('56');
+    expect(usePauseStore.getState().lost).toBe(0);
   });
 });
 

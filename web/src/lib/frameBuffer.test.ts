@@ -168,6 +168,22 @@ describe('holding the queue', () => {
     expect(flush.mock.calls.flatMap(([batch]) => batch)).toEqual([1, 2]);
     expect(buffer.waiting()).toBe(3);
   });
+
+  it('lets go of the waiting items a test picks, and keeps the rest in their order', () => {
+    const frames = stubFrames();
+    const flush = vi.fn();
+    const buffer = createFrameBuffer<number>(flush);
+    buffer.hold();
+    buffer.pushAll([1, 2, 3, 4]);
+
+    expect(buffer.drop((item) => item % 2 === 0)).toBe(2);
+    expect(buffer.waiting()).toBe(2);
+
+    buffer.release();
+    runFrames(frames);
+
+    expect(flush).toHaveBeenCalledWith([1, 3]);
+  });
 });
 
 // A queue handed over in one frame is the avalanche that stopping used to be designed around.

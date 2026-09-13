@@ -1,6 +1,7 @@
 import { matchesFilter, showsTopic } from '../lib/topicMatch';
 import { useHoldStore } from './holdStore';
 import { useLogStore } from './logStore';
+import { usePauseStore } from './pauseStore';
 import { useSearchStore } from './searchStore';
 import { useTopicTreeStore } from './topicTreeStore';
 
@@ -34,13 +35,16 @@ export function clearTraffic(): void {
  * console that emptied one left the fault this shape exists to prevent. Holds are the third: a
  * pause kept the runs it had frozen, so a pane the reader had just emptied went on showing them,
  * and the topic's next message brought its row back with the value from before. A hold above what
- * went keeps standing without it; one with nothing left is let go.
+ * went keeps standing without it; one with nothing left is let go. The queue behind the rail's
+ * Stop is a fourth place, since what waits there on these topics arrived before the reader asked
+ * and would put them back on resume.
  */
 export function forgetTopics(remove: (topic: string) => boolean): void {
   const log = useLogStore.getState();
   log.forgetTopics([...log.byTopic.keys()].filter(remove));
   useTopicTreeStore.getState().dropTopics(remove);
   useHoldStore.getState().forget(remove, 'nothing');
+  usePauseStore.getState().dropQueued(remove);
 }
 
 /**
@@ -53,6 +57,7 @@ export function forgetTopics(remove: (topic: string) => boolean): void {
  * Two answers, because a reader emptying a pane means one of two things. All of it, and the topic
  * goes from the tree with its run. Or all but the newest, which is the pane cleared with the
  * reading left on it: the rows stay, and so do the rows a hold froze, with their runs cut back too.
+ * `Keep newest` does not touch the queue: what waits there is newer than the reading it keeps.
  *
  * The search goes either way: a box still holding `boiler` over a pane that has just been emptied
  * reads as a pane with nothing in it.

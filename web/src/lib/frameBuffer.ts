@@ -78,7 +78,10 @@ export function createFrameBuffer<T>(flush: (batch: T[]) => void, options: Optio
         compact();
       }
 
-      flush(batch);
+      // drop() can empty the buffer without cancelling an already-scheduled frame (see drop()
+      // below), so the batch this frame collects can be empty. Handing that over would be a
+      // flush of nothing, which no reader of flush() should have to allow for.
+      if (batch.length > 0) flush(batch);
       // Whatever is left goes next frame, and so does whatever arrived during this one.
       schedule();
     });
@@ -137,6 +140,23 @@ export function createFrameBuffer<T>(flush: (batch: T[]) => void, options: Optio
         cancelAnimationFrame(frame);
         frame = 0;
       }
+
+      return dropped;
+    },
+
+    /**
+     * Lets go of the waiting items a test says yes to, and says how many that was.
+     *
+     * For a reader emptying part of what the console holds while it is stopped: what is waiting
+     * behind the stop on those topics arrived before they asked, and handing it over on resume
+     * would put back exactly what they had just cleared. Everything else keeps its place in line.
+     */
+    drop(remove: (item: T) => boolean): number {
+      const kept = buffer.slice(at).filter((item) => !remove(item));
+      const dropped = waiting() - kept.length;
+
+      buffer = kept;
+      at = 0;
 
       return dropped;
     },
