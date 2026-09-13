@@ -1,6 +1,6 @@
 import { memo, useRef, type CSSProperties, type ReactNode } from 'react';
 import type { ColourRule } from '../../lib/topicColour';
-import { nodeSummary, type TopicNode } from '../../lib/topicTree';
+import { EMPTY_LEVEL, nodeSummary, type TopicNode } from '../../lib/topicTree';
 import { Sparkline } from './Sparkline';
 import styles from './TopicTree.module.css';
 
@@ -38,16 +38,6 @@ const HEX = /^#[0-9a-f]{6}$/i;
 function paintable(colour: string | null | undefined): string | undefined {
   return colour && HEX.test(colour) ? colour : undefined;
 }
-
-/**
- * What stands in for a level with no name of its own.
- *
- * A topic beginning with '/' has an empty first level, and one written 'a//b' an empty middle
- * one — real levels either way: they are part of the topic, and they open and pick like any
- * other row. Drawn blank they read as a row that failed to render, so they are drawn as the
- * slash that implies them, in muted ink so it is plainly a mark and not a segment named '/'.
- */
-export const EMPTY_LEVEL = '/';
 
 // Purely presentational: everything it needs arrives as a prop. Rows used to subscribe to the
 // stores themselves, which made every message wake every row on a broker with thousands of them.

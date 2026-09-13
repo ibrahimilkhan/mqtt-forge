@@ -5,6 +5,7 @@ import { Fold, Unfold } from '../brand/icons';
 import { useRuleLookup } from '../../lib/useRuleLookup';
 import { matchesFilter, treeFilter } from '../../lib/topicMatch';
 import {
+  EMPTY_LEVEL,
   filterPath,
   flattenTree,
   MAX_TREE_ROWS,
@@ -17,7 +18,7 @@ import { HoldButton } from '../monitor/HoldButton';
 import { useHoldStore } from '../monitor/useTraffic';
 import { useComposeStore } from '../../stores/composeStore';
 import { useSearchStore } from '../../stores/searchStore';
-import { useSelectionStore } from '../../stores/selectionStore';
+import { brokerSelection, selectionFor, useSelectionStore } from '../../stores/selectionStore';
 import { useLogStore } from '../../stores/logStore';
 import { isPathOpen, useTopicTreeStore } from '../../stores/topicTreeStore';
 import styles from './TopicTree.module.css';
@@ -220,11 +221,7 @@ export function TopicTree({ broker }: { broker?: string }) {
   // the publish form so it can be sent straight back with the settings it arrived under.
   const onSelect = useCallback(
     (path: string, node: TopicNode) => {
-      // A leaf is one topic and a colour rule for it should say so; a branch stands for
-      // everything under it, which is what clicking a branch means.
-      const topic = node.children.size > 0 ? treeFilter(path) : path;
-
-      select({ label: path, filter: treeFilter(path), topic });
+      select(selectionFor(path, node));
       // A node that holds a message of its own hands over the whole of it — the body, and the QoS
       // and retain flag it was sent with — so that publishing it again publishes the same message.
       // A node that holds none hands over its path and nothing else: its flags are the placeholders
@@ -254,10 +251,7 @@ export function TopicTree({ broker }: { broker?: string }) {
 
   // The broker is not a topic: it focuses the log on everything and has nothing to publish to.
   const brokerLabel = broker ?? 'Not connected';
-  const pickBroker = useCallback(
-    () => select({ label: brokerLabel, filter: EVERYTHING }),
-    [select, brokerLabel],
-  );
+  const pickBroker = useCallback(() => select(brokerSelection(broker)), [select, broker]);
 
   /*
    * Glyphs, with the words kept as the accessible name and the tooltip. Three rules for the
@@ -301,7 +295,10 @@ export function TopicTree({ broker }: { broker?: string }) {
    * chevron pair is one idea drawn once, and this console now draws it in both places it happens.
    */
   const treeActions = useMemo(() => {
-    const of = selectedPath ? ` ${selectedPath}` : ' all';
+    // A null path is nothing picked; '' is the empty first level, which is a branch like any other
+    // and is spoken as the slash the row draws. A falsy test named it 'all' and expanded the tree.
+    const named = selectedPath === null ? null : selectedPath === '' ? EMPTY_LEVEL : selectedPath;
+    const of = named === null ? ' all' : ` ${named}`;
 
     return (
       <div className={styles.rowActions}>
@@ -309,7 +306,7 @@ export function TopicTree({ broker }: { broker?: string }) {
           type="button"
           onClick={() => setAllOpen(true, selectedPath)}
           aria-label={`Expand${of}`}
-          title={selectedPath ? `Expand every branch under ${selectedPath}` : 'Expand every branch'}
+          title={named === null ? 'Expand every branch' : `Expand every branch under ${named}`}
         >
           <Unfold />
         </button>
@@ -317,9 +314,7 @@ export function TopicTree({ broker }: { broker?: string }) {
           type="button"
           onClick={() => setAllOpen(false, selectedPath)}
           aria-label={`Collapse${of}`}
-          title={
-            selectedPath ? `Collapse every branch under ${selectedPath}` : 'Collapse every branch'
-          }
+          title={named === null ? 'Collapse every branch' : `Collapse every branch under ${named}`}
         >
           <Fold />
         </button>

@@ -39,6 +39,17 @@ export type TopicNode = {
 };
 
 /**
+ * What stands in for a level with no name of its own.
+ *
+ * A topic beginning with '/' has an empty first level, and one written 'a//b' an empty middle one
+ * — real levels either way: they are part of the topic, and they open and pick like any other row.
+ * Drawn blank they read as a row that failed to render, so they are drawn as the slash that implies
+ * them. Named blank — in 'No traffic on …', in the Manage list, on a window's bar — they named
+ * nothing, so they are named by it as well.
+ */
+export const EMPTY_LEVEL = '/';
+
+/**
  * How long a run each row keeps.
  *
  * A tree row is a thumbnail, not a chart — the pane below it holds the history. Twenty-four is
@@ -466,7 +477,7 @@ export function flattenTree(
 export function retainedTopics(root: TopicNode): string[] {
   const found: string[] = [];
 
-  const walk = (node: TopicNode, path: string) => {
+  const walk = (node: TopicNode, path: string | null) => {
     for (const name of node.order) {
       // The broker's own tree is not the reader's to clear. Mosquitto publishes every one of its
       // `$SYS` statistics retained, so a console that has ticked Subscribe $SYS counted fifty-six
@@ -475,10 +486,12 @@ export function retainedTopics(root: TopicNode): string[] {
       // republished the lot ten seconds later, and the figure sat where it was under a sentence
       // saying it had been emptied. Skipped at the root, since `$SYS/broker` is only reserved
       // because `$SYS` is.
-      if (path === '' && name.startsWith('$')) continue;
+      if (path === null && name.startsWith('$')) continue;
 
       const child = node.children.get(name)!;
-      const here = path === '' ? name : `${path}/${name}`;
+      // Joined by depth, not by the parent's path being '': the empty first level's children
+      // begin with a slash, and a retained message cleared at 'hfp/…' is cleared nowhere.
+      const here = path === null ? name : `${path}/${name}`;
       if (child.hits > 0 && child.latestRetain && child.latestPayload) found.push(here);
       walk(child, here);
     }
@@ -486,7 +499,7 @@ export function retainedTopics(root: TopicNode): string[] {
 
   // Recursive where the rest of this file is iterative, and it can be: it is called by a reader
   // pressing a button, once, not on the path of a message.
-  walk(root, '');
+  walk(root, null);
 
   return found;
 }
@@ -518,15 +531,18 @@ export function searchRows(
   let matched = 0;
 
   const stack: Array<{ node: TopicNode; path: string }> = [];
-  const descend = (node: TopicNode, path: string) => {
+  // A root child's path is its own name — the empty first level's included, whose path is '' —
+  // and every other path joins its parent's with a slash. Keyed on being the root rather than on
+  // the parent's path being '', because the empty level's own children begin with that slash.
+  const descend = (node: TopicNode, path: string | null) => {
     const { order, children } = node;
     for (let i = order.length - 1; i >= 0; i--) {
       const child = children.get(order[i])!;
-      stack.push({ node: child, path: path === '' ? child.name : `${path}/${child.name}` });
+      stack.push({ node: child, path: path === null ? child.name : `${path}/${child.name}` });
     }
   };
 
-  descend(root, '');
+  descend(root, null);
 
   while (stack.length > 0) {
     const { node, path } = stack.pop()!;

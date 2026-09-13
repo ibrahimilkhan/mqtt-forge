@@ -6,6 +6,8 @@ import {
   flattenTree,
   nodeSummary,
   pruneTopics,
+  retainedTopics,
+  searchRows,
   snapshotUnder,
   TREE_READINGS,
   type TopicNode,
@@ -616,5 +618,40 @@ describe('snapshotUnder', () => {
     // And the live tree is not the one being held.
     expect(at(after, 'sensors/temp').latestPayload).toBe('99');
     expect(at(after, 'sensors').subMessages).toBe(3);
+  });
+});
+
+// mqtt.hsl.fi publishes every topic under a leading '/', so its whole feed hangs off the empty
+// first level. A path joined as though '' were the root lost that slash.
+describe('paths under the empty first level', () => {
+  const hsl = () =>
+    applyMessages(
+      emptyTree(),
+      [
+        { topic: '/hfp/v2/bus/1', payload: 'x', retain: true },
+        { topic: 'plant/kiln', payload: '900', retain: true },
+      ],
+      1000,
+    );
+
+  it('names a search answer under / by its whole path, slash and all', () => {
+    expect(searchRows(hsl(), 'bus', 'topic', 100).rows.map((row) => row.path)).toEqual([
+      '/hfp/v2/bus',
+      '/hfp/v2/bus/1',
+    ]);
+  });
+
+  it('names a retained topic under / by the topic it was published on', () => {
+    expect(retainedTopics(hsl())).toEqual(['/hfp/v2/bus/1', 'plant/kiln']);
+  });
+
+  it('still leaves $SYS out of what the broker is holding for the reader', () => {
+    const tree = applyMessages(
+      emptyTree(),
+      [{ topic: '$SYS/broker/uptime', payload: '10', retain: true }],
+      1000,
+    );
+
+    expect(retainedTopics(tree)).toEqual([]);
   });
 });

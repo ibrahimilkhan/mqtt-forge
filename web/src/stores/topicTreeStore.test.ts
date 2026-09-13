@@ -155,3 +155,18 @@ describe('setAllOpen and the broker row', () => {
     expect(useTopicTreeStore.getState().brokerOpen).toBe(false);
   });
 });
+
+describe('the empty first level', () => {
+  it('expands the branch under / and nothing beside it', () => {
+    useTopicTreeStore.getState().apply([message('/hfp/v2/bus'), message('plant/kiln')]);
+
+    useTopicTreeStore.getState().setAllOpen(true, '');
+
+    const state = useTopicTreeStore.getState();
+    expect(state.defaultOpen).toBe(false);
+    expect(isPathOpen(state, '')).toBe(true);
+    expect(isPathOpen(state, '/hfp')).toBe(true);
+    expect(isPathOpen(state, '/hfp/v2')).toBe(true);
+    expect(isPathOpen(state, 'plant')).toBe(false);
+  });
+});

@@ -1168,3 +1168,34 @@ describe('searching the topics', () => {
     expect(rowNames()).toEqual(['office', 'plant']);
   });
 });
+
+describe('the empty first level', () => {
+  const send = (...topics: string[]) =>
+    useTopicTreeStore.getState().apply(topics.map((topic) => message(topic)));
+
+  it('scopes Expand and Collapse to / when / is picked', async () => {
+    send('/hfp/v2/bus', 'plant/kiln');
+    useTopicTreeStore.setState({ defaultOpen: true });
+    render(<TopicTree broker="mqtt.hsl.fi:8883" />);
+
+    await userEvent.click(screen.getAllByTestId('segment').find((one) => one.textContent === '/')!);
+
+    expect(useSelectionStore.getState().selected?.label).toBe('/');
+    // Scoped to the broker row: the / row is open too, and its own twisty reads 'Collapse /'
+    // as well — the same pairing 'puts the expand and collapse controls…' below disambiguates.
+    const broker = screen.getAllByTestId('tree-row')[0];
+    expect(within(broker).getByRole('button', { name: 'Expand /' })).toBeInTheDocument();
+    expect(within(broker).getByRole('button', { name: 'Collapse /' })).toBeInTheDocument();
+  });
+
+  it('picks a search answer under / by its whole path', async () => {
+    send('/hfp/v2/bus/1', 'plant/kiln');
+    render(<TopicTree broker="mqtt.hsl.fi:8883" />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Find a topic' }));
+    await userEvent.type(screen.getByLabelText('Search the topics'), 'bus/1');
+    await userEvent.click(screen.getByText('/hfp/v2/bus/1'));
+
+    expect(useSelectionStore.getState().selected?.filter).toBe('/hfp/v2/bus/1/#');
+  });
+});

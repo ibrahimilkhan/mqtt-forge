@@ -117,7 +117,12 @@ export const useTopicTreeStore = create<TreeState>((set, get) => ({
    */
   setAllOpen: (open, under) =>
     set((state) => {
-      if (!under) return { openPaths: new Map(), defaultOpen: open, brokerOpen: open };
+      // Only the absence of a branch means the whole tree. '' is a branch — the empty first level
+      // every mqtt.hsl.fi topic hangs off — and a falsy test sent a reader expanding it to every
+      // branch the broker has.
+      if (under === null || under === undefined) {
+        return { openPaths: new Map(), defaultOpen: open, brokerOpen: open };
+      }
 
       const node = nodeAt(state.root, under);
       if (!node) return {};
@@ -146,13 +151,18 @@ export const useTopicTreeStore = create<TreeState>((set, get) => ({
     }),
 }));
 
-/** A node and everything below it, by path. Depth is a topic's depth, so this cannot run away. */
+/**
+ * A node and everything below it, by path. Depth is a topic's depth, so this cannot run away.
+ *
+ * `path` is always a topic's own — the whole tree never comes through here — so a child always
+ * joins it with a slash, the empty first level's included.
+ */
 function eachBranch(node: TopicNode, path: string, take: (path: string) => void) {
   take(path);
 
   for (const name of node.order) {
     const child = node.children.get(name);
-    if (child) eachBranch(child, path === '' ? name : `${path}/${name}`, take);
+    if (child) eachBranch(child, `${path}/${name}`, take);
   }
 }
 

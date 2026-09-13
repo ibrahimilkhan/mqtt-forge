@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { useSelectionStore } from './selectionStore';
+import { applyMessages, emptyTree, nodeAt } from '../lib/topicTree';
+import { brokerSelection, selectionFor, useSelectionStore } from './selectionStore';
 
 const chip = { label: 'sensors/#', filter: 'sensors/#' };
 const node = { label: 'sensors/room', filter: 'sensors/room/#' };
@@ -55,5 +56,31 @@ describe('selectionStore', () => {
     useSelectionStore.getState().clear();
 
     expect(useSelectionStore.getState().selected).toBeNull();
+  });
+});
+
+describe('the selection a tree row makes', () => {
+  it('names the empty first level /', () => {
+    expect(selectionFor('', null)).toEqual({ label: '/', filter: '/#', topic: '/#' });
+  });
+
+  it('gives a leaf its own topic and a branch its subtree', () => {
+    const tree = applyMessages(emptyTree(), [{ topic: 'plant/boiler/temp', payload: '81' }], 1);
+
+    expect(selectionFor('plant/boiler/temp', nodeAt(tree, 'plant/boiler/temp'))).toEqual({
+      label: 'plant/boiler/temp',
+      filter: 'plant/boiler/temp/#',
+      topic: 'plant/boiler/temp',
+    });
+    expect(selectionFor('plant/boiler', nodeAt(tree, 'plant/boiler'))).toEqual({
+      label: 'plant/boiler',
+      filter: 'plant/boiler/#',
+      topic: 'plant/boiler/#',
+    });
+  });
+
+  it('names the broker row by the broker, or says there is none', () => {
+    expect(brokerSelection('mqtt.hsl.fi:8883')).toEqual({ label: 'mqtt.hsl.fi:8883', filter: '#' });
+    expect(brokerSelection(undefined)).toEqual({ label: 'Not connected', filter: '#' });
   });
 });
