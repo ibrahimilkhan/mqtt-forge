@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import type { LogEntry } from '../stores/logStore';
+import { TopicRing } from '../stores/topicRing';
 import {
+  arrivedBehind,
   behind,
   covers,
   discount,
+  freeze,
   holdName,
   inRegion,
   nearestHold,
@@ -10,6 +14,8 @@ import {
   paneState,
   reaches,
   regionOf,
+  shownRuns,
+  treeView,
   type Held,
   type Holds,
 } from './holds';
@@ -151,5 +157,172 @@ describe('what a filter and a hold share', () => {
     expect(holdName(held('#'), 'mqtt.hsl.fi:8883')).toBe('mqtt.hsl.fi:8883');
     expect(holdName(held('/#'), 'x')).toBe('/');
     expect(holdName(held('plant/boiler/#'), 'x')).toBe('plant/boiler');
+  });
+});
+
+let nextId = 1;
+
+/** Arrivals filed a topic at a time, the way the log keeps them. */
+const log = (...arrivals: Array<[topic: string, body: string]>) => {
+  const byTopic = new Map<string, TopicRing>();
+  for (const [topic, body] of arrivals) add(byTopic, topic, body);
+  return byTopic;
+};
+
+const add = (byTopic: Map<string, TopicRing>, topic: string, body: string) => {
+  let ring = byTopic.get(topic);
+  if (!ring) {
+    ring = new TopicRing({ maxItems: 100, maxBytes: Number.POSITIVE_INFINITY });
+    byTopic.set(topic, ring);
+  }
+  const entry: LogEntry = { id: nextId++, kind: 'recv', at: new Date(0), topic, body };
+  ring.push(entry);
+};
+
+const bodies = (runs: LogEntry[][]) => runs.map((run) => run.map((one) => `${one.topic}=${one.body}`));
+
+describe('the runs a filter shows', () => {
+  it('reads the live runs when no hold is near', () => {
+    const byTopic = log(['sensors/temp', '21']);
+
+    expect(bodies(shownRuns(byTopic, new Map(), 'sensors/#'))).toEqual([['sensors/temp=21']]);
+  });
+
+  // The report: / paused, the broker's row picked above it, and the log streamed on.
+  it('shows held topics as they were taken and the rest as they are, above a held row', () => {
+    const byTopic = log(['/hfp/bus', 'a1'], ['plant/kiln', '900']);
+    const slash = freeze('/#', byTopic, emptyTree(), new Map())!;
+    add(byTopic, '/hfp/bus', 'a2');
+    add(byTopic, 'plant/kiln', '910');
+
+    expect(bodies(shownRuns(byTopic, holdsOf(slash), '#'))).toEqual([
+      ['/hfp/bus=a1'],
+      ['plant/kiln=910', 'plant/kiln=900'],
+    ]);
+  });
+
+  it('narrows a branch hold to the row picked under it', () => {
+    const byTopic = log(['sensors/temp', '21'], ['sensors/humidity', '55']);
+    const sensors = freeze('sensors/#', byTopic, emptyTree(), new Map())!;
+    add(byTopic, 'sensors/temp', '22');
+
+    expect(bodies(shownRuns(byTopic, holdsOf(sensors), 'sensors/temp/#'))).toEqual([
+      ['sensors/temp=21'],
+    ]);
+  });
+
+  it('leaves out a topic that arrived behind the hold', () => {
+    const byTopic = log(['sensors/temp', '21']);
+    const sensors = freeze('sensors/#', byTopic, emptyTree(), new Map())!;
+    add(byTopic, 'sensors/pressure', '1013');
+
+    expect(bodies(shownRuns(byTopic, holdsOf(sensors), '#'))).toEqual([['sensors/temp=21']]);
+  });
+
+  it('goes on showing what the hold froze after the log lets the topic go', () => {
+    const byTopic = log(['sensors/temp', '21']);
+    const sensors = freeze('sensors/#', byTopic, emptyTree(), new Map())!;
+    byTopic.delete('sensors/temp');
+
+    expect(bodies(shownRuns(byTopic, holdsOf(sensors), 'sensors/#'))).toEqual([
+      ['sensors/temp=21'],
+    ]);
+  });
+
+  it('counts what arrived behind each held topic, and only under the hold asked about', () => {
+    const byTopic = log(['sensors/temp', '21'], ['plant/kiln', '900']);
+    const sensors = freeze('sensors/#', byTopic, emptyTree(), new Map())!;
+    const plant = freeze('plant/#', byTopic, emptyTree(), holdsOf(sensors))!;
+    add(byTopic, 'sensors/temp', '22');
+    add(byTopic, 'sensors/pressure', '1013');
+    add(byTopic, 'plant/kiln', '910');
+    const all = holdsOf(sensors, plant);
+
+    expect(arrivedBehind(byTopic, all, '#')).toBe(3);
+    expect(arrivedBehind(byTopic, all, 'sensors/#', sensors)).toBe(2);
+    expect(arrivedBehind(byTopic, all, 'plant/#', plant)).toBe(1);
+  });
+});
+
+describe('the tree the holds draw', () => {
+  it('draws a held row as it was, and a row above it without what the hold keeps back', () => {
+    const before = tree(['sensors/temp', '21'], ['sensors/humidity', '55']);
+    // Read before the second applyMessages call: a node's own fields are frozen once captured,
+    // but its parent keeps its children map and mutates it in place (see the Held doc comment
+    // above), so asking `before` for this same path again afterwards would answer with the row
+    // as it now stands rather than as it stood here.
+    const beforeTemp = at(before, 'sensors/temp');
+    const temp = freeze('sensors/temp/#', new Map(), before, new Map())!;
+    const after = applyMessages(before, [{ topic: 'sensors/temp', payload: '99' }], 2000);
+    const view = treeView(holdsOf(temp), after);
+
+    expect(view.row('sensors/temp', at(after, 'sensors/temp'))).toEqual({
+      node: beforeTemp,
+      held: true,
+    });
+    expect(view.row('sensors', at(after, 'sensors'))!.node.subMessages).toBe(2);
+    expect(view.root.subMessages).toBe(2);
+  });
+
+  it('takes nested holds off the rows above once, not once each', () => {
+    const before = tree(['plant/sensors/temp', '21'], ['plant/sensors/humidity', '55']);
+    const temp = freeze('plant/sensors/temp/#', new Map(), before, new Map())!;
+    const sensors = freeze('plant/sensors/#', new Map(), before, holdsOf(temp))!;
+    const after = applyMessages(before, [{ topic: 'plant/sensors/temp', payload: '99' }], 2000);
+    const view = treeView(holdsOf(temp, sensors), after);
+
+    expect(view.row('plant', at(after, 'plant'))!.node.subMessages).toBe(2);
+    expect(view.root.subMessages).toBe(2);
+  });
+
+  it('keeps a row that arrived behind the hold off screen', () => {
+    const before = tree(['sensors/temp', '21']);
+    const sensors = freeze('sensors/#', new Map(), before, new Map())!;
+    const after = applyMessages(before, [{ topic: 'sensors/pressure', payload: '1013' }], 2000);
+
+    expect(
+      treeView(holdsOf(sensors), after).row('sensors/pressure', at(after, 'sensors/pressure')),
+    ).toBeNull();
+  });
+
+  it('draws the broker row from what # froze, and freezes $SYS with the rest', () => {
+    const before = tree(['$SYS/broker/uptime', '10'], ['sensors/temp', '21']);
+    const everything = freeze('#', new Map(), before, new Map())!;
+    const after = applyMessages(before, [{ topic: 'sensors/temp', payload: '22' }], 2000);
+    const view = treeView(holdsOf(everything), after);
+
+    expect(view.root.subMessages).toBe(2);
+    expect(view.row('$SYS', at(after, '$SYS'))).not.toBeNull();
+    expect(view.row('$SYS/broker/uptime', at(after, '$SYS/broker/uptime'))!.held).toBe(true);
+  });
+});
+
+describe('taking a hold', () => {
+  it('freezes what is on screen, so a row under a paused branch does not jump', () => {
+    const byTopic = log(['sensors/temp', '21']);
+    const before = tree(['sensors/temp', '21']);
+    const sensors = freeze('sensors/#', byTopic, before, new Map())!;
+    add(byTopic, 'sensors/temp', '22');
+    const after = applyMessages(before, [{ topic: 'sensors/temp', payload: '22' }], 2000);
+
+    const temp = freeze('sensors/temp/#', byTopic, after, holdsOf(sensors))!;
+
+    expect(bodies([...temp.runs.values()])).toEqual([['sensors/temp=21']]);
+    expect(temp.nodes.get('sensors/temp')!.latestPayload).toBe('21');
+  });
+
+  it('keeps the broker row without what a hold under it was keeping back', () => {
+    const byTopic = log(['sensors/temp', '21'], ['plant/kiln', '900']);
+    const before = tree(['sensors/temp', '21'], ['plant/kiln', '900']);
+    const sensors = freeze('sensors/#', byTopic, before, new Map())!;
+    const after = applyMessages(before, [{ topic: 'sensors/temp', payload: '22' }], 2000);
+
+    const everything = freeze('#', byTopic, after, holdsOf(sensors))!;
+
+    expect(everything.root!.subMessages).toBe(2);
+  });
+
+  it('takes nothing for a filter no row selects', () => {
+    expect(freeze('sensors/+/temp', new Map(), emptyTree(), new Map())).toBeNull();
   });
 });

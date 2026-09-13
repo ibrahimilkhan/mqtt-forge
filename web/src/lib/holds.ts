@@ -1,4 +1,6 @@
-import type { LogEntry } from '../stores/logStore';
+import { runsFor, type LogEntry } from '../stores/logStore';
+import type { TopicRing } from '../stores/topicRing';
+import { showsTopic } from './topicMatch';
 import { EMPTY_LEVEL, filterPath, nodeAt, type TopicNode } from './topicTree';
 
 /**
@@ -199,4 +201,169 @@ export function holdName(held: Pick<Held, 'path'>, broker: string): string {
   if (held.path === null) return broker;
 
   return held.path === '' ? EMPTY_LEVEL : held.path;
+}
+
+/** How the tree is drawn under a set of holds. */
+export type TreeView = {
+  /** The broker's row. */
+  root: TopicNode;
+  /** A row as drawn, and whether a hold draws it; null while a hold keeps it off screen. */
+  row: (path: string, live: TopicNode) => { node: TopicNode; held: boolean } | null;
+};
+
+/**
+ * The tree as the holds draw it.
+ *
+ * A row under a hold is drawn from the nearest hold, and a row that hold has nothing for arrived
+ * behind it and is not drawn: the rows stop where they are, and one appearing is not standing
+ * still. A row under no hold is drawn from the live tree with what the outermost holds beneath it
+ * keep back taken out of its totals, so a branch never counts more than its rows add up to. The
+ * broker's row is a row like any other in that — frozen when `#` is held, discounted otherwise.
+ */
+export function treeView(holds: Holds, root: TopicNode): TreeView {
+  if (holds.size === 0) return { root, row: (_path, live) => ({ node: live, held: false }) };
+
+  const outer = outermost(holds.values()).flatMap((one) =>
+    one.path === null ? [] : [{ path: one.path, by: behind(one, root) }],
+  );
+
+  const beneath = (path: string | null): Behind => {
+    let messages = 0;
+    let topics = 0;
+
+    for (const one of outer) {
+      if (path !== null && !one.path.startsWith(`${path}/`)) continue;
+      messages += one.by.messages;
+      topics += one.by.topics;
+    }
+
+    return { messages, topics };
+  };
+
+  return {
+    root: holds.get(EVERYTHING)?.root ?? discount(root, beneath(null)),
+    row: (path, live) => {
+      const held = nearestHold(holds.values(), path);
+      if (held) {
+        const node = held.nodes.get(path);
+        return node ? { node, held: true } : null;
+      }
+
+      return { node: discount(live, beneath(path)), held: false };
+    },
+  };
+}
+
+/**
+ * The runs a filter shows, one per topic, newest first.
+ *
+ * With no hold near the filter this is the log's own answer and costs nothing more. Otherwise a
+ * topic under a hold shows the hold's run — narrowed to the topic, so a row picked under a paused
+ * branch shows its own readings rather than the branch's — and a topic under none shows the live
+ * run. A topic that arrived behind a hold is not shown, and a topic the log has let go of is still
+ * shown from the hold that froze it.
+ */
+export function shownRuns(
+  byTopic: ReadonlyMap<string, TopicRing>,
+  holds: Holds,
+  filter: string,
+): LogEntry[][] {
+  if (!filter) return [];
+
+  const touching = [...holds.values()].filter((one) => reaches(filter, one));
+  if (touching.length === 0) return runsFor(byTopic, filter);
+
+  const runs: LogEntry[][] = [];
+
+  for (const [topic, ring] of byTopic) {
+    if (!showsTopic(filter, topic)) continue;
+
+    const held = nearestHold(touching, topic);
+    const run = held ? held.runs.get(topic) : ring.newestFirst();
+    if (run && run.length > 0) runs.push(run);
+  }
+
+  for (const held of touching) {
+    for (const [topic, run] of held.runs) {
+      if (byTopic.has(topic) || run.length === 0 || !showsTopic(filter, topic)) continue;
+      if (nearestHold(touching, topic) === held) runs.push(run);
+    }
+  }
+
+  return runs;
+}
+
+/**
+ * How much has arrived behind the holds a filter shows through — for one hold, or all of them.
+ *
+ * Per topic, against the newest message its hold froze, so a hold taken from another hold's frozen
+ * view counts everything since that view rather than since the moment it was itself taken.
+ */
+export function arrivedBehind(
+  byTopic: ReadonlyMap<string, TopicRing>,
+  holds: Holds,
+  filter: string,
+  only?: Held,
+): number {
+  const touching = [...holds.values()].filter((one) => reaches(filter, one));
+  if (touching.length === 0) return 0;
+
+  let count = 0;
+
+  for (const [topic, ring] of byTopic) {
+    if (!showsTopic(filter, topic)) continue;
+
+    const held = nearestHold(touching, topic);
+    if (!held || (only !== undefined && held !== only)) continue;
+
+    const newest = held.runs.get(topic)?.[0]?.id ?? -1;
+    if (ring.newestId > newest) count += ring.countNewerThan(newest);
+  }
+
+  return count;
+}
+
+/**
+ * A hold on a row's filter, frozen from what the console is showing — never from the live stores.
+ *
+ * That difference is the whole of it. A hold read off the live log and tree, taken on a row under
+ * a branch that was already paused, showed the reader everything that had arrived behind the branch
+ * the moment they pressed it: the row and the pane jumped forward, under a control that said pause.
+ */
+export function freeze(
+  filter: string,
+  byTopic: ReadonlyMap<string, TopicRing>,
+  root: TopicNode,
+  holds: Holds,
+): Held | null {
+  const path = regionOf(filter);
+  if (path === undefined) return null;
+
+  const runs = new Map<string, LogEntry[]>();
+  for (const run of shownRuns(byTopic, holds, filter)) runs.set(run[0].topic!, run.slice());
+
+  const view = treeView(holds, root);
+  const nodes = new Map<string, TopicNode>();
+  const stack: Array<{ node: TopicNode; at: string }> = [];
+
+  if (path === null) {
+    for (const [name, child] of root.children) stack.push({ node: child, at: name });
+  } else {
+    const top = nodeAt(root, path);
+    if (top) stack.push({ node: top, at: path });
+  }
+
+  while (stack.length > 0) {
+    const { node, at } = stack.pop()!;
+    const drawn = view.row(at, node);
+
+    // Kept off screen by a hold already standing: it arrived behind that hold, and so did
+    // everything under it.
+    if (drawn === null) continue;
+
+    nodes.set(at, drawn.node);
+    for (const [name, child] of node.children) stack.push({ node: child, at: `${at}/${name}` });
+  }
+
+  return { filter, path, runs, nodes, root: path === null ? view.root : null };
 }
