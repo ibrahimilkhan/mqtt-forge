@@ -25,6 +25,8 @@ type TreeState = {
   forgotten: number;
   apply: (messages: DecodedMessage[]) => void;
   dropFilter: (filter: string, stillSubscribed: readonly string[]) => void;
+  /** Drops every topic the test says yes to — what Clear and an unsubscribe take from the tree. */
+  dropTopics: (remove: (topic: string) => boolean) => void;
   toggle: (path: string) => void;
   toggleBroker: () => void;
   setAllOpen: (open: boolean, under?: string | null) => void;
@@ -78,12 +80,14 @@ export const useTopicTreeStore = create<TreeState>((set, get) => ({
   // the second argument: with '#' still up, dropping 'sensors/#' changes nothing about what the
   // broker keeps sending, and the tree has to say so.
   dropFilter: (filter, stillSubscribed) =>
+    get().dropTopics(
+      (topic) =>
+        matchesFilter(filter, topic) && !stillSubscribed.some((kept) => matchesFilter(kept, topic)),
+    ),
+
+  dropTopics: (remove) =>
     set((state) => {
-      const root = pruneTopics(
-        state.root,
-        (topic) =>
-          matchesFilter(filter, topic) && !stillSubscribed.some((kept) => matchesFilter(kept, topic)),
-      );
+      const root = pruneTopics(state.root, remove);
 
       return root === state.root ? state : { root };
     }),

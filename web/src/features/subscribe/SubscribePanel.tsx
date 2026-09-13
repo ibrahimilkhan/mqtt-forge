@@ -8,7 +8,7 @@ import styles from '../../styles/panel.module.css';
 import { logFault, useLogStore } from '../../stores/logStore';
 import { useConnectionState } from '../../api/useConnectionState';
 import { useSelectionStore } from '../../stores/selectionStore';
-import { useTopicTreeStore } from '../../stores/topicTreeStore';
+import { forgetUnsubscribed } from '../../stores/clearTraffic';
 import { useGuardedKeyedMutate, useGuardedMutate } from '../../lib/useGuardedMutate';
 import { describeError } from '../../lib/problemDetails';
 import { FilterChips } from './FilterChips';
@@ -115,14 +115,13 @@ export function SubscribePanel({ onClose }: { onClose: () => void }) {
       // Read off the list this panel is showing, minus the chip that just went: the refetch
       // below has not landed yet, and the tree should not wait a round trip to stop showing
       // topics nothing is listening to any more. A filter a rule keeps is still listening, so
-      // nothing is pruned for it.
+      // nothing is pruned for it. It goes from the log and from anything the reader paused as
+      // well as from the tree — see forgetTopics.
       if (!alsoARule) {
-        useTopicTreeStore
-          .getState()
-          .dropFilter(
-            filter,
-            (filters ?? []).filter((f) => f.topicFilter !== filter).map((f) => f.topicFilter),
-          );
+        forgetUnsubscribed(
+          filter,
+          (filters ?? []).filter((f) => f.topicFilter !== filter).map((f) => f.topicFilter),
+        );
       }
 
       void refreshFilters();

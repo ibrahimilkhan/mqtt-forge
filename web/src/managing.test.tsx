@@ -459,3 +459,69 @@ describe('choosing how much of the machine the console may use', () => {
     expect(useLogStore.getState().capped).toBe(false);
   });
 });
+
+describe('emptying what a pause is holding', () => {
+  it('empties the paused pane, and the topic comes back live', async () => {
+    const { send } = await openConsole();
+    send(...PLANT);
+    await pick('temp');
+    await pauseOn('temp');
+    send(['plant/boiler/temp', '82']);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    await userEvent.click(screen.getByRole('button', { name: /^Clear \d/ }));
+
+    expect(logRows()).toHaveLength(0);
+    expect(useHoldStore.getState().held.size).toBe(0);
+
+    send(['plant/boiler/temp', '90']);
+    expect(rowFor('temp')).toHaveTextContent('90');
+  });
+
+  it('keeps a paused branch paused, without the topic cleared under it', async () => {
+    const { send } = await openConsole();
+    send(...PLANT);
+    await pick('boiler');
+    await pauseOn('boiler');
+    send(['plant/boiler/pressure', '9.9']);
+    await pick('temp');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    await userEvent.click(screen.getByRole('button', { name: /^Clear \d/ }));
+
+    expect([...useHoldStore.getState().held.keys()]).toEqual(['plant/boiler/#']);
+    expect(rowFor('pressure')).toHaveTextContent('2.1');
+    expect(rowFor('boiler')).toHaveTextContent('2 topics · 2 messages');
+  });
+});
+
+describe('clearing everything the broker row shows', () => {
+  it('takes $SYS with the rest', async () => {
+    const { send } = await openConsole();
+    send(['plant/kiln', '900'], ['$SYS/broker/uptime', '10']);
+    await pick('plant.local:1883');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    await userEvent.click(screen.getByRole('button', { name: /^Clear 2/ }));
+
+    expect(useLogStore.getState().held).toBe(0);
+    expect(within(tree()).queryByText('$SYS')).not.toBeInTheDocument();
+  });
+
+  it('keeps the newest $SYS reading with the rest', async () => {
+    const { send } = await openConsole();
+    send(
+      ['plant/kiln', '900'],
+      ['plant/kiln', '910'],
+      ['$SYS/broker/uptime', '10'],
+      ['$SYS/broker/uptime', '11'],
+    );
+    await pick('plant.local:1883');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Keep newest' }));
+
+    expect(useLogStore.getState().byTopic.get('$SYS/broker/uptime')?.length).toBe(1);
+    expect(useLogStore.getState().byTopic.get('plant/kiln')?.length).toBe(1);
+  });
+});

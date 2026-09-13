@@ -170,3 +170,13 @@ describe('the empty first level', () => {
     expect(isPathOpen(state, 'plant')).toBe(false);
   });
 });
+
+describe('dropTopics', () => {
+  it('takes whatever the test says out of the tree, $SYS included', () => {
+    useTopicTreeStore.getState().apply([message('$SYS/broker/uptime'), message('sensors/temp')]);
+
+    useTopicTreeStore.getState().dropTopics((topic) => topic.startsWith('$SYS'));
+
+    expect(useTopicTreeStore.getState().root.order).toEqual(['sensors']);
+  });
+});
