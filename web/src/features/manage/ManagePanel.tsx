@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react';
+import { useBrokerAddress } from '../../api/useConnectionState';
 import { PanelShell } from '../../components/PanelShell';
-import { arrivedBehind, type Holds } from '../../lib/holds';
-import { filterPath, retainedTopics } from '../../lib/topicTree';
+import { arrivedBehind, holdName, type Holds } from '../../lib/holds';
+import { nodeAt, retainedTopics } from '../../lib/topicTree';
 import { useLogStore } from '../../stores/logStore';
 import { useAppearanceStore } from '../../stores/appearanceStore';
 import { useBrokerEventsStore } from '../../stores/brokerEventsStore';
 import { clearTraffic } from '../../stores/clearTraffic';
-import { useSelectionStore } from '../../stores/selectionStore';
+import { useHoldStore } from '../../stores/holdStore';
+import { brokerSelection, selectionFor, useSelectionStore } from '../../stores/selectionStore';
 import { useHealthStore } from '../../stores/healthStore';
 import { usePauseStore } from '../../stores/pauseStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
-import { useHoldStore } from '../../stores/holdStore';
 import { clearRetained } from './clearRetained';
 import panel from '../../styles/panel.module.css';
 import styles from './ManagePanel.module.css';
@@ -19,7 +20,7 @@ import styles from './ManagePanel.module.css';
 const EVERY_MS = 1000;
 
 /** One paused topic, as the list draws it. */
-type Paused = { filter: string; label: string; holding: number; behind: number };
+type Paused = { filter: string; path: string | null; label: string; holding: number; behind: number };
 
 /**
  * What the console is holding, what the broker is holding, and what the reader has paused.
@@ -44,18 +45,22 @@ export function ManagePanel({ onClose }: { onClose: () => void }) {
   // retained figure below is counted off that tree, and a tree that has forgotten is a figure
   // that is short. See the note beside it.
   const forgotten = useTopicTreeStore((state) => state.forgotten);
+  const broker = useBrokerAddress();
 
   // Worked out on a timer rather than from a subscription: every number here walks a run or a
   // tree, and a panel that did that on every arrival would cost the most on the brokers where
   // it is most worth having open.
-  const [reading, setReading] = useState(() => count(holds));
+  const [reading, setReading] = useState(() => count(holds, broker));
 
   useEffect(() => {
-    setReading(count(holds));
-    const timer = setInterval(() => setReading(count(useHoldStore.getState().held)), EVERY_MS);
+    setReading(count(holds, broker));
+    const timer = setInterval(
+      () => setReading(count(useHoldStore.getState().held, broker)),
+      EVERY_MS,
+    );
 
     return () => clearInterval(timer);
-  }, [holds]);
+  }, [holds, broker]);
 
   const [asking, setAsking] = useState(false);
   /** Which of the two clears above is being asked about, and null while neither is. */
@@ -198,7 +203,13 @@ export function ManagePanel({ onClose }: { onClose: () => void }) {
                     className={styles.goTo}
                     title="Show this run in the log"
                     onClick={() =>
-                      select({ label: one.label, filter: one.filter, topic: one.label })
+                      // The same selection the tree makes for the row, label and topic both, so the
+                      // log opens on the same run under the same name either way.
+                      select(
+                        one.path === null
+                          ? brokerSelection(broker)
+                          : selectionFor(one.path, nodeAt(useTopicTreeStore.getState().root, one.path)),
+                      )
                     }
                   >
                     {one.label}
@@ -335,14 +346,16 @@ function Figure({ label, value, note }: { label: string; value: string; note?: s
 }
 
 /** Everything the panel draws, read in one pass off the stores. */
-function count(holds: Holds) {
+function count(holds: Holds, broker: string | undefined) {
   const log = useLogStore.getState();
 
   const paused: Paused[] = [...holds.values()].map((one) => ({
     filter: one.filter,
-    // The path rather than the filter: a row's hold is taken on `plant/boiler/#`, and what the
-    // reader paused was plant/boiler.
-    label: filterPath(one.filter) ?? one.filter,
+    path: one.path,
+    // By the name the tree gives what was paused: the broker for the hold over everything, the
+    // slash for the empty first level — which was listed as a nameless button — and the path for
+    // the rest. A row's hold is taken on `plant/boiler/#`, and what the reader paused was plant/boiler.
+    label: holdName(one, broker ?? 'Everything'),
     // Everything the hold froze, which is what its panes show while it stands.
     holding: [...one.runs.values()].reduce((total, run) => total + run.length, 0),
     behind: arrivedBehind(log.byTopic, holds, one.filter, one),

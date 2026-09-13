@@ -1,7 +1,9 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { beforeEach, describe, expect, it } from 'vitest';
+// The panel reads the live link through react-query, so it needs a client.
+import { renderWithClient as render } from '../../test/renderWithClient';
 import { server } from '../../test/server';
 import type { DecodedMessage } from '../../realtime/decodeIncoming';
 import { useBrokerEventsStore } from '../../stores/brokerEventsStore';
@@ -116,6 +118,39 @@ describe('the screen for what is being held', () => {
       panel();
 
       expect(screen.queryByRole('button', { name: /Let go of all/ })).not.toBeInTheDocument();
+    });
+
+    it('names the empty first level / and a hold on everything by the broker', async () => {
+      server.use(
+        http.get('/api/connection', () =>
+          HttpResponse.json({
+            state: 'Connected',
+            connection: { host: 'mqtt.hsl.fi', port: 8883, clientId: 'console' },
+          }),
+        ),
+      );
+      landed(message('/hfp/bus/1'), message('plant/kiln'));
+      pause('');
+      useHoldStore.getState().take('#');
+
+      panel();
+
+      expect(await screen.findByRole('button', { name: 'mqtt.hsl.fi:8883' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Let go of /' })).toBeInTheDocument();
+    });
+
+    it('takes the reader to the run the tree would pick', async () => {
+      landed(message('plant/boiler/temp'), message('plant/boiler/pressure'));
+      pause('plant/boiler');
+      panel();
+
+      await userEvent.click(screen.getByRole('button', { name: 'plant/boiler' }));
+
+      expect(useSelectionStore.getState().selected).toEqual({
+        label: 'plant/boiler',
+        filter: 'plant/boiler/#',
+        topic: 'plant/boiler/#',
+      });
     });
   });
 
