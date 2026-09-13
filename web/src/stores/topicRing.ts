@@ -110,6 +110,18 @@ export class TopicRing {
     return held;
   }
 
+  /**
+   * How many of the run arrived after the entry with this id — the traffic a hold is keeping off
+   * screen. Ids only go up, so it walks back from the newest and stops at the first it has seen,
+   * which makes a topic with nothing new cost one comparison.
+   */
+  countNewerThan(id: number): number {
+    let count = 0;
+    for (let at = this.items.length - 1; at >= this.start && this.items[at].id > id; at--) count++;
+
+    return count;
+  }
+
   private dropOldest(): void {
     const going = this.items[this.start];
     this.bytes -= weigh(going);

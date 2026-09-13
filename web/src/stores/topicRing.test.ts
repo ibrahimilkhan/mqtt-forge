@@ -69,3 +69,17 @@ describe('what a topic keeps', () => {
     expect(bodies(ring)[49]).toBe('m49950');
   });
 });
+
+describe('what arrived after a given entry', () => {
+  it('counts back from the newest and stops at the first it has seen', () => {
+    const ring = new TopicRing({ maxItems: 10, maxBytes: 1000 });
+    const first = entry('a');
+    ring.push(first);
+    ring.push(entry('b'));
+    ring.push(entry('c'));
+
+    expect(ring.countNewerThan(first.id)).toBe(2);
+    expect(ring.countNewerThan(-1)).toBe(3);
+    expect(ring.countNewerThan(ring.newestId)).toBe(0);
+  });
+});
