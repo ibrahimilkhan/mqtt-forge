@@ -51,6 +51,7 @@ export function TopicTree({ broker }: { broker?: string }) {
   // The store is read once here rather than once per row, so a message wakes this component
   // alone and only the rows whose node object actually changed re-render.
   const forgotten = useTopicTreeStore((state) => state.forgotten);
+  const returnedAt = useTopicTreeStore((state) => state.returnedAt);
 
   const { look, where } = useSearchStore((state) => state.tree);
   const setTree = useSearchStore((state) => state.setTree);
@@ -341,6 +342,13 @@ export function TopicTree({ broker }: { broker?: string }) {
                 open={row.open}
                 active={lastHitOf(row, node) > activeSince}
                 selected={row.path === selectedPath}
+                // Nothing at or under it since the link came back on its own: from before the
+                // drop. Not a row a hold draws — the pause already says it is standing still.
+                staleSince={
+                  !drawn.held && returnedAt !== null && node.lastSubHitAt < returnedAt
+                    ? returnedAt
+                    : undefined
+                }
                 // The selected row carries the pause; so does any row with a hold of its own,
                 // wherever the reader has gone since. A hold nobody can see is a hold nobody can
                 // undo.

@@ -6,7 +6,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { App } from '../../App';
 import { createFakeHub } from '../../realtime/fakeHub';
 import { useBrokerEventsStore } from '../../stores/brokerEventsStore';
+import { useHoldStore } from '../../stores/holdStore';
 import { resetLinkWatch } from '../../stores/linkWatchStore';
+import { useLogStore } from '../../stores/logStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import { server } from '../../test/server';
 import type {
@@ -131,7 +133,16 @@ describe('a link that drops while the reader is elsewhere', () => {
       });
     };
 
-    return { ...view, says, movesTo, supervising };
+    /** The same broker on a session this console did not see begin — which a return also is. */
+    const resumes = async (connectedAt: string) => {
+      link = { state: 'Connected', failure: null, connection: { ...CONNECTION, connectedAt } };
+
+      await act(async () => {
+        hub.emit('connectionStateChanged', link);
+      });
+    };
+
+    return { ...view, says, movesTo, resumes, supervising };
   }
 
   /** Somewhere that is not the Broker panel, which is where the reader has to be for any of this. */
@@ -370,11 +381,12 @@ describe('a link that drops while the reader is elsewhere', () => {
     expect(await screen.findByText(/^Link back/)).toBeInTheDocument();
   });
 
-  // A broker without persistence loses its retained tree on a restart. A hand Connect starts the
-  // console's tree again; a redial the supervisor made did not, so the old values stayed on
-  // screen looking current.
-  it('starts the tree again when the link comes back on its own', async () => {
-    const { says } = renderApp();
+  // A link that comes back on its own keeps the console. It used to start the tree again here, for
+  // a broker that restarted without its retained tree; on a broker that resets every link — as
+  // mqtt.hsl.fi did, every forty seconds — that threw away everything the reader was reading. The
+  // return is marked instead, and the tree draws what has not been heard since as faded.
+  it('keeps the tree when the link comes back on its own, and marks when it came back', async () => {
+    const { says, resumes } = renderApp();
     await says('Connected');
     await goElsewhere();
 
@@ -391,13 +403,79 @@ describe('a link that drops while the reader is elsewhere', () => {
         },
       ]);
     });
-    expect(useTopicTreeStore.getState().root.children.size).toBe(1);
+    const generation = useTopicTreeStore.getState().generation;
 
     await says('Faulted');
     await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Faulted'));
-    await says('Connected');
+    // A redial is a new session, so it comes back with a new connectedAt.
+    await resumes('2026-09-02T21:05:00.000Z');
 
-    await waitFor(() => expect(useTopicTreeStore.getState().root.children.size).toBe(0));
+    await waitFor(() => expect(useTopicTreeStore.getState().returnedAt).not.toBeNull());
+    expect(useTopicTreeStore.getState().generation).toBe(generation);
+    expect(useTopicTreeStore.getState().root.children.size).toBe(1);
+    // Marked once, as a return — not a second time as a session nobody saw begin.
+    expect(
+      useBrokerEventsStore.getState().events.some((one) => one.what.startsWith('New session')),
+    ).toBe(false);
+  });
+
+  it('keeps what the reader paused, and the log behind it, through the return', async () => {
+    const { says, resumes } = renderApp();
+    await says('Connected');
+    await goElsewhere();
+
+    act(() => {
+      useLogStore.getState().push({ kind: 'recv', topic: 'lab/oven', body: '210' });
+      useTopicTreeStore.getState().apply([
+        {
+          topic: 'lab/oven',
+          payload: '210',
+          mode: 'text',
+          size: 3,
+          qos: 0,
+          retain: false,
+          receivedAt: '2026-09-02T21:00:00.000Z',
+        },
+      ]);
+      useHoldStore.getState().take('lab/#');
+    });
+
+    await says('Faulted');
+    await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Faulted'));
+    await resumes('2026-09-02T21:05:00.000Z');
+
+    await waitFor(() => expect(useTopicTreeStore.getState().returnedAt).not.toBeNull());
+    expect(useHoldStore.getState().held.has('lab/#')).toBe(true);
+    expect(useLogStore.getState().byTopic.has('lab/oven')).toBe(true);
+  });
+
+  it('marks a session it did not see begin on the same broker, rather than starting again', async () => {
+    const { says, resumes } = renderApp();
+    await says('Connected');
+    await goElsewhere();
+
+    act(() => {
+      useTopicTreeStore.getState().apply([
+        {
+          topic: 'lab/oven',
+          payload: '210',
+          mode: 'text',
+          size: 3,
+          qos: 0,
+          retain: true,
+          receivedAt: '2026-09-02T21:00:00.000Z',
+        },
+      ]);
+    });
+    const generation = useTopicTreeStore.getState().generation;
+
+    await resumes('2026-09-03T08:00:00.000Z');
+
+    await waitFor(() => expect(useTopicTreeStore.getState().returnedAt).not.toBeNull());
+    expect(useTopicTreeStore.getState().generation).toBe(generation);
+    expect(
+      useBrokerEventsStore.getState().events.some((one) => one.what.startsWith('New session')),
+    ).toBe(true);
   });
 
   // ...but not twice. The reader's own Connect resets it and pushes 'Connected' into the log; a

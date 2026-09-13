@@ -38,6 +38,16 @@ type TreeState = {
    * belong to a broker, or to a session, that is no longer the one on screen.
    */
   generation: number;
+  /**
+   * When the link was last seen coming back to the same broker without the tree being started
+   * again — on the console's clock, which is what `lastHitAt` is on — or null.
+   *
+   * A row that has heard nothing since is from before the drop, and for a broker that restarted
+   * without its retained messages it is a value the broker no longer holds: the tree draws it
+   * faded. A fresh tree has nothing old in it, so `reset` clears this.
+   */
+  returnedAt: number | null;
+  returned: (at: number) => void;
 };
 
 export const useTopicTreeStore = create<TreeState>((set, get) => ({
@@ -46,6 +56,7 @@ export const useTopicTreeStore = create<TreeState>((set, get) => ({
   defaultOpen: false,
   brokerOpen: true,
   generation: 0,
+  returnedAt: null,
 
   /**
    * How many topics this tree has given up to stay inside its ceiling, for the whole connection.
@@ -101,6 +112,8 @@ export const useTopicTreeStore = create<TreeState>((set, get) => ({
 
   toggleBroker: () => set((state) => ({ brokerOpen: !state.brokerOpen })),
 
+  returned: (at) => set({ returnedAt: at }),
+
   /**
    * Open or shut every branch — of the whole tree, or of one branch of it.
    *
@@ -152,6 +165,7 @@ export const useTopicTreeStore = create<TreeState>((set, get) => ({
       // A new tree has given nothing up yet; the count belongs to the connection it was about.
       forgotten: 0,
       generation: get().generation + 1,
+      returnedAt: null,
     }),
 }));
 

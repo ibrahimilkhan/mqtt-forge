@@ -343,3 +343,13 @@
   gap: 6px;
   margin-bottom: 10px;
 }
+
+/* Heard nothing since the link came back.
+   The link dropped and returned on its own, and the console kept what it had rather than starting
+   again. What this row says is from before the drop, and the broker has not said it since — which
+   for a broker that restarted without its retained messages is a value it no longer holds. So the
+   value, the counts and the run are drawn faded until the next message on the row; the name stays
+   in ink, because the topic is still the topic. */
+.node[data-stale] .val,
+.node[data-stale] .meta { color: color-mix(in srgb, var(--muted) 70%, transparent); }
+.node[data-stale] .spark { color: color-mix(in srgb, var(--ink) 20%, transparent); }

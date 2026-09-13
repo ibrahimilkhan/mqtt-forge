@@ -180,3 +180,13 @@ describe('dropTopics', () => {
     expect(useTopicTreeStore.getState().root.order).toEqual(['sensors']);
   });
 });
+
+describe('a link that came back', () => {
+  it('is marked when it came back, and forgotten when the tree starts again', () => {
+    useTopicTreeStore.getState().returned(5000);
+    expect(useTopicTreeStore.getState().returnedAt).toBe(5000);
+
+    useTopicTreeStore.getState().reset();
+    expect(useTopicTreeStore.getState().returnedAt).toBeNull();
+  });
+});

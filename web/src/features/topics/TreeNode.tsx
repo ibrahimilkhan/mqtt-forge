@@ -20,6 +20,8 @@ type Props = {
   root?: boolean;
   /** Controls parked at the row's right end. Siblings of the pick button, never inside it. */
   actions?: ReactNode;
+  /** When the link came back, for a row that has heard nothing since: it is drawn faded. */
+  staleSince?: number;
   onToggle: (path: string) => void;
   onSelect: (path: string, node: TopicNode) => void;
 };
@@ -53,6 +55,7 @@ export const TreeNode = memo(function TreeNode({
   rule,
   root = false,
   actions,
+  staleSince,
   onToggle,
   onSelect,
 }: Props) {
@@ -78,6 +81,7 @@ export const TreeNode = memo(function TreeNode({
       data-active={active}
       data-selected={selected}
       data-root={root ? '' : undefined}
+      data-stale={staleSince !== undefined ? '' : undefined}
       data-depth={depth}
       style={rowStyle(depth, paint)}
     >
@@ -155,7 +159,18 @@ export const TreeNode = memo(function TreeNode({
         >
           {nameless ? EMPTY_LEVEL : segment}
         </span>
-        <span className={styles.val}>{node.latestPayload ?? ''}</span>
+        <span
+          className={styles.val}
+          // Faded by the row's `data-stale`; the title says why, since a dim value alone reads as
+          // a quiet topic rather than as one the broker has not confirmed since the link came back.
+          title={
+            staleSince !== undefined
+              ? `Nothing since the link came back at ${clock(staleSince)}`
+              : undefined
+          }
+        >
+          {node.latestPayload ?? ''}
+        </span>
         {/* Between the value and the counts: what the topic has been doing, for a reader
             scanning the tree rather than reading one row of it. */}
         <Sparkline readings={node.readings} colour={paint} />
@@ -177,3 +192,6 @@ export const TreeNode = memo(function TreeNode({
 function rowStyle(depth: number, colour?: string): CSSProperties {
   return { '--depth': depth, ...(colour && { '--rule-colour': colour }) } as CSSProperties;
 }
+
+/** A moment as the console's other clocks show one: hours, minutes and seconds. */
+const clock = (at: number) => new Date(at).toLocaleTimeString('en-GB');

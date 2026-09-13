@@ -5,8 +5,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // The tree reads its colour rules through react-query, so every render here needs a client.
 import { renderWithClient as render } from '../../test/renderWithClient';
 import { server } from '../../test/server';
-import { MAX_TREE_ROWS } from '../../lib/topicTree';
+import { applyMessages, emptyTree, MAX_TREE_ROWS } from '../../lib/topicTree';
 import { useComposeStore } from '../../stores/composeStore';
+import { useHoldStore } from '../../stores/holdStore';
 import { useSearchStore } from '../../stores/searchStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
@@ -1197,5 +1198,41 @@ describe('the empty first level', () => {
     await userEvent.click(screen.getByText('/hfp/v2/bus/1'));
 
     expect(useSelectionStore.getState().selected?.filter).toBe('/hfp/v2/bus/1/#');
+  });
+});
+
+describe('rows from before the link came back', () => {
+  const rowOf = (segment: string) =>
+    screen.getByText(segment).closest<HTMLElement>('[data-testid="tree-row"]')!;
+
+  it('fades a row that has heard nothing since, and not one that has', () => {
+    let root = applyMessages(
+      emptyTree(),
+      [message('sensors/temp', '21'), message('sensors/humidity', '55')],
+      1000,
+    );
+    root = applyMessages(root, [message('sensors/humidity', '56')], 3000);
+    useTopicTreeStore.setState({ root, defaultOpen: true, returnedAt: 2000 });
+
+    render(<TopicTree broker="localhost:1883" />);
+
+    expect(rowOf('temp')).toHaveAttribute('data-stale');
+    expect(within(rowOf('temp')).getByText('21')).toHaveAttribute(
+      'title',
+      expect.stringMatching(/^Nothing since the link came back at \d\d:\d\d:\d\d$/),
+    );
+    expect(rowOf('humidity')).not.toHaveAttribute('data-stale');
+    expect(rowOf('sensors')).not.toHaveAttribute('data-stale');
+    expect(rowOf('localhost:1883')).not.toHaveAttribute('data-stale');
+  });
+
+  it('does not fade a row a pause is holding', () => {
+    const root = applyMessages(emptyTree(), [message('sensors/temp', '21')], 1000);
+    useTopicTreeStore.setState({ root, defaultOpen: true, returnedAt: 2000 });
+    useHoldStore.getState().take('sensors/temp/#');
+
+    render(<TopicTree broker="localhost:1883" />);
+
+    expect(rowOf('temp')).not.toHaveAttribute('data-stale');
   });
 });

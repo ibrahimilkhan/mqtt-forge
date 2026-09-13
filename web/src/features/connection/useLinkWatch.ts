@@ -60,6 +60,13 @@ export function useLinkWatch() {
    */
   const linkAt = useRef<{ endpoint: string; since: string; generation: number } | null>(null);
 
+  /**
+   * The session a return was last marked for, so the effect that watches for a session this
+   * console did not see begin does not mark the same return a second time: a redial is a new
+   * session, and both effects see it.
+   */
+  const returnedSession = useRef<string | null>(null);
+
   useEffect(() => {
     // Before the API has answered, `state` is the standing-in Disconnected rather than an
     // observation — and Disconnected is the one value that clears the store. A console reloaded
@@ -111,12 +118,19 @@ export function useLinkWatch() {
       !watch.failure ||
       (link.host === watch.failure.host && link.port === watch.failure.port);
     if (state === 'Connected' && dropped !== null && sameBroker) {
-      // Started again since the drop means the reader's own Connect did it, and resetting a
-      // second time would clear the log out from under the 'Connected' line that mutation had
-      // just pushed. Unchanged means this link came back on its own, and the tree is still the
-      // old broker's — so it is started again here, and the retained messages refill it.
+      // Started again since the drop means the reader's own Connect did it. Unchanged means this
+      // link came back on its own — and the console keeps what it had.
+      //
+      // It used to start the tree again here, for a broker that restarted without its retained
+      // tree and would otherwise leave its old values looking current. On a broker that resets
+      // every link — mqtt.hsl.fi does, from some networks, every forty seconds — that threw away
+      // the tree, the log, the Stop queue and every pause the reader had taken, over and over. The
+      // return is marked instead, and a row that hears nothing after it is drawn faded.
       const tree = useTopicTreeStore.getState();
-      if (treeAtDrop.current === tree.generation) tree.reset();
+      if (treeAtDrop.current === tree.generation) {
+        tree.returned(Date.now());
+        returnedSession.current = link?.connectedAt ?? null;
+      }
       treeAtDrop.current = null;
 
       // What the link came back listening to, asked again rather than assumed. The supervisor
@@ -157,18 +171,31 @@ export function useLinkWatch() {
 
     if (held && (held.endpoint !== endpoint || held.since !== since)) {
       const moved = held.endpoint !== endpoint;
-      // Nobody has started the tree again since this console last saw the old link, so the
-      // topics under it are the old broker's and this console is the one to clear them.
       if (held.generation === tree.generation) {
-        tree.reset();
-        void queryClient.invalidateQueries({ queryKey: queryKeys.subscriptions });
-        useBrokerEventsStore.getState().push({
-          kind: 'note',
-          what: moved ? `Link moved · ${endpoint}` : `New session · ${endpoint}`,
-          detail: moved
-            ? `Another console pointed this server at ${endpoint}; the topics of ${held.endpoint} are gone.`
-            : 'The link was made again while this console was not watching; the topics on screen were the old session\'s.',
-        });
+        if (moved) {
+          // Another broker: the topics under the root are the old broker's, and this console is
+          // the one to clear them.
+          tree.reset();
+          void queryClient.invalidateQueries({ queryKey: queryKeys.subscriptions });
+          useBrokerEventsStore.getState().push({
+            kind: 'note',
+            what: `Link moved · ${endpoint}`,
+            detail: `Another console pointed this server at ${endpoint}; the topics of ${held.endpoint} are gone.`,
+          });
+        } else if (returnedSession.current !== since) {
+          // The same broker, on a session this console did not see begin — the machine that
+          // slept. What arrived before it is still true of what arrived; it is marked, as a
+          // return is, rather than thrown away.
+          tree.returned(Date.now());
+          returnedSession.current = since;
+          void queryClient.invalidateQueries({ queryKey: queryKeys.subscriptions });
+          useBrokerEventsStore.getState().push({
+            kind: 'note',
+            what: `New session · ${endpoint}`,
+            detail:
+              'The link was made again while this console was not watching; what arrived before it is drawn faded.',
+          });
+        }
       }
     }
 
