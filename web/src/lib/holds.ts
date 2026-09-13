@@ -415,13 +415,18 @@ function pruneFrozen(
 ): { nodes: Map<string, TopicNode>; root: TopicNode | null } {
   const nodes = new Map<string, TopicNode>();
 
+  // Assembled copy → the original frozen row it stands for. pruneTopics hands back the very node
+  // it was given for a branch nothing was taken out of, so looking the result up here on the way
+  // into flatten hands that branch back to the hold as the row it actually froze — see assemble.
+  const originals = new Map<TopicNode, TopicNode>();
+
   if (held.path === null) {
     if (!held.root) return { nodes, root: null };
 
-    const root = pruneTopics(assemble(held.nodes, held.root, null), remove);
-    flatten(root, null, nodes);
+    const pruned = pruneTopics(assemble(held.nodes, held.root, null, originals), remove);
+    flatten(pruned, null, nodes, originals);
 
-    return { nodes, root };
+    return { nodes, root: originals.get(pruned) ?? pruned };
   }
 
   const top = held.nodes.get(held.path);
@@ -435,14 +440,14 @@ function pruneFrozen(
 
   const standIn: TopicNode = {
     ...emptyTree(),
-    children: new Map([[name, assemble(held.nodes, top, held.path)]]),
+    children: new Map([[name, assemble(held.nodes, top, held.path, originals)]]),
     order: [name],
   };
   const kept = pruneTopics(standIn, (relative) => remove(prefix + relative)).children.get(name);
 
   if (kept) {
-    nodes.set(held.path, kept);
-    flatten(kept, held.path, nodes);
+    nodes.set(held.path, originals.get(kept) ?? kept);
+    flatten(kept, held.path, nodes, originals);
   }
 
   return { nodes, root: null };
@@ -453,11 +458,23 @@ function pruneFrozen(
  *
  * A frozen row's own child list is the live tree's — see Held — so the children are the names it
  * lists that the hold kept a row for.
+ *
+ * Every copy is recorded in `originals` against the frozen row it stands for. pruneTopics hands a
+ * branch nothing was taken out of back as the very node it was given, so pruneFrozen can look that
+ * node up here and flatten the branch into the hold as the row it actually froze rather than this
+ * copy of it — the same identity discipline pruneTopics itself keeps, so that a memoised tree row
+ * over a branch nothing was cleared from does not redraw because some other topic in the hold was.
+ *
+ * Recursive by topic depth, where every other walk in topicTree.ts is iterative for deep topics —
+ * and it can be, because assemble and flatten are only reached from a reader's click, Clear or an
+ * unsubscribe, never on the path of a message: the same reasoning retainedTopics gives for its own
+ * recursion.
  */
 function assemble(
   nodes: ReadonlyMap<string, TopicNode>,
   node: TopicNode,
   path: string | null,
+  originals: Map<TopicNode, TopicNode>,
 ): TopicNode {
   const children = new Map<string, TopicNode>();
   const order: string[] = [];
@@ -467,20 +484,33 @@ function assemble(
     const child = nodes.get(at);
     if (!child) continue;
 
-    children.set(name, assemble(nodes, child, at));
+    children.set(name, assemble(nodes, child, at, originals));
     order.push(name);
   }
 
-  return { ...node, children, order };
+  const assembled = { ...node, children, order };
+  originals.set(assembled, node);
+
+  return assembled;
 }
 
-/** A tree of frozen rows back into the hold's path → row map. */
-function flatten(node: TopicNode, path: string | null, into: Map<string, TopicNode>): void {
+/**
+ * A tree of frozen rows back into the hold's path → row map.
+ *
+ * Looks each child up in `originals` first, so a row pruneTopics handed back untouched is stored
+ * as the very row the hold froze rather than assemble's copy of it — see assemble.
+ */
+function flatten(
+  node: TopicNode,
+  path: string | null,
+  into: Map<string, TopicNode>,
+  originals: ReadonlyMap<TopicNode, TopicNode>,
+): void {
   for (const name of node.order) {
     const child = node.children.get(name)!;
     const at = path === null ? name : `${path}/${name}`;
 
-    into.set(at, child);
-    flatten(child, at, into);
+    into.set(at, originals.get(child) ?? child);
+    flatten(child, at, into, originals);
   }
 }

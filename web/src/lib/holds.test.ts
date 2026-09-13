@@ -391,4 +391,22 @@ describe('taking topics out of a hold', () => {
     expect(left.nodes.has('/hfp/bus/1')).toBe(false);
     expect(left.nodes.has('/hfp/bus/2')).toBe(true);
   });
+
+  it('hands back the frozen rows nothing was taken from as the very same rows', () => {
+    const arrivals: Array<[string, string]> = [
+      ['sensors/temp', '21'],
+      ['plant/kiln', '900'],
+    ];
+    const everything = freeze('#', log(...arrivals), tree(...arrivals), new Map())!;
+    const plant = everything.nodes.get('plant');
+    const kiln = everything.nodes.get('plant/kiln');
+
+    const left = forgetFrozen(everything, (topic) => topic === 'sensors/temp', 'nothing')!;
+
+    expect(left.nodes.get('plant')).toBe(plant);
+    expect(left.nodes.get('plant/kiln')).toBe(kiln);
+    expect(left.nodes.has('sensors')).toBe(false);
+    expect(left.root).not.toBe(everything.root);
+    expect(left.root!.subTopics).toBe(1);
+  });
 });
