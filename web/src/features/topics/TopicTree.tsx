@@ -2,24 +2,23 @@ import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 import { SearchBox, SearchOpener } from '../../components/SearchBox';
 import { WhereMenu } from '../../components/WhereMenu';
 import { Fold, Unfold } from '../brand/icons';
+import { EVERYTHING, treeView } from '../../lib/holds';
 import { useRuleLookup } from '../../lib/useRuleLookup';
-import { matchesFilter, treeFilter } from '../../lib/topicMatch';
+import { treeFilter } from '../../lib/topicMatch';
 import {
   EMPTY_LEVEL,
-  filterPath,
   flattenTree,
   MAX_TREE_ROWS,
-  nodeAt,
   searchRows,
   type TopicNode,
   type TopicRow,
 } from '../../lib/topicTree';
 import { HoldButton } from '../monitor/HoldButton';
-import { useHoldStore } from '../../stores/holdStore';
 import { useComposeStore } from '../../stores/composeStore';
+import { useHoldStore } from '../../stores/holdStore';
+import { useLogStore } from '../../stores/logStore';
 import { useSearchStore } from '../../stores/searchStore';
 import { brokerSelection, selectionFor, useSelectionStore } from '../../stores/selectionStore';
-import { useLogStore } from '../../stores/logStore';
 import { isPathOpen, useTopicTreeStore } from '../../stores/topicTreeStore';
 import styles from './TopicTree.module.css';
 import { TreeNode } from './TreeNode';
@@ -30,9 +29,6 @@ export const ACTIVE_WINDOW_MS = 1200;
 
 // Reserved: a topic path can never contain a NUL, so the broker row cannot collide with one.
 const BROKER_PATH = '\u0000broker';
-
-// Everything the broker has sent, which is what picking its row focuses the wire log on.
-const EVERYTHING = '#';
 
 export function TopicTree({ broker }: { broker?: string }) {
   const root = useTopicTreeStore((state) => state.root);
@@ -100,122 +96,17 @@ export function TopicTree({ broker }: { broker?: string }) {
   const activeSince = Date.now() - ACTIVE_WINDOW_MS;
 
   /*
-   * The rows a hold is keeping still.
+   * The tree as the holds draw it.
    *
-   * The hold froze them when it was taken: a row draws its own node's fields, and every message
-   * gives the nodes on its path fresh objects, so a node captured then goes on saying what it
-   * said. Drawing the live one instead is what made the pause look broken — the reader pressed
-   * it on a row and watched that row's own count go on climbing.
-   *
-   * A row the hold covers but the map does not know is a topic that arrived behind the hold. It
-   * is not drawn at all: the rows stop where they are, and one appearing is not standing still.
+   * A row under a hold is drawn from the hold — a row draws its own node's fields, and a node the
+   * hold froze goes on saying what it said — and a row the hold has nothing for arrived behind it
+   * and is not drawn. A row under no hold is drawn live, with what the holds beneath it keep back
+   * taken out of its counts. The rules are lib/holds' and nobody else's: the log and the chart
+   * read the same holds the same way, where this tree used to decide for itself and the log beside
+   * it decided differently.
    */
   const holding = useHoldStore((state) => state.held);
-
-  /*
-   * Every hold, with the test that says which rows it covers.
-   *
-   * There can be several now — a reader pausing one topic, going to read another and pausing
-   * that too — and each of them freezes its own branch. A row is covered by the first hold that
-   * claims it; a row under two nested holds is drawn from the inner one, which is the one the
-   * reader took while looking at it.
-   *
-   * A path is a prefix test, and no walk of the filter per row. Anything else — a '+' in the
-   * middle, a filter from somewhere other than a row — falls back to the matcher.
-   */
-  const holds = useMemo(
-    () =>
-      [...holding.values()]
-        .map((one) => {
-          const at = filterPath(one.filter);
-
-          return {
-            held: one,
-            path: at,
-            covers:
-              one.filter === EVERYTHING
-                ? () => true
-                : at === null
-                  ? (path: string) => matchesFilter(one.filter, path)
-                  : (path: string) => path === at || path.startsWith(`${at}/`),
-          };
-        })
-        // Deepest first, so a row under nested holds is drawn from the nearer of the two.
-        .sort((a, b) => (b.path?.length ?? 0) - (a.path?.length ?? 0)),
-    [holding],
-  );
-
-  const covering = useCallback(
-    (path: string) => holds.find((one) => one.covers(path)) ?? null,
-    [holds],
-  );
-
-  /** The rows a hold hangs off, for the mark each of them wears. */
-  const heldPaths = useMemo(
-    () => new Set(holds.map((one) => one.path).filter((path): path is string => path !== null)),
-    [holds],
-  );
-
-  /*
-   * What the hold is keeping out of the counts on the rows above it.
-   *
-   * A branch's summary is a count of everything under it, so an ancestor of a held row went on
-   * counting messages the reader had just asked it to stop showing: the tree said five hundred
-   * where the rows under it added up to three. The traffic behind the hold is exactly the held
-   * branch's own growth since it was taken, and every ancestor's total contains all of it, so
-   * one subtraction answers for all of them.
-   *
-   * Clamped at nothing: an unsubscribe can prune topics out from under a hold, and a count that
-   * went up because rows went away would be a worse lie than the one this fixes.
-   */
-  const behind = useMemo(
-    () =>
-      holds.flatMap((one) => {
-        if (one.path === null) return [];
-
-        const live = nodeAt(root, one.path);
-        const frozen = one.held.nodes.get(one.path);
-        if (!live || !frozen) return [];
-
-        return [
-          {
-            path: one.path,
-            messages: Math.max(0, live.subMessages - frozen.subMessages),
-            topics: Math.max(0, live.subTopics - frozen.subTopics),
-          },
-        ];
-      }),
-    [holds, root],
-  );
-
-  // Above the held rows, and only there: a sibling branch counts nothing that is being held. With
-  // several holds an ancestor is over however many of them hang beneath it, so what it discounts
-  // is their sum — and a hold nested inside another is counted once, by both, which is right:
-  // each of them really is holding that traffic back from the row above.
-  const above = useCallback(
-    (path: string, node: TopicNode) => {
-      const under = behind.filter((one) => one.path.startsWith(`${path}/`));
-      if (under.length === 0) return node;
-
-      return discount(node, {
-        messages: under.reduce((sum, one) => sum + one.messages, 0),
-        topics: under.reduce((sum, one) => sum + one.topics, 0),
-      });
-    },
-    [behind],
-  );
-
-  /** The same sum for the broker's own row, which stands above every hold there is. */
-  const allBehind = useMemo(
-    () =>
-      behind.length === 0
-        ? null
-        : {
-            messages: behind.reduce((sum, one) => sum + one.messages, 0),
-            topics: behind.reduce((sum, one) => sum + one.topics, 0),
-          },
-    [behind],
-  );
+  const view = useMemo(() => treeView(holding, root), [holding, root]);
 
   // One click does two things: focuses the wire log on the subtree, and loads the topic into
   // the publish form so it can be sent straight back with the settings it arrived under.
@@ -251,6 +142,10 @@ export function TopicTree({ broker }: { broker?: string }) {
 
   // The broker is not a topic: it focuses the log on everything and has nothing to publish to.
   const brokerLabel = broker ?? 'Not connected';
+  // What a hold on '#' is called: the spec's rule for naming a hold names the broker's address,
+  // and 'Not connected' is a link state rather than a name — so a console with no broker yet
+  // calls its one hold 'Everything' instead, which is what such a hold covers either way.
+  const holdBroker = broker ?? 'Everything';
   const pickBroker = useCallback(() => select(brokerSelection(broker)), [select, broker]);
 
   /*
@@ -265,20 +160,18 @@ export function TopicTree({ broker }: { broker?: string }) {
   /*
    * The narrow pause, on the row it acts on.
    *
-   * One row carries it — the selected one — because what it holds is the run the selection put
-   * on screen, and a control on a row that is not selected would offer to hold something the
-   * reader is not looking at. Made once and handed to that row alone: every other row is handed
-   * nothing, so nothing about them changes and the memo around each of them still holds.
+   * The selected row carries it, because what it holds is the run the selection put on screen.
+   * Made once and handed to that row alone: every other row is handed nothing, so nothing about
+   * them changes and the memo around each of them still holds. It is told the broker's name, which
+   * is what it calls a hold on everything when it says a pane is paused with one.
    */
-  const hold = useMemo(() => <HoldButton />, []);
+  const hold = useMemo(() => <HoldButton broker={holdBroker} />, [holdBroker]);
 
-  /**
-   * The pause on a row that is not the selected one.
-   *
-   * Made per path and kept, so a row that is paused is handed the same element on every render
-   * and its memo still holds. There are as many of these as there are holds, which is a handful.
-   */
-  const holdsOn = useCallback((path: string) => <HoldButton over={treeFilter(path)} />, []);
+  /** The pause on a row that is not the selected one, and has a hold of its own. */
+  const holdsOn = useCallback(
+    (filter: string) => <HoldButton over={filter} broker={holdBroker} />,
+    [holdBroker],
+  );
 
   /**
    * Expand and collapse, over whatever the reader is actually looking at.
@@ -363,21 +256,15 @@ export function TopicTree({ broker }: { broker?: string }) {
     </>
   );
 
-  const brokerActions = useMemo(
-    () =>
-      selectedFilter === EVERYTHING ? (
-        <>
-          {hold}
-          {finding}
-          {treeActions}
-        </>
-      ) : (
-        <>
-          {finding}
-          {treeActions}
-        </>
-      ),
-    [selectedFilter, hold, finding, treeActions],
+  // The broker's row takes the pause in front of its marks when it is picked, and keeps it there
+  // while everything is paused, wherever the reader has gone since: it lost it the moment another
+  // row was picked, and a hold over the whole console could then only be undone from Manage.
+  const brokerActions = (
+    <>
+      {selectedFilter === EVERYTHING ? hold : holding.has(EVERYTHING) ? holdsOn(EVERYTHING) : null}
+      {finding}
+      {treeActions}
+    </>
   );
 
   return (
@@ -401,8 +288,9 @@ export function TopicTree({ broker }: { broker?: string }) {
               over a search's answers too: it is still the broker they came from, it is still
               how a reader gets back to everything, and its counts are still the tree's. */}
           <TreeNode
-            // The broker's row is above every topic there is, so it too counts what is held.
-            node={allBehind ? discount(root, allBehind) : root}
+            // Drawn from what `#` froze while everything is paused, and otherwise without what
+            // the holds beneath it are keeping back.
+            node={view.root}
             path={BROKER_PATH}
             label={brokerLabel}
             depth={0}
@@ -432,12 +320,12 @@ export function TopicTree({ broker }: { broker?: string }) {
           )}
 
           {rows.map((row) => {
-            const over = covering(row.path);
-            const frozen = over ? (over.held.nodes.get(row.path) ?? null) : null;
-            // Covered, and not in the hold: it arrived behind the hold and is not drawn.
-            if (frozen === null && over) return null;
+            const drawn = view.row(row.path, row.node);
+            // A hold is keeping it off screen: it arrived behind the hold.
+            if (drawn === null) return null;
 
-            const node = frozen ?? above(row.path, row.node);
+            const { node } = drawn;
+            const filter = treeFilter(row.path);
 
             return (
               <TreeNode
@@ -453,14 +341,11 @@ export function TopicTree({ broker }: { broker?: string }) {
                 open={row.open}
                 active={lastHitOf(row, node) > activeSince}
                 selected={row.path === selectedPath}
-                // The selected row carries the pause; so does any row that is paused, wherever
-                // the reader has gone since. A hold nobody can see is a hold nobody can undo.
+                // The selected row carries the pause; so does any row with a hold of its own,
+                // wherever the reader has gone since. A hold nobody can see is a hold nobody can
+                // undo.
                 actions={
-                  row.path === selectedPath
-                    ? hold
-                    : heldPaths.has(row.path)
-                      ? holdsOn(row.path)
-                      : undefined
+                  row.path === selectedPath ? hold : holding.has(filter) ? holdsOn(filter) : undefined
                 }
                 rule={ruleOf(row.path)}
                 onToggle={toggle}
@@ -487,20 +372,6 @@ export function TopicTree({ broker }: { broker?: string }) {
       )}
     </>
   );
-}
-
-/**
- * The same row with the held branch's traffic taken out of its totals.
- *
- * A fresh object, which the memoised row will see as a change — but only the handful of rows
- * directly above a held one are given one, and a hold is a deliberate, temporary state.
- */
-function discount(node: TopicNode, behind: { messages: number; topics: number }): TopicNode {
-  return {
-    ...node,
-    subTopics: node.subTopics - behind.topics,
-    subMessages: node.subMessages - behind.messages,
-  };
 }
 
 // A closed branch reports the traffic of its (undrawn) rows; an open one only its own, since

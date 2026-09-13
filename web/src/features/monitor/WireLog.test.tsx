@@ -782,7 +782,9 @@ describe('holding the pane still', () => {
   it('lets go by itself when the selection changes', async () => {
     readings('sensors/temp', '21', '22');
     readings('sensors/hall', '31', '32');
-    useSelectionStore.getState().select(chip);
+    // A leaf, not the branch: the next selection below is its sibling, not its descendant, so
+    // switching to it is a switch to an unrelated pane rather than one this hold still covers.
+    useSelectionStore.getState().select({ label: 'sensors/temp', filter: 'sensors/temp/#' });
 
     render(<Held />);
     await userEvent.click(screen.getByRole('button', { name: 'Pause the pane' }));

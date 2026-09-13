@@ -518,3 +518,125 @@ describe('the two pauses against the link', () => {
     expect(rowOf('temp')).toHaveTextContent('99');
   });
 });
+
+// ---- a hold seen from the rows around it ----
+
+describe('a hold seen from the rows around it', () => {
+  // The report: every mqtt.hsl.fi topic hangs off the empty first level, the reader paused it,
+  // picked the broker's row above it, and watched the log stream on.
+  it('keeps the broker row still when / is paused and the broker row is picked', async () => {
+    const { send } = renderConsole();
+    send(['/hfp/bus/one', 'a1'], ['/hfp/bus/two', 'b1']);
+    await pick('/');
+    await userEvent.click(holdOn('/'));
+    send(['/hfp/bus/one', 'a2']);
+
+    await pick('localhost:1883');
+
+    expect(screen.getByTestId('body')).toHaveTextContent('b1');
+    expect(rowOf('localhost:1883')).toHaveTextContent('2 topics · 2 messages');
+  });
+
+  it("shows a row under a paused branch its own reading, not its sibling's", async () => {
+    const { send } = renderConsole();
+    send(['sensors/temp', '21'], ['sensors/humidity', '55']);
+    await pick('sensors');
+    await userEvent.click(holdControl());
+    send(['sensors/temp', '22']);
+
+    await pick('temp');
+
+    expect(screen.getByTestId('body')).toHaveTextContent('21');
+  });
+
+  it('offers a row under a paused branch a hold of its own, taken from what is on screen', async () => {
+    const { send } = renderConsole();
+    send(['sensors/temp', '21'], ['sensors/humidity', '55']);
+    await pick('sensors');
+    await userEvent.click(holdControl());
+    send(['sensors/temp', '22']);
+    await pick('temp');
+
+    const own = within(rowOf('temp')).getByRole('button', { name: 'Pause the pane on its own' });
+    expect(own).toHaveAttribute(
+      'title',
+      'Paused with sensors — pause it on its own to keep it paused when sensors is let go',
+    );
+
+    await userEvent.click(own);
+
+    // Taken from the frozen view: nothing on screen moved.
+    expect(rowOf('temp')).toHaveTextContent('21');
+    expect(screen.getByTestId('body')).toHaveTextContent('21');
+
+    // And it outlives the branch it was taken under.
+    await userEvent.click(within(rowOf('sensors')).getByRole('button', { name: /Let the pane go/ }));
+
+    expect(rowOf('temp')).toHaveTextContent('21');
+    expect(rowOf('humidity')).toHaveTextContent('55');
+  });
+
+  it("keeps the broker row's control on it after another row is picked", async () => {
+    const { send } = renderConsole();
+    send(['sensors/temp', '21']);
+    await pick('localhost:1883');
+    await userEvent.click(holdOn('localhost:1883'));
+
+    await pick('temp');
+
+    expect(
+      within(rowOf('localhost:1883')).getByRole('button', { name: /Let the pane go/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("holds the broker row's own counts while it is paused", async () => {
+    const { send } = renderConsole();
+    send(['sensors/temp', '21']);
+    await pick('localhost:1883');
+    await userEvent.click(holdOn('localhost:1883'));
+
+    send(['sensors/temp', '22'], ['sensors/humidity', '55']);
+
+    expect(rowOf('localhost:1883')).toHaveTextContent('1 topic · 1 message');
+  });
+
+  it('freezes $SYS with everything else when the broker row is paused, rather than hiding it', async () => {
+    const { send } = renderConsole();
+    send(['$SYS/broker/uptime', '10'], ['sensors/temp', '21']);
+    await pick('localhost:1883');
+    await userEvent.click(holdOn('localhost:1883'));
+
+    send(['$SYS/broker/uptime', '11']);
+
+    expect(rowFor('$SYS')).not.toBeNull();
+    expect(rowOf('uptime')).toHaveTextContent('10');
+  });
+
+  it('draws / from its own hold once the broker row it was taken under is let go', async () => {
+    const { send } = renderConsole();
+    send(['/hfp/bus/one', 'a1']);
+    await pick('localhost:1883');
+    await userEvent.click(holdOn('localhost:1883'));
+    send(['/hfp/bus/one', 'a2']);
+    await pick('/');
+    await userEvent.click(within(rowOf('/')).getByRole('button', { name: 'Pause the pane on its own' }));
+
+    await userEvent.click(within(rowOf('localhost:1883')).getByRole('button', { name: /Let the pane go/ }));
+
+    expect(rowOf('one')).toHaveTextContent('a1');
+  });
+
+  it('counts traffic held under nested holds once on the rows above', async () => {
+    const { send } = renderConsole();
+    send(['plant/sensors/temp', '21'], ['plant/sensors/humidity', '55']);
+    await pick('temp');
+    await userEvent.click(holdControl());
+    await pick('sensors');
+    await userEvent.click(within(rowOf('sensors')).getByRole('button', { name: 'Pause the pane' }));
+
+    send(['plant/sensors/temp', '99']);
+
+    expect(rowOf('plant')).toHaveTextContent('2 topics · 2 messages');
+    expect(rowOf('localhost:1883')).toHaveTextContent('2 topics · 2 messages');
+  });
+});

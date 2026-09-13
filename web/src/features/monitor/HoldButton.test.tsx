@@ -78,4 +78,37 @@ describe('the pause on one run', () => {
     expect(button).toHaveTextContent('2');
     expect(button).toHaveAccessibleName('Let the pane go, 2 arrived while it was paused');
   });
+
+  it('says a pane under a paused branch is paused with it, and offers a hold of its own', async () => {
+    readings('sensors/temp', '21');
+    act(() => useHoldStore.getState().take('sensors/#'));
+    act(() =>
+      useSelectionStore.getState().select({ label: 'sensors/temp', filter: 'sensors/temp/#' }),
+    );
+
+    render(<HoldButton />);
+
+    const own = screen.getByRole('button', { name: 'Pause the pane on its own' });
+    expect(own).toHaveAttribute('data-covered');
+    expect(own).toHaveAttribute(
+      'title',
+      'Paused with sensors — pause it on its own to keep it paused when sensors is let go',
+    );
+
+    await userEvent.click(own);
+
+    expect([...useHoldStore.getState().held.keys()]).toEqual(['sensors/#', 'sensors/temp/#']);
+    expect(screen.getByRole('button', { name: 'Let the pane go' })).toBeInTheDocument();
+  });
+
+  it('is not offered over a filter no row selects', () => {
+    readings('sensors/temp', '21');
+    act(() =>
+      useSelectionStore.getState().select({ label: 'sensors/+/temp', filter: 'sensors/+/temp' }),
+    );
+
+    render(<HoldButton />);
+
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
 });

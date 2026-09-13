@@ -63,3 +63,18 @@
 
 /* The count of what is waiting behind the pause, beside the shape that lets it through. */
 .hold span { font-variant-numeric: tabular-nums; }
+
+/* Paused with a branch above it, and not on its own.
+   The pane is still, so the control wears the held colour: a red pause over a pane that is not
+   moving would be offering to stop something that has stopped. Outlined rather than washed,
+   because it is not this row's own hold — and pressing it takes one. */
+.hold[data-covered] {
+  color: var(--live);
+  border-color: color-mix(in srgb, var(--live) 45%, transparent);
+}
+/* The red hover above is the state this is not in, said again in its own colour. */
+.hold[data-covered]:hover {
+  color: var(--live);
+  border-color: var(--live);
+  background: color-mix(in srgb, var(--live) 9%, var(--surface));
+}

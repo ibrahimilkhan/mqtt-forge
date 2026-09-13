@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import { canHold } from '../../lib/holds';
+import { canHold, type Held } from '../../lib/holds';
 import { found } from '../../lib/sift';
 import { matchesFilter } from '../../lib/topicMatch';
 import { useHoldStore, useShown } from '../../stores/holdStore';
@@ -73,24 +73,36 @@ export function useTrafficCount(): number {
   return useShown(selected?.filter).count;
 }
 
+/** What the pause on one filter can say. */
+export type HoldControl = {
+  can: boolean;
+  /**
+   * `own` — a hold taken on exactly this filter. `covered` — no hold of its own, but inside
+   * another's region, so the pane is paused with that one. `live` — nothing holds it.
+   */
+  state: 'own' | 'covered' | 'live';
+  /** How much has arrived behind its own hold. */
+  arrived: number;
+  /** The hold it is paused with, while covered. */
+  covering: Held | null;
+  toggle: () => void;
+};
+
 /**
  * The pause, for a control that is not in the pane it pauses.
  *
  * About the filter it was given, or whatever is selected. A control on a row that is not the
  * selected one is how a reader lets go of a topic they paused and then went to look at something
- * else. Taking the hold freezes the shown view at the click; see holdStore.
+ * else. Pressed on a pane paused with a branch above it, it takes a hold of the pane's own — frozen
+ * from the view on screen, so nothing moves — which stays when the branch is let go.
  */
-export function useHoldControl(over?: string): {
-  can: boolean;
-  held: boolean;
-  arrived: number;
-  toggle: () => void;
-} {
+export function useHoldControl(over?: string): HoldControl {
   const selected = useSelectionStore((state) => state.selected?.filter);
   const filter = over ?? selected;
   const can = canHold(filter);
   const shown = useShown(can ? filter : undefined);
-  const held = shown.state.own !== null;
+  const { own } = shown.state;
+  const covering = own === null ? shown.state.over : null;
 
   const toggle = useCallback(() => {
     if (!canHold(filter)) return;
@@ -100,7 +112,13 @@ export function useHoldControl(over?: string): {
     else holds.take(filter);
   }, [filter]);
 
-  return { can, held, arrived: held ? shown.arrived : 0, toggle };
+  return {
+    can,
+    state: own !== null ? 'own' : covering !== null ? 'covered' : 'live',
+    arrived: own !== null ? shown.arrived : 0,
+    covering,
+    toggle,
+  };
 }
 
 export function useTraffic(): Traffic {
