@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { matchesFilter, treeFilter } from './topicMatch';
+import { matchesFilter, showsTopic, treeFilter } from './topicMatch';
 
 describe('matchesFilter', () => {
   it('matches a topic against itself', () => {
@@ -72,5 +72,28 @@ describe('treeFilter', () => {
   it('keeps a leaf path matching only itself, since it has no descendants', () => {
     expect(matchesFilter(treeFilter('sensors/room/temp'), 'sensors/room/temp')).toBe(true);
     expect(matchesFilter(treeFilter('sensors/room/temp'), 'sensors/room/humidity')).toBe(false);
+  });
+});
+
+describe('showsTopic', () => {
+  it('shows every topic for #, $SYS included', () => {
+    expect(showsTopic('#', 'sensors/temp')).toBe(true);
+    expect(showsTopic('#', '$SYS/broker/uptime')).toBe(true);
+  });
+
+  it('shows a row and everything under it for its own filter', () => {
+    expect(showsTopic('sensors/#', 'sensors')).toBe(true);
+    expect(showsTopic('sensors/#', 'sensors/temp')).toBe(true);
+    expect(showsTopic('sensors/#', 'sensorsx/temp')).toBe(false);
+  });
+
+  it('shows what hangs off the empty first level', () => {
+    expect(showsTopic('/#', '/hfp/v2/bus')).toBe(true);
+    expect(showsTopic('/#', 'hfp/v2/bus')).toBe(false);
+  });
+
+  it('asks the matcher about any other filter, $ rule included', () => {
+    expect(showsTopic('sensors/+/temp', 'sensors/room/temp')).toBe(true);
+    expect(showsTopic('+/broker/uptime', '$SYS/broker/uptime')).toBe(false);
   });
 });

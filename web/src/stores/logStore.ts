@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { useBrokerEventsStore } from './brokerEventsStore';
 import { describeError } from '../lib/problemDetails';
-import { matchesFilter } from '../lib/topicMatch';
+import { showsTopic } from '../lib/topicMatch';
 import type { BodyMode } from '../lib/payload';
 import type { DecodedMessage } from '../realtime/decodeIncoming';
 import type { MessageProperties } from '../types/api';
@@ -549,13 +549,21 @@ function payloadSize(bytes: number): string {
  * so it orders arrivals across topics exactly as they arrived.
  */
 export function runFor(byTopic: ReadonlyMap<string, TopicRing>, filter: string): LogEntry[] {
-  const runs = runsFor(byTopic, filter);
+  return mergeRuns(runsFor(byTopic, filter));
+}
 
+/**
+ * Runs of different topics as one sequence, newest first.
+ *
+ * Merged on `id`, which only ever goes up, so it orders arrivals across topics exactly as they
+ * arrived. A lone run is handed back as it is.
+ */
+export function mergeRuns(runs: readonly LogEntry[][]): LogEntry[] {
   if (runs.length === 0) return [];
   if (runs.length === 1) return runs[0];
 
   const merged: LogEntry[] = [];
-  for (const run of runs) merged.push(...run);
+  for (const run of runs) for (const entry of run) merged.push(entry);
 
   return merged.sort((a, b) => b.id - a.id);
 }
@@ -606,13 +614,16 @@ export function runsOf(entries: readonly LogEntry[]): LogEntry[][] {
  * a time, on every batch, for as long as the selection is held.
  *
  * Each run is newest first, which is what a series wants: it takes its window off the front.
+ *
+ * Asked with showsTopic rather than the broker's matcher: every caller is reading a selection,
+ * and the broker's row selects `#` to mean everything this console holds, `$SYS` included.
  */
 export function runsFor(byTopic: ReadonlyMap<string, TopicRing>, filter: string): LogEntry[][] {
   if (!filter) return [];
 
   const runs: LogEntry[][] = [];
   for (const [topic, ring] of byTopic) {
-    if (!matchesFilter(filter, topic)) continue;
+    if (!showsTopic(filter, topic)) continue;
 
     const run = ring.newestFirst();
     if (run.length > 0) runs.push(run);

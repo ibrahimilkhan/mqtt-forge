@@ -27,3 +27,25 @@ export function matchesFilter(filter: string, topic: string): boolean {
 
 // '#' covers the node's own topic plus everything beneath it.
 export const treeFilter = (path: string): string => `${path}/#`;
+
+/**
+ * Whether a selection shows a topic — the question the log, the chart and Clear ask, which is not
+ * quite the broker's.
+ *
+ * `#` here is everything the console holds. The broker's row stands for everything the broker has
+ * sent, and a console that has also subscribed to `$SYS/#` holds `$SYS` topics under it: the row
+ * counts them, so its log shows them. MQTT's rule keeping `#` off `$` topics is about what a
+ * subscription delivers, and it stays where subscriptions are decided — see matchesFilter above.
+ *
+ * A row's own filter, `path/#`, is a prefix test and costs no split.
+ */
+export function showsTopic(filter: string, topic: string): boolean {
+  if (filter === '#') return true;
+
+  if (filter.endsWith('/#') && !filter.includes('+')) {
+    const path = filter.slice(0, -2);
+    if (!path.includes('#')) return topic === path || topic.startsWith(`${path}/`);
+  }
+
+  return matchesFilter(filter, topic);
+}

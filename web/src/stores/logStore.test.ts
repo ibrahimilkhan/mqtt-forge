@@ -6,7 +6,9 @@ import {
   heldWeight,
   narrowRuns,
   MIN_TOPIC_ENTRIES,
+  mergeRuns,
   runFor,
+  runsFor,
   TOPIC_BYTES,
   TOPIC_DEPTH,
   useLogStore,
@@ -491,5 +493,25 @@ describe('what a stamp means', () => {
 
   it('has nothing to say about a stamp it does not know', () => {
     expect(stampMeaning('WHATEVER')).toBeUndefined();
+  });
+});
+
+describe('what a selection reads', () => {
+  it('reads $SYS under # — the broker row shows what it counts', () => {
+    useLogStore.getState().push({ kind: 'recv', topic: 'sensors/temp', body: '21' });
+    useLogStore.getState().push({ kind: 'recv', topic: '$SYS/broker/uptime', body: '10' });
+
+    expect(arrivals().map((entry) => entry.topic)).toEqual(['$SYS/broker/uptime', 'sensors/temp']);
+  });
+
+  it('merges runs of different topics newest first', () => {
+    const push = (topic: string) => useLogStore.getState().push({ kind: 'recv', topic, body: '1' });
+    push('a');
+    push('b');
+    push('a');
+
+    const merged = mergeRuns(runsFor(useLogStore.getState().byTopic, '#'));
+
+    expect(merged.map((entry) => entry.topic)).toEqual(['a', 'b', 'a']);
   });
 });
