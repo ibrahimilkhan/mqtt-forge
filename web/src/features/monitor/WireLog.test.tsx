@@ -10,13 +10,13 @@ import { byteLength } from '../../lib/payload';
 import type { DecodedMessage } from '../../realtime/decodeIncoming';
 import { useAppearanceStore } from '../../stores/appearanceStore';
 import { useComposeStore } from '../../stores/composeStore';
-import { MAX_LOG_ENTRIES, MIN_TOPIC_ENTRIES, runFor, useLogStore } from '../../stores/logStore';
+import { MAX_LOG_ENTRIES, MIN_TOPIC_ENTRIES, useLogStore } from '../../stores/logStore';
 import { useSearchStore } from '../../stores/searchStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import { HoldButton } from './HoldButton';
 import { TrafficPane } from './TrafficPane';
-import { useHoldStore } from './useTraffic';
+import { shownWork, useHoldStore } from '../../stores/holdStore';
 import { LogCount, LogTools, WireLog } from './WireLog';
 
 const chip = { label: 'sensors/#', filter: 'sensors/#' };
@@ -121,11 +121,7 @@ describe('the count beside the region name', () => {
     useSelectionStore.getState().select(chip);
     const { rerender } = render(<LogCount />);
 
-    act(() =>
-      useHoldStore
-        .getState()
-        .hold(chip.filter, runFor(useLogStore.getState().byTopic, chip.filter), new Map()),
-    );
+    act(() => useHoldStore.getState().take(chip.filter));
     act(() => received('sensors/c'));
     rerender(<LogCount />);
 
@@ -790,7 +786,7 @@ describe('holding the pane still', () => {
 
     render(<Held />);
     await userEvent.click(screen.getByRole('button', { name: 'Pause the pane' }));
-    act(() => useSelectionStore.getState().select({ label: 'sensors/hall', filter: 'sensors/hall' }));
+    act(() => useSelectionStore.getState().select({ label: 'sensors/hall', filter: 'sensors/hall/#' }));
 
     expect(screen.getByRole('button', { name: 'Pause the pane' })).toBeInTheDocument();
   });
@@ -1965,5 +1961,71 @@ describe('clearing the log', () => {
 
     expect(screen.getByRole('button', { name: 'Clear 1' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Keep newest' })).not.toBeInTheDocument();
+  });
+});
+
+describe('what a hold does to the panes around it', () => {
+  const readings = (topic: string, ...bodies: string[]) =>
+    bodies.forEach((body) => useLogStore.getState().push({ kind: 'recv', topic, body }));
+
+  // The report: / paused, the broker's row picked above it, and the log streamed on.
+  it('holds the part of the broker row that / is holding', async () => {
+    readings('/hfp/bus/1', 'a1');
+    readings('plant/kiln', '900');
+    act(() => useHoldStore.getState().take('/#'));
+    readings('/hfp/bus/1', 'a2');
+    readings('plant/kiln', '910');
+    useSelectionStore.getState().select({ label: 'broker.example:1883', filter: '#' });
+
+    render(
+      <>
+        {/* A bare LogCount renders text nodes straight into the container beside Monitor's own
+            markup, so a testid on a wrapper is what lets the count be found on its own. */}
+        <span data-testid="log-count">
+          <LogCount />
+        </span>
+        <Monitor />
+      </>,
+    );
+    await userEvent.click(screen.getByRole('button', { name: /in history/ }));
+
+    expect(screen.getAllByTestId('body').map((one) => one.textContent)).toEqual(['910', '900', 'a1']);
+    expect(screen.getByTestId('log-count')).toHaveTextContent('(3)');
+  });
+
+  it("shows a row under a held branch its own frozen run, not the branch's", () => {
+    readings('sensors/temp', '21');
+    readings('sensors/humidity', '55');
+    act(() => useHoldStore.getState().take('sensors/#'));
+    readings('sensors/temp', '22');
+    useSelectionStore.getState().select({ label: 'sensors/temp', filter: 'sensors/temp/#' });
+
+    render(
+      <>
+        <span data-testid="log-count">
+          <LogCount />
+        </span>
+        <Monitor />
+      </>,
+    );
+
+    expect(screen.getByTestId('body')).toHaveTextContent('21');
+    expect(screen.getByTestId('log-count')).toHaveTextContent('(1)');
+  });
+
+  it('works the selection out once per change, however many parts of the console read it', () => {
+    received('sensors/a', 'sensors/b');
+    useSelectionStore.getState().select(chip);
+    render(
+      <>
+        <LogCount />
+        <Monitor />
+      </>,
+    );
+    const before = shownWork.count;
+
+    act(() => received('sensors/c'));
+
+    expect(shownWork.count - before).toBe(1);
   });
 });

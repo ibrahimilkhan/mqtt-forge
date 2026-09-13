@@ -10,7 +10,7 @@ import { useLogStore } from '../../stores/logStore';
 import { usePauseStore } from '../../stores/pauseStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
-import { useHoldStore } from '../monitor/useTraffic';
+import { useHoldStore } from '../../stores/holdStore';
 import { ManagePanel } from './ManagePanel';
 
 const message = (topic: string, payload = '1', retain = false): DecodedMessage => ({
@@ -32,14 +32,7 @@ const landed = (...messages: DecodedMessage[]) => {
 /** One figure cell: its label, its number and whatever word stands under them. */
 const figure = (label: string) => screen.getByText(label).closest('div');
 
-const pause = (path: string) =>
-  useHoldStore
-    .getState()
-    .hold(
-      `${path}/#`,
-      useLogStore.getState().byTopic.get(path)?.newestFirst() ?? [],
-      new Map(),
-    );
+const pause = (path: string) => useHoldStore.getState().take(`${path}/#`);
 
 beforeEach(() => {
   // Module singletons: a figure left over from one test is a figure the next one reports.

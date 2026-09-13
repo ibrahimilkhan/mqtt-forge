@@ -15,7 +15,7 @@ import {
   type TopicRow,
 } from '../../lib/topicTree';
 import { HoldButton } from '../monitor/HoldButton';
-import { useHoldStore } from '../monitor/useTraffic';
+import { useHoldStore } from '../../stores/holdStore';
 import { useComposeStore } from '../../stores/composeStore';
 import { useSearchStore } from '../../stores/searchStore';
 import { brokerSelection, selectionFor, useSelectionStore } from '../../stores/selectionStore';

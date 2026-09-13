@@ -6,7 +6,7 @@ import { useLogStore } from '../../stores/logStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { HoldButton } from './HoldButton';
 import { usePauseStore } from '../../stores/pauseStore';
-import { useHoldStore } from './useTraffic';
+import { useHoldStore } from '../../stores/holdStore';
 
 const chip = { label: 'sensors/#', filter: 'sensors/#' };
 const readings = (topic: string, ...bodies: string[]) =>

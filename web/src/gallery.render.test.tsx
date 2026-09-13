@@ -33,7 +33,7 @@ import { createFakeHub } from './realtime/fakeHub';
 import { useAppearanceStore } from './stores/appearanceStore';
 import { runFor, runsOf, useLogStore } from './stores/logStore';
 import { useSelectionStore } from './stores/selectionStore';
-import { useHoldStore } from './features/monitor/useTraffic';
+import { useHoldStore } from './stores/holdStore';
 import { useTopicTreeStore } from './stores/topicTreeStore';
 import { useZoomStore } from './features/monitor/useZoom';
 import { useWindows } from './features/monitor/useWindows';

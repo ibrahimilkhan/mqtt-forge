@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { PanelShell } from '../../components/PanelShell';
+import { arrivedBehind, type Holds } from '../../lib/holds';
 import { filterPath, retainedTopics } from '../../lib/topicTree';
-import { runFor, useLogStore } from '../../stores/logStore';
+import { useLogStore } from '../../stores/logStore';
 import { useAppearanceStore } from '../../stores/appearanceStore';
 import { useBrokerEventsStore } from '../../stores/brokerEventsStore';
 import { clearTraffic } from '../../stores/clearTraffic';
@@ -9,7 +10,7 @@ import { useSelectionStore } from '../../stores/selectionStore';
 import { useHealthStore } from '../../stores/healthStore';
 import { usePauseStore } from '../../stores/pauseStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
-import { useHoldStore } from '../monitor/useTraffic';
+import { useHoldStore } from '../../stores/holdStore';
 import { clearRetained } from './clearRetained';
 import panel from '../../styles/panel.module.css';
 import styles from './ManagePanel.module.css';
@@ -334,7 +335,7 @@ function Figure({ label, value, note }: { label: string; value: string; note?: s
 }
 
 /** Everything the panel draws, read in one pass off the stores. */
-function count(holds: ReadonlyMap<string, { filter: string; entries: { id: number }[] }>) {
+function count(holds: Holds) {
   const log = useLogStore.getState();
 
   const paused: Paused[] = [...holds.values()].map((one) => ({
@@ -342,11 +343,9 @@ function count(holds: ReadonlyMap<string, { filter: string; entries: { id: numbe
     // The path rather than the filter: a row's hold is taken on `plant/boiler/#`, and what the
     // reader paused was plant/boiler.
     label: filterPath(one.filter) ?? one.filter,
-    holding: one.entries.length,
-    behind:
-      one.entries.length === 0
-        ? 0
-        : runFor(log.byTopic, one.filter).filter((entry) => entry.id > one.entries[0].id).length,
+    // Everything the hold froze, which is what its panes show while it stands.
+    holding: [...one.runs.values()].reduce((total, run) => total + run.length, 0),
+    behind: arrivedBehind(log.byTopic, holds, one.filter, one),
   }));
   paused.sort((a, b) => a.label.localeCompare(b.label));
 

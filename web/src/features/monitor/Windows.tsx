@@ -8,7 +8,7 @@ import { TrafficChart } from './TrafficChart';
 import { RuleEditor } from '../alerts/RuleEditor';
 import { stampMeaning, type LogEntry } from '../../stores/logStore';
 import { useWindows, type FloatWindow } from './useWindows';
-import { useRunsFor } from './useTraffic';
+import { useShown } from '../../stores/holdStore';
 import { useZoomStore } from './useZoom';
 
 /**
@@ -373,14 +373,19 @@ function chipsFor(entry: LogEntry): string[] {
  * be called for the half that is not being drawn.
  */
 function ChartBody({ filter, label }: { filter: string; label: string }) {
-  // Runs, not one merged sequence: a pinned window redraws on every batch for as long as it is
-  // open, and merging a branch of thousands of topics only for the chart to split it again was
-  // what made a pinned window cost two thirds of a second at a time.
-  const runs = useRunsFor(filter);
+  // The same view the pane reads, so a window over a held topic holds with it — and pinning a held
+  // chart opens a window drawing what the chart was drawing, not the traffic behind the hold.
+  const shown = useShown(filter);
 
-  if (runs.length === 0) return <p className="empty">Nothing on {label} to chart yet.</p>;
+  if (shown.runs.length === 0) return <p className="empty">Nothing on {label} to chart yet.</p>;
 
   // Keyed on the filter like the pane's own chart: this window only ever draws one, so the key is
   // really a statement that it never changes run under the reader.
-  return <TrafficChart key={filter} runs={runs} />;
+  return (
+    <TrafficChart
+      key={filter}
+      runs={shown.runs}
+      frozen={shown.state.over !== null || shown.state.touched}
+    />
+  );
 }

@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StreamPause } from './features/monitor/StreamPause';
 import { TrafficPane } from './features/monitor/TrafficPane';
-import { useHoldStore } from './features/monitor/useTraffic';
+import { useHoldStore } from './stores/holdStore';
 import { WireLog } from './features/monitor/WireLog';
 import { TopicTree } from './features/topics/TopicTree';
 import { createFakeHub } from './realtime/fakeHub';

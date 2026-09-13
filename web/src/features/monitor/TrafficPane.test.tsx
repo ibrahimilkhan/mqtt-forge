@@ -7,7 +7,7 @@ import { useLogStore } from '../../stores/logStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { READING_IDS, READINGS } from '../appearance/readings';
 import { TrafficPane } from './TrafficPane';
-import { useHoldStore } from './useTraffic';
+import { useHoldStore } from '../../stores/holdStore';
 import { useZoomStore } from './useZoom';
 
 const chip = { label: 'sensors/#', filter: 'sensors/#' };

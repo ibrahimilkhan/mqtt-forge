@@ -13,7 +13,7 @@ import { useSearchStore } from './stores/searchStore';
 import { useSelectionStore } from './stores/selectionStore';
 import { useTopicTreeStore } from './stores/topicTreeStore';
 import { startApplyingAppearance } from './features/appearance/applyAppearance';
-import { useHoldStore } from './features/monitor/useTraffic';
+import { useHoldStore } from './stores/holdStore';
 import type { MqttMessage } from './types/api';
 
 /**

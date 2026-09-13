@@ -215,13 +215,14 @@ export function LogTools() {
  */
 export function LogCount() {
   const count = useTrafficCount();
-  const { entries, sought } = useShownEntries();
+  const shown = useShownEntries();
 
   if (count === 0) return null;
 
-  // Under a search it says both numbers, for the reason the broker events card does: a reader
-  // who has narrowed a run wants to know how much of it they are being shown.
-  return sought ? <>({entries.length} of {count})</> : <>({count})</>;
+  // Under a search it says both numbers, for the reason the broker events card does: a reader who
+  // has narrowed a run wants to know how much of it they are being shown. Read only then — the
+  // narrowed rows need the merged run, and the count alone does not.
+  return shown.sought ? <>({shown.entries.length} of {count})</> : <>({count})</>;
 }
 
 function EntryList() {

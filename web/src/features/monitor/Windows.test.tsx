@@ -8,7 +8,7 @@ import { useSelectionStore } from '../../stores/selectionStore';
 import { Windows } from './Windows';
 import { TrafficPane } from './TrafficPane';
 import { useWindows } from './useWindows';
-import { useHoldStore } from './useTraffic';
+import { useHoldStore } from '../../stores/holdStore';
 import { useZoomStore } from './useZoom';
 
 /** The pane and the windows pinned off it, which is how the app puts them on screen. */
@@ -464,5 +464,21 @@ describe('placing a window', () => {
     fireEvent.pointerDown(screen.getByLabelText('sensors/kiln chart'), { pointerId: 1 });
 
     expect(screen.getAllByTestId('chart-window').at(-1)).toHaveAttribute('data-filter', 'sensors/kiln');
+  });
+});
+
+describe('a window over a held topic', () => {
+  it('charts what the hold froze, and pinning a held chart does not move it on', async () => {
+    readings('sensors/kiln', '900', '910', '920');
+    useSelectionStore.getState().select({ label: 'sensors/kiln', filter: 'sensors/kiln/#' });
+    act(() => useHoldStore.getState().take('sensors/kiln/#'));
+    readings('sensors/kiln', '1000', '1100');
+
+    render(<Console />);
+    await openAndPin();
+
+    expect(
+      within(screen.getByTestId('chart-window')).getByTestId('reading-n'),
+    ).toHaveTextContent('3');
   });
 });
