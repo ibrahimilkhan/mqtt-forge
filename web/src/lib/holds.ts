@@ -1,7 +1,7 @@
 import { runsFor, type LogEntry } from '../stores/logStore';
 import type { TopicRing } from '../stores/topicRing';
 import { showsTopic } from './topicMatch';
-import { EMPTY_LEVEL, filterPath, nodeAt, type TopicNode } from './topicTree';
+import { EMPTY_LEVEL, emptyTree, filterPath, nodeAt, pruneTopics, type TopicNode } from './topicTree';
 
 /**
  * A pause on a row of the tree: a branch of the console — or the whole of it — kept still at the
@@ -366,4 +366,121 @@ export function freeze(
   }
 
   return { filter, path, runs, nodes, root: path === null ? view.root : null };
+}
+
+/**
+ * A hold with some of its topics taken out — what Clear and an unsubscribe do to what a reader
+ * paused.
+ *
+ * Clear used to leave holds alone, so a pane the reader had just emptied went on showing the run
+ * it had frozen, and the topic's next message brought its row back with the value from before the
+ * clear. The frozen rows are pruned by the live tree's own rule, so the counts on a frozen branch
+ * go on agreeing with the rows still drawn under it, and a hold with nothing left is let go.
+ *
+ * Keeping the newest cuts the frozen runs and leaves the rows, as the live tree keeps its rows.
+ */
+export function forgetFrozen(
+  held: Held,
+  remove: (topic: string) => boolean,
+  keep: 'nothing' | 'the newest',
+): Held | null {
+  if (keep === 'the newest') {
+    let runs: Map<string, LogEntry[]> | null = null;
+
+    for (const [topic, run] of held.runs) {
+      if (run.length <= 1 || !remove(topic)) continue;
+      runs ??= new Map(held.runs);
+      runs.set(topic, run.slice(0, 1));
+    }
+
+    return runs ? { ...held, runs } : held;
+  }
+
+  const touched = [...held.runs.keys()].some(remove) || [...held.nodes.keys()].some(remove);
+  if (!touched) return held;
+
+  const runs = new Map([...held.runs].filter(([topic]) => !remove(topic)));
+  const pruned = pruneFrozen(held, remove);
+  const empty =
+    runs.size === 0 &&
+    (held.path === null ? (pruned.root?.subTopics ?? 0) === 0 : !pruned.nodes.has(held.path));
+
+  return empty ? null : { ...held, runs, nodes: pruned.nodes, root: pruned.root };
+}
+
+/** The frozen rows with topics taken out, rebuilt as the live tree rebuilds itself. */
+function pruneFrozen(
+  held: Held,
+  remove: (topic: string) => boolean,
+): { nodes: Map<string, TopicNode>; root: TopicNode | null } {
+  const nodes = new Map<string, TopicNode>();
+
+  if (held.path === null) {
+    if (!held.root) return { nodes, root: null };
+
+    const root = pruneTopics(assemble(held.nodes, held.root, null), remove);
+    flatten(root, null, nodes);
+
+    return { nodes, root };
+  }
+
+  const top = held.nodes.get(held.path);
+  if (!top) return { nodes, root: null };
+
+  // pruneTopics walks from a root that is not a topic, so the region's own row goes under a stand-in
+  // root — and the paths it asks about, which then begin at the region, get the region's parent back.
+  const cut = held.path.lastIndexOf('/');
+  const name = cut === -1 ? held.path : held.path.slice(cut + 1);
+  const prefix = cut === -1 ? '' : `${held.path.slice(0, cut)}/`;
+
+  const standIn: TopicNode = {
+    ...emptyTree(),
+    children: new Map([[name, assemble(held.nodes, top, held.path)]]),
+    order: [name],
+  };
+  const kept = pruneTopics(standIn, (relative) => remove(prefix + relative)).children.get(name);
+
+  if (kept) {
+    nodes.set(held.path, kept);
+    flatten(kept, held.path, nodes);
+  }
+
+  return { nodes, root: null };
+}
+
+/**
+ * A frozen row and the frozen rows under it, put back together as a tree of their own.
+ *
+ * A frozen row's own child list is the live tree's — see Held — so the children are the names it
+ * lists that the hold kept a row for.
+ */
+function assemble(
+  nodes: ReadonlyMap<string, TopicNode>,
+  node: TopicNode,
+  path: string | null,
+): TopicNode {
+  const children = new Map<string, TopicNode>();
+  const order: string[] = [];
+
+  for (const name of node.order) {
+    const at = path === null ? name : `${path}/${name}`;
+    const child = nodes.get(at);
+    if (!child) continue;
+
+    children.set(name, assemble(nodes, child, at));
+    order.push(name);
+  }
+
+  return { ...node, children, order };
+}
+
+/** A tree of frozen rows back into the hold's path → row map. */
+function flatten(node: TopicNode, path: string | null, into: Map<string, TopicNode>): void {
+  for (const name of node.order) {
+    const child = node.children.get(name)!;
+    const at = path === null ? name : `${path}/${name}`;
+
+    into.set(at, child);
+    flatten(child, at, into);
+  }
 }

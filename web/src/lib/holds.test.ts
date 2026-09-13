@@ -6,6 +6,7 @@ import {
   behind,
   covers,
   discount,
+  forgetFrozen,
   freeze,
   holdName,
   inRegion,
@@ -324,5 +325,70 @@ describe('taking a hold', () => {
 
   it('takes nothing for a filter no row selects', () => {
     expect(freeze('sensors/+/temp', new Map(), emptyTree(), new Map())).toBeNull();
+  });
+});
+
+describe('taking topics out of a hold', () => {
+  const froze = () => {
+    const arrivals: Array<[string, string]> = [
+      ['sensors/temp', '21'],
+      ['sensors/temp', '22'],
+      ['sensors/humidity', '55'],
+    ];
+
+    return freeze('sensors/#', log(...arrivals), tree(...arrivals), new Map())!;
+  };
+
+  it('drops a cleared topic and takes it off the frozen rows above it', () => {
+    const sensors = forgetFrozen(froze(), (topic) => topic === 'sensors/temp', 'nothing')!;
+
+    expect([...sensors.runs.keys()]).toEqual(['sensors/humidity']);
+    expect(sensors.nodes.has('sensors/temp')).toBe(false);
+    expect(sensors.nodes.get('sensors')).toMatchObject({ subMessages: 1, subTopics: 1 });
+  });
+
+  it('lets the hold go once nothing is left in it', () => {
+    expect(forgetFrozen(froze(), (topic) => topic.startsWith('sensors'), 'nothing')).toBeNull();
+  });
+
+  it('hands back the very same hold when none of its topics answer', () => {
+    const sensors = froze();
+
+    expect(forgetFrozen(sensors, (topic) => topic.startsWith('plant'), 'nothing')).toBe(sensors);
+  });
+
+  it('keeps the newest of each run when the reader keeps the newest', () => {
+    const sensors = forgetFrozen(froze(), (topic) => topic === 'sensors/temp', 'the newest')!;
+
+    expect(bodies([sensors.runs.get('sensors/temp')!])).toEqual([['sensors/temp=22']]);
+    expect(sensors.nodes.get('sensors')!.subMessages).toBe(3);
+  });
+
+  it('prunes the broker row # froze, $SYS included', () => {
+    const arrivals: Array<[string, string]> = [
+      ['$SYS/broker/uptime', '10'],
+      ['sensors/temp', '21'],
+    ];
+    const everything = freeze('#', log(...arrivals), tree(...arrivals), new Map())!;
+
+    const left = forgetFrozen(everything, (topic) => topic.startsWith('$SYS'), 'nothing')!;
+
+    expect(left.root!.subTopics).toBe(1);
+    expect(left.nodes.has('$SYS')).toBe(false);
+    expect(forgetFrozen(left, () => true, 'nothing')).toBeNull();
+  });
+
+  it('prunes a region standing on the empty first level', () => {
+    const arrivals: Array<[string, string]> = [
+      ['/hfp/bus/1', 'a'],
+      ['/hfp/bus/2', 'b'],
+    ];
+    const slash = freeze('/#', log(...arrivals), tree(...arrivals), new Map())!;
+
+    const left = forgetFrozen(slash, (topic) => topic === '/hfp/bus/1', 'nothing')!;
+
+    expect(left.nodes.get('')!.subTopics).toBe(1);
+    expect(left.nodes.has('/hfp/bus/1')).toBe(false);
+    expect(left.nodes.has('/hfp/bus/2')).toBe(true);
   });
 });
