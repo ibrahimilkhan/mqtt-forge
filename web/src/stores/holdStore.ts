@@ -91,7 +91,13 @@ export interface Shown {
   /** The runs merged newest first — what the log draws. Merged on first read. */
   readonly entries: LogEntry[];
   readonly count: number;
-  /** What has arrived behind the holds — behind the filter's own hold, when it has one. */
+  /**
+   * What has arrived behind the holds — behind the filter's own hold, when it has one.
+   *
+   * Counted against the live log the first time it is read, so it belongs to the render it was
+   * read in: a view kept past its version must not be asked for it, since the log it would be
+   * counted against has since moved on.
+   */
   readonly arrived: number;
   readonly state: PaneState;
 }
@@ -150,6 +156,9 @@ export const shownWork = { count: 0 };
 const views = new Map<string, { version: number; holds: Holds; view: View }>();
 const KEPT = 16;
 
+/** The filters whose views are kept, oldest first — read by the tests that hold the cache to what can still be handed back. */
+export const keptViews = (): string[] => [...views.keys()];
+
 export function shownFor(filter: string | undefined): Shown {
   if (!filter) return NOTHING;
 
@@ -172,6 +181,19 @@ export function shownFor(filter: string | undefined): Shown {
     same ? last.view.runs : fresh,
     same ? last.view.mergedSoFar : null,
   );
+
+  // Each view holds a run of the log as it was, and a console that has been cleared or turned its
+  // log over would otherwise go on holding it for a filter that may never be read again — so
+  // whenever a view is worked out, every other filter's view that can no longer be handed back is
+  // let go here. One stays only if it was worked out under this very holds map, and either at the
+  // log's current version or drawn wholly from holds: such a view's runs are the holds' own frozen
+  // arrays rather than a place in a log that a clear or a turnover moves past, so it stays true for
+  // as long as the holds themselves stand.
+  for (const [other, kept] of views) {
+    if (other === filter) continue;
+    const canHandBack = kept.holds === holds && (kept.version === version || kept.view.state.over !== null);
+    if (!canHandBack) views.delete(other);
+  }
 
   views.delete(filter);
   views.set(filter, { version, holds, view });

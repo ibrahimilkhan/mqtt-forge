@@ -28,7 +28,6 @@ const landed = (...messages: DecodedMessage[]) => {
   useTopicTreeStore.getState().apply(messages);
 };
 
-/** What a paused row is: a filter, the run frozen under it, and the tree beneath it. */
 /** One figure cell: its label, its number and whatever word stands under them. */
 const figure = (label: string) => screen.getByText(label).closest('div');
 

@@ -1979,18 +1979,14 @@ describe('what a hold does to the panes around it', () => {
 
     render(
       <>
-        {/* A bare LogCount renders text nodes straight into the container beside Monitor's own
-            markup, so a testid on a wrapper is what lets the count be found on its own. */}
-        <span data-testid="log-count">
-          <LogCount />
-        </span>
+        <LogCount />
         <Monitor />
       </>,
     );
     await userEvent.click(screen.getByRole('button', { name: /in history/ }));
 
     expect(screen.getAllByTestId('body').map((one) => one.textContent)).toEqual(['910', '900', 'a1']);
-    expect(screen.getByTestId('log-count')).toHaveTextContent('(3)');
+    expect(screen.getByText('(3)')).toBeInTheDocument();
   });
 
   it("shows a row under a held branch its own frozen run, not the branch's", () => {
@@ -2002,15 +1998,13 @@ describe('what a hold does to the panes around it', () => {
 
     render(
       <>
-        <span data-testid="log-count">
-          <LogCount />
-        </span>
+        <LogCount />
         <Monitor />
       </>,
     );
 
     expect(screen.getByTestId('body')).toHaveTextContent('21');
-    expect(screen.getByTestId('log-count')).toHaveTextContent('(1)');
+    expect(screen.getByText('(1)')).toBeInTheDocument();
   });
 
   it('works the selection out once per change, however many parts of the console read it', () => {

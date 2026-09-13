@@ -20,7 +20,7 @@ import { useConnectionState } from '../../api/useConnectionState';
  * changes.
  */
 export function TrafficPane() {
-  const { selected, entries, runs, held } = useTraffic();
+  const { selected, runs, held } = useTraffic();
   const { isOnline } = useConnectionState();
   const zoomed = useZoomStore((state) => state.zoomed);
   useEscapeFromZoom();
@@ -68,7 +68,10 @@ export function TrafficPane() {
 
       {!selected && <p className="empty">The shape of a topic's readings is drawn here.</p>}
 
-      {selected && entries.length === 0 && (
+      {/* Asked of runs, not the merged entries: every run in it is non-empty, so the answer is the
+          same, and the chart never pays for a sort of a run it does not draw when the log is
+          folded. */}
+      {selected && runs.length === 0 && (
         isOnline ? (
           <p className="empty">Nothing on {selected.label} to chart yet.</p>
         ) : (
@@ -80,7 +83,7 @@ export function TrafficPane() {
 
       {/* Keyed like the entries above: a new selection is a new run, so the field being charted
           and the view it is drawn in start again rather than carrying over from another topic. */}
-      {selected && entries.length > 0 && (
+      {selected && runs.length > 0 && (
         <TrafficChart key={selected.filter} runs={runs} frozen={held} />
       )}
     </>

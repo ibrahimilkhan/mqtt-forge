@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { DecodedMessage } from '../realtime/decodeIncoming';
-import { shownFor, shownWork, useHoldStore } from './holdStore';
+import { keptViews, shownFor, shownWork, useHoldStore } from './holdStore';
 import { useLogStore } from './logStore';
 import { useTopicTreeStore } from './topicTreeStore';
 
@@ -98,5 +98,29 @@ describe('the shown view', () => {
     landed(['plant/kiln', '900']);
 
     expect(shownFor('sensors/#').runs).toBe(first);
+  });
+
+  it('keeps no view of another filter that the log has moved past', () => {
+    landed(['sensors/temp', '21'], ['plant/kiln', '900']);
+    shownFor('#');
+
+    landed(['plant/kiln', '910']);
+    shownFor('plant/#');
+
+    expect(keptViews()).toEqual(['plant/#']);
+  });
+
+  it('keeps a view drawn wholly from a hold for as long as that hold stands', () => {
+    landed(['sensors/temp', '21']);
+    useHoldStore.getState().take('sensors/#');
+    shownFor('sensors/#');
+
+    landed(['plant/kiln', '900']);
+    shownFor('plant/#');
+    expect(keptViews()).toEqual(['sensors/#', 'plant/#']);
+
+    useHoldStore.getState().release('sensors/#');
+    shownFor('plant/#');
+    expect(keptViews()).toEqual(['plant/#']);
   });
 });

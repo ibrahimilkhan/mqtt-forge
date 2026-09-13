@@ -585,6 +585,7 @@ export function nodeAt(root: TopicNode, path: string): TopicNode | null {
   return node;
 }
 
+// What a branch is carrying; nothing for leaves, whose own payload is on the row already.
 export function nodeSummary(node: TopicNode): string {
   if (node.children.size === 0) return '';
 
