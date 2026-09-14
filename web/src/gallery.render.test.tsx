@@ -9,6 +9,8 @@
  * modules are compiled in this environment — so it can be looked at rather than reasoned about.
  */
 import { existsSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render } from '@testing-library/react';
 import { it } from 'vitest';
@@ -36,7 +38,8 @@ import { useTopicTreeStore } from './stores/topicTreeStore';
 import { useZoomStore } from './features/monitor/useZoom';
 import { useWindows } from './features/monitor/useWindows';
 
-const OUT = '/Users/ilkhan/RiderProjects/MqttForge/src/MqttForge.Api/wwwroot';
+// The API's static root, found from this file's place in the checkout wherever that is.
+const OUT = join(dirname(fileURLToPath(import.meta.url)), '../../src/MqttForge.Api/wwwroot');
 
 /**
  * The width the plot would have in the box these pages draw it in.
