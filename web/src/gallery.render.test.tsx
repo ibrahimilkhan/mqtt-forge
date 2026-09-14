@@ -32,6 +32,7 @@ import { TrafficChart } from './features/monitor/TrafficChart';
 import { TrafficLine } from './features/monitor/TrafficLine';
 import { queryKeys } from './api/queryKeys';
 import { createFakeHub } from './realtime/fakeHub';
+import { useAlertStore } from './stores/alertStore';
 import { useAppearanceStore } from './stores/appearanceStore';
 import { runFor, runsOf, useLogStore } from './stores/logStore';
 import { useSelectionStore } from './stores/selectionStore';
@@ -379,6 +380,8 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
     'console-empty.html',
     'console-colours.html',
     'console-painted.html',
+    'console-alerts.html',
+    'console-ringing.html',
     'console-zoomed.html',
     'console-pinned.html',
     'console-shut.html',
@@ -414,6 +417,10 @@ it.skipIf(!existsSync(OUT))('writes the gallery', () => {
                 ? 'Colour rules'
               : href === 'console-painted.html'
                 ? 'What the rules paint'
+              : href === 'console-alerts.html'
+                ? 'Alert rules'
+              : href === 'console-ringing.html'
+                ? 'What is ringing'
                 : href === 'console-zoomed.html'
                   ? 'Chart opened'
                   : href === 'console-pinned.html'
@@ -458,6 +465,12 @@ ${inner}
   // what the panel above only describes — including the second colour, on the payloads of the
   // one rule that carries one.
   writeFileSync(`${OUT}/console-painted.html`, console_(client, { panel: null, colours: true }));
+  // The house's alert rules, three of them ringing: the one page about alarms, for the reason the
+  // colour rules keep to theirs.
+  writeFileSync(`${OUT}/console-alerts.html`, console_(client, { panel: 'alerts', alerts: true }));
+  // The same alarms with nothing open, which is where a reader who opened no panel meets them: the
+  // count on the rail and the notice in the corner.
+  writeFileSync(`${OUT}/console-ringing.html`, console_(client, { panel: null, alerts: true }));
   // The panel the console opens on, which is the one page that shows the broker form whole.
   writeFileSync(`${OUT}/console-broker.html`, console_(client, { panel: 'broker' }));
   // The same panel with nothing connected, which is what a reader actually opens the console on.
@@ -803,7 +816,7 @@ function detail() {
  * a fake hub satisfies the bridge. What this writes is the real layout with real components in
  * it, at whatever size the window opens — which is what a screenshot of the console is.
  */
-function console_(client, { zoomed = false, pinned = false, opened = false, panel = 'broker', rail = 'open', colours = false, link = true, traffic = true } = {}) {
+function console_(client, { zoomed = false, pinned = false, opened = false, panel = 'broker', rail = 'open', colours = false, alerts = false, link = true, traffic = true } = {}) {
   // Primed rather than fetched. Rendering here is one synchronous pass, so a query that has to
   // go and ask would still be pending when the HTML is taken — and the page would show a console
   // that had not connected to anything.
@@ -839,6 +852,67 @@ function console_(client, { zoomed = false, pinned = false, opened = false, pane
         ]
       : [],
   );
+  // The same holds for alarms: only on the pages about them. The rules are the house's own — a
+  // door, a garage, a sensor gone quiet and a meter judged against its own run — so the panel is
+  // read in the words of the broker every other page shows, and each alarm agrees with the tree
+  // beside it: the front door reads 1, and the garage has not yet climbed back to 14.
+  const ago = (minutes) => new Date(Date.now() - minutes * 60_000).toISOString();
+  const rule = (id, name, severity, filter, condition, rest = {}) => ({
+    id, name, enabled: true, filter, field: null, condition, clear: null, for: null, cooldown: null,
+    severity, actions: [{ type: 'screen' }], ...rest,
+  });
+  const alarm = (ruleId, ruleName, severity, topic, minutes, reason, value, count) => ({
+    id: `${ruleId}-1`, ruleId, ruleName, topic, severity, firedAt: ago(minutes), lastSeenAt: ago(1),
+    resolvedAt: null, resolvedBy: null, mutedUntil: null, count, reason, value,
+    sample: value === null ? null : String(value), actions: ['screen'],
+  });
+  const seen = (ruleId, topics, evaluated, firedMinutes) => ({
+    ruleId, topics, evaluated, skipped: 0, lastFiredAt: firedMinutes === null ? null : ago(firedMinutes),
+    faulted: false, faultReason: null,
+  });
+  client.setQueryData(queryKeys.alertRules, {
+    rules: alerts
+      ? [
+          rule('front-door', 'Front door left open', 'critical', 'alerts/door/+', { type: 'threshold', op: 'eq', value: 1 }, {
+            for: 300,
+            actions: [{ type: 'screen' }, { type: 'sound' }],
+          }),
+          rule('garage-cold', 'Garage too cold', 'warn', 'sensors/garage/temp', { type: 'threshold', op: 'lt', value: 13 }, {
+            clear: { type: 'threshold', op: 'gte', value: 14 },
+            for: 600,
+            actions: [{ type: 'screen' }, { type: 'publish', topic: null, qos: 1, retain: false }],
+          }),
+          rule('loft-quiet', 'Loft sensor went quiet', 'info', 'sensors/loft/temp', { type: 'silence', after: 900 }),
+          rule('energy-meter', 'Energy meter out of step', 'warn', 'home/energy/meter', { type: 'outlier', method: 'sigma', k: 3, window: 200 }, {
+            cooldown: 1800,
+          }),
+        ]
+      : [],
+    topicPrefix: 'mqttforge/alerts/',
+    allowWebhooks: true,
+    unreadable: false,
+    skippedIds: [],
+  });
+  useAlertStore.setState({
+    active: alerts
+      ? [
+          alarm('front-door', 'Front door left open', 'critical', 'alerts/door/front', 7, '1 == 1', 1, 1),
+          alarm('garage-cold', 'Garage too cold', 'warn', 'sensors/garage/temp', 23, '12.41 < 13', 12.41, 38),
+          alarm('loft-quiet', 'Loft sensor went quiet', 'info', 'sensors/loft/temp', 16, 'no message for 900s', null, 1),
+        ]
+      : [],
+    history: [],
+    muted: [],
+    rules: alerts
+      ? [seen('front-door', 2, 1840, 7), seen('garage-cold', 1, 6120, 23), seen('loft-quiet', 1, 5980, 16), seen('energy-meter', 1, 1450, null)]
+      : [],
+    warming: [],
+    capped: [],
+    dropped: 0,
+    webhooksDropped: 0,
+    suppressed: 0,
+    blindSeconds: 0,
+  });
 
   useLogStore.getState().clear();
   useTopicTreeStore.getState().reset();
@@ -1100,9 +1174,11 @@ function console_(client, { zoomed = false, pinned = false, opened = false, pane
   // The console opens with the Broker panel over the first column, which is right for a reader
   // who has just started it and wrong for a picture of the tool working. The panel is a click,
   // and a static page cannot carry one — so the click is made here.
+  // By the name at the head of the row rather than the row's whole text: once anything is ringing
+  // the Alerts row carries its count after the name, and its text is 'Alerts3'.
   const menu = (name) =>
     [...container.querySelectorAll('nav[aria-label="Panels"] button')].find(
-      (button) => button.textContent === name,
+      (button) => button.querySelector('span')?.textContent === name,
     );
   if (panel !== 'broker') {
     act(() => fireEvent.click(menu('Broker')));
