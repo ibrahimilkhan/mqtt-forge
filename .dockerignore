@@ -5,7 +5,6 @@ src/MqttForge.Api/wwwroot
 docs
 tests
 .git
-.claude
 web/certs
 dist
 .github

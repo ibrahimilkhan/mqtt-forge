@@ -4,7 +4,6 @@ obj/
 riderModule.iml
 /_ReSharper.Caches/
 .idea/
-.superpowers/
 .DS_Store
 node_modules/
 web/dist/
@@ -13,5 +12,3 @@ web/certs/
 src/MqttForge.Api/wwwroot/
 dist/
 *.DotSettings.user
-docs/superpowers/
-.claude/settings.local.json

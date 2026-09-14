@@ -1,9 +1,10 @@
 # The broker lab: four brokers, three vendors, every transport and every MQTT version MQTTForge
 # claims to speak. `./up.sh` starts it and prints the table of endpoints.
 #
-# Nothing here is meant to be reachable from anywhere but this machine, and the certificates it
-# serves are the throwaways in ./certs. Ports are deliberately in a high block so the lab never
-# argues with a broker you already have on 1883.
+# Nothing here is meant to be reachable from anywhere but this machine, so every port is published
+# on 127.0.0.1 only: several listeners are anonymous and EMQX's dashboard keeps its default login.
+# The certificates it serves are the throwaways in ./certs. Ports are deliberately in a high block
+# so the lab never argues with a broker you already have on 1883.
 name: mqttforge-lab
 
 services:
@@ -17,14 +18,14 @@ services:
       - ./mosquitto/passwd:/mosquitto/config/passwd:ro
       - ./certs:/mosquitto/certs:ro
     ports:
-      - "21883:1883"   # mqtt
-      - "21884:1884"   # mqtt, username and password
-      - "28883:8883"   # mqtts
-      - "28884:8884"   # mqtts, client certificate required
-      - "28885:8885"   # mqtts, expired certificate
-      - "28886:8886"   # mqtts, certificate for another name
-      - "29001:9001"   # ws
-      - "29443:9443"   # wss
+      - "127.0.0.1:21883:1883"   # mqtt
+      - "127.0.0.1:21884:1884"   # mqtt, username and password
+      - "127.0.0.1:28883:8883"   # mqtts
+      - "127.0.0.1:28884:8884"   # mqtts, client certificate required
+      - "127.0.0.1:28885:8885"   # mqtts, expired certificate
+      - "127.0.0.1:28886:8886"   # mqtts, certificate for another name
+      - "127.0.0.1:29001:9001"   # ws
+      - "127.0.0.1:29443:9443"   # wss
 
   # Mosquitto 1.5 — no MQTT 5. The rung the version ladder has to fall off.
   #
@@ -38,7 +39,7 @@ services:
     volumes:
       - ./mosquitto/mosquitto15.conf:/mosquitto/config/mosquitto.conf:ro
     ports:
-      - "31883:1883"   # mqtt, 3.1 and 3.1.1 only
+      - "127.0.0.1:31883:1883"   # mqtt, 3.1 and 3.1.1 only
 
   # EMQX 5 — a second implementation of all three versions and all four transports, and the one
   # that mounts its WebSocket at a fixed path, so a wrong path is a real failure to classify.
@@ -49,11 +50,11 @@ services:
     environment:
       EMQX_ALLOW_ANONYMOUS: "true"
     ports:
-      - "41883:1883"   # mqtt
-      - "48883:8883"   # mqtts, EMQX's own self-signed certificate
-      - "48083:8083"   # ws,  path /mqtt
-      - "48084:8084"   # wss, path /mqtt
-      - "48081:18083"  # dashboard, admin / public
+      - "127.0.0.1:41883:1883"   # mqtt
+      - "127.0.0.1:48883:8883"   # mqtts, EMQX's own self-signed certificate
+      - "127.0.0.1:48083:8083"   # ws,  path /mqtt
+      - "127.0.0.1:48084:8084"   # wss, path /mqtt
+      - "127.0.0.1:48081:18083"  # dashboard, admin / public
 
   # HiveMQ Community Edition — a third vendor's 3.1.1 and 5.0, and a WebSocket on a path of its
   # own, so "the path is wrong" is not a claim resting on one broker's behaviour.
@@ -64,5 +65,5 @@ services:
     volumes:
       - ./hivemq/config.xml:/opt/hivemq/conf/config.xml:ro
     ports:
-      - "51883:1883"   # mqtt
-      - "58000:8000"   # ws, path /mqtt
+      - "127.0.0.1:51883:1883"   # mqtt
+      - "127.0.0.1:58000:8000"   # ws, path /mqtt
