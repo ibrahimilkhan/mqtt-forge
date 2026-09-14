@@ -180,7 +180,7 @@ A rule can carry a second colour for the message under the topic. Most rules do 
 what tells a scrolling log apart, and the payload stays in the console's own ink. Give one to the
 rule whose payloads you are actually reading.
 
-![The Colours panel and the tree it paints](.github/assets/colours.png)
+![Two colour rules painting the tree, the log and the chart](.github/assets/colours.png)
 
 ## Alerts
 
@@ -193,6 +193,8 @@ fields its condition needs and nothing else. The panel lists the rules and what 
 seeing — how many topics it covers, how many readings it has read, when it last fired. It is
 about what is being watched for; how many alarms are ringing is the count on the **Alerts**
 button in the rail.
+
+![The Alerts panel watching a home broker](.github/assets/alerts.png)
 
 A rule subscribes its own filter. Alerting works with the console shut, and in a container with
 no browser pointed at it at all: the Docker image dials the saved broker as it starts when a
