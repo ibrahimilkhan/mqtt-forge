@@ -11,6 +11,8 @@
  * whether they are one family of states or six separate decisions.
  */
 import { existsSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render } from '@testing-library/react';
 import { it } from 'vitest';
@@ -21,7 +23,7 @@ import { arrived } from './features/connection/reconnectView';
 import { resetLinkWatch, useLinkWatchStore } from './stores/linkWatchStore';
 import { useHubStatusStore } from './stores/hubStatusStore';
 
-const OUT = '/Users/ilkhan/RiderProjects/MqttForge/src/MqttForge.Api/wwwroot';
+const OUT = join(dirname(fileURLToPath(import.meta.url)), '../../src/MqttForge.Api/wwwroot');
 
 const STYLE = `<style>
   body { padding: 24px; background: var(--paper); }

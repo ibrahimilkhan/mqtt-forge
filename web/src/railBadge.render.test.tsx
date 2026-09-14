@@ -8,6 +8,8 @@
  * thing that renders wrong for months without anybody opening the panel that would show it.
  */
 import { existsSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render } from '@testing-library/react';
 import { it } from 'vitest';
@@ -16,7 +18,7 @@ import { App } from './App';
 import { createFakeHub } from './realtime/fakeHub';
 import { useAlertStore } from './stores/alertStore';
 
-const OUT = '/Users/ilkhan/RiderProjects/MqttForge/src/MqttForge.Api/wwwroot';
+const OUT = join(dirname(fileURLToPath(import.meta.url)), '../../src/MqttForge.Api/wwwroot');
 
 const STYLE = `<style>
   body { padding: 20px; background: var(--paper); display: flex; flex-wrap: wrap; gap: 28px; }

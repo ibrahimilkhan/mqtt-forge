@@ -14,6 +14,8 @@
  * flex item next to the label that opened it — two words wide and thirty lines tall.
  */
 import { existsSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render } from '@testing-library/react';
 import { it } from 'vitest';
@@ -26,7 +28,7 @@ import { startRuleDraft, forgetDraft } from './features/alerts/ruleDraft';
 import { useAlertStore } from './stores/alertStore';
 import { useTopicTreeStore } from './stores/topicTreeStore';
 
-const OUT = '/Users/ilkhan/RiderProjects/MqttForge/src/MqttForge.Api/wwwroot';
+const OUT = join(dirname(fileURLToPath(import.meta.url)), '../../src/MqttForge.Api/wwwroot');
 
 const STYLE = `<style>
   body { padding: 24px; background: var(--paper); }
