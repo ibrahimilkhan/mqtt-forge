@@ -13,6 +13,12 @@ export type DecodedMessage = {
   receivedAt: string;
   /** What MQTT 5 sent with it. Absent on nearly every message, and on all of them on 3.1.1. */
   properties?: MessageProperties;
+  /**
+   * When the console received it, on its own clock — absent for a message that did not come over
+   * the hub. Stamped by useHubBridge before the message enters the frame buffer, so a queue
+   * drained later still dates it by when it actually arrived.
+   */
+  arrivedAt?: number;
 };
 
 /**
@@ -21,10 +27,11 @@ export type DecodedMessage = {
  */
 export function decodeIncoming(message: MqttMessage): DecodedMessage {
   const { topic, qos, retain, receivedAt, properties } = message;
+  const arrivedAt = (message as { arrivedAt?: number }).arrivedAt;
 
   if (message.payloadEncoding === 'base64') {
     const { text, size } = hexFromBase64(message.payload);
-    return { topic, payload: text, mode: 'hex', size, qos, retain, receivedAt, properties };
+    return { topic, payload: text, mode: 'hex', size, qos, retain, receivedAt, properties, arrivedAt };
   }
 
   return {
@@ -36,5 +43,6 @@ export function decodeIncoming(message: MqttMessage): DecodedMessage {
     retain,
     receivedAt,
     properties,
+    arrivedAt,
   };
 }

@@ -17,6 +17,7 @@ import { HoldButton } from '../monitor/HoldButton';
 import { useComposeStore } from '../../stores/composeStore';
 import { useHoldStore } from '../../stores/holdStore';
 import { useLogStore } from '../../stores/logStore';
+import { usePauseStore } from '../../stores/pauseStore';
 import { useSearchStore } from '../../stores/searchStore';
 import { brokerSelection, selectionFor, useSelectionStore } from '../../stores/selectionStore';
 import { isPathOpen, useTopicTreeStore } from '../../stores/topicTreeStore';
@@ -52,6 +53,10 @@ export function TopicTree({ broker }: { broker?: string }) {
   // alone and only the rows whose node object actually changed re-render.
   const forgotten = useTopicTreeStore((state) => state.forgotten);
   const returnedAt = useTopicTreeStore((state) => state.returnedAt);
+  // A stopped console is standing still, the way a held row is: nothing on it should move, and a
+  // fade appearing while it sits there would be the one thing on screen that did. See staleSince
+  // below.
+  const stopped = usePauseStore((state) => state.paused);
 
   const { look, where } = useSearchStore((state) => state.tree);
   const setTree = useSearchStore((state) => state.setTree);
@@ -343,9 +348,10 @@ export function TopicTree({ broker }: { broker?: string }) {
                 active={lastHitOf(row, node) > activeSince}
                 selected={row.path === selectedPath}
                 // Nothing at or under it since the link came back on its own: from before the
-                // drop. Not a row a hold draws — the pause already says it is standing still.
+                // drop. Not a row a hold draws — the pause already says it is standing still. Nor
+                // while the console itself is stopped: see `stopped` above.
                 staleSince={
-                  !drawn.held && returnedAt !== null && node.lastSubHitAt < returnedAt
+                  !stopped && !drawn.held && returnedAt !== null && node.lastSubHitAt < returnedAt
                     ? returnedAt
                     : undefined
                 }

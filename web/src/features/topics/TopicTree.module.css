@@ -349,7 +349,20 @@
    again. What this row says is from before the drop, and the broker has not said it since — which
    for a broker that restarted without its retained messages is a value it no longer holds. So the
    value, the counts and the run are drawn faded until the next message on the row; the name stays
-   in ink, because the topic is still the topic. */
-.node[data-stale] .val,
-.node[data-stale] .meta { color: color-mix(in srgb, var(--muted) 70%, transparent); }
-.node[data-stale] .spark { color: color-mix(in srgb, var(--ink) 20%, transparent); }
+   in ink, because the topic is still the topic.
+
+   Not on the selected row: it already lightens .meta for its own contrast fix above, tuned for
+   --rule rather than the pane's ground, and this rule's flat --muted percentage was painted over
+   it, same specificity, later in the file — a stale value picked out for reading came out harder
+   to read than a fresh one would have. The title still explains a stale value with no colour of
+   its own to say so.
+
+   The sparkline fades by opacity rather than colour. Its stroke is set inline to a colour rule's
+   own colour when one covers the row (see Sparkline), and a `color` rule cannot touch an inline
+   `stroke` — a coloured topic's run stayed bright through a return that faded every value beside
+   it. Opacity dims whatever the stroke's colour turns out to be, ruled or not. */
+.node[data-stale]:not([data-selected='true']) .val,
+.node[data-stale]:not([data-selected='true']) .meta {
+  color: color-mix(in srgb, var(--muted) 70%, transparent);
+}
+.node[data-stale] .spark { opacity: 0.35; }

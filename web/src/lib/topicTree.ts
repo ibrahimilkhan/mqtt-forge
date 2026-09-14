@@ -157,6 +157,8 @@ type TreeMessage = {
   mode?: BodyMode;
   qos?: number;
   retain?: boolean;
+  /** When the console received it, on its own clock. Absent falls back to the batch's own `at`. */
+  arrivedAt?: number;
 };
 
 export function applyMessage(
@@ -171,13 +173,28 @@ export function applyMessage(
   return insert(root, topic.split('/'), payload, at, qos, retain, mode).node;
 }
 
+/**
+ * A message is dated by when the console received it, not by when this batch happens to be
+ * applied — `at` is only the fallback for a message with no `arrivedAt` of its own. A queue
+ * drained late, behind the rail's Stop or by a console catching up, must not make an old value
+ * look as fresh as one landing this instant.
+ */
 export function applyMessages(
   root: TopicNode,
   messages: ReadonlyArray<TreeMessage>,
   at: number,
 ): TopicNode {
   return messages.reduce(
-    (tree, m) => applyMessage(tree, m.topic, m.payload, at, m.qos ?? 0, m.retain ?? false, m.mode ?? 'text'),
+    (tree, m) =>
+      applyMessage(
+        tree,
+        m.topic,
+        m.payload,
+        m.arrivedAt ?? at,
+        m.qos ?? 0,
+        m.retain ?? false,
+        m.mode ?? 'text',
+      ),
     root,
   );
 }
@@ -646,7 +663,11 @@ function insert(
       ...linkChild(parent, segments[i], node),
       subTopics: parent.subTopics + (isNewTopic ? 1 : 0),
       subMessages: parent.subMessages + 1,
-      lastSubHitAt: at,
+      // Math.max, not a plain overwrite: lastSubHitAt means 'the newest message anywhere beneath
+      // this node', and a batch is not guaranteed to be applied in arrival order — the queue
+      // behind a stop can hand over an older-arrived message after a newer one. A plain overwrite
+      // let the later insert along this path pull an ancestor's stamp backwards.
+      lastSubHitAt: Math.max(parent.lastSubHitAt, at),
     };
   }
 

@@ -8,6 +8,7 @@ import { server } from '../../test/server';
 import { applyMessages, emptyTree, MAX_TREE_ROWS } from '../../lib/topicTree';
 import { useComposeStore } from '../../stores/composeStore';
 import { useHoldStore } from '../../stores/holdStore';
+import { usePauseStore } from '../../stores/pauseStore';
 import { useSearchStore } from '../../stores/searchStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
@@ -1234,5 +1235,20 @@ describe('rows from before the link came back', () => {
     render(<TopicTree broker="localhost:1883" />);
 
     expect(rowOf('temp')).not.toHaveAttribute('data-stale');
+  });
+
+  // A stopped console is standing still, the way a held row is: nothing on it should move, and a
+  // fade appearing while it sits there would be the one thing on screen that did.
+  it('does not fade a row while the console is stopped, and does once it resumes', () => {
+    const root = applyMessages(emptyTree(), [message('sensors/temp', '21')], 1000);
+    useTopicTreeStore.setState({ root, defaultOpen: true, returnedAt: 2000 });
+    usePauseStore.setState({ paused: true });
+
+    render(<TopicTree broker="localhost:1883" />);
+    expect(rowOf('temp')).not.toHaveAttribute('data-stale');
+
+    act(() => usePauseStore.setState({ paused: false }));
+
+    expect(rowOf('temp')).toHaveAttribute('data-stale');
   });
 });

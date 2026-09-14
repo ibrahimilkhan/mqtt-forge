@@ -72,6 +72,14 @@ export const TreeNode = memo(function TreeNode({
   /** The rule's colour, once — the row, the name and the sparkline all draw from this one answer. */
   const paint = paintable(rule?.colour);
 
+  /**
+   * Why a row is faded, when it is — put on both `.val` and `.meta` below. A branch with no
+   * message of its own has an empty, zero-width `.val`, and without this its faded counts had
+   * nothing to say why they were dim.
+   */
+  const staleTitle =
+    staleSince !== undefined ? `Nothing since the link came back at ${clock(staleSince)}` : undefined;
+
   return (
     <div
       className={styles.node}
@@ -163,18 +171,18 @@ export const TreeNode = memo(function TreeNode({
           className={styles.val}
           // Faded by the row's `data-stale`; the title says why, since a dim value alone reads as
           // a quiet topic rather than as one the broker has not confirmed since the link came back.
-          title={
-            staleSince !== undefined
-              ? `Nothing since the link came back at ${clock(staleSince)}`
-              : undefined
-          }
+          title={staleTitle}
         >
           {node.latestPayload ?? ''}
         </span>
         {/* Between the value and the counts: what the topic has been doing, for a reader
             scanning the tree rather than reading one row of it. */}
         <Sparkline readings={node.readings} colour={paint} />
-        <span className={styles.meta}>{nodeSummary(node)}</span>
+        {/* Same title as the value above: a branch has no value of its own to carry it, and its
+            faded counts would otherwise say nothing about why they are dim. */}
+        <span className={styles.meta} title={staleTitle}>
+          {nodeSummary(node)}
+        </span>
       </button>
 
       {actions}

@@ -32,10 +32,13 @@ type TreeState = {
   setAllOpen: (open: boolean, under?: string | null) => void;
   reset: () => void;
   /**
-   * Goes up every time the tree starts again, which is every time a connection is made.
+   * Goes up every time the tree is started again — a hand Connect, a moved link, Clear traffic —
+   * and not when a dropped link comes back on its own to the same broker: that is marked instead,
+   * see `returnedAt` below.
    *
    * Read by anything holding messages that were meant for the tree that has just gone: they
-   * belong to a broker, or to a session, that is no longer the one on screen.
+   * belong to a broker, or to a session, that is no longer the one on screen. The log, the holds
+   * and the Stop queue all key their own reset off it.
    */
   generation: number;
   /**

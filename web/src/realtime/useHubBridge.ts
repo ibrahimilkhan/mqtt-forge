@@ -35,6 +35,16 @@ const PER_FRAME = 2_000;
  */
 const DROPS_REPORTED_EVERY = 5_000;
 
+/**
+ * A message once it has been stamped with when the console received it.
+ *
+ * The field lives here rather than on `MqttMessage` itself: it means nothing before this module
+ * has seen the message, and everything downstream of the buffer reads it through `decodeIncoming`
+ * instead of this type. Written onto the objects SignalR already allocated — see `messagesReceived`
+ * below — so the buffer is typed over the stamped shape without a copy on this hot path.
+ */
+type Arriving = MqttMessage & { arrivedAt?: number };
+
 // Where hub events meet application state; mounted once, from App.
 export function useHubBridge(hub: Hub) {
   const queryClient = useQueryClient();
@@ -42,7 +52,7 @@ export function useHubBridge(hub: Hub) {
   useEffect(() => {
     // Declared before the queue so the queue can be asked, on the way out of a flush, how much
     // of it is left. Hoisted, so the reference is sound by the time a frame can fire.
-    function take(batch: MqttMessage[]) {
+    function take(batch: Arriving[]) {
       const started = performance.now();
 
       const decoded = batch.map(decodeIncoming);
@@ -55,7 +65,7 @@ export function useHubBridge(hub: Hub) {
       usePauseStore.getState().track(buffer.waiting());
     }
 
-    const buffer = createFrameBuffer<MqttMessage>(take, {
+    const buffer = createFrameBuffer<Arriving>(take, {
       // A stop of any length ends in a queue, and handing all of it over in one frame is the
       // avalanche that stopping used to be designed around. At sixty frames a second this is a
       // hundred and twenty thousand messages a second — faster than any broker this watches —
@@ -114,6 +124,14 @@ export function useHubBridge(hub: Hub) {
 
     const unsubscribe = hub.subscribe({
       messagesReceived: (messages) => {
+        // Stamped here, before the buffer, so a message is dated by when the console actually
+        // received it rather than by when the queue gets around to handing it to the tree — which
+        // for a batch sitting behind the rail's Stop, or one a slow console is still catching up
+        // on, can be long after. Written onto the objects SignalR already allocated, not copied
+        // per message: this runs on every message a busy broker sends.
+        const at = Date.now();
+        for (const message of messages) (message as Arriving).arrivedAt = at;
+
         buffer.pushAll(messages);
         usePauseStore.getState().track(buffer.waiting());
       },

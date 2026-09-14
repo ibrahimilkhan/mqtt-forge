@@ -396,6 +396,35 @@ describe('while the console is stopped', () => {
     expect(useLogStore.getState().held).toBe(2_000);
     expect(usePauseStore.getState().waiting).toBe(1_000);
   });
+
+  // The queue behind this stop can now sit across a drop and a return, since Task 10 stopped a
+  // link coming back on its own from resetting the tree. A message dated by when the frame buffer
+  // hands it over would land looking as fresh as the moment it drains — long after the return, if
+  // the reader left it stopped that long — and a row that heard nothing since would un-fade for a
+  // value the broker never said again. Dated by when the console actually received it, it keeps
+  // that moment wherever the queue gets around to it.
+  it('keeps the time a message was received, not the time it lands once the queue drains', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const hub = createFakeHub();
+      renderBridge(hub);
+      usePauseStore.setState({ paused: true });
+
+      vi.setSystemTime(1_000);
+      hub.emit('messagesReceived', [message('sensors/temp', '21')]);
+
+      // A gap before the queue is let go, long enough that 'when it landed' and 'when it arrived'
+      // are two different moments.
+      vi.setSystemTime(5_000);
+      usePauseStore.setState({ paused: false });
+      runFrames();
+
+      const node = useTopicTreeStore.getState().root.children.get('sensors')?.children.get('temp');
+      expect(node?.lastHitAt).toBe(1_000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('useHubBridge and the alert engine', () => {

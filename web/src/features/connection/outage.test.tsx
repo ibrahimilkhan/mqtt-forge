@@ -495,6 +495,9 @@ describe('a link that drops while the reader is elsewhere', () => {
     await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Connected'));
 
     expect(useTopicTreeStore.getState().generation).toBe(after);
+    // A hand Connect is not a return: it starts the tree again, and a fresh tree has nothing old
+    // in it to mark.
+    expect(useTopicTreeStore.getState().returnedAt).toBeNull();
   });
 
 

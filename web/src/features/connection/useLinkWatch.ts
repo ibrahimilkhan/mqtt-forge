@@ -38,10 +38,11 @@ export function useLinkWatch() {
    * has started it again since.
    *
    * A hand Connect resets the tree — new connection, new tree, retained messages refill it. A
-   * redial the supervisor made is the same new connection and had no such reset, so a broker that
-   * came back without its retained tree (no `persistence`, which is every default container) left
-   * its old values on screen looking current. A monitoring console showing state the broker no
-   * longer holds is wrong in the one thing it is for.
+   * redial the supervisor made is the same new connection and gets no such reset: unchanged means
+   * this is a link coming back on its own, and the return is marked rather than the tree started
+   * again — a row that has heard nothing since is drawn faded, rather than a broker that came back
+   * without its retained tree leaving old values looking current. Only a moved link, or the
+   * reader's own Connect, still start the tree again.
    */
   const treeAtDrop = useRef<number | null>(null);
 
@@ -160,7 +161,8 @@ export function useLinkWatch() {
   // dropped and came back hours ago: nothing on this side saw either, so the state still reads
   // Connected and every arrival of the old session is still on screen, under a green lamp, as
   // though it were current. `connectedAt` is the broker's own answer to 'is this the same
-  // session', and a new one means the tree belongs to a connection that is over.
+  // session', and a new one is marked as a return, the same as a drop this console did watch: a
+  // row that has heard nothing since is drawn faded, rather than looking current.
   useEffect(() => {
     if (!answered || state !== 'Connected' || !link) return;
 
@@ -171,6 +173,8 @@ export function useLinkWatch() {
 
     if (held && (held.endpoint !== endpoint || held.since !== since)) {
       const moved = held.endpoint !== endpoint;
+      // Unchanged generation means nobody has started the tree again since this console last saw
+      // the link.
       if (held.generation === tree.generation) {
         if (moved) {
           // Another broker: the topics under the root are the old broker's, and this console is

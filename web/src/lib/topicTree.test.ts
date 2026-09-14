@@ -348,6 +348,45 @@ describe('applyMessages', () => {
 
     expect(tree.children.get('sensors')!.children.get('temp')!.latestMode).toBe('text');
   });
+
+  // A message queued behind the rail's Stop, or one a slow console is still catching up on, can
+  // be handed to the tree long after it arrived. Dated by the batch's own `at` it would look as
+  // fresh as one that just landed; dated by its own `arrivedAt` it keeps the moment it actually
+  // arrived, whichever moment the tree gets around to applying it.
+  it('dates a message by its own arrival when it has one, and by the batch time otherwise', () => {
+    const tree = applyMessages(
+      emptyTree(),
+      [
+        { topic: 'a', payload: '1', arrivedAt: 500 },
+        { topic: 'b', payload: '1' },
+      ],
+      900,
+    );
+
+    expect(at(tree, 'a').lastHitAt).toBe(500);
+    expect(at(tree, 'b').lastHitAt).toBe(900);
+    // The root is the ancestor of both messages here, and the later-applied one — 'b', at 900 —
+    // also happens to be the newer of the two, so it wins whichever rule an ancestor follows.
+    expect(tree.lastSubHitAt).toBe(900);
+  });
+
+  // A batch need not be applied in arrival order: the queue behind a stop can hand over an
+  // older-arrived message after a newer one, once messages carry their own `arrivedAt`. An
+  // ancestor's lastSubHitAt means 'the newest message anywhere beneath it', not 'whatever the
+  // last insert along this path happened to write' — so applying the older message second must
+  // not pull the ancestor's stamp backwards.
+  it('does not let a later-applied message with an older arrival pull an ancestor backwards', () => {
+    const tree = applyMessages(
+      emptyTree(),
+      [
+        { topic: 'a', payload: '1', arrivedAt: 900 },
+        { topic: 'b', payload: '1', arrivedAt: 500 },
+      ],
+      900,
+    );
+
+    expect(tree.lastSubHitAt).toBe(900);
+  });
 });
 
 describe('pruneTopics', () => {
