@@ -586,8 +586,9 @@ export function heldWeight(byTopic: ReadonlyMap<string, TopicRing>): number {
 /**
  * One sequence of arrivals, put back into a run per topic.
  *
- * For a run that is already fixed — a held pane — where grouping is paid once rather than on
- * every arrival, and the live path never needs it because the log holds the runs apart already.
+ * For a sequence that is already fixed, where grouping is paid once: the pages rendered from a
+ * hand-built log, and the chart tests that write their traffic out as one list. Nothing on the live
+ * path calls it, because the log holds the runs apart already and a hold freezes them as runs.
  */
 export function runsOf(entries: readonly LogEntry[]): LogEntry[][] {
   const byTopic = new Map<string, LogEntry[]>();

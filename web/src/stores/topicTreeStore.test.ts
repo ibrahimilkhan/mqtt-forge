@@ -88,36 +88,6 @@ describe('topicTreeStore', () => {
   });
 });
 
-describe('dropFilter', () => {
-  it('takes the unsubscribed topics out of the tree', () => {
-    useTopicTreeStore.getState().apply([message('sensors/temp'), message('devices/a')]);
-
-    useTopicTreeStore.getState().dropFilter('sensors/#', []);
-
-    const root = useTopicTreeStore.getState().root;
-    expect(root.children.has('sensors')).toBe(false);
-    expect(root.children.has('devices')).toBe(true);
-  });
-
-  // Still covered by a wider subscription, so messages keep arriving and the rows must stay.
-  it('keeps topics another live subscription still covers', () => {
-    useTopicTreeStore.getState().apply([message('sensors/temp')]);
-
-    useTopicTreeStore.getState().dropFilter('sensors/#', ['#']);
-
-    expect(useTopicTreeStore.getState().root.children.has('sensors')).toBe(true);
-  });
-
-  it('leaves the tree object alone when the filter matched nothing on screen', () => {
-    useTopicTreeStore.getState().apply([message('devices/a')]);
-    const before = useTopicTreeStore.getState().root;
-
-    useTopicTreeStore.getState().dropFilter('sensors/#', []);
-
-    expect(useTopicTreeStore.getState().root).toBe(before);
-  });
-});
-
 // The broker row is what everything hangs off, so both controls have to reach it: with it left
 // out, expanding opened every branch behind a closed door and collapsing left the top level
 // standing. The row itself is always drawn, so folding it puts the tree away without emptying

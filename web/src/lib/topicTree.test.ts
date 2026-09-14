@@ -370,22 +370,29 @@ describe('applyMessages', () => {
     expect(tree.lastSubHitAt).toBe(900);
   });
 
-  // A batch need not be applied in arrival order: the queue behind a stop can hand over an
-  // older-arrived message after a newer one, once messages carry their own `arrivedAt`. An
-  // ancestor's lastSubHitAt means 'the newest message anywhere beneath it', not 'whatever the
-  // last insert along this path happened to write' — so applying the older message second must
-  // not pull the ancestor's stamp backwards.
-  it('does not let a later-applied message with an older arrival pull an ancestor backwards', () => {
+  // Not something the hub's own path does: its queue is first in, first out, and every batch is
+  // stamped as it arrives, so messages reach the tree in the order they were received. This is a
+  // guard for the ways an older stamp can still be applied after a newer one — an apply with no
+  // stamp of its own, dated by whenever it runs, or a clock that steps back. lastSubHitAt means
+  // 'the newest message at or beneath this node', not 'whatever the last insert along this path
+  // happened to write', so an older stamp applied second must not pull it backwards: not on an
+  // ancestor, and not on a topic that is a branch too, which would fall below its own child.
+  it('does not let a later-applied message with an older stamp pull a node backwards', () => {
     const tree = applyMessages(
       emptyTree(),
       [
-        { topic: 'a', payload: '1', arrivedAt: 900 },
-        { topic: 'b', payload: '1', arrivedAt: 500 },
+        { topic: 'a/b', payload: '1', arrivedAt: 900 },
+        { topic: 'a', payload: '1', arrivedAt: 500 },
       ],
       900,
     );
 
+    // The ancestor of both.
     expect(tree.lastSubHitAt).toBe(900);
+    // The topic the older message landed on, which is also the branch the newer one is under.
+    expect(at(tree, 'a').lastSubHitAt).toBe(900);
+    // Its own last message is still the one that landed on it.
+    expect(at(tree, 'a').lastHitAt).toBe(500);
   });
 });
 

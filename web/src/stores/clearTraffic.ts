@@ -29,15 +29,16 @@ export function clearTraffic(): void {
 }
 
 /**
- * Topics gone from every place the console keeps one: the tree, the log's runs, and every hold.
+ * Topics gone from every place the console keeps one: the tree, the log's runs, every hold, and the
+ * queue behind the rail's Stop.
  *
- * All three, always. The tree and the log hold one thing between them — a row and its run — and a
+ * All four, always. The tree and the log hold one thing between them — a row and its run — and a
  * console that emptied one left the fault this shape exists to prevent. Holds are the third: a
  * pause kept the runs it had frozen, so a pane the reader had just emptied went on showing them,
  * and the topic's next message brought its row back with the value from before. A hold above what
- * went keeps standing without it; one with nothing left is let go. The queue behind the rail's
- * Stop is a fourth place, since what waits there on these topics arrived before the reader asked
- * and would put them back on resume.
+ * went keeps standing without it; one with nothing left is let go. The queue is the fourth, since
+ * what waits there on these topics arrived before the reader asked and would put them back on
+ * resume.
  */
 export function forgetTopics(remove: (topic: string) => boolean): void {
   const log = useLogStore.getState();

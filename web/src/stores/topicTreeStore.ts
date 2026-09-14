@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { matchesFilter } from '../lib/topicMatch';
 import {
   applyMessages,
   emptyTree,
@@ -24,7 +23,6 @@ type TreeState = {
   /** Topics given up to the ceiling since this tree started. */
   forgotten: number;
   apply: (messages: DecodedMessage[]) => void;
-  dropFilter: (filter: string, stillSubscribed: readonly string[]) => void;
   /** Drops every topic the test says yes to — what Clear and an unsubscribe take from the tree. */
   dropTopics: (remove: (topic: string) => boolean) => void;
   toggle: (path: string) => void;
@@ -88,16 +86,6 @@ export const useTopicTreeStore = create<TreeState>((set, get) => ({
 
       return { root, forgotten: state.forgotten + forgotten.length };
     }),
-
-  // Messages stop arriving for a filter that was dropped, so what the tree still shows for it is
-  // history the user just said they were done with. Overlapping subscriptions are the reason for
-  // the second argument: with '#' still up, dropping 'sensors/#' changes nothing about what the
-  // broker keeps sending, and the tree has to say so.
-  dropFilter: (filter, stillSubscribed) =>
-    get().dropTopics(
-      (topic) =>
-        matchesFilter(filter, topic) && !stillSubscribed.some((kept) => matchesFilter(kept, topic)),
-    ),
 
   dropTopics: (remove) =>
     set((state) => {

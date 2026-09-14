@@ -7,7 +7,7 @@ import { TrafficPane } from './features/monitor/TrafficPane';
 import { useHoldStore } from './stores/holdStore';
 import { clearSelection } from './stores/clearTraffic';
 import { WireLog } from './features/monitor/WireLog';
-import { TopicTree } from './features/topics/TopicTree';
+import { ACTIVE_WINDOW_MS, TopicTree } from './features/topics/TopicTree';
 import { createFakeHub } from './realtime/fakeHub';
 import { useHubBridge } from './realtime/useHubBridge';
 import { useLogStore } from './stores/logStore';
@@ -176,6 +176,35 @@ describe('the stop in the rail', () => {
     expect(rowFor('pressure')).not.toBeNull();
     expect(usePauseStore.getState().waiting).toBe(0);
     expect(usePauseStore.getState().lost).toBe(0);
+  });
+
+  // A tint says a message arrived a moment ago, and none of what the Stop held back did: it went
+  // past while the reader was reading. Rows are tinted by when their message arrived, so the queue
+  // lands without lighting up every row it touches — and a message that arrives live still does.
+  it('lands what it held back without tinting the rows, and tints what arrives live', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(10_000);
+      const { send } = renderConsole();
+      await userEvent.click(streamControl());
+
+      send(['sensors/temp', '21']);
+
+      vi.setSystemTime(10_000 + ACTIVE_WINDOW_MS + 1);
+      await act(async () => {
+        await userEvent.click(streamControl());
+      });
+      act(() => runFrames());
+
+      expect(rowOf('temp')).toHaveTextContent('21');
+      expect(rowOf('temp')).not.toHaveAttribute('data-active', 'true');
+
+      send(['sensors/temp', '22']);
+
+      expect(rowOf('temp')).toHaveAttribute('data-active', 'true');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

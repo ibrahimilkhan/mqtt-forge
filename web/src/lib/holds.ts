@@ -98,8 +98,11 @@ export function outermost(holds: Iterable<Held>): Held[] {
 /**
  * What arrived under a region after it was frozen: the live row at its top against the frozen one.
  *
- * Each figure is clamped at nothing. An unsubscribe or a Clear can take rows out from under a
- * hold, and a count that went up because rows went away would be a worse lie than a zero.
+ * Each figure is clamped at nothing: the rows above a hold take it off their own counts, and a
+ * count that went up because rows went away would be a worse lie than a zero. An unsubscribe or a
+ * Clear no longer does that — it takes its topics out of the hold as well as the tree, so the two
+ * go down together — but the tree's topic ceiling still can: it forgets quiet topics from the live
+ * tree and leaves them standing in a hold that froze them (see MAX_TREE_TOPICS).
  */
 export function behind(held: Held, root: TopicNode): Behind {
   const live = held.path === null ? root : nodeAt(root, held.path);

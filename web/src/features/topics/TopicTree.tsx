@@ -25,7 +25,9 @@ import styles from './TopicTree.module.css';
 import { TreeNode } from './TreeNode';
 
 // How long a row stays tinted after its last message. A row under steady traffic simply never
-// stops being active, so it holds one colour instead of restarting a fade per message.
+// stops being active, so it holds one colour instead of restarting a fade per message. The last
+// message is dated by when it arrived, not by when it reached the tree, so what the rail's Stop
+// held back lands without flashing: none of it arrived a moment ago.
 export const ACTIVE_WINDOW_MS = 1200;
 
 // Reserved: a topic path can never contain a NUL, so the broker row cannot collide with one.
@@ -148,9 +150,10 @@ export function TopicTree({ broker }: { broker?: string }) {
 
   // The broker is not a topic: it focuses the log on everything and has nothing to publish to.
   const brokerLabel = broker ?? 'Not connected';
-  // What a hold on '#' is called: the spec's rule for naming a hold names the broker's address,
-  // and 'Not connected' is a link state rather than a name — so a console with no broker yet
-  // calls its one hold 'Everything' instead, which is what such a hold covers either way.
+  // What a hold on '#' is called — by holdName, whose rule names the broker's address. A link that
+  // has dropped has no address to give, and the tree keeps its rows through a drop, so a hold on
+  // them can outlive the address: 'Not connected' is a link state rather than a name, and the hold
+  // is called 'Everything' instead, which is what it covers either way.
   const holdBroker = broker ?? 'Everything';
   const pickBroker = useCallback(() => select(brokerSelection(broker)), [select, broker]);
 
@@ -167,9 +170,10 @@ export function TopicTree({ broker }: { broker?: string }) {
    * The narrow pause, on the row it acts on.
    *
    * The selected row carries it, because what it holds is the run the selection put on screen.
-   * Made once and handed to that row alone: every other row is handed nothing, so nothing about
-   * them changes and the memo around each of them still holds. It is told the broker's name, which
-   * is what it calls a hold on everything when it says a pane is paused with one.
+   * Made once and handed to that row. A row with a hold of its own is handed a control of its own
+   * as well (see holdsOn below); every other row is handed nothing, so nothing about them changes
+   * and the memo around each of them still holds. It is told the broker's name, which is what it
+   * calls a hold on everything when it says a pane is paused with one.
    */
   const hold = useMemo(() => <HoldButton broker={holdBroker} />, [holdBroker]);
 
@@ -221,9 +225,6 @@ export function TopicTree({ broker }: { broker?: string }) {
     );
   }, [setAllOpen, selectedPath]);
 
-  // The broker's row keeps the two tree marks at its end whether it is picked or not, and takes
-  // the pause in front of them when it is: picking it focuses the log on everything, which is a
-  // run like any other and can be held like one.
   /**
    * The search, on the row the whole tree hangs off.
    *

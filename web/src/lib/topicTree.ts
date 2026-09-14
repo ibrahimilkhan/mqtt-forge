@@ -650,8 +650,11 @@ function insert(
     latestMode: mode,
     latestQos: qos,
     latestRetain: retain,
+    // The last message on this topic is the one that just landed, whatever its stamp says.
     lastHitAt: at,
-    lastSubHitAt: at,
+    // Guarded as the ancestors below are, since a topic can be a branch too: an older stamp landing
+    // on it must not put it below a newer message on its own child.
+    lastSubHitAt: Math.max(target.lastSubHitAt, at),
     subTopics: target.subTopics + (isNewTopic ? 1 : 0),
     subMessages: target.subMessages + 1,
   };
@@ -664,9 +667,10 @@ function insert(
       subTopics: parent.subTopics + (isNewTopic ? 1 : 0),
       subMessages: parent.subMessages + 1,
       // Math.max, not a plain overwrite: lastSubHitAt means 'the newest message anywhere beneath
-      // this node', and a batch is not guaranteed to be applied in arrival order — the queue
-      // behind a stop can hand over an older-arrived message after a newer one. A plain overwrite
-      // let the later insert along this path pull an ancestor's stamp backwards.
+      // this node'. The hub's own path never applies an older stamp after a newer one — its queue
+      // is first in, first out, and each batch is stamped as it arrives — so this is a guard for
+      // what that path does not cover: an apply with no stamp of its own, dated by whenever it
+      // runs, and a clock that steps back. A plain overwrite let either pull an ancestor backwards.
       lastSubHitAt: Math.max(parent.lastSubHitAt, at),
     };
   }

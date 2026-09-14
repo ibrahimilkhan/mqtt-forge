@@ -408,12 +408,12 @@ describe('while the console is stopped', () => {
     expect(usePauseStore.getState().waiting).toBe(1_000);
   });
 
-  // The queue behind this stop can now sit across a drop and a return, since Task 10 stopped a
-  // link coming back on its own from resetting the tree. A message dated by when the frame buffer
-  // hands it over would land looking as fresh as the moment it drains — long after the return, if
-  // the reader left it stopped that long — and a row that heard nothing since would un-fade for a
-  // value the broker never said again. Dated by when the console actually received it, it keeps
-  // that moment wherever the queue gets around to it.
+  // The queue behind this stop can sit across a drop and a return, since a link that comes back on
+  // its own to the same broker no longer starts the tree again. A message dated by when the frame
+  // buffer hands it over would land looking as fresh as the moment it drains — long after the
+  // return, if the reader left it stopped that long — and a row that heard nothing since would
+  // un-fade for a value the broker never said again. Dated by when the console actually received
+  // it, it keeps that moment wherever the queue gets around to it.
   it('keeps the time a message was received, not the time it lands once the queue drains', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     try {
