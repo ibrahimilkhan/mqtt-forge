@@ -2,13 +2,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../App';
 import { createFakeHub } from '../../realtime/fakeHub';
 import { useBrokerEventsStore } from '../../stores/brokerEventsStore';
 import { useHoldStore } from '../../stores/holdStore';
 import { resetLinkWatch } from '../../stores/linkWatchStore';
 import { useLogStore } from '../../stores/logStore';
+import { usePauseStore } from '../../stores/pauseStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import { server } from '../../test/server';
 import type {
@@ -16,6 +17,7 @@ import type {
   BrokerLink,
   ConnectionState,
   ConnectionStateResponse,
+  MqttMessage,
   ReconnectStatus,
 } from '../../types/api';
 
@@ -142,7 +144,7 @@ describe('a link that drops while the reader is elsewhere', () => {
       });
     };
 
-    return { ...view, says, movesTo, resumes, supervising };
+    return { ...view, hub, says, movesTo, resumes, supervising };
   }
 
   /** Somewhere that is not the Broker panel, which is where the reader has to be for any of this. */
@@ -500,6 +502,174 @@ describe('a link that drops while the reader is elsewhere', () => {
     expect(useTopicTreeStore.getState().returnedAt).toBeNull();
   });
 
+  /**
+   * What arrives either side of a return, through the hub the way it arrives in the app.
+   *
+   * A row is faded by comparing when its messages were received against when the link came back,
+   * so these are about moments a millisecond apart — which is why the clock here moves only when a
+   * test moves it. On a real clock 'before the return' and 'after it' are as often as not the same
+   * millisecond, and a test of which one a message fell on would pass or fail by chance.
+   */
+  describe('what arrives around a return', () => {
+    let frames: Array<() => void>;
+
+    beforeEach(() => {
+      // The hub bridge hands messages over a frame at a time, so the frames are the test's to run.
+      frames = [];
+      vi.stubGlobal('requestAnimationFrame', (callback: () => void) => frames.push(callback));
+      vi.stubGlobal('cancelAnimationFrame', () => {});
+
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(1_000);
+
+      useTopicTreeStore.getState().reset();
+      // Every branch open, so a topic's own row is drawn and not only the branch it hangs off.
+      useTopicTreeStore.setState({ defaultOpen: true });
+      useLogStore.getState().clear();
+      usePauseStore.setState({ paused: false, waiting: 0, lost: 0 });
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      useTopicTreeStore.setState({ defaultOpen: false });
+      usePauseStore.setState({ paused: false, waiting: 0, lost: 0 });
+    });
+
+    /** Runs frames until nothing more is booked: the queue hands over a frame's worth at a time. */
+    function runFrames(limit = 1000) {
+      for (let ran = 0; frames.length > 0; ran++) {
+        if (ran > limit) throw new Error('the queue never emptied');
+        frames.shift()!();
+      }
+    }
+
+    const message = (topic: string, payload: string, retain = false): MqttMessage => ({
+      topic,
+      payload,
+      qos: 0,
+      retain,
+      receivedAt: '2026-09-02T21:00:00.000Z',
+    });
+
+    /** Messages over the hub, and every frame the queue books to hand them to the tree and the log. */
+    const hands = (hub: ReturnType<typeof createFakeHub>, ...messages: MqttMessage[]) => {
+      act(() => hub.emit('messagesReceived', messages));
+      act(() => runFrames());
+    };
+
+    /**
+     * A topic's row, by its own segment.
+     *
+     * By test id rather than by role: the drop opened the Broker panel, and that panel takes the
+     * whole workspace — the tree is still drawn behind it, but out of the accessibility tree.
+     */
+    const rowOf = (segment: string): HTMLElement => {
+      const found = screen.getAllByTestId('segment').find((one) => one.textContent === segment);
+      if (!found) throw new Error(`the tree draws no row for ${segment}`);
+
+      return found.closest<HTMLElement>('[data-testid="tree-row"]')!;
+    };
+
+    /** The rail's own Stop, by either of the names it goes by. */
+    const stop = () => screen.getByRole('button', { name: /^(Stop stream|Resume)/ });
+
+    /**
+     * The broker's own answer to a return, drawn as though it were the one thing it had not said.
+     *
+     * A link that comes back is subscribed again, and a broker answers a subscription with its
+     * retained messages — so they can reach the console right behind the 'Connected', before React
+     * has drawn it. The return used to be dated when the effect that marks it ran, which is after
+     * both: the message the broker had just sent again was dated before the return it came back
+     * with, and its row was faded.
+     */
+    it('does not fade a row the broker sends again before the return has been drawn', async () => {
+      const { hub, says } = renderApp();
+      await says('Connected');
+      hands(hub, message('lab/oven', '210', true), message('lab/door', 'shut', true));
+
+      vi.setSystemTime(2_000);
+      await says('Faulted');
+      await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Faulted'));
+
+      // A redial is a new session, so it comes back with a new connectedAt.
+      link = {
+        state: 'Connected',
+        failure: null,
+        connection: { ...CONNECTION, connectedAt: '2026-09-02T21:05:00.000Z' },
+      };
+      await act(async () => {
+        // Three moments, in the order a real link has them. The state is received; the broker's
+        // retained message is received behind it; and the effect that marks the return runs
+        // later still, once this callback is over and React has drawn the state.
+        vi.setSystemTime(4_000);
+        hub.emit('connectionStateChanged', link);
+        vi.setSystemTime(4_001);
+        hub.emit('messagesReceived', [message('lab/oven', '211', true)]);
+        vi.setSystemTime(4_002);
+      });
+      act(() => runFrames());
+
+      // The door was not sent again, so it is faded — which is also what says the return is drawn.
+      await waitFor(() => expect(rowOf('door')).toHaveAttribute('data-stale'));
+      expect(rowOf('oven')).toHaveTextContent('211');
+      expect(rowOf('oven')).not.toHaveAttribute('data-stale');
+    });
+
+    // The rail's Stop is the reader's, and a link coming back is no reason to throw away what it is
+    // holding for them. It used to be: the return started the tree again, and the queue went with
+    // the tree it had been meant for.
+    it("keeps the queue behind the rail's Stop through a return, and lands it on resume", async () => {
+      const { hub, says, resumes } = renderApp();
+      await says('Connected');
+      await waitFor(() => expect(stop()).toBeEnabled());
+      await userEvent.click(stop());
+
+      act(() =>
+        hub.emit('messagesReceived', [message('lab/oven', '210'), message('lab/door', 'shut')]),
+      );
+      expect(usePauseStore.getState().waiting).toBe(2);
+
+      vi.setSystemTime(2_000);
+      await says('Faulted');
+      await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Faulted'));
+      vi.setSystemTime(4_000);
+      await resumes('2026-09-02T21:05:00.000Z');
+      await waitFor(() => expect(useTopicTreeStore.getState().returnedAt).not.toBeNull());
+
+      expect(usePauseStore.getState().waiting).toBe(2);
+      expect(usePauseStore.getState().lost).toBe(0);
+
+      await userEvent.click(stop());
+      act(() => runFrames());
+
+      expect(useLogStore.getState().held).toBe(2);
+      expect(useLogStore.getState().byTopic.has('lab/oven')).toBe(true);
+      expect(useLogStore.getState().byTopic.has('lab/door')).toBe(true);
+      expect(usePauseStore.getState().waiting).toBe(0);
+    });
+
+    // A row faded by a return is waiting to hear from the broker again, and the next message on it
+    // is exactly that.
+    it('un-fades a row once a message arrives on it after the return', async () => {
+      const { hub, says, resumes } = renderApp();
+      await says('Connected');
+      hands(hub, message('lab/oven', '210'));
+
+      vi.setSystemTime(2_000);
+      await says('Faulted');
+      await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Faulted'));
+      vi.setSystemTime(4_000);
+      await resumes('2026-09-02T21:05:00.000Z');
+      await waitFor(() => expect(rowOf('oven')).toHaveAttribute('data-stale'));
+
+      vi.setSystemTime(5_000);
+      hands(hub, message('lab/oven', '211'));
+
+      expect(rowOf('oven')).toHaveTextContent('211');
+      expect(rowOf('oven')).not.toHaveAttribute('data-stale');
+    });
+  });
 
   /**
    * The reader stopped the ladder and dialled the broker themselves.

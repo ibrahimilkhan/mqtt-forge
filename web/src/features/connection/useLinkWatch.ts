@@ -23,7 +23,7 @@ import type { ConnectionState } from '../../types/api';
  * no command behind them.
  */
 export function useLinkWatch() {
-  const { state, failure, link, answered } = useConnectionState();
+  const { state, failure, link, answered, seenAt } = useConnectionState();
   const { status, answered: statusAnswered } = useReconnectStatus();
   const queryClient = useQueryClient();
 
@@ -129,7 +129,14 @@ export function useLinkWatch() {
       // return is marked instead, and a row that hears nothing after it is drawn faded.
       const tree = useTopicTreeStore.getState();
       if (treeAtDrop.current === tree.generation) {
-        tree.returned(Date.now());
+        // Dated by when the console heard the link was back, not by when this effect got to it. A
+        // row is faded against when its messages were received, which the hub bridge stamps as it
+        // takes them in, and this effect runs only after React has drawn the new state — late
+        // enough for a retained message the broker sent straight back to be received first, and
+        // then faded as older than the return it came back with. `seenAt` is taken on the same
+        // clock at the same point on the way in; the effect's own clock is left for an answer
+        // written anywhere else, which carries none.
+        tree.returned(seenAt ?? Date.now());
         returnedSession.current = link?.connectedAt ?? null;
       }
       treeAtDrop.current = null;
@@ -152,6 +159,10 @@ export function useLinkWatch() {
           what: `Link back · gone for ${away(dropped)}`,
         });
     }
+    // `seenAt` is read above and not listed. It comes with the state it dates, so whenever this has
+    // something to do the two are from the same answer — and a refetch that changes nothing about
+    // the link still brings a new one, which is no reason to look at the link again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seenAt dates the state, see above
   }, [state, failure, link, answered, queryClient]);
 
   // The link is not the one this console was watching — another broker, or the same broker on a
@@ -189,8 +200,9 @@ export function useLinkWatch() {
         } else if (returnedSession.current !== since) {
           // The same broker, on a session this console did not see begin — the machine that
           // slept. What arrived before it is still true of what arrived; it is marked, as a
-          // return is, rather than thrown away.
-          tree.returned(Date.now());
+          // return is, rather than thrown away — and dated the same way, by when the console
+          // heard of it, for the reason given at the return above.
+          tree.returned(seenAt ?? Date.now());
           returnedSession.current = since;
           void queryClient.invalidateQueries({ queryKey: queryKeys.subscriptions });
           useBrokerEventsStore.getState().push({
@@ -204,6 +216,9 @@ export function useLinkWatch() {
     }
 
     linkAt.current = { endpoint, since, generation: useTopicTreeStore.getState().generation };
+    // Unlisted for the reason given on the effect above. A run here is not free either: each one
+    // writes the tree's generation into `linkAt`, and that is what the next session is judged by.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seenAt dates the link, see above
   }, [answered, state, link, queryClient]);
 
   // The link is down with an outage the server is working on — or has stopped working on, which

@@ -1,12 +1,14 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
-import { beforeEach, describe, expect, it } from 'vitest';
+import type { ReactNode } from 'react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
 import { createFakeHub } from '../realtime/fakeHub';
 import { useHubStatusStore } from '../stores/hubStatusStore';
 import { server } from '../test/server';
+import { useConnectionState } from './useConnectionState';
 
 // Store outlives a test; reset so one case's reconnect doesn't leak into the next.
 beforeEach(() => useHubStatusStore.getState().setStatus('live'));
@@ -137,5 +139,35 @@ describe('connection gating', () => {
     await screen.findByLabelText('Connection details');
     // On the status head above the list, which is the one place it is said now.
     expect(screen.getByText('live.example:1884')).toBeInTheDocument();
+  });
+});
+
+describe('the state as the console holds it', () => {
+  // The fetch is one of the two ways the console hears what the link is, and a link coming back is
+  // dated by when it heard — so the answer is dated when it lands, as the hub bridge dates a push.
+  it('dates the answer by when it landed, not by when it was asked for', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(4_000);
+      server.use(
+        http.get('/api/connection', () => {
+          // The answer is on its way back: anything stamped from here on was stamped as it landed.
+          vi.setSystemTime(5_000);
+          return HttpResponse.json({ state: 'Connected', connection: LINK });
+        }),
+      );
+
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const { result } = renderHook(() => useConnectionState(), {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        ),
+      });
+
+      await waitFor(() => expect(result.current.answered).toBe(true));
+      expect(result.current.seenAt).toBe(5_000);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

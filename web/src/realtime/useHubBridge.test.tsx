@@ -117,13 +117,24 @@ describe('useHubBridge', () => {
     expect(node).toMatchObject({ latestMode: 'hex', latestPayload: '01 A4 FF' });
   });
 
-  it('writes a pushed connection state into the query cache', () => {
-    const hub = createFakeHub();
-    const { queryClient } = renderBridge(hub);
+  // With the moment it was received, on the clock a message is stamped with: a link coming back is
+  // dated by it, and compared against the messages around it. See useLinkWatch.
+  it('writes a pushed connection state into the query cache, dated when it was received', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const hub = createFakeHub();
+      const { queryClient } = renderBridge(hub);
 
-    hub.emit('connectionStateChanged', { state: 'Faulted' });
+      vi.setSystemTime(4_000);
+      hub.emit('connectionStateChanged', { state: 'Faulted' });
 
-    expect(queryClient.getQueryData(queryKeys.connection)).toEqual({ state: 'Faulted' });
+      expect(queryClient.getQueryData(queryKeys.connection)).toEqual({
+        state: 'Faulted',
+        seenAt: 4_000,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('refetches after a reconnect, since the broker may have changed while the hub was down', () => {

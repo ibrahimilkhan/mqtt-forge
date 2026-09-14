@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { queryKeys } from '../api/queryKeys';
+import type { SeenConnectionState } from '../api/useConnectionState';
 import { createFrameBuffer } from '../lib/frameBuffer';
 import { useAlertStore } from '../stores/alertStore';
 import { useHubStatusStore } from '../stores/hubStatusStore';
@@ -135,7 +136,18 @@ export function useHubBridge(hub: Hub) {
         buffer.pushAll(messages);
         usePauseStore.getState().track(buffer.waiting());
       },
-      connectionStateChanged: (payload) => queryClient.setQueryData(queryKeys.connection, payload),
+      // Dated here, the way a message is above: on the same clock, and at the same point on the
+      // way in. A link coming back is marked with this moment, and a row is faded when nothing
+      // under it was received after it — so the two have to be measured alike. The effect that
+      // marks the return runs only once React has drawn this state, and by then a retained message
+      // the broker sent straight back on the resubscribe can already have been received: dated by
+      // the effect, the return fell after it, and the one row the broker had just confirmed was
+      // drawn faded.
+      connectionStateChanged: (payload) =>
+        queryClient.setQueryData<SeenConnectionState>(queryKeys.connection, {
+          ...payload,
+          seenAt: Date.now(),
+        }),
       // Its own key, written the same way. The supervisor sends this only when something about it
       // actually moved, so there is nothing to throttle here: a whole outage is a handful of
       // payloads, and the countdown the panel draws runs off the instant in the last one.
