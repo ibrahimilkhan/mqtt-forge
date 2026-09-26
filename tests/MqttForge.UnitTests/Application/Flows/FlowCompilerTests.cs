@@ -1,0 +1,217 @@
+using MqttForge.Application.Flows;
+using MqttForge.Domain.Enums;
+using MqttForge.Domain.Models;
+
+namespace MqttForge.UnitTests.Application.Flows;
+
+public class FlowCompilerTests
+{
+    private static IReadOnlyList<FlowProblem> Problems(FlowBuilder flow) =>
+        FlowCompiler.Compile(flow.Build(), FlowBuilder.Prefix).Problems;
+
+    private static FlowProblem Only(FlowBuilder flow) => Assert.Single(Problems(flow));
+
+    private static FlowBuilder One(string type, object? config = null) =>
+        new FlowBuilder().Node("n1", type, config);
+
+    [Fact]
+    public void The_boiler_watch_compiles_and_is_wired_port_by_port()
+    {
+        var flow = new FlowBuilder()
+            .Node("in", "mqttIn", new { filter = "plant/+/temp" })
+            .Node("test", "if", new { field = "$.temp", test = "gt", value = "90" })
+            .Node("hot", "alarm", new { name = "Hot", severity = "critical", reason = "{{topic}}" })
+            .Wire("in", "out", "test", "in")
+            .Wire("test", "yes", "hot", "raise")
+            .Wire("test", "no", "hot", "clear")
+            .Compile();
+
+        var input = Assert.Single(flow.Inputs);
+        Assert.Equal("plant/+/temp", input.Filter);
+
+        var test = Assert.IsType<IfNode>(Assert.Single(input.To("out")).Node);
+        Assert.Equal("raise", Assert.Single(test.To("yes")).Port);
+        Assert.Equal("clear", Assert.Single(test.To("no")).Port);
+
+        var alarm = Assert.IsType<AlarmNode>(flow.Nodes["hot"]);
+        Assert.Equal(AlertSeverity.Critical, alarm.Severity);
+        Assert.IsType<ScreenAction>(Assert.Single(alarm.Actions));
+    }
+
+    [Fact]
+    public void The_fingerprint_ignores_where_nodes_stand_and_notices_what_they_do()
+    {
+        var a = new FlowBuilder().Node("n1", "mqttIn", new { filter = "a/#" }).Build();
+        var moved = a with { Nodes = [a.Nodes[0] with { X = 400, Y = 90 }] };
+        var changed = new FlowBuilder().Node("n1", "mqttIn", new { filter = "b/#" }).Build();
+
+        string Print(Flow flow) => FlowCompiler.Compile(flow, FlowBuilder.Prefix).Flow!.Fingerprint;
+
+        Assert.Equal(Print(a), Print(moved));
+        Assert.NotEqual(Print(a), Print(changed));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("has space")]
+    [InlineData("an-id-that-is-far-too-long-to-be-an-id-here")]
+    public void A_flow_id_outside_the_pattern_is_refused(string id)
+    {
+        var problem = Only(new FlowBuilder(id: id));
+
+        Assert.Equal("flow", problem.Key);
+    }
+
+    [Fact]
+    public void A_flow_needs_a_name() =>
+        Assert.Equal("flow", Only(new FlowBuilder(name: "  ")).Key);
+
+    [Fact]
+    public void Two_nodes_may_not_share_an_id()
+    {
+        var problem = Only(new FlowBuilder().Node("n1", "debug").Node("n1", "debug"));
+
+        Assert.Equal("node:n1", problem.Key);
+    }
+
+    [Fact]
+    public void An_unknown_node_type_is_refused_by_name()
+    {
+        var problem = Only(One("teleport"));
+
+        Assert.Equal("node:n1", problem.Key);
+        Assert.Contains("teleport", problem.Message);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("plant/#/temp")]
+    public void MQTT_in_needs_a_well_formed_filter(string filter) =>
+        Assert.Equal("node:n1", Only(One("mqttIn", new { filter })).Key);
+
+    [Fact]
+    public void MQTT_in_may_not_listen_where_alarms_are_published() =>
+        Assert.Contains("mqttforge/alerts/", Only(One("mqttIn", new { filter = "mqttforge/#" })).Message);
+
+    [Theory]
+    [InlineData(0.05)]
+    [InlineData(90_000)]
+    public void Every_needs_an_interval_between_a_tenth_of_a_second_and_a_day(double seconds) =>
+        Assert.Equal("node:n1", Only(One("every", new { seconds })).Key);
+
+    [Theory]
+    [InlineData("gt", "")]
+    [InlineData("lt", "ninety")]
+    [InlineData("between", "10")]
+    [InlineData("matches", "(")]
+    [InlineData("oneOf", " , ")]
+    [InlineData("", "90")]
+    public void If_needs_a_test_and_what_the_test_compares_with(string test, string value) =>
+        Assert.Equal("node:n1", Only(One("if", new { field = "$.temp", test, value, value2 = "" })).Key);
+
+    [Fact]
+    public void Between_needs_its_bounds_the_right_way_round() =>
+        Assert.Equal("node:n1", Only(One("if", new { test = "between", value = "20", value2 = "10" })).Key);
+
+    [Theory]
+    [InlineData(0, 1.0)]
+    [InlineData(1001, 1.0)]
+    [InlineData(3, 0.05)]
+    [InlineData(3, 4000.0)]
+    public void Repeat_needs_a_count_and_an_interval_it_can_keep(int count, double seconds) =>
+        Assert.Equal("node:n1", Only(One("repeat", new { count, seconds })).Key);
+
+    [Fact]
+    public void Repeat_with_no_interval_is_allowed() =>
+        Assert.Empty(Problems(One("repeat", new { count = 5, seconds = 0 })));
+
+    [Fact]
+    public void An_alarm_needs_a_name_and_a_level()
+    {
+        Assert.Equal("node:n1", Only(One("alarm", new { name = "", severity = "warn" })).Key);
+        Assert.Equal("node:n1", Only(One("alarm", new { name = "Hot", severity = "loud" })).Key);
+    }
+
+    [Fact]
+    public void An_alarm_asks_for_the_channels_it_names()
+    {
+        var alarm = Assert.IsType<AlarmNode>(One("alarm", new
+        {
+            name = "Hot", severity = "warn", sound = true, webhook = "https://hooks.example.com/boiler",
+            publish = true, publishTopic = "", qos = 1, retain = true
+        }).Compile().Nodes["n1"]);
+
+        Assert.Collection(alarm.Actions,
+            action => Assert.IsType<ScreenAction>(action),
+            action => Assert.IsType<SoundAction>(action),
+            action => Assert.Equal("https://hooks.example.com/boiler", Assert.IsType<WebhookAction>(action).Url),
+            action =>
+            {
+                var publish = Assert.IsType<PublishAction>(action);
+                Assert.Null(publish.Topic);
+                Assert.Equal(1, publish.Qos);
+                Assert.True(publish.Retain);
+            });
+    }
+
+    [Fact]
+    public void An_alarms_webhook_has_to_be_an_http_address() =>
+        Assert.Equal("node:n1", Only(One("alarm", new { name = "Hot", severity = "warn", webhook = "ftp://x" })).Key);
+
+    [Fact]
+    public void An_alarms_own_topic_has_to_stay_under_the_alert_prefix() =>
+        Assert.Equal("node:n1", Only(One("alarm", new
+        {
+            name = "Hot", severity = "warn", publish = true, publishTopic = "plant/alarm"
+        })).Key);
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("plant/+/cmd")]
+    [InlineData("plant/{{colour}}")]
+    public void Publish_needs_a_topic_it_can_publish_to(string topic) =>
+        Assert.Equal("node:n1", Only(One("publish", new { topic, payload = "x" })).Key);
+
+    [Fact]
+    public void Publish_refuses_a_payload_template_it_cannot_fill_in() =>
+        Assert.Equal("node:n1", Only(One("publish", new { topic = "a", payload = "{{nope}}" })).Key);
+
+    [Fact]
+    public void A_wire_must_start_and_end_on_nodes_and_ports_that_exist()
+    {
+        var problems = Problems(new FlowBuilder()
+            .Node("a", "inject")
+            .Node("b", "debug")
+            .Wire("a", "out", "ghost", "in")
+            .Wire("a", "yes", "b", "in")
+            .Wire("a", "out", "b", "raise"));
+
+        Assert.Equal(["edge:e1", "edge:e2", "edge:e3"], problems.Select(p => p.Key));
+    }
+
+    [Fact]
+    public void Two_wires_between_the_same_ports_are_refused() =>
+        Assert.Equal("edge:e2", Only(new FlowBuilder()
+            .Node("a", "inject").Node("b", "debug")
+            .Wire("a", "out", "b", "in").Wire("a", "out", "b", "in")).Key);
+
+    [Fact]
+    public void Wires_that_go_round_in_a_circle_are_refused()
+    {
+        var problem = Only(new FlowBuilder()
+            .Node("a", "forEach").Node("b", "repeat", new { count = 2, seconds = 0 })
+            .Wire("a", "out", "b", "in").Wire("b", "out", "a", "in"));
+
+        Assert.Equal("flow", problem.Key);
+        Assert.Contains("circle", problem.Message);
+    }
+
+    [Fact]
+    public void Too_many_nodes_are_refused()
+    {
+        var flow = new FlowBuilder();
+        for (var i = 0; i <= FlowLimits.NodesPerFlow; i++) flow.Node($"n{i}", "debug");
+
+        Assert.Equal("flow", Only(flow).Key);
+    }
+}
