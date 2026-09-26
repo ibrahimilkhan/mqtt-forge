@@ -105,4 +105,30 @@ public static class TopicFilterMatch
     // did, calling it a wildcard errs towards saying nothing instead of inventing a topic name
     // out of a malformed filter and then reporting it silent for ever.
     public static bool HasWildcard(string filter) => filter.AsSpan().IndexOfAny('+', '#') >= 0;
+
+    /// <summary>
+    /// Whether a string is a well-formed MQTT topic filter. An empty level is legal — 'a//b' has
+    /// three levels and an empty middle one — so only the wildcards and NUL are policed.
+    /// </summary>
+    // Here rather than only in Api's validation, because the flow compiler in Application checks
+    // filters too and Application does not reference Api. Api's TopicFilter.IsValid asks this.
+    public static bool IsValidFilter(string? filter)
+    {
+        if (string.IsNullOrEmpty(filter)) return false;
+        if (filter.Contains('\0')) return false;
+
+        var levels = filter.Split('/');
+
+        for (var i = 0; i < levels.Length; i++)
+        {
+            var level = levels[i];
+
+            // Both wildcards stand alone in their level; '#' also has to end the filter.
+            if (level == "#") { if (i != levels.Length - 1) return false; continue; }
+            if (level == "+") continue;
+            if (level.Contains('#') || level.Contains('+')) return false;
+        }
+
+        return true;
+    }
 }

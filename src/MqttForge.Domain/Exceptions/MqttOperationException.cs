@@ -85,3 +85,22 @@ public sealed class AlertRulesUnreadableException : MqttOperationException
     public AlertRulesUnreadableException(string message, Exception? inner = null)
         : base(message, inner) { }
 }
+
+// The flows could not be written down. Its own type for AlertRulesNotSavedException's reason: the
+// sentence the reader is shown names the thing they were editing, and a reader deploying a flow
+// must not be told their alert rules could not be saved.
+public sealed class FlowsNotSavedException : MqttOperationException
+{
+    public FlowsNotSavedException(string message, Exception? inner = null)
+        : base(message, inner) { }
+}
+
+// flows.json holds something this build could not read, and a write would replace it with what
+// this build understood — which is nothing. Unlike the alert rules there is no 'discard it'
+// second button yet: the file is repaired or moved aside by hand. Api maps this to 409 and the
+// reason 'flowsUnreadable'.
+public sealed class FlowsUnreadableException : MqttOperationException
+{
+    public FlowsUnreadableException(string message, Exception? inner = null)
+        : base(message, inner) { }
+}

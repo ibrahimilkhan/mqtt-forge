@@ -96,4 +96,19 @@ public class TopicFilterMatchTests
     {
         Assert.Equal(expected, TopicFilterMatch.HasWildcard(filter));
     }
+
+    // Moved here from Api so the flow compiler, which lives in Application, can ask it too.
+    [Theory]
+    [InlineData("plant/+/temp", true)]
+    [InlineData("plant/#", true)]
+    [InlineData("#", true)]
+    [InlineData("a//b", true)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    [InlineData("plant/#/temp", false)]
+    [InlineData("plant/te+mp", false)]
+    [InlineData("plant/te#", false)]
+    [InlineData("plant/\0", false)]
+    public void IsValidFilter_answers_what_the_api_validator_always_answered(string? filter, bool valid) =>
+        Assert.Equal(valid, TopicFilterMatch.IsValidFilter(filter));
 }
