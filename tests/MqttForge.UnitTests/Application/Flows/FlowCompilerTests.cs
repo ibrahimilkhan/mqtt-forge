@@ -11,6 +11,12 @@ public class FlowCompilerTests
 
     private static FlowProblem Only(FlowBuilder flow) => Assert.Single(Problems(flow));
 
+    // For the shapes FlowBuilder cannot draw: a null list, or a null element in one, or a null
+    // field on a node or edge — everything System.Text.Json can still hand the compiler despite
+    // what the record's constructor promises at compile time.
+    private static FlowProblem Only(Flow flow) =>
+        Assert.Single(FlowCompiler.Compile(flow, FlowBuilder.Prefix).Problems);
+
     private static FlowBuilder One(string type, object? config = null) =>
         new FlowBuilder().Node("n1", type, config);
 
@@ -213,5 +219,115 @@ public class FlowCompilerTests
         for (var i = 0; i <= FlowLimits.NodesPerFlow; i++) flow.Node($"n{i}", "debug");
 
         Assert.Equal("flow", Only(flow).Key);
+    }
+
+    [Fact]
+    public void Two_wires_may_not_share_an_id()
+    {
+        var flow = new FlowBuilder()
+            .Node("a", "inject").Node("b", "debug").Node("c", "debug")
+            .Wire("a", "out", "b", "in")
+            .Wire("a", "out", "c", "in")
+            .Build();
+
+        // Two edges that would otherwise both be fine, given the same id by hand rather than by
+        // FlowBuilder's own counter — the one shape FlowBuilder itself never draws.
+        var duplicated = flow with { Edges = [flow.Edges[0], flow.Edges[1] with { Id = flow.Edges[0].Id }] };
+
+        var problem = Only(duplicated);
+
+        Assert.Equal($"edge:{flow.Edges[0].Id}", problem.Key);
+        Assert.Equal("A wire needs its own id.", problem.Message);
+    }
+
+    // System.Text.Json only promises these are never null at compile time. A hand-edited
+    // flows.json, or a PUT body built by hand rather than by the console, can still leave any of
+    // them out, and the compiler has to answer with problems, the same as it does for anything
+    // else somebody got wrong — not with an exception that skips every other flow being compiled
+    // alongside this one.
+
+    [Fact]
+    public void Missing_node_and_edge_lists_compile_as_an_empty_flow_not_a_crash()
+    {
+        var flow = new FlowBuilder().Build() with { Nodes = null!, Edges = null! };
+
+        var result = FlowCompiler.Compile(flow, FlowBuilder.Prefix);
+
+        Assert.Empty(result.Problems);
+        Assert.Empty(result.Flow!.Nodes);
+    }
+
+    [Fact]
+    public void A_null_node_in_the_list_is_a_flow_problem_not_a_crash()
+    {
+        var problem = Only(new FlowBuilder().Build() with { Nodes = [null!] });
+
+        Assert.Equal("flow", problem.Key);
+        Assert.Equal("A node in this flow is empty.", problem.Message);
+    }
+
+    [Fact]
+    public void A_null_edge_in_the_list_is_a_flow_problem_not_a_crash()
+    {
+        var problem = Only(new FlowBuilder().Build() with { Edges = [null!] });
+
+        Assert.Equal("flow", problem.Key);
+        Assert.Equal("A wire in this flow is empty.", problem.Message);
+    }
+
+    [Fact]
+    public void A_wire_with_no_source_node_is_refused_not_a_crash()
+    {
+        var flow = new FlowBuilder().Node("a", "inject").Node("b", "debug").Build();
+        var broken = flow with { Edges = [new FlowEdge("e1", null!, "out", "b", "in")] };
+
+        var problem = Only(broken);
+
+        Assert.Equal("edge:e1", problem.Key);
+        Assert.Equal("This wire does not start and end on nodes.", problem.Message);
+    }
+
+    [Fact]
+    public void A_wire_with_no_destination_node_is_refused_not_a_crash()
+    {
+        var flow = new FlowBuilder().Node("a", "inject").Node("b", "debug").Build();
+        var broken = flow with { Edges = [new FlowEdge("e1", "a", "out", null!, "in")] };
+
+        var problem = Only(broken);
+
+        Assert.Equal("edge:e1", problem.Key);
+        Assert.Equal("This wire does not start and end on nodes.", problem.Message);
+    }
+
+    [Fact]
+    public void A_wire_with_no_output_port_named_is_refused_not_a_crash()
+    {
+        var flow = new FlowBuilder().Node("a", "inject").Node("b", "debug").Build();
+        var broken = flow with { Edges = [new FlowEdge("e1", "a", null!, "b", "in")] };
+
+        var problem = Only(broken);
+
+        Assert.Equal("edge:e1", problem.Key);
+        Assert.Equal("This node has no output called ''.", problem.Message);
+    }
+
+    [Fact]
+    public void A_wire_with_no_input_port_named_is_refused_not_a_crash()
+    {
+        var flow = new FlowBuilder().Node("a", "inject").Node("b", "debug").Build();
+        var broken = flow with { Edges = [new FlowEdge("e1", "a", "out", "b", null!)] };
+
+        var problem = Only(broken);
+
+        Assert.Equal("edge:e1", problem.Key);
+        Assert.Equal("That node has no input called ''.", problem.Message);
+    }
+
+    [Fact]
+    public void A_node_with_no_type_named_hits_the_unknown_type_problem_not_a_crash()
+    {
+        var flow = new FlowBuilder().Build() with { Nodes = [new FlowNode("n1", null!, 0, 0, FlowJson.EmptyConfig)] };
+
+        Assert.Equal("node:n1", Only(flow).Key);
     }
 }

@@ -34,10 +34,17 @@ public static partial class FlowCompiler
         if (name.Length is 0 or > FlowLimits.NameLength)
             problems.Add(new(null, null, $"Name the flow, in at most {FlowLimits.NameLength} characters."));
 
-        if (flow.Nodes.Count > FlowLimits.NodesPerFlow)
+        // STJ only promises Nodes/Edges are never null at compile time: a hand-edited flows.json,
+        // or a PUT body built by hand rather than by the console, can still leave either out, or
+        // leave a hole in the middle of one. None of that is a reason to throw instead of answering
+        // with the same kind of problem list a bad node or a bad wire gets.
+        var rawNodes = flow.Nodes ?? [];
+        var rawEdges = flow.Edges ?? [];
+
+        if (rawNodes.Count > FlowLimits.NodesPerFlow)
             problems.Add(new(null, null, $"A flow holds at most {FlowLimits.NodesPerFlow} nodes."));
 
-        if (flow.Edges.Count > FlowLimits.EdgesPerFlow)
+        if (rawEdges.Count > FlowLimits.EdgesPerFlow)
             problems.Add(new(null, null, $"A flow holds at most {FlowLimits.EdgesPerFlow} wires."));
 
         // Types are kept for every node with a usable id, compiled or not, so a wire to a node whose
@@ -45,8 +52,14 @@ public static partial class FlowCompiler
         var types = new Dictionary<string, string>(StringComparer.Ordinal);
         var nodes = new Dictionary<string, CompiledNode>(StringComparer.Ordinal);
 
-        foreach (var node in flow.Nodes)
+        foreach (var node in rawNodes)
         {
+            if (node is null)
+            {
+                problems.Add(new(null, null, "A node in this flow is empty."));
+                continue;
+            }
+
             if (node.Id is null || !IdPattern.IsMatch(node.Id))
             {
                 problems.Add(new(null, null, "A node's id is 1 to 40 letters, digits, '-' or '_'."));
@@ -70,8 +83,14 @@ public static partial class FlowCompiler
         var edgeIds = new HashSet<string>(StringComparer.Ordinal);
         var joined = new HashSet<(string, string, string, string)>();
 
-        foreach (var edge in flow.Edges)
+        foreach (var edge in rawEdges)
         {
+            if (edge is null)
+            {
+                problems.Add(new(null, null, "A wire in this flow is empty."));
+                continue;
+            }
+
             var problem = Wire(edge, types, edgeIds, joined);
             if (problem is not null) problems.Add(new(null, edge.Id, problem));
             else wires.Add(edge);
@@ -156,13 +175,14 @@ public static partial class FlowCompiler
 
             case FlowPorts.Publish:
             {
-                var topic = FlowTemplate.Parse(settings.Text("topic").Trim(), out var topicProblem);
+                var topicText = settings.Text("topic").Trim();
+                var topic = FlowTemplate.Parse(topicText, out var topicProblem);
                 var payload = FlowTemplate.Parse(settings.Text("payload"), out var payloadProblem);
                 var qos = (int)(settings.Number("qos") ?? 0);
 
-                if (settings.Text("topic").Trim().Length == 0)
+                if (topicText.Length == 0)
                     problem = "Give the topic to publish to.";
-                else if (settings.Text("topic").Length > FlowLimits.TopicTemplateLength)
+                else if (topicText.Length > FlowLimits.TopicTemplateLength)
                     problem = $"A topic is at most {FlowLimits.TopicTemplateLength} characters.";
                 else if (topicProblem is not null)
                     problem = topicProblem;
@@ -324,7 +344,11 @@ public static partial class FlowCompiler
         if (edge.Id is null || !IdPattern.IsMatch(edge.Id) || !ids.Add(edge.Id))
             return "A wire needs its own id.";
 
-        if (!types.TryGetValue(edge.From, out var from) || !types.TryGetValue(edge.To, out var to))
+        // Dictionary.TryGetValue throws on a null key rather than answering false, so a null
+        // From or To has to be turned away before it ever reaches one — the same problem a wire
+        // to an id nothing declared gets, since to whoever drew this a missing end is no different.
+        if (edge.From is null || edge.To is null ||
+            !types.TryGetValue(edge.From, out var from) || !types.TryGetValue(edge.To, out var to))
             return "This wire does not start and end on nodes.";
 
         if (edge.From == edge.To)
@@ -367,11 +391,15 @@ public static partial class FlowCompiler
 
     private static string Fingerprint(Flow flow)
     {
+        // Reached only once Compile has found no problem, which for Nodes/Edges means neither is
+        // null and neither holds a null element — but the list itself can still be the null STJ
+        // leaves it as when a hand-edited file omits the property, so it is coalesced again here
+        // rather than trusted a second time from a flow this method never validated itself.
         var shape = JsonSerializer.Serialize(new
         {
             flow.Name,
-            Nodes = flow.Nodes.Select(node => new { node.Id, node.Type, Config = node.Config.ValueKind == JsonValueKind.Undefined ? "{}" : node.Config.GetRawText() }),
-            flow.Edges,
+            Nodes = (flow.Nodes ?? []).Select(node => new { node.Id, node.Type, Config = node.Config.ValueKind == JsonValueKind.Undefined ? "{}" : node.Config.GetRawText() }),
+            Edges = flow.Edges ?? [],
         }, FlowJson.Options);
 
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(shape)));
