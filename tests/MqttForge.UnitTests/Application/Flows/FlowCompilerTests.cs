@@ -330,4 +330,35 @@ public class FlowCompilerTests
 
         Assert.Equal("node:n1", Only(flow).Key);
     }
+
+    [Fact]
+    public void CompileAll_keeps_every_id_and_runs_only_what_compiled()
+    {
+        var set = FlowCompiler.CompileAll(
+            [
+                new FlowBuilder("good").Node("n1", "debug").Build(),
+                new FlowBuilder("bad").Node("n1", "teleport").Build(),
+            ],
+            FlowBuilder.Prefix);
+
+        Assert.Equal(["good", "bad"], set.Kept);
+        Assert.Equal("good", Assert.Single(set.Compiled).Id);
+
+        var problem = Assert.Single(set.Problems);
+        Assert.Equal("bad", problem.FlowId);
+        Assert.Equal("node:n1", problem.Problem.Key);
+    }
+
+    // Kept is how the runtime tells a flow turned off from one taken away, and the two end their
+    // alarms differently — "flow off" and "flow removed". A flow that is off is still in the file,
+    // so it has to be in Kept, and it compiles like any other: it is the runtime that leaves it idle.
+    [Fact]
+    public void CompileAll_compiles_and_keeps_a_flow_that_is_off()
+    {
+        var set = FlowCompiler.CompileAll([new FlowBuilder("idle").Node("n1", "debug").Off().Build()], FlowBuilder.Prefix);
+
+        Assert.False(Assert.Single(set.Compiled).Enabled);
+        Assert.Equal(["idle"], set.Kept);
+        Assert.Empty(set.Problems);
+    }
 }

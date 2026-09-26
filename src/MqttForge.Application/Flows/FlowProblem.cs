@@ -12,3 +12,12 @@ public sealed record FlowProblem(string? NodeId, string? EdgeId, string Message)
 
 /// <summary>What compiling one flow came to.</summary>
 public sealed record FlowCompileResult(CompiledFlow? Flow, IReadOnlyList<FlowProblem> Problems);
+
+/// <summary>Every flow in a file, compiled: what can run, every id, and what could not compile.</summary>
+public sealed record FlowSet(
+    IReadOnlyList<CompiledFlow> Compiled,
+    IReadOnlyList<string> Kept,
+    IReadOnlyList<FlowSetProblem> Problems);
+
+/// <summary>A problem, and which flow in the file it belongs to.</summary>
+public sealed record FlowSetProblem(string FlowId, FlowProblem Problem);

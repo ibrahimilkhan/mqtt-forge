@@ -117,6 +117,25 @@ public static partial class FlowCompiler
         }, []);
     }
 
+    /// <summary>Every flow in a file. A flow that does not compile is kept, reported, and not run.</summary>
+    // Kept rather than dropped because the file is a record: a hand-edited flow with a typo in it
+    // is still somebody's work, and the next deploy of a different flow must not take it away.
+    public static FlowSet CompileAll(IReadOnlyList<Flow> flows, string alertTopicPrefix)
+    {
+        var compiled = new List<CompiledFlow>();
+        var problems = new List<FlowSetProblem>();
+
+        foreach (var flow in flows)
+        {
+            var result = Compile(flow, alertTopicPrefix);
+
+            if (result.Flow is not null) compiled.Add(result.Flow);
+            else problems.AddRange(result.Problems.Select(problem => new FlowSetProblem(flow.Id, problem)));
+        }
+
+        return new FlowSet(compiled, [.. flows.Select(flow => flow.Id)], problems);
+    }
+
     private static CompiledNode? Node(FlowNode node, Settings settings, string prefix, out string? problem)
     {
         problem = null;
