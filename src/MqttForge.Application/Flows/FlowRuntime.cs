@@ -66,7 +66,15 @@ public sealed class FlowRuntime
     public FlowOutcome Deploy(IReadOnlyList<CompiledFlow> flows, IReadOnlyCollection<string> kept, DateTimeOffset now)
     {
         var into = new Collector();
-        var wanted = flows.Where(flow => flow.Enabled).ToDictionary(flow => flow.Id, StringComparer.Ordinal);
+
+        // The first flow with an id is the one that counts, on or off, and any later one with the
+        // same id is left out rather than thrown on. The console never writes two, but flows.json
+        // can be edited by hand, and one slip there must not keep every other flow from running.
+        var wanted = new Dictionary<string, CompiledFlow>(StringComparer.Ordinal);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var flow in flows)
+            if (seen.Add(flow.Id) && flow.Enabled)
+                wanted.Add(flow.Id, flow);
 
         foreach (var id in _flows.Keys.Where(id => !wanted.ContainsKey(id)).ToList())
         {
@@ -118,7 +126,7 @@ public sealed class FlowRuntime
 
             if (matching is null) continue;
 
-            if (state.Echo.Heard(message.Topic, message.Payload, now))
+            if (state.Echo.Heard(message, now))
             {
                 foreach (var input in matching) state.Counter(input.Id).Out("echo");
                 Touch();
@@ -173,11 +181,7 @@ public sealed class FlowRuntime
                 counter.Count++;
 
                 Emit(run, every, "out", item.Message with { Index = (int)Math.Min(counter.Count, int.MaxValue) });
-
-                // From now rather than from when it was due, when the pump fell behind: a stall is
-                // one late tick, never a burst of the ones that were missed.
-                var next = due + every.Interval;
-                _schedule.Enqueue(item, next > now ? next : now + every.Interval);
+                _schedule.Enqueue(item, NextAfter(due, every.Interval, now));
             }
             else if (node is RepeatNode repeat)
             {
@@ -186,7 +190,7 @@ public sealed class FlowRuntime
                 if (item.Remaining > 1)
                     _schedule.Enqueue(
                         item with { Message = item.Message with { Index = item.Message.Index + 1 }, Remaining = item.Remaining - 1 },
-                        due + repeat.Interval);
+                        NextAfter(due, repeat.Interval, now));
                 else
                     state.Sequences[repeat.Id] = Math.Max(0, state.Sequences.GetValueOrDefault(repeat.Id) - 1);
             }
@@ -250,7 +254,7 @@ public sealed class FlowRuntime
         state.Fault,
         [.. state.Flow.Nodes.Keys.Select(id =>
         {
-            var counter = state.Counter(id);
+            var counter = state.Peek(id);
             var standing = state.Flow.Nodes[id] is AlarmNode
                 ? _alarms.StandingFor(state.Flow.Id, id, FlowLimits.StandingShown)
                 : [];
@@ -302,8 +306,7 @@ public sealed class FlowRuntime
                 Publish(run, publish, message);
                 break;
             case DebugNode debug:
-                run.Into.Debug.Add(new FlowDebugEntry(run.State.Flow.Id, debug.Id, run.Now, FlowDebugEntry.Message,
-                    message.Topic, Clip(message.Payload, FlowLimits.DebugExcerpt)));
+                run.Into.Debug.Add(DebugLine(run.State, debug.Id, run.Now, FlowDebugEntry.Message, message.Topic, message.Payload));
                 run.State.Counter(debug.Id).Note = Excerpt(message.Payload);
                 break;
         }
@@ -444,6 +447,12 @@ public sealed class FlowRuntime
         }
 
         var (alert, isNew) = _alarms.Raise(run.State.Flow, node, message, run.Now, _random);
+        if (alert is null)
+        {
+            Fail(run.State, node.Id, "Too many alarms are up; this one was not raised.", message.Topic, run.Now, run.Into);
+            return;
+        }
+
         counter.Note = Excerpt(alert.Reason);
 
         if (!isNew) return;
@@ -485,7 +494,7 @@ public sealed class FlowRuntime
             return;
         }
 
-        state.Echo.Remember(topic, payload, run.Now);
+        state.Echo.Remember(topic, bytes, run.Now);
         run.Into.Publishes.Add(new FlowPublish(state.Flow.Id, node.Id, new PublishRequest(topic, bytes, node.Qos, node.Retain)));
 
         var counter = state.Counter(node.Id);
@@ -500,7 +509,7 @@ public sealed class FlowRuntime
         var state = run.State;
         state.Faults++;
         state.Fault = $"An event ran more than {FlowLimits.StepsPerEvent} nodes and was stopped.";
-        run.Into.Debug.Add(new FlowDebugEntry(state.Flow.Id, start.Id, run.Now, FlowDebugEntry.Error, "", state.Fault));
+        run.Into.Debug.Add(DebugLine(state, start.Id, run.Now, FlowDebugEntry.Error, "", state.Fault));
     }
 
     private static void Fail(FlowState state, string nodeId, string reason, string topic, DateTimeOffset now, Collector into)
@@ -508,14 +517,29 @@ public sealed class FlowRuntime
         var counter = state.Counter(nodeId);
         counter.Errors++;
         counter.Note = Excerpt(reason);
-
-        // Cut like a payload, because some reasons carry one: a topic that came out wrong is quoted
-        // in its sentence, and a topic template with {{payload}} in it is as long as the payload.
-        into.Debug.Add(new FlowDebugEntry(state.Flow.Id, nodeId, now, FlowDebugEntry.Error, topic,
-            Clip(reason, FlowLimits.DebugExcerpt)));
+        into.Debug.Add(DebugLine(state, nodeId, now, FlowDebugEntry.Error, topic, reason));
     }
 
+    /// <summary>A line for the debug strip, with neither its topic nor its text longer than an excerpt.</summary>
+    // Every line is made here, so none can miss the cut, and both halves need it. A Debug node prints
+    // whatever arrived, topic and all; a Publish that failed carries the topic it rendered, which
+    // with {{payload}} in its template is as long as the payload, and its reason may quote it again.
+    private static FlowDebugEntry DebugLine(
+        FlowState state, string nodeId, DateTimeOffset at, string kind, string topic, string text) =>
+        new(state.Flow.Id, nodeId, at, kind, Clip(topic, FlowLimits.DebugExcerpt), Clip(text, FlowLimits.DebugExcerpt));
+
     private void Touch() => _version++;
+
+    /// <summary>When an Every tick or a Repeat copy that came due at <paramref name="due"/> goes next.</summary>
+    // From now rather than from when it was due, when the pump fell behind: a stall — a laptop that
+    // slept, a debugger paused on the pump — is one late emission, never a burst of the ones that
+    // were missed. For a Repeat that means its copies come later rather than all at once; it still
+    // sends every one of them.
+    private static DateTimeOffset NextAfter(DateTimeOffset due, TimeSpan interval, DateTimeOffset now)
+    {
+        var next = due + interval;
+        return next > now ? next : now + interval;
+    }
 
     /// <summary>One line, short enough to stand under a node.</summary>
     private static string Excerpt(string text)
@@ -545,10 +569,18 @@ public sealed class FlowRuntime
             if (!_counters.TryGetValue(id, out var counter)) _counters[id] = counter = new NodeCounter();
             return counter;
         }
+
+        /// <summary>A node's counter to read, which never makes one: a status read leaves no trace.</summary>
+        public NodeCounter Peek(string id) =>
+            _counters.TryGetValue(id, out var counter) ? counter : NodeCounter.Untouched;
     }
 
     private sealed class NodeCounter
     {
+        // What a node nothing has happened to reads as. One instance for all of them, so it must
+        // never be written: every write goes through FlowState.Counter, which never hands it out.
+        public static readonly NodeCounter Untouched = new();
+
         public long Count;
         public long Errors;
 
@@ -566,12 +598,17 @@ public sealed class FlowRuntime
     // Keyed by topic first, so the common arrival — a topic this flow never published to — costs a
     // dictionary miss and no hashing at all. Not consumed on a match: a broker may deliver one
     // publish twice to a client with overlapping subscriptions, and the second copy would loop.
+    //
+    // A hash of the bytes on both sides, never of text. What goes out is the rendered payload's
+    // UTF-8; what comes back is text only when those bytes read as text, and base64 of them when
+    // they do not (PayloadText) — a payload holding one control byte would otherwise never be
+    // recognised, and a flow publishing it to its own filter would answer itself for ever.
     private sealed class EchoSet
     {
         private readonly Dictionary<string, List<(string Hash, DateTimeOffset Until)>> _byTopic = new(StringComparer.Ordinal);
         private readonly Queue<(string Topic, string Hash, DateTimeOffset Until)> _order = new();
 
-        public void Remember(string topic, string payload, DateTimeOffset now)
+        public void Remember(string topic, byte[] payload, DateTimeOffset now)
         {
             Expire(now);
             if (_order.Count >= FlowLimits.EchoFingerprints) Forget(_order.Dequeue());
@@ -582,13 +619,32 @@ public sealed class FlowRuntime
             _order.Enqueue((topic, entry.Item1, entry.Item2));
         }
 
-        public bool Heard(string topic, string payload, DateTimeOffset now)
+        public bool Heard(MqttMessage message, DateTimeOffset now)
         {
             Expire(now);
-            if (!_byTopic.TryGetValue(topic, out var list)) return false;
+            if (!_byTopic.TryGetValue(message.Topic, out var list)) return false;
 
-            var hash = Hash(payload);
+            var hash = Hash(BytesOf(message));
             return list.Exists(entry => entry.Hash == hash);
+        }
+
+        /// <summary>The bytes the broker delivered, as near as the message can say.</summary>
+        private static byte[] BytesOf(MqttMessage message)
+        {
+            if (message.PayloadEncoding == MqttMessage.Base64)
+            {
+                try
+                {
+                    return Convert.FromBase64String(message.Payload);
+                }
+                catch (FormatException)
+                {
+                    // Marked base64 and not base64. The text is then the only thing to compare,
+                    // and an arrival is never a reason for the runtime to throw.
+                }
+            }
+
+            return Encoding.UTF8.GetBytes(message.Payload);
         }
 
         private void Expire(DateTimeOffset now)
@@ -604,8 +660,7 @@ public sealed class FlowRuntime
             if (list.Count == 0) _byTopic.Remove(entry.Topic);
         }
 
-        private static string Hash(string payload) =>
-            Convert.ToHexString(SHA1.HashData(Encoding.UTF8.GetBytes(payload)));
+        private static string Hash(byte[] payload) => Convert.ToHexString(SHA1.HashData(payload));
     }
 
     /// <summary>Fifty publishes a second, refilled continuously, a second's worth at most.</summary>

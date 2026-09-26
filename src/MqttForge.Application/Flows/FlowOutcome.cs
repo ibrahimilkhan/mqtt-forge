@@ -16,6 +16,11 @@ public sealed record FlowDebugEntry(string FlowId, string NodeId, DateTimeOffset
 // The runtime decides and never does. A publish here has not been sent and an alarm here has not
 // been announced; the engine does both, off the thread, so a test of the runtime is a list of
 // calls and a list of what came back.
+//
+// The engine announces Raised before Resolved, always, to the notifier and the dispatcher alike.
+// One outcome can hold both ends of one alarm — a For each over [95, 50] raises it on the first
+// element and clears it on the second — and a console told of the clear first would drop nothing,
+// then add the raise, and show an alarm that was already over until its next snapshot.
 public sealed record FlowOutcome(
     IReadOnlyList<FlowPublish> Publishes,
     IReadOnlyList<Alert> Raised,

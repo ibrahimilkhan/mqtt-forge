@@ -24,8 +24,11 @@ public sealed class FlowAlarmBook
 
     public static string RuleIdOf(string flowId, string nodeId) => $"flow-{flowId}-{nodeId}";
 
-    /// <summary>A raise: a new alarm, or one more count on the one already up for this topic.</summary>
-    public (Alert Alert, bool IsNew) Raise(
+    /// <summary>
+    /// A raise: a new alarm, or one more count on the one already up for this topic. No alarm at
+    /// all when a new one would be past <see cref="FlowLimits.StandingAlarms"/>.
+    /// </summary>
+    public (Alert? Alert, bool IsNew) Raise(
         CompiledFlow flow, AlarmNode node, FlowMessage message, DateTimeOffset now, Random random)
     {
         var key = new Key(flow.Id, node.Id, message.Topic);
@@ -36,6 +39,10 @@ public sealed class FlowAlarmBook
             _standing[key] = counted;
             return (counted, false);
         }
+
+        // Only a new alarm waits for a place. One that is already up goes on counting and clears as
+        // it always did, and each clear gives a place back.
+        if (_standing.Count >= FlowLimits.StandingAlarms) return (null, false);
 
         var value = PayloadValue.TryExtract(message.Payload, node.ValueField, out var text)
             ? PayloadValue.AsReading(text)

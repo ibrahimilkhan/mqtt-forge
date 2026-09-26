@@ -102,6 +102,23 @@ public class FlowAlarmTests
     }
 
     [Fact]
+    public void Taking_the_alarm_node_away_resolves_its_alarms_as_flow_changed()
+    {
+        Ringing(Watch().Compile());
+
+        var withoutIt = new FlowBuilder()
+            .Node("in", "mqttIn", new { filter = "plant/+/temp" })
+            .Node("test", "if", new { field = "$.temp", test = "gt", value = "90" })
+            .Wire("in", "out", "test", "in")
+            .Compile();
+
+        var outcome = _runtime.Deploy([withoutIt], ["f1"], T0.AddSeconds(1));
+
+        Assert.Equal("flow changed", Assert.Single(outcome.Resolved).ResolvedBy);
+        Assert.Empty(_runtime.Alarms().Active);
+    }
+
+    [Fact]
     public void History_keeps_the_newest_hundred()
     {
         _runtime.Deploy([Watch().Compile()], ["f1"], T0);

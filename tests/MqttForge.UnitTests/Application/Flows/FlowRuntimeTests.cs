@@ -318,6 +318,59 @@ public class FlowRuntimeTests
         Assert.Equal(T0.AddSeconds(31), _runtime.NextDue);
     }
 
+    [Fact]
+    public void Repeat_does_not_burst_after_a_stall()
+    {
+        Start(new FlowBuilder()
+            .Node("go", "inject")
+            .Node("again", "repeat", new { count = 5, seconds = 1 })
+            .Node("send", "publish", new { topic = "sim/{{index}}", payload = "x" })
+            .Wire("go", "out", "again", "in")
+            .Wire("again", "out", "send", "in")
+            .Compile());
+        _runtime.Inject("f1", "go", T0);
+
+        var outcome = _runtime.OnTick(T0.AddSeconds(30), connected: true);
+
+        Assert.Equal(["sim/2"], outcome.Publishes.Select(p => p.Request.Topic));
+        Assert.Equal(T0.AddSeconds(31), _runtime.NextDue);
+    }
+
+    [Fact]
+    public void A_changed_flow_leaves_its_old_timer_behind()
+    {
+        static FlowBuilder Ticker(string payload) => new FlowBuilder()
+            .Node("tick", "every", new { seconds = 2, payload })
+            .Node("say", "debug")
+            .Wire("tick", "out", "say", "in");
+
+        Start(Ticker("old").Compile());
+        _runtime.Deploy([Ticker("new").Compile()], ["f1"], T0.AddSeconds(1));
+
+        // The old timer was due at +2 and the new one is due at +3: only the new one may speak, once
+        // an interval.
+        Assert.Empty(_runtime.OnTick(T0.AddSeconds(2), connected: true).Debug);
+        Assert.Equal(["new"], _runtime.OnTick(T0.AddSeconds(3), connected: true).Debug.Select(entry => entry.Text));
+        Assert.Equal(["new"], _runtime.OnTick(T0.AddSeconds(5), connected: true).Debug.Select(entry => entry.Text));
+    }
+
+    [Fact]
+    public void A_repeat_sequence_gives_its_place_back_when_its_last_copy_goes()
+    {
+        Start(new FlowBuilder()
+            .Node("go", "inject")
+            .Node("again", "repeat", new { count = 2, seconds = 1 })
+            .Wire("go", "out", "again", "in")
+            .Compile());
+
+        for (var i = 0; i < FlowLimits.RepeatSequences; i++) _runtime.Inject("f1", "go", T0);
+        _runtime.OnTick(T0.AddSeconds(1), connected: true);
+        _runtime.Inject("f1", "go", T0.AddSeconds(1));
+
+        Assert.Equal(0, Node("again").Errors);
+        Assert.Equal(2 * FlowLimits.RepeatSequences + 1, Node("again").Outs["out"]);
+    }
+
     // ---- inject and debug ----
 
     [Fact]
@@ -370,6 +423,35 @@ public class FlowRuntimeTests
         var later = _runtime.OnMessage(Msg("plant/k1/cmd", "on"), T0.AddSeconds(6));
 
         Assert.Single(later.Publishes);
+    }
+
+    [Fact]
+    public void A_flow_knows_its_own_publish_when_it_comes_back_as_base64()
+    {
+        Start(new FlowBuilder("loop")
+            .Node("in", "mqttIn", new { filter = "dev/+/cmd" })
+            .Node("send", "publish", new { topic = "dev/{{topic[1]}}/cmd", payload = "\u0006" })
+            .Wire("in", "out", "send", "in")
+            .Compile());
+        Assert.Single(_runtime.OnMessage(Msg("dev/d1/cmd", "go"), T0).Publishes);
+
+        // What the broker hands back: a control byte is not text, so the one byte arrives as base64.
+        var echo = new MqttMessage("dev/d1/cmd", Convert.ToBase64String([0x06]), MqttMessage.Base64, 0, false, T0);
+
+        Assert.Empty(_runtime.OnMessage(echo, T0.AddSeconds(1)).Publishes);
+        Assert.Equal(1, Node("in", "loop").Outs["echo"]);
+    }
+
+    [Fact]
+    public void An_arrival_marked_base64_that_does_not_decode_is_compared_as_text()
+    {
+        Start(Loop("loop").Compile());
+        _runtime.OnMessage(Msg("plant/k1/cmd", "on!"), T0);
+
+        var echo = new MqttMessage("plant/k1/cmd", "on!", MqttMessage.Base64, 0, false, T0);
+
+        Assert.Empty(_runtime.OnMessage(echo, T0.AddSeconds(1)).Publishes);
+        Assert.Equal(1, Node("in", "loop").Outs["echo"]);
     }
 
     [Fact]
@@ -450,6 +532,36 @@ public class FlowRuntimeTests
         Assert.Equal(FlowDebugEntry.Error, Assert.Single(outcome.Debug).Kind);
     }
 
+    [Fact]
+    public void Past_the_ceiling_a_new_alarm_is_refused_and_the_ones_up_carry_on()
+    {
+        Start(new FlowBuilder()
+            .Node("in", "mqttIn", new { filter = "plant/+/temp" })
+            .Node("test", "if", new { field = "$.temp", test = "gt", value = "90" })
+            .Node("hot", "alarm", new { name = "Hot", severity = "critical" })
+            .Wire("in", "out", "test", "in")
+            .Wire("test", "yes", "hot", "raise")
+            .Wire("test", "no", "hot", "clear")
+            .Compile());
+
+        for (var i = 0; i < FlowLimits.StandingAlarms; i++)
+            _runtime.OnMessage(Msg($"plant/k{i}/temp", "{\"temp\":95}"), T0);
+
+        var refused = _runtime.OnMessage(Msg("plant/late/temp", "{\"temp\":95}"), T0);
+
+        Assert.Empty(refused.Raised);
+        Assert.Equal(FlowDebugEntry.Error, Assert.Single(refused.Debug).Kind);
+        Assert.Equal(1, Node("hot").Errors);
+        Assert.Equal("Too many alarms are up; this one was not raised.", Node("hot").Note);
+        Assert.Equal(FlowLimits.StandingAlarms, _runtime.Alarms().Active.Count);
+
+        // One already up still counts and still clears, and the place a clear gives back is taken.
+        _runtime.OnMessage(Msg("plant/k0/temp", "{\"temp\":96}"), T0.AddSeconds(1));
+        Assert.Equal(2, _runtime.Alarms().Active.Single(alarm => alarm.Topic == "plant/k0/temp").Count);
+        Assert.Single(_runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":50}"), T0.AddSeconds(1)).Resolved);
+        Assert.Single(_runtime.OnMessage(Msg("plant/late/temp", "{\"temp\":95}"), T0.AddSeconds(1)).Raised);
+    }
+
     // ---- what the engine asks of it ----
 
     [Fact]
@@ -459,6 +571,22 @@ public class FlowRuntimeTests
             new FlowBuilder("c").Node("in", "mqttIn", new { filter = "lab/#" }).Compile());
 
         Assert.Equal(["lab/#", "plant/+/temp"], _runtime.Filters().Order());
+    }
+
+    [Fact]
+    public void Of_two_flows_with_one_id_the_first_is_the_one_that_counts()
+    {
+        static CompiledFlow Twin(string filter, bool on = true)
+        {
+            var flow = new FlowBuilder("twin").Node("in", "mqttIn", new { filter });
+            return (on ? flow : flow.Off()).Compile();
+        }
+
+        _runtime.Deploy([Twin("a/#"), Twin("b/#")], ["twin"], T0);
+        Assert.Equal(["a/#"], _runtime.Filters());
+
+        _runtime.Deploy([Twin("a/#", on: false), Twin("b/#")], ["twin"], T0);
+        Assert.Empty(_runtime.Filters());
     }
 
     [Fact]
@@ -498,7 +626,7 @@ public class FlowRuntimeTests
         Assert.Equal("plant/k1/temp", Assert.Single(Node("hot").Standing).Topic);
     }
 
-    // ---- what stands under a node ----
+    // ---- what stands under a node, and in the debug strip ----
 
     [Fact]
     public void A_note_is_one_line_that_fits_under_its_node()
@@ -528,6 +656,25 @@ public class FlowRuntimeTests
         Assert.Equal(FlowDebugEntry.Error, entry.Kind);
         Assert.True(entry.Text.Length <= FlowLimits.DebugExcerpt);
         Assert.True(Node("send").Note!.Length <= FlowLimits.NoteLength);
+    }
+
+    [Fact]
+    public void A_debug_line_carries_no_more_of_a_topic_than_an_excerpt()
+    {
+        Start(new FlowBuilder()
+            .Node("in", "mqttIn", new { filter = "x/#" })
+            .Node("say", "debug")
+            .Node("send", "publish", new { topic = "{{topic}}/out", payload = "x" })
+            .Wire("in", "out", "say", "in")
+            .Wire("in", "out", "send", "in")
+            .Compile());
+        _runtime.OnTick(T0, connected: false);
+
+        var outcome = _runtime.OnMessage(Msg("x/" + new string('k', 5000), "1"), T0);
+
+        // The Debug node's line, and the Publish node's error, which carries the topic it rendered.
+        Assert.Equal([FlowDebugEntry.Message, FlowDebugEntry.Error], outcome.Debug.Select(entry => entry.Kind));
+        Assert.All(outcome.Debug, entry => Assert.True(entry.Topic.Length <= FlowLimits.DebugExcerpt, entry.NodeId));
     }
 
     [Fact]

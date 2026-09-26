@@ -31,4 +31,12 @@ public record MqttMessage(
     // reads a frame a second with two thousand messages in it, and `"properties":null` two
     // thousand times is a field nobody asked for in every one of them.
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    MessageProperties? Properties = null);
+    MessageProperties? Properties = null)
+{
+    /// <summary>The <see cref="PayloadEncoding"/> of a payload that was not text: its bytes, as base64.</summary>
+    // Here, beside the field it names, rather than only in Infrastructure's PayloadText, which is
+    // where the choice is made: the flow runtime in Application has to turn such a payload back into
+    // bytes, and Application does not reference Infrastructure. PayloadText.Base64 is this constant,
+    // so the word written and the word read cannot drift apart.
+    public const string Base64 = "base64";
+}

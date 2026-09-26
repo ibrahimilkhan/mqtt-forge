@@ -42,6 +42,14 @@ public static class FlowLimits
     public const int NoteLength = 80;
 
     public const int StandingShown = 20;
+
+    /// <summary>How many flow alarms may be up at once, across every flow.</summary>
+    // The alert engine's MaxActiveAlerts, and for its reasons. A filter as wide as plant/# feeding a
+    // raise opens one alarm per topic, each holding a sample of up to 4 KB, and every one of them is
+    // in each GET /api/alerts the console reads; without a ceiling a flow is the way round the one
+    // the alert engine keeps.
+    public const int StandingAlarms = 1_000;
+
     public const int AlarmHistory = 100;
     public const int DebugPerPush = 100;
     public const int DebugExcerpt = 1_024;

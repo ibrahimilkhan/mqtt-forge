@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Text;
 using System.Text.Unicode;
+using MqttForge.Domain.Models;
 
 namespace MqttForge.Infrastructure.Mqtt;
 
@@ -16,7 +17,7 @@ namespace MqttForge.Infrastructure.Mqtt;
 public static class PayloadText
 {
     public const string Text = "text";
-    public const string Base64 = "base64";
+    public const string Base64 = MqttMessage.Base64;
 
     public static (string Payload, string Encoding) Describe(in ReadOnlySequence<byte> payload) =>
         payload.IsSingleSegment ? Describe(payload.First.Span) : Describe(payload.ToArray());
