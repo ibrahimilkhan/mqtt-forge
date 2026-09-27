@@ -1,0 +1,153 @@
+/* The canvas plate: --surface on the page's --paper, the same step every other pane stands on. */
+.canvas {
+  position: relative;
+  min-height: 0;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-plate);
+  overflow: hidden;
+}
+
+/* React Flow's own variables, pointed at the console's tokens. base.css draws structure, and the
+   few colours it does draw it reads from these. The variables that colour the zoom buttons belong
+   to React Flow's full theme, which this page does not load, so those buttons, and the one colour
+   base.css writes out itself, the attribution link's, are ours by class below. */
+.canvas :global(.react-flow) {
+  --xy-background-color: var(--surface);
+  --xy-background-pattern-color: var(--rule);
+  --xy-edge-stroke: var(--muted);
+  --xy-edge-stroke-selected: var(--ink);
+  --xy-connectionline-stroke: var(--signal);
+  --xy-selection-background-color: color-mix(in srgb, var(--signal) 6%, transparent);
+  --xy-selection-border: 1px dotted var(--signal);
+  --xy-attribution-background-color: transparent;
+  font-family: var(--sans);
+}
+
+.canvas :global(.react-flow__controls) {
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+  overflow: hidden;
+}
+
+/* base.css sizes the zoom buttons and leaves their colours to the page, where a bare button is the
+   console's filled blue: something begins when it is pressed. These only move the view, so they
+   wear the plate's colours instead. */
+.canvas :global(.react-flow__controls-button) {
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--ink);
+}
+.canvas :global(.react-flow__controls-button:last-child) { border-bottom: 0; }
+.canvas :global(.react-flow__controls-button:hover:not(:disabled)) {
+  background: var(--paper);
+  border-color: var(--rule);
+}
+
+.canvas :global(.react-flow__attribution a) { color: var(--muted); }
+
+.hint {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+/* ---- a node ---- */
+
+.node {
+  position: relative;
+  width: 188px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-plate);
+  color: var(--ink);
+  font-size: var(--t-small);
+}
+
+.node[data-selected] { border-color: var(--signal); outline: 1px solid var(--signal); }
+.node[data-problem] { border-color: var(--fault); outline: 1px solid var(--fault); }
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 9px 1px;
+  font-weight: 600;
+}
+
+/* The glyphs are drawn 1em square, so this is their size: 15px at the default base, and it scales
+   with the rest of the type when the reader changes the base in the appearance panel. */
+.icon { display: inline-flex; font-size: var(--t-body); }
+
+/* What starts a flow is the console's blue, what decides is grey, what acts is green: the three
+   groups of the palette, and the only colour a node wears. */
+.node[data-group='Triggers'] .icon { color: var(--signal); }
+.node[data-group='Logic'] .icon { color: var(--muted); }
+.node[data-group='Actions'] .icon { color: var(--live); }
+
+.name { flex: 1 1 auto; min-width: 0; }
+
+.summary {
+  padding: 0 9px;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status {
+  padding: 3px 9px 7px;
+  font-family: var(--mono);
+  font-size: var(--t-nano);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.status[data-errors] { color: var(--fault); }
+
+.handle {
+  width: 10px;
+  height: 10px;
+  background: var(--surface);
+  border: 1.5px solid var(--muted);
+}
+
+.portIn,
+.portOut {
+  position: absolute;
+  transform: translateY(-50%);
+  font-family: var(--mono);
+  font-size: var(--t-nano);
+  color: var(--muted);
+  pointer-events: none;
+}
+.portIn { right: calc(100% + 8px); }
+.portOut { left: calc(100% + 8px); }
+
+.inject {
+  padding: 1px 7px;
+  font-size: var(--t-nano);
+  line-height: 1.4;
+}
+
+/* ---- a wire ---- */
+
+.canvas .wire {
+  stroke: var(--muted);
+  stroke-width: 1.5;
+  transition: stroke 0.3s, stroke-width 0.3s;
+}
+.canvas .wire[data-flash] { stroke: var(--signal); stroke-width: 2.5; transition: none; }
+.canvas .wire[data-selected] { stroke: var(--ink); stroke-width: 2; }
+.canvas .wire[data-problem] { stroke: var(--fault); }
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas .wire { transition: none; }
+}
