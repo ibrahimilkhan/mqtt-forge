@@ -20,7 +20,7 @@ namespace MqttForge.UnitTests.Infrastructure;
 /// engine is subscribed to, so a mistake here is not a lost message but a feedback loop; and it
 /// leaves a retained record behind, so a mistake here outlives the process that made it.
 /// </summary>
-public class MqttAlertDispatcherTests
+public class MqttAlertDispatcherTests : IDisposable
 {
     private static readonly DateTimeOffset T0 = new(2026, 8, 30, 9, 0, 0, TimeSpan.Zero);
 
@@ -33,6 +33,17 @@ public class MqttAlertDispatcherTests
 
     private MqttAlertDispatcher CreateSut() =>
         new(_publisher, _options, _log, _lifetime);
+
+    // Every dispatcher here is made on this lifetime, and its loop runs until the lifetime stops.
+    // Left to run, a test's loop outlived it — one on a stalled publisher spending its two-second
+    // budgets for as long as the run went on — so every test ends by stopping it, with the publisher
+    // let go first so that the sweep is quick.
+    public void Dispose()
+    {
+        _publisher.Stall = false;
+        _publisher.Hang = false;
+        _lifetime.StopApplication();
+    }
 
     private static Alert Fired(
         PublishAction? publish = null,

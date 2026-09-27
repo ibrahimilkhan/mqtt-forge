@@ -45,9 +45,10 @@ public class AlertDispatchWiringTests
 
     // The console's events and the container's log are both channels, and both have to be there.
     // A build that resolved one of them alone would look completely healthy from the other end.
-    // AlertEndpointTests follows one alarm into both.
+    // What the container can say is which is the notifier and that both resolve; that the engine
+    // holds the hub as its console is AlertEndpointTests', which follows one alarm into both.
     [Fact]
-    public async Task The_engine_tells_the_log_on_its_pump_and_holds_the_hub_as_its_console()
+    public async Task The_notifier_is_the_log_and_the_log_and_the_hub_each_resolve_by_their_own_type()
     {
         await using var app = Host();
 
