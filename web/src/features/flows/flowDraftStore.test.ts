@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyFlow, fingerprint } from './flowDocument';
-import { DRAFT_PREFIX, useFlowDraftStore } from './flowDraftStore';
+import { createFlowDraftStore, DRAFT_PREFIX, useFlowDraftStore } from './flowDraftStore';
 
 /** Where every draft was kept together before each had a key of its own. */
 const OLD_KEY = 'mqttforge.flows.drafts';
@@ -333,10 +333,11 @@ describe('a browser that will not keep the drafts', () => {
 /**
  * Two tabs on one console share one localStorage. Each writes only what it changed, and hears
  * what the other wrote; which flow is on screen and which node is picked stay each tab's own.
+ * The other tab is a second store made over the same storage, as a second page would make it.
  */
 describe('two tabs', () => {
   it('leave each other\'s drafts in storage when one picks a node or shows a flow', async () => {
-    const other = await reopened();
+    const other = createFlowDraftStore();
     const watch = emptyFlow('Watch');
     useFlowDraftStore.getState().put(watch);
 
@@ -347,8 +348,8 @@ describe('two tabs', () => {
     expect(later.getState().drafts[watch.id]?.name).toBe('Watch');
   });
 
-  it('hear what the other did to a flow\'s draft, and keep their own drafts and their own place', async () => {
-    const other = await reopened();
+  it('hear what the other did to a flow\'s draft, and keep their own drafts and their own place', () => {
+    const other = createFlowDraftStore();
     const mine = emptyFlow('Mine');
     other.getState().put(mine);
     other.getState().show(mine.id);
