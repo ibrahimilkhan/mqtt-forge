@@ -2,7 +2,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
-import { Profiler } from 'react';
+import { Profiler, StrictMode } from 'react';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { queryKeys } from '../../api/queryKeys';
 import { useFlowStatusStore } from '../../stores/flowStatusStore';
@@ -11,6 +11,7 @@ import { server } from '../../test/server';
 import { renderWithClient as render } from '../../test/renderWithClient';
 import type { FlowDebugDto, FlowDto, FlowNodeDto, FlowsDto, FlowStatusDto } from '../../types/api';
 import { standInForTheBrowser } from './canvasTestbed';
+import { DebugStrip } from './DebugStrip';
 import strip from './DebugStrip.module.css';
 import stripSheet from './DebugStrip.module.css?raw';
 import { NODE_HEIGHT, NODE_WIDTH } from './FlowCanvas';
@@ -405,6 +406,23 @@ describe('Flows page', () => {
     render(<FlowsPage />);
     await screen.findByRole('region', { name: 'Debug' });
     expect(fold()).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  // React may run a state updater twice, and StrictMode always does. A write inside one ran twice
+  // with it; a press writes the fold once.
+  it('writes the fold once for each press, even where React runs its updaters twice', async () => {
+    const writes = vi.spyOn(Storage.prototype, 'setItem');
+    render(
+      <StrictMode>
+        <DebugStrip flow={watch} />
+      </StrictMode>,
+    );
+
+    await userEvent.click(within(screen.getByRole('region', { name: 'Debug' })).getByRole('button', { name: /Debug/ }));
+    const folds = writes.mock.calls.filter(([key]) => key === 'mqttforge.flows.debugOpen');
+    writes.mockRestore();
+
+    expect(folds).toEqual([['mqttforge.flows.debugOpen', '0']]);
   });
 });
 

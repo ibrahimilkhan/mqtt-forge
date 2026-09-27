@@ -43,15 +43,17 @@ export function DebugStrip({ flow }: { flow: FlowDto }) {
     return node ? specOf(node.type).label : nodeId;
   };
 
-  const toggle = () =>
-    setOpen((was) => {
-      try {
-        localStorage.setItem(OPEN_KEY, was ? '0' : '1');
-      } catch {
-        // The fold is only remembered where it can be.
-      }
-      return !was;
-    });
+  // Written from the press, not from inside the state's updater: React may run an updater more
+  // than once, and StrictMode always runs it twice.
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    try {
+      localStorage.setItem(OPEN_KEY, next ? '1' : '0');
+    } catch {
+      // The fold is only remembered where it can be.
+    }
+  };
 
   return (
     <section className={styles.debug} data-open={open ? '' : undefined} aria-label="Debug">
