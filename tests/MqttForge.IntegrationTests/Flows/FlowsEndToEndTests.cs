@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -23,9 +22,14 @@ public sealed class FlowsEndToEndTests : IClassFixture<MosquittoFixture>, IAsync
 {
     private readonly MosquittoFixture _broker;
     private readonly string _settingsPath = Temp("flow-e2e-settings");
+    private readonly string _colourRulesPath = Temp("flow-e2e-colours");
+    private readonly string _savedProfilesPath = Temp("flow-e2e-brokers");
+    private readonly string _alertRulesPath = Temp("flow-e2e-rules");
+    private readonly string _alertStatePath = Temp("flow-e2e-state");
+    private readonly string _reconnectPath = Temp("flow-e2e-reconnect");
     private readonly string _flowsPath = Temp("flow-e2e-flows");
     private readonly string _clientId = $"flows-{Guid.NewGuid():N}"[..20];
-    private readonly List<IDisposable> _hosts = [];
+    private readonly List<WebApplicationFactory<Program>> _hosts = [];
     private readonly ConcurrentQueue<(string Topic, string Payload)> _heard = new();
     private IMqttClient? _plant;
 
@@ -39,8 +43,21 @@ public sealed class FlowsEndToEndTests : IClassFixture<MosquittoFixture>, IAsync
     public async Task DisposeAsync()
     {
         if (_plant is not null) await _plant.DisconnectAsync();
-        foreach (var host in _hosts) host.Dispose();
-        foreach (var path in new[] { _settingsPath, _flowsPath })
+        _plant?.Dispose();
+
+        // Awaited rather than disposed synchronously, as AlertingEndToEndTests' hosts are: this is
+        // what gives the host its shutdown, and AlertEngineHost's handover save runs there.
+        foreach (var host in _hosts) await host.DisposeAsync();
+
+        // PointedAt hands back a factory that does not own its files — AlertingEndToEndTests'
+        // reason: a test that restarts "the same" app against files it wrote by hand must not have
+        // the second host's dispose delete out from under the first. So every path this class asks
+        // PointedAt to use, it also asks for by name, and deletes here itself.
+        foreach (var path in new[]
+                 {
+                     _settingsPath, _colourRulesPath, _savedProfilesPath, _alertRulesPath,
+                     _alertStatePath, _reconnectPath, _flowsPath
+                 })
             if (File.Exists(path)) File.Delete(path);
     }
 
@@ -77,7 +94,9 @@ public sealed class FlowsEndToEndTests : IClassFixture<MosquittoFixture>, IAsync
         var store = new JsonFlowStore(_flowsPath);
         foreach (var flow in flows) await store.SaveAsync(flow, CancellationToken.None);
 
-        var factory = MqttForgeApiFactory.PointedAt(_settingsPath, Temp("flow-e2e-colours"), flowsPath: _flowsPath);
+        var factory = MqttForgeApiFactory.PointedAt(
+            _settingsPath, _colourRulesPath, _savedProfilesPath, _alertRulesPath, _alertStatePath,
+            _reconnectPath, _flowsPath);
         var host = factory.WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, config) =>
             config.AddInMemoryCollection(new Dictionary<string, string?> { ["MqttForge:ConnectOnStart"] = "true" })));
 
