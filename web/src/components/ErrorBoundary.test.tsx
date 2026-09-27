@@ -22,6 +22,17 @@ describe('ErrorBoundary', () => {
     expect(screen.getByText('render exploded')).toBeInTheDocument();
   });
 
+  it('shows what the part it stands around says instead, when it is told', () => {
+    render(
+      <ErrorBoundary fallback={(error) => <p>Could not draw this: {error.message}</p>}>
+        <Boom />
+      </ErrorBoundary>,
+    );
+
+    expect(screen.getByText('Could not draw this: render exploded')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Something went wrong' })).not.toBeInTheDocument();
+  });
+
   it('leaves a healthy tree alone', () => {
     render(
       <ErrorBoundary>
