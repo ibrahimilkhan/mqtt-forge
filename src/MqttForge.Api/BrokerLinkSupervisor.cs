@@ -6,7 +6,7 @@ using MqttForge.Domain.Models;
 
 namespace MqttForge.Api;
 
-/// <summary>Brings the broker link up when rules need it, and brings it back when it drops.</summary>
+/// <summary>Brings the broker link up when rules or flows need it, and brings it back when it drops.</summary>
 // Before this class there was no reconnection in the repository at all: nothing connected at
 // start-up, MqttnetClientProvider hands out a plain IMqttClient rather than a managed one, and
 // OnDisconnectedAsync only clears the filter set and announces. With those three facts standing,
@@ -90,11 +90,12 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
     // first of the two is allowed to count — see StartAsync.
     private bool _optionRead;
 
-    // Whether anything ever asked for this link. Set when the rules wanted one at start-up, and
-    // set again the moment the state is seen Connected — because a link somebody opened by hand
-    // is a link worth keeping up. Without it, a host with no alert rules at all would answer a
-    // fault by dialling a broker its own start-up had just decided not to dial: this supervisor
-    // runs in every host this product builds, including the ones that have no rules file at all.
+    // Whether anything ever asked for this link. Set when the rules or the flows wanted one at
+    // start-up, and set again the moment the state is seen Connected — because a link somebody
+    // opened by hand is a link worth keeping up. Without it, a host with nothing enabled would
+    // answer a fault by dialling a broker its own start-up had just decided not to dial: this
+    // supervisor runs in every host this product builds, including the ones that have no rules
+    // file at all.
     private bool _wanted;
 
     // The reader's dial count as of the last poll — see ConnectionService.ReaderDials. A change
@@ -167,13 +168,13 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
     public DateTimeOffset Now => _time.GetUtcNow();
 
     /// <summary>The one decision made at start-up: whether there is anything to be connected for.</summary>
-    // No enabled rule means no connection, which is today's behaviour kept on purpose. Opening
-    // the console is what connects a broker; a container that dialled out on every start because
-    // somebody once saved a host would be a surprise nobody asked for.
+    // No enabled rule and no enabled flow means no connection, which is today's behaviour kept on
+    // purpose. Opening the console is what connects a broker; a container that dialled out on every
+    // start because somebody once saved a host would be a surprise nobody asked for.
     //
-    // Bringing the link up when a rule is enabled *later* is deliberately not here. That is a
-    // save-time decision and it belongs with the save, not with a supervisor whose whole job is
-    // to watch a link that already exists.
+    // Bringing the link up when a rule or a flow is enabled *later* is deliberately not here. That
+    // is a save-time decision and it belongs with the save, not with a supervisor whose whole job
+    // is to watch a link that already exists.
     public async Task StartUpAsync(CancellationToken ct)
     {
         // Before the rules, because it governs everything after them and because a console that
@@ -347,8 +348,8 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
         //
         // Reopening a link somebody closed on purpose is arguing with them. Their next Connect
         // puts the state back to Connected and puts this class back to work — which is also where
-        // _wanted is set for a host whose rules never asked for a link: somebody dialled by hand,
-        // so from here on the link is worth keeping up.
+        // _wanted is set for a host whose rules and flows never asked for a link: somebody dialled
+        // by hand, so from here on the link is worth keeping up.
         //
         // Connecting is somebody already dialling — this class or the reader — and either way the
         // ladder has nothing to add until it is over.
@@ -380,10 +381,10 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
         // still clear the ladder down. A supervisor turned off in the middle of an outage should
         // not come back to a rung it left behind an hour ago.
         //
-        // The start-up decision is held in the same breath. A host with no enabled rule is not
-        // this supervisor's business, and a broker that faults on it is somebody else's story —
-        // most of this repository's integration tests are exactly that host, and two of them
-        // assert a Faulted broker deliberately.
+        // The start-up decision is held in the same breath. A host with no enabled rule or flow is
+        // not this supervisor's business, and a broker that faults on it is somebody else's
+        // story — most of this repository's integration tests are exactly that host, and two of
+        // them assert a Faulted broker deliberately.
         // An outage begins the first time a wanted link is seen down, whatever is then done about
         // it — including nothing, when the option is off or the reader stopped it. A fault on a
         // link nobody wanted is not an outage: it is the reader's own failed Connect.
@@ -449,10 +450,10 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
     }
 
     /// <inheritdoc />
-    // The same decision StartUpAsync makes, made again when a rule is saved rather than only when
-    // the process starts. Gated on the same option, so a desktop console does not dial because
-    // somebody saved a rule — that reader has a Connect button and did not press it — and on the
-    // link being down, so a save on a live link is the no-op it should be.
+    // The same decision StartUpAsync makes, made again when a rule or a flow is saved rather than
+    // only when the process starts. Gated on the same option, so a desktop console does not dial
+    // because somebody saved one — that reader has a Connect button and did not press it — and
+    // on the link being down, so a save on a live link is the no-op it should be.
     public async Task WantedAsync(CancellationToken ct)
     {
         if (!_options.ConnectOnStart) return;

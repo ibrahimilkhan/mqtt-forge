@@ -62,7 +62,7 @@ public sealed class FlowService
         }
 
         // After the gate: a dial can take seconds, and no other deploy has to wait for it. Only a
-        // host that dials for rules at start-up will dial here — see ILinkForRules.
+        // host that dials at start-up will dial here — see ILinkForRules.
         if (flow.Enabled) await _link.WantedAsync(ct);
 
         return new FlowSaveResult(flow, []);

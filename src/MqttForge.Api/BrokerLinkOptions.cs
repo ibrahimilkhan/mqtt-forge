@@ -3,9 +3,10 @@ using Microsoft.Extensions.Configuration;
 namespace MqttForge.Api;
 
 /// <summary>What the host is allowed to do with the broker link before anybody asks it to.</summary>
-/// <param name="ConnectOnStart">Whether start-up dials the saved broker when an alert rule is
-/// enabled. Off unless somebody turns it on: the console opens on the Broker panel and the reader
-/// presses Connect. The Docker image turns it on, because a container has nobody to press it.</param>
+/// <param name="ConnectOnStart">Whether start-up dials the saved broker when an alert rule or a
+/// flow is enabled. Off unless somebody turns it on: the console opens on the Broker panel and
+/// the reader presses Connect. The Docker image turns it on, because a container has nobody to
+/// press it.</param>
 // A record of its own rather than a bool on the supervisor's constructor, because the container
 // fills constructor parameters from registered services and a bool has nowhere to come from. It
 // is read the way AlertEngineOptions is — at resolve time, so a late-configuring test host still

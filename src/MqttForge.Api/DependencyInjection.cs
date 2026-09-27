@@ -237,7 +237,7 @@ public static class DependencyInjection
         // supervisor that takes it so that a reader of this file meets the option before its use.
         services.AddSingleton(sp => BrokerLinkOptions.From(sp.GetRequiredService<IConfiguration>()));
         services.AddSingleton<BrokerLinkSupervisor>();
-        // The same instance under the face the rule service asks for — see ILinkForRules.
+        // The same instance, as the face the rule and flow services ask for. See ILinkForRules.
         services.AddSingleton<ILinkForRules>(sp => sp.GetRequiredService<BrokerLinkSupervisor>());
         services.AddHostedService(sp => sp.GetRequiredService<BrokerLinkSupervisor>());
         return services;
