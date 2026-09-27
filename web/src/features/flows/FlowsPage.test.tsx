@@ -1317,6 +1317,21 @@ describe('a draft and the server\'s copy', () => {
     await waitFor(() => expect(puts.map((flow) => flow.name)).toEqual(['Flow 1', 'Boiler watch 2']));
   });
 
+  // One question and one pair of answers: the pane says why the draft is held back, and Keep mine
+  // and Discard stand under that sentence, where the reader is looking when they choose.
+  it('offers one Discard for a draft held back, beside Keep mine in its pane', async () => {
+    const { kept } = keeping([watch]);
+    const { queryClient } = render(<FlowsPage />);
+    await userEvent.type(await screen.findByLabelText('Name'), ' 2');
+    await elsewhere(queryClient, () => (kept[0] = v2));
+    await screen.findByText(/^Changed on the server since you started/);
+
+    const discards = screen.getAllByRole('button', { name: 'Discard' });
+    const pane = screen.getByRole('complementary', { name: 'Inspector' });
+    expect(discards).toHaveLength(1);
+    expect(within(pane).getByRole('button', { name: 'Discard' })).toBe(discards[0]);
+  });
+
   it('puts the server\'s newer copy on screen when the reader discards theirs', async () => {
     const { kept } = keeping([watch]);
     const { queryClient } = render(<FlowsPage />);

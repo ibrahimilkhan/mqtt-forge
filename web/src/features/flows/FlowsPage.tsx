@@ -196,9 +196,10 @@ function Page() {
             store.put(flow);
             store.show(flow.id);
           }}
-          onDiscard={
-            (changed.has(shown.id) || overtaken.has(shown.id)) && byId.has(shown.id) ? () => store.discard(shown.id) : undefined
-          }
+          // Not for a draft held back. Its pane says why it is held, with Keep mine and Discard under
+          // the sentence — where the reader is looking when they choose, and the one place both
+          // answers are — so a second Discard up here would only ask the same question twice.
+          onDiscard={changed.has(shown.id) && byId.has(shown.id) ? () => store.discard(shown.id) : undefined}
           onDeploy={() => deploy.mutate(flows.filter((flow) => changed.has(flow.id)))}
         />
 

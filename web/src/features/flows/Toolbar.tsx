@@ -40,7 +40,10 @@ type Props = {
   refused: ReadonlySet<string>;
   deploying: boolean;
   onNew: () => void;
-  /** Puts the flow on screen back to what is running. Left out when there is nothing to go back to. */
+  /**
+   * Puts the flow on screen back to what is running. Left out when there is nothing to go back to,
+   * and for a draft held back, whose pane has the choice.
+   */
   onDiscard?: () => void;
   onDeploy: () => void;
 };
@@ -112,7 +115,8 @@ function step(key: string, at: number, count: number): number | null {
  * draft of a copy another console has since replaced or deleted, which would undo that console's
  * work. Discard is only about the flow on screen, and only offered when that flow has a deployed
  * version to go back to. For a flow never deployed, going back would throw the whole flow away,
- * and that is Delete flow's job, which asks first.
+ * and that is Delete flow's job, which asks first. A draft held back has its Discard in its own
+ * pane, beside Keep mine, under the sentence that says why.
  *
  * The tabs are one stop on the Tab key, and the arrows, Home and End go along them. Selection
  * follows the focus: showing a flow is instant, and a reader going along the tabs is looking for
