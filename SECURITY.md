@@ -70,7 +70,15 @@ back onto your own broker — that one goes nowhere the broker connection was no
 Flows (an experimental page) are drawn from nodes and run on the server, whether or not a console
 is open. A deployed flow is a standing instruction in the same way an alert rule is: anyone who can
 reach the port can deploy one, and it keeps running after they have gone — publishing on a timer,
-answering messages, raising alarms. Each flow is held to fifty publishes a second.
+answering messages, raising alarms. Each flow is held to fifty publishes a second, and at most fifty
+flows are kept, so together they can publish up to 2,500 messages a second.
+
+A Publish node can write to any topic the broker lets this app write to, and it can set the retain
+flag, so what it writes stays on the broker for every client that subscribes later. That includes
+the alert prefix: a flow can leave a retained message there that looks like an alarm record. An
+Alarm node's own MQTT record has to stay under the prefix, but nothing keeps a Publish node out of
+it. If something acts on what is published under the prefix, decide who may write there in the
+broker's own access control.
 
 A flow's alarm webhook goes through the same `MqttForge:AllowWebhooks` switch as a rule's, and its
 MQTT alarm stays under the alert prefix, as a rule's does. Flows are kept in `flows.json` beside the
