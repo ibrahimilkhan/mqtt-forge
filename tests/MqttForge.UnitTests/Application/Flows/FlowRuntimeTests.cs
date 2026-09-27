@@ -712,6 +712,44 @@ public class FlowRuntimeTests
         Assert.Null(_runtime.NextDue);
     }
 
+    // A copy the clock brings is the event again, and it ends the sequence when it is stopped, as the
+    // first copy does: the copies after it would each be stopped the same way, a turn of the pump
+    // apart. It has a first copy that got through to set it up: turned away short of the pattern by
+    // an inner Repeat whose ten sequences were running then and had all gone by the second copy.
+    [Fact]
+    public void A_repeat_whose_later_copy_was_stopped_schedules_no_more_and_gives_its_place_back()
+    {
+        Start(new FlowBuilder()
+            .Node("fill", "inject", new { payload = "calm" })
+            .Node("go", "inject", new { payload = HostilePatterns.Payload })
+            .Node("again", "inject", new { payload = "calm" })
+            .Node("outer", "repeat", new { count = 3, seconds = 2 })
+            .Node("inner", "repeat", new { count = 2, seconds = 1 })
+            .Node("test", "if", new { field = "", test = "matches", value = HostilePatterns.Catastrophic })
+            .Wire("fill", "out", "inner", "in")
+            .Wire("go", "out", "outer", "in")
+            .Wire("again", "out", "outer", "in")
+            .Wire("outer", "out", "inner", "in")
+            .Wire("inner", "out", "test", "in")
+            .Compile());
+
+        for (var i = 0; i < FlowLimits.RepeatSequences; i++) _runtime.Inject("f1", "fill", T0);
+        _runtime.Inject("f1", "go", T0);
+        Assert.Equal(1, Node("inner").Errors);
+        Assert.Equal(0, Node("test").Errors);
+
+        // The inner sequences end at +1; at +2 the second copy reaches the pattern and runs out of time.
+        _runtime.OnTick(T0.AddSeconds(1), connected: true);
+        _runtime.OnTick(T0.AddSeconds(2), connected: true);
+        Assert.Equal(1, Node("test").Errors);
+
+        Assert.Null(_runtime.NextDue);
+
+        // And its place is free again: ten more sequences, and none of them turned away.
+        for (var i = 0; i < FlowLimits.RepeatSequences; i++) _runtime.Inject("f1", "again", T0.AddSeconds(2));
+        Assert.Equal(0, Node("outer").Errors);
+    }
+
     [Fact]
     public void A_publish_that_failed_on_the_way_out_is_counted_on_its_node()
     {

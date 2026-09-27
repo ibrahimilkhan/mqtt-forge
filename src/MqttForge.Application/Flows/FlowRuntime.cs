@@ -207,7 +207,9 @@ public sealed class FlowRuntime
             {
                 Emit(run, repeat, "out", item.Message);
 
-                if (item.Remaining > 1)
+                // A copy whose event was stopped ends its sequence, as the first copy's does in Repeat:
+                // each copy after it would start the same event again, and be stopped the same way.
+                if (item.Remaining > 1 && !run.Stopped)
                     _schedule.Enqueue(
                         item with { Message = item.Message with { Index = item.Message.Index + 1 }, Remaining = item.Remaining - 1 },
                         NextAfter(due, repeat.Interval, now));
