@@ -10,18 +10,20 @@ namespace MqttForge.Application.Flows;
 
 /// <summary>
 /// The transport around <see cref="FlowRuntime"/>: one bounded queue, one loop that is both the
-/// pump and the timer, a second loop that publishes, and the flows' own subscriptions.
+/// pump and the timer, a second loop that publishes, a third that tells the console, and the
+/// flows' own subscriptions.
 /// </summary>
 // AlertEngine's shape, taken whole and for its reasons. The runtime is pure and holds every fact
 // about a flow; this class holds nothing but the carrying — a queue, a clock, what was last pushed
 // to the console — and the moment a field here becomes a fact about a flow it belongs there.
 //
-// One difference, and it is the reason there are two loops. A Publish node is the only thing in
-// the product that sends to the broker because of a message the broker sent, at up to fifty a
-// second per flow, and MQTTnet's publish waits for the broker's answer at QoS 1. Awaiting that on
-// the pump would make every flow — and every alarm they raise — as slow as the slowest round trip.
-// So publishes are handed to a channel of their own, sent in order by a loop that waits for
-// nothing else, and a failure comes back to the pump as a command, where the counters live.
+// One difference, and it is the reason there are more loops than one. A Publish node is the only
+// thing in the product that sends to the broker because of a message the broker sent, at up to
+// fifty a second per flow, and MQTTnet's publish waits for the broker's answer at QoS 1. Awaiting
+// that on the pump would make every flow — and every alarm they raise — as slow as the slowest
+// round trip. So publishes are handed to a channel of their own, sent in order by a loop that waits
+// for nothing else, and a failure comes back to the pump as a command, where the counters live. The
+// console's pushes go the same way, for the same reason: see FlowConsoleSender.
 public sealed class FlowEngine
 {
     public FlowEngine(FlowRuntime runtime, IFlowStore store, IAlertNotifier notifier, IFlowNotifier console,
@@ -32,7 +34,7 @@ public sealed class FlowEngine
         _runtime = runtime;
         _store = store;
         _notifier = notifier;
-        _console = console;
+        _pushes = new FlowConsoleSender(console, log);
         _connection = connection;
         _subscriber = subscriber;
         _publisher = publisher;
@@ -77,7 +79,7 @@ public sealed class FlowEngine
     private readonly FlowRuntime _runtime;
     private readonly IFlowStore _store;
     private readonly IAlertNotifier _notifier;
-    private readonly IFlowNotifier _console;
+    private readonly FlowConsoleSender _pushes;
     private readonly IMqttConnectionManager _connection;
     private readonly IMqttSubscriber _subscriber;
     private readonly IMqttPublisher _publisher;
@@ -151,13 +153,17 @@ public sealed class FlowEngine
         _resubscribe = true;
         await CarryOutAsync(outcome, now, ct);
         await SyncSubscriptionsAsync(ct);
-        await PushAsync(now, force: true, ct);
+        Push(now, force: true);
     }
 
     /// <summary>The pump and the timer, in one loop, for the life of the process.</summary>
     public async Task RunAsync(CancellationToken ct)
     {
         var sending = SendAsync(ct);
+
+        // The console's loop, started and stopped with the pump: what the pump pushes is sent from
+        // there, so no console, however slow, is ever something the pump waits for.
+        var telling = _pushes.RunAsync(ct);
         var reader = _queue.Reader;
 
         // Held across iterations for AlertEngine's reason: a wait that loses the race is still a
@@ -199,6 +205,7 @@ public sealed class FlowEngine
         finally
         {
             _outbox.Writer.TryComplete();
+            _pushes.Complete();
 
             try
             {
@@ -208,6 +215,9 @@ public sealed class FlowEngine
             {
                 // The publish loop was cancelled with the same token; what it still held goes with the process.
             }
+
+            // Ends on the same token, which calls off a send a console was sitting on.
+            await telling;
         }
     }
 
@@ -371,7 +381,7 @@ public sealed class FlowEngine
             // catch below — alarms in the book nobody was told of, publishes never sent — or hold
             // all of it back until the broker answered.
             await CarryOutAsync(FlowOutcome.Merge(outcomes), now, ct);
-            await PushAsync(now, force: false, ct);
+            Push(now, force: false);
 
             // And filters that went with no transition to show for it — a link that dropped and came
             // back between two turns, a move whose new endpoint was not known yet. Once a tick, what
@@ -386,7 +396,7 @@ public sealed class FlowEngine
                 // A refusal is marked on its node after this turn's push has gone. Asked for again,
                 // it goes out within the throttle's quarter second, where it would otherwise wait
                 // for whatever woke the pump next: on a turn the clock woke, the next tick.
-                if (_runtime.Version != version) await PushAsync(now, force: false, ct);
+                if (_runtime.Version != version) Push(now, force: false);
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -527,8 +537,8 @@ public sealed class FlowEngine
         if (run.Count > 0) yield return (raised, run);
     }
 
-    /// <summary>Tells the console what moved, at most four times a second.</summary>
-    private async Task PushAsync(DateTimeOffset now, bool force, CancellationToken ct)
+    /// <summary>Hands the console what moved, at most four times a second. Never waits on it: see FlowConsoleSender.</summary>
+    private void Push(DateTimeOffset now, bool force)
     {
         var moved = _runtime.Version != _pushed || _debug.Count > 0 || _debugDropped > 0;
         if (!moved)
@@ -551,20 +561,11 @@ public sealed class FlowEngine
         Volatile.Write(ref _status, status);
         Volatile.Write(ref _alarms, _runtime.Alarms());
 
-        var debug = _debug.ToList();
-        var dropped = _debugDropped;
+        _pushes.Status(status);
+        if (_debug.Count > 0 || _debugDropped > 0) _pushes.Debug([.. _debug], _debugDropped);
+
         _debug.Clear();
         _debugDropped = 0;
-
-        try
-        {
-            await _console.StatusAsync(status);
-            if (debug.Count > 0 || dropped > 0) await _console.DebugAsync(debug, dropped);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
-        {
-            _log.LogWarning(ex, "Could not tell the console what the flows are doing.");
-        }
     }
 
     /// <summary>The publish loop: in order, one at a time, each with its own deadline.</summary>

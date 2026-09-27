@@ -64,6 +64,12 @@ public sealed class FlowEngineTests : IAsyncLifetime
     private FlowEngine Run(FlowEngine engine)
     {
         _pump = Task.Run(() => engine.RunAsync(_stop.Token));
+
+        // The push StartAsync made is handed to the console by a loop of the engine's own, which
+        // starts with the pump. Every test here counts the console's pushes from that first one.
+        var deadline = DateTime.UtcNow + StopPatience;
+        while (_console.Answered == 0 && DateTime.UtcNow < deadline) Thread.Sleep(1);
+
         return engine;
     }
 
@@ -699,6 +705,67 @@ public sealed class FlowEngineTests : IAsyncLifetime
         // would take the rest of the turn with it — the look at the filters that comes after.
         Assert.Contains(_log.Lines, line => line.Message.StartsWith("Could not tell the console"));
         Assert.DoesNotContain(_log.Lines, line => line.Message.StartsWith("A turn of the flow engine failed"));
+    }
+
+    // ---- a console that is slow to read ----
+
+    // A console that stops reading holds a hub send for as long as its connection lasts — up to the
+    // client timeout — and every flow in the product would be waiting on it with the pump.
+    [Fact]
+    public async Task A_console_that_stops_reading_holds_up_no_flow()
+    {
+        var engine = await RunningAsync(Watch());
+        _console.Stall = true;
+
+        // A change, and the quarter second after which it is pushed — to a console that never takes it.
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+        await ClockStill(() => _publisher.Sent.Count == 1, "the first arrival to be run");
+        _time.Advance(FlowLimits.StatusEvery);
+        await ClockStill(() => _console.Held == 1, "the push to be stuck with the console");
+
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k2/temp", "{\"temp\":95}"));
+
+        await ClockStill(() => _publisher.Sent.Count == 2 && _alerts.Raised.Count == 2,
+            "the next arrival to be judged, its alarm raised and its publish sent, with the push still stuck");
+    }
+
+    [Fact]
+    public async Task A_console_that_was_stuck_is_sent_the_newest_status_and_none_it_missed()
+    {
+        var engine = await RunningAsync(Watch());
+        _console.Stall = true;
+
+        // Three changes, a push a quarter second after each. The first push sticks; the two after it
+        // are made while it waits, and only the newest of them is still worth sending.
+        for (var i = 1; i <= 3; i++)
+        {
+            await engine.NotifyMessageReceivedAsync(Msg($"plant/k{i}/temp", "{\"temp\":95}"));
+            await ClockStill(() => _publisher.Sent.Count == i, $"arrival {i} to be run");
+            _time.Advance(FlowLimits.StatusEvery);
+            await ClockStill(() => Count(engine, "in") == i, $"push {i} to be made");
+        }
+
+        _console.Stall = false;
+
+        await ClockStill(() => _console.Statuses.Count == 3, "the stuck push and the newest to be taken");
+        Assert.Equal([0, 1, 3], _console.Statuses.Select(status => status.Flows.Single().Nodes.Single(node => node.Id == "in").Count));
+    }
+
+    [Fact]
+    public async Task A_push_stuck_with_a_console_is_called_off_when_the_engine_stops()
+    {
+        var engine = await RunningAsync(Watch());
+        _console.Stall = true;
+
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+        await ClockStill(() => _publisher.Sent.Count == 1, "the arrival to be run");
+        _time.Advance(FlowLimits.StatusEvery);
+        await ClockStill(() => _console.Held == 1, "the push to be stuck with the console");
+
+        await _stop.CancelAsync();
+
+        await _pump!.WaitAsync(StopPatience);
+        Assert.Equal(0, _console.Held);
     }
 
     [Fact]

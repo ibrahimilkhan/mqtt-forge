@@ -112,6 +112,9 @@ internal sealed class RecordingFlowNotifier : IFlowNotifier
     private Exception? _fault;
     private int _failed;
     private int _linesDropped;
+    private int _answered;
+    private int _held;
+    private TaskCompletionSource? _stuck;
 
     /// <summary>When set, every status push throws it.</summary>
     public Exception? Fault
@@ -122,6 +125,49 @@ internal sealed class RecordingFlowNotifier : IFlowNotifier
 
     /// <summary>How many status pushes threw.</summary>
     public int Failed => Volatile.Read(ref _failed);
+
+    /// <summary>How many status pushes this console has answered, taken or thrown. Counted once it has.</summary>
+    public int Answered => Volatile.Read(ref _answered);
+
+    /// <summary>
+    /// When set, every push waits until it is cleared, or until its token calls it off: a console
+    /// that has stopped reading. What it is handed meanwhile is recorded only once it is let go.
+    /// </summary>
+    public bool Stall
+    {
+        set
+        {
+            lock (_gate)
+            {
+                if (value) _stuck ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                else
+                {
+                    _stuck?.TrySetResult();
+                    _stuck = null;
+                }
+            }
+        }
+    }
+
+    /// <summary>How many pushes are waiting on the stalled console right now.</summary>
+    public int Held => Volatile.Read(ref _held);
+
+    private async Task WaitAsync(CancellationToken ct)
+    {
+        Task? stuck;
+        lock (_gate) stuck = _stuck?.Task;
+        if (stuck is null) return;
+
+        Interlocked.Increment(ref _held);
+        try
+        {
+            await stuck.WaitAsync(ct);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _held);
+        }
+    }
 
     public IReadOnlyList<FlowStatus> Statuses
     {
@@ -139,27 +185,34 @@ internal sealed class RecordingFlowNotifier : IFlowNotifier
         get { lock (_gate) return _linesDropped; }
     }
 
-    public Task StatusAsync(FlowStatus status)
+    public Task StatusAsync(FlowStatus status, CancellationToken ct)
     {
         if (Fault is { } fault)
         {
             Interlocked.Increment(ref _failed);
+            Interlocked.Increment(ref _answered);
             return Task.FromException(fault);
         }
 
-        lock (_gate) _statuses.Add(status);
-        return Task.CompletedTask;
+        return RecordAsync(status, ct);
     }
 
-    public Task DebugAsync(IReadOnlyList<FlowDebugEntry> entries, int dropped)
+    private async Task RecordAsync(FlowStatus status, CancellationToken ct)
     {
+        await WaitAsync(ct);
+        lock (_gate) _statuses.Add(status);
+        Interlocked.Increment(ref _answered);
+    }
+
+    public async Task DebugAsync(IReadOnlyList<FlowDebugEntry> entries, int dropped, CancellationToken ct)
+    {
+        await WaitAsync(ct);
+
         lock (_gate)
         {
             _debug.AddRange(entries);
             _linesDropped += dropped;
         }
-
-        return Task.CompletedTask;
     }
 }
 
