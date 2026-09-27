@@ -196,7 +196,7 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
 
         try
         {
-            var document = await _rules.LoadAsync(ct);
+            var document = await LoadRulesAsync(ct);
 
             // Flows are the second reason to be connected. Read second, and only asked when the
             // rules alone would leave the broker alone, so a host with no flows behaves exactly as
@@ -251,7 +251,28 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _log.LogError(ex, "Could not work out whether the alert rules need a broker connection.");
+            // Nothing above is known to throw — each read and the dial keep their own faults — but
+            // one that did would stop the host, which is BackgroundService's default.
+            _log.LogError(ex, "Could not work out whether the broker should be connected at start-up.");
+        }
+    }
+
+    /// <summary>The rules, or no rules and unreadable when the store could not be read at all.</summary>
+    // The store answers a file it cannot parse as Unreadable and promises nothing about the rest: a
+    // directory where the file should be, a permission the container lacks. AlertEngine starts with
+    // no rules on such a fault, and it is taken the same way here: the flows are still asked — a
+    // host whose only reason to dial was a flow used to stay offline — and the line StartUpAsync
+    // writes for an unreadable file says what became of the rules and of the dial.
+    private async Task<AlertRuleDocument> LoadRulesAsync(CancellationToken ct)
+    {
+        try
+        {
+            return await _rules.LoadAsync(ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _log.LogError(ex, "The alert rules could not be read to see whether they need a broker connection.");
+            return new AlertRuleDocument([], Unreadable: true, []);
         }
     }
 

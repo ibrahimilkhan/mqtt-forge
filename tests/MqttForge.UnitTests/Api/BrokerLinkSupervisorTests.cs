@@ -667,6 +667,27 @@ public class BrokerLinkSupervisorTests
             entry.Level == LogLevel.Error && entry.Message.Contains("alert rules could not be read"));
     }
 
+    // A fault reading the rules — a directory where the file should be, a permission the container
+    // lacks — is no rules running, as the engine takes it, and no reason to leave the flows unasked:
+    // a host whose only reason to dial was a flow stayed offline, and said only that it could not
+    // work out whether the rules needed a broker.
+    [Fact]
+    public async Task A_rules_file_that_cannot_be_opened_still_lets_an_enabled_flow_dial()
+    {
+        _rules.LoadAsync(Arg.Any<CancellationToken>()).Throws(new IOException("disk gone"));
+        FlowsHold(enabled: true);
+        var sut = new BrokerLinkSupervisor(Service, _rules, _log, _time,
+            options: new BrokerLinkOptions(ConnectOnStart: true), flows: _flows);
+
+        await sut.StartUpAsync(CancellationToken.None);
+
+        Assert.Equal([0], _attempts);
+        Assert.Contains(_log.Entries, entry => entry.Level == LogLevel.Error && entry.Exception is IOException);
+        Assert.Contains(_log.Entries, entry =>
+            entry.Level == LogLevel.Error && entry.Message.Contains("no rules are running") &&
+            entry.Message.Contains("connected for the flows"));
+    }
+
     // The rules are one reason of three to keep a link up: the flows are another, and a link the
     // reader opened by hand the third. Measured: an outage with only flows and the reader's link
     // wrote "for the alert rules" on every rung, on a host with no rule at all.
