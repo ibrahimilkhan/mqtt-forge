@@ -127,7 +127,7 @@ export function App({ hub }: { hub: Hub }) {
    * A panel's × unmounts the button that was just pressed, and a browser hands focus to the body
    * when that happens — so the next Tab restarted from the first control in the document. A
    * reader who opened Settings, the last row in the rail, and closed it again was returned to
-   * the top of the console and had to walk the whole rail to get back. All eight panels did it.
+   * the top of the console and had to walk the whole rail to get back. Every panel did it.
    */
   const rows = useRef<Partial<Record<PanelId, HTMLButtonElement | null>>>({});
 
@@ -321,7 +321,7 @@ export function App({ hub }: { hub: Hub }) {
 
       <Workspace
         panel={Panel ? <Panel onClose={close} open={setOpenPanel} /> : undefined}
-        // Three of the seven, for two different reasons; see Workspace's own note on both.
+        // Four of the nine, for three different reasons; see Workspace's own note on each.
         //
         // The broker's is unconditional. It used to shrink into a column once the link was up,
         // on the reasoning that a live panel is a report rather than a form — and the shape was

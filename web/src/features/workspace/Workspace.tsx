@@ -19,17 +19,18 @@ type Props = {
    * Absent for the panels that are read against what is on screen — a filter against the tree it
    * will narrow, a plot against the run it will draw. Those stay in their column.
    *
-   * `full` for the broker panel while there is no link. Its form is read in one sitting and
-   * answered in one sitting: nothing in the tree or the log means anything until the connection
-   * it describes is up. Its fields stop growing at a reading measure, because a form does not
-   * get better at 1400px; what fills the rest of the window is what is not the form. Once the
-   * link is up the same panel is a report, and it comes back into the column — see App, which
-   * is where the state is read.
+   * `full` for the broker panel. Its form is read in one sitting and answered in one sitting:
+   * nothing in the tree or the log means anything until the connection it describes is up. Its
+   * fields stop growing at a reading measure, because a form does not get better at 1400px; what
+   * fills the rest of the window is what is not the form. It used to come back into the column
+   * once the link was up, and no longer does — see App for why.
    *
    * `fill` for the two panels that hold a list of rules — alerts and colours. They take the
    * workspace for the opposite reason: each row is a topic filter and a line about what the rule
    * is doing, and a table of those held to a reading measure in the middle of a wide window is a
-   * table wrapping in a column with empty space either side of it.
+   * table wrapping in a column with empty space either side of it. And for flows, whose page is
+   * a canvas: a drawing has no reading measure, and every pixel it is not given is a wire that
+   * has to be panned to.
    *
    * Colours was in the first group until the list became a table. It was there because a colour
    * rule is read against the branch it will paint, and giving that up is a real cost — so it is

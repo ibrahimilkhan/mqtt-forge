@@ -98,7 +98,7 @@ export function createSignalRHub(url = '/hubs/mqtt'): Hub {
       /**
        * Binds one server-sent event, if this caller asked for it, and remembers how to unbind it.
        *
-       * Eight of these now, and each used to be the same four lines with the same name written in
+       * Ten of these now, and each used to be the same four lines with the same name written in
        * three places — which is exactly the shape a new event gets added to by copying and then
        * forgetting one of the three. The lifecycle pair below cannot join it: signalR has no
        * removal API for onreconnecting and onreconnected, so those are kept in sets of our own.

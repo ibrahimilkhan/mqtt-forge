@@ -13,7 +13,7 @@ import { PANELS } from './features/panels';
  * when that happens. Nothing put it back, so the next Tab restarted from the first control in the
  * document: a reader who opened Settings — the last row in the rail — and closed it again was
  * returned to the top of the console and had to walk the whole rail to reach where they had been.
- * All eight panels did it.
+ * Every panel did it.
  *
  * The rule is the ordinary one for anything that opens and shuts: the thing that opened it is
  * where the reader comes back to.

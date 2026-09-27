@@ -103,8 +103,8 @@
  * the panel is empty from edge to edge, and a sentence held against the left of 1400 pixels reads
  * as a caption on the nothing next to it rather than as the panel saying what it is for.
  *
- * A share of the window rather than a fixed height: PanelShell is the shell for seven panels and
- * this is one state of two of them, so the centring is bought here instead of by making that
+ * A share of the window rather than a fixed height: PanelShell is the shell for every panel and
+ * this is one state of three of them, so the centring is bought here instead of by making that
  * component a flex column for everybody. The block shrinks with the window, because vh does. */
 .nothingYet {
   margin: 0;

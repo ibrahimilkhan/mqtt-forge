@@ -1,17 +1,17 @@
 import type { ReactNode } from 'react';
 
 /**
- * The seven marks the panel menu wears, one per panel — and thirteen more that are not panels.
+ * The nine marks the panel menu wears, one per panel — and seventeen more that are not panels.
  *
- * Drawn here rather than pulled from an icon set. Twenty glyphs is not worth a dependency, and a
- * set drawn to its own rules would sit beside the mark in `marks.tsx` looking borrowed: the same
+ * Drawn here rather than pulled from an icon set. Twenty-six glyphs is not worth a dependency, and
+ * a set drawn to its own rules would sit beside the mark in `marks.tsx` looking borrowed: the same
  * 24-unit square, one weight of stroke, round ends, no fill, current colour. That is the whole
  * drawing language of this console, and these follow it — the shapes are Lucide's `antenna`,
  * `funnel`, `chart-line`, `blend`, `bell`, `qr-code` and `settings`, redrawn at the rail's own
  * weight.
  *
  * The counts in this paragraph had already fallen behind the file before the bell arrived; they
- * are put right here rather than left to drift further. Seven panels, one warning, twelve marks
+ * are put right here rather than left to drift further. Nine panels, one warning, sixteen marks
  * that go inside buttons.
  *
  * 1.8 rather than Lucide's 1.5, because 1.8 is what the mark and every other line in here is
@@ -21,7 +21,7 @@ import type { ReactNode } from 'react';
  * `Warning` wears no panel: it stands on the Broker row beside `Antenna`, and a triangle
  * borrowed from somewhere else would look stuck on rather than part of the rail.
  *
- * The last twelve wear no panel either — they go inside buttons, in the same mono the button is
+ * The last sixteen wear no panel either — they go inside buttons, in the same mono the button is
  * lettered in, at the size of one line of that type. Which is what they are drawn for: a mark in
  * a button has one line of type's worth of room and has to be recognised in it, so each of them
  * is the simplest shape that survives thirteen pixels.

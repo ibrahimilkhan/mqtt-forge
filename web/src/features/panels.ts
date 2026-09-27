@@ -15,7 +15,7 @@ export type PanelId =
 /**
  * What the panel is for, rather than what it is called.
  *
- * Seven flat buttons is a list to read through; three groups is a list to point at. The headings
+ * Nine flat buttons is a list to read through; three groups is a list to point at. The headings
  * are the questions someone actually arrives with: what am I connected to, what am I reading, and
  * what else is here.
  *

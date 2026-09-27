@@ -126,7 +126,7 @@ const offenders = () =>
  * to open, or every button on the page loses its aria-label — which is the failure mode of every
  * sweep ever written.
  *
- * Two floors, because there are two contexts. Three of the eight panels take the whole window and
+ * Two floors, because there are two contexts. Four of the nine panels take the whole window and
  * hide the workspace behind them, so with one of those open the page holds the rail, the panel
  * and nothing else. The rich sweep is the one with every panel shut, where the tree, the log, the
  * chart and the publish form are all drawn at once.

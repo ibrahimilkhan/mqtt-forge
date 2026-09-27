@@ -1182,7 +1182,7 @@ function console_(client, { zoomed = false, pinned = false, opened = false, pane
     );
   if (panel !== 'broker') {
     act(() => fireEvent.click(menu('Broker')));
-    // By the row's own label and not by the id with a capital on it: two of the eight are not
+    // By the row's own label and not by the id with a capital on it: two of the nine are not
     // named after themselves — 'subscribe' opens Filters and 'mobile' opens QR — and the
     // capitalised id found no button at all for either.
     if (panel) act(() => fireEvent.click(menu(PANELS.find((p) => p.id === panel).label)));
