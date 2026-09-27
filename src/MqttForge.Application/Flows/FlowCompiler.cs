@@ -376,6 +376,19 @@ public static partial class FlowCompiler
                 return null;
             }
 
+            // The alert rules' refusal, and for its reason, but on every Alarm node rather than only
+            // behind a wildcard: a node holds one alarm per topic, whatever brings the topics to it, and
+            // a retained record at one fixed topic is each topic's alarm written over the last one's —
+            // and the empty message that takes one back takes back the record of them all. Empty is the
+            // usual place, which names the topic already.
+            if (settings.Bool("retain") && topic.Length > 0 &&
+                !topic.Contains(AlertTopicPrefix.Placeholder, StringComparison.Ordinal))
+            {
+                problem = $"A retained alarm's own topic has to carry {AlertTopicPrefix.Placeholder}, or each topic's alarm " +
+                          $"replaces the last one's on the broker. Put {AlertTopicPrefix.Placeholder} in it, or leave it empty for the usual place.";
+                return null;
+            }
+
             var qos = (int)(settings.Number("qos") ?? 1);
             if (qos is < 0 or > 2)
             {

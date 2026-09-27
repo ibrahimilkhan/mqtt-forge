@@ -278,6 +278,28 @@ public class FlowCompilerTests
             name = "Hot", severity = "warn", publish = true, publishTopic = "plant/alarm"
         })).Key);
 
+    // The alert rules' refusal, for its reason. An Alarm node holds one alarm per topic, and a retained
+    // record at one fixed topic is each topic's alarm written over the last one's — and the empty
+    // message that takes one of them back takes back the record of them all.
+    [Theory]
+    [InlineData("mqttforge/alerts/boiler")]
+    [InlineData("mqttforge/alerts/boiler/{{topic[1]}}")]
+    public void A_retained_alarms_own_topic_has_to_carry_the_topic_it_is_about(string publishTopic)
+    {
+        var problem = Only(One("alarm", new { name = "Hot", severity = "warn", publish = true, publishTopic, retain = true }));
+
+        Assert.Equal("node:n1", problem.Key);
+        Assert.Equal("A retained alarm's own topic has to carry {topic}, or each topic's alarm replaces the last one's " +
+                     "on the broker. Put {topic} in it, or leave it empty for the usual place.", problem.Message);
+    }
+
+    [Theory]
+    [InlineData("mqttforge/alerts/boiler/{topic}", true)]
+    [InlineData("", true)]
+    [InlineData("mqttforge/alerts/boiler", false)]
+    public void An_alarms_own_topic_that_is_one_per_topic_or_not_retained_is_taken(string publishTopic, bool retain) =>
+        Assert.Empty(Problems(One("alarm", new { name = "Hot", severity = "warn", publish = true, publishTopic, retain })));
+
     [Theory]
     [InlineData("")]
     [InlineData("plant/+/cmd")]
