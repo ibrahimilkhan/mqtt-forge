@@ -1,0 +1,127 @@
+import { create } from 'zustand';
+import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware';
+import type { FlowDto } from '../../types/api';
+
+export const DRAFTS_KEY = 'mqttforge.flows.drafts';
+
+type DraftState = {
+  /** Flows edited here and not yet deployed, by id — flows never deployed included. */
+  drafts: Record<string, FlowDto>;
+  /** The flow on screen. */
+  current: string | null;
+  /** The node the inspector is showing. Null shows the flow's own settings. */
+  selected: string | null;
+  /** What the server said about each flow's last refused deploy: flow id, then flow / node:{id} / edge:{id}. */
+  refusals: Record<string, Record<string, string[]>>;
+
+  /** Changes a flow, starting its draft from `base` if it has none yet. */
+  edit: (base: FlowDto, change: (flow: FlowDto) => FlowDto) => void;
+  /** A whole draft: a new flow, or an example. */
+  put: (flow: FlowDto) => void;
+  /** Throws a flow's edits away. */
+  discard: (id: string) => void;
+  show: (id: string | null) => void;
+  select: (nodeId: string | null) => void;
+  refuse: (flowId: string, errors: Record<string, string[]>) => void;
+  /** The server has the flow now; there is nothing left to keep here. */
+  deployed: (flowId: string) => void;
+  /** The flow was deleted. */
+  forget: (flowId: string) => void;
+};
+
+/**
+ * localStorage when it can be had, and nothing when it cannot — a private window, a browser set to
+ * block site data. Every access is caught: a page that cannot keep drafts still edits and deploys.
+ * Writes wait a moment, because a node being dragged is an edit every frame and a JSON write every
+ * frame is work nobody asked for.
+ */
+const quietly: StateStorage = (() => {
+  let pending: ReturnType<typeof setTimeout> | undefined;
+
+  return {
+    getItem: (name) => {
+      try {
+        return localStorage.getItem(name);
+      } catch {
+        return null;
+      }
+    },
+    setItem: (name, value) => {
+      clearTimeout(pending);
+      const write = () => {
+        try {
+          localStorage.setItem(name, value);
+        } catch {
+          // Nowhere to keep it. The draft lives until the page is closed.
+        }
+      };
+      // Tests read storage straight after a change; a real page waits a quarter of a second.
+      if (import.meta.env.MODE === 'test') write();
+      else pending = setTimeout(write, 250);
+    },
+    removeItem: (name) => {
+      try {
+        localStorage.removeItem(name);
+      } catch {
+        // As above.
+      }
+    },
+  };
+})();
+
+const without = <T>(record: Record<string, T>, key: string): Record<string, T> =>
+  Object.fromEntries(Object.entries(record).filter(([id]) => id !== key));
+
+/**
+ * What the page has changed and not deployed.
+ *
+ * The deployed flows are the server's, read through react-query; this holds only the difference.
+ * A flow's draft is kept whole rather than as a list of changes, because Deploy sends a whole
+ * flow and "Discard" means "back to what is running" — both are one assignment with whole flows.
+ */
+export const useFlowDraftStore = create<DraftState>()(
+  persist(
+    (set) => ({
+      drafts: {},
+      current: null,
+      selected: null,
+      refusals: {},
+
+      edit: (base, change) =>
+        set((state) => ({ drafts: { ...state.drafts, [base.id]: change(state.drafts[base.id] ?? base) } })),
+
+      put: (flow) => set((state) => ({ drafts: { ...state.drafts, [flow.id]: flow } })),
+
+      discard: (id) =>
+        set((state) => ({
+          drafts: without(state.drafts, id),
+          refusals: without(state.refusals, id),
+          selected: null,
+        })),
+
+      show: (id) => set({ current: id, selected: null }),
+
+      select: (nodeId) => set({ selected: nodeId }),
+
+      refuse: (flowId, errors) => set((state) => ({ refusals: { ...state.refusals, [flowId]: errors } })),
+
+      deployed: (flowId) =>
+        set((state) => ({ drafts: without(state.drafts, flowId), refusals: without(state.refusals, flowId) })),
+
+      forget: (flowId) =>
+        set((state) => ({
+          drafts: without(state.drafts, flowId),
+          refusals: without(state.refusals, flowId),
+          current: state.current === flowId ? null : state.current,
+          selected: state.current === flowId ? null : state.selected,
+        })),
+    }),
+    {
+      name: DRAFTS_KEY,
+      storage: createJSONStorage(() => quietly),
+      // Only the work and where it was left. A refusal is about a deploy that happened in this
+      // page, and a selection about a canvas that is not open yet.
+      partialize: (state) => ({ drafts: state.drafts, current: state.current }),
+    },
+  ),
+);
