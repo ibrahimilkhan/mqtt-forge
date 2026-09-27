@@ -197,9 +197,9 @@ public class MqttAlertDispatcherTests
     [Fact]
     public async Task Shutdown_calls_off_the_publication_in_flight_and_makes_none_of_those_waiting()
     {
-        _publisher.Stall = true;
         var sut = CreateSut();
         var action = new PublishAction(null, 1, true);
+        _publisher.HoldOnce(_ => true);
 
         await sut.RaisedAsync([Fired(action, ruleId: "r1")]);
         await Until(() => _publisher.Held == 1, "the first publication to be waiting on the broker");
@@ -208,8 +208,72 @@ public class MqttAlertDispatcherTests
         _lifetime.StopApplication();
 
         Assert.Equal(0, _publisher.Held);
-        Assert.Empty(_publisher.Sent);
+
+        // r2's raise was never made. What went out is the sweep taking back the record r1's may
+        // have left: see the test below.
+        var taken = Assert.Single(_publisher.Sent);
+        Assert.Equal("mqttforge/alerts/r1/plant/boiler/temp", taken.Topic);
+        Assert.Empty(taken.Payload);
         Assert.Contains(_log.Lines, line => line.Message.Contains("still waiting when MQTTForge stopped"));
+    }
+
+    // Calling a publish off stops the waiting for the broker's answer and nothing else: a PUBLISH at
+    // QoS 1 or 2 already written may land all the same. So a retained raise is on the list of records
+    // to take back from the moment it is sent, and the sweep takes back one the shutdown called off.
+    [Fact]
+    public async Task A_retained_raise_the_shutdown_called_off_is_taken_back_all_the_same()
+    {
+        var sut = CreateSut();
+        _publisher.HoldOnce(request => request.Payload.Length > 0);
+
+        await sut.RaisedAsync([Fired(new PublishAction(null, 1, true))]);
+        await Until(() => _publisher.Held == 1, "the raise to be in flight");
+
+        _lifetime.StopApplication();
+
+        var taken = Assert.Single(_publisher.Sent);
+        Assert.Equal("mqttforge/alerts/r1/plant/boiler/temp", taken.Topic);
+        Assert.Empty(taken.Payload);
+        Assert.True(taken.Retain);
+    }
+
+    // And the other way round: a clear the shutdown called off may not have landed, so its record is
+    // still one to take back. Only a clear that went is one less.
+    [Fact]
+    public async Task A_clear_the_shutdown_called_off_leaves_its_record_for_the_sweep()
+    {
+        var action = new PublishAction(null, 1, true);
+        var alert = Fired(action);
+        var sut = CreateSut();
+
+        await sut.RaisedAsync([alert]);
+        await Settled(sut);
+        _publisher.Clear();
+
+        _publisher.HoldOnce(request => request.Payload.Length == 0);
+        await sut.ResolvedAsync([Ended(alert)]);
+        await Until(() => _publisher.Held == 1, "the clear to be in flight");
+
+        _lifetime.StopApplication();
+
+        Assert.Equal([AlertPayload.For(Ended(alert), "resolved"), ""], _publisher.Sent.Select(TextOf));
+    }
+
+    // Called off because the process is stopping, not given up on: neither a publish that failed nor
+    // one the broker never got for want of a link, and the log does not say it was.
+    [Fact]
+    public async Task A_publish_the_shutdown_called_off_is_not_counted_or_said_to_have_failed()
+    {
+        var sut = CreateSut();
+        _publisher.HoldOnce(_ => true);
+
+        await sut.RaisedAsync([Fired(new PublishAction(null, 1, false))]);
+        await Until(() => _publisher.Held == 1, "the raise to be in flight");
+
+        _lifetime.StopApplication();
+
+        Assert.Equal(0, sut.Undelivered);
+        Assert.DoesNotContain(_log.Lines, line => line.Message.Contains("could not be published"));
     }
 
     // The alert's identity is the (rule, topic) pair, so the place it goes has to name the pair.
@@ -544,6 +608,14 @@ public class MqttAlertDispatcherTests
         /// <summary>How many publishes are waiting on the stalled broker right now.</summary>
         public int Held => Volatile.Read(ref _held);
 
+        private Func<PublishRequest, bool>? _holdOnce;
+
+        /// <summary>
+        /// The first publish that matches waits until its token calls it off, and the rest go
+        /// straight through: the one publication in flight when the process stops.
+        /// </summary>
+        public void HoldOnce(Func<PublishRequest, bool> which) => Volatile.Write(ref _holdOnce, which);
+
         public void Clear()
         {
             lock (_gate) _sent.Clear();
@@ -554,6 +626,20 @@ public class MqttAlertDispatcherTests
             if (Throw is not null) throw Throw();
 
             if (Hang) await Task.Delay(Timeout.Infinite, ct);
+
+            if (Volatile.Read(ref _holdOnce) is { } which && which(request) &&
+                Interlocked.CompareExchange(ref _holdOnce, null, which) == which)
+            {
+                Interlocked.Increment(ref _held);
+                try
+                {
+                    await Task.Delay(Timeout.Infinite, ct);
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref _held);
+                }
+            }
 
             Task? stuck;
             lock (_gate) stuck = _stuck?.Task;

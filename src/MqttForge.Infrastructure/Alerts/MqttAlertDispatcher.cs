@@ -213,9 +213,12 @@ public sealed class MqttAlertDispatcher : IAlertDispatcher
     }
 
     /// <summary>Stops the loop before the sweep, and says what was still waiting.</summary>
-    // The loop goes first, and is waited for, briefly: a publication still in flight when the sweep
-    // ran could put back a record the sweep had just taken, and one still waiting could add one
-    // after it. Its token calls off the publish in flight, so the wait is short.
+    // The loop goes first, and is waited for, briefly: one still waiting when the sweep ran could add
+    // a record after it. Its token calls off the publish in flight, and what that achieves is the
+    // short wait: the loop stops waiting for the broker's answer and ends. It does not take the
+    // packet back. A PUBLISH already written may still land, ahead of the sweep's clear on the same
+    // link, which is why a retained raise is on the sweep's list from the moment it is sent and a
+    // clear called off leaves its record there (SendAsync).
     private void Stop()
     {
         _stopping.Cancel();
@@ -242,25 +245,25 @@ public sealed class MqttAlertDispatcher : IAlertDispatcher
 
             var body = Encoding.UTF8.GetBytes(AlertPayload.For(alert, @event));
 
-            // A body that never left is not a record to be taken back: the topic stays in the
-            // list so the shutdown clear tries it again when the link may be up.
+            // A record to take back from the moment it is sent, not from the moment the broker
+            // says it has it: a PUBLISH at QoS 1 or 2 already written lands whether or not anybody
+            // is still waiting for the answer, and Stop calls that wait off. The sweep clearing a
+            // topic that holds nothing costs one empty publish; one it missed says "critical" on
+            // the broker for ever.
+            if (one.Raised && publish.Retain) _retained[topic] = publish.Qos;
+
+            // A body that never left leaves the list as it was: the topic stays on it so the
+            // shutdown clear tries it again when the link may be up.
             if (!await PublishAsync(topic, body, publish.Qos, publish.Retain, alert.RuleName, ct))
                 continue;
 
-            if (!publish.Retain) continue;
-
-            if (one.Raised)
-            {
-                _retained[topic] = publish.Qos;
-
-                continue;
-            }
+            if (!publish.Retain || one.Raised) continue;
 
             // The order is the whole of it: the resolved body first, so anybody listening
             // hears the alarm end, and then nothing at all, so anybody subscribing tomorrow is
-            // not told about it at all.
-            await ClearAsync(topic, publish.Qos, ct);
-            _retained.TryRemove(topic, out _);
+            // not told about it at all. Off the list only once the clear went: one called off or
+            // given up on may not have reached the broker, and the sweep tries it again.
+            if (await ClearAsync(topic, publish.Qos, ct)) _retained.TryRemove(topic, out _);
         }
     }
 
@@ -279,7 +282,7 @@ public sealed class MqttAlertDispatcher : IAlertDispatcher
         }
     }
 
-    private Task ClearAsync(string topic, int qos, CancellationToken ct) =>
+    private Task<bool> ClearAsync(string topic, int qos, CancellationToken ct) =>
         PublishAsync(topic, [], qos, retain: true, what: "the retained record", ct);
 
     /// <summary>Where this alert goes, or null if it may not go anywhere.</summary>
@@ -340,6 +343,14 @@ public sealed class MqttAlertDispatcher : IAlertDispatcher
                 "{What} for {Topic} was not published: MQTTForge is not connected to a broker.",
                 what, topic);
 
+            return false;
+        }
+        catch (Exception) when (ct == _stopping.Token && ct.IsCancellationRequested)
+        {
+            // Called off by Stop: the process stopping, not the broker failing. Not a publish that
+            // did not land, since it may land yet, and nothing to say in the log; a retained record
+            // it leaves is on the list for the sweep. Whatever MQTTnet made of the cancellation —
+            // it answers a wait called off with its own timeout exception — the token says so.
             return false;
         }
         catch (Exception ex)
