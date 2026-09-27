@@ -58,7 +58,8 @@ export function useDeploy() {
         throw unread(error);
       }
 
-      // A read that set off before this one, and came back after it, would put the older list back.
+      // A read of the list still out set off before this one did: let in after it, it would put the
+      // older list back.
       await queryClient.cancelQueries({ queryKey: queryKeys.flows });
       queryClient.setQueryData<FlowsDto>(queryKeys.flows, read);
       // As the cache keeps it: a copy that has not changed is still the object the page worked
