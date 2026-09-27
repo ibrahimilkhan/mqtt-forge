@@ -1282,8 +1282,12 @@ describe('a node this build does not know', () => {
     render(<FlowsPage />);
     const pane = await screen.findByRole('complementary', { name: 'Inspector' });
 
-    expect(await within(pane).findByText("MQTT in → function: That node has no input called 'in'.")).toBeInTheDocument();
-    expect(within(pane).getByText("function → Debug: This node has no output called 'out'.")).toBeInTheDocument();
+    expect(
+      await within(pane).findByText("MQTT in (plant/+/temp) → function (not known to this build): That node has no input called 'in'."),
+    ).toBeInTheDocument();
+    expect(
+      within(pane).getByText("function (not known to this build) → Debug (prints to Debug): This node has no output called 'out'."),
+    ).toBeInTheDocument();
   });
 
   it('says in the node pane that it does not know the node, and still takes it out', async () => {

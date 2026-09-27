@@ -138,6 +138,38 @@ describe('inspector', () => {
     expect(useFlowDraftStore.getState().drafts.watch.nodes[1].config.severity).toBe('critical');
   });
 
+  // A wire has no pane, so the flow's pane says what the server refused about it, by its ends. By
+  // type alone, two nodes of one type read "If → If", and the reader could not tell which wire.
+  it('names the ends of a refused wire as they are drawn, by type and by the line under it', () => {
+    const [test] = watch.nodes;
+    const twice: FlowDto = {
+      ...watch,
+      nodes: [test, { ...test, id: 'hotter', x: 260, config: { ...test.config, value: '95' } }],
+      edges: [{ id: 'e1', from: 'test', fromPort: 'yes', to: 'hotter', toPort: 'in' }],
+    };
+    render(
+      <Inspector flow={twice} deployed={twice} running overtaken={false} problems={{ 'edge:e1': ['Not this wire.'] }} facts={facts} />,
+    );
+
+    expect(screen.getByText('If ($.temp > 90) → If ($.temp > 95): Not this wire.')).toBeInTheDocument();
+  });
+
+  // What an Inject sends can be a whole payload, which the canvas cuts to the node's width.
+  it('cuts a long line when it names a wire\'s end by it', () => {
+    const [test] = watch.nodes;
+    const payload = JSON.stringify({ reading: 'kiln-2', values: [94.2, 94.8, 95.1, 95.6] });
+    const pressed: FlowDto = {
+      ...watch,
+      nodes: [{ id: 'go', type: 'inject', x: 0, y: 0, config: { topic: '', payload } }, test],
+      edges: [{ id: 'e1', from: 'go', fromPort: 'out', to: 'test', toPort: 'in' }],
+    };
+    render(
+      <Inspector flow={pressed} deployed={pressed} running overtaken={false} problems={{ 'edge:e1': ['Not this wire.'] }} facts={facts} />,
+    );
+
+    expect(screen.getByText(`Inject (${payload.slice(0, 29)}…) → If ($.temp > 90): Not this wire.`)).toBeInTheDocument();
+  });
+
   it('says when this host will not send webhooks', () => {
     useFlowDraftStore.getState().select('hot');
     render(<Inspector flow={watch} deployed={watch} running overtaken={false} problems={{}} facts={{ ...facts, allowWebhooks: false }} />);

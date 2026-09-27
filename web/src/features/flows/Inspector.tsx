@@ -105,16 +105,30 @@ function NodePane({ flow, node, problems, facts }: { flow: FlowDto; node: FlowNo
   );
 }
 
+/** How much of a node's line a wire's problem quotes: about what the node shows before it cuts it. */
+const QUOTED = 30;
+
+/**
+ * A node as the canvas draws it: its type, and the line under that which says its settings. The
+ * type alone reads "If → If" for two nodes of one type; the line is what tells them apart there.
+ * A line longer than the node is cut, as the node cuts it.
+ */
+function drawnAs(node: FlowNodeDto): string {
+  const spec = specOf(node.type);
+  const line = Array.from(spec.summary(node.config));
+  return `${spec.label} (${line.length > QUOTED ? `${line.slice(0, QUOTED - 1).join('')}…` : line.join('')})`;
+}
+
 /**
  * What the server said about the flow as a whole, and about each of its wires. A node's own
  * problems are in its pane and on the node; a wire has no pane, and on the canvas only its colour,
  * so this is the one place its reason is said — named by the nodes it runs between, as the reader
- * sees it drawn. A wire the flow no longer has is not listed, as a node that is gone has no pane.
+ * sees them drawn. A wire the flow no longer has is not listed, as a node that is gone has no pane.
  */
 function flowProblems(flow: FlowDto, problems: Problems): string[] {
   const nameOf = (nodeId: string) => {
     const node = flow.nodes.find((one) => one.id === nodeId);
-    return node ? specOf(node.type).label : nodeId;
+    return node ? drawnAs(node) : nodeId;
   };
 
   return [
