@@ -298,6 +298,13 @@ public sealed class FlowRuntime
 
     public FlowAlarms Alarms() => new(_alarms.Active(), _alarms.History());
 
+    /// <summary>The Alerts panel's "clear history", for the flows' half of the list it shows.</summary>
+    public void ClearHistory()
+    {
+        _alarms.ClearHistory();
+        Touch();
+    }
+
     // ---- one event ----
 
     private void Link(bool connected, DateTimeOffset now, Collector into)

@@ -429,6 +429,14 @@ public sealed class FlowEngine
             case FlowPublishFailed failed:
                 return _runtime.PublishFailed(failed.FlowId, failed.NodeId, failed.Reason, now);
 
+            case FlowClearHistory:
+                _runtime.ClearHistory();
+
+                // At once rather than at the next push: GET /api/alerts reads this, and a console
+                // that cleared the list and read it back would otherwise find it all still there.
+                Volatile.Write(ref _alarms, _runtime.Alarms());
+                return FlowOutcome.Empty;
+
             default:
                 _log.LogWarning("The flow engine does not know what to do with a {Command}.", command.GetType().Name);
                 return FlowOutcome.Empty;

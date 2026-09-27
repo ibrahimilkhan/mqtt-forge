@@ -3,7 +3,7 @@ using MqttForge.Domain.Models;
 namespace MqttForge.Application.Flows;
 
 /// <summary>Everything that can reach the flow engine's queue, as one closed union.</summary>
-// One queue for all four, for AlertCommand's reason: order. A deploy posted after an arrival has to
+// One queue for all of them, for AlertCommand's reason: order. A deploy posted after an arrival has to
 // be applied after it, and a publish failure has to be counted against the flow that was running
 // when it was asked for. The runtime is single-threaded, so this is also the whole list of ways any
 // other thread is allowed to reach it.
@@ -20,3 +20,6 @@ public sealed record FlowInject(string FlowId, string NodeId) : FlowCommand;
 
 /// <summary>The publish loop could not send what a Publish node asked for.</summary>
 public sealed record FlowPublishFailed(string FlowId, string NodeId, string Reason) : FlowCommand;
+
+/// <summary>Somebody cleared the alert history, which lists the flows' alarms that ended as well as the rules'.</summary>
+public sealed record FlowClearHistory : FlowCommand;

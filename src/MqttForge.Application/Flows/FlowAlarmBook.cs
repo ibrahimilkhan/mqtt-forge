@@ -103,6 +103,9 @@ public sealed class FlowAlarmBook
 
     public IReadOnlyList<Alert> History() => [.. _history];
 
+    /// <summary>Forgets the alarms that have ended. What is standing is not history.</summary>
+    public void ClearHistory() => _history.Clear();
+
     /// <summary>What is standing, under the Alarm node that holds it up: oldest first, at most <paramref name="most"/> a node.</summary>
     // One pass over every alarm for every node at once. A node with nothing standing is simply not in it.
     public IReadOnlyDictionary<(string FlowId, string NodeId), IReadOnlyList<FlowStanding>> StandingByNode(int most)

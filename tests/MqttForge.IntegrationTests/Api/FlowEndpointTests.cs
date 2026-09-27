@@ -209,6 +209,58 @@ public sealed class FlowEndpointTests : IClassFixture<MqttForgeApiFactory>
         }, "the cleared alarm to leave active and land in history");
     }
 
+    // The Alerts panel's "clear history" is one button for one list, and GET /api/alerts merges the
+    // flows' history into it: a flow alarm left behind would come back on the next read.
+    [Fact]
+    public async Task Clearing_the_alert_history_clears_the_flows_history_too_and_leaves_what_stands()
+    {
+        using var fresh = new MqttForgeApiFactory();
+        var client = fresh.CreateClient();
+
+        await client.PutAsJsonAsync("/api/flows/pair", new
+        {
+            id = "pair",
+            name = "Pair",
+            enabled = true,
+            nodes = new object[]
+            {
+                new { id = "raiseGo", type = "inject", x = 40, y = 40, config = new { topic = "plant/k1/button", payload = "1" } },
+                new { id = "clearGo", type = "inject", x = 40, y = 160, config = new { topic = "plant/k1/button", payload = "0" } },
+                new { id = "otherGo", type = "inject", x = 40, y = 280, config = new { topic = "plant/k2/button", payload = "1" } },
+                new { id = "ring", type = "alarm", x = 260, y = 100, config = new { name = "Pressed", severity = "warn" } },
+            },
+            edges = new object[]
+            {
+                new { id = "e1", from = "raiseGo", fromPort = "out", to = "ring", toPort = "raise" },
+                new { id = "e2", from = "clearGo", fromPort = "out", to = "ring", toPort = "clear" },
+                new { id = "e3", from = "otherGo", fromPort = "out", to = "ring", toPort = "raise" },
+            },
+        });
+
+        foreach (var node in new[] { "raiseGo", "clearGo", "otherGo" })
+            await Until(async () =>
+                (await client.PostAsync($"/api/flows/pair/nodes/{node}/inject", null)).StatusCode == HttpStatusCode.Accepted,
+                $"the flow to accept {node}");
+
+        static bool Ours(JsonElement alert) => alert.GetProperty("ruleId").GetString() == "flow-pair-ring";
+
+        await Until(async () =>
+        {
+            var alerts = await Json(await client.GetAsync("/api/alerts"));
+            return alerts.GetProperty("history").EnumerateArray().Any(Ours) &&
+                   alerts.GetProperty("active").EnumerateArray().Any(Ours);
+        }, "one flow alarm to have ended and one to stand");
+
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync("/api/alerts/history")).StatusCode);
+
+        await Until(async () =>
+            !(await Json(await client.GetAsync("/api/alerts"))).GetProperty("history").EnumerateArray().Any(Ours),
+            "the flow alarm that ended to leave the history");
+
+        var standing = (await Json(await client.GetAsync("/api/alerts"))).GetProperty("active").EnumerateArray().Where(Ours).ToList();
+        Assert.Equal("plant/k2/button", Assert.Single(standing).GetProperty("topic").GetString());
+    }
+
     [Fact]
     public async Task A_file_this_build_cannot_read_is_a_409_and_is_left_alone()
     {

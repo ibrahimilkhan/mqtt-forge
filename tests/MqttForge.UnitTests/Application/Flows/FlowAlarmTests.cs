@@ -142,6 +142,21 @@ public class FlowAlarmTests
     }
 
     [Fact]
+    public void Clearing_the_history_empties_it_and_leaves_what_is_standing()
+    {
+        Ringing(Watch().Compile());
+        _runtime.OnMessage(new MqttMessage("plant/k1/temp", "{\"temp\":50}", "text", 0, false, T0), T0.AddSeconds(1));
+        _runtime.OnMessage(new MqttMessage("plant/k2/temp", "{\"temp\":95}", "text", 0, false, T0), T0.AddSeconds(2));
+        var before = _runtime.Version;
+
+        _runtime.ClearHistory();
+
+        Assert.Empty(_runtime.Alarms().History);
+        Assert.Equal("plant/k2/temp", Assert.Single(_runtime.Alarms().Active).Topic);
+        Assert.True(_runtime.Version > before);
+    }
+
+    [Fact]
     public void History_keeps_the_newest_hundred()
     {
         _runtime.Deploy([Watch().Compile()], ["f1"], T0);

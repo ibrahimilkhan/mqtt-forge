@@ -137,10 +137,13 @@ public sealed class AlertController : ControllerBase
     }
 
     /// <summary>Empties the session's alert history. The active alarms are not history.</summary>
+    // Both engines', because GET /api/alerts answers with both in one list: the flows' alarms that
+    // ended would otherwise be back in it on the very next read.
     [HttpDelete("alerts/history")]
     public IActionResult ClearHistory()
     {
         _engine.Post(new ClearHistoryCommand());
+        _flows.Post(new FlowClearHistory());
 
         return NoContent();
     }
