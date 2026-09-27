@@ -23,7 +23,7 @@ export function FilterChips({ filters, onRemove, pendingFilter }: Props) {
 
   return (
     <div className={styles.filters}>
-      {filters.map(({ topicFilter, console: ours, rules }) => (
+      {filters.map(({ topicFilter, console: ours, rules, flows }) => (
         <Chip
           key={topicFilter}
           filter={topicFilter}
@@ -31,7 +31,9 @@ export function FilterChips({ filters, onRemove, pendingFilter }: Props) {
           pending={pendingFilter === topicFilter}
           // A filter only a rule holds is not this console's to drop: the × would send an
           // UNSUBSCRIBE the subscriber refuses to act on, and the chip would come straight back.
-          held={!ours && rules}
+          // A flow's MQTT in node holds its filters the same way, and letting go is turning the
+          // flow off.
+          heldBy={ours ? null : rules ? 'rule' : flows ? 'flow' : null}
           onPick={pick}
           onRemove={onRemove}
         />
@@ -44,13 +46,15 @@ type ChipProps = {
   filter: string;
   selected: boolean;
   pending: boolean;
-  /** Held by an alert rule and not by this console, so there is nothing here to let go of. */
-  held: boolean;
+  /** Held by an alert rule or a flow and not by this console, so there is nothing here to let go of. */
+  heldBy: 'rule' | 'flow' | null;
   onPick: (filter: string) => void;
   onRemove: (filter: string) => void;
 };
 
-const Chip = memo(function Chip({ filter, selected, pending, held, onPick, onRemove }: ChipProps) {
+const Chip = memo(function Chip({ filter, selected, pending, heldBy, onPick, onRemove }: ChipProps) {
+  const held = heldBy !== null;
+
   return (
     <span className={styles.filter} data-selected={selected}>
       {/* Sibling buttons, not nested — nested buttons aren't valid HTML. */}
@@ -68,9 +72,19 @@ const Chip = memo(function Chip({ filter, selected, pending, held, onPick, onRem
         onClick={() => onRemove(filter)}
         disabled={pending || held}
         aria-label={
-          held ? `${filter} is held by an alert rule` : `Unsubscribe from ${filter}`
+          heldBy === 'rule'
+            ? `${filter} is held by an alert rule`
+            : heldBy === 'flow'
+              ? `${filter} is held by a flow`
+              : `Unsubscribe from ${filter}`
         }
-        title={held ? 'Held by an alert rule — disable it to drop this.' : undefined}
+        title={
+          heldBy === 'rule'
+            ? 'Held by an alert rule — disable it to drop this.'
+            : heldBy === 'flow'
+              ? 'Held by a flow — turn the flow off to drop this.'
+              : undefined
+        }
       >
         ×
       </button>

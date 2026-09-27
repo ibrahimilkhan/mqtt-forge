@@ -118,3 +118,17 @@ it('keeps the × when the console holds it too', () => {
 
   expect(screen.getByRole('button', { name: 'Unsubscribe from plant/#' })).toBeEnabled();
 });
+
+// A flow's MQTT in node holds its filters the same way.
+it('will not drop a filter only a flow holds, and says why', () => {
+  render(
+    <FilterChips
+      filters={[{ topicFilter: 'plant/+/temp', console: false, rules: false, flows: true }]}
+      onRemove={() => {}}
+    />,
+  );
+
+  const cross = screen.getByRole('button', { name: 'plant/+/temp is held by a flow' });
+  expect(cross).toBeDisabled();
+  expect(cross).toHaveAttribute('title', 'Held by a flow — turn the flow off to drop this.');
+});
