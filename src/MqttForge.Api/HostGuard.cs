@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Sockets;
 
 namespace MqttForge.Api;
 
@@ -46,11 +47,46 @@ public static class HostGuard
         // An address, v4 or v6. This is what every documented route to the app sends.
         if (IPAddress.TryParse(host, out _)) return true;
 
-        return Is(host, "localhost")
-            || EndsWith(host, ".localhost")
-            // mDNS, so the name is answered on the link rather than by a resolver a stranger can
-            // aim. Reaching this machine as 'kitchen-pi.local' is the ordinary case it protects.
-            || EndsWith(host, ".local");
+        return IsLocalName(host);
+    }
+
+    /// <summary>
+    /// Whether a host is this machine or the network it is on: the names <see cref="IsAllowed"/>
+    /// takes, and a loopback, link-local or private address, but no other address.
+    /// </summary>
+    /// <remarks>
+    /// Every address the Vite dev server advertises, and so every address a development run takes
+    /// its pages from: see OriginGuard.IsDevServer. Narrower than IsAllowed on addresses, because the
+    /// question there is whether a name can be moved, and here whose page it is: a page served at a
+    /// public address is somebody else's, whatever port it is on.
+    /// </remarks>
+    /// <param name="host">The name alone, as for IsAllowed.</param>
+    public static bool IsOnThisNetwork(string host) =>
+        IPAddress.TryParse(host, out var address) ? IsPrivate(address) : IsLocalName(host);
+
+    private static bool IsLocalName(string host) =>
+        Is(host, "localhost")
+        || EndsWith(host, ".localhost")
+        // mDNS, so the name is answered on the link rather than by a resolver a stranger can
+        // aim. Reaching this machine as 'kitchen-pi.local' is the ordinary case it protects.
+        || EndsWith(host, ".local");
+
+    // Loopback, link-local and private, v4 and v6: 127/8, 169.254/16, 10/8, 172.16/12, 192.168/16,
+    // and ::1, fe80::/10, fc00::/7. An IPv4 address written as IPv6 is judged as the IPv4 one it is.
+    private static bool IsPrivate(IPAddress address)
+    {
+        if (address.IsIPv4MappedToIPv6) address = address.MapToIPv4();
+        if (IPAddress.IsLoopback(address)) return true;
+
+        if (address.AddressFamily == AddressFamily.InterNetworkV6)
+            return address.IsIPv6LinkLocal || address.IsIPv6UniqueLocal;
+
+        var bytes = address.GetAddressBytes();
+
+        return bytes[0] == 10
+            || (bytes[0] == 172 && (bytes[1] & 0xF0) == 16)
+            || (bytes[0] == 192 && bytes[1] == 168)
+            || (bytes[0] == 169 && bytes[1] == 254);
     }
 
     private static bool Is(string host, string name) =>

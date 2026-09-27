@@ -180,7 +180,7 @@ public sealed class OriginGuardEndpointTests : IClassFixture<MqttForgeApiFactory
     [InlineData("https://localhost:5173")]
     [InlineData("http://kitchen-pi.local:5173")]
     [InlineData("https://192.168.1.24:5173")]
-    public async Task Development_takes_the_dev_servers_page_at_any_address_it_is_served_from(string page)
+    public async Task Development_takes_the_dev_servers_page_at_the_addresses_it_is_served_from(string page)
     {
         using var factory = new MqttForgeApiFactory();
         using var dev = factory.WithWebHostBuilder(b => b.UseEnvironment("Development"));
@@ -192,6 +192,25 @@ public sealed class OriginGuardEndpointTests : IClassFixture<MqttForgeApiFactory
 
         using var hub = await OpenHub(dev, page, host: new Uri(page).Authority);
         Assert.Equal("{}\u001e", await Handshake(hub));
+    }
+
+    // A page on port 5173 of another site is that site's page, development run or not. 'dotnet run'
+    // is a development run, so a source build a reader has open is what this keeps such a page from.
+    [Theory]
+    [InlineData("http://evil.example:5173")]
+    [InlineData("https://203.0.113.9:5173")]
+    public async Task Development_takes_no_page_on_the_dev_servers_port_at_another_site(string page)
+    {
+        using var factory = new MqttForgeApiFactory();
+        using var dev = factory.WithWebHostBuilder(b => b.UseEnvironment("Development"));
+        var client = dev.CreateClient();
+        await Deploy(client, "lan");
+
+        var inject = await Send(client, HttpMethod.Post, "/api/flows/lan/nodes/ours/inject", page, host: "localhost:5169");
+        Assert.Equal(HttpStatusCode.Forbidden, inject.StatusCode);
+
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => OpenHub(dev, page, host: "localhost:5169"));
+        Assert.Contains("status code: 403", refused.Message);
     }
 
     [Theory]

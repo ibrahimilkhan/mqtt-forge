@@ -50,8 +50,8 @@ public static class OriginGuard
 
     /// <param name="trusted">
     /// Origins besides the app's own whose pages may send it anyway: in Development the dev
-    /// server's, the one its CORS policy names and every other address it answers at (see
-    /// IsDevServer); nobody's in a shipped package.
+    /// server's, the one its CORS policy names and every other address on this machine or its
+    /// network it answers at (see IsDevServer); nobody's in a shipped package.
     /// </param>
     public static bool IsAllowed(HttpRequest request, Func<string, bool> trusted)
     {
@@ -100,21 +100,29 @@ public static class OriginGuard
     public const int DevServerPort = 5173;
 
     /// <summary>
-    /// Whether an origin is a page of the Vite dev server: any host, on its port, over http or https.
-    /// Trusted in Development only — see MqttForgeHost.
+    /// Whether an origin is a page of the Vite dev server: on its port, over http or https, at an
+    /// address on this machine or its network. Trusted in Development only — see MqttForgeHost.
     /// </summary>
-    // Any host, because the dev server answers at whatever address it was reached by: localhost, the
-    // machine's LAN name or address for the phone off the QR code. And https as well, once the
-    // per-machine certificates are there. Its /api proxy rewrites Host to the API's and its /hubs
-    // proxy keeps it while the API sees http, and neither a WebSocket upgrade nor a plain-http LAN page
-    // carries Sec-Fetch-Site, so without this the dev console lost its WebSocket and a LAN browser
-    // every change. Compared whole, as IsAllowed compares: an origin is a scheme and an authority
-    // and nothing more, so one with a user, a path or a second origin joined on is not this.
+    // At whatever address on this machine or its network it was reached by, which is every address
+    // it advertises: localhost, the machine's .local name, a LAN address for the phone off the QR
+    // code. And https as well, once the per-machine certificates are there. Its /api proxy rewrites
+    // Host to the API's and its /hubs proxy keeps it while the API sees http, and neither a WebSocket
+    // upgrade nor a plain-http LAN page carries Sec-Fetch-Site, so without this the dev console lost
+    // its WebSocket and a LAN browser every change.
+    //
+    // Not at any host, though, which it used to be. Port 5173 is nobody's to own, and a page on it at
+    // another site is that site's page; a source build run with 'dotnet run' is a development run, so
+    // any such page could drive the reader's own. The host is held to the host guard's own names, and
+    // to addresses that are loopback, link-local or private: see HostGuard.IsOnThisNetwork.
+    //
+    // Compared whole, as IsAllowed compares: an origin is a scheme and an authority and nothing more,
+    // so one with a user, a path or a second origin joined on is not this.
     public static bool IsDevServer(string origin) =>
         Uri.TryCreate(origin, UriKind.Absolute, out var page)
         && page.Scheme is "http" or "https"
         && page.Port == DevServerPort
-        && string.Equals(origin, $"{page.Scheme}://{page.Authority}", StringComparison.OrdinalIgnoreCase);
+        && string.Equals(origin, $"{page.Scheme}://{page.Authority}", StringComparison.OrdinalIgnoreCase)
+        && HostGuard.IsOnThisNetwork(page.DnsSafeHost);
 
     // Anything but a read, and anything on the hub, whose WebSocket upgrade is a GET. The path is
     // matched as routing matches it, ignoring case.

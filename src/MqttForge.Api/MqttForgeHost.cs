@@ -160,9 +160,9 @@ public static class MqttForgeHost
 
     /// <summary>
     /// The origins besides the app's own whose pages may change things here: those the CORS policy
-    /// lets read an answer, and in Development the dev server's pages at every address it answers
-    /// at. Only Development has a policy, naming the dev server on localhost; a shipped package
-    /// trusts no other origin at all.
+    /// lets read an answer, and in Development the dev server's pages at every address on this
+    /// machine or its network it answers at. Only Development has a policy, naming the dev server on
+    /// localhost; a shipped package trusts no other origin at all.
     /// </summary>
     // The dev server's other addresses are trusted here and not added to the policy: a page served
     // through its proxy is the same origin as its /api and /hubs as far as the browser knows, so it

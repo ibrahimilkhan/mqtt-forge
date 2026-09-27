@@ -50,10 +50,17 @@ no `Sec-Fetch-Site`, its `Origin` decides, and has to be the scheme, host and po
 sent to. That is more often than it sounds: Chromium-based browsers send no `Sec-Fetch-Site` on the
 live channel's WebSocket, and no browser sends one to a plain-http address other than loopback — the
 desktop window's LAN address, the phone's QR address, a container reached by its IP or a `.local`
-name. A development run lets in any page on port 5173 as well, over http or https and whatever its
-host, because that is the Vite dev server however it was reached — `https://localhost:5173`, a
-phone's `http://<name>.local:5173` — and a page on another site that happens to use that port with
-it; a shipped package trusts no other origin at all.
+name.
+
+A development run also lets in the Vite dev server's pages: port 5173, over http or https, at an
+address on this machine or its network — `localhost`, a `.local` name, or a loopback, link-local or
+private address such as `192.168.1.24`. Those are all the addresses the dev server gives out,
+`https://localhost:5173` or a phone's `http://<name>.local:5173`; a page on port 5173 at any other
+address is another site's, and is refused like every other. Any page on your own network that
+serves on port 5173 can still drive a development run. A development run is what `dotnet run` makes
+of a source build, as in the README's *Build it yourself*, and what the Docker image becomes if you
+set `ASPNETCORE_ENVIRONMENT=Development` on it, so leave that unset on anything you keep running. A
+shipped package trusts no other origin at all.
 
 A request with neither header is served as before. That is curl, a script, anything that is not a
 browser — anyone who can reach the port, as the section above says. What this closes is the way in

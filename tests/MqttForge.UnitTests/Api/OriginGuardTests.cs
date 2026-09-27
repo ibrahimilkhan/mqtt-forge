@@ -165,6 +165,28 @@ public class OriginGuardTests
     public void Knows_the_dev_servers_pages_by_their_port(string origin, bool devServer) =>
         Assert.Equal(devServer, OriginGuard.IsDevServer(origin));
 
+    // And by where it is: this machine or its network, which is every address the dev server
+    // advertises — localhost, the machine's .local name, its private LAN addresses. Port 5173 is
+    // nobody's to own, and a page on it at any other site is another site's page. A source build run
+    // with 'dotnet run' is a development run, so this is what stands between it and such a page.
+    [Theory]
+    [InlineData("http://dev.localhost:5173", true)]
+    [InlineData("http://127.0.0.2:5173", true)]
+    [InlineData("http://10.0.0.7:5173", true)]
+    [InlineData("http://172.16.4.2:5173", true)]
+    [InlineData("http://172.31.255.1:5173", true)]
+    [InlineData("https://169.254.10.1:5173", true)]
+    [InlineData("http://[fd12:3456::1]:5173", true)]
+    [InlineData("http://[fe80::1]:5173", true)]
+    [InlineData("http://evil.example:5173", false)]
+    [InlineData("https://kitchen-pi.local.evil.example:5173", false)]
+    [InlineData("http://203.0.113.9:5173", false)]
+    [InlineData("http://172.32.0.1:5173", false)]
+    [InlineData("http://[2001:db8::1]:5173", false)]
+    [InlineData("http://[::ffff:203.0.113.9]:5173", false)]
+    public void Knows_the_dev_servers_pages_only_on_this_machine_or_its_network(string origin, bool devServer) =>
+        Assert.Equal(devServer, OriginGuard.IsDevServer(origin));
+
     // ---- refused for the scheme alone ----
 
     // Behind a proxy that ends TLS the page is https and this app sees http. A WebSocket upgrade
