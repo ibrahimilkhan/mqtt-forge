@@ -239,4 +239,30 @@ public class SilenceAndConnectionTests
         Assert.Equal(0, core.Snapshot().Suppressed);
         Assert.Empty(core.Snapshot().Capped);
     }
+
+    // A filter that names one topic is not something learned from a broker: the rule names the
+    // device, and a move arms it again as a save does, so the device has its seconds to speak at the
+    // new broker. Counted from the move, not from the old broker's last reading of it, which says
+    // nothing about the new one.
+    [Fact]
+    public void A_move_to_another_broker_listens_for_a_topic_a_rule_names_from_the_moment_of_the_move()
+    {
+        var core = Core(Rule(QuietFor(60), filter: "plant/boiler/temp"));
+        core.OnTick(T0, connected: true);
+
+        var spoke = T0.AddSeconds(10);
+        core.OnMessage(Message("20.1", spoke), spoke);
+
+        var moved = T0.AddSeconds(30);
+        core.ForgetTopics(moved);
+
+        // Sixty seconds after the old broker last heard it fall in here, and nothing rings for them.
+        for (var second = 31; second < 90; second++)
+            Assert.Empty(core.OnTick(T0.AddSeconds(second), connected: true).Raised);
+
+        var alert = Assert.Single(core.OnTick(moved.AddSeconds(60), connected: true).Raised);
+        Assert.Equal("plant/boiler/temp", alert.Topic);
+        Assert.Equal("no message for 60s", alert.Reason);
+        Assert.Equal(1, Assert.Single(core.Snapshot().Rules).Topics);
+    }
 }

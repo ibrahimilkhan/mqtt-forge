@@ -611,8 +611,8 @@ public sealed class AlertEngineCore
     public const string ConnectionEnded = "connection ended";
 
     /// <summary>
-    /// Throws away everything learned from a broker that is no longer the one connected, and ends
-    /// every alarm standing there.
+    /// Throws away everything learned from a broker that is no longer the one connected, ends
+    /// every alarm standing there, and arms the topics the rules name themselves again from now.
     /// </summary>
     // A silence rule is the reason this exists. Its whole judgement is 'nothing has arrived on
     // this topic for N seconds', and it keeps that per topic — so a console moved from one broker
@@ -631,6 +631,11 @@ public sealed class AlertEngineCore
     // next save recounted them. Now they end as a flow's alarm does on a move, "connection ended",
     // through Close and Announce as every other end does: into the history, the slot given back, a
     // muted pair's end not announced. In the order they went up, so every channel hears them so.
+    //
+    // A topic a silence rule names by itself was never learned from the broker: the rule names the
+    // device, and is armed for it at start and on every save (see Arm). Forgotten with the rest and
+    // not armed again, it stayed unwatched at the new broker until the next save, and a device that
+    // never spoke there never rang. So it is armed again here, from the move, as a save would arm it.
     public EngineOutcome ForgetTopics(DateTimeOffset now)
     {
         var resolved = new List<Alert>();
@@ -652,6 +657,8 @@ public sealed class AlertEngineCore
         _pairs.Clear();
         _readings = 0;
         foreach (var tally in _tallies.Values) tally.Topics = 0;
+
+        Arm(_rules, now);
 
         return resolved.Count == 0 ? EngineOutcome.Empty : new EngineOutcome([], resolved);
     }

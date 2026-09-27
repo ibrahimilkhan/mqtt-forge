@@ -52,6 +52,37 @@ public class AlertEngineTests
 
         public Task Until(Func<bool> settled, string what) => Eventually.Until(Time, settled, what);
 
+        /// <summary>Waits for the engine to reach a state without moving its clock, for a test that needs the second.</summary>
+        public async Task ClockStill(Func<bool> settled, string what)
+        {
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+
+            while (DateTime.UtcNow < deadline)
+            {
+                if (settled()) return;
+                await Task.Delay(5);
+            }
+
+            Assert.Fail($"Timed out, with the clock held still, waiting until {what}.");
+        }
+
+        /// <summary>Points the link at another broker, and answers when the pump saw the move.</summary>
+        // Woken by that broker's first reading, of a topic no rule in these tests watches, and not by
+        // the clock: so the move is seen at the second it was made, which is what the tests count from.
+        public async Task<DateTimeOffset> MoveTo(string host)
+        {
+            var moves = Moves();
+
+            Connection.At(host, 1883);
+            Engine.Post(new ArrivalCommand(new MqttMessage("plant/gate/open", "1", "text", 0, false, Time.GetUtcNow())));
+
+            await ClockStill(() => Moves() > moves, $"the move to {host} to be seen");
+
+            return Time.GetUtcNow();
+        }
+
+        private int Moves() => Log.Lines.Count(line => line.Message.StartsWith("The link moved", StringComparison.Ordinal));
+
         /// <summary>Moves the clock through whole ticks the pump is meant to notice nothing in.</summary>
         public async Task TickAsync(int seconds)
         {
@@ -391,9 +422,9 @@ public class AlertEngineTests
     // one into the second, where they do not exist — so within N seconds each of them rang, about
     // devices on a broker nobody is watching any more.
     [Fact]
-    public async Task Moving_the_link_to_another_broker_forgets_what_the_last_one_taught()
+    public async Task Moving_the_link_to_another_broker_forgets_the_topics_the_last_one_taught()
     {
-        await using var harness = Build(Document([Rule("dead", "plant/boiler/temp", new SilenceCondition(30))]));
+        await using var harness = Build(Document([Rule("dead", "plant/+/temp", new SilenceCondition(30))]));
         harness.Connection.At("broker.a", 1883);
         await harness.Engine.StartAsync(CancellationToken.None);
         harness.Run();
@@ -414,6 +445,58 @@ public class AlertEngineTests
 
         // ...and nothing rings about a topic that belonged to the broker that was left.
         await harness.TickAsync(60);
+        Assert.Empty(harness.Notifier.Raised);
+    }
+
+    // A filter that names one topic is another matter: the rule names the device, and learned nothing
+    // about it from the broker. It is armed at start, as a save arms it, and a move arms it again, so a
+    // boiler that stays silent at the new broker rings there. It used to be forgotten with the rest
+    // and not armed again until the next save, and a boiler that never spoke at the new broker never
+    // rang. The seconds count from the move, not from the old broker's last reading.
+    [Fact]
+    public async Task A_topic_a_rule_names_rings_when_it_stays_silent_at_the_broker_the_link_moved_to()
+    {
+        await using var harness = Build(Document([Rule("dead", "plant/boiler/temp", new SilenceCondition(30))]));
+        harness.Connection.At("broker.a", 1883);
+        await harness.Engine.StartAsync(CancellationToken.None);
+        harness.Run();
+        await harness.TickAsync(2);
+
+        // The boiler speaks at the first broker, and twenty seconds later the reader moves the link.
+        harness.Engine.Post(new ArrivalCommand(Message("plant/boiler/temp", "21")));
+        await harness.TickAsync(20);
+        var moved = await harness.MoveTo("broker.b");
+
+        // Thirty seconds after the first broker last heard it fall in here, and nothing rings for them.
+        await harness.TickAsync(29);
+        Assert.Empty(harness.Notifier.Raised);
+
+        // Thirty seconds after the move, with nothing heard at the new broker, it does.
+        await harness.TickAsync(1);
+        await harness.Until(() => harness.Notifier.Raised.Count == 1, "the boiler's silence at the new broker to ring");
+
+        var alert = Assert.Single(harness.Notifier.Raised);
+        Assert.Equal("plant/boiler/temp", alert.Topic);
+        Assert.True(alert.FiredAt >= moved.AddSeconds(30));
+    }
+
+    [Fact]
+    public async Task A_topic_a_rule_names_that_speaks_in_time_at_the_broker_the_link_moved_to_does_not_ring()
+    {
+        await using var harness = Build(Document([Rule("dead", "plant/boiler/temp", new SilenceCondition(30))]));
+        harness.Connection.At("broker.a", 1883);
+        await harness.Engine.StartAsync(CancellationToken.None);
+        harness.Run();
+        await harness.TickAsync(2);
+        var moved = await harness.MoveTo("broker.b");
+
+        // The boiler speaks at the new broker twenty seconds after the move, inside its thirty.
+        await harness.TickAsync(20);
+        harness.Engine.Post(new ArrivalCommand(
+            new MqttMessage("plant/boiler/temp", "21", "text", 0, false, moved.AddSeconds(20))));
+
+        // Past thirty seconds from the move, and short of thirty from the reading: nothing rings.
+        await harness.TickAsync(29);
         Assert.Empty(harness.Notifier.Raised);
     }
 
