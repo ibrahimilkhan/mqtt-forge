@@ -666,4 +666,77 @@ public class BrokerLinkSupervisorTests
         Assert.Contains(_log.Entries, entry =>
             entry.Level == LogLevel.Error && entry.Message.Contains("alert rules could not be read"));
     }
+
+    // The rules are one reason of three to keep a link up: the flows are another, and a link the
+    // reader opened by hand the third. Measured: an outage with only flows and the reader's link
+    // wrote "for the alert rules" on every rung, on a host with no rule at all.
+    private static bool SaysAlertRules(RecordingLogger<BrokerLinkSupervisor>.Entry entry) =>
+        entry.Message.Contains("alert rules", StringComparison.OrdinalIgnoreCase) || entry.Message.StartsWith("A rule wants");
+
+    [Fact]
+    public async Task A_link_dialled_for_the_flows_is_never_said_to_be_for_the_alert_rules()
+    {
+        FlowsHold(enabled: true);
+        var sut = new BrokerLinkSupervisor(Service, _rules, _log, _time,
+            options: new BrokerLinkOptions(ConnectOnStart: true), flows: _flows);
+
+        // The start-up dial, a flow saved while the broker is still away, and a rung of the ladder.
+        await sut.StartUpAsync(CancellationToken.None);
+        await sut.WantedAsync(CancellationToken.None);
+        _manager.State.Returns(ConnectionState.Faulted);
+        await PollAsync(sut, seconds: 2);
+
+        Assert.Equal([0, 0, 2], _attempts);
+        Assert.DoesNotContain(_log.Entries, SaysAlertRules);
+    }
+
+    [Fact]
+    public async Task A_link_the_reader_opened_is_not_said_to_be_redialled_for_the_alert_rules()
+    {
+        var sut = CreateSut(connectOnStart: false);
+        await sut.StartUpAsync(CancellationToken.None);
+
+        _manager.State.Returns(ConnectionState.Connected);
+        await PollAsync(sut);
+        _manager.State.Returns(ConnectionState.Faulted);
+        await PollAsync(sut, seconds: 2);
+
+        Assert.Equal([3], _attempts);
+        Assert.DoesNotContain(_log.Entries, SaysAlertRules);
+    }
+
+    [Fact]
+    public async Task A_flow_that_wants_a_broker_nobody_saved_is_not_said_to_be_the_alert_rules()
+    {
+        FlowsHold(enabled: true);
+        _settingsStore.LoadAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<BrokerConnectionSettings?>(null));
+        var sut = new BrokerLinkSupervisor(Service, _rules, _log, _time,
+            options: new BrokerLinkOptions(ConnectOnStart: true), flows: _flows);
+
+        await sut.StartUpAsync(CancellationToken.None);
+
+        Assert.Contains(_log.Entries, entry => entry.Level == LogLevel.Warning);
+        Assert.DoesNotContain(_log.Entries, SaysAlertRules);
+    }
+
+    // A broker that is down fails every rung the same way, and a stack a rung buried the log in
+    // copies of one fault. The sentence is what a reader needs; the stack is there for whoever
+    // turns on Debug.
+    [Fact]
+    public async Task A_failed_attempt_is_one_line_at_warning_with_its_stack_at_debug()
+    {
+        var sut = await WantedAsync();
+        _manager.State.Returns(ConnectionState.Faulted);
+        await PollAsync(sut, seconds: 2);
+
+        var warnings = _log.Entries.Where(entry => entry.Level == LogLevel.Warning).ToList();
+        Assert.Equal(2, warnings.Count);
+        Assert.All(warnings, warning =>
+        {
+            Assert.Null(warning.Exception);
+            Assert.Contains("broker down", warning.Message);
+        });
+        Assert.Equal(2, _log.Entries.Count(entry => entry.Level == LogLevel.Debug && entry.Exception is IOException));
+    }
 }

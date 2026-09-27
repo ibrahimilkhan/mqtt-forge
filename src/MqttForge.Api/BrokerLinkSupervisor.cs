@@ -199,8 +199,8 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
             var document = await _rules.LoadAsync(ct);
 
             // Flows are the second reason to be connected. Read second, and only asked when the
-            // rules alone would leave the broker alone, so a host with no flows behaves — and logs
-            // — exactly as it did before flows existed.
+            // rules alone would leave the broker alone, so a host with no flows behaves exactly as
+            // it did before flows existed, and says nothing about them.
             var rulesWant = !document.Unreadable && document.Rules.Any(rule => rule.Enabled);
             var flowsWant = !rulesWant && await FlowsWantAsync(ct);
 
@@ -230,6 +230,11 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
             else if (flowsWant)
             {
                 _log.LogInformation("A flow is enabled, so the broker is connected for the flows.");
+            }
+            else
+            {
+                // Here rather than in the dial, which serves the flows and the reader's own link too.
+                _log.LogInformation("An alert rule is enabled, so the broker is connected for the rules.");
             }
 
             // Past both guards, so this host has something to be connected for — and it goes on
@@ -436,7 +441,8 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
         _gaveUp = false;
         _declined = false;
 
-        _log.LogInformation("A rule wants a broker link, so one is being dialled.");
+        // A rule or a flow: both save through here, and this cannot tell which.
+        _log.LogInformation("A rule or a flow wants a broker link, so one is being dialled.");
         await AttemptAsync(ct);
     }
 
@@ -659,8 +665,7 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
 
             if (settings is null)
             {
-                _log.LogWarning(
-                    "Alert rules are running but no broker has been saved, so there is nothing to connect to.");
+                _log.LogWarning("A broker link is wanted, but no broker has been saved, so there is nothing to connect to.");
                 return;
             }
 
@@ -670,8 +675,10 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
             // simply the state a fresh client is in.
             if (redial && _connection.CurrentState == ConnectionState.Disconnected) return;
 
+            // Without a reason: the same dial serves the rules, the flows and a link the reader
+            // opened, and a caller that knows which of them it is says so before it asks.
             _attempts++;
-            _log.LogInformation("Connecting to {Endpoint} for the alert rules.", settings.Endpoint);
+            _log.LogInformation("Connecting to {Endpoint}.", settings.Endpoint);
             await _connection.ConnectAsync(settings, ct, ConnectOrigin.Supervisor);
 
             // The link is back; now what the console was listening to. Its own try/catch, because
@@ -693,7 +700,11 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
         {
             // The ladder only exists because attempts fail. One that let the failure out would
             // end the loop that is meant to try again — and, with StopHost, the process.
-            _log.LogWarning(ex, "Could not reach the broker for the alert rules; will try again.");
+            //
+            // The sentence at Warning and the stack at Debug. A broker that is down fails every
+            // rung the same way, and a stack a rung filled the log with copies of one fault.
+            _log.LogWarning("Could not reach the broker: {Reason}", ex.Message);
+            _log.LogDebug(ex, "Could not reach the broker.");
         }
         finally
         {
