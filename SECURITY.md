@@ -75,8 +75,13 @@ the console inside a page of your own — a Home Assistant panel, say — name t
 `MqttForge:FrameAncestors`, several with a space or a comma between them:
 
 ```
-docker run -d -p 5169:5169 -e MqttForge__FrameAncestors=https://homeassistant.local:8123 ghcr.io/ibrahimilkhan/mqtt-forge
+docker run -d -p 5169:5169 -e MqttForge__FrameAncestors=http://homeassistant.local:8123 ghcr.io/ibrahimilkhan/mqtt-forge
 ```
+
+The page and the console have to be on the same footing. A page served over https cannot show a
+console served over plain http, which is what that container serves: the browser blocks the frame
+as mixed content, whatever this setting says. If your Home Assistant is https, serve the console
+over https as well, behind the same reverse proxy, say, and name the page by its https origin.
 
 A current browser goes by that list and lets the page frame the console; one too old for
 `frame-ancestors` keeps the console to itself. A value that is not a page — `*`, a scheme on its own,
