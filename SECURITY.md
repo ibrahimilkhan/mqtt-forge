@@ -34,6 +34,31 @@ returns it — `GET /api/connection/settings` reports only whether one is set �
 the file on disk, not the endpoint. [README.md](README.md#keeping-your-settings) says where that
 file lives.
 
+## Pages on other sites
+
+Any page you have open can send requests to an address your browser can reach, and this app's
+are among them: `127.0.0.1`, the LAN address the desktop window loads, the port a container
+publishes. The browser keeps the answers from that page, since the app lets no other origin read
+one. That is not enough on its own: a form on another site can POST here without asking first,
+and a WebSocket is not covered by CORS at all.
+
+So the app refuses, with a 403, a request that a browser says came from a page on another origin
+if it would change something — every POST, PUT, PATCH and DELETE — and every request to `/hubs`,
+the live channel that carries your broker's traffic to the console, whatever its method. A request
+is the app's own when the browser says so in `Sec-Fetch-Site: same-origin`, or, from a browser that
+does not send that header, when its `Origin` is the scheme, host and port the request was sent to.
+In development the Vite dev server's origin, `http://localhost:5173`, is let in as well, because
+the CORS policy there names it; a shipped package has no such policy and trusts no other origin.
+
+A request with neither header is served as before. That is curl, a script, anything that is not a
+browser — anyone who can reach the port, as the section above says. What this closes is the way in
+through a page you were shown, not the port itself.
+
+Behind a reverse proxy, a current browser says `same-origin` and is let through whatever the proxy
+does to `Host`. One too old to send `Sec-Fetch-Site` is judged by `Origin` against the scheme, host
+and port the app itself sees, so it needs a proxy that keeps `Host` and, where the proxy ends TLS,
+an app that is told the scheme (`ASPNETCORE_FORWARDEDHEADERS_ENABLED=true`).
+
 ## Alerts that leave the machine
 
 A rule can carry a webhook, and webhooks are **on by default**. A rule that has one makes this
