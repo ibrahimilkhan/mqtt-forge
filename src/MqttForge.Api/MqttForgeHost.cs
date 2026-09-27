@@ -81,6 +81,23 @@ public static class MqttForgeHost
 
         var app = builder.Build();
 
+        // Who may show the console in a frame, on every answer — the page, the API, an error page,
+        // either guard's refusal — so it goes first, and is added as the answer starts, after
+        // whatever cleared the headers on the way. A setting that is no page stops the app here.
+        // See FrameAncestors.
+        var framing = FrameAncestors.Policy(app.Configuration[FrameAncestors.Setting]);
+        app.Use(async (context, next) =>
+        {
+            context.Response.OnStarting(() =>
+            {
+                context.Response.Headers.Append(HeaderNames.ContentSecurityPolicy, framing);
+                context.Response.Headers.XFrameOptions = "SAMEORIGIN";
+                return Task.CompletedTask;
+            });
+
+            await next(context);
+        });
+
         app.UseExceptionHandler();
 
         // Before anything is served, and only while nobody has taken the question over: a host

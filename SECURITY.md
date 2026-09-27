@@ -65,6 +65,22 @@ sees. So the proxy has to keep `Host`, and the app has to be told the scheme
 back to a stream that some proxies hold back, and the live feed stalls; the app says so in its log,
 once for each such page, when a refusal differs from its own address only in the scheme.
 
+The app also says who may show the console in a frame. Every answer carries
+`Content-Security-Policy: frame-ancestors 'self'` and `X-Frame-Options: SAMEORIGIN`; without them a
+page on another site could frame the console and lay a decoy over Disconnect, Inject, Delete flow or
+Clear history, and your click would land on the console itself, whose requests are its own. To show
+the console inside a page of your own — a Home Assistant panel, say — name that page's origin in
+`MqttForge:FrameAncestors`, several with a space or a comma between them:
+
+```
+docker run -d -p 5169:5169 -e MqttForge__FrameAncestors=https://homeassistant.local:8123 ghcr.io/ibrahimilkhan/mqtt-forge
+```
+
+A current browser goes by that list and lets the page frame the console; one too old for
+`frame-ancestors` keeps the console to itself. A value that is not a page — `*`, a scheme on its own,
+anything with a `;` in it — stops the app from starting rather than letting every site in. The
+desktop window shows the console as its own page, not in a frame, and is not affected.
+
 ## Alerts that leave the machine
 
 A rule can carry a webhook, and webhooks are **on by default**. A rule that has one makes this
