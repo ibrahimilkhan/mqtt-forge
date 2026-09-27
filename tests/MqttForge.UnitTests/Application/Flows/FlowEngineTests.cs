@@ -892,6 +892,28 @@ public sealed class FlowEngineTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_publish_failure_among_the_old_brokers_last_messages_does_not_put_them_after_the_move()
+    {
+        _connection.At("broker-a.plant.local", 1883);
+        var engine = await StartedAsync(_alerts, _dispatcher, [Watch()]);
+
+        // A publish broker A failed — one in flight when A was torn down, or one it never answered —
+        // comes back to the queue ahead of a message A had already sent. B came up a second later.
+        engine.Post(new FlowPublishFailed("f1", "fan", "The link went before the broker took the publish."));
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+        _connection.Link = LinkTo("broker-b.plant.local", connectedAt: T0.AddSeconds(1));
+        _subscriber.LinkDropped();
+        Run(engine);
+
+        // A's message is judged as A's, and its alarm ends with the move like any other of A's.
+        await ClockStill(() => _alerts.Raised.Count == 1, "broker A's message to be judged");
+        Assert.Empty(engine.Alarms.Active);
+        Assert.Equal(FlowAlarmBook.ConnectionEnded, Assert.Single(engine.Alarms.History).ResolvedBy);
+
+        await Eventually.Until(_time, () => Errors(engine, "fan") == 1, "the failure to be counted on its node all the same");
+    }
+
+    [Fact]
     public async Task An_every_that_comes_due_in_the_turn_that_sees_a_move_is_not_refused_for_want_of_a_link()
     {
         _connection.At("broker-a.plant.local", 1883);

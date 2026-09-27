@@ -228,9 +228,16 @@ public sealed class FlowEngine
         return _runtime.OnMove(_time.GetUtcNow());
     }
 
-    /// <summary>Whether a command is a message received before this link came up, so through the one before it.</summary>
-    private static bool ArrivedBefore(FlowCommand command, BrokerLink link) =>
-        command is FlowArrival { Message: { } message } && message.ReceivedAt < link.ConnectedAt;
+    /// <summary>Whether a command falls after the move to <paramref name="link"/>, so the move is told before it.</summary>
+    // A publish's failure falls on neither side. Its node counts it whichever link is up, and the
+    // publish may well have been in flight on the old link when that went — so it must not be what
+    // puts the old broker's messages queued behind it on the new broker's side.
+    private static bool FallsAfter(FlowCommand command, BrokerLink link) => command switch
+    {
+        FlowArrival { Message: { } message } => message.ReceivedAt >= link.ConnectedAt,
+        FlowPublishFailed => false,
+        _ => true,
+    };
 
     /// <summary>Whether a filter the running flows want, and the broker has not refused, is not held for them.</summary>
     private bool FiltersMissing()
@@ -305,8 +312,9 @@ public sealed class FlowEngine
             // the old link's last message before the manager may dial again, and a clean session is
             // sent nothing before it has subscribed, a round trip after it came up. What can still
             // misplace an arrival is a broker that kept the session and sends its backlog before the
-            // link is stamped, or a clock set back in the middle of a move. Other commands carry no
-            // time and act on the link that is up now, so the move goes before the first of them.
+            // link is stamped, or a clock set back in the middle of a move. A publish that failed
+            // decides nothing (FallsAfter says why); the other commands carry no time and act on
+            // the link that is up now, so the move goes before the first of them.
             var moving = endpoint is not null && _linkedTo is not null && endpoint != _linkedTo ? link : null;
             if (moving is null && endpoint is not null) _linkedTo = endpoint;
 
@@ -315,7 +323,7 @@ public sealed class FlowEngine
             {
                 handled++;
 
-                if (moving is not null && !ArrivedBefore(command, moving))
+                if (moving is not null && FallsAfter(command, moving))
                 {
                     outcomes.Add(Move(moving));
                     moving = null;
