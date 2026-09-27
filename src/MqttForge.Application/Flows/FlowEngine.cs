@@ -378,7 +378,16 @@ public sealed class FlowEngine
             // the flows want is held against what the subscriber is holding for them.
             if (tick && connected && !_resubscribe && FiltersMissing()) _resubscribe = true;
 
-            if (_resubscribe) await SyncSubscriptionsAsync(ct);
+            if (_resubscribe)
+            {
+                var version = _runtime.Version;
+                await SyncSubscriptionsAsync(ct);
+
+                // A refusal is marked on its node after this turn's push has gone. Asked for again,
+                // it goes out within the throttle's quarter second, where it would otherwise wait
+                // for whatever woke the pump next: on a turn the clock woke, the next tick.
+                if (_runtime.Version != version) await PushAsync(now, force: false, ct);
+            }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

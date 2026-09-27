@@ -447,6 +447,37 @@ public sealed class FlowEngineTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_filter_refused_after_its_turn_has_pushed_reaches_the_console_a_quarter_second_later()
+    {
+        await RunningAsync(Watch(), new FlowBuilder("f2", "Simulator")
+            .Node("tick", "every", new { seconds = 1, topic = "plant/sim/ping", payload = "on" })
+            .Node("say", "debug")
+            .Wire("tick", "out", "say", "in")
+            .Build());
+
+        // The flows' filter went with nothing to show for it, and the broker now refuses it. The
+        // tick that looks for it runs the Every too, and the push for that goes out before the look
+        // — so what the look finds has to be pushed on its own. Woken by the clock and not by the
+        // queue, the pump turns no more until something else is due.
+        _subscriber.LinkDropped();
+        _subscriber.Refuse = new MessageRejectedException("Not authorised.", ["plant/+/temp"]);
+        _time.Advance(FlowEngine.TickInterval);
+
+        await ClockStill(() => _console.Statuses.Count == 2 && _subscriber.Batches.Count == 2,
+            "the tick to push the Every and have the filter refused");
+        Assert.Equal(0, InErrors(_console.Statuses[1]));
+
+        // The throttle's quarter second and no more: the next tick is a second away.
+        _time.Advance(FlowLimits.StatusEvery);
+
+        await ClockStill(() => _console.Statuses.Count == 3, "the refusal to be pushed");
+        Assert.Equal(1, InErrors(_console.Statuses[2]));
+
+        static long InErrors(FlowStatus status) =>
+            status.Flows.Single(flow => flow.Id == "f1").Nodes.Single(node => node.Id == "in").Errors;
+    }
+
+    [Fact]
     public async Task A_refused_filter_is_asked_for_again_on_a_new_link()
     {
         _subscriber.Refuse = new MessageRejectedException("Not authorised.", ["plant/+/temp"]);
