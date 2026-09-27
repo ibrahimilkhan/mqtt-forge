@@ -313,6 +313,21 @@ describe('flow canvas', () => {
     expect(at('problem')).toBeGreaterThan(at('flash'));
   });
 
+  // A node the server refused and the reader has picked wears both marks. Drawn with the same
+  // properties, the refusal, written later, took the pick's place, and the pick was gone. Each is
+  // a shape of its own instead: the pick a ring standing off the node, the refusal its own edge.
+  it('keeps the pick on a node the server refused, each mark a shape of its own', () => {
+    const rules = sheet.replace(/\/\*[\s\S]*?\*\//g, '');
+    const set = (mark: string) =>
+      [...(new RegExp(String.raw`\.node\[data-${mark}\]\s*\{([^}]*)\}`).exec(rules)?.[1] ?? '').matchAll(/([\w-]+)\s*:/g)].map(
+        ([, property]) => property,
+      );
+
+    expect(set('selected')).toContain('outline-offset');
+    expect(set('problem')).not.toEqual([]);
+    expect(set('problem').filter((property) => set('selected').includes(property))).toEqual([]);
+  });
+
   // A wire that was clicked has the focus as well as the pick, and React Flow draws a focused wire
   // in its own selected colour by a rule that outweighs the marks above. It reads that colour from
   // a variable, so a lit wire and a refused one say their colour there too.

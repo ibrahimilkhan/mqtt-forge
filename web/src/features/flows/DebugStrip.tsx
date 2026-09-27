@@ -88,6 +88,9 @@ export function DebugStrip({ flow }: { flow: FlowDto }) {
                   {clock(entry.at)}
                 </time>
                 <span className={styles.node}>{labelOf(entry.nodeId)}</span>
+                {/* Said in a word as well as in the line's colour, which is all some readers would
+                    have to tell an error from what a Debug node printed. */}
+                {entry.kind === 'error' && <span className={styles.error}>error</span>}
                 {/* A message with nothing in it is still a message, and says what it was missing:
                     a line of only a time and a node reads as one that failed to draw. What went
                     wrong is not a message, so an error with no topic is missing nothing. */}

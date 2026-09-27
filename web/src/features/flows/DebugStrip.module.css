@@ -54,6 +54,8 @@
 
 .time { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; }
 .node { flex: none; color: var(--muted); }
+/* The word on an error line, in the line's own colour and set as a tag, before what went wrong. */
+.error { flex: none; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
 .topic { flex: none; max-width: 30ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .text { min-width: 0; overflow-wrap: anywhere; }
 

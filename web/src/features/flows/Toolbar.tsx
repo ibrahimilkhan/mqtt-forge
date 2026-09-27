@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, type FocusEvent, type KeyboardEvent } from 'react';
 import type { FlowDto } from '../../types/api';
+import { Warning } from '../brand/icons';
 import { useFlowDraftStore } from './flowDraftStore';
 import styles from './Toolbar.module.css';
 
@@ -161,7 +162,11 @@ export function Toolbar(props: Props) {
               data-state={refused.has(flow.id) ? 'refused' : running.has(flow.id) ? 'running' : 'stopped'}
               onClick={() => show(flow.id)}
             >
-              <span className={styles.lamp} aria-hidden="true" />
+              {/* A shape as well as a colour, as the rail marks a faulted link: a refusal wears
+                  the same warning triangle, and the other two a dot and a ring (the stylesheet). */}
+              <span className={styles.lamp} aria-hidden="true">
+                {refused.has(flow.id) && <Warning />}
+              </span>
               {flow.name.trim() || 'Untitled'}
               {(changed.has(flow.id) || overtaken.has(flow.id)) && (
                 <span className={styles.changed} data-overtaken={overtaken.has(flow.id) ? '' : undefined} aria-hidden="true">

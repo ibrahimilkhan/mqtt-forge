@@ -18,6 +18,8 @@ import { NODE_HEIGHT, NODE_WIDTH } from './FlowCanvas';
 import { moveNodes } from './flowDocument';
 import { DRAFT_PREFIX, useFlowDraftStore } from './flowDraftStore';
 import FlowsPage from './FlowsPage';
+import toolbar from './Toolbar.module.css';
+import toolbarSheet from './Toolbar.module.css?raw';
 
 beforeAll(() => standInForTheBrowser());
 afterAll(() => vi.unstubAllGlobals());
@@ -54,6 +56,13 @@ const watchHasSeen = (count: number): FlowStatusDto => ({
     nodes: [{ id: 'in', count, outs: { out: count }, errors: 0, note: null, standing: [] }],
   }],
 });
+
+/** What a stylesheet declares for one selector, its comments left out. */
+function ruleOf(sheet: string, selector: string) {
+  const rules = sheet.replace(/\/\*[\s\S]*?\*\//g, '');
+  const at = rules.indexOf(`${selector} {`);
+  return at < 0 ? '' : rules.slice(at + selector.length, rules.indexOf('}', at));
+}
 
 /** A promise the test lets go of when it chooses, for an answer that has to arrive late. */
 function held() {
@@ -583,6 +592,31 @@ describe('the tabs', () => {
     expect(await screen.findByRole('tab', { name: 'Boiler watch 2, refused, changes not deployed' })).toBeInTheDocument();
   });
 
+  // A colour on its own says nothing to a reader who cannot tell these apart, so each state has a
+  // lamp of its own shape: a running flow a filled dot, a refused one the rail's warning triangle,
+  // any other an empty ring.
+  it('draw each state of a flow with a lamp of its own shape', async () => {
+    keeping([watch, sim]);
+    server.use(
+      http.get('/api/flows/status', () => HttpResponse.json(watchHasSeen(0))),
+      http.put('/api/flows/watch', () => refusal({ 'node:test': ['Pick a test.'] })),
+    );
+    render(<FlowsPage />);
+    const lamp = (name: RegExp) => screen.getByRole('tab', { name }).querySelector(`.${toolbar.lamp}`)!;
+    await screen.findByRole('tab', { name: /^Boiler watch, running/ });
+
+    expect(lamp(/^Boiler watch/).querySelector('svg')).toBeNull();
+    expect(lamp(/^Boiler simulator/).querySelector('svg')).toBeNull();
+    expect(ruleOf(toolbarSheet, '.lamp')).toMatch(/border:/);
+    expect(ruleOf(toolbarSheet, ".tab[data-state='running'] .lamp")).toMatch(/background:/);
+
+    await userEvent.type(screen.getByLabelText('Name'), ' 2');
+    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+    await screen.findByTitle('Pick a test.');
+
+    expect(lamp(/^Boiler watch 2/).querySelector('svg')).not.toBeNull();
+  });
+
   it('control one panel, which the tab on show names', async () => {
     keeping([watch, sim]);
     render(<FlowsPage />);
@@ -739,6 +773,22 @@ describe('the debug strip', () => {
     expect(within(empty).getByText('empty payload')).toHaveClass(strip.none);
     expect(within(error).getByText('The flow stopped.')).not.toHaveClass(strip.none);
     expect(stripSheet.replace(/\/\*[\s\S]*?\*\//g, '')).toMatch(/\.none\s*\{[^}]*[{;\s]color:\s*var\(--muted\)/);
+  });
+
+  // The line's colour says it is an error only to a reader who can tell its red from the ink.
+  it('says in a word which lines are errors', async () => {
+    keeping([watch]);
+    render(<FlowsPage />);
+    await screen.findByText('Boiler watch', { selector: 'h3' });
+
+    act(() =>
+      useFlowStatusStore.getState().addDebug([printed('watch', 'w1'), printed('watch', 'no such field', { kind: 'error' })], 0),
+    );
+
+    const error = within(debugStrip()).getByText('no such field').closest('li')!;
+    const message = within(debugStrip()).getByText('w1').closest('li')!;
+    expect(within(error).getByText('error')).toBeInTheDocument();
+    expect(within(message).queryByText('error')).not.toBeInTheDocument();
   });
 
   // Clear goes with the lines it cleared, and a browser hands the keyboard of a button taken out

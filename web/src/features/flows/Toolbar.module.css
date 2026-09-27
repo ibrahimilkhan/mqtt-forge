@@ -56,10 +56,20 @@
 }
 .tab[aria-selected='true'] { border-color: var(--signal); box-shadow: inset 0 -2px 0 var(--signal); }
 
-/* The flow's state, as a lamp: running green, refused red, anything else the rail's grey. */
-.lamp { width: 7px; height: 7px; border-radius: 50%; background: var(--rule); }
-.tab[data-state='running'] .lamp { background: var(--live); }
-.tab[data-state='refused'] .lamp { background: var(--fault); }
+/* The flow's state, as a lamp, and a shape as well as a colour, since a colour on its own says
+   nothing to a reader who cannot tell these apart: running a filled green dot, refused the rail's
+   warning triangle in red, anything else an empty grey ring. */
+.lamp { flex: none; width: 7px; height: 7px; border: 1.5px solid var(--muted); border-radius: 50%; }
+.tab[data-state='running'] .lamp { background: var(--live); border-color: var(--live); }
+.tab[data-state='refused'] .lamp {
+  display: inline-flex;
+  width: auto;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  font-size: var(--t-label);
+  color: var(--fault);
+}
 
 .changed { color: var(--warn); font-weight: 700; }
 /* A draft the server has moved on from under: held back from Deploy until the reader chooses. */

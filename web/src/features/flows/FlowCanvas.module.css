@@ -80,8 +80,11 @@
   font-size: var(--t-small);
 }
 
-.node[data-selected] { border-color: var(--signal); outline: 1px solid var(--signal); }
-.node[data-problem] { border-color: var(--fault); outline: 1px solid var(--fault); }
+/* Picked, a ring standing off the node; refused, the node's own edge drawn red and twice as heavy.
+   Two shapes on properties of their own, so a node that is both wears both — drawn with the same
+   outline, the refusal hid the pick — and neither is told from the other by its colour alone. */
+.node[data-selected] { outline: 2px solid var(--signal); outline-offset: 2px; }
+.node[data-problem] { border-color: var(--fault); box-shadow: 0 0 0 1px var(--fault); }
 
 .head {
   display: flex;
