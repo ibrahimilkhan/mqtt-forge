@@ -164,8 +164,8 @@ internal sealed class RecordingFlowNotifier : IFlowNotifier
 }
 
 /// <summary>
-/// Both alarm channels in one list, in the order the engine used them, and how many flow alarms
-/// the engine was showing at each moment it told the console of a raise.
+/// Both alarm channels in one list, in the order the engine used them — call by call, and alarm by
+/// alarm — and how many flow alarms the engine was showing at each moment it told the console of a raise.
 /// </summary>
 // One object for the notifier and the dispatcher because the question is about order across the
 // two of them, which two separate recorders cannot answer.
@@ -173,6 +173,8 @@ internal sealed class AlarmCallLog : IAlertNotifier, IAlertDispatcher
 {
     private readonly Lock _gate = new();
     private readonly List<string> _calls = [];
+    private readonly List<string> _alarms = [];
+    private readonly Dictionary<string, string> _letters = new(StringComparer.Ordinal);
     private readonly List<int> _upWhenTold = [];
 
     private FlowEngine? _engine;
@@ -195,6 +197,17 @@ internal sealed class AlarmCallLog : IAlertNotifier, IAlertDispatcher
         get { lock (_gate) return [.. _calls]; }
     }
 
+    /// <summary>
+    /// Every alarm either half was handed, one line each in the order handed — "told raised a",
+    /// "sent resolved a" — with each alarm lettered in the order it was first seen.
+    /// </summary>
+    // Lettered by id, because two alarms of one node on one topic differ in nothing else a test can
+    // read: the old broker's and the new one's, or the one a clear ended and the one raised next.
+    public IReadOnlyList<string> Alarms
+    {
+        get { lock (_gate) return [.. _alarms]; }
+    }
+
     public IReadOnlyList<int> UpWhenTold
     {
         get { lock (_gate) return [.. _upWhenTold]; }
@@ -204,26 +217,34 @@ internal sealed class AlarmCallLog : IAlertNotifier, IAlertDispatcher
     {
         var up = Engine?.Alarms.Active.Count ?? -1;
 
-        lock (_gate)
-        {
-            _calls.Add("told raised");
-            _upWhenTold.Add(up);
-        }
+        lock (_gate) _upWhenTold.Add(up);
 
-        return NotifierFault is { } fault ? Task.FromException(fault) : Task.CompletedTask;
+        return Add("told raised", alerts, NotifierFault);
     }
 
-    Task IAlertNotifier.ResolvedAsync(IReadOnlyList<Alert> alerts) => Add("told resolved", NotifierFault);
+    Task IAlertNotifier.ResolvedAsync(IReadOnlyList<Alert> alerts) => Add("told resolved", alerts, NotifierFault);
 
     Task IAlertNotifier.DroppedAsync(int total) => Task.CompletedTask;
 
-    Task IAlertDispatcher.RaisedAsync(IReadOnlyList<Alert> alerts) => Add("sent raised", DispatcherFault);
+    Task IAlertDispatcher.RaisedAsync(IReadOnlyList<Alert> alerts) => Add("sent raised", alerts, DispatcherFault);
 
-    Task IAlertDispatcher.ResolvedAsync(IReadOnlyList<Alert> alerts) => Add("sent resolved", DispatcherFault);
+    Task IAlertDispatcher.ResolvedAsync(IReadOnlyList<Alert> alerts) => Add("sent resolved", alerts, DispatcherFault);
 
-    private Task Add(string call, Exception? fault)
+    private Task Add(string call, IReadOnlyList<Alert> alerts, Exception? fault)
     {
-        lock (_gate) _calls.Add(call);
+        lock (_gate)
+        {
+            _calls.Add(call);
+
+            foreach (var alert in alerts)
+            {
+                if (!_letters.TryGetValue(alert.Id, out var letter))
+                    _letters[alert.Id] = letter = ((char)('a' + _letters.Count)).ToString();
+
+                _alarms.Add($"{call} {letter}");
+            }
+        }
+
         return fault is null ? Task.CompletedTask : Task.FromException(fault);
     }
 }

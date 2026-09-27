@@ -107,7 +107,8 @@ public sealed class FlowEngineTests : IAsyncLifetime
         .Wire("test", "no", "hot", "clear")
         .Build();
 
-    private static MqttMessage Msg(string topic, string payload) => new(topic, payload, "text", 0, false, T0);
+    private static MqttMessage Msg(string topic, string payload, DateTimeOffset? receivedAt = null) =>
+        new(topic, payload, "text", 0, false, receivedAt ?? T0);
 
     /// <summary>A live link to a broker, up since <paramref name="connectedAt"/>.</summary>
     private static BrokerLink LinkTo(string host, DateTimeOffset connectedAt) =>
@@ -498,6 +499,77 @@ public sealed class FlowEngineTests : IAsyncLifetime
         // then add the raise, and show an alarm that was already over.
         await Eventually.Until(_time, () => log.Calls.Count == 4, "both ends to be told and sent");
         Assert.Equal(["told raised", "told resolved", "sent raised", "sent resolved"], log.Calls);
+    }
+
+    // What every channel outside the process knows an alarm by is its rule and its topic: a publish
+    // goes to a topic named by the two, and a webhook's body carries no alarm id. So two alarms that
+    // share them are one alarm out there, and the order they were told in is the only thing that
+    // says which of them stands — told a raise and then the end before it, a channel hears the new
+    // alarm end with the old one while the book and the console say it is up.
+
+    [Fact]
+    public async Task One_event_that_clears_an_alarm_and_raises_it_again_is_told_and_sent_in_that_order()
+    {
+        var log = new AlarmCallLog();
+        var engine = await RunningAsync(log, log, new FlowBuilder()
+            .Node("go", "inject", new { topic = "plant/k1/temp", payload = "[95, 50, 95]" })
+            .Node("each", "forEach", new { field = "" })
+            .Node("test", "if", new { field = "", test = "gt", value = "90" })
+            .Node("hot", "alarm", new { name = "Hot", severity = "critical", webhook = "https://hooks.example.com/boiler" })
+            .Wire("go", "out", "each", "in")
+            .Wire("each", "out", "test", "in")
+            .Wire("test", "yes", "hot", "raise")
+            .Wire("test", "no", "hot", "clear")
+            .Build());
+
+        engine.Post(new FlowInject("f1", "go"));
+
+        await Eventually.Until(_time, () => log.Alarms.Count == 6, "every end of both alarms to be told and sent");
+        Assert.Equal(
+            ["told raised a", "told resolved a", "told raised b", "sent raised a", "sent resolved a", "sent raised b"],
+            log.Alarms);
+    }
+
+    [Fact]
+    public async Task A_clear_and_a_raise_again_of_one_topic_in_one_turn_are_told_and_sent_in_that_order()
+    {
+        var log = new AlarmCallLog();
+        var engine = await StartedAsync(log, log, [Watch(webhook: "https://hooks.example.com/boiler")]);
+
+        // Hot, cool and hot again, all waiting for the same turn: three events, each its own outcome.
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":50}"));
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+        Run(engine);
+
+        await ClockStill(() => log.Alarms.Count == 6, "every end of both alarms to be told and sent");
+        Assert.Equal(
+            ["told raised a", "told resolved a", "told raised b", "sent raised a", "sent resolved a", "sent raised b"],
+            log.Alarms);
+    }
+
+    [Fact]
+    public async Task A_move_to_a_broker_carrying_the_same_topic_ends_the_old_alarm_before_it_raises_the_new_one()
+    {
+        var log = new AlarmCallLog();
+        _connection.At("broker-a.plant.local", 1883);
+        var engine = await StartedAsync(log, log, [Watch(webhook: "https://hooks.example.com/boiler")]);
+
+        // Broker B carries the plant A did — a cluster, a bridge, a failover pair — so its first
+        // message raises an alarm on the rule and topic of the one the move ends. A pump held up for
+        // the whole of the move, so A's last message, the move and B's first are all one turn.
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+        _connection.Link = LinkTo("broker-b.plant.local", connectedAt: T0.AddSeconds(1));
+        _subscriber.LinkDropped();
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}", receivedAt: T0.AddSeconds(2)));
+        Run(engine);
+
+        await ClockStill(() => log.Alarms.Count == 6, "every end of both alarms to be told and sent");
+        Assert.Equal(
+            ["told raised a", "told resolved a", "told raised b", "sent raised a", "sent resolved a", "sent raised b"],
+            log.Alarms);
+        Assert.Equal(FlowAlarmBook.ConnectionEnded, Assert.Single(engine.Alarms.History).ResolvedBy);
+        Assert.Single(engine.Alarms.Active);
     }
 
     [Fact]

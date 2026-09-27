@@ -432,24 +432,24 @@ public sealed class FlowEngine
             else _debugDropped++;
         }
 
-        if (outcome.Raised.Count == 0 && outcome.Resolved.Count == 0) return;
+        if (outcome.Alarms.Count == 0) return;
 
         // Before the telling, AlertEngine's order: a console that reacts to alertsRaised by reading
         // GET /api/alerts has to find the alarm already there, or the badge flickers back to nothing.
         Volatile.Write(ref _alarms, _runtime.Alarms());
-        await DeliverAsync(outcome.Raised, outcome.Resolved, ct);
+        await DeliverAsync(outcome.Alarms, ct);
     }
 
     // Every channel's catch lets a cancellation through only when it is the engine stopping, the rule
     // SyncSubscriptionsAsync keeps and for its reason. None of these channels is handed the engine's
     // token, so a cancellation from one of them is that channel giving up — a hub send, a queue
     // closing — and not a reason to skip the channel after it or the rest of the turn.
-    private async Task DeliverAsync(IReadOnlyList<Alert> raised, IReadOnlyList<Alert> resolved, CancellationToken ct)
+    private async Task DeliverAsync(IReadOnlyList<FlowAlarmEvent> alarms, CancellationToken ct)
     {
         try
         {
-            if (raised.Count > 0) await _notifier.RaisedAsync(raised);
-            if (resolved.Count > 0) await _notifier.ResolvedAsync(resolved);
+            foreach (var (raised, alerts) in Runs(alarms))
+                await (raised ? _notifier.RaisedAsync(alerts) : _notifier.ResolvedAsync(alerts));
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
@@ -458,14 +458,13 @@ public sealed class FlowEngine
 
         if (_dispatcher is null) return;
 
-        var leaving = Outgoing(raised);
-        var leavingResolved = Outgoing(resolved);
-        if (leaving.Count == 0 && leavingResolved.Count == 0) return;
+        var leaving = Outgoing(alarms);
+        if (leaving.Count == 0) return;
 
         try
         {
-            if (leaving.Count > 0) await _dispatcher.RaisedAsync(leaving);
-            if (leavingResolved.Count > 0) await _dispatcher.ResolvedAsync(leavingResolved);
+            foreach (var (raised, alerts) in Runs(leaving))
+                await (raised ? _dispatcher.RaisedAsync(alerts) : _dispatcher.ResolvedAsync(alerts));
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
@@ -474,8 +473,31 @@ public sealed class FlowEngine
     }
 
     /// <summary>The alarms whose node asked for a channel outside this process — AlertEngine's filter.</summary>
-    private static IReadOnlyList<Alert> Outgoing(IReadOnlyList<Alert> alerts) =>
-        [.. alerts.Where(alert => alert.Actions.Any(action => action is WebhookAction or PublishAction))];
+    private static IReadOnlyList<FlowAlarmEvent> Outgoing(IReadOnlyList<FlowAlarmEvent> alarms) =>
+        [.. alarms.Where(alarm => alarm.Alert.Actions.Any(action => action is WebhookAction or PublishAction))];
+
+    /// <summary>The alarms in their order, cut wherever a raise follows an end or an end a raise.</summary>
+    // One call a run and not one an alarm: the forty alarms a lost link ends are still one call to
+    // each channel, as they always were, and only a change of kind costs another.
+    private static IEnumerable<(bool Raised, IReadOnlyList<Alert> Alerts)> Runs(IReadOnlyList<FlowAlarmEvent> alarms)
+    {
+        var run = new List<Alert>();
+        var raised = false;
+
+        foreach (var alarm in alarms)
+        {
+            if (run.Count > 0 && alarm.Raised != raised)
+            {
+                yield return (raised, run);
+                run = [];
+            }
+
+            raised = alarm.Raised;
+            run.Add(alarm.Alert);
+        }
+
+        if (run.Count > 0) yield return (raised, run);
+    }
 
     /// <summary>Tells the console what moved, at most four times a second.</summary>
     private async Task PushAsync(DateTimeOffset now, bool force, CancellationToken ct)

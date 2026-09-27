@@ -79,7 +79,7 @@ public sealed class FlowRuntime
         foreach (var id in _flows.Keys.Where(id => !wanted.ContainsKey(id)).ToList())
         {
             var reason = kept.Contains(id) ? FlowAlarmBook.FlowOff : FlowAlarmBook.FlowRemoved;
-            into.Resolved.AddRange(_alarms.ResolveFlow(id, reason, now));
+            into.Resolved(_alarms.ResolveFlow(id, reason, now));
             _flows.Remove(id);
         }
 
@@ -91,7 +91,7 @@ public sealed class FlowRuntime
             // moved a node, or deployed a different flow, did not ask for this one to start over.
             if (running is not null && running.Flow.Fingerprint == flow.Fingerprint) continue;
 
-            if (running is not null) into.Resolved.AddRange(_alarms.Reconcile(running.Flow, flow, now));
+            if (running is not null) into.Resolved(_alarms.Reconcile(running.Flow, flow, now));
 
             // A new generation strands whatever the old one had scheduled: those entries are skipped
             // when they come due rather than hunted down in the queue now.
@@ -276,7 +276,7 @@ public sealed class FlowRuntime
         {
             // The alert engine's "connection ended": with no link nothing is being watched, and an
             // alarm left standing would be a claim about a plant nobody can see.
-            into.Resolved.AddRange(_alarms.ResolveAll(FlowAlarmBook.ConnectionEnded, now));
+            into.Resolved(_alarms.ResolveAll(FlowAlarmBook.ConnectionEnded, now));
             Touch();
         }
 
@@ -455,7 +455,7 @@ public sealed class FlowRuntime
         {
             if (_alarms.Clear(run.State.Flow.Id, node.Id, message.Topic, run.Now) is { } cleared)
             {
-                run.Into.Resolved.Add(cleared);
+                run.Into.Resolved([cleared]);
                 counter.Out("cleared");
             }
 
@@ -473,7 +473,7 @@ public sealed class FlowRuntime
 
         if (!isNew) return;
 
-        run.Into.Raised.Add(alert);
+        run.Into.Raised(alert);
         counter.Out("raised");
     }
 
@@ -719,13 +719,19 @@ public sealed class FlowRuntime
     private sealed class Collector
     {
         public List<FlowPublish> Publishes { get; } = [];
-        public List<Alert> Raised { get; } = [];
-        public List<Alert> Resolved { get; } = [];
+        public List<FlowAlarmEvent> Alarms { get; } = [];
         public List<FlowDebugEntry> Debug { get; } = [];
 
+        public void Raised(Alert alert) => Alarms.Add(new FlowAlarmEvent(alert, Raised: true));
+
+        public void Resolved(IEnumerable<Alert> alerts)
+        {
+            foreach (var alert in alerts) Alarms.Add(new FlowAlarmEvent(alert, Raised: false));
+        }
+
         public FlowOutcome Outcome() =>
-            Publishes.Count == 0 && Raised.Count == 0 && Resolved.Count == 0 && Debug.Count == 0
+            Publishes.Count == 0 && Alarms.Count == 0 && Debug.Count == 0
                 ? FlowOutcome.Empty
-                : new FlowOutcome(Publishes, Raised, Resolved, Debug);
+                : new FlowOutcome(Publishes, Alarms, Debug);
     }
 }
