@@ -3,6 +3,7 @@ using System.Text.Json;
 using MqttForge.Application.Flows;
 using MqttForge.Domain.Enums;
 using MqttForge.Domain.Models;
+using MqttForge.UnitTests.Application.Alerts;
 
 namespace MqttForge.UnitTests.Application.Flows;
 
@@ -599,6 +600,32 @@ public class FlowRuntimeTests
         Assert.Contains(outcome.Debug, entry => entry.Kind == FlowDebugEntry.Error && entry.NodeId == "go");
         Assert.True(outcome.Debug.Count(entry => entry.Kind == FlowDebugEntry.Message) < FlowLimits.StepsPerEvent);
         Assert.Equal(1, _runtime.Status().Flows.Single().Faults);
+    }
+
+    // Each hostile text costs the pattern its 50 ms. Carried on past the first, a For each of a
+    // thousand of them would hold the pump for fifty seconds, and the step budget for eight minutes.
+    [Fact]
+    public void A_pattern_that_runs_out_of_time_ends_its_event_and_says_why()
+    {
+        Start(new FlowBuilder()
+            .Node("go", "inject", new { payload = JsonSerializer.Serialize(Enumerable.Repeat(HostilePatterns.Payload, 3)) })
+            .Node("each", "forEach", new { field = "" })
+            .Node("test", "if", new { field = "", test = "matches", value = HostilePatterns.Catastrophic })
+            .Node("say", "debug")
+            .Wire("go", "out", "each", "in")
+            .Wire("each", "out", "test", "in")
+            .Wire("each", "out", "say", "in")
+            .Compile());
+
+        var outcome = _runtime.Inject("f1", "go", T0);
+
+        // The first element's pattern, and nothing after it: not the Debug node wired after the If,
+        // and not the next two elements.
+        Assert.Equal(1, Node("test").Count);
+        Assert.Equal(1, Node("test").Errors);
+        Assert.Equal("The pattern took longer than 50 ms, so the event was stopped.", Node("test").Note);
+        Assert.Equal(FlowDebugEntry.Error, Assert.Single(outcome.Debug).Kind);
+        Assert.Equal(0, _runtime.Status().Flows.Single().Faults);
     }
 
     [Fact]

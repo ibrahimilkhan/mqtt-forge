@@ -289,7 +289,7 @@ public sealed class FlowRuntime
 
         foreach (var target in from.To(port))
         {
-            if (run.Exhausted) return;
+            if (run.Stopped) return;
             Enter(run, target.Node, target.Port, message);
         }
     }
@@ -298,7 +298,7 @@ public sealed class FlowRuntime
     {
         if (++run.Steps > FlowLimits.StepsPerEvent)
         {
-            run.Exhausted = true;
+            run.Exhausted = run.Stopped = true;
             return;
         }
 
@@ -340,7 +340,11 @@ public sealed class FlowRuntime
         }
         catch (RegexMatchTimeoutException)
         {
-            Fail(run.State, node.Id, "The pattern took longer than 50 ms and was stopped.", message.Topic, run.Now, run.Into);
+            // The whole event ends, not only this message's way through the If. A pattern that ran
+            // out of time on one text will on the next one like it, and every one a For each or a
+            // Repeat brought on after this would cost another 50 ms of the pump that every flow shares.
+            Fail(run.State, node.Id, "The pattern took longer than 50 ms, so the event was stopped.", message.Topic, run.Now, run.Into);
+            run.Stopped = true;
             return;
         }
 
@@ -413,7 +417,7 @@ public sealed class FlowRuntime
                 var payload = element.ValueKind == JsonValueKind.String ? element.GetString()! : element.GetRawText();
                 Emit(run, node, "out", message with { Payload = payload, Index = index });
 
-                if (run.Exhausted) return;
+                if (run.Stopped) return;
             }
         }
     }
@@ -436,7 +440,7 @@ public sealed class FlowRuntime
 
         if (!scheduled)
         {
-            for (var copy = 2; copy <= node.Count && !run.Exhausted; copy++)
+            for (var copy = 2; copy <= node.Count && !run.Stopped; copy++)
                 Emit(run, node, "out", message with { Index = copy });
             return;
         }
@@ -726,7 +730,12 @@ public sealed class FlowRuntime
         public DateTimeOffset Now { get; } = now;
         public Collector Into { get; } = into;
         public int Steps { get; set; }
+
+        /// <summary>The event ran past its step budget, which is a fault on its flow.</summary>
         public bool Exhausted { get; set; }
+
+        /// <summary>Nothing more of the event runs: its budget ran out, or a pattern ran out of time.</summary>
+        public bool Stopped { get; set; }
     }
 
     private sealed class Collector
