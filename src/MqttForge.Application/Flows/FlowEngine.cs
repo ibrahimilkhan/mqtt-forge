@@ -23,7 +23,9 @@ namespace MqttForge.Application.Flows;
 // that on the pump would make every flow — and every alarm they raise — as slow as the slowest
 // round trip. So publishes are handed to a channel of their own, sent in order by a loop that waits
 // for nothing else, and a failure comes back to the pump as a command, where the counters live. The
-// console's pushes go the same way, for the same reason: see FlowConsoleSender.
+// console's pushes go the same way, for the same reason, and so does its half of every alarm: see
+// FlowConsoleSender. The notifier this class is handed is told on the pump, so it has to be one that
+// waits on nothing — in production the log; the console is told through IFlowNotifier, from that loop.
 public sealed class FlowEngine
 {
     public FlowEngine(FlowRuntime runtime, IFlowStore store, IAlertNotifier notifier, IFlowNotifier console,
@@ -585,13 +587,17 @@ public sealed class FlowEngine
     {
         try
         {
-            foreach (var (raised, alerts) in Runs(alarms))
+            foreach (var (raised, alerts) in FlowAlarmEvent.Runs(alarms))
                 await (raised ? _notifier.RaisedAsync(alerts) : _notifier.ResolvedAsync(alerts));
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             _log.LogError(ex, "An alert notifier threw. The flow alarms it was given were not delivered.");
         }
+
+        // The console's half, handed to the loop that sends the pushes and never waited for here: an
+        // alarm frame to a console that has stopped reading waits as long as a push to it does.
+        _pushes.Alarms(alarms);
 
         if (_dispatcher is null) return;
 
@@ -600,7 +606,7 @@ public sealed class FlowEngine
 
         try
         {
-            foreach (var (raised, alerts) in Runs(leaving))
+            foreach (var (raised, alerts) in FlowAlarmEvent.Runs(leaving))
                 await (raised ? _dispatcher.RaisedAsync(alerts) : _dispatcher.ResolvedAsync(alerts));
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
@@ -612,29 +618,6 @@ public sealed class FlowEngine
     /// <summary>The alarms whose node asked for a channel outside this process — AlertEngine's filter.</summary>
     private static IReadOnlyList<FlowAlarmEvent> Outgoing(IReadOnlyList<FlowAlarmEvent> alarms) =>
         [.. alarms.Where(alarm => alarm.Alert.Actions.Any(action => action is WebhookAction or PublishAction))];
-
-    /// <summary>The alarms in their order, cut wherever a raise follows an end or an end a raise.</summary>
-    // One call a run and not one an alarm: the forty alarms a lost link ends are still one call to
-    // each channel, as they always were, and only a change of kind costs another.
-    private static IEnumerable<(bool Raised, IReadOnlyList<Alert> Alerts)> Runs(IReadOnlyList<FlowAlarmEvent> alarms)
-    {
-        var run = new List<Alert>();
-        var raised = false;
-
-        foreach (var alarm in alarms)
-        {
-            if (run.Count > 0 && alarm.Raised != raised)
-            {
-                yield return (raised, run);
-                run = [];
-            }
-
-            raised = alarm.Raised;
-            run.Add(alarm.Alert);
-        }
-
-        if (run.Count > 0) yield return (raised, run);
-    }
 
     /// <summary>Hands the console what moved, at most four times a second. Never waits on it: see FlowConsoleSender.</summary>
     private void Push(DateTimeOffset now, bool force)

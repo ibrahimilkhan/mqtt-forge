@@ -13,7 +13,31 @@ public sealed record FlowDebugEntry(string FlowId, string NodeId, DateTimeOffset
 }
 
 /// <summary>An alarm that went up, or one that came down.</summary>
-public sealed record FlowAlarmEvent(Alert Alert, bool Raised);
+public sealed record FlowAlarmEvent(Alert Alert, bool Raised)
+{
+    /// <summary>The alarms in their order, cut wherever a raise follows an end or an end a raise.</summary>
+    // One call a run and not one an alarm: the forty alarms a lost link ends are still one call to
+    // each channel, as they always were, and only a change of kind costs another.
+    public static IEnumerable<(bool Raised, IReadOnlyList<Alert> Alerts)> Runs(IReadOnlyList<FlowAlarmEvent> alarms)
+    {
+        var run = new List<Alert>();
+        var raised = false;
+
+        foreach (var alarm in alarms)
+        {
+            if (run.Count > 0 && alarm.Raised != raised)
+            {
+                yield return (raised, run);
+                run = [];
+            }
+
+            raised = alarm.Raised;
+            run.Add(alarm.Alert);
+        }
+
+        if (run.Count > 0) yield return (raised, run);
+    }
+}
 
 /// <summary>Everything one call into the runtime decided, for the engine to carry out.</summary>
 // The runtime decides and never does. A publish here has not been sent and an alarm here has not

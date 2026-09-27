@@ -22,6 +22,10 @@ namespace MqttForge.Api.Realtime;
 //
 // What is kept is the frame cap, for its own reason: a restart that restores every alarm that was
 // ringing hands over one list, and the engine's MaxActiveAlerts ceiling is a thousand.
+//
+// The flow engine's alarms go out here too, as the same two events in the same frames, but not
+// from a pump: it calls the overloads that take a token from the loop that sends its pushes, and
+// calls a stuck frame off when it stops. See SignalRFlowNotifier.
 public sealed class SignalRAlertNotifier : IAlertNotifier
 {
     public const string AlertsRaised = "alertsRaised";
@@ -41,14 +45,20 @@ public sealed class SignalRAlertNotifier : IAlertNotifier
     private readonly IHubContext<MqttHub> _hub;
 
     // The last total sent, so an engine that is keeping up costs nothing. Not volatile and not
-    // interlocked: every call into this class comes off AlertEngine's pump, which is one thread.
+    // interlocked: every call to DroppedAsync comes off AlertEngine's pump, which is one thread.
     private int _announced;
 
     public SignalRAlertNotifier(IHubContext<MqttHub> hub) => _hub = hub;
 
-    public Task RaisedAsync(IReadOnlyList<Alert> alerts) => SendAsync(AlertsRaised, alerts);
+    public Task RaisedAsync(IReadOnlyList<Alert> alerts) => SendAsync(AlertsRaised, alerts, CancellationToken.None);
 
-    public Task ResolvedAsync(IReadOnlyList<Alert> alerts) => SendAsync(AlertsResolved, alerts);
+    public Task ResolvedAsync(IReadOnlyList<Alert> alerts) => SendAsync(AlertsResolved, alerts, CancellationToken.None);
+
+    /// <summary>The same frames, called off by <paramref name="ct"/>: the flow engine's way in.</summary>
+    public Task RaisedAsync(IReadOnlyList<Alert> alerts, CancellationToken ct) => SendAsync(AlertsRaised, alerts, ct);
+
+    /// <summary>The same frames, called off by <paramref name="ct"/>: the flow engine's way in.</summary>
+    public Task ResolvedAsync(IReadOnlyList<Alert> alerts, CancellationToken ct) => SendAsync(AlertsResolved, alerts, ct);
 
     /// <summary>
     /// Said by the mute endpoint after it has posted the command, because a mute is something a
@@ -75,7 +85,7 @@ public sealed class SignalRAlertNotifier : IAlertNotifier
         await _hub.Clients.All.SendAsync(AlertsDropped, total);
     }
 
-    private async Task SendAsync(string method, IReadOnlyList<Alert> alerts)
+    private async Task SendAsync(string method, IReadOnlyList<Alert> alerts, CancellationToken ct)
     {
         // The engine calls both halves on every turn that changed anything, and most turns change
         // nothing on one of the two lists. An empty frame a second is a socket kept awake for no
@@ -89,7 +99,7 @@ public sealed class SignalRAlertNotifier : IAlertNotifier
 
             // Awaited in order. Frames of one restore arriving out of order would have the panel
             // drawing the second half of an alarm list before the first.
-            await _hub.Clients.All.SendAsync(method, frame);
+            await _hub.Clients.All.SendAsync(method, frame, ct);
         }
     }
 }

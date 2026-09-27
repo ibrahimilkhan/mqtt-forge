@@ -2,7 +2,13 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using MqttForge.Api.Hubs;
+using MqttForge.Api.Realtime;
 using MqttForge.IntegrationTests.Support;
+using NSubstitute;
 using Xunit;
 
 namespace MqttForge.IntegrationTests.Api;
@@ -269,6 +275,95 @@ public sealed class FlowEndpointTests : IClassFixture<MqttForgeApiFactory>
 
         var standing = (await Json(await client.GetAsync("/api/alerts"))).GetProperty("active").EnumerateArray().Where(Ours).ToList();
         Assert.Equal("plant/k2/button", Assert.Single(standing).GetProperty("topic").GetString());
+    }
+
+    // The consoles stop reading as the first alarm is sent to them, so its frame sits until it is
+    // called off. The flows do not wait with it: the second button's alarm is raised with the first
+    // one's frame still stuck, and stopping the host is what lets that frame go.
+    [Fact]
+    public async Task A_console_that_stops_reading_holds_up_no_flow_alarm_and_is_let_go_when_the_host_stops()
+    {
+        var hub = new StalledHub(holding: SignalRAlertNotifier.AlertsRaised);
+        using var factory = new MqttForgeApiFactory();
+        var host = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.AddSingleton(new SignalRAlertNotifier(hub.Context));
+            services.AddSingleton(sp => new SignalRFlowNotifier(hub.Context, sp.GetRequiredService<SignalRAlertNotifier>()));
+        }));
+        var client = host.CreateClient();
+
+        await client.PutAsJsonAsync("/api/flows/bells", new
+        {
+            id = "bells",
+            name = "Bells",
+            enabled = true,
+            nodes = new object[]
+            {
+                new { id = "one", type = "inject", x = 40, y = 40, config = new { topic = "plant/k1/button", payload = "1" } },
+                new { id = "two", type = "inject", x = 40, y = 160, config = new { topic = "plant/k2/button", payload = "1" } },
+                new { id = "ring", type = "alarm", x = 260, y = 100, config = new { name = "Pressed", severity = "warn" } },
+            },
+            edges = new object[]
+            {
+                new { id = "e1", from = "one", fromPort = "out", to = "ring", toPort = "raise" },
+                new { id = "e2", from = "two", fromPort = "out", to = "ring", toPort = "raise" },
+            },
+        });
+
+        async Task<int> Standing() =>
+            (await Json(await client.GetAsync("/api/alerts"))).GetProperty("active").EnumerateArray()
+                .Count(alert => alert.GetProperty("ruleId").GetString() == "flow-bells-ring");
+
+        Assert.Equal(HttpStatusCode.Accepted, (await client.PostAsync("/api/flows/bells/nodes/one/inject", null)).StatusCode);
+        await Until(() => Task.FromResult(hub.Held == 1), "the first alarm's frame to be stuck with the console");
+
+        Assert.Equal(HttpStatusCode.Accepted, (await client.PostAsync("/api/flows/bells/nodes/two/inject", null)).StatusCode);
+        await Until(async () => await Standing() == 2, "the second alarm to be raised, with the first one's frame still stuck");
+
+        await host.DisposeAsync();
+
+        Assert.Equal(0, hub.Held);
+    }
+
+    /// <summary>
+    /// A hub whose sends of one method wait until their token calls them off — consoles that stopped
+    /// reading when that was sent — and whose other sends go through.
+    /// </summary>
+    private sealed class StalledHub
+    {
+        private int _held;
+
+        public StalledHub(string holding)
+        {
+            var proxy = Substitute.For<IClientProxy>();
+            proxy
+                .SendCoreAsync(Arg.Any<string>(), Arg.Any<object?[]>(), Arg.Any<CancellationToken>())
+                .Returns(call => call.ArgAt<string>(0) == holding ? HoldAsync(call.ArgAt<CancellationToken>(2)) : Task.CompletedTask);
+
+            var clients = Substitute.For<IHubClients>();
+            clients.All.Returns(proxy);
+
+            Context = Substitute.For<IHubContext<MqttHub>>();
+            Context.Clients.Returns(clients);
+        }
+
+        public IHubContext<MqttHub> Context { get; }
+
+        /// <summary>How many sends are waiting on the consoles right now.</summary>
+        public int Held => Volatile.Read(ref _held);
+
+        private async Task HoldAsync(CancellationToken ct)
+        {
+            Interlocked.Increment(ref _held);
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _held);
+            }
+        }
     }
 
     [Fact]

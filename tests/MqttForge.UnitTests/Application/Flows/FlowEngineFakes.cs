@@ -124,6 +124,10 @@ internal sealed class RecordingFlowNotifier : IFlowNotifier
     private readonly Lock _gate = new();
     private readonly List<FlowStatus> _statuses = [];
     private readonly List<FlowDebugEntry> _debug = [];
+    private readonly List<string> _told = [];
+    private readonly List<string> _alarmIds = [];
+    private readonly Dictionary<string, string> _letters = new(StringComparer.Ordinal);
+    private readonly List<int> _upWhenTold = [];
 
     private Exception? _fault;
     private int _failed;
@@ -131,6 +135,14 @@ internal sealed class RecordingFlowNotifier : IFlowNotifier
     private int _answered;
     private int _held;
     private TaskCompletionSource? _stuck;
+    private FlowEngine? _engine;
+
+    /// <summary>The engine to read when a raise is told. Set once it has been built.</summary>
+    public FlowEngine? Engine
+    {
+        get => Volatile.Read(ref _engine);
+        set => Volatile.Write(ref _engine, value);
+    }
 
     /// <summary>When set, every status push throws it.</summary>
     public Exception? Fault
@@ -146,8 +158,9 @@ internal sealed class RecordingFlowNotifier : IFlowNotifier
     public int Answered => Volatile.Read(ref _answered);
 
     /// <summary>
-    /// When set, every push waits until it is cleared, or until its token calls it off: a console
-    /// that has stopped reading. What it is handed meanwhile is recorded only once it is let go.
+    /// When set, every send — a push or an alarm — waits until it is cleared, or until its token calls
+    /// it off: a console that has stopped reading. What it is handed meanwhile is recorded only once it
+    /// is let go.
     /// </summary>
     public bool Stall
     {
@@ -165,7 +178,7 @@ internal sealed class RecordingFlowNotifier : IFlowNotifier
         }
     }
 
-    /// <summary>How many pushes are waiting on the stalled console right now.</summary>
+    /// <summary>How many sends are waiting on the stalled console right now.</summary>
     public int Held => Volatile.Read(ref _held);
 
     private async Task WaitAsync(CancellationToken ct)
@@ -201,6 +214,34 @@ internal sealed class RecordingFlowNotifier : IFlowNotifier
         get { lock (_gate) return _linesDropped; }
     }
 
+    /// <summary>Every alarm the console was told of, one line each in the order told — "raised a", "resolved a".</summary>
+    // Lettered by id in the order first seen, AlarmCallLog's way and for its reason.
+    public IReadOnlyList<string> Alarms
+    {
+        get { lock (_gate) return [.. _told.Where(line => !line.StartsWith("status", StringComparison.Ordinal))]; }
+    }
+
+    /// <summary>The ids of the alarms the console was told of, in the order told.</summary>
+    public IReadOnlyList<string> AlarmIds
+    {
+        get { lock (_gate) return [.. _alarmIds]; }
+    }
+
+    /// <summary>
+    /// The alarms and the statuses in the order the console took them, a status as "status N" with N
+    /// the alarms it shows standing.
+    /// </summary>
+    public IReadOnlyList<string> Told
+    {
+        get { lock (_gate) return [.. _told]; }
+    }
+
+    /// <summary>How many flow alarms the engine was showing at each moment the console was told of a raise.</summary>
+    public IReadOnlyList<int> UpWhenTold
+    {
+        get { lock (_gate) return [.. _upWhenTold]; }
+    }
+
     public Task StatusAsync(FlowStatus status, CancellationToken ct)
     {
         if (Fault is { } fault)
@@ -216,7 +257,13 @@ internal sealed class RecordingFlowNotifier : IFlowNotifier
     private async Task RecordAsync(FlowStatus status, CancellationToken ct)
     {
         await WaitAsync(ct);
-        lock (_gate) _statuses.Add(status);
+
+        lock (_gate)
+        {
+            _statuses.Add(status);
+            _told.Add($"status {status.Flows.Sum(flow => flow.Nodes.Sum(node => node.Standing.Count))}");
+        }
+
         Interlocked.Increment(ref _answered);
     }
 
@@ -230,6 +277,37 @@ internal sealed class RecordingFlowNotifier : IFlowNotifier
             _linesDropped += dropped;
         }
     }
+
+    public Task RaisedAsync(IReadOnlyList<Alert> alerts, CancellationToken ct)
+    {
+        // Read as the console is told, before it takes the frame: what it would find if it answered by
+        // reading GET /api/alerts at once.
+        var up = Engine?.Alarms.Active.Count ?? -1;
+
+        lock (_gate) _upWhenTold.Add(up);
+
+        return RecordAsync("raised", alerts, ct);
+    }
+
+    public Task ResolvedAsync(IReadOnlyList<Alert> alerts, CancellationToken ct) => RecordAsync("resolved", alerts, ct);
+
+    private async Task RecordAsync(string kind, IReadOnlyList<Alert> alerts, CancellationToken ct)
+    {
+        await WaitAsync(ct);
+
+        lock (_gate)
+            foreach (var alert in alerts)
+            {
+                if (!_letters.TryGetValue(alert.Id, out var letter))
+                    _letters[alert.Id] = letter = Letter(_letters.Count);
+
+                _told.Add($"{kind} {letter}");
+                _alarmIds.Add(alert.Id);
+            }
+    }
+
+    // a to z, then aa, ab and on: a test that tells a few thousand alarms still reads them apart.
+    private static string Letter(int n) => n < 26 ? ((char)('a' + n)).ToString() : Letter(n / 26 - 1) + (char)('a' + n % 26);
 }
 
 /// <summary>

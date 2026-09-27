@@ -612,16 +612,37 @@ public sealed class FlowEngineTests : IAsyncLifetime
     [Fact]
     public async Task A_raised_alarm_is_already_in_Alarms_when_the_console_is_told()
     {
-        var log = new AlarmCallLog();
-        var engine = await RunningAsync(log, log, Watch());
-        log.Engine = engine;
+        var engine = await RunningAsync(Watch());
+        _console.Engine = engine;
 
         await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
 
         // A console that answers alertsRaised by reading GET /api/alerts has to find it there, or
         // the badge lights and goes out again until the next push.
-        await Eventually.Until(_time, () => log.UpWhenTold.Count == 1, "the raise to be told");
-        Assert.Equal([1], log.UpWhenTold);
+        await Eventually.Until(_time, () => _console.UpWhenTold.Count == 1, "the raise to be told");
+        Assert.Equal([1], _console.UpWhenTold);
+    }
+
+    // The console knows an alarm by its id, so for it the order within one alarm is what counts: an
+    // end told before its raise would leave the raise standing on the badge for good.
+    [Fact]
+    public async Task One_event_that_clears_an_alarm_and_raises_it_again_is_told_to_the_console_in_that_order()
+    {
+        var engine = await RunningAsync(new FlowBuilder()
+            .Node("go", "inject", new { topic = "plant/k1/temp", payload = "[95, 50, 95]" })
+            .Node("each", "forEach", new { field = "" })
+            .Node("test", "if", new { field = "", test = "gt", value = "90" })
+            .Node("hot", "alarm", new { name = "Hot", severity = "critical" })
+            .Wire("go", "out", "each", "in")
+            .Wire("each", "out", "test", "in")
+            .Wire("test", "yes", "hot", "raise")
+            .Wire("test", "no", "hot", "clear")
+            .Build());
+
+        engine.Post(new FlowInject("f1", "go"));
+
+        await Eventually.Until(_time, () => _console.Alarms.Count == 3, "both alarms to be told to the console");
+        Assert.Equal(["raised a", "resolved a", "raised b"], _console.Alarms);
     }
 
     // ---- the debug strip ----
@@ -772,12 +793,19 @@ public sealed class FlowEngineTests : IAsyncLifetime
 
     // ---- a console that is slow to read ----
 
+    /// <summary>A flow that answers every reading with a publish and raises nothing, so all the console is sent is pushes.</summary>
+    private static Flow Relay() => new FlowBuilder()
+        .Node("in", "mqttIn", new { filter = "plant/+/temp" })
+        .Node("fan", "publish", new { topic = "plant/{{topic[1]}}/cmd", payload = "on", qos = 1 })
+        .Wire("in", "out", "fan", "in")
+        .Build();
+
     // A console that stops reading holds a hub send for as long as its connection lasts — up to the
     // client timeout — and every flow in the product would be waiting on it with the pump.
     [Fact]
     public async Task A_console_that_stops_reading_holds_up_no_flow()
     {
-        var engine = await RunningAsync(Watch());
+        var engine = await RunningAsync(Relay());
         _console.Stall = true;
 
         // A change, and the quarter second after which it is pushed — to a console that never takes it.
@@ -788,14 +816,13 @@ public sealed class FlowEngineTests : IAsyncLifetime
 
         await engine.NotifyMessageReceivedAsync(Msg("plant/k2/temp", "{\"temp\":95}"));
 
-        await ClockStill(() => _publisher.Sent.Count == 2 && _alerts.Raised.Count == 2,
-            "the next arrival to be judged, its alarm raised and its publish sent, with the push still stuck");
+        await ClockStill(() => _publisher.Sent.Count == 2, "the next arrival to be judged and its publish sent, with the push still stuck");
     }
 
     [Fact]
     public async Task A_console_that_was_stuck_is_sent_the_newest_status_and_none_it_missed()
     {
-        var engine = await RunningAsync(Watch());
+        var engine = await RunningAsync(Relay());
         _console.Stall = true;
 
         // Three changes, a push a quarter second after each. The first push sticks; the two after it
@@ -817,13 +844,84 @@ public sealed class FlowEngineTests : IAsyncLifetime
     [Fact]
     public async Task A_push_stuck_with_a_console_is_called_off_when_the_engine_stops()
     {
-        var engine = await RunningAsync(Watch());
+        var engine = await RunningAsync(Relay());
         _console.Stall = true;
 
         await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
         await ClockStill(() => _publisher.Sent.Count == 1, "the arrival to be run");
         _time.Advance(FlowLimits.StatusEvery);
         await ClockStill(() => _console.Held == 1, "the push to be stuck with the console");
+
+        await _stop.CancelAsync();
+
+        await _pump!.WaitAsync(StopPatience);
+        Assert.Equal(0, _console.Held);
+    }
+
+    // An alarm is told to the console as a rule's is, through the same hub, and SignalR writes one
+    // message at a time to a connection: an alarm frame to a console that has stopped reading waits
+    // behind whatever is stuck there, and a pump that waited on it waited as long.
+    [Fact]
+    public async Task An_alarm_stuck_with_a_console_holds_up_no_flow_and_the_order_holds_once_it_is_let_go()
+    {
+        var engine = await RunningAsync(Watch());
+        _console.Stall = true;
+
+        // The first boiler rings, and its frame sticks with the console.
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+        await ClockStill(() => _console.Held == 1, "the alarm's frame to be stuck with the console");
+
+        // A second boiler rings, and the first cools and rings again.
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k2/temp", "{\"temp\":95}"));
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":50}"));
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+
+        await ClockStill(() => _publisher.Sent.Count == 3 && _alerts.Raised.Count == 3 && _alerts.Resolved.Count == 1,
+            "every arrival to be judged, published and written to the log, with the frame still stuck");
+        Assert.Equal(1, _console.Held);
+
+        _console.Stall = false;
+
+        await ClockStill(() => _console.Alarms.Count == 4, "every alarm to reach the console");
+        Assert.Equal(["raised a", "raised b", "resolved a", "raised c"], _console.Alarms);
+    }
+
+    // The console reads what an Alarm node holds up from the status, and the badge from the alarms:
+    // a status that counts an alarm the console has not been told of lights the node and not the rail.
+    [Fact]
+    public async Task An_alarm_is_told_to_the_console_before_the_status_that_counts_it()
+    {
+        var engine = await RunningAsync(Watch());
+        _console.Stall = true;
+
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+        await ClockStill(() => _console.Held == 1, "the first alarm's frame to be stuck with the console");
+
+        // A push that counts the first alarm, a second alarm, and a push that counts both — made while
+        // the console holds the first frame, so all three wait for it together.
+        _time.Advance(FlowLimits.StatusEvery);
+        await ClockStill(() => engine.Status.Flows.Single().Nodes.Single(node => node.Id == "hot").Standing.Count == 1,
+            "the push counting the first alarm to be made");
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k2/temp", "{\"temp\":95}"));
+        await ClockStill(() => _publisher.Sent.Count == 2, "the second alarm to be raised");
+        _time.Advance(FlowLimits.StatusEvery);
+        await ClockStill(() => engine.Status.Flows.Single().Nodes.Single(node => node.Id == "hot").Standing.Count == 2,
+            "the push counting both to be made");
+
+        _console.Stall = false;
+
+        await ClockStill(() => _console.Told.Count == 4, "the frames and the newest push to be taken");
+        Assert.Equal(["status 0", "raised a", "raised b", "status 2"], _console.Told);
+    }
+
+    [Fact]
+    public async Task An_alarm_stuck_with_a_console_is_called_off_when_the_engine_stops()
+    {
+        var engine = await RunningAsync(Watch());
+        _console.Stall = true;
+
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+        await ClockStill(() => _console.Held == 1, "the alarm's frame to be stuck with the console");
 
         await _stop.CancelAsync();
 

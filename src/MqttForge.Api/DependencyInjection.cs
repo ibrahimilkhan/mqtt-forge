@@ -162,9 +162,14 @@ public static class DependencyInjection
 
         // The flows: a store, the pure runtime, the hub's notifier, and the engine around them. The
         // engine is built by hand for AlertEngine's reason — it needs the subscriber, which is on
-        // the other side of the notifier ring — and it is handed the same notifier and dispatcher
-        // the alert engine has, which is how a flow's alarm reaches the badge, the sound, the
-        // webhook and the broker without a line of either of those changing.
+        // the other side of the notifier ring — and it is handed the dispatcher the alert engine
+        // has, which is how a flow's alarm reaches the webhook and the broker without a line of
+        // either changing.
+        //
+        // Of the alert engine's two notifiers it is handed the log alone, which its pump tells. The
+        // console's half — the badge, the sound — goes through the flow notifier instead, sent from
+        // the loop the engine's pushes go out on: the composite would have its pump wait on the
+        // slowest console, as the alert engine's does.
         services.AddSingleton<IFlowStore>(sp =>
             new JsonFlowStore(StorePaths.Flows(sp.GetRequiredService<IConfiguration>())));
         services.AddSingleton(_ => new FlowRuntime());
@@ -173,7 +178,7 @@ public static class DependencyInjection
         services.AddSingleton(sp => new FlowEngine(
             sp.GetRequiredService<FlowRuntime>(),
             sp.GetRequiredService<IFlowStore>(),
-            sp.GetRequiredService<IAlertNotifier>(),
+            sp.GetRequiredService<LoggingAlertNotifier>(),
             sp.GetRequiredService<IFlowNotifier>(),
             sp.GetRequiredService<IMqttConnectionManager>(),
             new DeferredSubscriber(sp),

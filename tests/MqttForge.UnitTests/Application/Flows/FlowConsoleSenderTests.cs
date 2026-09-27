@@ -1,4 +1,6 @@
 using MqttForge.Application.Flows;
+using MqttForge.Domain.Enums;
+using MqttForge.Domain.Models;
 using MqttForge.UnitTests.Application.Alerts;
 
 namespace MqttForge.UnitTests.Application.Flows;
@@ -46,6 +48,101 @@ public sealed class FlowConsoleSenderTests : IAsyncLifetime
     private static FlowDebugEntry Line(int n) => new("f1", "say", T0, FlowDebugEntry.Message, "a/b", $"line {n}");
 
     private static FlowStatus Picture(int n) => new([new FlowRunStatus($"f{n}", 0, null, [])]);
+
+    private static Alert Alarm(string id) => new(id, "flow-f1-hot", "Watch · Hot", $"plant/{id}/temp", AlertSeverity.Critical,
+        FiredAt: T0, LastSeenAt: T0, ResolvedAt: null, ResolvedBy: null, MutedUntil: null, Count: 1,
+        Reason: "hot", Value: null, Sample: null, Actions: [new ScreenAction()]);
+
+    private static FlowAlarmEvent Up(string id) => new(Alarm(id), Raised: true);
+
+    private static FlowAlarmEvent Down(string id) => new(Alarm(id) with { ResolvedAt = T0, ResolvedBy = "clear" }, Raised: false);
+
+    // ---- alarms ----
+
+    // A status is the picture of everything handed over before it, alarms included: sent ahead of
+    // them, it would light a node for an alarm the badge has not been told of.
+    [Fact]
+    public async Task Alarms_go_out_in_their_order_and_ahead_of_the_status_handed_over_after_them()
+    {
+        _console.Stall = true;
+        _sender.Alarms([Up("w")]);
+        await Until(() => _console.Held == 1, "the first alarm to be stuck with the console");
+
+        // All of it waiting together once the console takes again: two alarms, a picture, and more.
+        _sender.Alarms([Up("x")]);
+        _sender.Status(Picture(1));
+        _sender.Alarms([Down("x"), Up("y")]);
+        _console.Stall = false;
+
+        await Until(() => _console.Told.Count == 5, "the alarms and the picture to be taken");
+        Assert.Equal(["raised a", "raised b", "resolved b", "raised c", "status 0"], _console.Told);
+        Assert.Equal("f1", Assert.Single(_console.Statuses).Flows.Single().Id);
+    }
+
+    [Fact]
+    public async Task A_console_that_keeps_up_is_told_of_an_alarm_however_briefly_it_stood()
+    {
+        _console.Stall = true;
+        _sender.Status(Picture(0));
+        await Until(() => _console.Held == 1, "the picture to be stuck with the console");
+
+        _sender.Alarms([Up("x"), Down("x")]);
+        _console.Stall = false;
+
+        await Until(() => _console.Alarms.Count == 2, "both ends of the alarm to be told");
+        Assert.Equal(["raised a", "resolved a"], _console.Alarms);
+    }
+
+    // What the console still needs, once too many are waiting: every alarm standing, and the end of
+    // every alarm it was told went up. An alarm that went up and came down meanwhile it never saw,
+    // and never needs to.
+    [Fact]
+    public async Task Past_the_bound_the_alarms_that_came_and_went_untold_go_and_the_rest_keep_their_order()
+    {
+        _sender.Alarms([Up("told-1"), Up("told-2")]);
+        await Until(() => _console.Alarms.Count == 2, "the first two alarms to be told");
+
+        _console.Stall = true;
+        _sender.Status(Picture(0));
+        await Until(() => _console.Held == 1, "the picture to be stuck with the console");
+
+        // One turn's worth: an end, a flood of alarms that each went up and came down, a new one that
+        // stands, and the other end. More than the bound, all of it waiting on the stuck picture.
+        const int flood = FlowConsoleSender.AlarmEvents / 2 + 50;
+        var turn = new List<FlowAlarmEvent> { Down("told-1") };
+        for (var i = 0; i < flood; i++) turn.AddRange([Up($"brief-{i}"), Down($"brief-{i}")]);
+        turn.AddRange([Up("standing"), Down("told-2")]);
+        _sender.Alarms(turn);
+
+        _console.Stall = false;
+
+        await Until(() => _console.Alarms.Count == 5, "what the console still needs to be told");
+        Assert.Equal(["raised a", "raised b", "resolved a", "raised c", "resolved b"], _console.Alarms);
+        Assert.Contains(_log.Lines, line => line.Message.StartsWith($"{flood} flow alarms went up and came down"));
+    }
+
+    // A bound that holds whatever it is handed. The runtime's own ceiling on standing alarms keeps it
+    // from ever getting here — so this hands the sender what no runtime would: ends of alarms it was
+    // never told went up, more than the bound of them.
+    [Fact]
+    public async Task Past_the_bound_whatever_it_is_handed_the_oldest_alarm_events_go_and_are_said()
+    {
+        _console.Stall = true;
+        _sender.Status(Picture(0));
+        await Until(() => _console.Held == 1, "the picture to be stuck with the console");
+
+        const int over = 10;
+        _sender.Alarms([.. Enumerable.Range(0, FlowConsoleSender.AlarmEvents + over).Select(i => Down($"gone-{i}"))]);
+        _console.Stall = false;
+
+        await Until(() => _console.Alarms.Count == FlowConsoleSender.AlarmEvents, "the newest events to be told");
+        await Task.Delay(50);
+
+        Assert.Equal(FlowConsoleSender.AlarmEvents, _console.AlarmIds.Count);
+        Assert.Equal($"gone-{over}", _console.AlarmIds[0]);
+        Assert.Equal($"gone-{FlowConsoleSender.AlarmEvents + over - 1}", _console.AlarmIds[^1]);
+        Assert.Contains(_log.Lines, line => line.Message.StartsWith($"The console fell {over} flow alarm events behind"));
+    }
 
     // One batch is taken and sticks. Five more than the queue holds come after it, each two lines and
     // one the pump itself had dropped: the oldest five go, and their fifteen are told as dropped.
