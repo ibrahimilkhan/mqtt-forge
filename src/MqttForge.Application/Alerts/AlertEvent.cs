@@ -11,11 +11,17 @@ namespace MqttForge.Application.Alerts;
 public sealed record AlertEvent(Alert Alert, bool Raised)
 {
     /// <summary>What one call into the core decided: its raises, then its ends.</summary>
-    // Every pair's own order, for one call and for nothing larger. A pair is looked at once in a call,
+    // What that keeps is each pair's own order, within one call. A pair is looked at once in a call,
     // and there it can be raised and then ended — an arrival rings it, and the same arrival turns out
     // to be a new level — but never ended and raised again: a tick that ends an alarm is done with its
-    // pair, and a save or a restore only ends. Two pairs have no order anybody can tell, since no
-    // channel knows one alert by another's rule and topic. See EngineOutcome.
+    // pair, and a save or a restore only ends. Across pairs the order is not kept: a tick that ends
+    // one topic's alarm and raises another's tells the raise first.
+    //
+    // That is enough because every channel knows an alert by its pair. The webhook's body names the
+    // rule and the topic, the broker's default topic names both, and a rule whose filter can match
+    // more than one topic may keep a retained record only at a topic that carries {topic} — the rule
+    // validator refuses one that does not — so two pairs of one rule never share a record. Two rules
+    // pointed at one fixed topic share it whatever order they are told in. See EngineOutcome.
     public static IEnumerable<AlertEvent> Of(EngineOutcome outcome)
     {
         foreach (var alert in outcome.Raised) yield return new AlertEvent(alert, Raised: true);

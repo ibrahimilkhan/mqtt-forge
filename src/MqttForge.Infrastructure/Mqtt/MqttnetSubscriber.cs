@@ -190,11 +190,14 @@ public sealed class MqttnetSubscriber : IMqttSubscriber, ISubscriptionRestorer
                 [.. requests.Select(r => r.TopicFilter)],
                 ex);
         }
-        // The same refusal from a broker too old to send a DISCONNECT packet: it closes the TCP
-        // socket while the SUBSCRIBE is in flight, and MQTTnet hands that over as a bare
-        // communication failure. Azure IoT Hub does exactly this to a filter it does not allow,
-        // and reading it as 'the link died' left the filter unnamed and the reader with nothing to
-        // narrow. Only while subscribing: everywhere else this shape means what it says.
+        // The same refusal from a broker that sends no DISCONNECT packet and ends the link under the
+        // SUBSCRIBE instead, as far as it still arrives as a bare communication failure: a TLS link
+        // cut off mid-stream does. Azure IoT Hub refuses a filter that way, and reading it as 'the
+        // link died' left the filter unnamed and the reader with nothing to narrow. A plain TCP
+        // broker that closes its socket, with a FIN or a reset, reaches MQTTnet as the client
+        // disconnected, which AnsweredAsync says is a link that went: tried against a listener
+        // that took the SUBSCRIBE and closed, both ways. Only while subscribing: everywhere else
+        // this shape means what it says.
         //
         // Bare, and only bare. What AnsweredAsync has already said as something else — a broker
         // that did not answer, a link that went, a caller that gave up — never reaches this line.
