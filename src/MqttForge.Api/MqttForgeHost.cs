@@ -1,6 +1,8 @@
 using FluentValidation;
 using FluentValidation.AspNetCore;
+using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.StaticFiles;
+using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 using MqttForge.Api.Contracts;
 using MqttForge.Api.ErrorHandling;
@@ -67,6 +69,8 @@ public static class MqttForgeHost
         builder.Services.AddExceptionHandler<MqttExceptionHandler>();
 
         // Dev only: shipped packages serve the UI from this host. AllowCredentials is required by SignalR
+        // OriginGuard trusts whatever this names, so an origin added here may change things as well
+        // as read them.
         if (builder.Environment.IsDevelopment())
             builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
                 p.WithOrigins("http://localhost:5173").AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
@@ -95,6 +99,21 @@ public static class MqttForgeHost
                 await next(context);
             });
 
+        // Whether or not the guard above stands: a name the operator chose is no more a reason to
+        // take a request from another site's page than an address is. See OriginGuard for which
+        // requests, and why one that names no origin is still served.
+        var trusted = TrustedOrigins(app.Services);
+        app.Use(async (context, next) =>
+        {
+            if (!OriginGuard.IsAllowed(context.Request, trusted))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
+
+            await next(context);
+        });
+
         if (app.Environment.IsDevelopment()) app.UseCors();
 
         app.UseDefaultFiles();
@@ -115,6 +134,18 @@ public static class MqttForgeHost
     /// </summary>
     private static bool Guarding(IConfiguration configuration) =>
         configuration["AllowedHosts"] is null or "" or "*";
+
+    /// <summary>
+    /// The origins besides the app's own whose pages may change things here: those the CORS policy
+    /// lets read an answer, so that the two cannot come to disagree. Only Development has a policy,
+    /// naming the dev server; a shipped package trusts no other origin at all.
+    /// </summary>
+    private static Func<string, bool> TrustedOrigins(IServiceProvider services)
+    {
+        var cors = services.GetRequiredService<IOptions<CorsOptions>>().Value;
+
+        return cors.GetPolicy(cors.DefaultPolicyName)?.IsOriginAllowed ?? (_ => false);
+    }
 
     // Vite hashes every asset filename, so those are safe to keep forever. index.html is the
     // one file whose name never changes, and it names the hashed bundles — cache it and the
