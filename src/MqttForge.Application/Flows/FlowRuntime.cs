@@ -167,6 +167,11 @@ public sealed class FlowRuntime
                 var run = new Run(state, now, into);
                 Emit(run, input, "out", new FlowMessage(message.Topic, message.Payload));
                 Finish(run, input);
+
+                // The rest of the arrival goes with it, in this flow: a pattern that ran out of time on
+                // this text will on its way in from the next input too. Another flow's patterns are its
+                // own, and what it makes of the arrival is not this flow's to stop.
+                if (run.TimedOut) break;
             }
 
             Touch();
@@ -380,7 +385,7 @@ public sealed class FlowRuntime
             // out of time on one text will on the next one like it, and every one a For each or a
             // Repeat brought on after this would cost another 50 ms of the pump that every flow shares.
             Fail(run.State, node.Id, "The pattern took longer than 50 ms, so the event was stopped.", message.Topic, run.Now, run.Into);
-            run.Stopped = true;
+            run.TimedOut = run.Stopped = true;
             return;
         }
 
@@ -472,7 +477,9 @@ public sealed class FlowRuntime
 
         Emit(run, node, "out", message with { Index = 1 });
 
-        if (node.Count == 1) return;
+        // Nothing more of an event that was stopped, now or later: each copy would start it again, and
+        // be stopped the same way.
+        if (node.Count == 1 || run.Stopped) return;
 
         if (!scheduled)
         {
@@ -708,6 +715,9 @@ public sealed class FlowRuntime
 
         /// <summary>Nothing more of the event runs: its budget ran out, or a pattern ran out of time.</summary>
         public bool Stopped { get; set; }
+
+        /// <summary>A pattern ran out of time, and nothing more of the arrival that started the event runs in its flow.</summary>
+        public bool TimedOut { get; set; }
     }
 
     private sealed class Collector

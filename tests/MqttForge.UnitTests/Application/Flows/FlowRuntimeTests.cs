@@ -668,6 +668,50 @@ public class FlowRuntimeTests
         Assert.Equal(0, _runtime.Status().Flows.Single().Faults);
     }
 
+    // An arrival runs once for each MQTT in node it matches, and three of them on one filter, all wired
+    // to one hostile If, would cost the pattern its 50 ms three times over for every message. The
+    // other flow is a drawing of its own: what it makes of the arrival is not this one's to stop.
+    [Fact]
+    public void A_pattern_that_runs_out_of_time_stops_the_whole_arrival_in_its_flow()
+    {
+        var hostile = new FlowBuilder()
+            .Node("test", "if", new { field = "", test = "matches", value = HostilePatterns.Catastrophic });
+        for (var i = 0; i < 3; i++)
+            hostile.Node($"in{i}", "mqttIn", new { filter = "plant/+/text" }).Wire($"in{i}", "out", "test", "in");
+
+        Start(hostile.Compile(), new FlowBuilder("f2", "Other")
+            .Node("in", "mqttIn", new { filter = "plant/+/text" })
+            .Node("say", "debug")
+            .Wire("in", "out", "say", "in")
+            .Compile());
+
+        var outcome = _runtime.OnMessage(Msg("plant/k1/text", HostilePatterns.Payload), T0);
+
+        Assert.Equal(1, Node("test").Count);
+        Assert.Equal(1, Node("test").Errors);
+        Assert.Equal(1, Node("say", "f2").Count);
+        Assert.Single(outcome.Debug, entry => entry.Kind == FlowDebugEntry.Error);
+    }
+
+    // The first copy goes at once, and the event it started was stopped: the copies after it would
+    // each start the same event again, a second apart, and stop it the same way.
+    [Fact]
+    public void A_repeat_whose_event_was_stopped_schedules_no_copies()
+    {
+        Start(new FlowBuilder()
+            .Node("go", "inject", new { payload = HostilePatterns.Payload })
+            .Node("again", "repeat", new { count = 3, seconds = 1 })
+            .Node("test", "if", new { field = "", test = "matches", value = HostilePatterns.Catastrophic })
+            .Wire("go", "out", "again", "in")
+            .Wire("again", "out", "test", "in")
+            .Compile());
+
+        _runtime.Inject("f1", "go", T0);
+
+        Assert.Equal(1, Node("test").Errors);
+        Assert.Null(_runtime.NextDue);
+    }
+
     [Fact]
     public void A_publish_that_failed_on_the_way_out_is_counted_on_its_node()
     {
