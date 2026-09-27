@@ -790,6 +790,53 @@ public class FlowRuntimeTests
             Assert.True(node.Note is null || node.Note.Length <= FlowLimits.NoteLength, $"{node.Id}: {node.Note}"));
     }
 
+    // A note shows eighty characters and must cost about that: the line endings are replaced in what
+    // is kept, not in a copy of the whole payload made first. The text is the same either way, so the
+    // allocation is the proof — two megabyte copies against a few hundred bytes.
+    [Fact]
+    public void A_note_costs_what_it_shows_and_not_a_copy_of_the_payload()
+    {
+        Start(new FlowBuilder()
+            .Node("in", "mqttIn", new { filter = "a/#" })
+            .Node("say", "debug")
+            .Wire("in", "out", "say", "in")
+            .Compile());
+        _runtime.OnMessage(Msg("a/b", "warming up"), T0);
+
+        var lines = Msg("a/b", string.Concat(Enumerable.Repeat("a line\n", 150_000)));
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        _runtime.OnMessage(lines, T0);
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.StartsWith("a line a line ", Node("say").Note);
+        Assert.Equal(FlowLimits.NoteLength, Node("say").Note!.Length);
+        Assert.True(allocated < 64 * 1024, $"{allocated:N0} bytes were allocated to run one message into two notes.");
+    }
+
+    // One read, and every Alarm node its own list: oldest first, at most twenty. Raised newest first
+    // here, so the order is the read's own and not the order they came in.
+    [Fact]
+    public void Each_alarm_node_lists_its_own_standing_alarms_oldest_first_and_at_most_twenty()
+    {
+        static FlowBuilder Pair(string id) => new FlowBuilder(id)
+            .Node("in", "mqttIn", new { filter = $"{id}/+/temp" })
+            .Node("hot", "alarm", new { name = "Hot", severity = "warn" })
+            .Node("cold", "alarm", new { name = "Cold", severity = "info" })
+            .Wire("in", "out", "hot", "raise")
+            .Wire("in", "out", "cold", "raise");
+        Start(Pair("a").Compile(), Pair("b").Compile());
+
+        for (var i = 0; i < 25; i++) _runtime.OnMessage(Msg($"a/k{i}/temp", "1"), T0.AddSeconds(100 - i));
+        _runtime.OnMessage(Msg("b/k0/temp", "1"), T0);
+
+        string[] oldestTwenty = [.. Enumerable.Range(5, 20).Reverse().Select(i => $"a/k{i}/temp")];
+
+        Assert.Equal(oldestTwenty, Node("hot", "a").Standing.Select(standing => standing.Topic));
+        Assert.Equal(oldestTwenty, Node("cold", "a").Standing.Select(standing => standing.Topic));
+        Assert.Equal(["b/k0/temp"], Node("hot", "b").Standing.Select(standing => standing.Topic));
+        Assert.Empty(Node("in", "a").Standing);
+    }
+
     [Fact]
     public void An_error_carrying_a_rendered_topic_is_cut_to_an_excerpt()
     {

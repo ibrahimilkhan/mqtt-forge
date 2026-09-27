@@ -276,20 +276,25 @@ public sealed class FlowRuntime
         Touch();
     }
 
-    public FlowStatus Status() => new([.. _flows.Values.Select(state => new FlowRunStatus(
-        state.Flow.Id,
-        state.Faults,
-        state.Fault,
-        [.. state.Flow.Nodes.Keys.Select(id =>
-        {
-            var counter = state.Peek(id);
-            var standing = state.Flow.Nodes[id] is AlarmNode
-                ? _alarms.StandingFor(state.Flow.Id, id, FlowLimits.StandingShown)
-                : [];
+    public FlowStatus Status()
+    {
+        // Grouped once for the whole read. Asked node by node, it walked every standing alarm once for
+        // every Alarm node of every running flow — a thousand alarms times ten thousand nodes, at four
+        // pushes a second.
+        var standing = _alarms.StandingByNode(FlowLimits.StandingShown);
 
-            return new FlowNodeStatus(id, counter.Count, new Dictionary<string, long>(counter.Outs),
-                counter.Errors, counter.Note, standing);
-        })]))]);
+        return new([.. _flows.Values.Select(state => new FlowRunStatus(
+            state.Flow.Id,
+            state.Faults,
+            state.Fault,
+            [.. state.Flow.Nodes.Keys.Select(id =>
+            {
+                var counter = state.Peek(id);
+
+                return new FlowNodeStatus(id, counter.Count, new Dictionary<string, long>(counter.Outs),
+                    counter.Errors, counter.Note, standing.GetValueOrDefault((state.Flow.Id, id), []));
+            })]))]);
+    }
 
     public FlowAlarms Alarms() => new(_alarms.Active(), _alarms.History());
 
@@ -600,10 +605,16 @@ public sealed class FlowRuntime
     }
 
     /// <summary>One line, short enough to stand under a node.</summary>
+    // Cut before the line endings are replaced, so a note costs the eighty characters it keeps and not
+    // a copy of a 64 KB payload made first. Never between the halves of a surrogate pair.
     private static string Excerpt(string text)
     {
-        var line = text.ReplaceLineEndings(" ");
-        return line.Length <= FlowLimits.NoteLength ? line : line[..(FlowLimits.NoteLength - 1)] + "…";
+        if (text.Length <= FlowLimits.NoteLength) return text.ReplaceLineEndings(" ");
+
+        var keep = FlowLimits.NoteLength - 1;
+        if (char.IsHighSurrogate(text[keep - 1])) keep--;
+
+        return text[..keep].ReplaceLineEndings(" ") + "…";
     }
 
     private static string Clip(string text, int most) => text.Length <= most ? text : text[..most];

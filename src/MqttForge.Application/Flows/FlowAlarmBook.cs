@@ -103,13 +103,27 @@ public sealed class FlowAlarmBook
 
     public IReadOnlyList<Alert> History() => [.. _history];
 
-    public IReadOnlyList<FlowStanding> StandingFor(string flowId, string nodeId, int most) =>
-        [.. _standing
-            .Where(pair => pair.Key.FlowId == flowId && pair.Key.NodeId == nodeId)
-            .Select(pair => pair.Value)
-            .OrderBy(alert => alert.FiredAt)
-            .Take(most)
-            .Select(alert => new FlowStanding(alert.Topic, alert.FiredAt, alert.Reason, alert.Count))];
+    /// <summary>What is standing, under the Alarm node that holds it up: oldest first, at most <paramref name="most"/> a node.</summary>
+    // One pass over every alarm for every node at once. A node with nothing standing is simply not in it.
+    public IReadOnlyDictionary<(string FlowId, string NodeId), IReadOnlyList<FlowStanding>> StandingByNode(int most)
+    {
+        var byNode = new Dictionary<(string FlowId, string NodeId), List<Alert>>();
+
+        foreach (var (key, alert) in _standing)
+        {
+            if (!byNode.TryGetValue((key.FlowId, key.NodeId), out var alerts))
+                byNode[(key.FlowId, key.NodeId)] = alerts = [];
+
+            alerts.Add(alert);
+        }
+
+        return byNode.ToDictionary(
+            pair => pair.Key,
+            IReadOnlyList<FlowStanding> (pair) => [.. pair.Value
+                .OrderBy(alert => alert.FiredAt)
+                .Take(most)
+                .Select(alert => new FlowStanding(alert.Topic, alert.FiredAt, alert.Reason, alert.Count))]);
+    }
 
     private IReadOnlyList<Alert> ResolveWhere(Func<Key, bool> which, string reason, DateTimeOffset now)
     {
