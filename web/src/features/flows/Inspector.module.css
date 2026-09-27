@@ -28,13 +28,19 @@
 
 .mono { font-family: var(--mono); font-size: var(--t-code); }
 
+/* A box and the sentence it answers, in the console's own set for one — panel.module.css's
+   `.checks label`, as the Broker panel's Clean session has it — rather than in the capitals the
+   global label rule keeps for the word over a field. */
 .check {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 12px;
   font-size: var(--t-small);
+  letter-spacing: 0.04em;
+  text-transform: none;
   color: var(--ink);
+  cursor: pointer;
 }
 .check input { accent-color: var(--signal); }
 

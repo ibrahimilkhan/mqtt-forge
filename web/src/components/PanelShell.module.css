@@ -54,19 +54,39 @@
 }
 
 /* A panel whose body is a canvas: a column, with the block taking whatever height is left under
-   the band. The panel stops scrolling — the canvas pans instead — and the block stops being a
-   flow of paragraphs with a margin under it. */
+   the band. The canvas pans rather than the panel scrolling, and the block stops being a flow of
+   paragraphs with a margin under it.
+
+   Until the window is too short for the least height the body asks for: then the block scrolls,
+   under the band, so what stands below the canvas can still be reached rather than being cut off
+   by the window, and the name and the × stay where they are. Never sideways — nothing in a canvas
+   page is meant to be wider than the panel.
+
+   The panel's own padding at the foot moves inside the block, into what scrolls: left on the
+   panel, it lay outside the scrolling, and the last thing on the page came to rest on the panel's
+   edge. The same 24px as `.panel` above — change one and change both.
+
+   The block keeps no least height of its own. The body in it holds its own, and what that
+   overflows the block by is what scrolls; sized to its content instead, the block would ask for
+   the whole height of every list inside the body, and would scroll where only those lists
+   should. */
 .panel[data-stretch] {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  padding-bottom: 0;
 }
 .panel[data-stretch] > .block {
   flex: 1 1 auto;
   min-height: 0;
   margin-bottom: 0;
+  padding-bottom: 24px;
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* See scrollPanes.test.ts: a pane that scrolls has to be a containing block. */
+  position: relative;
 }
 
 /* The head row itself. On its own it holds the close button and nothing else, and draws no rule:

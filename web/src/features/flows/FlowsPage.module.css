@@ -1,6 +1,7 @@
-/* The page: a toolbar, then palette | canvas | inspector, then the debug strip. The middle row is
-   the one that stretches. min-height stops a short window squeezing the canvas to nothing: below
-   it the panel's own column scrolls instead. */
+/* The page: the toolbar, then the flow on screen, which is the row that stretches. min-height
+   stops a short window squeezing the canvas to nothing: below it the panel's body scrolls under
+   its band instead (see PanelShell's stretch mode), so the debug strip at the foot of the page can
+   still be reached. */
 .page {
   flex: 1 1 auto;
   min-height: 520px;

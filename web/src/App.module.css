@@ -640,10 +640,12 @@
 .rail:not([data-open]) .menuBtn[aria-expanded='true'] .menuCount { color: var(--paper); }
 
 /* An experimental row's mark: a small letter after the name, in the row's own colour and a step
-   quieter. A badge would say "look here"; this only says "not finished". */
+   quieter. A badge would say "look here"; this only says "not finished". Out of the row's
+   capitals: a capital beta is drawn exactly like a Latin B. */
 .menuBeta {
   font-family: var(--mono);
   font-size: var(--t-nano);
+  text-transform: none;
   opacity: 0.7;
   margin-left: 2px;
 }
