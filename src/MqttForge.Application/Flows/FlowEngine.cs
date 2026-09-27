@@ -355,15 +355,19 @@ public sealed class FlowEngine
             outcomes.Add(_runtime.OnTick(now, connected));
             _linkWasUp = connected;
 
+            // What the turn decided goes out before the filters are looked at. That look reads the
+            // subscriber and may wait on a SUBSCRIBE, so ahead of this it could lose the turn to the
+            // catch below — alarms in the book nobody was told of, publishes never sent — or hold
+            // all of it back until the broker answered.
+            await CarryOutAsync(FlowOutcome.Merge(outcomes), now, ct);
+            await PushAsync(now, force: false, ct);
+
             // And filters that went with no transition to show for it — a link that dropped and came
             // back between two turns, a move whose new endpoint was not known yet. Once a tick, what
             // the flows want is held against what the subscriber is holding for them.
             if (tick && connected && !_resubscribe && FiltersMissing()) _resubscribe = true;
 
             if (_resubscribe) await SyncSubscriptionsAsync(ct);
-
-            await CarryOutAsync(FlowOutcome.Merge(outcomes), now, ct);
-            await PushAsync(now, force: false, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

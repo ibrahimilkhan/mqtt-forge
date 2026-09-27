@@ -676,6 +676,45 @@ public sealed class FlowEngineTests : IAsyncLifetime
         Assert.Contains(_log.Lines, line => line.Level == LogLevel.Error && line.Message.Contains(nameof(FlowArrival)));
     }
 
+    [Fact]
+    public async Task A_subscriber_that_throws_when_read_does_not_cost_the_turn_its_alarm_its_publish_or_its_push()
+    {
+        var subscriber = new SubscriberProbe(_subscriber);
+        var engine = await StartedAsync(_alerts, _dispatcher, [Watch()], subscriber);
+
+        // One turn with an arrival to carry out and a tick that looks at the filters, and the look
+        // throws — which only the turn's own catch is there to stop.
+        subscriber.FiltersFault = new InvalidOperationException("The filter list could not be read.");
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+        _time.Advance(FlowEngine.TickInterval);
+        Run(engine);
+
+        await ClockStill(() => _log.Lines.Any(line => line.Message.StartsWith("A turn of the flow engine failed")),
+            "the subscriber's fault to reach the turn");
+        Assert.Single(_alerts.Raised);
+        Assert.Equal(1, Count(engine, "in"));
+        await ClockStill(() => _publisher.Sent.Count == 1, "the turn's publish to go out");
+    }
+
+    [Fact]
+    public async Task A_subscribe_the_broker_does_not_answer_does_not_hold_back_what_its_turn_decided()
+    {
+        var subscriber = new SubscriberProbe(_subscriber);
+        var engine = await StartedAsync(_alerts, _dispatcher, [Watch()], subscriber);
+
+        // The flows' filter gone with nothing to show for it, so the tick's look asks for it again —
+        // of a broker that never answers — in the same turn as an arrival that raises an alarm.
+        subscriber.Stall = true;
+        _subscriber.LinkDropped();
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+        _time.Advance(FlowEngine.TickInterval);
+        Run(engine);
+
+        await ClockStill(() => subscriber.Held == 1, "the SUBSCRIBE to be waiting on the broker");
+        await ClockStill(() => _alerts.Raised.Count == 1 && _publisher.Sent.Count == 1 && Count(engine, "in") == 1,
+            "the turn's alarm, publish and push to go out while it waits");
+    }
+
     // ---- the link, as the pump sees it ----
 
     [Fact]

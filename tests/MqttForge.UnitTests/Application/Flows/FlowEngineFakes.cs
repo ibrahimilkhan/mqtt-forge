@@ -252,8 +252,8 @@ internal sealed class SteppingClock(FakeTimeProvider time) : TimeProvider
 }
 
 /// <summary>
-/// RecordingSubscriber and two things it cannot do: keep the QoS every filter was asked for at, and
-/// throw from its list of filters.
+/// RecordingSubscriber and three things it cannot do: keep the QoS every filter was asked for at,
+/// throw from its list of filters, and wait on a broker that does not answer.
 /// </summary>
 // A decorator here rather than a change to the alert engine's fake: that one is shared with every
 // alert test, and both questions are only this file's.
@@ -264,11 +264,23 @@ internal sealed class SubscriberProbe(RecordingSubscriber inner) : IMqttSubscrib
 
     private Exception? _filtersFault;
     private Action? _onSubscribe;
+    private bool _stall;
+    private int _held;
 
     public IReadOnlyList<SubscriptionRequest> Requests
     {
         get { lock (_gate) return [.. _requests]; }
     }
+
+    /// <summary>When set, every SUBSCRIBE waits on its token: a broker that never answers.</summary>
+    public bool Stall
+    {
+        get => Volatile.Read(ref _stall);
+        set => Volatile.Write(ref _stall, value);
+    }
+
+    /// <summary>How many SUBSCRIBEs are waiting on a stalled broker right now.</summary>
+    public int Held => Volatile.Read(ref _held);
 
     /// <summary>Run once, inside the next SUBSCRIBE: something a test needs to happen in the middle of a turn.</summary>
     public Action? OnSubscribe
@@ -293,7 +305,20 @@ internal sealed class SubscriberProbe(RecordingSubscriber inner) : IMqttSubscrib
     {
         lock (_gate) _requests.AddRange(requests);
         Interlocked.Exchange(ref _onSubscribe, null)?.Invoke();
-        return inner.SubscribeAsync(requests, ct, owner);
+        return Stall ? StallAsync(ct) : inner.SubscribeAsync(requests, ct, owner);
+    }
+
+    private async Task StallAsync(CancellationToken ct)
+    {
+        Interlocked.Increment(ref _held);
+        try
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _held);
+        }
     }
 
     public Task UnsubscribeAsync(string topicFilter, CancellationToken ct,
