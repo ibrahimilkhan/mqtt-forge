@@ -334,7 +334,14 @@ public sealed class AlertEngine
             // And a link that went and came back to the same broker between two looks, which no tick
             // saw down. It is a new link all the same: the rules' filters went with the old one, and
             // a pause the broker left on the old one is not this one's.
-            if (Relinked() && moving is null) NewLink();
+            //
+            // Only one no tick saw down, FlowEngine's line. One a tick saw go is the tick's to take up
+            // when it sees it back, after the core is told of the return, as it always was. Taken up
+            // here, on a turn before that tick, the rules' SUBSCRIBE went out ahead of the return, a
+            // reading that came on their filters at once was judged before it, and the return then
+            // started that reading's For again (AlertEngineCore.Resume). Relinked is asked first all
+            // the same, so the link it last looked at is the one up now, whichever case it is.
+            if (Relinked() && _linkWasUp && moving is null) NewLink();
 
             var handled = 0;
             while (handled < MaxPerTurn && _queue.Reader.TryRead(out var command))

@@ -1021,6 +1021,81 @@ public class AlertEngineTests
         Assert.True(harness.Subscriber.AskedAt[2] - harness.Subscriber.AskedAt[1] >= second);
     }
 
+    // A link a tick saw go comes back with every clock the outage stopped pulled to the return, on the
+    // tick that sees it back (AlertEngineCore.Resume): a For half run when the link went starts again.
+    // The rules' filters are asked for after that, on that tick. Asked for on an earlier turn — the
+    // first to find the link up at a new ConnectedAt — a reading that came on them at once was judged
+    // before the return, and the return then threw its For away: the rule started its seconds again
+    // at the next reading, a whole reading late.
+    [Fact]
+    public async Task A_for_begun_by_a_reading_on_the_rules_filters_after_an_outage_a_tick_saw_is_kept()
+    {
+        SubscriberProbe? probe = null;
+        await using var harness = Build(
+            Document([Rule("hot", "plant/+/temp", Over90) with { For = 5 }, Rule("open", "plant/+/open", new ThresholdCondition(ThresholdOp.Gt, 0))]),
+            probe: inner => probe = new SubscriberProbe(inner));
+        harness.Connection.Link = new BrokerLink("broker.a", 1883, "test", null, false, Start.AddMinutes(-1), false, null, null);
+        await harness.Engine.StartAsync(CancellationToken.None);
+        harness.Run();
+
+        // The link goes, and a tick sees it gone: every tick publishes the panel afresh.
+        harness.Connection.State = ConnectionState.Disconnected;
+        harness.Subscriber.LinkDropped();
+        var down = harness.Engine.Snapshot;
+        await harness.Until(() => !ReferenceEquals(harness.Engine.Snapshot, down), "a tick to see the link gone");
+
+        // It comes back to the same broker, and the boiler, hot, speaks the moment the rules' filters
+        // are up again.
+        var spoke = DateTimeOffset.MinValue;
+        probe!.OnSubscribe = () =>
+        {
+            spoke = harness.Time.GetUtcNow();
+            harness.Engine.Post(new ArrivalCommand(new MqttMessage("plant/boiler/temp", "95", "text", 0, false, spoke)));
+        };
+        harness.Connection.Link = new BrokerLink("broker.a", 1883, "test", null, false, harness.Time.GetUtcNow(), false, null, null);
+        harness.Connection.State = ConnectionState.Connected;
+
+        // Before the next tick, with the clock held still, a gate and then a door open on the console's
+        // own filters, each on a turn of its own: the door is judged only once the gate's turn is over,
+        // and with it whatever that turn asked of the broker.
+        harness.Engine.Post(new ArrivalCommand(new MqttMessage("plant/gate/open", "1", "text", 0, false, harness.Time.GetUtcNow())));
+        await harness.ClockStill(() => harness.Notifier.Raised.Count == 1, "the gate to be judged");
+        harness.Engine.Post(new ArrivalCommand(new MqttMessage("plant/door/open", "1", "text", 0, false, harness.Time.GetUtcNow())));
+        await harness.ClockStill(() => harness.Notifier.Raised.Count == 2, "the door to be judged");
+
+        // Five seconds of the boiler's heat from its reading, and it rings.
+        await harness.Until(() => harness.Notifier.Raised.Any(alert => alert.RuleId == "hot"),
+            "the boiler to ring five seconds after its reading");
+        Assert.True(harness.Notifier.Raised.Single(alert => alert.RuleId == "hot").FiredAt >= spoke.AddSeconds(5));
+    }
+
+    // The link is looked at on every turn all the same, so the one the engine last saw is the one up
+    // now. Looked at only once the tick had taken the link up, the turn after took the same link for a
+    // new one: every refusal forgotten, and a filter this broker had just refused asked for again.
+    [Fact]
+    public async Task A_link_a_tick_saw_come_back_asks_once_for_a_filter_its_broker_refuses()
+    {
+        await using var harness = Build(Document([Rule("a", "plant/a/#", Over90)]));
+        harness.Connection.Link = new BrokerLink("broker.a", 1883, "test", null, false, Start.AddMinutes(-1), false, null, null);
+        await harness.Engine.StartAsync(CancellationToken.None);
+        harness.Run();
+
+        harness.Connection.State = ConnectionState.Disconnected;
+        harness.Subscriber.LinkDropped();
+        var down = harness.Engine.Snapshot;
+        await harness.Until(() => !ReferenceEquals(harness.Engine.Snapshot, down), "a tick to see the link gone");
+
+        // Back, at the same broker, which now refuses the filter.
+        harness.Subscriber.Refuse = new MessageRejectedException("Not authorised.", ["plant/a/#"]);
+        harness.Connection.Link = new BrokerLink("broker.a", 1883, "test", null, false, harness.Time.GetUtcNow(), false, null, null);
+        harness.Connection.State = ConnectionState.Connected;
+
+        await harness.Until(() => harness.Subscriber.Batches.Count == 2, "the filter to be asked for on the link back");
+        await harness.TickAsync(5);
+
+        Assert.Equal(2, harness.Subscriber.Batches.Count);
+    }
+
     [Fact]
     public async Task A_cancelled_alarm_channel_is_contained_in_that_channel()
     {
