@@ -446,4 +446,82 @@ describe('flow canvas', () => {
     expect(Math.abs(panX + x * zoom - 200)).toBeLessThanOrEqual(4 * zoom);
     expect(Math.abs(panY + y * zoom - 120)).toBeLessThanOrEqual(4 * zoom);
   });
+
+  // The Inject button's own click stops there and never picks the node it sits in, so a Backspace
+  // pressed on it is not about that node. Left to the canvas, it would instead take away whatever
+  // else is picked, quite possibly a node panned out of sight a while ago.
+  it('leaves a node picked elsewhere alone when Backspace is pressed on the Inject button', async () => {
+    useFlowStatusStore.getState().setStatus({
+      flows: [{ id: 'button', faults: 0, fault: null, nodes: [{ id: 'go', count: 0, outs: {}, errors: 0, note: null, standing: [] }] }],
+    });
+    draw();
+    const picked = await screen.findByText('If');
+
+    fireEvent.click(picked);
+    expect(useFlowDraftStore.getState().selected).toBe('test');
+
+    const inject = screen.getByRole('button', { name: 'Inject' });
+    act(() => inject.focus());
+    fireEvent.keyDown(inject, { key: 'Backspace' });
+    fireEvent.keyUp(inject, { key: 'Backspace' });
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+
+    // Nothing was touched at all: the button never picks its own node, so a draft that dropped
+    // "test" and kept "go" would be just as wrong as one that lost both.
+    expect(useFlowDraftStore.getState().drafts.button).toBeUndefined();
+  });
+
+  // A plain div takes no keyboard at all, with or without this: a browser only follows a click's
+  // focus onto an element that a tabIndex, at any value, makes focusable in the first place. A
+  // pan is a click on the ground that never lands on a node, so without it the ground stays
+  // unable to take the keyboard, wherever a click left it before — off the canvas entirely once
+  // that earlier target is gone — and Delete stops reaching the canvas after such a pan. -1 and
+  // not 0: a reader moving focus forward with Tab should land on a node, not on the canvas
+  // around it.
+  it('can take the keyboard by a click, though it is not itself a tab stop', async () => {
+    draw();
+    await screen.findByText('If');
+    const canvas = document.getElementById('flow-canvas')!;
+
+    // Read off the attribute, not the DOM property: an element's tabIndex property defaults to
+    // -1 as soon as it is not natively focusable, whether or not it was ever given the attribute.
+    expect(canvas.getAttribute('tabindex')).toBe('-1');
+    act(() => canvas.focus());
+    expect(document.activeElement).toBe(canvas);
+  });
+
+  // There is nothing to type into on the canvas today, but the check stands ready for a node
+  // type that puts one there, and is worth pinning on its own: without it, this box would lose
+  // letters to Backspace and the node picked before it to Delete both at once.
+  it('leaves what is picked alone when Backspace is typed into a box on the canvas', async () => {
+    draw();
+    const picked = await screen.findByText('If');
+
+    fireEvent.click(picked);
+    expect(useFlowDraftStore.getState().selected).toBe('test');
+
+    const box = document.createElement('input');
+    document.getElementById('flow-canvas')!.appendChild(box);
+    fireEvent.keyDown(box, { key: 'Backspace' });
+    fireEvent.keyUp(box, { key: 'Backspace' });
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+
+    expect(useFlowDraftStore.getState().drafts.button).toBeUndefined();
+  });
+
+  // Ctrl+Backspace, say, is a browser or OS shortcut passing through the canvas, not a request to
+  // delete a node — the same reasoning a held Alt, Meta or Shift gets.
+  it('leaves what is picked alone when Backspace is held with Ctrl', async () => {
+    draw();
+    const picked = await screen.findByText('If');
+
+    fireEvent.click(picked);
+    expect(useFlowDraftStore.getState().selected).toBe('test');
+
+    fireEvent.keyDown(picked, { key: 'Backspace', ctrlKey: true });
+    fireEvent.keyUp(picked, { key: 'Backspace', ctrlKey: true });
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+
+    expect(useFlowDraftStore.getState().drafts.button).toBeUndefined();
+  });
 });

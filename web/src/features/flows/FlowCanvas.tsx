@@ -94,6 +94,9 @@ function firstNode(picks: Iterable<string>): string | null {
 const typedInto = (target: EventTarget) =>
   target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName));
 
+/** Whether a key went to a button or a link of its own, rather than to the canvas around it. */
+const onAControl = (target: EventTarget) => target instanceof Element && target.closest('button, a') !== null;
+
 /**
  * The canvas for one flow.
  *
@@ -283,10 +286,13 @@ export function FlowCanvas({ flow, running, problems }: { flow: FlowDto; running
   // the reader pressed Backspace on a tab, on Deploy or in the palette, out of their sight. So it
   // has no key of its own, and the canvas asks it for the deletion its key made: the picked nodes
   // and wires, which come back as the same changes as any other and reach the draft the same way.
-  // A key held with another is somebody's shortcut, and a key in a box takes away a letter.
+  // A key held with another is somebody's shortcut, and a key in a box takes away a letter. And a
+  // key on a button or a link is that control's own: the Inject node's ▶ stops its click from
+  // reaching the canvas, so it never picks the node it sits in, and a Backspace on it would only
+  // take away whatever else is picked instead — maybe a node panned out of sight a while ago.
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key !== 'Backspace' && event.key !== 'Delete') return;
-    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || typedInto(event.target)) return;
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || typedInto(event.target) || onAControl(event.target)) return;
 
     event.preventDefault();
     const { nodes, edges } = drawing.getState();
