@@ -43,6 +43,26 @@ const wireOf = (connection: Connection | CanvasEdge): Wire => ({
   toPort: connection.targetHandle ?? '',
 });
 
+/*
+ * A pick is kept under its kind as well as its id, `node:{id}` or `edge:{id}`, the way the
+ * server's refusals are keyed. The server lets a node and a wire share an id, and picking one must
+ * not frame the other; and letting go of "every node picked" needs to know which picks are nodes.
+ */
+const NODE = 'node:';
+const EDGE = 'edge:';
+
+/** The node a pick is of, or null when it is a wire. */
+const nodeOf = (pick: string) => (pick.startsWith(NODE) ? pick.slice(NODE.length) : null);
+
+/** The first node among some picks, for the inspector to show; null when there is none. */
+function firstNode(picks: Iterable<string>): string | null {
+  for (const pick of picks) {
+    const node = nodeOf(pick);
+    if (node !== null) return node;
+  }
+  return null;
+}
+
 /**
  * The canvas for one flow.
  *
@@ -71,10 +91,33 @@ export function FlowCanvas({ flow, running }: { flow: FlowDto; running: boolean 
     setPicked(next);
   }, []);
 
-  // A node picked somewhere else — the palette adds and picks one — is picked here too.
+  /** Lets go of some picks, and says what is left picked. */
+  const drop = useCallback(
+    (gone: readonly string[]) => {
+      const left = new Set([...latest.current].filter((pick) => !gone.includes(pick)));
+      if (left.size < latest.current.size) choose(left);
+      return left;
+    },
+    [choose],
+  );
+
+  // What is picked follows the flow and the store's choice of node.
+  // - Something the flow no longer has is not picked, however it went: deleted here, its draft
+  //   discarded, taken out from the inspector. Otherwise it would come back picked with the node
+  //   or wire, and the next Backspace would take it away again without the reader choosing it.
+  // - A node chosen somewhere else (the palette adds and picks one) is picked here instead.
+  // - No node chosen means no node picked. The canvas only ever clears the choice when it has no
+  //   node left picked, so a clear that finds one picked came from outside: a Discard, or another
+  //   flow shown. The wires stay picked; picking only wires shows the flow's own settings anyway.
   useEffect(() => {
-    if (selected && !latest.current.has(selected)) choose(new Set([selected]));
-  }, [choose, selected]);
+    const present = new Set([...flow.nodes.map((node) => NODE + node.id), ...flow.edges.map((edge) => EDGE + edge.id)]);
+    const now = latest.current;
+
+    let next = [...now].filter((pick) => present.has(pick) && (selected !== null || nodeOf(pick) === null));
+    if (selected !== null && present.has(NODE + selected) && !now.has(NODE + selected)) next = [NODE + selected];
+
+    if (next.length !== now.size || next.some((pick) => !now.has(pick))) choose(new Set(next));
+  }, [choose, flow.edges, flow.nodes, selected]);
 
   const nodes = useMemo<CanvasNode[]>(
     () =>
@@ -83,7 +126,7 @@ export function FlowCanvas({ flow, running }: { flow: FlowDto; running: boolean 
         type: 'flow',
         position: { x: node.x, y: node.y },
         data: { flowId: flow.id, node, running },
-        selected: picked.has(node.id),
+        selected: picked.has(NODE + node.id),
         measured: sizes[node.id],
       })),
     [flow.id, flow.nodes, picked, running, sizes],
@@ -98,34 +141,31 @@ export function FlowCanvas({ flow, running }: { flow: FlowDto; running: boolean 
         sourceHandle: edge.fromPort,
         target: edge.to,
         targetHandle: edge.toPort,
-        selected: picked.has(edge.id),
+        selected: picked.has(EDGE + edge.id),
         data: { flowId: flow.id },
       })),
     [flow.id, flow.edges, picked],
   );
 
   const pick = useCallback(
-    (changes: ReadonlyArray<{ id: string; selected: boolean }>) => {
+    (changes: ReadonlyArray<{ pick: string; selected: boolean }>) => {
       const next = new Set(latest.current);
       let last: string | null = null;
 
       for (const change of changes) {
         if (change.selected) {
-          next.add(change.id);
-          last = change.id;
-        } else next.delete(change.id);
+          next.add(change.pick);
+          last = nodeOf(change.pick) ?? last;
+        } else next.delete(change.pick);
       }
 
       choose(next);
 
       // The inspector follows the node picked last. Picking only wires, or nothing, shows the
       // flow's own settings.
-      const node = last && flow.nodes.some((one) => one.id === last)
-        ? last
-        : [...next].find((id) => flow.nodes.some((one) => one.id === id));
-      select(node ?? null);
+      select(last ?? firstNode(next));
     },
-    [choose, flow.nodes, select],
+    [choose, select],
   );
 
   const onNodesChange = useCallback(
@@ -133,35 +173,43 @@ export function FlowCanvas({ flow, running }: { flow: FlowDto; running: boolean 
       const moved: Record<string, { x: number; y: number }> = {};
       const measured: Record<string, Size> = {};
       const removed: string[] = [];
-      const picks: Array<{ id: string; selected: boolean }> = [];
+      const picks: Array<{ pick: string; selected: boolean }> = [];
 
       for (const change of changes) {
         if (change.type === 'position' && change.position) moved[change.id] = change.position;
         else if (change.type === 'dimensions' && change.dimensions) measured[change.id] = change.dimensions;
         else if (change.type === 'remove') removed.push(change.id);
-        else if (change.type === 'select') picks.push({ id: change.id, selected: change.selected });
+        else if (change.type === 'select') picks.push({ pick: NODE + change.id, selected: change.selected });
       }
 
       if (Object.keys(moved).length > 0) edit(flow, (current) => moveNodes(current, moved));
       if (Object.keys(measured).length > 0) setSizes((known) => ({ ...known, ...measured }));
       if (removed.length > 0) {
         edit(flow, (current) => removeNodes(current, removed));
-        if (selected && removed.includes(selected)) select(null);
+        // What was deleted is not picked any more. An inspector that was showing it shows another
+        // node still picked, or the flow, and never a node that has gone.
+        const left = drop(removed.map((id) => NODE + id));
+        if (selected && removed.includes(selected)) select(firstNode(left));
       }
       if (picks.length > 0) pick(picks);
     },
-    [edit, flow, pick, select, selected],
+    [drop, edit, flow, pick, select, selected],
   );
 
   const onEdgesChange = useCallback(
     (changes: EdgeChange<CanvasEdge>[]) => {
       const removed = changes.filter((change) => change.type === 'remove').map((change) => change.id);
-      const picks = changes.flatMap((change) => (change.type === 'select' ? [{ id: change.id, selected: change.selected }] : []));
+      const picks = changes.flatMap((change) =>
+        change.type === 'select' ? [{ pick: EDGE + change.id, selected: change.selected }] : [],
+      );
 
-      if (removed.length > 0) edit(flow, (current) => removeEdges(current, removed));
+      if (removed.length > 0) {
+        edit(flow, (current) => removeEdges(current, removed));
+        drop(removed.map((id) => EDGE + id));
+      }
       if (picks.length > 0) pick(picks);
     },
-    [edit, flow, pick],
+    [drop, edit, flow, pick],
   );
 
   const onConnect = useCallback(
@@ -190,7 +238,7 @@ export function FlowCanvas({ flow, running }: { flow: FlowDto; running: boolean 
     const at = screenToFlowPosition({ x: event.clientX, y: event.clientY });
 
     edit(flow, (current) => addNode(current, type, at, id));
-    choose(new Set([id]));
+    choose(new Set([NODE + id]));
     select(id);
   };
 
@@ -233,9 +281,10 @@ function FlowNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
   const status = useFlowStatusStore((state) => state.nodes[nodeKey(data.flowId, id)]);
   const problems = useFlowDraftStore((state) => state.refusals[data.flowId]?.[`node:${id}`]);
 
-  // A node the running flow does not have yet — just added, or the flow not deployed — has no
-  // numbers, and saying "0 in" under it would be a claim about something that is not running.
-  const line = status ? spec.status(status) : data.running ? 'waiting' : 'not deployed';
+  // A running flow reports every node of the version it runs, so a node with no numbers is not
+  // deployed: the flow is not running, or the node is only in the draft. "0 in" or "waiting" under
+  // it would be a claim about something that is not running.
+  const line = status ? spec.status(status) : 'not deployed';
 
   return (
     <div

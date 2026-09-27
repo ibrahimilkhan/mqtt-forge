@@ -1,4 +1,4 @@
-import { ReactFlowProvider } from '@xyflow/react';
+import { ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -8,6 +8,8 @@ import { renderWithClient as render } from '../../test/renderWithClient';
 import type { FlowDto } from '../../types/api';
 import { standInForTheBrowser } from './canvasTestbed';
 import { DRAG_TYPE, FlowCanvas } from './FlowCanvas';
+import sheet from './FlowCanvas.module.css?raw';
+import { removeEdges } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
 
 beforeAll(() => standInForTheBrowser());
@@ -45,6 +47,28 @@ function Page({ flow }: { flow: FlowDto }) {
   return <FlowCanvas flow={draft ?? flow} running />;
 }
 
+/** The button flow on screen the way the page puts it there, so a Discard redraws the canvas. */
+const drawPage = () => {
+  useFlowDraftStore.getState().show('button');
+  return render(
+    <ReactFlowProvider>
+      <div style={{ width: 800, height: 600 }}>
+        <Page flow={button} />
+      </div>
+    </ReactFlowProvider>,
+  );
+};
+
+/** Deletes one node through React Flow, the way something beside the canvas could. */
+function DeleteNode({ id }: { id: string }) {
+  const { deleteElements } = useReactFlow();
+  return (
+    <button type="button" onClick={() => void deleteElements({ nodes: [{ id }] })}>
+      Delete {id}
+    </button>
+  );
+}
+
 /** A port on the canvas, by its node and its name. */
 const port = (nodeId: string, name: string) =>
   document.querySelector<HTMLElement>(`.react-flow__handle[data-nodeid="${nodeId}"][data-handleid="${name}"]`)!;
@@ -76,6 +100,20 @@ describe('flow canvas', () => {
     draw(button, false);
 
     expect(await screen.findAllByText('not deployed')).toHaveLength(2);
+  });
+
+  // A running flow reports every node of the version it runs, so a node it does not report is one
+  // that is only in the draft. "Waiting" would say it is running and has had nothing yet.
+  it('says a node the running flow does not report is not deployed', async () => {
+    useFlowStatusStore.getState().setStatus({
+      flows: [{ id: 'button', faults: 0, fault: null, nodes: [{ id: 'go', count: 3, outs: { out: 3 }, errors: 0, note: null, standing: [] }] }],
+    });
+
+    draw();
+
+    expect(await screen.findByText('3 sent')).toBeInTheDocument();
+    expect(screen.getByText('not deployed')).toBeInTheDocument();
+    expect(screen.queryByText('waiting')).toBeNull();
   });
 
   it('marks a node the server refused, with its reason', async () => {
@@ -159,6 +197,53 @@ describe('flow canvas', () => {
     await waitFor(() => expect(document.querySelector('[data-flash]')).toBeNull());
   });
 
+  it('lights the wire of the port a message left by, and no other', async () => {
+    const branches: FlowDto = {
+      ...button,
+      nodes: [
+        ...button.nodes,
+        { id: 'hot', type: 'debug', x: 560, y: 40, config: {} },
+        { id: 'cold', type: 'debug', x: 560, y: 160, config: {} },
+      ],
+      edges: [
+        ...button.edges,
+        { id: 'e2', from: 'test', fromPort: 'yes', to: 'hot', toPort: 'in' },
+        { id: 'e3', from: 'test', fromPort: 'no', to: 'cold', toPort: 'in' },
+      ],
+    };
+    const status = (yes: number, no: number, count = yes + no) => ({
+      flows: [{ id: 'button', faults: 0, fault: null, nodes: [{ id: 'test', count, outs: { yes, no }, errors: 0, note: null, standing: [] }] }],
+    });
+    const lit = (to: string) => screen.getByLabelText(`Edge from test to ${to}`).querySelector('[data-flash]') !== null;
+    useFlowStatusStore.getState().setStatus(status(1, 1));
+    draw(branches);
+    await screen.findAllByText('Debug');
+
+    // What the If took in says nothing about which way it sent it.
+    act(() => useFlowStatusStore.getState().setStatus(status(1, 1, 9)));
+    expect(lit('hot')).toBe(false);
+    expect(lit('cold')).toBe(false);
+
+    act(() => useFlowStatusStore.getState().setStatus(status(1, 2)));
+    expect(lit('cold')).toBe(true);
+    expect(lit('hot')).toBe(false);
+
+    act(() => useFlowStatusStore.getState().setStatus(status(2, 2)));
+    expect(lit('hot')).toBe(true);
+  });
+
+  // The marks on a wire are one attribute each, at the same weight, so where two meet the one
+  // written later wins: a flash after a pick, so a picked wire still lights, and a refusal after
+  // both, so a busy wire cannot hide what the server refused.
+  it('lets a picked wire light, and keeps a refused one marked while it does', () => {
+    const rules = sheet.replace(/\/\*[\s\S]*?\*\//g, '');
+    const at = (mark: string) => rules.indexOf(`.wire[data-${mark}]`);
+
+    expect(at('selected')).toBeGreaterThan(-1);
+    expect(at('flash')).toBeGreaterThan(at('selected'));
+    expect(at('problem')).toBeGreaterThan(at('flash'));
+  });
+
   // React Flow tells the canvas about one click in two reports, the nodes' and the wires', one
   // straight after the other. The second has to start from where the first left the picks.
   it('moves the pick from a node to a wire and back, and the inspector follows the node', async () => {
@@ -181,6 +266,18 @@ describe('flow canvas', () => {
     expect(node()).toHaveAttribute('data-selected');
     expect(line()).not.toHaveAttribute('data-selected');
     expect(useFlowDraftStore.getState().selected).toBe('test');
+  });
+
+  // The server checks node ids against node ids and wire ids against wire ids, so a flow written
+  // by hand can give a wire the id of a node.
+  it('picks a wire without framing a node that shares its id', async () => {
+    draw({ ...button, edges: [{ ...button.edges[0], id: 'go' }] });
+    await screen.findByText('If');
+
+    fireEvent.click(screen.getByLabelText('Edge from go to test'));
+
+    expect(screen.getByLabelText('Edge from go to test').querySelector('.react-flow__edge-path')).toHaveAttribute('data-selected');
+    expect(screen.getByText('Inject').closest('[data-group]')).not.toHaveAttribute('data-selected');
   });
 
   it('takes a picked wire out of the draft when Delete is pressed', async () => {
@@ -208,6 +305,83 @@ describe('flow canvas', () => {
     expect(useFlowDraftStore.getState().selected).toBeNull();
   });
 
+  // Discard puts back what the draft took away. It has to come back as the deployed flow has it,
+  // not picked, or the next Backspace takes it away again without the reader seeing it chosen.
+  it('lets go of a deleted node, so Discard brings it back unpicked', async () => {
+    drawPage();
+
+    fireEvent.click(await screen.findByText('If'));
+    fireEvent.keyDown(document, { key: 'Backspace' });
+    fireEvent.keyUp(document, { key: 'Backspace' });
+    await waitFor(() => expect(useFlowDraftStore.getState().drafts.button?.nodes.map((node) => node.id)).toEqual(['go']));
+
+    act(() => useFlowDraftStore.getState().discard('button'));
+    expect((await screen.findByText('If')).closest('[data-group]')).not.toHaveAttribute('data-selected');
+
+    fireEvent.keyDown(document, { key: 'Backspace' });
+    fireEvent.keyUp(document, { key: 'Backspace' });
+    // React Flow deletes a turn later, so give it the turn before saying it took nothing.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(useFlowDraftStore.getState().drafts.button).toBeUndefined();
+  });
+
+  // Discard also clears the inspector. The canvas has to agree, or it frames a node the inspector
+  // is not showing.
+  it('lets go of a picked node when its draft is discarded', async () => {
+    drawPage();
+    const inject = (await screen.findByText('Inject')).closest<HTMLElement>('.react-flow__node')!;
+
+    fireEvent.click(inject);
+    fireEvent.keyDown(inject, { key: 'ArrowRight' });
+    expect(useFlowDraftStore.getState().drafts.button).toBeDefined();
+
+    act(() => useFlowDraftStore.getState().discard('button'));
+
+    expect(useFlowDraftStore.getState().selected).toBeNull();
+    expect(screen.getByText('Inject').closest('[data-group]')).not.toHaveAttribute('data-selected');
+    expect(inject.style.transform).toBe('translate(40px,80px)');
+  });
+
+  // Something besides the Delete key can take one of several picked nodes away through React Flow:
+  // the inspector deleting the node it shows, say. It then shows a node still picked, and the
+  // canvas keeps that one framed.
+  it('shows another picked node when the one on show is deleted', async () => {
+    render(
+      <ReactFlowProvider>
+        <div style={{ width: 800, height: 600 }}>
+          <Page flow={button} />
+        </div>
+        <DeleteNode id="test" />
+      </ReactFlowProvider>,
+    );
+    // React Flow picks more than one with Meta on a Mac and with Control anywhere else.
+    const more = navigator.userAgent.includes('Mac') ? 'Meta' : 'Control';
+
+    fireEvent.click(await screen.findByText('Inject'));
+    fireEvent.keyDown(window, { key: more });
+    fireEvent.click(screen.getByText('If'));
+    fireEvent.keyUp(window, { key: more });
+    expect(useFlowDraftStore.getState().selected).toBe('test');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete test' }));
+
+    await waitFor(() => expect(useFlowDraftStore.getState().selected).toBe('go'));
+    expect(screen.getByText('Inject').closest('[data-group]')).toHaveAttribute('data-selected');
+  });
+
+  it('lets go of a picked wire that leaves the flow some other way', async () => {
+    drawPage();
+    await screen.findByText('If');
+
+    fireEvent.click(screen.getByLabelText('Edge from go to test'));
+    // Not through React Flow: the flow simply stops having the wire, and then has it again.
+    act(() => useFlowDraftStore.getState().edit(button, (flow) => removeEdges(flow, ['e1'])));
+    act(() => useFlowDraftStore.getState().discard('button'));
+
+    const wire = screen.getByLabelText('Edge from go to test').querySelector('.react-flow__edge-path')!;
+    expect(wire).not.toHaveAttribute('data-selected');
+  });
+
   // Clicking one port and then another is React Flow's other way of drawing a wire, and it asks
   // the same question a dragged wire does before it lands.
   it('draws a wire from one port to another, and refuses one the server would refuse', async () => {
@@ -231,13 +405,7 @@ describe('flow canvas', () => {
   // driven here: jsdom lays nothing out, so the canvas is zero pixels wide to React Flow's pan-at-
   // the-edge, which then pans on every drag and moves the node by however long the test took.
   it('moves a picked node with the arrow keys, and draws it where the draft now has it', async () => {
-    render(
-      <ReactFlowProvider>
-        <div style={{ width: 800, height: 600 }}>
-          <Page flow={button} />
-        </div>
-      </ReactFlowProvider>,
-    );
+    drawPage();
     const node = (await screen.findByText('Inject')).closest<HTMLElement>('.react-flow__node')!;
 
     fireEvent.click(node);
