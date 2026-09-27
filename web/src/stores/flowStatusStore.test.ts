@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { FlowDebugDto, FlowStatusDto } from '../types/api';
-import { DEBUG_KEPT, nodeKey, useFlowStatusStore } from './flowStatusStore';
+import { DEBUG_KEPT, leftOut, nodeKey, useFlowStatusStore } from './flowStatusStore';
 
 const status: FlowStatusDto = {
   flows: [
@@ -16,8 +16,8 @@ const status: FlowStatusDto = {
   ],
 };
 
-const line = (text: string): FlowDebugDto => ({
-  flowId: 'watch',
+const line = (text: string, flowId = 'watch'): FlowDebugDto => ({
+  flowId,
   nodeId: 'say',
   at: '2026-09-26T09:14:22.000Z',
   kind: 'message',
@@ -25,41 +25,81 @@ const line = (text: string): FlowDebugDto => ({
   text,
 });
 
+const state = () => useFlowStatusStore.getState();
+const texts = (flowId: string) => (state().debug[flowId] ?? []).map((entry) => entry.text);
+
 describe('flow status store', () => {
-  beforeEach(() => useFlowStatusStore.setState({ flows: {}, nodes: {}, debug: [], debugDropped: 0 }));
+  beforeEach(() => useFlowStatusStore.setState(useFlowStatusStore.getInitialState()));
 
   it('keeps each running flow and each node under its own key', () => {
-    useFlowStatusStore.getState().setStatus(status);
+    state().setStatus(status);
 
-    const state = useFlowStatusStore.getState();
-    expect(Object.keys(state.flows)).toEqual(['watch']);
-    expect(state.nodes[nodeKey('watch', 'test')].outs).toEqual({ yes: 3, no: 409 });
+    expect(Object.keys(state().flows)).toEqual(['watch']);
+    expect(state().nodes[nodeKey('watch', 'test')].outs).toEqual({ yes: 3, no: 409 });
   });
 
   it('replaces the whole picture, so a flow that stopped is gone', () => {
-    useFlowStatusStore.getState().setStatus(status);
-    useFlowStatusStore.getState().setStatus({ flows: [] });
+    state().setStatus(status);
+    state().setStatus({ flows: [] });
 
-    expect(useFlowStatusStore.getState().flows).toEqual({});
-    expect(useFlowStatusStore.getState().nodes).toEqual({});
+    expect(state().flows).toEqual({});
+    expect(state().nodes).toEqual({});
   });
 
   it('keeps debug lines newest first, and no more than it keeps', () => {
-    useFlowStatusStore.getState().addDebug([line('a'), line('b')], 0);
-    useFlowStatusStore.getState().addDebug([line('c')], 3);
+    state().addDebug([line('a'), line('b')], 0);
+    state().addDebug([line('c')], 0);
 
-    expect(useFlowStatusStore.getState().debug.map((entry) => entry.text)).toEqual(['c', 'b', 'a']);
-    expect(useFlowStatusStore.getState().debugDropped).toBe(3);
+    expect(texts('watch')).toEqual(['c', 'b', 'a']);
 
-    useFlowStatusStore.getState().addDebug(Array.from({ length: DEBUG_KEPT + 5 }, (_, i) => line(String(i))), 0);
-    expect(useFlowStatusStore.getState().debug).toHaveLength(DEBUG_KEPT);
+    state().addDebug(Array.from({ length: DEBUG_KEPT + 5 }, (_, i) => line(String(i))), 0);
+    expect(state().debug.watch).toHaveLength(DEBUG_KEPT);
   });
 
-  it('clears the strip and what it had dropped', () => {
-    useFlowStatusStore.getState().addDebug([line('a')], 2);
-    useFlowStatusStore.getState().clearDebug();
+  // The strip shows one flow's lines. Kept all together, a flow printing on every message would
+  // push a quiet one's lines out of the store before anybody switched to its tab.
+  it('keeps each flow its own lines, so a busy flow cannot push a quiet one out', () => {
+    state().addDebug([line('quiet', 'watch')], 0);
+    state().addDebug(Array.from({ length: DEBUG_KEPT + 5 }, (_, i) => line(String(i), 'busy')), 0);
 
-    expect(useFlowStatusStore.getState().debug).toEqual([]);
-    expect(useFlowStatusStore.getState().debugDropped).toBe(0);
+    expect(texts('watch')).toEqual(['quiet']);
+    expect(state().debug.busy).toHaveLength(DEBUG_KEPT);
+  });
+
+  it('clears one flow\'s lines and leaves the others', () => {
+    state().addDebug([line('a', 'watch'), line('b', 'busy')], 0);
+
+    state().clearDebug('watch');
+
+    expect(texts('watch')).toEqual([]);
+    expect(texts('busy')).toEqual(['b']);
+  });
+
+  // A line keeps the number it came with, so the strip can keep its row, and whatever the reader
+  // has selected in it, as newer lines arrive above.
+  it('numbers each line in the order it came, and never renumbers one', () => {
+    state().addDebug([line('a'), line('b')], 0);
+    const [b, a] = state().debug.watch;
+    expect(b.seq).toBeGreaterThan(a.seq);
+
+    state().addDebug([line('c')], 0);
+
+    const [c, ...rest] = state().debug.watch;
+    expect(rest).toEqual([b, a]);
+    expect(c.seq).toBeGreaterThan(b.seq);
+  });
+
+  // The server counts what it left out, not whose it was, so no strip can claim the count as its
+  // own. Each strip counts from when it was last cleared.
+  it('counts the lines left out from every flow, for each strip from its last Clear', () => {
+    state().addDebug([line('a', 'watch')], 3);
+    expect(leftOut(state(), 'watch')).toBe(3);
+    expect(leftOut(state(), 'busy')).toBe(3);
+
+    state().clearDebug('watch');
+    state().addDebug([], 2);
+
+    expect(leftOut(state(), 'watch')).toBe(2);
+    expect(leftOut(state(), 'busy')).toBe(5);
   });
 });

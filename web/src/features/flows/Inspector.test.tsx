@@ -37,7 +37,7 @@ function Inspecting({ running = true }: { running?: boolean }) {
 beforeEach(() => {
   localStorage.clear();
   useFlowDraftStore.setState({ drafts: {}, current: 'watch', selected: null, refusals: {} });
-  useFlowStatusStore.setState({ flows: {}, nodes: {}, debug: [], debugDropped: 0 });
+  useFlowStatusStore.setState(useFlowStatusStore.getInitialState());
 });
 
 describe('palette', () => {

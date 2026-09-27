@@ -6,7 +6,7 @@ import { queryKeys } from '../../api/queryKeys';
 import { useFlowStatusStore } from '../../stores/flowStatusStore';
 import { server } from '../../test/server';
 import { renderWithClient as render } from '../../test/renderWithClient';
-import type { FlowDto, FlowsDto, FlowStatusDto } from '../../types/api';
+import type { FlowDebugDto, FlowDto, FlowsDto, FlowStatusDto } from '../../types/api';
 import { standInForTheBrowser } from './canvasTestbed';
 import { useFlowDraftStore } from './flowDraftStore';
 import FlowsPage from './FlowsPage';
@@ -17,7 +17,7 @@ afterAll(() => vi.unstubAllGlobals());
 beforeEach(() => {
   localStorage.clear();
   useFlowDraftStore.setState({ drafts: {}, current: null, selected: null, refusals: {} });
-  useFlowStatusStore.setState({ flows: {}, nodes: {}, debug: [], debugDropped: 0 });
+  useFlowStatusStore.setState(useFlowStatusStore.getInitialState());
 });
 
 const watch: FlowDto = {
@@ -504,6 +504,94 @@ describe('the tabs', () => {
     await userEvent.keyboard('{Home}');
     expect(document.activeElement).toBe(tabs()[0]);
     expect(onScreen()).toBe('Boiler watch');
+  });
+});
+
+/** A line a Debug node printed, in a flow. */
+const printed = (flowId: string, text: string, over: Partial<FlowDebugDto> = {}): FlowDebugDto => ({
+  flowId, nodeId: 'in', at: '2026-09-26T09:14:22Z', kind: 'message', topic: 'plant/k1/temp', text, ...over,
+});
+
+const debugStrip = () => screen.getByRole('region', { name: 'Debug' });
+
+describe('the debug strip', () => {
+  it('keeps each flow\'s lines, and clears only the flow on screen', async () => {
+    keeping([watch, sim]);
+    render(<FlowsPage />);
+    await screen.findByText('Boiler watch', { selector: 'h3' });
+    act(() => useFlowStatusStore.getState().addDebug([printed('watch', 'w1'), printed('sim', 's1')], 0));
+
+    expect(await within(debugStrip()).findByText('w1')).toBeInTheDocument();
+    await userEvent.click(within(debugStrip()).getByRole('button', { name: 'Clear' }));
+    expect(within(debugStrip()).queryByText('w1')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('tab', { name: /^Boiler simulator/ }));
+    expect(within(debugStrip()).getByText('s1')).toBeInTheDocument();
+  });
+
+  // The strip is "the last 200, for the flow on screen": a flow printing on every message must not
+  // push the one being looked at out of it.
+  it('keeps the lines of the flow on screen however busy another flow is', async () => {
+    keeping([watch, sim]);
+    render(<FlowsPage />);
+    await screen.findByText('Boiler watch', { selector: 'h3' });
+
+    act(() => useFlowStatusStore.getState().addDebug([printed('watch', 'w1')], 0));
+    act(() => useFlowStatusStore.getState().addDebug(Array.from({ length: 200 }, (_, i) => printed('sim', `s${i}`)), 0));
+
+    expect(within(debugStrip()).getByText('w1')).toBeInTheDocument();
+  });
+
+  // The server says how many lines it left out, never whose they were, so no strip can claim them.
+  // Each strip counts them from when it was last cleared.
+  it('says lines were left out, from any flow, until this strip is cleared', async () => {
+    keeping([watch, sim]);
+    render(<FlowsPage />);
+    await screen.findByText('Boiler watch', { selector: 'h3' });
+
+    act(() => useFlowStatusStore.getState().addDebug([printed('watch', 'w1')], 3));
+    expect(within(debugStrip()).getByText('3 left out, from any flow')).toBeInTheDocument();
+
+    await userEvent.click(within(debugStrip()).getByRole('button', { name: 'Clear' }));
+    expect(within(debugStrip()).queryByText(/left out/)).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('tab', { name: /^Boiler simulator/ }));
+    expect(within(debugStrip()).getByText('3 left out, from any flow')).toBeInTheDocument();
+  });
+
+  // A row that is drawn again as each batch arrives loses whatever the reader had selected in it,
+  // which is how a payload is copied out of a live flow.
+  it('keeps a line\'s row as newer lines arrive above it', async () => {
+    keeping([watch]);
+    render(<FlowsPage />);
+    await screen.findByText('Boiler watch', { selector: 'h3' });
+
+    act(() => useFlowStatusStore.getState().addDebug([printed('watch', 'w1')], 0));
+    const row = within(debugStrip()).getByText('w1').closest('li');
+    act(() => useFlowStatusStore.getState().addDebug([printed('watch', 'w2')], 0));
+
+    expect(within(debugStrip()).getByText('w1').closest('li')).toBe(row);
+  });
+
+  // A message with nothing in it is still a message. A line that printed only the time and the
+  // node would read as one that failed to draw.
+  it('says when a message came with no topic and an empty payload', async () => {
+    keeping([watch]);
+    render(<FlowsPage />);
+    await screen.findByText('Boiler watch', { selector: 'h3' });
+
+    act(() =>
+      useFlowStatusStore.getState().addDebug(
+        [printed('watch', '', { topic: '' }), printed('watch', 'The flow stopped.', { kind: 'error', topic: '' })],
+        0,
+      ),
+    );
+
+    const empty = within(debugStrip()).getByText('empty payload').closest('li')!;
+    expect(within(empty).getByText('no topic')).toBeInTheDocument();
+    // What went wrong is not about a message, so an error with no topic has nothing missing.
+    const error = within(debugStrip()).getByText('The flow stopped.').closest('li')!;
+    expect(within(error).queryByText('no topic')).not.toBeInTheDocument();
   });
 });
 

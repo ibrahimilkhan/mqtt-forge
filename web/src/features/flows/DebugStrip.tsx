@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { useFlowStatusStore } from '../../stores/flowStatusStore';
+import { useState } from 'react';
+import { leftOut, useFlowStatusStore, type DebugLine } from '../../stores/flowStatusStore';
 import type { FlowDto } from '../../types/api';
 import { NODE_SPECS } from './nodeTypes';
 import styles from './DebugStrip.module.css';
@@ -14,6 +14,9 @@ const readOpen = () => {
   }
 };
 
+/** A flow with no lines. One array, so the store's answer is the same one each time it is asked. */
+const NO_LINES: DebugLine[] = [];
+
 /** Hours, minutes and seconds: these lines are about the last minute. */
 const clock = (at: string) =>
   new Date(at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
@@ -22,15 +25,18 @@ const clock = (at: string) =>
  * What the flow on screen printed and what went wrong in it, newest first.
  *
  * Only this flow's lines: a reader looking at one flow and reading another's is reading noise.
- * The store keeps every flow's, so switching tabs shows the other flow's lines at once.
+ * The store keeps every flow's, each to its own last 200, so switching tabs shows the other
+ * flow's lines at once, and Clear empties this flow's and no other's.
+ *
+ * What the server left out it counts but does not attribute, so that figure is said as the whole
+ * console's, not as this flow's.
  */
 export function DebugStrip({ flow }: { flow: FlowDto }) {
-  const debug = useFlowStatusStore((state) => state.debug);
-  const dropped = useFlowStatusStore((state) => state.debugDropped);
+  const lines = useFlowStatusStore((state) => state.debug[flow.id] ?? NO_LINES);
+  const dropped = useFlowStatusStore((state) => leftOut(state, flow.id));
   const clear = useFlowStatusStore((state) => state.clearDebug);
   const [open, setOpen] = useState(readOpen);
 
-  const lines = useMemo(() => debug.filter((entry) => entry.flowId === flow.id), [debug, flow.id]);
   const labelOf = (nodeId: string) => {
     const node = flow.nodes.find((one) => one.id === nodeId);
     return node ? NODE_SPECS[node.type].label : nodeId;
@@ -52,9 +58,9 @@ export function DebugStrip({ flow }: { flow: FlowDto }) {
         <button type="button" className={styles.fold} aria-expanded={open} onClick={toggle}>
           <span aria-hidden="true">{open ? '▾' : '▸'}</span> Debug <span className={styles.count}>{lines.length}</span>
         </button>
-        {dropped > 0 && <span className={styles.dropped}>{dropped} left out</span>}
-        {open && lines.length > 0 && (
-          <button type="button" className="ghost ends" onClick={clear}>
+        {dropped > 0 && <span className={styles.dropped}>{dropped} left out, from any flow</span>}
+        {open && (lines.length > 0 || dropped > 0) && (
+          <button type="button" className="ghost ends" onClick={() => clear(flow.id)}>
             Clear
           </button>
         )}
@@ -65,14 +71,25 @@ export function DebugStrip({ flow }: { flow: FlowDto }) {
           <p className={styles.empty}>Nothing yet. What a Debug node is given is printed here, and so is anything that goes wrong.</p>
         ) : (
           <ol className={styles.lines}>
-            {lines.map((entry, index) => (
-              <li key={`${entry.at}-${index}`} className={styles.line} data-kind={entry.kind}>
+            {lines.map((entry) => (
+              <li key={entry.seq} className={styles.line} data-kind={entry.kind}>
                 <time className={styles.time} dateTime={entry.at}>
                   {clock(entry.at)}
                 </time>
                 <span className={styles.node}>{labelOf(entry.nodeId)}</span>
-                {entry.topic && <span className={styles.topic}>{entry.topic}</span>}
-                <span className={styles.text}>{entry.text}</span>
+                {/* A message with nothing in it is still a message, and says what it was missing:
+                    a line of only a time and a node reads as one that failed to draw. What went
+                    wrong is not a message, so an error with no topic is missing nothing. */}
+                {entry.topic ? (
+                  <span className={styles.topic}>{entry.topic}</span>
+                ) : (
+                  entry.kind === 'message' && <span className={`${styles.topic} ${styles.none}`}>no topic</span>
+                )}
+                {entry.text || entry.kind === 'error' ? (
+                  <span className={styles.text}>{entry.text}</span>
+                ) : (
+                  <span className={`${styles.text} ${styles.none}`}>empty payload</span>
+                )}
               </li>
             ))}
           </ol>

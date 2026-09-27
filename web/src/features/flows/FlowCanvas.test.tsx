@@ -18,7 +18,7 @@ afterAll(() => vi.unstubAllGlobals());
 beforeEach(() => {
   localStorage.clear();
   useFlowDraftStore.setState({ drafts: {}, current: null, selected: null, refusals: {} });
-  useFlowStatusStore.setState({ flows: {}, nodes: {}, debug: [], debugDropped: 0 });
+  useFlowStatusStore.setState(useFlowStatusStore.getInitialState());
 });
 
 const button: FlowDto = {

@@ -543,6 +543,6 @@ describe('flow events', () => {
     });
 
     expect(Object.keys(useFlowStatusStore.getState().flows)).toEqual(['watch']);
-    expect(useFlowStatusStore.getState().debug[0].text).toBe('hello');
+    expect(useFlowStatusStore.getState().debug.watch[0].text).toBe('hello');
   });
 });
