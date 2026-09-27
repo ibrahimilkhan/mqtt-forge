@@ -31,6 +31,16 @@ public sealed class MqttnetSubscriber : IMqttSubscriber, ISubscriptionRestorer
     // freshly subscribed topic, which is the one failure this must not have.
     public static readonly TimeSpan ReplayWindow = TimeSpan.FromSeconds(2);
 
+    /// <summary>How long a SUBSCRIBE or an UNSUBSCRIBE waits for the broker's answer before it is given up.</summary>
+    // Ten seconds, and this class's own figure rather than the client's. The client's is MQTTnet's
+    // default of a hundred seconds, which it keeps for everything a client waits on, and which both
+    // engines would sit out on their pumps, once per attempt, for a broker that keeps the link and
+    // never answers: every rule and every flow deaf for a hundred seconds at a time. A working
+    // broker sends its SUBACK in milliseconds, across the world in well under a second, so ten is
+    // generous for the slowest link that is working and short for one that is not. What running
+    // out of it means is unchanged: the broker did not answer, and asking again may well mend that.
+    public static readonly TimeSpan SubscriptionTimeout = TimeSpan.FromSeconds(10);
+
     private readonly IMqttClient _client;
     private readonly IMessageNotifier _notifier;
     private readonly TimeProvider _time;
@@ -433,18 +443,15 @@ public sealed class MqttnetSubscriber : IMqttSubscriber, ISubscriptionRestorer
             throw new NotConnectedException("Connect to a broker before subscribing.");
     }
 
-    // MQTTnet's own figure, for a client that has not been given its options yet.
-    private static readonly TimeSpan MqttnetTimeout = new MqttClientOptions().Timeout;
-
     /// <summary>
-    /// A request the broker has to answer, with the deadline MQTTnet keeps only for a caller who
-    /// has no token to give it.
+    /// A request the broker has to answer, with a deadline of its own: MQTTnet keeps one only for a
+    /// caller who has no token to give it.
     /// </summary>
     // Every caller here has a token that can be cancelled — the engines' pumps, the console's
     // requests — and MQTTnet waits on that token alone when it can be. So a broker that kept the
     // link up and never answered held its caller until the link went, which for a broker still
     // answering its pings was for ever: a pump held with it, and every rule and flow deaf. The wait
-    // now ends at the timeout the client was given, the one MQTTnet itself would have used.
+    // now ends at SubscriptionTimeout.
     //
     // What comes back is said as what it is, and none of it is a refusal: a caller that took one
     // for a refusal stops asking. A deadline that passed is a broker that did not answer, which
@@ -454,9 +461,7 @@ public sealed class MqttnetSubscriber : IMqttSubscriber, ISubscriptionRestorer
     // caller's own token is a cancellation, whatever the library made of it.
     private async Task<T> AnsweredAsync<T>(Func<CancellationToken, Task<T>> ask, string asked, CancellationToken ct)
     {
-        var timeout = _client.Options?.Timeout ?? MqttnetTimeout;
-
-        using var deadline = new CancellationTokenSource(timeout, _time);
+        using var deadline = new CancellationTokenSource(SubscriptionTimeout, _time);
         using var either = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
 
         try
@@ -471,7 +476,7 @@ public sealed class MqttnetSubscriber : IMqttSubscriber, ISubscriptionRestorer
                                    ex is OperationCanceledException or MqttCommunicationTimedOutException)
         {
             throw new BrokerDidNotAnswerException(
-                $"The broker did not answer {asked} within {timeout.TotalSeconds:0} seconds.", ex);
+                $"The broker did not answer {asked} within {SubscriptionTimeout.TotalSeconds:0} seconds.", ex);
         }
         catch (Exception ex) when (ex is OperationCanceledException or MqttClientDisconnectedException
                                        or MqttClientNotConnectedException)

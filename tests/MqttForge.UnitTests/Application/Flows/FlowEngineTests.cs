@@ -984,7 +984,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
     [Fact]
     public async Task A_subscribe_the_broker_did_not_answer_marks_no_node_and_is_asked_for_again()
     {
-        _subscriber.Refuse = new BrokerDidNotAnswerException("The broker did not answer the SUBSCRIBE for 'plant/+/temp' within 100 seconds.");
+        _subscriber.Refuse = new BrokerDidNotAnswerException("The broker did not answer the SUBSCRIBE for 'plant/+/temp' within 10 seconds.");
         var engine = await RunningAsync(Watch());
         _subscriber.Refuse = null;
 

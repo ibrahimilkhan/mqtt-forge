@@ -15,7 +15,7 @@ namespace MqttForge.IntegrationTests.Mqtt;
 /// </summary>
 // The subscriber's callers all have tokens that can be cancelled, and MQTTnet keeps its own timeout
 // only for a caller that has none, so what is proved here is the deadline the subscriber gives the
-// wait itself: the client's timeout, which each test sets short.
+// wait itself: ten seconds of its own, whatever the client's timeout.
 public sealed class UnansweredSubscribeTests : IClassFixture<MosquittoFixture>
 {
     private readonly MosquittoFixture _broker;
@@ -35,10 +35,12 @@ public sealed class UnansweredSubscribeTests : IClassFixture<MosquittoFixture>
         return provider;
     }
 
+    // MQTTnet's own timeout on the client, a hundred seconds, as the product's client has it: the
+    // SUBSCRIBE is given up at the subscriber's ten all the same.
     [Fact]
-    public async Task A_subscribe_a_frozen_broker_never_answers_is_given_up_at_the_clients_timeout()
+    public async Task A_subscribe_a_frozen_broker_never_answers_is_given_up_after_ten_seconds()
     {
-        using var provider = await ConnectedAsync("frozen-subscribe", TimeSpan.FromSeconds(2));
+        using var provider = await ConnectedAsync("frozen-subscribe", new MqttClientOptions().Timeout);
         var subscriber = new MqttnetSubscriber(provider, Substitute.For<IMessageNotifier>());
 
         await _broker.PauseAsync();
@@ -51,6 +53,7 @@ public sealed class UnansweredSubscribeTests : IClassFixture<MosquittoFixture>
                 .WaitAsync(TimeSpan.FromSeconds(20)));
 
             Assert.Contains("'plant/#'", thrown.Message);
+            Assert.Contains("within 10 seconds", thrown.Message);
             Assert.Empty(subscriber.ActiveFilters);
             Assert.True(provider.Client.IsConnected, "the link should still be up: the broker only stopped answering");
         }

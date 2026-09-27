@@ -85,8 +85,8 @@ public class SubscriptionEndpointTests : IClassFixture<MqttForgeApiFactory>, ICl
         Assert.Equal("180", message.Payload);
     }
 
-    // A broker that keeps the link and never answers the SUBSCRIBE. The subscriber gives up at the
-    // client's timeout and says the broker did not answer, and so does the console's answer: not a
+    // A broker that keeps the link and never answers the SUBSCRIBE. The subscriber gives up after its
+    // ten seconds and says the broker did not answer, and so does the console's answer: not a
     // refusal, which would send the reader off to narrow a filter nothing was wrong with, and not a
     // 500, which says the server failed at something.
     [Fact]
@@ -97,7 +97,7 @@ public class SubscriptionEndpointTests : IClassFixture<MqttForgeApiFactory>, ICl
         subscriber
             .SubscribeAsync(Arg.Any<IReadOnlyList<SubscriptionRequest>>(), Arg.Any<CancellationToken>(), Arg.Any<SubscriptionOwner>())
             .ThrowsAsync(new BrokerDidNotAnswerException(
-                "The broker did not answer the SUBSCRIBE for 'sensors/#' within 100 seconds."));
+                "The broker did not answer the SUBSCRIBE for 'sensors/#' within 10 seconds."));
 
         using var factory = new MqttForgeApiFactory();
         var client = factory

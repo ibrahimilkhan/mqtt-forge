@@ -723,7 +723,7 @@ public class AlertEngineTests
     {
         await using var harness = Build(Document([Rule("a", "plant/a/#", Over90)]));
         harness.Subscriber.Refuse = how == "no answer"
-            ? new BrokerDidNotAnswerException("The broker did not answer the SUBSCRIBE for 'plant/a/#' within 100 seconds.")
+            ? new BrokerDidNotAnswerException("The broker did not answer the SUBSCRIBE for 'plant/a/#' within 10 seconds.")
             : new NotConnectedException("The link to the broker went while the SUBSCRIBE for 'plant/a/#' was waiting for an answer.");
 
         await harness.Engine.StartAsync(CancellationToken.None);

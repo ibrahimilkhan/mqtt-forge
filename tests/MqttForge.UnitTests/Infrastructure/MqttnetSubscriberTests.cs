@@ -104,20 +104,24 @@ public class MqttnetSubscriberTests
             .SubscribeAsync(Arg.Any<MqttClientSubscribeOptions>(), Arg.Any<CancellationToken>())
             .Returns(call => Unanswered<MqttClientSubscribeResult>(call.ArgAt<CancellationToken>(1)));
 
-    /// <summary>A subscriber on a clock the test moves, over a client whose timeout is ten seconds.</summary>
+    /// <summary>
+    /// A subscriber on a clock the test moves, over a client with MQTTnet's own options: a timeout of
+    /// a hundred seconds, which is what the product's client has.
+    /// </summary>
     private MqttnetSubscriber OnTheClock(FakeTimeProvider time)
     {
         _client.IsConnected.Returns(true);
-        _client.Options.Returns(new MqttClientOptions { Timeout = TimeSpan.FromSeconds(10) });
+        _client.Options.Returns(new MqttClientOptions());
 
         return new MqttnetSubscriber(new MqttnetClientProvider(_client), Substitute.For<IMessageNotifier>(), time);
     }
 
     // Every caller here has a token that can be cancelled — the engines' pumps, the console's
     // requests — so MQTTnet waited for the SUBACK for as long as the link lasted, and a broker that
-    // answers its pings kept the link for ever: the pump held with it, and every rule deaf.
+    // answers its pings kept the link for ever: the pump held with it, and every rule deaf. The
+    // client's own timeout was no better an answer: a hundred seconds of a pump per attempt.
     [Fact]
-    public async Task A_subscribe_the_broker_never_answers_is_given_up_at_the_clients_timeout_and_is_not_a_refusal()
+    public async Task A_subscribe_the_broker_never_answers_is_given_up_after_ten_seconds_and_is_not_a_refusal()
     {
         var time = new FakeTimeProvider();
         var sut = OnTheClock(time);
@@ -125,10 +129,16 @@ public class MqttnetSubscriberTests
 
         using var caller = new CancellationTokenSource();
         var asking = sut.SubscribeAsync(Asking("plant/#"), caller.Token);
-        time.Advance(TimeSpan.FromSeconds(10));
+
+        // Not a moment before its ten seconds, whatever the client's own timeout says.
+        time.Advance(MqttnetSubscriber.SubscriptionTimeout - TimeSpan.FromMilliseconds(1));
+        Assert.False(asking.IsCompleted, "the SUBSCRIBE should still be waiting for its answer");
+
+        time.Advance(TimeSpan.FromMilliseconds(1));
 
         var thrown = await Assert.ThrowsAsync<BrokerDidNotAnswerException>(() => asking.WaitAsync(TimeSpan.FromSeconds(5)));
-        Assert.Contains("'plant/#'", thrown.Message);
+        Assert.Equal(TimeSpan.FromSeconds(10), MqttnetSubscriber.SubscriptionTimeout);
+        Assert.Equal("The broker did not answer the SUBSCRIBE for 'plant/#' within 10 seconds.", thrown.Message);
         Assert.Empty(sut.ActiveFilters);
     }
 
@@ -177,7 +187,7 @@ public class MqttnetSubscriberTests
     }
 
     [Fact]
-    public async Task An_unsubscribe_the_broker_never_answers_is_given_up_at_the_clients_timeout()
+    public async Task An_unsubscribe_the_broker_never_answers_is_given_up_after_ten_seconds()
     {
         var time = new FakeTimeProvider();
         var sut = OnTheClock(time);
@@ -190,7 +200,7 @@ public class MqttnetSubscriberTests
 
         using var caller = new CancellationTokenSource();
         var letting = sut.UnsubscribeAsync("plant/#", caller.Token);
-        time.Advance(TimeSpan.FromSeconds(10));
+        time.Advance(MqttnetSubscriber.SubscriptionTimeout);
 
         await Assert.ThrowsAsync<BrokerDidNotAnswerException>(() => letting.WaitAsync(TimeSpan.FromSeconds(5)));
 
