@@ -1,8 +1,10 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using MqttForge.Api.Contracts;
+using MqttForge.Api.Realtime;
 using MqttForge.Application.Alerts;
 using MqttForge.Domain.Enums;
 using MqttForge.Domain.Models;
@@ -465,5 +467,61 @@ public class AlertEndpointTests : IDisposable
         // The present is not history. A user tidying away a list of things that finished must not
         // find the thing that is still happening has gone with them.
         Assert.Equal("plant/pump/temp", Assert.Single(alerts.Active).Topic);
+    }
+
+    // A container with no browser on it still says what happened, and a console still gets the
+    // event: the log is told on the engine's pump and the hub from a loop of the engine's own, and
+    // a build that lost either of them would look healthy from the other end.
+    [Fact]
+    public async Task A_rule_alarm_is_told_to_the_log_and_to_the_console()
+    {
+        var hub = new StalledHub(holding: null);
+        var lines = new RecordingLogger<LoggingAlertNotifier>();
+        using var factory = new MqttForgeApiFactory();
+        var host = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.AddSingleton(new SignalRAlertNotifier(hub.Context));
+            services.AddSingleton(new LoggingAlertNotifier(lines));
+        }));
+        var client = host.CreateClient();
+        await PutAsync(client, "", Hot("hot"));
+
+        host.Services.GetRequiredService<AlertEngine>().Post(new ArrivalCommand(
+            new MqttMessage("plant/boiler/temp", "94.2", "text", 0, false, DateTimeOffset.UtcNow)));
+
+        await Until(() => Task.FromResult(hub.Sent), sent => sent.Contains(SignalRAlertNotifier.AlertsRaised),
+            "the console to be told");
+
+        // Read once the console has its frame: the pump logs an alarm before it hands it over.
+        Assert.Contains(lines.Entries, entry => entry.Message.StartsWith("Alert raised [Warn] Boiler temperature on plant/boiler/temp"));
+    }
+
+    // The consoles stop reading as the first alarm is sent to them, so its frame sits until it is
+    // called off. The rules do not wait with it: the next reading is judged with the first alarm's
+    // frame still stuck, and stopping the host is what lets that frame go.
+    [Fact]
+    public async Task A_console_that_stops_reading_holds_up_no_rule_and_is_let_go_when_the_host_stops()
+    {
+        var hub = new StalledHub(holding: SignalRAlertNotifier.AlertsRaised);
+        using var factory = new MqttForgeApiFactory();
+        var host = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            services.AddSingleton(new SignalRAlertNotifier(hub.Context))));
+        var client = host.CreateClient();
+        await PutAsync(client, "", Hot("hot"));
+
+        var engine = host.Services.GetRequiredService<AlertEngine>();
+        void Reads(string topic, string payload) =>
+            engine.Post(new ArrivalCommand(new MqttMessage(topic, payload, "text", 0, false, DateTimeOffset.UtcNow)));
+
+        Reads("plant/boiler/temp", "94.2");
+        await Until(() => Task.FromResult(hub.Held), held => held == 1, "the first alarm's frame to be stuck with the console");
+
+        Reads("plant/pump/temp", "94.2");
+        await Until(() => AlertsAsync(client), panel => panel.Active.Count == 2,
+            "the second alarm to be raised, with the first one's frame still stuck");
+
+        await host.DisposeAsync();
+
+        Assert.Equal(0, hub.Held);
     }
 }

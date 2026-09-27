@@ -40,7 +40,7 @@ public class AlertHubTests
     {
         var hub = new RecordingAlertHub();
 
-        await new SignalRAlertNotifier(hub.Context).RaisedAsync([Fired()]);
+        await new SignalRAlertNotifier(hub.Context).RaisedAsync([Fired()], CancellationToken.None);
 
         var alert = Assert.Single(hub.Frame(SignalRAlertNotifier.AlertsRaised));
 
@@ -61,13 +61,13 @@ public class AlertHubTests
 
     // Its own method rather than a flag on the batch. Every channel downstream treats the two
     // halves differently, and a console unpacking a record to find out which half it was given
-    // is the shape IAlertNotifier was split in two to avoid.
+    // is the shape the engine's seams were split in two to avoid.
     [Fact]
     public async Task Resolved_alerts_travel_under_their_own_name()
     {
         var hub = new RecordingAlertHub();
 
-        await new SignalRAlertNotifier(hub.Context).ResolvedAsync([Fired(resolvedBy: "clear")]);
+        await new SignalRAlertNotifier(hub.Context).ResolvedAsync([Fired(resolvedBy: "clear")], CancellationToken.None);
 
         var alert = Assert.Single(hub.Frame(SignalRAlertNotifier.AlertsResolved));
 
@@ -76,16 +76,15 @@ public class AlertHubTests
         Assert.Empty(hub.Frames(SignalRAlertNotifier.AlertsRaised));
     }
 
-    // The engine calls this on every turn that changed anything, and most turns change nothing on
-    // one of the two lists. An empty frame a second is a websocket kept awake for no reason.
+    // Nothing to say is no frame at all. An empty frame is a websocket kept awake for no reason.
     [Fact]
     public async Task A_tick_with_nothing_to_say_sends_nothing()
     {
         var hub = new RecordingAlertHub();
         var notifier = new SignalRAlertNotifier(hub.Context);
 
-        await notifier.RaisedAsync([]);
-        await notifier.ResolvedAsync([]);
+        await notifier.RaisedAsync([], CancellationToken.None);
+        await notifier.ResolvedAsync([], CancellationToken.None);
 
         Assert.True(hub.SaidNothing);
     }
@@ -130,23 +129,23 @@ public class AlertHubTests
     {
         var hub = new RecordingAlertHub();
 
-        await new SignalRAlertNotifier(hub.Context).DroppedAsync(12);
+        await new SignalRAlertNotifier(hub.Context).DroppedAsync(12, CancellationToken.None);
 
         Assert.Equal(12, Assert.Single(hub.Arguments(SignalRAlertNotifier.AlertsDropped)));
     }
 
     // The engine already guards this, and so does this class: DroppedAsync carries a running
-    // total, and a total that has not moved is not news. Guarded in both places on purpose —
-    // the composite means this method has more than one possible caller.
+    // total, and a total that has not moved is not news. Guarded in both places on purpose, so
+    // that neither has to know the other's bookkeeping.
     [Fact]
     public async Task The_same_drop_total_is_not_sent_twice()
     {
         var hub = new RecordingAlertHub();
         var notifier = new SignalRAlertNotifier(hub.Context);
 
-        await notifier.DroppedAsync(12);
-        await notifier.DroppedAsync(12);
-        await notifier.DroppedAsync(13);
+        await notifier.DroppedAsync(12, CancellationToken.None);
+        await notifier.DroppedAsync(12, CancellationToken.None);
+        await notifier.DroppedAsync(13, CancellationToken.None);
 
         Assert.Equal([12, 13], hub.Arguments(SignalRAlertNotifier.AlertsDropped));
     }
@@ -162,7 +161,7 @@ public class AlertHubTests
         for (var i = 0; i <= SignalRAlertNotifier.MaxBatchSize; i++)
             alarms.Add(Fired($"a{i}", $"plant/{i}/temp"));
 
-        await new SignalRAlertNotifier(hub.Context).RaisedAsync(alarms);
+        await new SignalRAlertNotifier(hub.Context).RaisedAsync(alarms, CancellationToken.None);
 
         var frames = hub.Frames(SignalRAlertNotifier.AlertsRaised);
 
@@ -184,7 +183,7 @@ public class AlertHubTests
         var hub = new RecordingAlertHub();
 
         await new SignalRAlertNotifier(hub.Context)
-            .RaisedAsync([Fired(sample: new string('x', AlertDto.SampleLimit * 4))]);
+            .RaisedAsync([Fired(sample: new string('x', AlertDto.SampleLimit * 4))], CancellationToken.None);
 
         var alert = Assert.Single(hub.Frame(SignalRAlertNotifier.AlertsRaised));
 

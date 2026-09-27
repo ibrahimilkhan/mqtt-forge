@@ -15,7 +15,7 @@ namespace MqttForge.Api.Realtime;
 //
 // A flow alarm is told as a rule's is, as alertsRaised and alertsResolved, so the badge, the sound
 // and the notice need nothing of their own for it — through SignalRAlertNotifier, which is where an
-// alarm becomes a frame, with the token the rules' pump has no use for.
+// alarm becomes a frame, and with this loop's token.
 public sealed class SignalRFlowNotifier : IFlowNotifier
 {
     public const string StatusEvent = "flowStatus";

@@ -181,6 +181,135 @@ internal sealed class RecordingAlertNotifier : IAlertNotifier
     }
 }
 
+/// <summary>
+/// Stands where the console's hub stands: keeps what it is told, in order, and can stop reading.
+/// </summary>
+internal sealed class RecordingAlertConsole : IAlertConsole
+{
+    private readonly Lock _gate = new();
+    private readonly List<string> _told = [];
+    private readonly List<string> _ids = [];
+    private readonly Dictionary<string, string> _letters = new(StringComparer.Ordinal);
+    private readonly List<int> _dropped = [];
+
+    private TaskCompletionSource? _stuck;
+    private Exception? _fault;
+    private int _held;
+    private int _failed;
+
+    /// <summary>
+    /// When set, every send waits until it is cleared, or until its token calls it off: a console
+    /// that has stopped reading. What it is handed meanwhile is recorded only once it is let go.
+    /// </summary>
+    public bool Stall
+    {
+        set
+        {
+            lock (_gate)
+            {
+                if (value) _stuck ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                else
+                {
+                    _stuck?.TrySetResult();
+                    _stuck = null;
+                }
+            }
+        }
+    }
+
+    /// <summary>How many sends are waiting on the stalled console right now.</summary>
+    public int Held => Volatile.Read(ref _held);
+
+    /// <summary>When set, every send throws it before recording anything.</summary>
+    public Exception? Fault
+    {
+        get => Volatile.Read(ref _fault);
+        set => Volatile.Write(ref _fault, value);
+    }
+
+    /// <summary>How many sends threw.</summary>
+    public int Failed => Volatile.Read(ref _failed);
+
+    /// <summary>
+    /// Every alert the console was told of, one line each in the order told — "raised a",
+    /// "resolved a" — lettered by id in the order first seen.
+    /// </summary>
+    // Lettered by id, AlarmCallLog's way: two alerts of one rule on one topic differ in nothing
+    // else a test can read.
+    public IReadOnlyList<string> Told
+    {
+        get { lock (_gate) return [.. _told]; }
+    }
+
+    /// <summary>The ids of the alerts the console was told of, in the order told.</summary>
+    public IReadOnlyList<string> AlertIds
+    {
+        get { lock (_gate) return [.. _ids]; }
+    }
+
+    /// <summary>Every drop total the console was told, in the order told.</summary>
+    public IReadOnlyList<int> Dropped
+    {
+        get { lock (_gate) return [.. _dropped]; }
+    }
+
+    public Task RaisedAsync(IReadOnlyList<Alert> alerts, CancellationToken ct) => RecordAsync("raised", alerts, ct);
+
+    public Task ResolvedAsync(IReadOnlyList<Alert> alerts, CancellationToken ct) => RecordAsync("resolved", alerts, ct);
+
+    public async Task DroppedAsync(int total, CancellationToken ct)
+    {
+        ThrowIfFaulted();
+        await WaitAsync(ct);
+
+        lock (_gate) _dropped.Add(total);
+    }
+
+    private async Task RecordAsync(string kind, IReadOnlyList<Alert> alerts, CancellationToken ct)
+    {
+        ThrowIfFaulted();
+        await WaitAsync(ct);
+
+        lock (_gate)
+            foreach (var alert in alerts)
+            {
+                if (!_letters.TryGetValue(alert.Id, out var letter))
+                    _letters[alert.Id] = letter = Letter(_letters.Count);
+
+                _told.Add($"{kind} {letter}");
+                _ids.Add(alert.Id);
+            }
+    }
+
+    private void ThrowIfFaulted()
+    {
+        if (Fault is not { } fault) return;
+
+        Interlocked.Increment(ref _failed);
+        throw fault;
+    }
+
+    private async Task WaitAsync(CancellationToken ct)
+    {
+        Task? stuck;
+        lock (_gate) stuck = _stuck?.Task;
+        if (stuck is null) return;
+
+        Interlocked.Increment(ref _held);
+        try
+        {
+            await stuck.WaitAsync(ct);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _held);
+        }
+    }
+
+    // a to z, then aa, ab and on: a test that tells a few thousand alerts still reads them apart.
+    private static string Letter(int n) => n < 26 ? ((char)('a' + n)).ToString() : Letter(n / 26 - 1) + (char)('a' + n % 26);
+}
+
 internal sealed class FakeAlertRuleStore : IAlertRuleStore
 {
     private readonly Lock _gate = new();

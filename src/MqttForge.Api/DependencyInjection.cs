@@ -84,17 +84,17 @@ public static class DependencyInjection
         // both of them are handed the same object the endpoint reads.
         services.AddSingleton<AlertPanelCounters>();
 
-        // Two channels for one engine. The hub is what a console hears; the log is what a
-        // container leaves behind, and dropping it when SignalR arrived would have made a
-        // headless MQTTForge — the deployment this feature was written for — run rules and tell
-        // nobody. Both are registered under their own types as well, because the composite is not
-        // their only caller: the mute endpoint resolves SignalRAlertNotifier by name.
+        // Two channels for one engine, told from two places. The log is what a container leaves
+        // behind, and dropping it when SignalR arrived would have made a headless MQTTForge — the
+        // deployment this feature was written for — run rules and tell nobody; it is the notifier,
+        // told on the pump, which it never holds up. The hub is what a console hears, and a console
+        // that stops reading holds a send for as long as its connection lasts, so it is the
+        // engine's console, told from a loop of the engine's own. Both are registered under their
+        // own types as well: the mute endpoint resolves SignalRAlertNotifier by name, and the flow
+        // engine is handed the log and the hub by theirs.
         services.AddSingleton<LoggingAlertNotifier>();
         services.AddSingleton<SignalRAlertNotifier>();
-        services.AddSingleton<IAlertNotifier>(sp => new CompositeAlertNotifier(
-            sp.GetRequiredService<LoggingAlertNotifier>(),
-            sp.GetRequiredService<SignalRAlertNotifier>(),
-            sp.GetRequiredService<ILogger<CompositeAlertNotifier>>()));
+        services.AddSingleton<IAlertNotifier>(sp => sp.GetRequiredService<LoggingAlertNotifier>());
 
         // The named client, built from the dispatcher's own handler: AllowAutoRedirect false, so
         // a 3xx is an answer the dispatcher calls a failure rather than a hop to an address the
@@ -148,8 +148,9 @@ public static class DependencyInjection
         // that a test wanting a fake one hands it to the engine directly instead of silently
         // swapping the clock under MqttnetConnectionManager as well.
         //
-        // The dispatcher is passed by name. It and the clock are both optional parameters, and a
-        // positional argument here would tie this file to whichever order they ended up in.
+        // The dispatcher and the console are passed by name. They and the clock are all optional
+        // parameters, and a positional argument here would tie this file to whichever order they
+        // ended up in.
         services.AddSingleton(sp => new AlertEngine(
             sp.GetRequiredService<AlertEngineCore>(),
             sp.GetRequiredService<IAlertRuleStore>(),
@@ -158,7 +159,8 @@ public static class DependencyInjection
             sp.GetRequiredService<IMqttConnectionManager>(),
             new DeferredSubscriber(sp),
             sp.GetRequiredService<ILogger<AlertEngine>>(),
-            dispatcher: sp.GetRequiredService<IAlertDispatcher>()));
+            dispatcher: sp.GetRequiredService<IAlertDispatcher>(),
+            console: sp.GetRequiredService<SignalRAlertNotifier>()));
 
         // The flows: a store, the pure runtime, the hub's notifier, and the engine around them. The
         // engine is built by hand for AlertEngine's reason — it needs the subscriber, which is on
@@ -166,10 +168,10 @@ public static class DependencyInjection
         // has, which is how a flow's alarm reaches the webhook and the broker without a line of
         // either changing.
         //
-        // Of the alert engine's two notifiers it is handed the log alone, which its pump tells. The
+        // Of the alert engine's two channels it is handed the log alone, which its pump tells. The
         // console's half — the badge, the sound — goes through the flow notifier instead, sent from
-        // the loop the engine's pushes go out on: the composite would have its pump wait on the
-        // slowest console, as the alert engine's does.
+        // the loop the engine's pushes go out on, as the alert engine sends its own: told on the
+        // pump, the hub would have it wait on the slowest console.
         services.AddSingleton<IFlowStore>(sp =>
             new JsonFlowStore(StorePaths.Flows(sp.GetRequiredService<IConfiguration>())));
         services.AddSingleton(_ => new FlowRuntime());

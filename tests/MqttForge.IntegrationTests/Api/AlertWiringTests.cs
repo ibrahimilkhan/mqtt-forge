@@ -50,10 +50,11 @@ public class AlertWiringTests
         // The three faces that could each be satisfied by the wrong object, named.
         Assert.IsType<JsonAlertRuleStore>(app.Services.GetRequiredService<IAlertRuleStore>());
         Assert.IsType<JsonAlertStateStore>(app.Services.GetRequiredService<IAlertStateStore>());
-        // The composite, not the logger. Part 2 registered the logger directly, because there was
-        // no console channel yet; part 3 puts the hub beside it and the logger inside it, so a
-        // headless container goes on saying what it decided while a console gets the events.
-        Assert.IsType<CompositeAlertNotifier>(app.Services.GetRequiredService<IAlertNotifier>());
+        // The logger, told on the engine's pump, which it never holds up. The console is told from
+        // a loop of the engine's own, through SignalRAlertNotifier as the engine's IAlertConsole —
+        // so a headless container goes on saying what it decided while a console gets the events,
+        // and a console that stops reading holds up no rule.
+        Assert.IsType<LoggingAlertNotifier>(app.Services.GetRequiredService<IAlertNotifier>());
 
         // And the four that only have to exist. GetRequiredService throws when they do not, so
         // the assertion is the call; NotNull is here to say the call was the point.

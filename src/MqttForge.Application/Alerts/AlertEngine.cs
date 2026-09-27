@@ -9,7 +9,8 @@ namespace MqttForge.Application.Alerts;
 
 /// <summary>
 /// The transport around <see cref="AlertEngineCore"/>: one bounded queue, one loop that is both
-/// the pump and the tick, one published snapshot, and the rule set's own subscriptions.
+/// the pump and the tick, a second that tells the console, one published snapshot, and the rule
+/// set's own subscriptions.
 /// </summary>
 // It holds no alerting state whatsoever. Every field here is about carrying things — a queue, a
 // clock, the last snapshot, whether the link was up last time it looked — and the moment one of
@@ -26,11 +27,12 @@ public sealed class AlertEngine
     // five call sites construct this class positionally, three of them passing a clock as the
     // eighth argument, and a parameter inserted anywhere before that would rebind their clock to a
     // dispatcher. Null is also the honest default — a host with no webhook and no publish action
-    // anywhere has nothing for one to do.
+    // anywhere has nothing for one to do. The console comes after it, for the same two reasons.
     public AlertEngine(AlertEngineCore core, IAlertRuleStore rules, IAlertStateStore state,
                        IAlertNotifier notifier, IMqttConnectionManager connection,
                        IMqttSubscriber subscriber, ILogger<AlertEngine> log,
-                       TimeProvider? timeProvider = null, IAlertDispatcher? dispatcher = null)
+                       TimeProvider? timeProvider = null, IAlertDispatcher? dispatcher = null,
+                       IAlertConsole? console = null)
     {
         _core = core;
         _rules = rules;
@@ -40,6 +42,7 @@ public sealed class AlertEngine
         _subscriber = subscriber;
         _log = log;
         _dispatcher = dispatcher;
+        _console = console is null ? null : new AlertConsoleSender(console, log);
 
         // MqttnetConnectionManager's signature exactly, for the same reason: production wires
         // nothing and the tests hand in a clock they can move.
@@ -102,6 +105,10 @@ public sealed class AlertEngine
     /// Where an alert goes when it has to leave the process. Null in every test that predates it
     /// and in any host that has wired no outgoing channel at all.
     private readonly IAlertDispatcher? _dispatcher;
+
+    /// The console's half of every alert, sent from a loop of its own. Null in every test that
+    /// predates it and in any host with no console to tell.
+    private readonly AlertConsoleSender? _console;
     private readonly IMqttConnectionManager _connection;
     private readonly IMqttSubscriber _subscriber;
     private readonly ILogger<AlertEngine> _log;
@@ -218,6 +225,9 @@ public sealed class AlertEngine
     /// <summary>The pump and the tick, in one loop, for the life of the process.</summary>
     public async Task RunAsync(CancellationToken ct)
     {
+        // The console's loop, started and stopped with the pump: what the pump tells the console is
+        // sent from there, so no console, however slow, is ever something the pump waits for.
+        var telling = _console?.RunAsync(ct) ?? Task.CompletedTask;
         var reader = _queue.Reader;
 
         // Held across iterations rather than made fresh each time round the loop. A wait that
@@ -266,6 +276,12 @@ public sealed class AlertEngine
         {
             // Shutdown. Whatever is still queued goes with the process, and the state file already
             // holds everything a restart is not allowed to lose.
+        }
+        finally
+        {
+            // Ends on the same token, which calls off a send a console was sitting on.
+            _console?.Complete();
+            await telling;
         }
     }
 
@@ -578,6 +594,7 @@ public sealed class AlertEngine
         if (dropped == _announced) return;
 
         _announced = dropped;
+        _console?.Dropped(dropped);
 
         try
         {
@@ -682,9 +699,13 @@ public sealed class AlertEngine
             _log.LogError(ex, "An alert notifier threw. The alerts it was given were not delivered.");
         }
 
-        // After the notifier and in its own try, both deliberately. The console is the fast local
-        // channel and a screen notice must not wait behind a POST; and a fault in either of them
-        // is a fault in one channel, never in the other and never in the pump.
+        // The console's half, handed to the loop that sends it and never waited for here: a frame
+        // to a console that has stopped reading waits as long as its connection lasts.
+        _console?.Alerts(events);
+
+        // After the console and in its own try, both deliberately. The console is the fast local
+        // channel and a screen notice must not wait behind a POST; and a fault in any of them is a
+        // fault in one channel, never in another and never in the pump.
         await DispatchAsync(events, ct);
     }
 

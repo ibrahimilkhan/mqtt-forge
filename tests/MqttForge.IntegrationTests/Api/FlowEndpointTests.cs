@@ -2,13 +2,10 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
-using MqttForge.Api.Hubs;
 using MqttForge.Api.Realtime;
 using MqttForge.IntegrationTests.Support;
-using NSubstitute;
 using Xunit;
 
 namespace MqttForge.IntegrationTests.Api;
@@ -323,47 +320,6 @@ public sealed class FlowEndpointTests : IClassFixture<MqttForgeApiFactory>
         await host.DisposeAsync();
 
         Assert.Equal(0, hub.Held);
-    }
-
-    /// <summary>
-    /// A hub whose sends of one method wait until their token calls them off — consoles that stopped
-    /// reading when that was sent — and whose other sends go through.
-    /// </summary>
-    private sealed class StalledHub
-    {
-        private int _held;
-
-        public StalledHub(string holding)
-        {
-            var proxy = Substitute.For<IClientProxy>();
-            proxy
-                .SendCoreAsync(Arg.Any<string>(), Arg.Any<object?[]>(), Arg.Any<CancellationToken>())
-                .Returns(call => call.ArgAt<string>(0) == holding ? HoldAsync(call.ArgAt<CancellationToken>(2)) : Task.CompletedTask);
-
-            var clients = Substitute.For<IHubClients>();
-            clients.All.Returns(proxy);
-
-            Context = Substitute.For<IHubContext<MqttHub>>();
-            Context.Clients.Returns(clients);
-        }
-
-        public IHubContext<MqttHub> Context { get; }
-
-        /// <summary>How many sends are waiting on the consoles right now.</summary>
-        public int Held => Volatile.Read(ref _held);
-
-        private async Task HoldAsync(CancellationToken ct)
-        {
-            Interlocked.Increment(ref _held);
-            try
-            {
-                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
-            }
-            finally
-            {
-                Interlocked.Decrement(ref _held);
-            }
-        }
     }
 
     [Fact]

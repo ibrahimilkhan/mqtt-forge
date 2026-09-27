@@ -62,7 +62,10 @@ public class AlertEngineTests
             }
         }
 
-        public async ValueTask DisposeAsync()
+        /// <summary>Stops the pump, and fails the test if it has not stopped within ten seconds.</summary>
+        // Long enough for a loaded build machine, short enough that a pump that cannot be stopped
+        // is a failed test rather than a run that never ends.
+        public async Task StopAsync()
         {
             if (_cancellation is null || _pump is null) return;
 
@@ -70,8 +73,13 @@ public class AlertEngineTests
 
             // Awaited rather than abandoned, and that is an assertion: a pump that faulted on any
             // turn of any test in this file fails that test here rather than dying in silence.
-            await _pump;
-            _cancellation.Dispose();
+            await _pump.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await StopAsync();
+            _cancellation?.Dispose();
         }
     }
 
@@ -83,11 +91,13 @@ public class AlertEngineTests
     /// Stands in front of <see cref="Harness.Subscriber"/>, for a subscriber that does what the
     /// recording one cannot: wait on a broker that never answers, or throw when read.
     /// </param>
+    /// <param name="console">The console's hub, for the tests that are about it. None otherwise.</param>
     private static Harness Build(
         AlertRuleDocument? rules = null,
         ConnectionState state = ConnectionState.Connected,
         AlarmCallLog? alarms = null,
-        Func<RecordingSubscriber, IMqttSubscriber>? probe = null)
+        Func<RecordingSubscriber, IMqttSubscriber>? probe = null,
+        IAlertConsole? console = null)
     {
         var time = new FakeTimeProvider(Start);
         var ruleStore = new FakeAlertRuleStore { Document = rules ?? new AlertRuleDocument([], false, []) };
@@ -100,7 +110,7 @@ public class AlertEngineTests
         var engine = new AlertEngine(
             new AlertEngineCore(new AlertEngineOptions()),
             ruleStore, stateStore, (IAlertNotifier?)alarms ?? notifier, connection,
-            probe?.Invoke(subscriber) ?? subscriber, log, time, alarms);
+            probe?.Invoke(subscriber) ?? subscriber, log, time, alarms, console);
 
         return new Harness
         {
@@ -768,6 +778,99 @@ public class AlertEngineTests
         await harness.Until(() => harness.Notifier.Raised.Count == 1 && harness.State.Saves.Count == 1,
             "the turn's alarm to be told and written down while it waits");
         Assert.Single(harness.Engine.Snapshot.Active);
+    }
+
+    // ---- a console that is slow to read ----
+
+    // SignalR writes one message at a time to a connection, so a frame to a console that has
+    // stopped reading waits for as long as that connection lasts — up to its client timeout — and
+    // a pump that waited on it held every rule in the product with it.
+    [Fact]
+    public async Task A_console_that_stops_reading_holds_up_no_rule()
+    {
+        var console = new RecordingAlertConsole();
+        await using var harness = Build(Document([Rule("boiler", "plant/+/temp", Over90)]), console: console);
+        await harness.Engine.StartAsync(CancellationToken.None);
+        harness.Run();
+        console.Stall = true;
+
+        harness.Engine.Post(new ArrivalCommand(Message("plant/boiler/temp", "94.2")));
+        await harness.Until(() => console.Held == 1, "the alarm's frame to be stuck with the console");
+
+        harness.Engine.Post(new ArrivalCommand(Message("plant/kiln/temp", "99")));
+
+        await harness.Until(() => harness.Notifier.Raised.Count == 2 && harness.Engine.Snapshot.Active.Count == 2,
+            "the next reading to be judged and written to the log, with the frame still stuck");
+        Assert.Equal(1, console.Held);
+    }
+
+    [Fact]
+    public async Task Alarms_stuck_with_a_console_go_out_in_their_order_once_it_is_let_go()
+    {
+        var console = new RecordingAlertConsole();
+        await using var harness = Build(Document([Rule("boiler", "plant/+/temp", Over90)]), console: console);
+        await harness.Engine.StartAsync(CancellationToken.None);
+        harness.Run();
+        console.Stall = true;
+
+        // The boiler rings and its frame sticks; the kiln rings; the boiler cools, and the tick after
+        // it ends the boiler's alarm.
+        harness.Engine.Post(new ArrivalCommand(Message("plant/boiler/temp", "94.2")));
+        await harness.Until(() => console.Held == 1, "the first alarm's frame to be stuck with the console");
+        harness.Engine.Post(new ArrivalCommand(Message("plant/kiln/temp", "99")));
+        harness.Engine.Post(new ArrivalCommand(Message("plant/boiler/temp", "20")));
+
+        await harness.Until(() => harness.Notifier.Raised.Count == 2 && harness.Notifier.Resolved.Count == 1,
+            "both alarms to be raised and the first to end, with its frame still stuck");
+
+        console.Stall = false;
+
+        await harness.Until(() => console.Told.Count == 3, "every alarm to reach the console");
+        Assert.Equal(["raised a", "raised b", "resolved a"], console.Told);
+    }
+
+    [Fact]
+    public async Task An_alarm_stuck_with_a_console_is_called_off_when_the_engine_stops()
+    {
+        var console = new RecordingAlertConsole();
+        await using var harness = Build(Document([Rule("boiler", "plant/+/temp", Over90)]), console: console);
+        await harness.Engine.StartAsync(CancellationToken.None);
+        harness.Run();
+        console.Stall = true;
+
+        harness.Engine.Post(new ArrivalCommand(Message("plant/boiler/temp", "94.2")));
+        await harness.Until(() => console.Held == 1, "the alarm's frame to be stuck with the console");
+
+        await harness.StopAsync();
+
+        Assert.Equal(0, console.Held);
+    }
+
+    // The drop total is a frame like any other, and a console stuck on it is a console stuck.
+    [Fact]
+    public async Task A_console_stuck_on_the_drop_total_holds_up_no_rule_and_is_told_the_newest()
+    {
+        var console = new RecordingAlertConsole();
+        await using var harness = Build(Document([Rule("boiler", "plant/+/temp", Over90)]), console: console);
+        await harness.Engine.StartAsync(CancellationToken.None);
+
+        // More than the queue holds, with nothing draining it: the first turn has a total to tell.
+        const int posted = AlertEngine.QueueCapacity + 10;
+        for (var i = 0; i < posted; i++)
+            harness.Engine.Post(new ArrivalCommand(Message($"noise/{i}", "1")));
+
+        console.Stall = true;
+        harness.Run();
+        await harness.Until(() => console.Held == 1, "the drop total to be stuck with the console");
+
+        harness.Engine.Post(new ArrivalCommand(Message("plant/boiler/temp", "94.2")));
+        await harness.Until(() => harness.Notifier.Raised.Count == 1, "the next reading to be judged, with the total still stuck");
+
+        console.Stall = false;
+
+        await harness.Until(() => console.Dropped.Count >= 1 && console.Told.Count == 1,
+            "the total and the alarm to reach the console");
+        Assert.Equal(harness.Engine.Dropped, console.Dropped[^1]);
     }
 
     /// <summary>A rule that rings over <paramref name="over"/> and asks for its alarm on the broker.</summary>

@@ -45,15 +45,16 @@ public class AlertDispatchWiringTests
 
     // The console's events and the container's log are both channels, and both have to be there.
     // A build that resolved one of them alone would look completely healthy from the other end.
+    // AlertEndpointTests follows one alarm into both.
     [Fact]
-    public async Task The_notifier_the_engine_holds_tells_the_log_and_the_console()
+    public async Task The_engine_tells_the_log_on_its_pump_and_holds_the_hub_as_its_console()
     {
         await using var app = Host();
 
-        Assert.IsType<CompositeAlertNotifier>(app.Services.GetRequiredService<IAlertNotifier>());
+        Assert.IsType<LoggingAlertNotifier>(app.Services.GetRequiredService<IAlertNotifier>());
 
-        // Registered under their own types as well, because the composite is not the only caller:
-        // the mute endpoint resolves SignalRAlertNotifier by name to announce a mute.
+        // Registered under their own types as well: the engine is handed the hub by name as its
+        // console, and the mute endpoint resolves SignalRAlertNotifier to announce a mute.
         Assert.NotNull(app.Services.GetRequiredService<SignalRAlertNotifier>());
         Assert.NotNull(app.Services.GetRequiredService<LoggingAlertNotifier>());
     }

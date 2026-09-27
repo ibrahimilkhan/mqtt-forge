@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.SignalR;
 using MqttForge.Api.Contracts;
 using MqttForge.Api.Hubs;
-using MqttForge.Domain.Abstractions;
+using MqttForge.Application.Alerts;
 using MqttForge.Domain.Models;
 
 namespace MqttForge.Api.Realtime;
@@ -10,23 +10,16 @@ namespace MqttForge.Api.Realtime;
 /// What the console is told: an alarm started, an alarm stopped, a pair was muted, and the count
 /// of what the engine never saw.
 /// </summary>
-// Delivery concern, so it lives in Api beside SignalRMessageNotifier — and it is deliberately not
-// built like it. That class has a queue and a pump because its caller is MQTTnet's own receive
-// handler, where a wait is a wait on the broker connection itself; its comment says exactly that.
-// This class is called from AlertEngine.DeliverAsync, on the engine's own pump, which has already
-// finished judging by the time it gets here and whose other work is a one-second tick.
+// Delivery concern, so it lives in Api beside SignalRMessageNotifier. It keeps no queue of its own,
+// because both engines keep one and call it only from a loop of their own, never from a pump: the
+// alert engine from AlertConsoleSender's, the flow engine from FlowConsoleSender's, through
+// SignalRFlowNotifier. A send to every console waits on the slowest of them, and one that has
+// stopped reading holds it until its connection times out — which holds up that loop, and no rule
+// and no flow. Each engine calls a stuck frame off with its token when it stops.
 //
-// A queue of its own would buy nothing and cost something. It would add a second place an alert
-// can be dropped, and an alarm dropped on the way to the screen is the silent failure this whole
-// feature exists to prevent. A late frame is the better of the two.
-//
-// What is kept is the frame cap, for its own reason: a restart that restores every alarm that was
-// ringing hands over one list, and the engine's MaxActiveAlerts ceiling is a thousand.
-//
-// The flow engine's alarms go out here too, as the same two events in the same frames, but not
-// from a pump: it calls the overloads that take a token from the loop that sends its pushes, and
-// calls a stuck frame off when it stops. See SignalRFlowNotifier.
-public sealed class SignalRAlertNotifier : IAlertNotifier
+// What is kept here is the frame cap, for its own reason: a restart that restores every alarm that
+// was ringing hands over one list, and the engine's MaxActiveAlerts ceiling is a thousand.
+public sealed class SignalRAlertNotifier : IAlertConsole
 {
     public const string AlertsRaised = "alertsRaised";
     public const string AlertsResolved = "alertsResolved";
@@ -45,19 +38,13 @@ public sealed class SignalRAlertNotifier : IAlertNotifier
     private readonly IHubContext<MqttHub> _hub;
 
     // The last total sent, so an engine that is keeping up costs nothing. Not volatile and not
-    // interlocked: every call to DroppedAsync comes off AlertEngine's pump, which is one thread.
+    // interlocked: every call to DroppedAsync comes off AlertConsoleSender's loop, one at a time.
     private int _announced;
 
     public SignalRAlertNotifier(IHubContext<MqttHub> hub) => _hub = hub;
 
-    public Task RaisedAsync(IReadOnlyList<Alert> alerts) => SendAsync(AlertsRaised, alerts, CancellationToken.None);
-
-    public Task ResolvedAsync(IReadOnlyList<Alert> alerts) => SendAsync(AlertsResolved, alerts, CancellationToken.None);
-
-    /// <summary>The same frames, called off by <paramref name="ct"/>: the flow engine's way in.</summary>
     public Task RaisedAsync(IReadOnlyList<Alert> alerts, CancellationToken ct) => SendAsync(AlertsRaised, alerts, ct);
 
-    /// <summary>The same frames, called off by <paramref name="ct"/>: the flow engine's way in.</summary>
     public Task ResolvedAsync(IReadOnlyList<Alert> alerts, CancellationToken ct) => SendAsync(AlertsResolved, alerts, ct);
 
     /// <summary>
@@ -65,8 +52,8 @@ public sealed class SignalRAlertNotifier : IAlertNotifier
     /// person did rather than something a turn of the engine decided. A null
     /// <paramref name="until"/> is the lift: zero minutes, the panel's "Geri al".
     /// </summary>
-    // Not on IAlertNotifier. That interface is the engine's own way of saying what it judged, and
-    // a fourth method about a hub would make every future notifier implement one. The endpoint
+    // Not on IAlertConsole. That interface is the engine's own way of saying what it judged, and
+    // a fourth method about a hub would make every future console implement one. The endpoint
     // resolves this class by its own type, which is how the container registers it.
     //
     // Nullable rather than two methods: the console draws one row either way, and a second event
@@ -75,21 +62,20 @@ public sealed class SignalRAlertNotifier : IAlertNotifier
         _hub.Clients.All.SendAsync(AlertMuted, ruleId, topic, until);
 
     // Sent on a change only, which for an engine that is keeping up is never. The engine guards
-    // this as well; both guards are wanted, because the composite means this method has more than
-    // one possible caller and neither of them should have to know about the other's bookkeeping.
-    public async Task DroppedAsync(int total)
+    // this as well; both guards are wanted, because neither caller of a method like this one should
+    // have to know about the other's bookkeeping.
+    public async Task DroppedAsync(int total, CancellationToken ct)
     {
         if (total == _announced) return;
 
         _announced = total;
-        await _hub.Clients.All.SendAsync(AlertsDropped, total);
+        await _hub.Clients.All.SendAsync(AlertsDropped, total, ct);
     }
 
     private async Task SendAsync(string method, IReadOnlyList<Alert> alerts, CancellationToken ct)
     {
-        // The engine calls both halves on every turn that changed anything, and most turns change
-        // nothing on one of the two lists. An empty frame a second is a socket kept awake for no
-        // reason and a console asked to redraw for no reason.
+        // Nothing to say is no frame at all. An empty frame is a socket kept awake for no reason and
+        // a console asked to redraw for no reason.
         if (alerts.Count == 0) return;
 
         for (var sent = 0; sent < alerts.Count; sent += MaxBatchSize)
