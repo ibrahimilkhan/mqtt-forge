@@ -1,0 +1,29 @@
+/* The page: a toolbar, then palette | canvas | inspector, then the debug strip. The middle row is
+   the one that stretches. min-height stops a short window squeezing the canvas to nothing: below
+   it the panel's own column scrolls instead. */
+.page {
+  flex: 1 1 auto;
+  min-height: 520px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: var(--channel);
+}
+
+.body {
+  display: grid;
+  grid-template-columns: 172px minmax(0, 1fr) 300px;
+  gap: var(--channel);
+  min-height: 0;
+}
+
+.missing {
+  margin: 0;
+  color: var(--muted);
+}
+
+@media (max-width: 900px) {
+  .body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(360px, 1fr) auto;
+  }
+}

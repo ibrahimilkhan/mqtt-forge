@@ -638,3 +638,12 @@
 /* On the ink, for the reason the triangle takes the light on it: the levels are tuned against
    paper and surface, and against the console's blue they are 2:1. */
 .rail:not([data-open]) .menuBtn[aria-expanded='true'] .menuCount { color: var(--paper); }
+
+/* An experimental row's mark: a small letter after the name, in the row's own colour and a step
+   quieter. A badge would say "look here"; this only says "not finished". */
+.menuBeta {
+  font-family: var(--mono);
+  font-size: var(--t-nano);
+  opacity: 0.7;
+  margin-left: 2px;
+}

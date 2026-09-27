@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Antenna, Bell, Blend, Broom, ChartLine, Funnel, QrCode, Settings } from './brand/icons';
+import { Antenna, Bell, Blend, Broom, ChartLine, Funnel, Nodes, QrCode, Settings } from './brand/icons';
 
 export type PanelId =
   | 'broker'
@@ -9,7 +9,8 @@ export type PanelId =
   | 'alerts'
   | 'manage'
   | 'mobile'
-  | 'settings';
+  | 'settings'
+  | 'flows';
 
 /**
  * What the panel is for, rather than what it is called.
@@ -30,7 +31,7 @@ export type PanelId =
  */
 export type PanelGroup = 'Link' | 'Reading' | 'Tools';
 
-type Panel = { id: PanelId; label: string; group: PanelGroup; icon: () => ReactElement };
+type Panel = { id: PanelId; label: string; group: PanelGroup; icon: () => ReactElement; beta?: boolean };
 
 // These share the one panel column, so only one is ever open. Publish and the log are not here:
 // they have fixed places in the workspace and are always on screen.
@@ -45,6 +46,10 @@ export const PANELS: ReadonlyArray<Panel> = [
   { id: 'chart', label: 'Chart', group: 'Reading', icon: ChartLine },
   { id: 'colours', label: 'Colours', group: 'Reading', icon: Blend },
   { id: 'alerts', label: 'Alerts', group: 'Reading', icon: Bell },
+  // First in Tools. It is not about reading a topic, which is what Reading holds: it is where the
+  // console is told what to do on its own — raise an alarm, publish — and that is a tool. Marked
+  // beta because it is an experiment, and a reader should know that before building on it.
+  { id: 'flows', label: 'Flows', group: 'Tools', icon: Nodes, beta: true },
   // What the console and the broker are holding, and what the reader has paused, on one screen.
   // Under Tools rather than Reading: none of it is about watching a topic, all of it is about
   // the state the console has got itself into after an afternoon of watching several.

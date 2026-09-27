@@ -26,7 +26,7 @@ import type { ReactNode } from 'react';
  * a button has one line of type's worth of room and has to be recognised in it, so each of them
  * is the simplest shape that survives thirteen pixels.
  */
-const Glyph = ({ children, weight = 1.8 }: { children: ReactNode; weight?: number }) => (
+export const Glyph = ({ children, weight = 1.8 }: { children: ReactNode; weight?: number }) => (
   <svg
     viewBox="0 0 24 24"
     width="1em"
@@ -115,6 +115,19 @@ export const Bell = () => (
     <>
       <path d="M6.4 9.6a5.6 5.6 0 0 1 11.2 0c0 3.9 1.4 5.4 1.4 5.4H5s1.4-1.5 1.4-5.4Z" />
       <path d="M10.2 18.3a2 2 0 0 0 3.6 0" />
+    </>
+  </Glyph>
+);
+
+/** Flows: three nodes and the wires between them. */
+export const Nodes = () => (
+  <Glyph>
+    <>
+      <rect x="3" y="4" width="6" height="5" rx="1" />
+      <rect x="15" y="4" width="6" height="5" rx="1" />
+      <rect x="9" y="15" width="6" height="5" rx="1" />
+      <path d="M9 6.5h6" />
+      <path d="M18 9v2.5a1.5 1.5 0 0 1-1.5 1.5H12v2" />
     </>
   </Glyph>
 );

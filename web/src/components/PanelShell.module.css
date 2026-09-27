@@ -53,6 +53,22 @@
   .panel { outline: 1px solid; outline-offset: -1px; }
 }
 
+/* A panel whose body is a canvas: a column, with the block taking whatever height is left under
+   the band. The panel stops scrolling — the canvas pans instead — and the block stops being a
+   flow of paragraphs with a margin under it. */
+.panel[data-stretch] {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.panel[data-stretch] > .block {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 /* The head row itself. On its own it holds the close button and nothing else, and draws no rule:
    with nothing but the × on the row, a line only drew a box around the empty space beside it.
    Every panel the menu opens takes `.band` below with it and has a name to put on the row. */

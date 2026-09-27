@@ -11,7 +11,7 @@ type Props = {
    * Every panel the menu opens does. A panel is a page: it is opened by name, it is read on its
    * own, and one whose top edge is whichever field happens to come first has no top edge at all.
    * The rail's own row says which is open, but it says it a rail's width away and in a list of
-   * eight; the band says it where the reading starts.
+   * nine; the band says it where the reading starts.
    *
    * The one that does not is the publish form, which is not a page. It has a fixed place in the
    * workspace under the chart, it is never opened or closed, and the region it sits in has a
@@ -20,11 +20,21 @@ type Props = {
   named?: boolean;
   onClose?: () => void;
   children: ReactNode;
+  /**
+   * The panel is a column whose body takes all the height it is given, rather than a page that
+   * scrolls. For the one panel whose body is a canvas: a canvas has no height of its own to
+   * scroll through, so it has to be handed one.
+   */
+  stretch?: boolean;
 };
 
-export function PanelShell({ title, named = false, onClose, children }: Props) {
+export function PanelShell({ title, named = false, onClose, stretch = false, children }: Props) {
   return (
-    <section className={styles.panel} aria-label={`${title} panel`}>
+    <section
+      className={styles.panel}
+      aria-label={`${title} panel`}
+      data-stretch={stretch ? '' : undefined}
+    >
       {/* Off screen only where there is no band to carry it — a pane with a fixed place, which
           has no name to say and no button to close. The head row is drawn when something has to
           sit on it, and an empty bordered row would leave a rule with nothing above it. */}

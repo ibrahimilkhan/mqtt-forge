@@ -32,6 +32,7 @@ import { SoundPrompt } from './features/alerts/SoundButton';
 import { useSoundStore } from './features/alerts/alertSound';
 import { useAlertStore } from './stores/alertStore';
 import { useLinkWatchStore } from './stores/linkWatchStore';
+import { FlowsPanel } from './features/flows/FlowsPanel';
 
 /** The width the workspace stops being columns at, and the rail starts lying over it. */
 const NARROW = '(max-width: 760px)';
@@ -55,6 +56,7 @@ const PANEL_VIEWS: Record<PanelId, (props: PanelProps) => ReactNode> = {
   manage: ManagePanel,
   mobile: MobilePanel,
   settings: AppearancePanel,
+  flows: FlowsPanel,
 };
 
 /**
@@ -187,7 +189,7 @@ export function App({ hub }: { hub: Hub }) {
             type="button"
             className={styles.railToggle}
             /* A toggle, not a disclosure. `aria-expanded` over `aria-controls="panel-menu"`
-               said the menu was collapsed — and nothing is: the nav holds the same eight
+               said the menu was collapsed — and nothing is: the nav holds the same nine
                buttons at both widths, every one of them focusable, named and reachable, which
                the menu's own comment below says out loud. A listener told 'collapsed' would
                open it before using a menu that was never shut. What this control actually does
@@ -227,9 +229,11 @@ export function App({ hub }: { hub: Hub }) {
                 ? `${panel.label} · ${pointedAt}`
                 : panel.id === 'settings' && soundWanted && !soundArmed
                   ? 'Sound is not ready — click to turn it on'
-                  : menuOpen
-                    ? undefined
-                    : panel.label;
+                  : panel.beta
+                    ? `${panel.label} (experimental)`
+                    : menuOpen
+                      ? undefined
+                      : panel.label;
 
             return (
               <Fragment key={panel.id}>
@@ -265,6 +269,13 @@ export function App({ hub }: { hub: Hub }) {
                 >
                   <Icon />
                   {menuOpen && <span>{panel.label}</span>}
+                  {/* Beside the name, in the name's own line, and silent to a screen reader — the
+                      row's title says the word; this only has to be seen. */}
+                  {menuOpen && panel.beta && (
+                    <span className={styles.menuBeta} aria-hidden="true">
+                      β
+                    </span>
+                  )}
                   {/* At the end of the row, so the name is still what the eye lands on and this
                       is what it finds next. A shape as well as a colour, because a colour on its
                       own says nothing to a reader who cannot tell these two apart. */}
@@ -321,7 +332,7 @@ export function App({ hub }: { hub: Hub }) {
         wide={
           openPanel === 'broker'
             ? 'full'
-            : openPanel === 'alerts' || openPanel === 'colours'
+            : openPanel === 'alerts' || openPanel === 'colours' || openPanel === 'flows'
               ? 'fill'
               : undefined
         }
