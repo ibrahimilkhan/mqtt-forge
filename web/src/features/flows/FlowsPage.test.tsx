@@ -679,7 +679,7 @@ describe('the debug strip', () => {
     expect(within(empty).getByText('no topic')).toHaveClass(strip.none);
     expect(within(empty).getByText('empty payload')).toHaveClass(strip.none);
     expect(within(error).getByText('The flow stopped.')).not.toHaveClass(strip.none);
-    expect(stripSheet.replace(/\/\*[\s\S]*?\*\//g, '')).toMatch(/\.none\s*\{[^}]*color:\s*var\(--muted\)/);
+    expect(stripSheet.replace(/\/\*[\s\S]*?\*\//g, '')).toMatch(/\.none\s*\{[^}]*[{;\s]color:\s*var\(--muted\)/);
   });
 
   // Clear goes with the lines it cleared, and a browser hands the keyboard of a button taken out
