@@ -16,8 +16,9 @@ namespace MqttForge.Application.Flows;
 //
 // Alarms are a record too, and one the console acts on: an end it never hears leaves an alarm on
 // the badge, and a raise it never hears is an alarm nobody sees. So they are kept in the order they
-// happened, every one of them for a console that keeps up, and are sent before any status that
-// counts them — see SendWaitingAsync, and Compact for a console that does not keep up.
+// happened, every one of them while no more than AlarmEvents are waiting, and are sent before any
+// status that counts them — see SendWaitingAsync, and Compact for what happens past that bound,
+// whether the console has stopped taking or one turn handed over more than it holds.
 public sealed class FlowConsoleSender
 {
     /// <summary>Debug batches kept for a console slow to take them: four seconds of the pump's pushes.</summary>
@@ -115,6 +116,10 @@ public sealed class FlowConsoleSender
     // it too, and a picture a push behind the badge is put right by the next push, a quarter second on.
     // Taken the other way round, a status could count an alarm handed over after the alarms were taken,
     // and light a node for an alarm the badge had not been told of.
+    //
+    // Within the bound, that is. Past it, Compact lets go both ends of an alarm that came and went
+    // while waiting, and the status waiting beside them may have been made while that alarm stood:
+    // it then counts an alarm the console is never told of, until the next push, a quarter second on.
     private async Task SendWaitingAsync(CancellationToken ct)
     {
         while (true)
@@ -164,10 +169,12 @@ public sealed class FlowConsoleSender
             (lost, _alarmsLost) = (_alarmsLost, 0);
         }
 
-        // Said once the console is taking again, rather than every time the list was cut back.
+        // Said once the console is taking again, rather than every time the list was cut back. The log
+        // and not the alert history, which keeps the last hundred to end: past the bound these are
+        // thousands, and most of them are gone from it by now.
         if (untold > 0)
             _log.LogWarning("{Count} flow alarms went up and came down while the console was not taking what it was sent. " +
-                            "It was not told of them; the log and the alert history were.", untold);
+                            "It was not told of them; the log was.", untold);
 
         if (lost > 0)
             _log.LogWarning("The console fell {Count} flow alarm events behind, and the oldest were let go. " +
@@ -178,14 +185,16 @@ public sealed class FlowConsoleSender
 
     /// <summary>What the console still needs of the alarms waiting for it, cut to that once there are too many.</summary>
     // An alarm that went up and came down while the console was not taking is let go, both ends of it:
-    // a console never told it went up has nothing to take down, and what it missed is in the log and
-    // the history. Every other event stays, in its order. What is left is then at most the alarms
-    // standing now, whose ends have not come, and the ends of those standing when the console stopped
-    // taking, whose raises it has — twice FlowLimits.StandingAlarms, at any rate of alarms.
+    // a console never told it went up has nothing to take down, and what it missed is in the log. Every
+    // other event stays, in its order. What is left is then at most the alarms standing now, whose
+    // ends have not come, and the ends of those standing when the console stopped taking, whose
+    // raises it has — twice FlowLimits.StandingAlarms, at any rate of alarms.
     //
-    // Only past the bound: a console keeping up is told of every alarm, however briefly it stood.
-    // And the oldest go after all if that is still too many, which no alarm book that keeps its
-    // ceiling can make happen, so that the bound holds whatever the pump hands over.
+    // Only past the bound: a console that never has more than AlarmEvents waiting is told of every
+    // alarm, however briefly it stood. One that keeps up can still get here, when a single turn hands
+    // over more than that at once. And the oldest go after all if that is still too many, which no
+    // alarm book that keeps its ceiling can make happen, so that the bound holds whatever the pump
+    // hands over.
     private void Compact()
     {
         var ended = new HashSet<string>(StringComparer.Ordinal);

@@ -17,9 +17,10 @@ namespace MqttForge.Application.Alerts;
 // and what is left is then at most the alerts standing now, whose ends have not come, and the ends
 // of those standing when the channel last took, whose raises it has.
 //
-// Only past the bound: a channel keeping up is told of every alert, however briefly it stood. And
-// the oldest go after all if that is still too many, which no engine keeping its ceiling can make
-// happen, so that the bound holds whatever it is handed.
+// Only past the bound: a channel that never has more than that waiting is told of every alert,
+// however briefly it stood. One that keeps up can still get here, when a single hand-over is more
+// than the bound. And the oldest go after all if that is still too many, which no engine keeping
+// its ceiling can make happen, so that the bound holds whatever it is handed.
 public sealed class AlertBacklog(int bound)
 {
     // A list under a lock rather than a channel: what Compact does needs the whole of it at once.
