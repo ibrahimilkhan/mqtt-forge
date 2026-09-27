@@ -621,7 +621,8 @@ public class AlertEngineTests
 
         harness.Engine.Post(new RuleSetChangedCommand([]));
 
-        await harness.Until(() => harness.Notifier.Resolved.Count == 1, "the save ended it");
+        await harness.Until(() => harness.Notifier.Resolved.Count == 1 && harness.Subscriber.Unsubscribed.Count == 1,
+            "the save to end it and take its filter down");
 
         // SetRules is the only place this resolution can come from — no message will ever reach
         // that pair again — and the pump has to carry the body out.

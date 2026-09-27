@@ -115,7 +115,8 @@ public class AlertRuleServiceTests
 
         Assert.Equal(["boiler"], Assert.Single(fixture.Store.Saves).Select(rule => rule.Id));
 
-        await fixture.Until(() => fixture.Engine.Snapshot.Rules.Count == 1, "the rule set reached the engine");
+        await fixture.Until(() => fixture.Engine.Snapshot.Rules.Count == 1 && fixture.Subscriber.Batches.Count == 1,
+            "the rule set to reach the engine and its filter to go up");
 
         // The push is the whole mechanism: the engine never re-reads the file on the message path,
         // so the proof it heard about this save is that it went and subscribed the rule's filter.
@@ -176,7 +177,8 @@ public class AlertRuleServiceTests
         await fixture.Service.ReplaceAsync([Rule("allowed", "plant/allowed/#")], false,
             CancellationToken.None);
 
-        await fixture.Until(() => fixture.Engine.Snapshot.Rules.Count == 1, "the allowed save arrived");
+        await fixture.Until(() => fixture.Engine.Snapshot.Rules.Count == 1 && fixture.Subscriber.Batches.Count == 1,
+            "the allowed save to arrive and its filter to go up");
 
         Assert.Equal("allowed", Assert.Single(fixture.Engine.Snapshot.Rules).RuleId);
         Assert.Equal(["plant/allowed/#"], Assert.Single(fixture.Subscriber.Batches));
@@ -268,7 +270,8 @@ public class AlertRuleServiceTests
         fixture.Store.SaveFault = null;
         await fixture.Service.ReplaceAsync([Rule("kept", "plant/kept/#")], false, CancellationToken.None);
 
-        await fixture.Until(() => fixture.Engine.Snapshot.Rules.Count == 1, "the save that worked arrived");
+        await fixture.Until(() => fixture.Engine.Snapshot.Rules.Count == 1 && fixture.Subscriber.Batches.Count == 1,
+            "the save that worked to arrive and its filter to go up");
 
         Assert.Equal("kept", Assert.Single(fixture.Engine.Snapshot.Rules).RuleId);
         Assert.Equal(["plant/kept/#"], Assert.Single(fixture.Subscriber.Batches));
