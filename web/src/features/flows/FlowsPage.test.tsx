@@ -256,6 +256,23 @@ describe('Flows page', () => {
     expect(screen.queryByRole('button', { name: 'Deploy' })).not.toBeInTheDocument();
   });
 
+  // The canvas and the inspector are both made again for each flow, and siblings that share a key
+  // leave React unable to tell them apart: every tab shown left its canvas behind in the page,
+  // five canvases after five tabs, the inspector pushed down under them.
+  it('draws one canvas and one inspector, whichever tabs were shown before', async () => {
+    keeping([watch, sim]);
+    render(<FlowsPage />);
+    await screen.findByRole('tab', { name: /Boiler watch/ });
+
+    await userEvent.click(screen.getByRole('tab', { name: /Boiler simulator/ }));
+    await userEvent.click(screen.getByRole('tab', { name: /Boiler watch/ }));
+    await userEvent.click(screen.getByRole('tab', { name: /Boiler simulator/ }));
+
+    expect(document.querySelectorAll('.react-flow')).toHaveLength(1);
+    expect(document.querySelectorAll('#flow-canvas')).toHaveLength(1);
+    expect(document.querySelectorAll('aside')).toHaveLength(1);
+  });
+
   it('makes a new flow from beside the tabs, and shows it', async () => {
     keeping([watch]);
     render(<FlowsPage />);

@@ -293,11 +293,18 @@ function Page() {
         <div id={FLOW_PANEL} role="tabpanel" aria-labelledby={tabIdOf(shown.id)} className={styles.flow}>
           <div className={styles.body}>
             <Palette onAdd={add} />
-            <FlowCanvas key={shown.id} flow={shown} running={running.has(shown.id)} problems={problems[shown.id] ?? NOTHING_WRONG} />
+            {/* Keyed apart as well as by flow: siblings that share a key cannot be told apart, and
+                each tab shown would leave its canvas behind in the page. */}
+            <FlowCanvas
+              key={`canvas-${shown.id}`}
+              flow={shown}
+              running={running.has(shown.id)}
+              problems={problems[shown.id] ?? NOTHING_WRONG}
+            />
             {/* One inspector per flow, like the canvas: what it holds — a delete it is asking about —
                 is about the flow it was opened on, and must not stand over the next one. */}
             <Inspector
-              key={shown.id}
+              key={`inspector-${shown.id}`}
               flow={shown}
               deployed={byId.get(shown.id)}
               running={running.has(shown.id)}
