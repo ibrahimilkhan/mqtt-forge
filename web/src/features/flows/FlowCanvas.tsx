@@ -295,6 +295,13 @@ export function FlowCanvas({ flow, running, problems }: { flow: FlowDto; running
 /** Where a port stands on its side of the node: spread evenly, top to bottom. */
 const portTop = (index: number, count: number) => `${((index + 1) * 100) / (count + 1)}%`;
 
+/**
+ * How many letters the longest port name on a side has, when that side's ports are named at all —
+ * one port needs no name — for the stylesheet to keep a column that wide for the names inside the
+ * node's edge.
+ */
+const named = (ports: readonly string[]) => (ports.length > 1 ? Math.max(...ports.map((port) => port.length)) : 0);
+
 function FlowNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
   const spec = NODE_SPECS[data.node.type];
   const Icon = spec.icon;
@@ -308,6 +315,7 @@ function FlowNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
   return (
     <div
       className={styles.node}
+      style={{ '--in-names': named(spec.ins), '--out-names': named(spec.outs) } as CSSProperties}
       data-group={spec.group}
       data-selected={selected ? '' : undefined}
       data-problem={data.problems ? '' : undefined}

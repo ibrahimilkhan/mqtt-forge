@@ -61,8 +61,16 @@
 /* ---- a node ---- */
 
 /* The width is FlowCanvas.tsx's NODE_WIDTH, which the canvas sets as --node-width: the page reckons
-   where a new node goes from the same number. */
+   where a new node goes from the same number.
+
+   A side whose ports are named keeps a column for the names inside the node's edge, so a wire
+   meets its port beside the name rather than running through it, and the node's own text stops
+   where the column starts rather than running under a name. The node says how many letters its
+   longest name on each side has (0 when that side names none); a name is --t-nano mono, 0.6em a
+   letter, set 9px in with 6px after it. With no names the column is the node's usual 9px. */
 .node {
+  --in-column: calc(9px + min(var(--in-names), 1) * 6px + var(--in-names) * 0.6 * var(--t-nano));
+  --out-column: calc(9px + min(var(--out-names), 1) * 6px + var(--out-names) * 0.6 * var(--t-nano));
   position: relative;
   width: var(--node-width);
   background: var(--surface);
@@ -79,7 +87,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 9px 1px;
+  padding: 7px var(--out-column) 1px var(--in-column);
   font-weight: 600;
 }
 
@@ -96,7 +104,7 @@
 .name { flex: 1 1 auto; min-width: 0; }
 
 .summary {
-  padding: 0 9px;
+  padding: 0 var(--out-column) 0 var(--in-column);
   font-family: var(--mono);
   font-size: var(--t-micro);
   color: var(--muted);
@@ -106,7 +114,7 @@
 }
 
 .status {
-  padding: 3px 9px 7px;
+  padding: 3px var(--out-column) 7px var(--in-column);
   font-family: var(--mono);
   font-size: var(--t-nano);
   color: var(--muted);
@@ -121,17 +129,21 @@
   border: 1.5px solid var(--muted);
 }
 
+/* A port's name, in the column its side keeps: beside its handle, which stands on the edge and
+   reaches 5px in, and level with it. Inputs read from the left edge, outputs up to the right one. */
 .portIn,
 .portOut {
   position: absolute;
   transform: translateY(-50%);
   font-family: var(--mono);
   font-size: var(--t-nano);
+  line-height: 1;
   color: var(--muted);
+  white-space: nowrap;
   pointer-events: none;
 }
-.portIn { right: calc(100% + 8px); }
-.portOut { left: calc(100% + 8px); }
+.portIn { left: 9px; }
+.portOut { right: 9px; text-align: right; }
 
 .inject {
   padding: 1px 7px;
