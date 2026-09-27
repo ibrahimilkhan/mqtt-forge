@@ -4,12 +4,18 @@ import { PanelShell } from '../../components/PanelShell';
 import panel from '../../styles/panel.module.css';
 
 /**
- * The page did not arrive. Marked where its import fails rather than read off the error's words,
- * which every browser writes its own way: Chrome's "Failed to fetch dynamically imported module",
- * Firefox's "error loading dynamically imported module", Safari's "Importing a module script
- * failed".
+ * The import failed — marked here rather than told apart by the error's own words, which every
+ * browser writes its own way: Chrome's "Failed to fetch dynamically imported module", Firefox's
+ * "error loading dynamically imported module", Safari's "Importing a module script failed". Not
+ * named for a fetch failure, because it is not always one: a fault thrown while the chunk's own
+ * code first runs — an import cycle, say — rejects the very same import, and is no fetch failure
+ * at all. Either way `cause` keeps what the import actually failed with, for the notice to show.
  */
-class PageNotFetched extends Error {}
+class PageNotLoaded extends Error {
+  constructor(cause: unknown) {
+    super('The page could not be loaded.', { cause });
+  }
+}
 
 /**
  * The page is its own chunk. It carries a canvas library the rest of the console has no use for,
@@ -25,7 +31,7 @@ class PageNotFetched extends Error {}
  */
 const FlowsPage = lazy(() =>
   import('./FlowsPage').catch((error: unknown) => {
-    throw new PageNotFetched('The page could not be fetched.', { cause: error });
+    throw new PageNotLoaded(error);
   }),
 );
 
@@ -48,13 +54,19 @@ export function FlowsPanel({ onClose }: { onClose: () => void }) {
  * than reloaded into again and again. Both offer the reload, which starts the page afresh.
  */
 function Stopped({ error }: { error: Error }) {
+  // Read for a bug report as much as for a reader: worth showing even though the advice above
+  // already covers both of what it could mean, because it is the one part of this that says
+  // which of the two actually happened here.
+  const cause = error instanceof PageNotLoaded && error.cause instanceof Error ? error.cause.message : undefined;
+
   return (
     <div>
       <p className={panel.fault}>
-        {error instanceof PageNotFetched
+        {error instanceof PageNotLoaded
           ? 'The page could not be loaded. If the console was updated after this window was opened, a reload fetches the new one; if the server has stopped, start it first.'
           : `The page hit an error: ${error.message}`}
       </p>
+      {cause && <p className={panel.note}>{cause}</p>}
       <div className={panel.actions}>
         <button type="button" onClick={() => window.location.reload()}>
           Reload the console

@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import panel from '../../styles/panel.module.css';
 
 /** Whether the page's chunk arrives when the panel asks for it. */
 const chunk = { arrives: false };
@@ -73,5 +74,27 @@ describe('Flows panel', () => {
 
     expect(await screen.findByText(/The page could not be loaded/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reload the console' })).toBeInTheDocument();
+  });
+
+  // An import cycle throws while the chunk's own code first runs, which rejects the dynamic
+  // import exactly as a fetch failure does — so the advice above cannot say which one happened,
+  // and still does not. But the words the failure came with say a good deal on their own, to a
+  // reader who wants to know more or a bug report that should have them. Not pinned to a literal
+  // string: like the advice above, which browser or bundler said it is not this test's business,
+  // only that whatever it was is there, under the notice, in the same voice the console uses for
+  // anything it only wants to add rather than to warn with.
+  it('shows the underlying error under the notice, in the muted voice it is said in', async () => {
+    chunk.arrives = false;
+    const FlowsPanel = await freshPanel();
+    render(<FlowsPanel onClose={() => {}} />);
+
+    const notice = await screen.findByText(/^The page could not be loaded\./);
+    // Its own paragraph, right after the advice, not folded into it: the two are read as
+    // separate sentences, one said flatly and one said quieter.
+    const cause = notice.nextElementSibling;
+
+    expect(cause).toHaveClass(panel.note);
+    expect(cause?.textContent).not.toBe('');
+    expect(cause?.textContent).not.toBe(notice.textContent);
   });
 });
