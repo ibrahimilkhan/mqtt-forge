@@ -22,6 +22,7 @@ public sealed class FlowServiceTests : IAsyncLifetime
     private readonly FakeTimeProvider _time = new(T0);
     private readonly FakeFlowStore _store = new();
     private readonly ILinkForRules _link = Substitute.For<ILinkForRules>();
+    private readonly IAlertDispatcher _dispatcher = Substitute.For<IAlertDispatcher>();
     private readonly CancellationTokenSource _stop = new();
     private readonly FlowEngine _engine;
     private readonly FlowService _sut;
@@ -31,7 +32,7 @@ public sealed class FlowServiceTests : IAsyncLifetime
     {
         _engine = new FlowEngine(new FlowRuntime(), _store, Substitute.For<IAlertNotifier>(),
             Substitute.For<IFlowNotifier>(), new FakeConnection(), new RecordingSubscriber(), new RecordingPublisher(),
-            new AlertEngineOptions(), NullLogger<FlowEngine>.Instance, _time);
+            new AlertEngineOptions(), NullLogger<FlowEngine>.Instance, _time, _dispatcher);
         _sut = new FlowService(_store, _engine, _link, new AlertEngineOptions());
     }
 
@@ -67,6 +68,13 @@ public sealed class FlowServiceTests : IAsyncLifetime
 
     /// <summary>A flow with a button, so whether the engine is running it is one question away.</summary>
     private static Flow Pressed(string id = "f1") => new FlowBuilder(id).Node("go", "inject").Build();
+
+    /// <summary>A button whose alarm leaves by webhook, so the turn that raises it waits on the dispatcher.</summary>
+    private static Flow Ringing(string id = "f1") => new FlowBuilder(id)
+        .Node("go", "inject", new { topic = "plant/k1/button", payload = "1" })
+        .Node("ring", "alarm", new { name = "Pressed", severity = "warn", webhook = "https://hooks.example.com/pressed" })
+        .Wire("go", "out", "ring", "raise")
+        .Build();
 
     [Fact]
     public async Task A_flow_that_compiles_is_kept_and_asks_for_a_link_when_it_is_on()
@@ -167,15 +175,25 @@ public sealed class FlowServiceTests : IAsyncLifetime
     public async Task A_delete_is_answered_once_the_engine_has_stopped_the_flow()
     {
         Run();
-        await _sut.SaveAsync(Pressed(), CancellationToken.None);
-        await _stop.CancelAsync();
-        await _pump!.WaitAsync(TimeSpan.FromSeconds(10));
+        await _sut.SaveAsync(Ringing(), CancellationToken.None);
 
-        // The pump held still from here: a delete answered before it has stopped the flow would
-        // leave a button on a deleted flow still pressable.
+        // The pump held up by a turn telling an alarm to a channel slow to answer: it reaches nothing
+        // posted after that until the channel lets it go.
+        var sent = new TaskCompletionSource();
+        _dispatcher.RaisedAsync(Arg.Any<IReadOnlyList<Alert>>()).Returns(sent.Task);
+        Assert.True(_sut.Inject("f1", "go"));
+        await Until(() => _dispatcher.ReceivedCalls().Any(), "the pump to be held up telling the alarm");
+
+        // A delete answered before the engine has stopped the flow would leave a button on a deleted
+        // flow still pressable.
         var deleting = _sut.DeleteAsync("f1", CancellationToken.None);
-
         Assert.False(deleting.IsCompleted);
+        Assert.True(_engine.CanInject("f1", "go"));
+
+        sent.SetResult();
+
+        Assert.True(await deleting.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.False(_engine.CanInject("f1", "go"));
     }
 
     // Bounded: a pump held up — by an alarm channel slow to answer, or a broker slow with a

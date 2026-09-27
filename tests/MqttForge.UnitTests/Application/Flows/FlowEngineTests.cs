@@ -862,6 +862,10 @@ public sealed class FlowEngineTests : IAsyncLifetime
             await ClockStill(() => _publisher.Sent.Count == i, $"arrival {i} to be run");
             _time.Advance(FlowLimits.StatusEvery);
             await ClockStill(() => Count(engine, "in") == i, $"push {i} to be made");
+
+            // In the console's hands before the next is made. Made first, push 2 could take push 1's
+            // place in the slot before the loop had taken it, and the console be sent [0, 2, 3].
+            if (i == 1) await ClockStill(() => _console.Held == 1, "push 1 to be stuck with the console");
         }
 
         _console.Stall = false;
