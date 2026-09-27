@@ -20,6 +20,11 @@ public interface IMqttSubscriber
     // The owner is defaulted so that every caller that predates the alerting engine — the
     // subscription service, and the integration tests that drive a real broker — keeps saying
     // exactly what it always said: this is the console asking.
+    //
+    // A refusal is a MessageRejectedException naming the filters the broker would not have, and
+    // only a refusal is: the engines stop asking for those on this link. A broker that kept the link
+    // and did not answer in time is a BrokerDidNotAnswerException, and a link that went is a
+    // NotConnectedException, and both are worth asking again.
     Task SubscribeAsync(IReadOnlyList<SubscriptionRequest> requests, CancellationToken ct,
                         SubscriptionOwner owner = SubscriptionOwner.Console);
 

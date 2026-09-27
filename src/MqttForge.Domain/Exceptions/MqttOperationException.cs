@@ -33,6 +33,17 @@ public sealed class NotConnectedException : MqttOperationException
         : base(message, inner) { }
 }
 
+// The link stayed up and the broker did not answer in time: a SUBSCRIBE whose SUBACK never came,
+// an UNSUBSCRIBE whose UNSUBACK never did. Its own type because it is neither of the two it would
+// otherwise be read as. It is not a refusal, since nothing was refused and asking again may well
+// work, and a caller that took it for one would stop asking; and it is not a lost link, since the
+// link is still there.
+public sealed class BrokerDidNotAnswerException : MqttOperationException
+{
+    public BrokerDidNotAnswerException(string message, Exception? inner = null)
+        : base(message, inner) { }
+}
+
 // Message itself rejected (e.g. topic/payload too large), independent of connection health
 public sealed class MessageRejectedException : MqttOperationException
 {

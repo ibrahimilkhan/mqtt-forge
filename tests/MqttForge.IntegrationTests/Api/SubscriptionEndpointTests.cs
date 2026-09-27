@@ -1,9 +1,17 @@
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
 using MqttForge.Api.Contracts;
+using MqttForge.Domain.Abstractions;
+using MqttForge.Domain.Enums;
+using MqttForge.Domain.Exceptions;
+using MqttForge.Domain.Models;
 using MqttForge.IntegrationTests.Support;
 using MQTTnet;
+using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using Xunit;
 
 namespace MqttForge.IntegrationTests.Api;
@@ -77,5 +85,34 @@ public class SubscriptionEndpointTests : IClassFixture<MqttForgeApiFactory>, ICl
         Assert.Equal("180", message.Payload);
     }
 
+    // A broker that keeps the link and never answers the SUBSCRIBE. The subscriber gives up at the
+    // client's timeout and says the broker did not answer, and so does the console's answer: not a
+    // refusal, which would send the reader off to narrow a filter nothing was wrong with, and not a
+    // 500, which says the server failed at something.
+    [Fact]
+    public async Task A_subscribe_the_broker_did_not_answer_is_a_504_that_says_so()
+    {
+        var subscriber = Substitute.For<IMqttSubscriber, ISubscriptionRestorer>();
+        subscriber.Filters.Returns([]);
+        subscriber
+            .SubscribeAsync(Arg.Any<IReadOnlyList<SubscriptionRequest>>(), Arg.Any<CancellationToken>(), Arg.Any<SubscriptionOwner>())
+            .ThrowsAsync(new BrokerDidNotAnswerException(
+                "The broker did not answer the SUBSCRIBE for 'sensors/#' within 100 seconds."));
+
+        using var factory = new MqttForgeApiFactory();
+        var client = factory
+            .WithWebHostBuilder(builder => builder.ConfigureTestServices(services => services.AddSingleton(subscriber)))
+            .CreateClient();
+
+        var response = await client.PostAsJsonAsync("/api/subscriptions", new SubscribeRequestDto("sensors/#", 0));
+
+        Assert.Equal(HttpStatusCode.GatewayTimeout, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<ProblemDetailsResponse>();
+        Assert.Equal("The broker did not answer", problem!.Title);
+        Assert.Contains("'sensors/#'", problem.Detail);
+    }
+
     private sealed record IncomingMessage(string Topic, string Payload, int Qos, bool Retain);
+
+    private sealed record ProblemDetailsResponse(string Title, string Detail, int Status);
 }

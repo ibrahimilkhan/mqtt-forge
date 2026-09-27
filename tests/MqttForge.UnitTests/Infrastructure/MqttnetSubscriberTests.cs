@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Time.Testing;
 using MqttForge.Domain.Abstractions;
 using MqttForge.Domain.Enums;
 using MqttForge.Domain.Exceptions;
@@ -73,6 +74,128 @@ public class MqttnetSubscriberTests
 
         Assert.Contains("'#'", thrown.Message);
         Assert.Equal(["#"], thrown.Filters);
+    }
+
+    // ---- a broker that does not answer, and a link that goes ----
+
+    /// <summary>
+    /// MQTTnet's own wait for an answer: until its token calls it off, and then its timeout
+    /// exception rather than a cancellation.
+    /// </summary>
+    // MqttPacketAwaitable fails a wait its token called off with MqttCommunicationTimedOutException,
+    // and MQTTnet keeps its own Options.Timeout only for a caller whose token cannot be cancelled.
+    // So this is a broker that keeps the link and never answers, as a caller with a token sees it.
+    private static async Task<T> Unanswered<T>(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw new MqttCommunicationTimedOutException();
+        }
+
+        throw new InvalidOperationException("An infinite wait came back.");
+    }
+
+    private void GivenTheBrokerNeverAnswersASubscribe() =>
+        _client
+            .SubscribeAsync(Arg.Any<MqttClientSubscribeOptions>(), Arg.Any<CancellationToken>())
+            .Returns(call => Unanswered<MqttClientSubscribeResult>(call.ArgAt<CancellationToken>(1)));
+
+    /// <summary>A subscriber on a clock the test moves, over a client whose timeout is ten seconds.</summary>
+    private MqttnetSubscriber OnTheClock(FakeTimeProvider time)
+    {
+        _client.IsConnected.Returns(true);
+        _client.Options.Returns(new MqttClientOptions { Timeout = TimeSpan.FromSeconds(10) });
+
+        return new MqttnetSubscriber(new MqttnetClientProvider(_client), Substitute.For<IMessageNotifier>(), time);
+    }
+
+    // Every caller here has a token that can be cancelled — the engines' pumps, the console's
+    // requests — so MQTTnet waited for the SUBACK for as long as the link lasted, and a broker that
+    // answers its pings kept the link for ever: the pump held with it, and every rule deaf.
+    [Fact]
+    public async Task A_subscribe_the_broker_never_answers_is_given_up_at_the_clients_timeout_and_is_not_a_refusal()
+    {
+        var time = new FakeTimeProvider();
+        var sut = OnTheClock(time);
+        GivenTheBrokerNeverAnswersASubscribe();
+
+        using var caller = new CancellationTokenSource();
+        var asking = sut.SubscribeAsync(Asking("plant/#"), caller.Token);
+        time.Advance(TimeSpan.FromSeconds(10));
+
+        var thrown = await Assert.ThrowsAsync<BrokerDidNotAnswerException>(() => asking.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Contains("'plant/#'", thrown.Message);
+        Assert.Empty(sut.ActiveFilters);
+    }
+
+    // What MQTTnet hands a SUBSCRIBE still waiting when the link goes — the reader moving to another
+    // broker, a keep-alive that gave up — and what it hands one sent a moment after. Read as a
+    // refusal, the engines stopped asking for a filter nobody had refused, and faulted its rule.
+    [Theory]
+    [InlineData("disconnected")]
+    [InlineData("not connected")]
+    [InlineData("cancelled")]
+    public async Task A_link_that_goes_while_subscribing_is_a_link_that_went_and_not_a_refusal(string how)
+    {
+        _client
+            .SubscribeAsync(Arg.Any<MqttClientSubscribeOptions>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(how switch
+            {
+                "disconnected" => new MqttClientDisconnectedException(null!),
+                "not connected" => new MqttClientNotConnectedException(),
+                _ => new OperationCanceledException("The client called off its own link."),
+            });
+        var sut = CreateSut();
+
+        using var caller = new CancellationTokenSource();
+        var thrown = await Assert.ThrowsAsync<NotConnectedException>(() =>
+            sut.SubscribeAsync(Asking("plant/#"), caller.Token));
+
+        Assert.Contains("'plant/#'", thrown.Message);
+        Assert.Empty(sut.ActiveFilters);
+    }
+
+    // The caller's own token, called off: the engine stopping, or the console's request gone. Not
+    // the broker's doing, and nothing a refusal could say.
+    [Fact]
+    public async Task A_subscribe_its_caller_calls_off_is_a_cancellation_and_not_a_refusal()
+    {
+        _client.IsConnected.Returns(true);
+        GivenTheBrokerNeverAnswersASubscribe();
+        var sut = CreateSut();
+
+        using var caller = new CancellationTokenSource();
+        var asking = sut.SubscribeAsync(Asking("plant/#"), caller.Token);
+        await caller.CancelAsync();
+
+        var thrown = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => asking);
+        Assert.Equal(caller.Token, thrown.CancellationToken);
+    }
+
+    [Fact]
+    public async Task An_unsubscribe_the_broker_never_answers_is_given_up_at_the_clients_timeout()
+    {
+        var time = new FakeTimeProvider();
+        var sut = OnTheClock(time);
+        GivenTheBrokerAnswers(("plant/#", MqttClientSubscribeResultCode.GrantedQoS0));
+        await sut.SubscribeAsync(Asking("plant/#"), CancellationToken.None);
+
+        _client
+            .UnsubscribeAsync(Arg.Any<MqttClientUnsubscribeOptions>(), Arg.Any<CancellationToken>())
+            .Returns(call => Unanswered<MqttClientUnsubscribeResult>(call.ArgAt<CancellationToken>(1)));
+
+        using var caller = new CancellationTokenSource();
+        var letting = sut.UnsubscribeAsync("plant/#", caller.Token);
+        time.Advance(TimeSpan.FromSeconds(10));
+
+        await Assert.ThrowsAsync<BrokerDidNotAnswerException>(() => letting.WaitAsync(TimeSpan.FromSeconds(5)));
+
+        // Still listed: the broker was never heard to let it go.
+        Assert.Contains("plant/#", sut.ActiveFilters);
     }
 
     private static bool AsksForEverythingAtQoS2(MqttClientSubscribeOptions? options)

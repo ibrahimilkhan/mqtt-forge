@@ -155,7 +155,8 @@ public sealed class MqttnetSubscriber : IMqttSubscriber, ISubscriptionRestorer
 
         try
         {
-            result = await _client.SubscribeAsync(options.Build(), ct);
+            result = await AnsweredAsync(
+                token => _client.SubscribeAsync(options.Build(), token), $"the SUBSCRIBE for '{named}'", ct);
         }
         catch (MqttProtocolViolationException ex)
         {
@@ -181,6 +182,9 @@ public sealed class MqttnetSubscriber : IMqttSubscriber, ISubscriptionRestorer
         // communication failure. Azure IoT Hub does exactly this to a filter it does not allow,
         // and reading it as 'the link died' left the filter unnamed and the reader with nothing to
         // narrow. Only while subscribing: everywhere else this shape means what it says.
+        //
+        // Bare, and only bare. What AnsweredAsync has already said as something else — a broker
+        // that did not answer, a link that went, a caller that gave up — never reaches this line.
         catch (MqttCommunicationException ex) when (ex is not MqttClientUnexpectedDisconnectReceivedException)
         {
             throw new MessageRejectedException(
@@ -294,7 +298,8 @@ public sealed class MqttnetSubscriber : IMqttSubscriber, ISubscriptionRestorer
                 return;
             }
 
-            await _client.UnsubscribeAsync(topicFilter, ct);
+            await AnsweredAsync(
+                token => _client.UnsubscribeAsync(topicFilter, token), $"the UNSUBSCRIBE for '{topicFilter}'", ct);
             _filters.TryRemove(new KeyValuePair<string, ActiveFilter>(topicFilter, held));
             _qosAtBroker.TryRemove(topicFilter, out _);
 
@@ -382,11 +387,13 @@ public sealed class MqttnetSubscriber : IMqttSubscriber, ISubscriptionRestorer
 
             try
             {
-                await _client.UnsubscribeAsync(held.Filter, ct);
+                await AnsweredAsync(
+                    token => _client.UnsubscribeAsync(held.Filter, token), $"the UNSUBSCRIBE for '{held.Filter}'", ct);
             }
-            catch (MqttCommunicationException)
+            catch (Exception ex) when (ex is MqttCommunicationException or NotConnectedException or BrokerDidNotAnswerException)
             {
-                // The link is the thing that is wrong, and every filter goes with it anyway.
+                // The link is the thing that is wrong — gone, or not answering — and the worst of it
+                // is the duplicate above.
             }
         }
     }
@@ -424,6 +431,54 @@ public sealed class MqttnetSubscriber : IMqttSubscriber, ISubscriptionRestorer
     {
         if (!_client.IsConnected)
             throw new NotConnectedException("Connect to a broker before subscribing.");
+    }
+
+    // MQTTnet's own figure, for a client that has not been given its options yet.
+    private static readonly TimeSpan MqttnetTimeout = new MqttClientOptions().Timeout;
+
+    /// <summary>
+    /// A request the broker has to answer, with the deadline MQTTnet keeps only for a caller who
+    /// has no token to give it.
+    /// </summary>
+    // Every caller here has a token that can be cancelled — the engines' pumps, the console's
+    // requests — and MQTTnet waits on that token alone when it can be. So a broker that kept the
+    // link up and never answered held its caller until the link went, which for a broker still
+    // answering its pings was for ever: a pump held with it, and every rule and flow deaf. The wait
+    // now ends at the timeout the client was given, the one MQTTnet itself would have used.
+    //
+    // What comes back is said as what it is, and none of it is a refusal: a caller that took one
+    // for a refusal stops asking. A deadline that passed is a broker that did not answer, which
+    // asking again may well mend. A link that went is a link that went, in whichever of its three
+    // shapes MQTTnet hands it over — its own cancellation when a keep-alive gives up, the client
+    // disconnected under a request in flight, or gone just before the request left. And the
+    // caller's own token is a cancellation, whatever the library made of it.
+    private async Task<T> AnsweredAsync<T>(Func<CancellationToken, Task<T>> ask, string asked, CancellationToken ct)
+    {
+        var timeout = _client.Options?.Timeout ?? MqttnetTimeout;
+
+        using var deadline = new CancellationTokenSource(timeout, _time);
+        using var either = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
+
+        try
+        {
+            return await ask(either.Token);
+        }
+        catch (Exception ex) when (ct.IsCancellationRequested)
+        {
+            throw new OperationCanceledException($"The wait for an answer to {asked} was called off.", ex, ct);
+        }
+        catch (Exception ex) when (deadline.IsCancellationRequested &&
+                                   ex is OperationCanceledException or MqttCommunicationTimedOutException)
+        {
+            throw new BrokerDidNotAnswerException(
+                $"The broker did not answer {asked} within {timeout.TotalSeconds:0} seconds.", ex);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or MqttClientDisconnectedException
+                                       or MqttClientNotConnectedException)
+        {
+            throw new NotConnectedException(
+                $"The link to the broker went while {asked} was waiting for an answer.", ex);
+        }
     }
 
     private Task OnMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs e)

@@ -979,6 +979,19 @@ public sealed class FlowEngineTests : IAsyncLifetime
         await Eventually.Until(_time, () => _subscriber.Filters.Count == 1, "the filter to be asked for again");
     }
 
+    // What the subscriber says of a SUBSCRIBE the broker never answered: not a refusal, so no node is
+    // marked, and the filter is asked for again.
+    [Fact]
+    public async Task A_subscribe_the_broker_did_not_answer_marks_no_node_and_is_asked_for_again()
+    {
+        _subscriber.Refuse = new BrokerDidNotAnswerException("The broker did not answer the SUBSCRIBE for 'plant/+/temp' within 100 seconds.");
+        var engine = await RunningAsync(Watch());
+        _subscriber.Refuse = null;
+
+        await Eventually.Until(_time, () => _subscriber.Filters.Count == 1, "the filter to be asked for again");
+        Assert.Equal(0, Errors(engine, "in"));
+    }
+
     [Fact]
     public async Task A_cancellation_from_a_fault_nobody_foresaw_does_not_stop_the_pump()
     {

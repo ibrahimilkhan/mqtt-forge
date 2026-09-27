@@ -22,6 +22,9 @@ public sealed class MqttExceptionHandler : IExceptionHandler
             // Not a 502: the broker is not the one that ended this.
             ConnectAttemptAbortedException => (StatusCodes.Status409Conflict, "Connect aborted"),
             NotConnectedException => (StatusCodes.Status409Conflict, "Not connected"),
+            // A 504 and not a 400: the broker kept the link and did not answer in time, so nothing
+            // was refused, and the request may well go through if it is made again.
+            BrokerDidNotAnswerException => (StatusCodes.Status504GatewayTimeout, "The broker did not answer"),
             MessageRejectedException => (StatusCodes.Status400BadRequest, "Message rejected"),
             // Nothing the request did wrong: the rules were valid and where they go is unwritable.
             RulesNotSavedException => (StatusCodes.Status500InternalServerError, "Could not save the colour rules"),

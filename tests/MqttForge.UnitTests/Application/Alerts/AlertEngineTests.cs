@@ -639,6 +639,27 @@ public class AlertEngineTests
         await harness.Until(() => harness.Subscriber.Filters.Count == 1, "the filter to be asked for again");
     }
 
+    // What the subscriber says of a SUBSCRIBE the broker never answered, and of one the link went
+    // under. Neither is a refusal: the rule is not set aside, and the filter is asked for again.
+    [Theory]
+    [InlineData("no answer")]
+    [InlineData("link went")]
+    public async Task A_subscribe_that_went_unanswered_or_lost_its_link_faults_no_rule_and_is_asked_for_again(string how)
+    {
+        await using var harness = Build(Document([Rule("a", "plant/a/#", Over90)]));
+        harness.Subscriber.Refuse = how == "no answer"
+            ? new BrokerDidNotAnswerException("The broker did not answer the SUBSCRIBE for 'plant/a/#' within 100 seconds.")
+            : new NotConnectedException("The link to the broker went while the SUBSCRIBE for 'plant/a/#' was waiting for an answer.");
+
+        await harness.Engine.StartAsync(CancellationToken.None);
+        Assert.False(Assert.Single(harness.Engine.Snapshot.Rules).Faulted);
+
+        harness.Subscriber.Refuse = null;
+        harness.Run();
+
+        await harness.Until(() => harness.Subscriber.Filters.Count == 1, "the filter to be asked for again");
+    }
+
     [Fact]
     public async Task A_cancelled_alarm_channel_is_contained_in_that_channel()
     {
