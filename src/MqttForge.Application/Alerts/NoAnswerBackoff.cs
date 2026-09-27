@@ -10,8 +10,9 @@ namespace MqttForge.Application.Alerts;
 // pump for ten seconds in every fifteen for as long as it kept the link up. Each pause longer than
 // the last hands the pump back to its rules and flows, and a minute still asks often enough to catch
 // a broker that has come back to itself. Short again once the broker answers, yes or no, and lifted
-// altogether by a new link, which is a new answer. One for each pump: the alert rules and the flows
-// each ask for their own filters, of the same broker.
+// altogether by a new link, which is a new answer. The reader's own save or deploy interrupts it, and
+// the run goes on after. One for each pump: the alert rules and the flows each ask for their own
+// filters, of the same broker.
 public sealed class NoAnswerBackoff
 {
     /// <summary>The pause after the first attempt in a row the broker leaves unanswered.</summary>
@@ -52,6 +53,13 @@ public sealed class NoAnswerBackoff
         _unanswered = 0;
         _until = DateTimeOffset.MinValue;
     }
+
+    /// <summary>The reader's own save or deploy: nothing is put off, and the run goes on.</summary>
+    // A person who has just saved a rule or deployed a flow is waiting to see it at work, and a pause
+    // of up to a minute is not theirs to sit out. So the next attempt goes at once. It is no answer,
+    // though, and no new link: if the broker leaves that attempt unanswered as well, the pause after
+    // it is the next of the run it interrupted, not the first again.
+    public void Interrupt() => _until = DateTimeOffset.MinValue;
 
     /// <summary>Whether the broker did not answer so lately that asking again now would only wait on it again.</summary>
     // A pause that ends further off than the whole of the pause standing is a clock set back since,

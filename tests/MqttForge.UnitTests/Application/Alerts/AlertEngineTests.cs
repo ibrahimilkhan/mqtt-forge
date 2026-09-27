@@ -978,6 +978,49 @@ public class AlertEngineTests
         await harness.ClockStill(() => harness.Subscriber.Filters.Count == 1, "the filter to be asked for on the new link");
     }
 
+    // A rule the reader has just saved is a person waiting to see it at work, and the pause a broker
+    // that did not answer leaves is up to a minute: the filters are asked for at once, whatever it is.
+    [Fact]
+    public async Task A_rule_saved_during_a_pause_has_the_filters_asked_for_at_once()
+    {
+        await using var harness = Build(Document([Rule("a", "plant/a/#", Over90)]));
+        harness.Subscriber.Refuse = new BrokerDidNotAnswerException(
+            "The broker did not answer the SUBSCRIBE for 'plant/a/#' within 10 seconds.");
+        await harness.Engine.StartAsync(CancellationToken.None);
+        harness.Subscriber.Refuse = null;
+        harness.Run();
+
+        // Saved with the clock held still at the start, inside the pause the unanswered SUBSCRIBE left.
+        harness.Engine.Post(new RuleSetChangedCommand([Rule("a", "plant/a/#", Over90), Rule("b", "plant/b/#", Over90)]));
+
+        await harness.ClockStill(() => harness.Subscriber.Filters.Count == 2, "the saved rules' filters to be asked for");
+    }
+
+    // A save is no answer, though. One the broker leaves unanswered as well is one more attempt in the
+    // run, and the pause after it is the run's next: ten seconds after the second, not five again.
+    [Fact]
+    public async Task A_save_the_broker_leaves_unanswered_too_is_followed_by_the_next_pause_of_the_run()
+    {
+        await using var harness = Build(Document([Rule("a", "plant/a/#", Over90)]));
+        harness.Subscriber.Clock = harness.Time;
+        harness.Subscriber.Refuse = new BrokerDidNotAnswerException(
+            "The broker did not answer the SUBSCRIBE for 'plant/a/#' within 10 seconds.");
+        await harness.Engine.StartAsync(CancellationToken.None);
+        harness.Run();
+
+        harness.Engine.Post(new RuleSetChangedCommand([Rule("a", "plant/a/#", Over90), Rule("b", "plant/b/#", Over90)]));
+        await harness.ClockStill(() => harness.Subscriber.Batches.Count == 2, "the saved rules' filters to be asked for");
+        harness.Subscriber.Refuse = null;
+
+        var second = NoAnswerBackoff.After(2);
+        await harness.TickAsync((int)second.TotalSeconds - 1);
+        Assert.Equal(2, harness.Subscriber.Batches.Count);
+
+        await harness.TickAsync(1);
+        await harness.Until(() => harness.Subscriber.Filters.Count == 2, "the filters to be asked for again after the run's second pause");
+        Assert.True(harness.Subscriber.AskedAt[2] - harness.Subscriber.AskedAt[1] >= second);
+    }
+
     [Fact]
     public async Task A_cancelled_alarm_channel_is_contained_in_that_channel()
     {

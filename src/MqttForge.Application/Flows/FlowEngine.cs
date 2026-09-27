@@ -563,6 +563,11 @@ public sealed class FlowEngine
                 // again once somebody has edited the flow that wanted it.
                 _resubscribe = true;
                 _refused.Clear();
+
+                // And whoever deployed them is waiting to see them run: the filters are asked for on
+                // this turn, whatever pause a broker that did not answer left. AlertEngine's rule for
+                // a save, and its reason.
+                _noAnswer.Interrupt();
                 return outcome;
 
             case FlowInject inject:

@@ -103,8 +103,8 @@ public sealed class AlertEngine
     // made one turn per deadline, every rule a reading behind for as long as the broker kept that
     // up. A pause between the attempts gives the pump turns of its own, and a longer one after each
     // attempt in a row the broker leaves unanswered gives it more (NoAnswerBackoff). Short at first,
-    // because a broker that was only slow answers the next time, and a new link asks at once
-    // whatever the pause.
+    // because a broker that was only slow answers the next time; and a new link, or the reader's own
+    // save, asks at once whatever the pause.
     public static readonly TimeSpan NoAnswerPause = NoAnswerBackoff.First;
 
     private readonly AlertEngineCore _core;
@@ -460,6 +460,12 @@ public sealed class AlertEngine
                 // The reader has just edited the rules, which is the other way a refused filter
                 // becomes worth asking about again — most obviously by being narrowed.
                 _refused.Clear();
+
+                // And the reader is waiting to see them at work, so the filters are asked for on this
+                // turn, whatever pause a broker that did not answer left: up to a minute of it. The
+                // run of pauses goes on if the broker leaves this attempt unanswered too
+                // (NoAnswerBackoff.Interrupt).
+                _noAnswer.Interrupt();
 
                 return _core.SetRules(change.Rules, now);
 

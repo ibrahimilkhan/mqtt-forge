@@ -63,6 +63,23 @@ public class NoAnswerBackoffTests
         Assert.Equal(NoAnswerBackoff.First, backoff.NotAnswered(T0.AddSeconds(6)));
     }
 
+    // The reader's own save or deploy asks at once, whatever the pause. It is no answer, though: an
+    // attempt the broker leaves unanswered after it is the next of the run, not the first of a new one.
+    [Fact]
+    public void A_save_ends_the_pause_and_the_run_goes_on()
+    {
+        var backoff = new NoAnswerBackoff();
+        backoff.NotAnswered(T0);
+        var asked = T0.AddSeconds(5);
+        backoff.NotAnswered(asked);
+
+        backoff.Interrupt();
+
+        var saved = asked.AddSeconds(1);
+        Assert.False(backoff.Pausing(saved));
+        Assert.Equal(NoAnswerBackoff.After(3), backoff.NotAnswered(saved));
+    }
+
     // A pause that ends further off than the whole of it is a clock set back since, and is over. The
     // whole of it is the pause standing, not the first one.
     [Fact]

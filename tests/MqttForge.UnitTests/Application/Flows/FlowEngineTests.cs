@@ -1125,6 +1125,49 @@ public sealed class FlowEngineTests : IAsyncLifetime
         await ClockStill(() => _subscriber.Filters.Count == 1, "the flows' filters to be asked for on the new link");
     }
 
+    // AlertEngine's, for a rule's save: a flow the reader has just deployed is a person waiting to see
+    // it run, and its filters are asked for at once, whatever pause a broker that did not answer left.
+    [Fact]
+    public async Task A_deploy_during_a_pause_has_the_flows_filters_asked_for_at_once()
+    {
+        _subscriber.Refuse = new BrokerDidNotAnswerException("The broker did not answer the SUBSCRIBE for 'plant/+/temp' within 10 seconds.");
+        var engine = await RunningAsync(Watch());
+        _subscriber.Refuse = null;
+
+        // Deployed with the clock held still at the start, inside the pause the unanswered SUBSCRIBE left.
+        Assert.True(await engine.DeployAsync(Deployment(Watch(), Doors()), CancellationToken.None));
+
+        await ClockStill(() => _subscriber.Filters.Count == 2, "the deployed flows' filters to be asked for");
+    }
+
+    // A deploy is no answer, though. One the broker leaves unanswered as well is one more attempt in the
+    // run, and the pause after it is the run's next: ten seconds after the second, not five again.
+    [Fact]
+    public async Task A_deploy_the_broker_leaves_unanswered_too_is_followed_by_the_next_pause_of_the_run()
+    {
+        _subscriber.Clock = _time;
+        _subscriber.Refuse = new BrokerDidNotAnswerException("The broker did not answer the SUBSCRIBE for 'plant/+/temp' within 10 seconds.");
+        var engine = await RunningAsync(Watch());
+
+        engine.Post(Deployment(Watch(), Doors()));
+        await ClockStill(() => _subscriber.Batches.Count == 2, "the deployed flows' filters to be asked for");
+        _subscriber.Refuse = null;
+
+        var second = NoAnswerBackoff.After(2);
+        while (_time.GetUtcNow() < T0 + second - FlowEngine.TickInterval)
+        {
+            _time.Advance(FlowEngine.TickInterval);
+            await Task.Delay(10);
+        }
+
+        Assert.Equal(2, _subscriber.Batches.Count);
+
+        await Eventually.Until(_time, () => _subscriber.Filters.Count == 2, "the filters to be asked for again after the run's second pause");
+        Assert.True(_subscriber.AskedAt[2] - _subscriber.AskedAt[1] >= second);
+    }
+
+    private static Flow Doors() => new FlowBuilder("f3", "Doors").Node("in", "mqttIn", new { filter = "plant/+/door" }).Build();
+
     [Fact]
     public async Task A_cancellation_from_a_fault_nobody_foresaw_does_not_stop_the_pump()
     {
