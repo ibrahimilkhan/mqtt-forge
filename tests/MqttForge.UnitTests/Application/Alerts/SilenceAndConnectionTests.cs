@@ -240,6 +240,27 @@ public class SilenceAndConnectionTests
         Assert.Empty(core.Snapshot().Capped);
     }
 
+    // The capped figure is the old broker's as well: how many of its topics a ceiling turned away.
+    // It goes with the move, as the topic counts do, and the new broker's are counted afresh.
+    [Fact]
+    public void A_move_to_another_broker_forgets_the_topics_a_ceiling_turned_away_there()
+    {
+        var core = new AlertEngineCore(new AlertEngineOptions { MaxTopicsPerRule = 1 });
+        core.SetRules([Rule(Above(90), filter: "plant/+/temp")], T0);
+        core.OnTick(T0, connected: true);
+        core.OnMessage(Message("20", T0, "plant/k1/temp"), T0);
+        core.OnMessage(Message("20", T0, "plant/k2/temp"), T0);
+        Assert.Equal(1, Assert.Single(core.Snapshot().Capped).Untracked);
+
+        core.ForgetTopics(T0.AddSeconds(1));
+        Assert.Empty(core.Snapshot().Capped);
+
+        var later = T0.AddSeconds(2);
+        core.OnMessage(Message("20", later, "plant/k3/temp"), later);
+        core.OnMessage(Message("20", later, "plant/k4/temp"), later);
+        Assert.Equal(1, Assert.Single(core.Snapshot().Capped).Untracked);
+    }
+
     // A filter that names one topic is not something learned from a broker: the rule names the
     // device, and a move arms it again as a save does, so the device has its seconds to speak at the
     // new broker. Counted from the move, not from the old broker's last reading of it, which says

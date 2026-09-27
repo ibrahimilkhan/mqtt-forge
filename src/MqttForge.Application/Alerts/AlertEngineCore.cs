@@ -622,15 +622,21 @@ public sealed class AlertEngineCore
     //
     // The windows go with it. A ring of readings is a history of one sensor at one broker, and
     // averaging the new broker's values into the old broker's run is the same mistake more
-    // quietly. Mutes go with their pairs.
+    // quietly. Mutes go with their pairs, and the topics a ceiling turned away go with the topic
+    // counts: the panel's capped figure was a count of the old broker's topics.
     //
     // Active alarms end rather than go: they were raised about the other broker's world, and every
-    // channel that heard one go up has to hear it come down, or the webhook's endpoint, the retained
-    // record and the console's badge go on saying it stands. Dropped in silence, they did, and they
-    // went on holding their slots under the active ceiling and their rules' topic counts until the
-    // next save recounted them. Now they end as a flow's alarm does on a move, "connection ended",
-    // through Close and Announce as every other end does: into the history, the slot given back, a
-    // muted pair's end not announced. In the order they went up, so every channel hears them so.
+    // channel that heard one go up has to hear it come down, or the webhook's endpoint and the
+    // console's badge go on saying it stands. Dropped in silence, they did, and they went on holding
+    // their slots under the active ceiling and their rules' topic counts until the next save
+    // recounted them. Now they end as a flow's alarm does on a move, "connection ended", through
+    // Close and Announce as every other end does: into the history, the slot given back, a muted
+    // pair's end not announced. In the order they went up, so every channel hears them so.
+    //
+    // The end does not reach the old broker, though. A record the broker channel retained there
+    // stays there, since nothing is published to a broker once the link has left it; the end goes
+    // out on the link that is up, so the new broker is sent a retained "resolved" and then a clear,
+    // which leave nothing behind on it.
     //
     // A topic a silence rule names by itself was never learned from the broker: the rule names the
     // device, and is armed for it at start and on every save (see Arm). Forgotten with the rest and
@@ -656,7 +662,12 @@ public sealed class AlertEngineCore
 
         _pairs.Clear();
         _readings = 0;
-        foreach (var tally in _tallies.Values) tally.Topics = 0;
+
+        foreach (var tally in _tallies.Values)
+        {
+            tally.Topics = 0;
+            tally.Refused.Clear();
+        }
 
         Arm(_rules, now);
 
