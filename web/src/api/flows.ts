@@ -34,3 +34,10 @@ export const injectNode = (flowId: string, nodeId: string) =>
  */
 export const isFlowInvalid = (error: unknown): error is ApiError =>
   error instanceof ApiError && error.reason === 'flowInvalid';
+
+/**
+ * Whether the server has no flow by that id to delete: another console deleted it since this one
+ * last read the list. Its own 404, which says so, and not one from something in front of it.
+ */
+export const isFlowUnknown = (error: unknown): error is ApiError =>
+  error instanceof ApiError && error.status === 404 && error.reason === 'flowUnknown';

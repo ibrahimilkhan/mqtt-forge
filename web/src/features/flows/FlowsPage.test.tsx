@@ -109,7 +109,11 @@ function keeping(initial: FlowDto[] = [], over: Partial<FlowsDto> = {}) {
       const id = String(params.id);
       deletes.push(id);
       const at = kept.findIndex((one) => one.id === id);
-      if (at < 0) return HttpResponse.json({ title: 'No such flow', reason: 'flowUnknown' }, { status: 404 });
+      if (at < 0)
+        return HttpResponse.json(
+          { title: 'No such flow', detail: `There is no flow '${id}' to delete.`, reason: 'flowUnknown' },
+          { status: 404, headers: { 'Content-Type': 'application/problem+json' } },
+        );
       kept.splice(at, 1);
       return new HttpResponse(null, { status: 204 });
     }),
@@ -1198,6 +1202,26 @@ describe('deleting a flow', () => {
     expect(await screen.findByRole('button', { name: 'Start from an example' })).toBeInTheDocument();
     expect(useFlowDraftStore.getState().drafts).toEqual({});
     expect(deletes).toEqual([]);
+  });
+
+  // Deleted on another console since this one last read the list. The server answers that it has
+  // no such flow, and the flow is gone either way, which is what the reader asked for.
+  it('counts a flow the server no longer has as deleted, rather than saying it was not', async () => {
+    const { kept, deletes } = keeping([watch, sim]);
+    useFlowDraftStore.getState().edit(watch, (flow) => ({ ...flow, name: 'Boiler watch 2' }));
+    useFlowDraftStore.getState().show('watch');
+    render(<FlowsPage />);
+    await screen.findByText('Boiler watch 2', { selector: 'h3' });
+    kept.splice(0, 1);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete flow' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+
+    expect(await screen.findByText('Boiler simulator', { selector: 'h3' })).toBeInTheDocument();
+    expect(screen.queryByText(/was not deleted/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /^Boiler watch/ })).not.toBeInTheDocument();
+    expect(useFlowDraftStore.getState().drafts.watch).toBeUndefined();
+    expect(deletes).toEqual(['watch']);
   });
 });
 

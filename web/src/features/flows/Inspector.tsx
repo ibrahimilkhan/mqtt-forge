@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useContext, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { deleteFlow } from '../../api/flows';
+import { deleteFlow, isFlowUnknown } from '../../api/flows';
 import { queryKeys } from '../../api/queryKeys';
 import { Field } from '../../components/Field';
 import { nodeKey, useFlowStatusStore } from '../../stores/flowStatusStore';
@@ -146,9 +146,16 @@ function FlowPane({ flow, deployed, running, overtaken, problems }: FlowPaneProp
   };
 
   const remove = useMutation({
-    // A flow that was never deployed has nothing on the server to delete.
+    // A flow that was never deployed has nothing on the server to delete. One the server says it
+    // does not have was deleted on another console since this one last read the list: it is gone
+    // either way, which is what the reader asked for.
     mutationFn: async (id: string) => {
-      if (deployed) await deleteFlow(id);
+      if (!deployed) return;
+      try {
+        await deleteFlow(id);
+      } catch (error) {
+        if (!isFlowUnknown(error)) throw error;
+      }
     },
     onMutate: () => failures.trying('delete'),
     // The id comes with the answer rather than from the flow on screen: a mutation still out is
