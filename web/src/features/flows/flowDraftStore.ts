@@ -18,7 +18,7 @@ type DraftState = {
   edit: (base: FlowDto, change: (flow: FlowDto) => FlowDto) => void;
   /** A whole draft: a new flow, or an example. */
   put: (flow: FlowDto) => void;
-  /** Throws a flow's edits away. */
+  /** Throws a flow's edits away. Clears the selection too, but only if this is the flow on screen. */
   discard: (id: string) => void;
   show: (id: string | null) => void;
   select: (nodeId: string | null) => void;
@@ -32,42 +32,34 @@ type DraftState = {
 /**
  * localStorage when it can be had, and nothing when it cannot — a private window, a browser set to
  * block site data. Every access is caught: a page that cannot keep drafts still edits and deploys.
- * Writes wait a moment, because a node being dragged is an edit every frame and a JSON write every
- * frame is work nobody asked for.
+ * Written the moment a change happens rather than after a pause: the persist middleware has already
+ * turned the whole state into one JSON string before this runs, so the only thing a delay would
+ * save is the localStorage call itself — and a reload or a closed tab inside that delay would lose
+ * the edit that "a reload loses nothing" promises to keep.
  */
-const quietly: StateStorage = (() => {
-  let pending: ReturnType<typeof setTimeout> | undefined;
-
-  return {
-    getItem: (name) => {
-      try {
-        return localStorage.getItem(name);
-      } catch {
-        return null;
-      }
-    },
-    setItem: (name, value) => {
-      clearTimeout(pending);
-      const write = () => {
-        try {
-          localStorage.setItem(name, value);
-        } catch {
-          // Nowhere to keep it. The draft lives until the page is closed.
-        }
-      };
-      // Tests read storage straight after a change; a real page waits a quarter of a second.
-      if (import.meta.env.MODE === 'test') write();
-      else pending = setTimeout(write, 250);
-    },
-    removeItem: (name) => {
-      try {
-        localStorage.removeItem(name);
-      } catch {
-        // As above.
-      }
-    },
-  };
-})();
+const quietly: StateStorage = {
+  getItem: (name) => {
+    try {
+      return localStorage.getItem(name);
+    } catch {
+      return null;
+    }
+  },
+  setItem: (name, value) => {
+    try {
+      localStorage.setItem(name, value);
+    } catch {
+      // Nowhere to keep it. The draft lives until the page is closed.
+    }
+  },
+  removeItem: (name) => {
+    try {
+      localStorage.removeItem(name);
+    } catch {
+      // As above.
+    }
+  },
+};
 
 const without = <T>(record: Record<string, T>, key: string): Record<string, T> =>
   Object.fromEntries(Object.entries(record).filter(([id]) => id !== key));
@@ -96,7 +88,9 @@ export const useFlowDraftStore = create<DraftState>()(
         set((state) => ({
           drafts: without(state.drafts, id),
           refusals: without(state.refusals, id),
-          selected: null,
+          // A selection belongs to whatever canvas is open; discarding some other flow's draft
+          // must not blank out what the reader is looking at right now.
+          selected: state.current === id ? null : state.selected,
         })),
 
       show: (id) => set({ current: id, selected: null }),
