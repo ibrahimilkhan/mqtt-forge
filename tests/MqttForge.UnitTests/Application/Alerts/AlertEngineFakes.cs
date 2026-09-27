@@ -283,6 +283,10 @@ internal sealed class FakeConnection : IMqttConnectionManager
     }
 
     /// <summary>Points the fake at a broker, as a successful connect would.</summary>
+    // Up since the epoch, before any message a test can stamp. The alert engine never reads that,
+    // and the flow engine splits its queue on it: every arrival still queued when it sees this as a
+    // move is taken for the new broker's, so the move is told ahead of the first of them. A test
+    // about where a move falls sets a BrokerLink with a ConnectedAt of its own.
     public void At(string host, int port) =>
         Link = new BrokerLink(host, port, "test", null, false, DateTimeOffset.UnixEpoch, false, null, null);
 

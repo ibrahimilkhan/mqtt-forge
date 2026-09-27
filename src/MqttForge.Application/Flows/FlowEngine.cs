@@ -66,7 +66,10 @@ public sealed class FlowEngine
     /// <summary>How long one publish may take before it is counted as failed.</summary>
     public static readonly TimeSpan PublishTimeout = TimeSpan.FromSeconds(5);
 
-    private const int MaxPerTurn = 4_096;
+    /// <summary>How many commands one turn takes before it looks at the clock. AlertEngine's figure.</summary>
+    // For its reason: a firehose would otherwise keep one turn draining for ever, and nothing that
+    // is due — an Every, a push, the look at the link — would ever run.
+    public const int MaxPerTurn = 4_096;
 
     /// <summary>The QoS the flows' subscriptions ask for — AlertEngine's RuleQos, for its reason.</summary>
     private const int FlowQos = 1;

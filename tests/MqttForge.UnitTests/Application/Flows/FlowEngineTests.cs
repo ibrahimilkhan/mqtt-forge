@@ -861,9 +861,9 @@ public sealed class FlowEngineTests : IAsyncLifetime
 
         // The move, and broker B's first message after it, both waiting for the same turn — the
         // console's own filters go back up on B before the flows see the move.
-        _connection.At("broker-b.plant.local", 1883);
+        _connection.Link = LinkTo("broker-b.plant.local", connectedAt: T0.AddSeconds(1));
         _subscriber.LinkDropped();
-        await engine.NotifyMessageReceivedAsync(Msg("plant/k2/temp", "{\"temp\":95}"));
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k2/temp", "{\"temp\":95}", receivedAt: T0.AddSeconds(2)));
 
         await ClockStill(() => _alerts.Raised.Count == 2 && _alerts.Resolved.Count >= 1,
             "the move and the new broker's alarm to be told");
@@ -889,6 +889,31 @@ public sealed class FlowEngineTests : IAsyncLifetime
         await ClockStill(() => _alerts.Resolved.Count == 1, "the old broker's alarm to end with the move");
         Assert.Equal(FlowAlarmBook.ConnectionEnded, _alerts.Resolved[0].ResolvedBy);
         Assert.Empty(engine.Alarms.Active);
+    }
+
+    [Fact]
+    public async Task A_move_a_turn_stops_short_of_is_told_by_the_next_turn_where_it_falls()
+    {
+        _connection.At("broker-a.plant.local", 1883);
+        var engine = await StartedAsync(_alerts, _dispatcher, [Watch()]);
+
+        // A turn's worth of broker A's messages, one more of A's that raises an alarm, and B's first,
+        // which raises its own: the turn that sees the move stops at its limit short of where it falls.
+        for (var i = 0; i < FlowEngine.MaxPerTurn; i++)
+            await engine.NotifyMessageReceivedAsync(Msg("plant/k0/temp", "{\"temp\":50}"));
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+        _connection.Link = LinkTo("broker-b.plant.local", connectedAt: T0.AddSeconds(1));
+        _subscriber.LinkDropped();
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k2/temp", "{\"temp\":95}", receivedAt: T0.AddSeconds(2)));
+        Run(engine);
+
+        // Told between A's last message and B's first — not at the end of the turn that ran out,
+        // which would have put A's last message on B's side and left its alarm standing there.
+        await ClockStill(() => _alerts.Raised.Count == 2, "both brokers' alarms to be told");
+        Assert.Equal(["plant/k2/temp"], engine.Alarms.Active.Select(alert => alert.Topic));
+        var ended = Assert.Single(engine.Alarms.History);
+        Assert.Equal("plant/k1/temp", ended.Topic);
+        Assert.Equal(FlowAlarmBook.ConnectionEnded, ended.ResolvedBy);
     }
 
     [Fact]
