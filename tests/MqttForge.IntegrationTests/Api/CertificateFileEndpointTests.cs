@@ -19,8 +19,16 @@ namespace MqttForge.IntegrationTests.Api;
 /// this covers is the two answers a console has to be able to tell apart — a host with no window,
 /// which is every browser, and a dialog somebody dismissed.
 /// </summary>
-public sealed class CertificateFileEndpointTests
+public sealed class CertificateFileEndpointTests : IDisposable
 {
+    private readonly List<string> _folders = [];
+
+    public void Dispose()
+    {
+        foreach (var folder in _folders)
+            if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
+    }
+
     [Fact]
     public async Task The_dialog_is_absent_where_the_host_has_no_window()
     {
@@ -128,10 +136,11 @@ public sealed class CertificateFileEndpointTests
         return picker;
     }
 
-    private static string TempFile()
+    // A file the dialog "chose", in a folder of its own that this test takes away again.
+    private string TempFile()
     {
-        var folder = Path.Combine(Path.GetTempPath(), $"mqttforge-cert-api-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(folder);
+        var folder = Directory.CreateTempSubdirectory("mqttforge-cert-api-").FullName;
+        _folders.Add(folder);
         var path = Path.Combine(folder, "client.pfx");
         File.WriteAllText(path, "not really a certificate");
 
@@ -147,22 +156,28 @@ public sealed class CertificateFileEndpointTests
     /// ordinary factory registers no picker, which is the case a browser sees; the desktop shell
     /// is what registers one.
     /// </summary>
+    // ExportEndpointTests' factory and its reason: the settings in a directory of the factory's own,
+    // where every other store goes beside them, gone with the factory once its host has stopped.
     private sealed class PickerFactory(IFilePicker? picker) : WebApplicationFactory<Program>
     {
-        private readonly string _settingsPath =
-            Path.Combine(Path.GetTempPath(), $"mqttforge-cert-api-{Guid.NewGuid():N}.json");
+        private readonly string _directory = Directory.CreateTempSubdirectory("mqttforge-cert-api-").FullName;
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.ConfigureAppConfiguration((_, config) =>
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["MqttForge:SettingsPath"] = _settingsPath,
-                    ["MqttForge:ColourRulesPath"] = _settingsPath + ".colours"
+                    ["MqttForge:SettingsPath"] = Path.Combine(_directory, "connection-settings.json")
                 }));
 
             if (picker is not null)
                 builder.ConfigureServices(services => services.AddSingleton(picker));
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+            if (disposing && Directory.Exists(_directory)) Directory.Delete(_directory, recursive: true);
         }
     }
 }

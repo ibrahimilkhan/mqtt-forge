@@ -47,7 +47,10 @@ public class SettingsUnwritableTests : IClassFixture<MosquittoFixture>
     {
         if (OperatingSystem.IsWindows()) return;
 
-        var settingsPath = Path.Combine(Path.GetTempPath(), $"mqttforge-unreadable-{Guid.NewGuid():N}.json");
+        // In a directory of its own, where every other store goes beside the settings file and is
+        // taken away with it: in the temp directory itself, they stayed there after the run.
+        var directory = Directory.CreateTempSubdirectory("mqttforge-unreadable-");
+        var settingsPath = Path.Combine(directory.FullName, "connection-settings.json");
         await File.WriteAllTextAsync(settingsPath, "{}");
         File.SetUnixFileMode(settingsPath, UnixFileMode.None);
 
@@ -62,7 +65,7 @@ public class SettingsUnwritableTests : IClassFixture<MosquittoFixture>
         }
         finally
         {
-            File.Delete(settingsPath);
+            directory.Delete(recursive: true);
         }
     }
 

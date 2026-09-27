@@ -38,9 +38,11 @@ public class AlertEndpointTests : IDisposable
         _factory.Dispose();
 
         foreach (var factory in _extra) factory.Dispose();
+
+        // And each one's atomic-write temp file, which a save called off as its host stopped leaves.
         foreach (var path in _files)
-            if (File.Exists(path))
-                File.Delete(path);
+        foreach (var file in new[] { path, path + ".tmp" })
+            if (File.Exists(file)) File.Delete(file);
     }
 
     /// <summary>A screen action, which is what a rule wants unless a test says otherwise.</summary>

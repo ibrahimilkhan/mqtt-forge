@@ -49,16 +49,18 @@ public sealed class FlowsEndToEndTests : IClassFixture<MosquittoFixture>, IAsync
         // what gives the host its shutdown, and AlertEngineHost's handover save runs there.
         foreach (var host in _hosts) await host.DisposeAsync();
 
-        // PointedAt hands back a factory that does not own its files — AlertingEndToEndTests'
-        // reason: a test that restarts "the same" app against files it wrote by hand must not have
-        // the second host's dispose delete out from under the first. So every path this class asks
-        // PointedAt to use, it also asks for by name, and deletes here itself.
+        // PointedAt hands back a factory that does not own the files it is handed —
+        // AlertingEndToEndTests' reason: a test that restarts "the same" app against files it wrote
+        // by hand must not have the second host's dispose delete out from under the first. So every
+        // path this class asks PointedAt to use, it also asks for by name, and deletes here itself,
+        // with the atomic-write temp file a save called off as its host stopped leaves beside it.
         foreach (var path in new[]
                  {
                      _settingsPath, _colourRulesPath, _savedProfilesPath, _alertRulesPath,
                      _alertStatePath, _reconnectPath, _flowsPath
                  })
-            if (File.Exists(path)) File.Delete(path);
+        foreach (var file in new[] { path, path + ".tmp" })
+            if (File.Exists(file)) File.Delete(file);
     }
 
     private static JsonElement Config(object config) => JsonSerializer.SerializeToElement(config, FlowJson.Options);

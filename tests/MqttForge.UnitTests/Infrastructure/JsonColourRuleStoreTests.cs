@@ -132,6 +132,9 @@ public class JsonColourRuleStoreTests : IDisposable
         }
         finally
         {
+            // The temp file as well: only the move onto the directory fails, so '<directory>.tmp'
+            // was written beside it, outside the directory, and deleting that does not take it.
+            if (File.Exists(directory + ".tmp")) File.Delete(directory + ".tmp");
             Directory.Delete(directory, recursive: true);
         }
     }

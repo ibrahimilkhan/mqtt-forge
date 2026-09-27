@@ -69,8 +69,10 @@ public sealed class FlowDeployLimitTests : IAsyncLifetime
             await _app.DisposeAsync();
         }
 
+        // And each one's atomic-write temp file, which a save called off as the app stopped leaves.
         foreach (var path in _files)
-            if (File.Exists(path)) File.Delete(path);
+        foreach (var file in new[] { path, path + ".tmp" })
+            if (File.Exists(file)) File.Delete(file);
     }
 
     private static HttpRequestMessage Put(string id, byte[] body) => new(HttpMethod.Put, $"/api/flows/{id}")

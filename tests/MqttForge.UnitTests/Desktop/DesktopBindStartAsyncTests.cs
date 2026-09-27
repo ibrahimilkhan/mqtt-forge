@@ -22,6 +22,7 @@ public sealed class DesktopBindStartAsyncTests
         finally
         {
             await app.StopAsync();
+            await app.DisposeAsync();
             CleanUp(settingsPath);
         }
     }
@@ -45,6 +46,7 @@ public sealed class DesktopBindStartAsyncTests
         finally
         {
             await app.StopAsync();
+            await app.DisposeAsync();
             CleanUp(settingsPath);
         }
     }
@@ -69,12 +71,16 @@ public sealed class DesktopBindStartAsyncTests
         }
     }
 
+    // In a directory of its own, because every other store the app keeps goes beside the settings
+    // file: in the temp directory itself, the alert engine's state was one file every run of this
+    // class shared, written as each app stopped, and never taken away.
     private static string TempSettingsPath() =>
-        Path.Combine(Path.GetTempPath(), $"mqttforge-desktopbind-{Guid.NewGuid():N}.json");
+        Path.Combine(Directory.CreateTempSubdirectory("mqttforge-desktopbind-").FullName, "connection-settings.json");
 
     private static void CleanUp(string settingsPath)
     {
-        if (File.Exists(settingsPath)) File.Delete(settingsPath);
+        var directory = Path.GetDirectoryName(settingsPath)!;
+        if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
     }
 
     private static int FreePortForTest()

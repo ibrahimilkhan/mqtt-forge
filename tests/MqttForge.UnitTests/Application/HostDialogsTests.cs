@@ -12,14 +12,23 @@ namespace MqttForge.UnitTests.Application;
 /// dialog under Encryption standing under the folder dialog the chart panel opened. A count per
 /// service counts the wrong thing — the window is what there is only one of.
 /// </summary>
-public class HostDialogsTests
+public class HostDialogsTests : IDisposable
 {
-    private static string TempFolder()
+    private readonly List<string> _folders = [];
+
+    // A real folder, because a chosen folder has to exist; and one this test takes away again.
+    private string TempFolder()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"mqttforge-window-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(path);
+        var path = Directory.CreateTempSubdirectory("mqttforge-window-").FullName;
+        _folders.Add(path);
 
         return path;
+    }
+
+    public void Dispose()
+    {
+        foreach (var folder in _folders)
+            if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
     }
 
     [Fact]

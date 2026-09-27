@@ -20,8 +20,16 @@ namespace MqttForge.IntegrationTests.Api;
 /// a folder its owner already opened. That is the whole of the reasoning on ExportService, and
 /// nothing was checking it end to end.
 /// </summary>
-public sealed class ExportEndpointTests
+public sealed class ExportEndpointTests : IDisposable
 {
+    private readonly List<string> _folders = [];
+
+    public void Dispose()
+    {
+        foreach (var folder in _folders)
+            if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
+    }
+
     [Fact]
     public async Task Folder_says_this_host_cannot_be_asked_when_it_has_no_window()
     {
@@ -150,10 +158,11 @@ public sealed class ExportEndpointTests
         return picker;
     }
 
-    private static string TempFolder()
+    // A folder the dialog "chose", which the saves write into; this test takes it away again.
+    private string TempFolder()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"mqttforge-export-api-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(path);
+        var path = Directory.CreateTempSubdirectory("mqttforge-export-api-").FullName;
+        _folders.Add(path);
 
         return path;
     }
@@ -167,22 +176,30 @@ public sealed class ExportEndpointTests
     /// ordinary factory registers no picker, which is the case a browser sees; the desktop shell
     /// is what registers one.
     /// </summary>
+    // Its settings in a directory of its own, where every other store goes beside them, and which
+    // goes with the factory once the host has stopped. With the settings file in the temp directory
+    // itself, the stores it did not name went there too, and the alert engine's state was one file
+    // every such host shared, written as each stopped and never taken away.
     private sealed class ExportFactory(IFolderPicker? picker) : WebApplicationFactory<Program>
     {
-        private readonly string _settingsPath =
-            Path.Combine(Path.GetTempPath(), $"mqttforge-export-api-{Guid.NewGuid():N}.json");
+        private readonly string _directory = Directory.CreateTempSubdirectory("mqttforge-export-api-").FullName;
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.ConfigureAppConfiguration((_, config) =>
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["MqttForge:SettingsPath"] = _settingsPath,
-                    ["MqttForge:ColourRulesPath"] = _settingsPath + ".colours"
+                    ["MqttForge:SettingsPath"] = Path.Combine(_directory, "connection-settings.json")
                 }));
 
             if (picker is not null)
                 builder.ConfigureServices(services => services.AddSingleton(picker));
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+            if (disposing && Directory.Exists(_directory)) Directory.Delete(_directory, recursive: true);
         }
     }
 }

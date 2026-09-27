@@ -14,7 +14,11 @@ public sealed class ControllerDiscoveryTests
     public async Task Controllers_are_discovered_when_the_entry_assembly_is_not_MqttForge_Api()
     {
         var entryAssemblyName = typeof(ControllerDiscoveryTests).Assembly.GetName().Name;
-        var settingsPath = Path.Combine(Path.GetTempPath(), $"mqttforge-discovery-{Guid.NewGuid():N}.json");
+
+        // In a directory of its own, where every other store goes beside the settings file and is
+        // taken away with it: in the temp directory itself, they stayed there after the run.
+        var store = Directory.CreateTempSubdirectory("mqttforge-discovery-");
+        var settingsPath = Path.Combine(store.FullName, "connection-settings.json");
 
         var app = MqttForgeHost.Build(
             [$"--applicationName={entryAssemblyName}", $"--MqttForge:SettingsPath={settingsPath}"],
@@ -34,7 +38,8 @@ public sealed class ControllerDiscoveryTests
         finally
         {
             await app.StopAsync();
-            if (File.Exists(settingsPath)) File.Delete(settingsPath);
+            await app.DisposeAsync();
+            store.Delete(recursive: true);
         }
     }
 }

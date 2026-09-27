@@ -5,18 +5,27 @@ using Xunit;
 
 namespace MqttForge.UnitTests.Application;
 
-public class CertificatePickerTests
+public class CertificatePickerTests : IDisposable
 {
     private readonly IFilePicker _picker = Substitute.For<IFilePicker>();
+    private readonly List<string> _folders = [];
 
-    private static string TempFile(string name = "client.pfx")
+    // A real file, because the picker checks the one it is handed exists; in a folder of its own,
+    // which this test takes away again.
+    private string TempFile(string name = "client.pfx")
     {
-        var folder = Path.Combine(Path.GetTempPath(), $"mqttforge-cert-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(folder);
+        var folder = Directory.CreateTempSubdirectory("mqttforge-cert-").FullName;
+        _folders.Add(folder);
         var path = Path.Combine(folder, name);
         File.WriteAllText(path, "not really a certificate");
 
         return path;
+    }
+
+    public void Dispose()
+    {
+        foreach (var folder in _folders)
+            if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
     }
 
     [Fact]

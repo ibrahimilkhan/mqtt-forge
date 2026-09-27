@@ -5,16 +5,25 @@ using Xunit;
 
 namespace MqttForge.UnitTests.Application;
 
-public class ExportServiceTests
+public class ExportServiceTests : IDisposable
 {
     private readonly IFolderPicker _picker = Substitute.For<IFolderPicker>();
+    private readonly List<string> _folders = [];
 
-    private static string TempFolder()
+    // A real folder, because the service checks the one it is handed exists and writes into it; and
+    // one this test takes away again, with whatever was saved there.
+    private string TempFolder()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"mqttforge-export-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(path);
+        var path = Directory.CreateTempSubdirectory("mqttforge-export-").FullName;
+        _folders.Add(path);
 
         return path;
+    }
+
+    public void Dispose()
+    {
+        foreach (var folder in _folders)
+            if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
     }
 
     [Fact]

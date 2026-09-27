@@ -238,9 +238,11 @@ public class HeadlessAlertingTests : IClassFixture<MosquittoFixture>, IDisposabl
     {
         foreach (var host in _hosts) host.Dispose();
 
+        // And each one's atomic-write temp file, which a save called off as its host stopped leaves.
         foreach (var path in new[]
                  { _settingsPath, _colourRulesPath, _savedProfilesPath, _alertRulesPath, _alertStatePath })
-            if (File.Exists(path)) File.Delete(path);
+        foreach (var file in new[] { path, path + ".tmp" })
+            if (File.Exists(file)) File.Delete(file);
     }
 
     /// <summary>Stands where the console's notifier will stand in part 3, and keeps what it hears.</summary>

@@ -337,9 +337,11 @@ public class AlertingEndToEndTests : IClassFixture<MosquittoFixture>, IAsyncLife
 
         if (_probe is not null) await _probe.DisposeAsync();
 
+        // And each one's atomic-write temp file, which a save called off as its host stopped leaves.
         foreach (var path in new[]
                  { _settingsPath, _colourRulesPath, _savedProfilesPath, _alertRulesPath, _alertStatePath })
-            if (File.Exists(path)) File.Delete(path);
+        foreach (var file in new[] { path, path + ".tmp" })
+            if (File.Exists(file)) File.Delete(file);
     }
 
     /// <summary>A real HTTP endpoint on a loopback port this class owns.</summary>
