@@ -43,7 +43,7 @@ public sealed class FlowEngine
         _time = timeProvider ?? TimeProvider.System;
         _dispatcher = dispatcher;
 
-        _queue = Channel.CreateBounded<FlowCommand>(
+        _queue = Channel.CreateBounded<Queued>(
             new BoundedChannelOptions(QueueCapacity) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true },
             OnDropped);
 
@@ -87,11 +87,16 @@ public sealed class FlowEngine
     private readonly ILogger<FlowEngine> _log;
     private readonly TimeProvider _time;
     private readonly IAlertDispatcher? _dispatcher;
-    private readonly Channel<FlowCommand> _queue;
+    private readonly Channel<Queued> _queue;
     private readonly Channel<FlowPublish> _outbox;
 
     /// <summary>Filters this broker has refused on this link. Not asked for again until the link or the flows change.</summary>
     private readonly HashSet<string> _refused = new(StringComparer.Ordinal);
+
+    // The deploy the pump has not reached yet, and the order everything posted is stamped in. See Hand.
+    private readonly Lock _deploying = new();
+    private PendingDeploy? _pending;
+    private long _stamp;
 
     private readonly List<FlowDebugEntry> _debug = [];
 
@@ -124,7 +129,82 @@ public sealed class FlowEngine
     public bool CanInject(string flowId, string nodeId) => Volatile.Read(ref _injectable).Contains((flowId, nodeId));
 
     /// <summary>Hands a command to the pump. Never blocks and never throws.</summary>
-    public void Post(FlowCommand command) => _queue.Writer.TryWrite(command);
+    public void Post(FlowCommand command)
+    {
+        if (command is FlowDeploy deploy)
+        {
+            Hand(deploy);
+            return;
+        }
+
+        _queue.Writer.TryWrite(new Queued(Interlocked.Increment(ref _stamp), command));
+    }
+
+    /// <summary>How long a deploy's answer waits for the pump to be running it.</summary>
+    // Long enough for a pump held up for a moment — a turn telling its alarms to a slow channel, a
+    // broker slow to answer a SUBSCRIBE — and short enough that a pump stuck on one does not leave
+    // the console's Deploy waiting with it. PublishTimeout's figure.
+    public static readonly TimeSpan DeployPatience = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Hands the pump what should run now, and answers once it is running it: true, or false when
+    /// <see cref="DeployPatience"/> ran out first — the deploy is not lost, and runs when the pump
+    /// is free.
+    /// </summary>
+    // Handed over before the first await, so a caller can hold a lock around the handing over alone
+    // and wait for the answer outside it.
+    public async Task<bool> DeployAsync(FlowDeploy deploy, CancellationToken ct)
+    {
+        var running = Hand(deploy);
+
+        try
+        {
+            return await running.WaitAsync(DeployPatience, _time, ct);
+        }
+        catch (TimeoutException)
+        {
+            _log.LogWarning("The flow engine was busy for {Seconds} seconds, so a deploy was answered before it ran. " +
+                            "It runs as soon as the engine is free.", DeployPatience.TotalSeconds);
+            return false;
+        }
+    }
+
+    /// <summary>Puts a deploy where the queue cannot lose it, and its place in the queue's order.</summary>
+    // A deploy is the whole of what should run, so it has a slot of its own: the queue lets its oldest
+    // entry go when it is full, and a deploy it let go was a file saying one thing and an engine running
+    // another until the next deploy or restart. A deploy the pump has not reached yet is simply replaced
+    // by a newer one, which is everything the older said and more, and takes the older one's place in
+    // the order: every command posted after the first of them meets flows at least that new.
+    //
+    // The queue still gets an entry, which is the pump's wake-up and nothing else. If the queue has to
+    // let that entry go, it was full, the pump is draining it, and the slot is found all the same.
+    private Task<bool> Hand(FlowDeploy deploy)
+    {
+        Task<bool> running;
+        lock (_deploying)
+        {
+            _pending ??= new PendingDeploy(Interlocked.Increment(ref _stamp));
+            _pending.Deploy = deploy;
+            running = _pending.Running.Task;
+        }
+
+        _queue.Writer.TryWrite(new Queued(Interlocked.Increment(ref _stamp), deploy));
+        return running;
+    }
+
+    /// <summary>The deploy waiting in its slot, if it was handed over before the command stamped <paramref name="before"/>.</summary>
+    private PendingDeploy? TakeDeploy(long before)
+    {
+        if (Volatile.Read(ref _pending) is null) return null;
+
+        lock (_deploying)
+        {
+            if (_pending is not { } pending || pending.Stamp > before) return null;
+
+            _pending = null;
+            return pending;
+        }
+    }
 
     /// <summary>The fan-out's entry point: queue it and get out of the receive loop's way.</summary>
     public Task NotifyMessageReceivedAsync(MqttMessage message)
@@ -331,11 +411,8 @@ public sealed class FlowEngine
             var moving = endpoint is not null && _linkedTo is not null && endpoint != _linkedTo ? link : null;
             if (moving is null && endpoint is not null) _linkedTo = endpoint;
 
-            var handled = 0;
-            while (handled < MaxPerTurn && _queue.Reader.TryRead(out var command))
+            bool Handle(FlowCommand command)
             {
-                handled++;
-
                 if (moving is not null && FallsAfter(command, moving))
                 {
                     outcomes.Add(Move(moving));
@@ -345,6 +422,7 @@ public sealed class FlowEngine
                 try
                 {
                     outcomes.Add(Apply(command, _time.GetUtcNow()));
+                    return true;
                 }
                 catch (Exception ex)
                 {
@@ -354,8 +432,29 @@ public sealed class FlowEngine
                     // that nobody would ever be told about.
                     _log.LogError(ex, "The flow engine could not apply a {Command}, so it was skipped.",
                         command.GetType().Name);
+                    return false;
                 }
             }
+
+            // Answered once it has been applied, whoever handed it over and however many of them it
+            // stands for.
+            void Deploy(PendingDeploy pending) => pending.Running.TrySetResult(Handle(pending.Deploy));
+
+            var handled = 0;
+            while (handled < MaxPerTurn && _queue.Reader.TryRead(out var queued))
+            {
+                handled++;
+
+                // A deploy goes in at its own place, whether or not the queue kept its entry: ahead of
+                // the first command posted after it. The entry itself is its wake-up and nothing more.
+                if (TakeDeploy(before: queued.Stamp) is { } pending) Deploy(pending);
+                if (queued.Command is not FlowDeploy) Handle(queued.Command);
+            }
+
+            // One handed over after everything the turn read, or whose entry the queue let go with
+            // nothing after it. A turn that stopped at its limit leaves it for the next, which reads
+            // on to its place first.
+            if (handled < MaxPerTurn && TakeDeploy(before: long.MaxValue) is { } late) Deploy(late);
 
             // Nothing queued came after the move, so it goes after the queue, as any down does —
             // unless the turn stopped at its limit, when the next one sees the same move and goes on
@@ -678,11 +777,25 @@ public sealed class FlowEngine
         }
     }
 
-    private void OnDropped(FlowCommand command)
+    private void OnDropped(Queued queued)
     {
+        // A deploy's entry is only its wake-up: the deploy itself is in its slot, and lost is what it is not.
+        if (queued.Command is FlowDeploy) return;
+
         Interlocked.Increment(ref _dropped);
 
-        if (command is not FlowArrival)
-            _log.LogWarning("The flow engine's queue was full and dropped a {Command}.", command.GetType().Name);
+        if (queued.Command is not FlowArrival)
+            _log.LogWarning("The flow engine's queue was full and dropped a {Command}.", queued.Command.GetType().Name);
+    }
+
+    /// <summary>A command, and when it was posted, as the order of everything posted.</summary>
+    private readonly record struct Queued(long Stamp, FlowCommand Command);
+
+    /// <summary>The newest deploy the pump has not reached, where the first of them was stamped, and everyone waiting on it.</summary>
+    private sealed class PendingDeploy(long stamp)
+    {
+        public long Stamp { get; } = stamp;
+        public FlowDeploy Deploy { get; set; } = null!;
+        public TaskCompletionSource<bool> Running { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 }

@@ -14,17 +14,26 @@ internal sealed class FakeFlowStore : IFlowStore
 
     public bool Unreadable { get; set; }
 
+    /// <summary>Run once a write has landed: a client that goes away at that moment, say.</summary>
+    public Action? AfterWrite { get; set; }
+
     public IReadOnlyList<Flow> Flows
     {
         get { lock (_gate) return [.. _flows]; }
         set { lock (_gate) _flows = [.. value]; }
     }
 
-    public Task<FlowDocument> LoadAsync(CancellationToken ct) =>
-        Task.FromResult(Unreadable ? new FlowDocument([], true) : new FlowDocument(Flows, false));
+    // Every call gives up on a token already cancelled, as JsonFlowStore's gate does.
+    public Task<FlowDocument> LoadAsync(CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(Unreadable ? new FlowDocument([], true) : new FlowDocument(Flows, false));
+    }
 
     public Task SaveAsync(Flow flow, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
+
         lock (_gate)
         {
             var at = _flows.FindIndex(one => one.Id == flow.Id);
@@ -32,12 +41,19 @@ internal sealed class FakeFlowStore : IFlowStore
             else _flows.Add(flow);
         }
 
+        AfterWrite?.Invoke();
         return Task.CompletedTask;
     }
 
     public Task<bool> RemoveAsync(string id, CancellationToken ct)
     {
-        lock (_gate) return Task.FromResult(_flows.RemoveAll(one => one.Id == id) > 0);
+        ct.ThrowIfCancellationRequested();
+
+        bool removed;
+        lock (_gate) removed = _flows.RemoveAll(one => one.Id == id) > 0;
+
+        if (removed) AfterWrite?.Invoke();
+        return Task.FromResult(removed);
     }
 }
 

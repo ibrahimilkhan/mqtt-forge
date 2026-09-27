@@ -121,6 +121,16 @@ public sealed class FlowEndpointTests : IClassFixture<MqttForgeApiFactory>
         Assert.Equal(HttpStatusCode.NotFound, (await _client.DeleteAsync("/api/flows/doomed")).StatusCode);
     }
 
+    // A deploy is answered once the engine is running the flow, so its button works the moment the
+    // answer comes back — with no waiting and no second try.
+    [Fact]
+    public async Task A_flow_can_be_injected_the_moment_its_deploy_is_answered()
+    {
+        Assert.Equal(HttpStatusCode.OK, (await _client.PutAsJsonAsync("/api/flows/ready", Flow("ready"))).StatusCode);
+
+        Assert.Equal(HttpStatusCode.Accepted, (await _client.PostAsync("/api/flows/ready/nodes/go/inject", null)).StatusCode);
+    }
+
     [Fact]
     public async Task Injecting_a_node_no_running_flow_has_is_404() =>
         Assert.Equal(HttpStatusCode.NotFound,

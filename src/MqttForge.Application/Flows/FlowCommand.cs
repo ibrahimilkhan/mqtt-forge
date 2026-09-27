@@ -2,11 +2,15 @@ using MqttForge.Domain.Models;
 
 namespace MqttForge.Application.Flows;
 
-/// <summary>Everything that can reach the flow engine's queue, as one closed union.</summary>
-// One queue for all of them, for AlertCommand's reason: order. A deploy posted after an arrival has to
-// be applied after it, and a publish failure has to be counted against the flow that was running
-// when it was asked for. The runtime is single-threaded, so this is also the whole list of ways any
-// other thread is allowed to reach it.
+/// <summary>Everything that can reach the flow engine's pump, as one closed union.</summary>
+// One order for all of them, for AlertCommand's reason. A deploy posted after an arrival has to be
+// applied after it, and a publish failure has to be counted against the flow that was running when
+// it was asked for. The runtime is single-threaded, so this is also the whole list of ways any other
+// thread is allowed to reach it.
+//
+// One queue for all but a deploy, which waits in a slot of its own because the queue drops its
+// oldest entry when it is full, and takes its place in the queue's order by when it was posted.
+// FlowEngine.Hand says the rest.
 public abstract record FlowCommand;
 
 /// <summary>A message off the broker.</summary>

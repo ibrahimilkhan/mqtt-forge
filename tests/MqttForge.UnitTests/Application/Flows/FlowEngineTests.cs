@@ -643,6 +643,69 @@ public sealed class FlowEngineTests : IAsyncLifetime
         Assert.Equal(FlowLimits.DebugPerPush, _console.Debug.Count);
     }
 
+    // ---- deploys ----
+
+    private static FlowDeploy Deployment(params Flow[] flows)
+    {
+        var set = FlowCompiler.CompileAll(flows, FlowBuilder.Prefix);
+        return new FlowDeploy(set.Compiled, set.Kept);
+    }
+
+    // A deploy is the whole of what should run, and a full queue lets its oldest entry go. Held up
+    // long enough, the pump lost one: the file said one thing and the engine ran another until the
+    // next deploy or the next restart.
+    [Fact]
+    public async Task A_deploy_is_never_lost_to_a_full_queue()
+    {
+        var engine = await StartedAsync(_alerts, _dispatcher, []);
+
+        engine.Post(Deployment(Watch()));
+        for (var i = 0; i < FlowEngine.QueueCapacity; i++)
+            await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":50}"));
+        Run(engine);
+
+        // Run in its place, ahead of every arrival posted after it, and nothing counted as lost.
+        await Eventually.Until(_time, () => Count(engine, "in") == FlowEngine.QueueCapacity,
+            "every arrival to be judged by the deployed flow");
+        Assert.Equal(0, engine.Dropped);
+    }
+
+    [Fact]
+    public async Task An_arrival_posted_before_a_deploy_is_judged_by_the_flows_running_then()
+    {
+        var engine = await StartedAsync(_alerts, _dispatcher, [Watch()]);
+
+        // Hot, a deploy that takes the flow away, and hot again, all waiting for one turn.
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+        engine.Post(Deployment());
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k2/temp", "{\"temp\":95}"));
+        Run(engine);
+
+        await ClockStill(() => _alerts.Resolved.Count == 1, "the first arrival's alarm to end with its flow");
+        Assert.Equal("plant/k1/temp", Assert.Single(_alerts.Raised).Topic);
+        Assert.Equal(FlowAlarmBook.FlowRemoved, _alerts.Resolved[0].ResolvedBy);
+        Assert.Empty(engine.Alarms.Active);
+    }
+
+    // A deploy is the whole of what should run, so of two the pump has not reached only the newer is
+    // worth running — in the older one's place, and answering both.
+    [Fact]
+    public async Task Deploys_the_pump_has_not_reached_are_run_as_the_newest_and_all_are_answered()
+    {
+        var engine = await StartedAsync(_alerts, _dispatcher, []);
+
+        var first = engine.DeployAsync(Deployment(new FlowBuilder("f1").Node("go", "inject").Build()), CancellationToken.None);
+        var second = engine.DeployAsync(Deployment(new FlowBuilder("f2", "Second").Node("go", "inject").Build()), CancellationToken.None);
+        Assert.False(first.IsCompleted);
+
+        Run(engine);
+
+        Assert.True(await first.WaitAsync(StopPatience));
+        Assert.True(await second.WaitAsync(StopPatience));
+        Assert.False(engine.CanInject("f1", "go"));
+        Assert.True(engine.CanInject("f2", "go"));
+    }
+
     // ---- the queue ----
 
     [Fact]
