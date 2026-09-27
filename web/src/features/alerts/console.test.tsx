@@ -225,6 +225,39 @@ describe('the alerts console', () => {
     expect(railAlerts().textContent).toContain('1');
   });
 
+  // The badge is a number in the worst alarm's colour, and the colour says something the number
+  // does not. The row's name says both to a screen reader; a mouse over the row was told nothing.
+  it('says what the badge says to a pointer resting on the row, and nothing once it goes', async () => {
+    serverHas();
+    rulesOn([RULE]);
+    const hub = renderApp();
+    await screen.findByRole('navigation', { name: 'Panels' });
+    expect(railAlerts()).not.toHaveAttribute('title');
+
+    raise(hub, [ALERT]);
+    await waitFor(() => expect(within(railAlerts()).getByTestId('alert-badge')).toBeInTheDocument());
+    expect(railAlerts()).toHaveAttribute('title', '1 alerting, worst critical');
+
+    act(() => hub.emit('alertsResolved', [{ ...ALERT, resolvedAt: '2026-09-01T09:20:00Z', resolvedBy: 'clear' }]));
+    await waitFor(() => expect(within(railAlerts()).queryByTestId('alert-badge')).not.toBeInTheDocument());
+    expect(railAlerts()).not.toHaveAttribute('title');
+  });
+
+  // Narrowed, the rail shows no names, and every row's title is its name: this one's says the
+  // badge as well.
+  it('says the row\'s name with the badge to a pointer on the narrowed rail', async () => {
+    serverHas();
+    rulesOn([RULE]);
+    const hub = renderApp();
+    await screen.findByRole('navigation', { name: 'Panels' });
+
+    raise(hub, [ALERT]);
+    await waitFor(() => expect(within(railAlerts()).getByTestId('alert-badge')).toBeInTheDocument());
+    await userEvent.click(screen.getByRole('button', { name: 'Narrow the rail' }));
+
+    expect(railAlerts()).toHaveAttribute('title', 'Alerts, 1 alerting, worst critical');
+  });
+
   it('wears no badge while nothing is ringing', async () => {
     serverHas();
     rulesOn([]);

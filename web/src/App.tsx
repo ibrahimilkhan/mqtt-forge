@@ -224,6 +224,10 @@ export function App({ hub }: { hub: Hub }) {
             const said = extra ? `${panel.label}, ${extra}` : undefined;
             // The broker it is pointed at, or — on the Settings row, which is where the switch
             // is — the one thing about alerting a reader can put right without opening anything.
+            // On the Alerts row, what its badge says: the count is drawn as a number, but the
+            // worst alarm only as the badge's colour, and a pointer resting on the row was told
+            // neither. The open rail shows the row's name beside it; the shut one does not, so
+            // there the title says the name too.
             const hint =
               panel.id === 'broker' && pointedAt
                 ? `${panel.label} · ${pointedAt}`
@@ -231,9 +235,13 @@ export function App({ hub }: { hub: Hub }) {
                   ? 'Sound is not ready — click to turn it on'
                   : panel.beta
                     ? `${panel.label} (experimental)`
-                    : menuOpen
-                      ? undefined
-                      : panel.label;
+                    : alertSaid
+                      ? menuOpen
+                        ? alertSaid
+                        : said
+                      : menuOpen
+                        ? undefined
+                        : panel.label;
 
             return (
               <Fragment key={panel.id}>
