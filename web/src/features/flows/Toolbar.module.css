@@ -57,6 +57,12 @@
 
 .add { flex: none; padding: 3px 10px; font-size: var(--t-body); }
 
+/* Deploy while a run is out: off to the eye and to the hand, but still a button that can hold the
+   focus it was pressed with — see the markup. Drawn the way global.css draws a disabled button,
+   with the hover that global.css only holds back from a real one held back here too. */
+.deploy[aria-disabled='true'] { opacity: 0.35; cursor: progress; }
+.deploy[aria-disabled='true']:hover { background: var(--tone); border-color: var(--tone); }
+
 .count {
   flex: none;
   font-family: var(--mono);

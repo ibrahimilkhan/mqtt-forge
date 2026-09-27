@@ -1,11 +1,23 @@
+import { useLayoutEffect, useRef, type KeyboardEvent } from 'react';
 import type { FlowDto, FlowRunStatusDto } from '../../types/api';
 import { useFlowDraftStore } from './flowDraftStore';
 import styles from './Toolbar.module.css';
+
+/** The region the tabs control. Everything under them is about the flow on screen. */
+export const FLOW_PANEL = 'flow-panel';
+
+/** A tab's own id, so the region it controls can say which tab names it. */
+export const tabIdOf = (flowId: string) => `flow-tab-${flowId}`;
+
+/** Puts the keyboard on a flow's tab, for a control that is about to go out from under it. */
+export const focusTab = (flowId: string) => document.getElementById(tabIdOf(flowId))?.focus();
 
 type Props = {
   flows: FlowDto[];
   /** Flows whose draft differs from what is running, and flows never deployed. */
   changed: ReadonlySet<string>;
+  /** Flows the server has, whatever their drafts say. */
+  deployed: ReadonlySet<string>;
   current: string;
   running: Readonly<Record<string, FlowRunStatusDto>>;
   /** Flows the server has said something is wrong with: a refused deploy, or a problem in its file. */
@@ -18,6 +30,34 @@ type Props = {
 };
 
 /**
+ * What a tab's lamp and dot say, in words, for a reader who cannot see them. A flow never deployed
+ * is not deployed; one that was, and has been edited since, is still running what was deployed, so
+ * it is its changes that are not.
+ */
+function stateOf(flowId: string, { changed, deployed, running, refused }: Props): string {
+  const lamp = refused.has(flowId) ? 'refused' : running[flowId] ? 'running' : deployed.has(flowId) ? 'not running' : null;
+  const draft = !deployed.has(flowId) ? 'not deployed' : changed.has(flowId) ? 'changes not deployed' : null;
+
+  return [lamp, draft].flatMap((words) => (words ? [`, ${words}`] : [])).join('');
+}
+
+/** Where each key a tab list answers to goes, from `at` in a list of `count`. */
+function step(key: string, at: number, count: number): number | null {
+  switch (key) {
+    case 'ArrowRight':
+      return (at + 1) % count;
+    case 'ArrowLeft':
+      return (at - 1 + count) % count;
+    case 'Home':
+      return 0;
+    case 'End':
+      return count - 1;
+    default:
+      return null;
+  }
+}
+
+/**
  * The flows as tabs, and the one action that changes what runs.
  *
  * Deploy sends every changed flow, not the one on screen: a reader who edited two flows and
@@ -25,10 +65,36 @@ type Props = {
  * nobody remembers making. Discard is only about the flow on screen, and only offered when that
  * flow has a deployed version to go back to. For a flow never deployed, going back would throw
  * the whole flow away, and that is Delete flow's job, which asks first.
+ *
+ * The tabs are one stop on the Tab key, and the arrows, Home and End go along them. Selection
+ * follows the focus: showing a flow is instant, and a reader going along the tabs is looking for
+ * one. The + stands outside the list, which may own tabs and nothing else.
  */
-export function Toolbar({ flows, changed, current, running, refused, deploying, onNew, onDiscard, onDeploy }: Props) {
+export function Toolbar(props: Props) {
+  const { flows, changed, current, running, refused, deploying, onNew, onDiscard, onDeploy } = props;
   const show = useFlowDraftStore((state) => state.show);
+  const deployButton = useRef<HTMLButtonElement>(null);
   const count = changed.size;
+  const nothing = count === 0;
+
+  // A run that leaves nothing to deploy turns Deploy off in the hand that pressed it, and a browser
+  // drops the focus of a button that cannot be pressed. The reader goes to the tab of the flow they
+  // were on rather than to the top of the document. Before the paint, while the button still has it.
+  useLayoutEffect(() => {
+    if (nothing && document.activeElement === deployButton.current) focusTab(current);
+  }, [current, nothing]);
+
+  const onKeyDown = (event: KeyboardEvent) => {
+    // A modified arrow is the browser's — Alt and Left is Back — not the list's.
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+
+    const to = step(event.key, flows.findIndex((flow) => flow.id === current), flows.length);
+    if (to === null) return;
+
+    event.preventDefault();
+    show(flows[to].id);
+    focusTab(flows[to].id);
+  };
 
   return (
     <div className={styles.toolbar}>
@@ -39,14 +105,16 @@ export function Toolbar({ flows, changed, current, running, refused, deploying, 
       {/* The + scrolls with the tabs, so it is always just after the last one. It stands beside
           the tab list rather than in it, because ARIA lets a tab list own tabs and nothing else. */}
       <div className={styles.tabs}>
-        <div className={styles.tabList} role="tablist" aria-label="Tabs">
+        <div className={styles.tabList} role="tablist" aria-label="Tabs" onKeyDown={onKeyDown}>
           {flows.map((flow) => (
             <button
               key={flow.id}
+              id={tabIdOf(flow.id)}
               type="button"
               role="tab"
               aria-selected={flow.id === current}
-              aria-controls="flow-canvas"
+              aria-controls={FLOW_PANEL}
+              tabIndex={flow.id === current ? 0 : -1}
               className={styles.tab}
               data-state={refused.has(flow.id) ? 'refused' : running[flow.id] ? 'running' : 'stopped'}
               onClick={() => show(flow.id)}
@@ -54,11 +122,11 @@ export function Toolbar({ flows, changed, current, running, refused, deploying, 
               <span className={styles.lamp} aria-hidden="true" />
               {flow.name.trim() || 'Untitled'}
               {changed.has(flow.id) && (
-                <span className={styles.changed}>
-                  <span aria-hidden="true">•</span>
-                  <span className="srOnly">, not deployed</span>
+                <span className={styles.changed} aria-hidden="true">
+                  •
                 </span>
               )}
+              <span className="srOnly">{stateOf(flow.id, props)}</span>
             </button>
           ))}
         </div>
@@ -69,16 +137,36 @@ export function Toolbar({ flows, changed, current, running, refused, deploying, 
       </div>
 
       <span className={styles.count} aria-live="polite">
-        {count === 0 ? 'All deployed' : `${count} ${count === 1 ? 'change' : 'changes'}`}
+        {nothing ? 'All deployed' : `${count} ${count === 1 ? 'change' : 'changes'}`}
       </span>
 
       {onDiscard && (
-        <button type="button" className="ghost ends" onClick={onDiscard}>
+        <button
+          type="button"
+          className="ghost ends"
+          onClick={() => {
+            // Discard takes itself away with the changes, and the keyboard with it.
+            onDiscard();
+            focusTab(current);
+          }}
+        >
           Discard
         </button>
       )}
 
-      <button type="button" disabled={count === 0 || deploying} onClick={onDeploy}>
+      {/* Off while a run is out, but said rather than set: a button switched off in the hand that
+          pressed it loses the focus in some browsers, and a run that ends in a refusal leaves it
+          on again with the reader still on it. */}
+      <button
+        ref={deployButton}
+        type="button"
+        className={styles.deploy}
+        disabled={nothing}
+        aria-disabled={deploying || undefined}
+        onClick={() => {
+          if (!deploying) onDeploy();
+        }}
+      >
         {deploying ? 'Deploying…' : 'Deploy'}
       </button>
     </div>

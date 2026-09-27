@@ -1,12 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import { getFlows, getFlowStatus } from '../../api/flows';
 import { queryKeys } from '../../api/queryKeys';
 import { describeError } from '../../lib/problemDetails';
 import { useFlowStatusStore } from '../../stores/flowStatusStore';
 import panel from '../../styles/panel.module.css';
-import type { FlowNodeType } from '../../types/api';
+import type { FlowDto, FlowNodeType } from '../../types/api';
 import { DebugStrip } from './DebugStrip';
 import { exampleFlows } from './examples';
 import { FlowCanvas } from './FlowCanvas';
@@ -14,7 +15,7 @@ import { addNode, emptyFlow, newId, nextName, problemsOf, sameFlow, withDrafts, 
 import { useFlowDraftStore } from './flowDraftStore';
 import { Inspector } from './Inspector';
 import { Palette } from './Palette';
-import { Toolbar } from './Toolbar';
+import { FLOW_PANEL, focusTab, tabIdOf, Toolbar } from './Toolbar';
 import { useDeploy } from './useDeploy';
 import styles from './FlowsPage.module.css';
 
@@ -75,6 +76,7 @@ function Page() {
 
   const deployed = useMemo(() => data?.flows ?? [], [data]);
   const byId = useMemo(() => new Map(deployed.map((flow) => [flow.id, flow])), [deployed]);
+  const deployedIds = useMemo(() => new Set(byId.keys()), [byId]);
   const flows = useMemo(() => withDrafts(deployed, drafts), [deployed, drafts]);
   const changed = useMemo(
     () => new Set(flows.filter((flow) => drafts[flow.id] && !sameFlow(drafts[flow.id], byId.get(flow.id))).map((flow) => flow.id)),
@@ -139,6 +141,7 @@ function Page() {
         <Toolbar
           flows={flows}
           changed={changed}
+          deployed={deployedIds}
           current={shown.id}
           running={running}
           refused={refused}
@@ -157,19 +160,23 @@ function Page() {
         {deploy.isError && <p className={panel.fault}>Not deployed. {describeError(deploy.error)}</p>}
       </div>
 
-      <div className={styles.body}>
-        <Palette onAdd={add} />
-        <FlowCanvas key={shown.id} flow={shown} running={running[shown.id] !== undefined} problems={problems[shown.id] ?? NOTHING_WRONG} />
-        <Inspector
-          flow={shown}
-          deployed={byId.get(shown.id)}
-          running={running[shown.id] !== undefined}
-          problems={problems[shown.id] ?? NOTHING_WRONG}
-          facts={{ allowWebhooks: data.allowWebhooks, alertTopicPrefix: data.alertTopicPrefix }}
-        />
-      </div>
+      {/* What the tabs control: everything under them is about the flow on screen, the palette
+          included, since what it adds goes into that flow. */}
+      <div id={FLOW_PANEL} role="tabpanel" aria-labelledby={tabIdOf(shown.id)} className={styles.flow}>
+        <div className={styles.body}>
+          <Palette onAdd={add} />
+          <FlowCanvas key={shown.id} flow={shown} running={running[shown.id] !== undefined} problems={problems[shown.id] ?? NOTHING_WRONG} />
+          <Inspector
+            flow={shown}
+            deployed={byId.get(shown.id)}
+            running={running[shown.id] !== undefined}
+            problems={problems[shown.id] ?? NOTHING_WRONG}
+            facts={{ allowWebhooks: data.allowWebhooks, alertTopicPrefix: data.alertTopicPrefix }}
+          />
+        </div>
 
-      <DebugStrip flow={shown} />
+        <DebugStrip flow={shown} />
+      </div>
     </div>
   );
 }
@@ -179,6 +186,16 @@ function Start() {
   const put = useFlowDraftStore((state) => state.put);
   const show = useFlowDraftStore((state) => state.show);
 
+  // Either button takes this whole page away, and the keyboard with it. The reader goes to the tab
+  // of the first flow made, which has to be drawn before it can be given the focus.
+  const begin = (flows: FlowDto[]) => {
+    flushSync(() => {
+      flows.forEach(put);
+      show(flows[0].id);
+    });
+    focusTab(flows[0].id);
+  };
+
   return (
     <div className={styles.start}>
       <p>
@@ -186,25 +203,10 @@ function Start() {
         flows run on the server, with this page open or not.
       </p>
       <div className={panel.actions}>
-        <button
-          type="button"
-          onClick={() => {
-            const flows = exampleFlows();
-            flows.forEach(put);
-            show(flows[0].id);
-          }}
-        >
+        <button type="button" onClick={() => begin(exampleFlows())}>
           Start from an example
         </button>
-        <button
-          type="button"
-          className="ghost"
-          onClick={() => {
-            const flow = emptyFlow('Flow 1');
-            put(flow);
-            show(flow.id);
-          }}
-        >
+        <button type="button" className="ghost" onClick={() => begin([emptyFlow('Flow 1')])}>
           New flow
         </button>
       </div>

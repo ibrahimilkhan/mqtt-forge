@@ -5,8 +5,17 @@
   flex: 1 1 auto;
   min-height: 520px;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: var(--channel);
+}
+
+/* The flow on screen, under the tabs that choose it: palette | canvas | inspector, then the debug
+   strip. */
+.flow {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: var(--channel);
+  min-height: 0;
 }
 
 /* The toolbar, and under it the line that says a deploy did not go through. min-width, because a

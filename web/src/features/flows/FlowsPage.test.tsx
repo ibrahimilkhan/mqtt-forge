@@ -346,6 +346,167 @@ describe('Flows page', () => {
   });
 });
 
+/** The tab of the flow on screen. */
+const shownTab = () => screen.getByRole('tab', { selected: true });
+
+/**
+ * Where the keyboard goes when the control it was on goes away.
+ *
+ * A browser hands the focus to the body when the focused button is taken out, or stops being one
+ * that can be pressed, and the next Tab starts again from the top of the document. The reader
+ * belongs on the tab of the flow they were working on — the same rule focusReturn.test.tsx holds
+ * the panels to.
+ */
+describe('where the keyboard goes', () => {
+  it('goes to the tab when Discard takes itself away', async () => {
+    keeping([watch]);
+    render(<FlowsPage />);
+    await userEvent.type(await screen.findByLabelText('Name'), ' 2');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
+
+    expect(screen.queryByRole('button', { name: 'Discard' })).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(shownTab());
+  });
+
+  it('goes to the tab when a deploy leaves nothing to deploy', async () => {
+    keeping([watch]);
+    render(<FlowsPage />);
+    await userEvent.type(await screen.findByLabelText('Name'), ' 2');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+
+    expect(await screen.findByText('All deployed')).toBeInTheDocument();
+    expect(document.activeElement).toBe(shownTab());
+  });
+
+  // A button that is switched off while it has the focus loses it in some browsers, so while the
+  // run is out Deploy only says it is off, and answers no press. A refusal leaves it on again, with
+  // the reader still on it.
+  it('stays on Deploy while the run is out, and after a refusal', async () => {
+    const { puts } = keeping([watch]);
+    const answer = held();
+    server.use(
+      http.put('/api/flows/watch', async ({ request }) => {
+        puts.push((await request.json()) as FlowDto);
+        await answer.until;
+        return refusal({ 'node:test': ['Pick a test.'] });
+      }),
+    );
+    render(<FlowsPage />);
+    await userEvent.type(await screen.findByLabelText('Name'), ' 2');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+    const running = await screen.findByRole('button', { name: 'Deploying…' });
+    expect(running).toBeEnabled();
+    expect(running).toHaveAttribute('aria-disabled', 'true');
+    expect(document.activeElement).toBe(running);
+    await userEvent.click(running);
+
+    answer.release();
+    expect(await screen.findByTitle('Pick a test.')).toBeInTheDocument();
+    expect(document.activeElement).toBe(await screen.findByRole('button', { name: 'Deploy' }));
+    expect(puts).toHaveLength(1);
+  });
+
+  it('goes to the first tab when the examples are made', async () => {
+    keeping();
+    render(<FlowsPage />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Start from an example' }));
+
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: /^Boiler simulator/ }));
+  });
+
+  it('goes to the new tab when a first flow is made on the empty page', async () => {
+    keeping();
+    render(<FlowsPage />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'New flow' }));
+
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: /^Flow 1/ }));
+  });
+});
+
+describe('the tabs', () => {
+  // The lamp and the dot are drawn, and hidden from a screen reader, so the tab says in words what
+  // they say. A flow that is running an older version of itself is not "not deployed": its edits are.
+  it('say in their names whether each flow runs, and what of it is not deployed', async () => {
+    keeping([watch]);
+    server.use(http.get('/api/flows/status', () => HttpResponse.json(watchHasSeen(0))));
+    render(<FlowsPage />);
+
+    expect(await screen.findByRole('tab', { name: 'Boiler watch, running' })).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText('Name'), ' 2');
+    expect(screen.getByRole('tab', { name: 'Boiler watch 2, running, changes not deployed' })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'New flow' }));
+    expect(screen.getByRole('tab', { name: 'Flow 1, not deployed' })).toBeInTheDocument();
+  });
+
+  it('say when a flow is not running, and when the server refused its changes', async () => {
+    keeping([watch]);
+    server.use(http.put('/api/flows/watch', () => refusal({ 'node:test': ['Pick a test.'] })));
+    render(<FlowsPage />);
+
+    expect(await screen.findByRole('tab', { name: 'Boiler watch, not running' })).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText('Name'), ' 2');
+    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+
+    expect(await screen.findByRole('tab', { name: 'Boiler watch 2, refused, changes not deployed' })).toBeInTheDocument();
+  });
+
+  it('control one panel, which the tab on show names', async () => {
+    keeping([watch, sim]);
+    render(<FlowsPage />);
+    await screen.findByText('Boiler watch', { selector: 'h3' });
+
+    const panel = screen.getByRole('tabpanel');
+    expect(panel).toHaveAttribute('aria-labelledby', shownTab().id);
+    expect(panel).toHaveAccessibleName(/^Boiler watch/);
+    for (const tab of screen.getAllByRole('tab')) expect(tab).toHaveAttribute('aria-controls', panel.id);
+    expect(within(panel).getByRole('navigation', { name: 'Nodes' })).toBeInTheDocument();
+    expect(within(panel).getByRole('complementary', { name: 'Inspector' })).toBeInTheDocument();
+    expect(within(panel).getByRole('region', { name: 'Debug' })).toBeInTheDocument();
+  });
+
+  // One stop on the Tab key for the whole list, and the arrows to go along it — the way every tab
+  // list is used. Showing a flow is instant, so the flow goes on screen as its tab takes the focus.
+  it('go along with the arrow keys, Home and End, and show the flow they land on', async () => {
+    const fan: FlowDto = { id: 'fan', name: 'Fan', enabled: true, nodes: [], edges: [] };
+    keeping([watch, sim, fan]);
+    render(<FlowsPage />);
+    await screen.findByText('Boiler watch', { selector: 'h3' });
+    const tabs = () => screen.getAllByRole('tab');
+    const onScreen = () => screen.getByRole('complementary', { name: 'Inspector' }).querySelector('h3')?.textContent;
+
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([0, -1, -1]);
+    act(() => tabs()[0].focus());
+
+    await userEvent.keyboard('{ArrowRight}');
+    expect(document.activeElement).toBe(tabs()[1]);
+    expect(tabs()[1]).toHaveAttribute('aria-selected', 'true');
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, 0, -1]);
+    expect(onScreen()).toBe('Boiler simulator');
+
+    await userEvent.keyboard('{End}');
+    expect(document.activeElement).toBe(tabs()[2]);
+    expect(onScreen()).toBe('Fan');
+
+    await userEvent.keyboard('{ArrowRight}');
+    expect(document.activeElement).toBe(tabs()[0]);
+
+    await userEvent.keyboard('{ArrowLeft}');
+    expect(document.activeElement).toBe(tabs()[2]);
+
+    await userEvent.keyboard('{Home}');
+    expect(document.activeElement).toBe(tabs()[0]);
+    expect(onScreen()).toBe('Boiler watch');
+  });
+});
+
 describe('the numbers the page reads when it opens', () => {
   // Pushes carry nothing to put them in order by. A first read that comes back after a push has
   // landed was answered before it, so it is the older of the two, and drawn over the push it
