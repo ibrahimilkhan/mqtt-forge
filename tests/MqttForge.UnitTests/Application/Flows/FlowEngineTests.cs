@@ -992,6 +992,55 @@ public sealed class FlowEngineTests : IAsyncLifetime
         Assert.Equal(0, Errors(engine, "in"));
     }
 
+    // AlertEngine's pause, for its reason: each attempt at a broker that keeps the link and does not
+    // answer holds the pump for the subscriber's whole deadline, and one a turn left the pump a turn
+    // per deadline. The flows run meanwhile, and the filter is asked for again once the pause is over.
+    [Fact]
+    public async Task A_subscribe_the_broker_did_not_answer_is_asked_again_after_a_pause_and_not_on_the_next_turn()
+    {
+        _subscriber.Refuse = new BrokerDidNotAnswerException("The broker did not answer the SUBSCRIBE for 'plant/+/temp' within 10 seconds.");
+        var engine = await RunningAsync(Watch());
+        _subscriber.Refuse = null;
+
+        for (var second = 1; second < FlowEngine.NoAnswerPause.TotalSeconds; second++)
+        {
+            _time.Advance(FlowEngine.TickInterval);
+            await Task.Delay(10);
+        }
+
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+        await ClockStill(() => _publisher.Sent.Count == 1, "the arrival to be run during the pause");
+        Assert.Single(_subscriber.Batches);
+
+        _time.Advance(FlowEngine.TickInterval);
+        await ClockStill(() => _subscriber.Filters.Count == 1, "the filter to be asked for again once the pause is over");
+        Assert.Equal(2, _subscriber.Batches.Count);
+    }
+
+    // A pause is about the broker that did not answer. A new link is a new answer, asked for at once.
+    [Fact]
+    public async Task A_new_link_asks_for_the_flows_filters_at_once_whatever_pause_the_last_one_left()
+    {
+        _subscriber.Refuse = new BrokerDidNotAnswerException("The broker did not answer the SUBSCRIBE for 'plant/+/temp' within 10 seconds.");
+        var engine = await RunningAsync(Watch());
+        _subscriber.Refuse = null;
+
+        // An alarm on the first link, which the link going ends; then a turn with the link back. The
+        // clock is held still at the start all along, well inside the pause the first link left.
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+        await ClockStill(() => _alerts.Raised.Count == 1, "an alarm to stand on the first link");
+
+        _connection.State = ConnectionState.Disconnected;
+        _subscriber.LinkDropped();
+        await engine.NotifyMessageReceivedAsync(Msg("office/door", "open"));
+        await ClockStill(() => _alerts.Resolved.Count == 1, "the pump to see the link go");
+
+        _connection.State = ConnectionState.Connected;
+        await engine.NotifyMessageReceivedAsync(Msg("office/door", "shut"));
+
+        await ClockStill(() => _subscriber.Filters.Count == 1, "the flows' filters to be asked for on the new link");
+    }
+
     [Fact]
     public async Task A_cancellation_from_a_fault_nobody_foresaw_does_not_stop_the_pump()
     {

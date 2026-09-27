@@ -78,6 +78,10 @@ public sealed class FlowEngine
     /// <summary>The QoS the flows' subscriptions ask for — AlertEngine's RuleQos, for its reason.</summary>
     private const int FlowQos = 1;
 
+    /// <summary>How long the flows' filters are left, once the broker did not answer for them, before they are asked for again.</summary>
+    // AlertEngine's pause, and one figure for the two: both pumps wait on the same broker.
+    public static readonly TimeSpan NoAnswerPause = AlertEngine.NoAnswerPause;
+
     private readonly FlowRuntime _runtime;
     private readonly IFlowStore _store;
     private readonly IAlertNotifier _notifier;
@@ -94,6 +98,9 @@ public sealed class FlowEngine
 
     /// <summary>Filters this broker has refused on this link. Not asked for again until the link or the flows change.</summary>
     private readonly HashSet<string> _refused = new(StringComparer.Ordinal);
+
+    /// <summary>Until when the flows' filters are not asked for, after a broker that did not answer for them. See NoAnswerPause.</summary>
+    private DateTimeOffset _askAgainAt = DateTimeOffset.MinValue;
 
     // The deploy the pump has not reached yet, and the order everything posted is stamped in. See Hand.
     private readonly Lock _deploying = new();
@@ -315,8 +322,13 @@ public sealed class FlowEngine
     {
         _resubscribe = true;
         _refused.Clear();
+        _askAgainAt = DateTimeOffset.MinValue;
         _linkedTo = endpoint;
     }
+
+    /// <summary>Whether the broker did not answer for the filters so lately that asking again now would only wait on it again.</summary>
+    // A pause that ends further off than a whole pause is a clock set back since, and is over.
+    private bool Pausing(DateTimeOffset now) => now < _askAgainAt && _askAgainAt - now <= NoAnswerPause;
 
     private static string? EndpointOf(BrokerLink? link) => link is null ? null : $"{link.Host}:{link.Port}";
 
@@ -493,7 +505,7 @@ public sealed class FlowEngine
             // the flows want is held against what the subscriber is holding for them.
             if (tick && connected && !_resubscribe && FiltersMissing()) _resubscribe = true;
 
-            if (_resubscribe)
+            if (_resubscribe && !Pausing(now))
             {
                 var version = _runtime.Version;
                 await SyncSubscriptionsAsync(ct);
@@ -738,10 +750,20 @@ public sealed class FlowEngine
                 "The broker refused {Count} flow filter(s); they will not be asked for again on this link.",
                 refused.Count);
         }
+        catch (BrokerDidNotAnswerException silence)
+        {
+            // Not a refusal, and not for the very next turn either: see NoAnswerPause. The flag
+            // stays up, so the first turn after the pause asks again.
+            _askAgainAt = _time.GetUtcNow() + NoAnswerPause;
+
+            _log.LogWarning(silence,
+                "The broker did not answer for the flows' subscriptions. They will be asked for again in {Seconds} seconds.",
+                NoAnswerPause.TotalSeconds);
+        }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
-            // A link that went mid-packet, a broker that never answered: the flag stays up and the
-            // next turn asks again.
+            // A link that went mid-packet, a fault nobody foresaw: the flag stays up and the next
+            // turn asks again.
             //
             // A cancellation is one of these unless it is this pump's own. MQTTnet 5 can fail a
             // SUBSCRIBE that was waiting when its keep-alive gave up on the link with the

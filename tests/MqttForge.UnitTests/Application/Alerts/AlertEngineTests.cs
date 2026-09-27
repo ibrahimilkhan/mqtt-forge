@@ -735,6 +735,50 @@ public class AlertEngineTests
         await harness.Until(() => harness.Subscriber.Filters.Count == 1, "the filter to be asked for again");
     }
 
+    // Each attempt at a broker that keeps the link and does not answer holds the pump for the
+    // subscriber's whole deadline. Asked again on the very next turn, it left the pump one turn per
+    // deadline for as long as the broker kept the link up; now it is asked again after a pause.
+    [Fact]
+    public async Task A_subscribe_the_broker_did_not_answer_is_asked_again_after_a_pause_and_not_on_the_next_turn()
+    {
+        await using var harness = Build(Document([Rule("a", "plant/a/#", Over90)]));
+        harness.Subscriber.Refuse = new BrokerDidNotAnswerException(
+            "The broker did not answer the SUBSCRIBE for 'plant/a/#' within 10 seconds.");
+        await harness.Engine.StartAsync(CancellationToken.None);
+        harness.Subscriber.Refuse = null;
+        harness.Run();
+
+        await harness.TickAsync((int)AlertEngine.NoAnswerPause.TotalSeconds - 1);
+        Assert.Single(harness.Subscriber.Batches);
+
+        await harness.TickAsync(1);
+        await harness.Until(() => harness.Subscriber.Filters.Count == 1, "the filter to be asked for again once the pause is over");
+        Assert.Equal(2, harness.Subscriber.Batches.Count);
+    }
+
+    // A pause is about the broker that did not answer. A new link is a new answer, asked for at once.
+    [Fact]
+    public async Task A_new_link_asks_for_the_filters_at_once_whatever_pause_the_last_one_left()
+    {
+        await using var harness = Build(Document([Rule("a", "plant/a/#", Over90)]));
+        harness.Subscriber.Refuse = new BrokerDidNotAnswerException(
+            "The broker did not answer the SUBSCRIBE for 'plant/a/#' within 10 seconds.");
+        await harness.Engine.StartAsync(CancellationToken.None);
+        harness.Subscriber.Refuse = null;
+        harness.Run();
+
+        harness.Connection.State = ConnectionState.Disconnected;
+        harness.Subscriber.LinkDropped();
+        await harness.TickAsync(2);
+        harness.Connection.State = ConnectionState.Connected;
+        await harness.TickAsync(1);
+
+        // With the clock held three seconds in, inside the pause the first link left.
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (harness.Subscriber.Filters.Count == 0 && DateTime.UtcNow < deadline) await Task.Delay(5);
+        Assert.Single(harness.Subscriber.Filters);
+    }
+
     [Fact]
     public async Task A_cancelled_alarm_channel_is_contained_in_that_channel()
     {

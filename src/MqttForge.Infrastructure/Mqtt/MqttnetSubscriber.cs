@@ -37,8 +37,11 @@ public sealed class MqttnetSubscriber : IMqttSubscriber, ISubscriptionRestorer
     // engines would sit out on their pumps, once per attempt, for a broker that keeps the link and
     // never answers: every rule and every flow deaf for a hundred seconds at a time. A working
     // broker sends its SUBACK in milliseconds, across the world in well under a second, so ten is
-    // generous for the slowest link that is working and short for one that is not. What running
-    // out of it means is unchanged: the broker did not answer, and asking again may well mend that.
+    // generous for the slowest link that is working and short for one that is not. It is also
+    // under the fifteen seconds the console gives any request (PATIENCE_MS in web/src/api/client.ts),
+    // so a reader who asked for a filter hears that the broker did not answer, not that the console
+    // gave up. What running out of it means is unchanged: the broker did not answer, and asking again
+    // may well mend that — after the engines' NoAnswerPause, so they are not held one attempt a turn.
     public static readonly TimeSpan SubscriptionTimeout = TimeSpan.FromSeconds(10);
 
     private readonly IMqttClient _client;

@@ -97,6 +97,14 @@ public sealed class AlertEngine
     // existing alert's Count rather than raising a second one, because an alert belongs to a pair.
     private const int RuleQos = 1;
 
+    /// <summary>How long the rules' filters are left, once the broker did not answer for them, before they are asked for again.</summary>
+    // Every attempt at a broker that keeps the link and does not answer holds the pump for the
+    // subscriber's whole deadline, and the turn after one used to ask again at once: the pump then
+    // made one turn per deadline, every rule a reading behind for as long as the broker kept that
+    // up. A pause between the attempts gives the pump turns of its own. Short, because a broker that
+    // was only slow answers the next time, and a new link asks at once whatever the pause.
+    public static readonly TimeSpan NoAnswerPause = TimeSpan.FromSeconds(5);
+
     private readonly AlertEngineCore _core;
     private readonly IAlertRuleStore _rules;
     private readonly IAlertStateStore _state;
@@ -142,6 +150,9 @@ public sealed class AlertEngine
     // and a rule set the reader has just edited. Each of them forces a resubscribe, so each clears
     // this in the same breath.
     private readonly HashSet<string> _refused = new(StringComparer.Ordinal);
+
+    /// <summary>Until when the rules' filters are not asked for, after a broker that did not answer for them. See NoAnswerPause.</summary>
+    private DateTimeOffset _askAgainAt = DateTimeOffset.MinValue;
 
     /// <summary>Which broker the pairs in the core were learned from.</summary>
     // See AlertEngineCore.ForgetTopics. A link to a different broker is a different world, and
@@ -388,7 +399,7 @@ public sealed class AlertEngine
             // so the look costs nothing and asks the broker nothing.
             if (tick && connected && !_resubscribe && FiltersMissing()) _resubscribe = true;
 
-            if (_resubscribe) await SyncSubscriptionsAsync(ct);
+            if (_resubscribe && !Pausing(now)) await SyncSubscriptionsAsync(ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -458,7 +469,12 @@ public sealed class AlertEngine
         _resubscribe = true;
         _refused.Clear();
         _core.ForgetRefusals();
+        _askAgainAt = DateTimeOffset.MinValue;
     }
+
+    /// <summary>Whether the broker did not answer for the filters so lately that asking again now would only wait on it again.</summary>
+    // A pause that ends further off than a whole pause is a clock set back since, and is over.
+    private bool Pausing(DateTimeOffset now) => now < _askAgainAt && _askAgainAt - now <= NoAnswerPause;
 
     /// <summary>Whether a filter an enabled rule wants, and the broker has not refused, is not held for the rules.</summary>
     private bool FiltersMissing()
@@ -572,10 +588,20 @@ public sealed class AlertEngine
                 "The broker refused {Count} rule filter(s); they will not be asked for again on this link.",
                 refusal.Filters.Count);
         }
+        catch (BrokerDidNotAnswerException silence)
+        {
+            // Not a refusal, and not for the very next turn either: see NoAnswerPause. The flag
+            // stays up, so the first turn after the pause asks again.
+            _askAgainAt = _time.GetUtcNow() + NoAnswerPause;
+
+            _log.LogWarning(silence,
+                "The broker did not answer for the rule subscriptions. They will be asked for again in {Seconds} seconds.",
+                NoAnswerPause.TotalSeconds);
+        }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
-            // Everything else — a link that went in the middle of the packet, a broker that never
-            // answered. None of it may stop the pump, and none of it is permanent: the flag is
+            // Everything else — a link that went in the middle of the packet, a fault nobody
+            // foresaw. None of it may stop the pump, and none of it is permanent: the flag is
             // left set, so the next turn asks again.
             //
             // A cancellation is one of these unless it is this pump's own. MQTTnet 5 can fail a
