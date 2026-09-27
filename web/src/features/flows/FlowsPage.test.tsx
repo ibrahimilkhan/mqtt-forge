@@ -6,7 +6,7 @@ import { queryKeys } from '../../api/queryKeys';
 import { useFlowStatusStore } from '../../stores/flowStatusStore';
 import { server } from '../../test/server';
 import { renderWithClient as render } from '../../test/renderWithClient';
-import type { FlowDto, FlowsDto } from '../../types/api';
+import type { FlowDto, FlowsDto, FlowStatusDto } from '../../types/api';
 import { standInForTheBrowser } from './canvasTestbed';
 import { useFlowDraftStore } from './flowDraftStore';
 import FlowsPage from './FlowsPage';
@@ -30,6 +30,41 @@ const watch: FlowDto = {
   ],
   edges: [{ id: 'e1', from: 'in', fromPort: 'out', to: 'test', toPort: 'in' }],
 };
+
+const sim: FlowDto = {
+  id: 'sim',
+  name: 'Boiler simulator',
+  enabled: true,
+  nodes: [{ id: 'tick', type: 'every', x: 40, y: 100, config: { seconds: 2, topic: '', payload: '["k1","k2","k3"]' } }],
+  edges: [],
+};
+
+/** What the server says the watch has done, with this many messages in. */
+const watchHasSeen = (count: number): FlowStatusDto => ({
+  flows: [{
+    id: 'watch', faults: 0, fault: null,
+    nodes: [{ id: 'in', count, outs: { out: count }, errors: 0, note: null, standing: [] }],
+  }],
+});
+
+/** A promise the test lets go of when it chooses, for an answer that has to arrive late. */
+function held() {
+  let release = () => {};
+  const until = new Promise<void>((resolve) => (release = resolve));
+  return { until, release };
+}
+
+/** A few turns of the clock: long enough for an answer the server has sent to reach the page. */
+async function turns(count = 5) {
+  for (let turn = 0; turn < count; turn++) await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+}
+
+/** The answer the server gives a deploy it refuses. */
+const refusal = (errors: Record<string, string[]>) =>
+  HttpResponse.json(
+    { title: 'The flow was not deployed', detail: Object.values(errors)[0][0], reason: 'flowInvalid', errors },
+    { status: 400, headers: { 'Content-Type': 'application/problem+json' } },
+  );
 
 /** A server that keeps what it is sent, the way the real one does. */
 function keeping(initial: FlowDto[] = [], over: Partial<FlowsDto> = {}) {
@@ -308,5 +343,197 @@ describe('Flows page', () => {
     render(<FlowsPage />);
     await screen.findByRole('region', { name: 'Debug' });
     expect(fold()).toHaveAttribute('aria-expanded', 'false');
+  });
+});
+
+describe('the numbers the page reads when it opens', () => {
+  // Pushes carry nothing to put them in order by. A first read that comes back after a push has
+  // landed was answered before it, so it is the older of the two, and drawn over the push it
+  // would show a stopped flow as running until something moved again.
+  it('keeps a push that lands while the read is out, rather than the older answer', async () => {
+    keeping([watch]);
+    const answer = held();
+    let answered = false;
+    server.use(
+      http.get('/api/flows/status', async () => {
+        await answer.until;
+        answered = true;
+        return HttpResponse.json(watchHasSeen(412));
+      }),
+    );
+    render(<FlowsPage />);
+    await screen.findByRole('tab', { name: /Boiler watch/ });
+
+    act(() => useFlowStatusStore.getState().setStatus(watchHasSeen(500)));
+    expect(await screen.findByText('500 in')).toBeInTheDocument();
+
+    answer.release();
+    await waitFor(() => expect(answered).toBe(true));
+    await turns();
+
+    expect(screen.getByText('500 in')).toBeInTheDocument();
+    expect(screen.queryByText('412 in')).not.toBeInTheDocument();
+  });
+
+  it('lets the read go when the page is shut before it comes back', async () => {
+    keeping([watch]);
+    const answer = held();
+    let answered = false;
+    server.use(
+      http.get('/api/flows/status', async () => {
+        await answer.until;
+        answered = true;
+        return HttpResponse.json(watchHasSeen(412));
+      }),
+    );
+    const { unmount } = render(<FlowsPage />);
+    await screen.findByRole('tab', { name: /Boiler watch/ });
+
+    unmount();
+    answer.release();
+    await waitFor(() => expect(answered).toBe(true));
+    await turns();
+
+    expect(useFlowStatusStore.getState().flows).toEqual({});
+  });
+});
+
+describe('deploying', () => {
+  it('sends the next flow when one is refused, and lets that one go', async () => {
+    const { puts } = keeping([watch, sim]);
+    server.use(
+      http.put('/api/flows/watch', async ({ request }) => {
+        puts.push((await request.json()) as FlowDto);
+        return refusal({ 'node:test': ['Pick a test.'] });
+      }),
+    );
+    useFlowDraftStore.getState().put({ ...watch, name: 'Boiler watch 2' });
+    useFlowDraftStore.getState().put({ ...sim, name: 'Boiler simulator 2' });
+    render(<FlowsPage />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Deploy' }));
+
+    await waitFor(() => expect(puts.map((flow) => flow.name)).toEqual(['Boiler watch 2', 'Boiler simulator 2']));
+    expect(await screen.findByText('1 change')).toBeInTheDocument();
+    expect(useFlowDraftStore.getState().drafts.sim).toBeUndefined();
+    expect(useFlowDraftStore.getState().drafts.watch.name).toBe('Boiler watch 2');
+    expect(useFlowDraftStore.getState().refusals.watch).toEqual({ 'node:test': ['Pick a test.'] });
+  });
+
+  // A draft that says what is already running is no change, however it came to be there.
+  it('sends only the flows that differ from what is running', async () => {
+    const { puts } = keeping([watch, sim]);
+    useFlowDraftStore.getState().put({ ...watch });
+    useFlowDraftStore.getState().put({ ...sim, name: 'Boiler simulator 2' });
+    render(<FlowsPage />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Deploy' }));
+
+    expect(await screen.findByText('All deployed')).toBeInTheDocument();
+    expect(puts.map((flow) => flow.id)).toEqual(['sim']);
+  });
+
+  // A server that cannot write the file will not write the next one either, and a run that went
+  // on would only say so once for every flow.
+  it('stops at a failure that is not a refusal, and says why', async () => {
+    const { puts } = keeping([watch, sim]);
+    server.use(
+      http.put('/api/flows/watch', async ({ request }) => {
+        puts.push((await request.json()) as FlowDto);
+        return HttpResponse.json(
+          { title: 'Could not save the flows', detail: 'The disk is full.', reason: 'flowsNotSaved' },
+          { status: 500, headers: { 'Content-Type': 'application/problem+json' } },
+        );
+      }),
+    );
+    useFlowDraftStore.getState().put({ ...watch, name: 'Boiler watch 2' });
+    useFlowDraftStore.getState().put({ ...sim, name: 'Boiler simulator 2' });
+    render(<FlowsPage />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Deploy' }));
+
+    expect(await screen.findByText('Not deployed. The disk is full.')).toBeInTheDocument();
+    expect(puts.map((flow) => flow.id)).toEqual(['watch']);
+    expect(screen.getByText('2 changes')).toBeInTheDocument();
+  });
+
+  // A read of the list that set off before a flow was deployed answers with the flow as it was.
+  // Let in after the deploy has written the new one, it would put the old flow back under a tab
+  // whose draft has already gone.
+  it('does not let a read that was already out put back the flow a deploy replaced', async () => {
+    const kept = [watch, sim];
+    const watchPut = held();
+    const simPut = held();
+    let reading: ReturnType<typeof held> | null = null;
+    let asked = false;
+    server.use(
+      http.get('/api/flows', async () => {
+        const flows = kept.map((flow) => ({ ...flow }));
+        const hold = reading;
+        asked = hold !== null;
+        if (hold) await hold.until;
+        return HttpResponse.json({ flows, problems: [], unreadable: false, allowWebhooks: true, alertTopicPrefix: 'mqttforge/alerts/' });
+      }),
+      http.put('/api/flows/:id', async ({ params, request }) => {
+        const flow = (await request.json()) as FlowDto;
+        await (params.id === 'watch' ? watchPut : simPut).until;
+        kept[kept.findIndex((one) => one.id === flow.id)] = flow;
+        return HttpResponse.json({ flow });
+      }),
+    );
+    useFlowDraftStore.getState().put({ ...watch, name: 'Boiler watch 2' });
+    useFlowDraftStore.getState().put({ ...sim, name: 'Boiler simulator 2' });
+    useFlowDraftStore.getState().show('watch');
+    const { queryClient } = render(<FlowsPage />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Deploy' }));
+    // The window comes back into focus while the first flow is on its way, and the list is read.
+    const read = held();
+    reading = read;
+    act(() => void queryClient.invalidateQueries({ queryKey: queryKeys.flows }));
+    await waitFor(() => expect(asked).toBe(true));
+
+    watchPut.release();
+    await waitFor(() => expect(useFlowDraftStore.getState().drafts.watch).toBeUndefined());
+    read.release();
+    await waitFor(() => expect(queryClient.getQueryState(queryKeys.flows)?.fetchStatus).toBe('idle'));
+    await turns();
+
+    expect(queryClient.getQueryData<FlowsDto>(queryKeys.flows)?.flows[0].name).toBe('Boiler watch 2');
+    expect(screen.getByRole('tab', { name: /Boiler watch 2/ })).toBeInTheDocument();
+
+    reading = null;
+    simPut.release();
+    expect(await screen.findByText('All deployed')).toBeInTheDocument();
+  });
+});
+
+describe('a refusal', () => {
+  // A refusal is about a draft. Edited back to what is running, the flow has no draft for it to be
+  // about: nothing may go on saying the server refused it beside "All deployed", and the next edit
+  // must not bring it back.
+  it('lapses once the flow is back to what is running', async () => {
+    keeping([watch]);
+    server.use(http.put('/api/flows/watch', () => refusal({ flow: ['The flow is not right.'], 'node:test': ['Pick a test.'], 'edge:e1': ['Not this wire.'] })));
+    render(<FlowsPage />);
+    const run = await screen.findByRole('checkbox', { name: 'Run it once deployed' });
+
+    await userEvent.click(run);
+    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+    expect(await screen.findByTitle('Pick a test.')).toHaveAttribute('data-problem');
+    expect(screen.getByText('The flow is not right.')).toBeInTheDocument();
+
+    await userEvent.click(run);
+
+    expect(screen.getByText('All deployed')).toBeInTheDocument();
+    expect(document.querySelector('[data-problem]')).toBeNull();
+    expect(screen.queryByText('The flow is not right.')).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Boiler watch/ })).not.toHaveAttribute('data-state', 'refused');
+
+    await userEvent.click(run);
+
+    expect(screen.getByText('1 change')).toBeInTheDocument();
+    expect(document.querySelector('[data-problem]')).toBeNull();
+    expect(screen.queryByText('The flow is not right.')).not.toBeInTheDocument();
   });
 });

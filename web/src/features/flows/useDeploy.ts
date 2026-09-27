@@ -28,6 +28,10 @@ export function useDeploy() {
         try {
           const { flow: kept } = await putFlow(flow);
 
+          // A read of the list already on its way — the window came back into focus, say — was
+          // answered before this flow was kept. Let in after the write below, it would put the
+          // old flow back under a tab whose draft is about to go.
+          await queryClient.cancelQueries({ queryKey: queryKeys.flows });
           queryClient.setQueryData<FlowsDto>(queryKeys.flows, (old) =>
             old && {
               ...old,

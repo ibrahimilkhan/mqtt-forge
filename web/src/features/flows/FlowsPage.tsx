@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { ReactFlowProvider, useReactFlow } from '@xyflow/react';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { getFlows, getFlowStatus } from '../../api/flows';
 import { queryKeys } from '../../api/queryKeys';
 import { describeError } from '../../lib/problemDetails';
@@ -48,11 +48,23 @@ function Page() {
 
   // The numbers the hub has not pushed since the page opened. The store may already hold them —
   // the bridge feeds it from the moment the console opens — and this only fills a first gap.
+  // Pushes carry nothing to put them in order by, so the answer is kept only if no push has come
+  // in while it was out: one that has is newer than the answer. Every push builds a new picture,
+  // which is what makes an identity check enough. A page that has shut has no gap left to fill.
   useEffect(() => {
+    let open = true;
+    const asked = useFlowStatusStore.getState().flows;
+
     getFlowStatus().then(
-      (status) => useFlowStatusStore.getState().setStatus(status),
+      (status) => {
+        if (open && useFlowStatusStore.getState().flows === asked) useFlowStatusStore.getState().setStatus(status);
+      },
       () => {},
     );
+
+    return () => {
+      open = false;
+    };
   }, []);
 
   const deployed = useMemo(() => data?.flows ?? [], [data]);
@@ -63,6 +75,14 @@ function Page() {
     [flows, drafts, byId],
   );
   const serverProblems = useMemo(() => problemsOf(data?.problems ?? []), [data]);
+
+  // A flow edited back to what is running has no draft left for its refusal to be about. Only the
+  // page holds both halves of that comparison, so it is the one that tells the store. Before the
+  // paint, so the flow is never drawn for a frame with the old refusal still on it.
+  useLayoutEffect(() => {
+    const lapsed = Object.keys(refusals).filter((id) => !changed.has(id));
+    if (lapsed.length > 0) useFlowDraftStore.getState().lapse(lapsed);
+  }, [changed, refusals]);
 
   if (isPending) return <p className={styles.missing}>Reading the flows…</p>;
 

@@ -80,6 +80,21 @@ describe('flow drafts', () => {
     expect(useFlowDraftStore.getState().current).toBe(flow.id);
   });
 
+  it('lets the refusals of flows back to what is running lapse, and keeps the drafts and the rest', () => {
+    const back = emptyFlow('Back');
+    const still = emptyFlow('Still refused');
+    const store = useFlowDraftStore.getState();
+    store.put(back);
+    store.put(still);
+    store.refuse(back.id, { flow: ['Name the flow.'] });
+    store.refuse(still.id, { flow: ['Name the flow.'] });
+
+    useFlowDraftStore.getState().lapse([back.id]);
+
+    expect(Object.keys(useFlowDraftStore.getState().refusals)).toEqual([still.id]);
+    expect(Object.keys(useFlowDraftStore.getState().drafts)).toEqual([back.id, still.id]);
+  });
+
   it('forgets a flow that was deleted, moving off it if it was on screen', () => {
     const flow = emptyFlow('Deleted');
     useFlowDraftStore.getState().put(flow);

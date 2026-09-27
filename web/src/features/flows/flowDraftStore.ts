@@ -23,6 +23,11 @@ type DraftState = {
   show: (id: string | null) => void;
   select: (nodeId: string | null) => void;
   refuse: (flowId: string, errors: Record<string, string[]>) => void;
+  /**
+   * These flows match what is running again. A refusal is the server's answer about one draft, not
+   * about a flow, and that draft is no longer there to be refused, so the refusals go.
+   */
+  lapse: (flowIds: readonly string[]) => void;
   /** The server has the flow now; there is nothing left to keep here. */
   deployed: (flowId: string) => void;
   /** The flow was deleted. */
@@ -98,6 +103,11 @@ export const useFlowDraftStore = create<DraftState>()(
       select: (nodeId) => set({ selected: nodeId }),
 
       refuse: (flowId, errors) => set((state) => ({ refusals: { ...state.refusals, [flowId]: errors } })),
+
+      lapse: (flowIds) =>
+        set((state) => ({
+          refusals: Object.fromEntries(Object.entries(state.refusals).filter(([id]) => !flowIds.includes(id))),
+        })),
 
       deployed: (flowId) =>
         set((state) => ({ drafts: without(state.drafts, flowId), refusals: without(state.refusals, flowId) })),
