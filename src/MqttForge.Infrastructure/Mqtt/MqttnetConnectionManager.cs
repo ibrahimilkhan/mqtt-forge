@@ -6,7 +6,7 @@ using MQTTnet;
 
 namespace MqttForge.Infrastructure.Mqtt;
 
-public sealed class MqttnetConnectionManager : IMqttConnectionManager
+public sealed class MqttnetConnectionManager : IMqttConnectionManager, IDisposable
 {
     // Long enough for a slow broker over a slow link, short enough that a black-holed host
     // reports back instead of hanging on the OS TCP timeout (~75s on macOS, ~130s on Linux).
@@ -44,6 +44,15 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
     // The link that is up. Read through the IsConnected gate, same as the failure, so a dead
     // link cannot describe itself as a live one.
     private BrokerLink? _link;
+
+    // What the link that is up was made with, read from files for the attempt that made it; null
+    // when it needed none, or when no link is up. See LinkCertificates. Changed under its own lock
+    // and not the gate, because MQTTnet tells of a drop from a task of its own and waits for no gate.
+    private LinkCertificates? _linkCertificates;
+    private readonly Lock _certificatesLock = new();
+
+    // Set when the host stops, so an attempt still out then lets its certificates go on its way back.
+    private bool _disposed;
 
     // Last payload announced, to avoid duplicate notifications
     private string _announced = $"{ConnectionState.Disconnected}/";
@@ -101,6 +110,12 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
                 _offlineState = ConnectionState.Disconnected;
                 await AnnounceAsync();
                 throw;
+            }
+            finally
+            {
+                // The link this dial replaces is over, closed just now or dropped before, and
+                // however its DISCONNECT went the socket is closed.
+                LetGoOfLinkCertificates();
             }
 
             // Announce only after the old link is down
@@ -200,9 +215,14 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
         using var attempt = CancellationTokenSource.CreateLinkedTokenSource(ct);
         attempt.CancelAfter(_connectTimeout);
 
+        // What this attempt reads from files. Let go on the way out unless a link takes them: an
+        // attempt that failed has had its channel closed by MQTTnet before ConnectAsync is back,
+        // and nothing will present them again.
+        using var certificates = new LinkCertificates();
+
         try
         {
-            var options = MqttClientOptionsFactory.Build(settings, version, _tls);
+            var options = MqttClientOptionsFactory.Build(settings, version, _tls, certificates);
             result = await _client.ConnectAsync(options, attempt.Token);
         }
         catch (Exception) when (ct.IsCancellationRequested)
@@ -249,11 +269,49 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
         // to say — and latch that. Written this way it sees a state that is not yet a fault.
         _failureReason = null;
         _link = LinkTo(settings, version, result);
+        Keep(certificates.HandOver());
 
         // Post-connect, offline now means the link died, not a deliberate close
         // (also covers the broker dropping the session the instant it opens)
         _offlineState = ConnectionState.Faulted;
         await AnnounceAsync();
+    }
+
+    // The link that has just come up holds what it was made with, for as long as it lasts.
+    private void Keep(LinkCertificates certificates)
+    {
+        lock (_certificatesLock)
+        {
+            // A link the broker ended as it opened is over already, and its drop may have been told
+            // before there was anything here to let go. Once the host has stopped, nothing would
+            // come for them either.
+            if (_disposed || !_client.IsConnected)
+            {
+                certificates.Dispose();
+                return;
+            }
+
+            _linkCertificates = certificates;
+        }
+    }
+
+    // The link they were for is over.
+    private void LetGoOfLinkCertificates(bool unlessConnected = false)
+    {
+        LinkCertificates? over;
+
+        lock (_certificatesLock)
+        {
+            // The client is asked under the lock Keep takes. Asked outside it, a drop told late could
+            // find the client down while a newer link was still connecting, and then take that
+            // link's certificates, kept in the meantime, for the old one's.
+            if (unlessConnected && _client.IsConnected) return;
+
+            over = _linkCertificates;
+            _linkCertificates = null;
+        }
+
+        over?.Dispose();
     }
 
     // Records why this attempt failed and hands back the exception for the caller to throw, so
@@ -291,6 +349,8 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
         }
         finally
         {
+            // And for the same reason the link is over whether or not the DISCONNECT went.
+            LetGoOfLinkCertificates();
             _gate.Release();
             await AnnounceAsync();
         }
@@ -306,7 +366,22 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager
         if (e.ClientWasConnected && _offlineState == ConnectionState.Faulted)
             _failureReason = BrokerFailureClassifier.Classify(e);
 
+        // A link that dropped is over, and MQTTnet has closed its channel before it says so. Not
+        // while the client is connected, though: that is a newer link, still presenting its own.
+        LetGoOfLinkCertificates(unlessConnected: true);
+
         return AnnounceAsync();
+    }
+
+    // The host is stopping. The client is the provider's and goes a moment after this, taking any
+    // link still up with it; what that link was made with is this class's, and goes now.
+    public void Dispose()
+    {
+        _client.DisconnectedAsync -= OnDisconnectedAsync;
+
+        lock (_certificatesLock) _disposed = true;
+
+        LetGoOfLinkCertificates();
     }
 
     // The classifier can only say "the encrypted channel failed"; the inspector was inside it.

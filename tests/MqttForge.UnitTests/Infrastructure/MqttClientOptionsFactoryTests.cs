@@ -18,6 +18,9 @@ public class MqttClientOptionsFactoryTests
 
     private static readonly TlsCertificateInspector Inspector = new();
 
+    // Where the certificates read from files would go. None of the settings here names a file.
+    private static readonly LinkCertificates NoFiles = new();
+
     // Auto is an instruction, not a version, and this is where it turns into one.
     [Fact]
     public void Auto_expands_to_every_version_newest_first()
@@ -42,7 +45,7 @@ public class MqttClientOptionsFactoryTests
     [InlineData(MqttProtocolLevel.V500, MqttProtocolVersion.V500)]
     public void Each_version_reaches_the_wire_as_itself(MqttProtocolLevel level, MqttProtocolVersion wire)
     {
-        Assert.Equal(wire, MqttClientOptionsFactory.Build(Settings(), level, Inspector).ProtocolVersion);
+        Assert.Equal(wire, MqttClientOptionsFactory.Build(Settings(), level, Inspector, NoFiles).ProtocolVersion);
     }
 
     // Answering with a guess would hide the caller that forgot to expand it.
@@ -99,10 +102,10 @@ public class MqttClientOptionsFactoryTests
 
         Assert.Equal(
             600u,
-            MqttClientOptionsFactory.Build(settings, MqttProtocolLevel.V500, Inspector).SessionExpiryInterval);
+            MqttClientOptionsFactory.Build(settings, MqttProtocolLevel.V500, Inspector, NoFiles).SessionExpiryInterval);
         Assert.Equal(
             0u,
-            MqttClientOptionsFactory.Build(settings, MqttProtocolLevel.V311, Inspector).SessionExpiryInterval);
+            MqttClientOptionsFactory.Build(settings, MqttProtocolLevel.V311, Inspector, NoFiles).SessionExpiryInterval);
     }
 
     // The same bit on the wire under both of its names.
@@ -111,14 +114,14 @@ public class MqttClientOptionsFactoryTests
     {
         var settings = Settings() with { CleanSession = false };
 
-        Assert.False(MqttClientOptionsFactory.Build(settings, MqttProtocolLevel.V500, Inspector).CleanSession);
-        Assert.False(MqttClientOptionsFactory.Build(settings, MqttProtocolLevel.V311, Inspector).CleanSession);
+        Assert.False(MqttClientOptionsFactory.Build(settings, MqttProtocolLevel.V500, Inspector, NoFiles).CleanSession);
+        Assert.False(MqttClientOptionsFactory.Build(settings, MqttProtocolLevel.V311, Inspector, NoFiles).CleanSession);
     }
 
     [Fact]
     public void A_TCP_connection_is_built_on_a_TCP_channel()
     {
-        var options = MqttClientOptionsFactory.Build(Settings(), MqttProtocolLevel.V500, Inspector);
+        var options = MqttClientOptionsFactory.Build(Settings(), MqttProtocolLevel.V500, Inspector, NoFiles);
 
         Assert.IsType<MqttClientTcpOptions>(options.ChannelOptions);
     }
@@ -127,7 +130,7 @@ public class MqttClientOptionsFactoryTests
     public void A_WebSocket_connection_is_built_on_a_WebSocket_channel()
     {
         var options = MqttClientOptionsFactory.Build(
-            Settings(MqttTransport.WebSocket), MqttProtocolLevel.V500, Inspector);
+            Settings(MqttTransport.WebSocket), MqttProtocolLevel.V500, Inspector, NoFiles);
 
         var channel = Assert.IsType<MqttClientWebSocketOptions>(options.ChannelOptions);
         Assert.Equal("ws://broker.local:1883/mqtt", channel.Uri);
@@ -141,7 +144,7 @@ public class MqttClientOptionsFactoryTests
     public void Encryption_reaches_the_channel_it_was_asked_for_on(MqttTransport transport)
     {
         var options = MqttClientOptionsFactory.Build(
-            Settings(transport, useTls: true), MqttProtocolLevel.V500, Inspector);
+            Settings(transport, useTls: true), MqttProtocolLevel.V500, Inspector, NoFiles);
 
         Assert.True(Tls(options).UseTls);
     }
@@ -149,7 +152,7 @@ public class MqttClientOptionsFactoryTests
     [Fact]
     public void Nothing_is_encrypted_that_was_not_asked_to_be()
     {
-        Assert.False(Tls(MqttClientOptionsFactory.Build(Settings(), MqttProtocolLevel.V500, Inspector)).UseTls);
+        Assert.False(Tls(MqttClientOptionsFactory.Build(Settings(), MqttProtocolLevel.V500, Inspector, NoFiles)).UseTls);
     }
 
     // The one setting that turns verification off. Both flags, because MQTTnet consults them in
@@ -162,7 +165,7 @@ public class MqttClientOptionsFactoryTests
             Tls = new BrokerTlsSettings(AllowUntrustedCertificates: true),
         };
 
-        var tls = Tls(MqttClientOptionsFactory.Build(settings, MqttProtocolLevel.V500, Inspector));
+        var tls = Tls(MqttClientOptionsFactory.Build(settings, MqttProtocolLevel.V500, Inspector, NoFiles));
 
         Assert.True(tls.AllowUntrustedCertificates);
         Assert.True(tls.IgnoreCertificateChainErrors);
@@ -171,7 +174,7 @@ public class MqttClientOptionsFactoryTests
     [Fact]
     public void Verification_stays_on_when_nobody_turned_it_off()
     {
-        var tls = Tls(MqttClientOptionsFactory.Build(Settings(useTls: true), MqttProtocolLevel.V500, Inspector));
+        var tls = Tls(MqttClientOptionsFactory.Build(Settings(useTls: true), MqttProtocolLevel.V500, Inspector, NoFiles));
 
         Assert.False(tls.AllowUntrustedCertificates);
         Assert.False(tls.IgnoreCertificateChainErrors);
@@ -187,7 +190,7 @@ public class MqttClientOptionsFactoryTests
             Tls = new BrokerTlsSettings(AlpnProtocol: "x-amzn-mqtt-ca"),
         };
 
-        var tls = Tls(MqttClientOptionsFactory.Build(settings, MqttProtocolLevel.V500, Inspector));
+        var tls = Tls(MqttClientOptionsFactory.Build(settings, MqttProtocolLevel.V500, Inspector, NoFiles));
 
         Assert.Equal("x-amzn-mqtt-ca", Assert.Single(tls.ApplicationProtocols).ToString());
     }
@@ -201,7 +204,7 @@ public class MqttClientOptionsFactoryTests
             Tls = new BrokerTlsSettings(SniHost: "real.broker.example"),
         };
 
-        var tls = Tls(MqttClientOptionsFactory.Build(settings, MqttProtocolLevel.V500, Inspector));
+        var tls = Tls(MqttClientOptionsFactory.Build(settings, MqttProtocolLevel.V500, Inspector, NoFiles));
 
         Assert.Equal("real.broker.example", tls.TargetHost);
     }

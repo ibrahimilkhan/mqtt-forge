@@ -35,8 +35,14 @@ public static class MqttClientOptionsFactory
     /// that would have been refused is accepted; it is there to keep the reason, which the
     /// exception has already forgotten by the time it surfaces.
     /// </param>
+    /// <param name="certificates">
+    /// Takes every certificate read from a file for these options, the ones read before a later
+    /// file failed included. They are the caller's to dispose of once the link the options were
+    /// built for is over: see LinkCertificates.
+    /// </param>
     public static MqttClientOptions Build(
-        BrokerConnectionSettings settings, MqttProtocolLevel version, TlsCertificateInspector inspector)
+        BrokerConnectionSettings settings, MqttProtocolLevel version, TlsCertificateInspector inspector,
+        LinkCertificates certificates)
     {
         var builder = new MqttClientOptionsBuilder()
             .WithClientId(settings.ClientId)
@@ -57,7 +63,7 @@ public static class MqttClientOptionsFactory
             builder = builder.WithSessionExpiryInterval(expiry);
 
         if (settings.UseTls)
-            builder = builder.WithTlsOptions(o => ConfigureTls(o, settings, inspector));
+            builder = builder.WithTlsOptions(o => ConfigureTls(o, settings, inspector, certificates));
 
         return builder.Build();
     }
@@ -86,7 +92,8 @@ public static class MqttClientOptionsFactory
         !string.IsNullOrEmpty(settings.Username);
 
     private static void ConfigureTls(
-        MqttClientTlsOptionsBuilder tls, BrokerConnectionSettings settings, TlsCertificateInspector inspector)
+        MqttClientTlsOptionsBuilder tls, BrokerConnectionSettings settings, TlsCertificateInspector inspector,
+        LinkCertificates certificates)
     {
         var extra = settings.TlsSettings;
 
@@ -110,12 +117,12 @@ public static class MqttClientOptionsFactory
         // Our own certificate, for a broker that authenticates by certificate. A file we cannot
         // read is reported as itself rather than as a handshake that mysteriously failed.
         if (!string.IsNullOrWhiteSpace(extra.ClientCertificatePath))
-            tls.WithClientCertificates([CertificateFiles.LoadClientCertificate(extra)]);
+            tls.WithClientCertificates([certificates.Hold(CertificateFiles.LoadClientCertificate(extra))]);
 
         // An extra root to verify against. Not a way round verification: the chain is still
         // built and still has to reach a root, this just adds one to the set of acceptable
         // roots. That is what makes it the honest answer to a private CA.
-        var extraRoots = CertificateFiles.LoadAuthority(extra.CertificateAuthorityPath);
+        var extraRoots = certificates.Hold(CertificateFiles.LoadAuthority(extra.CertificateAuthorityPath));
 
         if (extra.AllowUntrustedCertificates)
         {
