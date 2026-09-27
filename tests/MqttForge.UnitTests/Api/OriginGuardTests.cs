@@ -143,4 +143,56 @@ public class OriginGuardTests
         Assert.False(OriginGuard.IsAllowed(
             Request("POST", Inject, "http://localhost:5173", site, host: "localhost:5169"), Nobody));
     }
+
+    // ---- refused for the scheme alone ----
+
+    // Behind a proxy that ends TLS the page is https and this app sees http. A WebSocket upgrade
+    // carries no Sec-Fetch-Site, so its Origin decides, and it names this very address but for the
+    // scheme: refused, rightly, and the one refusal worth a line in the log.
+    [Theory]
+    [InlineData("https://mqtt.example.com", "mqtt.example.com", "http", true)]
+    [InlineData("https://127.0.0.1:5169", "127.0.0.1:5169", "http", true)]
+    [InlineData("http://mqtt.example.com", "mqtt.example.com", "https", true)]
+    [InlineData("HTTPS://MQTT.example.com", "mqtt.example.com", "http", true)]
+    [InlineData("http://evil.example", "127.0.0.1:5169", "http", false)]
+    [InlineData("https://evil.example", "127.0.0.1:5169", "http", false)]
+    [InlineData("https://mqtt.example.com:8443", "mqtt.example.com", "http", false)]
+    [InlineData("http://127.0.0.1:5169", "127.0.0.1:5169", "http", false)]
+    [InlineData("null", "127.0.0.1:5169", "http", false)]
+    public void Knows_a_page_that_is_this_address_but_for_the_scheme(string origin, string host, string scheme, bool only) =>
+        Assert.Equal(only, OriginGuard.OnlySchemeDiffers(Request("GET", "/hubs/mqtt", origin, host: host, scheme: scheme)));
+
+    [Fact]
+    public void Says_once_for_each_origin_refused_for_its_scheme_alone_and_nothing_for_another_site()
+    {
+        var log = new RecordingLogger<OriginGuardLog>();
+        var guard = new OriginGuardLog(log);
+
+        guard.Refused(Request("GET", "/hubs/mqtt", "https://mqtt.example.com", host: "mqtt.example.com"));
+        guard.Refused(Request("GET", "/hubs/mqtt", "https://mqtt.example.com", host: "mqtt.example.com"));
+        guard.Refused(Request("POST", Inject, "http://evil.example"));
+
+        var said = Assert.Single(log.Entries);
+        Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Warning, said.Level);
+        Assert.Equal(
+            "Refused a request from the page at https://mqtt.example.com, which is this app's own address but for the scheme: " +
+            "the app sees http. Behind a proxy that ends TLS, keep the Host header and tell the app the scheme " +
+            "(ASPNETCORE_FORWARDEDHEADERS_ENABLED=true), or the console's live channel is refused its WebSocket " +
+            "and falls back to a stream the proxy may hold back.",
+            said.Message);
+    }
+
+    // The origins come from requests, so what is remembered of them is bounded: past it, nothing
+    // more is said, and by then the log has said it plenty.
+    [Fact]
+    public void Says_it_for_so_many_origins_and_then_no_more()
+    {
+        var log = new RecordingLogger<OriginGuardLog>();
+        var guard = new OriginGuardLog(log);
+
+        for (var i = 0; i < OriginGuardLog.Origins + 5; i++)
+            guard.Refused(Request("GET", "/hubs/mqtt", $"https://10.0.0.{i}:5169", host: $"10.0.0.{i}:5169"));
+
+        Assert.Equal(OriginGuardLog.Origins, log.Entries.Count);
+    }
 }

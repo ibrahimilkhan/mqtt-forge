@@ -9,8 +9,11 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using MqttForge.Api;
 using MqttForge.IntegrationTests.Support;
 
 namespace MqttForge.IntegrationTests.Api;
@@ -214,6 +217,57 @@ public sealed class OriginGuardEndpointTests : IClassFixture<MqttForgeApiFactory
 
         var ours = await Send(client, HttpMethod.Post, "/hubs/mqtt/negotiate?negotiateVersion=1", "http://mqtt.example.com", host: "mqtt.example.com");
         Assert.Equal(HttpStatusCode.OK, ours.StatusCode);
+    }
+
+    // Behind a proxy that ends TLS the console's page is https and the app sees http. A WebSocket
+    // upgrade carries no Sec-Fetch-Site in any browser, so its Origin decides, against an address
+    // that is the page's own but for the scheme. Told the scheme by the proxy's header, the app takes
+    // the page; not told, it refuses the upgrade, and says why in its log, once.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_websocket_from_a_page_behind_a_proxy_that_ends_TLS_is_taken_once_the_app_is_told_the_scheme(bool told)
+    {
+        var log = new RecordingLogger<OriginGuardLog>();
+        using var factory = new MqttForgeApiFactory();
+        using var proxied = factory.WithWebHostBuilder(b =>
+        {
+            b.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AllowedHosts"] = "mqtt.example.com",
+                // What ASPNETCORE_FORWARDEDHEADERS_ENABLED sets.
+                ["FORWARDEDHEADERS_ENABLED"] = told ? "true" : "false",
+            }));
+            b.ConfigureTestServices(services => services.AddSingleton<ILogger<OriginGuardLog>>(log));
+        });
+
+        Task<WebSocket> Upgrade()
+        {
+            var client = proxied.Server.CreateWebSocketClient();
+            client.ConfigureRequest = request =>
+            {
+                request.Headers.Origin = "https://mqtt.example.com";
+                request.Headers["X-Forwarded-Proto"] = "https";
+                request.Host = new HostString("mqtt.example.com");
+            };
+
+            return client.ConnectAsync(new Uri(proxied.Server.BaseAddress, "hubs/mqtt"), CancellationToken.None);
+        }
+
+        if (told)
+        {
+            using var hub = await Upgrade();
+            Assert.Equal("{}\u001e", await Handshake(hub));
+            Assert.Empty(log.Entries);
+            return;
+        }
+
+        Assert.Contains("status code: 403", (await Assert.ThrowsAsync<InvalidOperationException>(Upgrade)).Message);
+        Assert.Contains("status code: 403", (await Assert.ThrowsAsync<InvalidOperationException>(Upgrade)).Message);
+
+        var said = Assert.Single(log.Entries);
+        Assert.Equal(LogLevel.Warning, said.Level);
+        Assert.StartsWith("Refused a request from the page at https://mqtt.example.com,", said.Message);
     }
 
     private static async Task<HttpResponseMessage> Send(

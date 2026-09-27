@@ -45,19 +45,25 @@ and a WebSocket is not covered by CORS at all.
 So the app refuses, with a 403, a request that a browser says came from a page on another origin
 if it would change something — every POST, PUT, PATCH and DELETE — and every request to `/hubs`,
 the live channel that carries your broker's traffic to the console, whatever its method. A request
-is the app's own when the browser says so in `Sec-Fetch-Site: same-origin`, or, from a browser that
-does not send that header, when its `Origin` is the scheme, host and port the request was sent to.
-In development the Vite dev server's origin, `http://localhost:5173`, is let in as well, because
+is the app's own when the browser says so in `Sec-Fetch-Site: same-origin`. Where the browser sends
+no `Sec-Fetch-Site`, its `Origin` decides, and has to be the scheme, host and port the request was
+sent to. That is more often than it sounds: Chromium-based browsers send no `Sec-Fetch-Site` on the
+live channel's WebSocket, and no browser sends one to a plain-http address other than loopback — the
+desktop window's LAN address, the phone's QR address, a container reached by its IP or a `.local`
+name. In development the Vite dev server's origin, `http://localhost:5173`, is let in as well, because
 the CORS policy there names it; a shipped package has no such policy and trusts no other origin.
 
 A request with neither header is served as before. That is curl, a script, anything that is not a
 browser — anyone who can reach the port, as the section above says. What this closes is the way in
 through a page you were shown, not the port itself.
 
-Behind a reverse proxy, a current browser says `same-origin` and is let through whatever the proxy
-does to `Host`. One too old to send `Sec-Fetch-Site` is judged by `Origin` against the scheme, host
-and port the app itself sees, so it needs a proxy that keeps `Host` and, where the proxy ends TLS,
-an app that is told the scheme (`ASPNETCORE_FORWARDEDHEADERS_ENABLED=true`).
+Behind a reverse proxy that ends TLS, the page is https and the app sees http. A current browser's
+changes still pass on its `Sec-Fetch-Site: same-origin`, whatever the proxy does to `Host`, but the
+live channel's WebSocket is judged by `Origin` against the scheme, host and port the app itself
+sees. So the proxy has to keep `Host`, and the app has to be told the scheme
+(`ASPNETCORE_FORWARDEDHEADERS_ENABLED=true`). Otherwise the WebSocket is refused, the console falls
+back to a stream that some proxies hold back, and the live feed stalls; the app says so in its log,
+once for each such page, when a refusal differs from its own address only in the scheme.
 
 ## Alerts that leave the machine
 

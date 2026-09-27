@@ -76,6 +76,7 @@ public static class MqttForgeHost
                 p.WithOrigins("http://localhost:5173").AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
 
         builder.Services.AddMqttForge();
+        builder.Services.AddSingleton<OriginGuardLog>();
         configure?.Invoke(builder.Services);
 
         var app = builder.Build();
@@ -103,10 +104,15 @@ public static class MqttForgeHost
         // take a request from another site's page than an address is. See OriginGuard for which
         // requests, and why one that names no origin is still served.
         var trusted = TrustedOrigins(app.Services);
+        var refusals = app.Services.GetRequiredService<OriginGuardLog>();
         app.Use(async (context, next) =>
         {
             if (!OriginGuard.IsAllowed(context.Request, trusted))
             {
+                // Said in the log only when it is this app's own page but for the scheme: a proxy
+                // that ends TLS in front of an app nobody told. See OriginGuardLog.
+                refusals.Refused(context.Request);
+
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 return;
             }
