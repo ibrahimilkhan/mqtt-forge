@@ -85,16 +85,18 @@ const refusal = (errors: Record<string, string[]>) =>
     { status: 400, headers: { 'Content-Type': 'application/problem+json' } },
   );
 
-/** A server that keeps what it is sent, the way the real one does. */
+/** A server that keeps what it is sent, the way the real one does. `reads` counts the lists it has sent. */
 function keeping(initial: FlowDto[] = [], over: Partial<FlowsDto> = {}) {
   const kept = [...initial];
   const puts: FlowDto[] = [];
   const deletes: string[] = [];
+  let lists = 0;
 
   server.use(
-    http.get('/api/flows', () =>
-      HttpResponse.json({ flows: kept, problems: [], unreadable: false, allowWebhooks: true, alertTopicPrefix: 'mqttforge/alerts/', ...over }),
-    ),
+    http.get('/api/flows', () => {
+      lists++;
+      return HttpResponse.json({ flows: kept, problems: [], unreadable: false, allowWebhooks: true, alertTopicPrefix: 'mqttforge/alerts/', ...over });
+    }),
     http.put('/api/flows/:id', async ({ request }) => {
       const flow = (await request.json()) as FlowDto;
       puts.push(flow);
@@ -113,7 +115,7 @@ function keeping(initial: FlowDto[] = [], over: Partial<FlowsDto> = {}) {
     }),
   );
 
-  return { kept, puts, deletes };
+  return { kept, puts, deletes, reads: () => lists };
 }
 
 describe('Flows page', () => {
@@ -1003,6 +1005,7 @@ describe('deploying', () => {
     const kept = [watch, sim];
     const watchPut = held();
     const simPut = held();
+    const out: string[] = [];
     let reading: ReturnType<typeof held> | null = null;
     let asked = false;
     server.use(
@@ -1015,6 +1018,7 @@ describe('deploying', () => {
       }),
       http.put('/api/flows/:id', async ({ params, request }) => {
         const flow = (await request.json()) as FlowDto;
+        out.push(String(params.id));
         await (params.id === 'watch' ? watchPut : simPut).until;
         kept[kept.findIndex((one) => one.id === flow.id)] = flow;
         return HttpResponse.json({ flow });
@@ -1027,6 +1031,8 @@ describe('deploying', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Deploy' }));
     // The window comes back into focus while the first flow is on its way, and the list is read.
+    // On its way, so after the read Deploy makes of its own before it sends.
+    await waitFor(() => expect(out).toEqual(['watch']));
     const read = held();
     reading = read;
     act(() => void queryClient.invalidateQueries({ queryKey: queryKeys.flows }));
@@ -1486,6 +1492,81 @@ describe('a draft and the server\'s copy', () => {
 
     await elsewhere(queryClient, () => (kept[0] = v2));
     expect(await screen.findByText('1 held back')).toBeInTheDocument();
+  });
+
+  /*
+   * Two consoles side by side on two screens: neither is ever brought back into focus, and neither
+   * hears the other deploy, so the list the page read last is all it knows. Deploy reads the list
+   * itself before it sends anything.
+   */
+
+  it('reads the list before it sends, and holds back a draft another console has overtaken since', async () => {
+    const { kept, puts, reads } = keeping([watch]);
+    render(<FlowsPage />);
+    await userEvent.type(await screen.findByLabelText('Name'), ' 2');
+    const before = reads();
+
+    // Another console deploys the watch, and this one is not told.
+    kept[0] = v2;
+    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+
+    await waitFor(() => expect(reads()).toBeGreaterThan(before));
+    expect(puts).toEqual([]);
+    expect(
+      await screen.findByRole('tab', { name: 'Boiler watch 2, not running, changed on the server since you started' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('1 held back')).toBeInTheDocument();
+    expect(screen.getByText(/^Changed on the server since you started/)).toBeInTheDocument();
+    expect(puts).toEqual([]);
+    expect(kept[0]).toEqual(v2);
+  });
+
+  it('sends the drafts that still stand on the server\'s copy, and holds back only the one overtaken', async () => {
+    const { kept, puts } = keeping([watch, sim]);
+    useFlowDraftStore.getState().edit(watch, (flow) => ({ ...flow, name: 'Boiler watch 2' }));
+    useFlowDraftStore.getState().edit(sim, (flow) => ({ ...flow, name: 'Boiler simulator 2' }));
+    render(<FlowsPage />);
+    await screen.findByText('2 changes');
+
+    kept[0] = v2;
+    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+
+    await waitFor(() => expect(puts.map((flow) => flow.name)).toEqual(['Boiler simulator 2']));
+    expect(await screen.findByText('1 held back')).toBeInTheDocument();
+    expect(kept.find((flow) => flow.id === 'watch')).toEqual(v2);
+  });
+
+  it('brings back no flow another console has deleted since, however the page last saw it', async () => {
+    const { kept, puts, reads } = keeping([watch, sim]);
+    useFlowDraftStore.getState().show('watch');
+    render(<FlowsPage />);
+    await userEvent.type(await screen.findByLabelText('Name'), ' 2');
+    const before = reads();
+
+    kept.splice(0, 1);
+    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+
+    await waitFor(() => expect(reads()).toBeGreaterThan(before));
+    expect(puts).toEqual([]);
+    expect(await screen.findByRole('tab', { name: 'Boiler watch 2, deleted on the server since you started' })).toBeInTheDocument();
+    expect(kept.map((flow) => flow.id)).toEqual(['sim']);
+  });
+
+  // Without the list there is no telling which drafts another console has overtaken, so nothing
+  // goes, and the page says why rather than leaving the reader with a Deploy that did nothing.
+  it('sends nothing when the list cannot be read first, and says so', async () => {
+    const { puts } = keeping([watch]);
+    render(<FlowsPage />);
+    await userEvent.type(await screen.findByLabelText('Name'), ' 2');
+    server.use(http.get('/api/flows', () => couldNot('The server is starting.', 503)));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+
+    const said = 'Not deployed. The flows could not be read from the server first, so nothing was sent. The server is starting.';
+    expect(await screen.findByText(said)).toBeInTheDocument();
+    expect(outcome(said)).not.toBeNull();
+    expect(puts).toEqual([]);
+    expect(screen.getByText('1 change')).toBeInTheDocument();
   });
 });
 
