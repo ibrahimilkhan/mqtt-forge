@@ -6,6 +6,7 @@ import { Profiler } from 'react';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { queryKeys } from '../../api/queryKeys';
 import { useFlowStatusStore } from '../../stores/flowStatusStore';
+import panelStyles from '../../styles/panel.module.css';
 import { server } from '../../test/server';
 import { renderWithClient as render } from '../../test/renderWithClient';
 import type { FlowDebugDto, FlowDto, FlowNodeDto, FlowsDto, FlowStatusDto } from '../../types/api';
@@ -1323,6 +1324,48 @@ describe('a draft and the server\'s copy', () => {
 
     await elsewhere(queryClient, () => (kept[0] = v2));
     expect(await screen.findByText('1 held back')).toBeInTheDocument();
+  });
+});
+
+/**
+ * What the server says of a running flow besides its counts: each node's last word — the value it
+ * read, or what went wrong — and what stopped the flow. The page covers the log, so these are the
+ * only places they are said.
+ */
+describe('what a running flow says', () => {
+  const refusedFilter = (fault: string | null = null): FlowStatusDto => ({
+    flows: [{
+      id: 'watch', faults: fault ? 1 : 0, fault,
+      nodes: [
+        { id: 'in', count: 0, outs: {}, errors: 1, note: 'The broker refused this filter.', standing: [] },
+        { id: 'test', count: 0, outs: {}, errors: 0, note: null, standing: [] },
+      ],
+    }],
+  });
+
+  it('says why a node counts an error, on its status line and in its pane', async () => {
+    keeping([watch]);
+    server.use(http.get('/api/flows/status', () => HttpResponse.json(refusedFilter())));
+    render(<FlowsPage />);
+
+    const line = await screen.findByText('0 in · 1 error');
+    expect(line).toHaveAttribute('title', 'The broker refused this filter.');
+
+    fireEvent.click(line.closest<HTMLElement>('.react-flow__node')!);
+
+    const pane = screen.getByRole('complementary', { name: 'Inspector' });
+    expect(within(pane).getByText('The broker refused this filter.')).toBeInTheDocument();
+  });
+
+  it('says what stopped the flow, in its own pane', async () => {
+    keeping([watch]);
+    server.use(
+      http.get('/api/flows/status', () => HttpResponse.json(refusedFilter('An event ran more than 10000 nodes and was stopped.'))),
+    );
+    render(<FlowsPage />);
+
+    const pane = await screen.findByRole('complementary', { name: 'Inspector' });
+    expect(await within(pane).findByText('An event ran more than 10000 nodes and was stopped.')).toHaveClass(panelStyles.fault);
   });
 });
 

@@ -374,18 +374,22 @@ const named = (ports: readonly string[]) => (ports.length > 1 ? Math.max(...port
  * A running flow reports every node of the version it runs, so a node with no numbers is not
  * deployed: the flow is not running, or the node is only in the draft. "0 in" or "waiting" under it
  * would be a claim about something that is not running.
+ *
+ * `note` is the server's last word on the node: the value it last read or sent, or what last went
+ * wrong — "The broker refused this filter.", "no such field". The line only counts errors, so it
+ * is what the line says when a reader points at it.
  */
 function drawnOf(spec: NodeSpec, status: FlowNodeStatusDto | undefined) {
   return status
-    ? { reported: true, line: spec.status(status), failing: status.errors > 0 }
-    : { reported: false, line: 'not deployed', failing: false };
+    ? { reported: true, line: spec.status(status), failing: status.errors > 0, note: status.note }
+    : { reported: false, line: 'not deployed', failing: false, note: null };
 }
 
 function FlowNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
   const spec = specOf(data.node.type);
   const { ins, outs } = data.ports;
   const Icon = spec.icon;
-  const { reported, line, failing } = useFlowStatusStore(
+  const { reported, line, failing, note } = useFlowStatusStore(
     useShallow((state) => drawnOf(spec, state.nodes[nodeKey(data.flowId, id)])),
   );
 
@@ -423,7 +427,7 @@ function FlowNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
         {data.node.type === 'inject' && <InjectButton flowId={data.flowId} nodeId={id} ready={data.running && reported} />}
       </div>
       <div className={styles.summary}>{spec.summary(data.node.config)}</div>
-      <div className={styles.status} data-errors={failing ? '' : undefined}>
+      <div className={styles.status} data-errors={failing ? '' : undefined} title={note ?? undefined}>
         {line}
       </div>
 

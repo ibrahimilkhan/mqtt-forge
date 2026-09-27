@@ -113,6 +113,25 @@ describe('flow canvas', () => {
     expect(screen.getByLabelText('Edge from test to fn')).toBeInTheDocument();
   });
 
+  // The server's last word on a node — the value it read, or what went wrong — is the only place it
+  // says why a count of errors went up.
+  it('gives each node\'s status line the server\'s last word on it', async () => {
+    useFlowStatusStore.getState().setStatus({
+      flows: [{
+        id: 'button', faults: 0, fault: null,
+        nodes: [
+          { id: 'go', count: 1, outs: {}, errors: 1, note: 'More than 50 publishes a second; this one was dropped.', standing: [] },
+          { id: 'test', count: 5, outs: { yes: 2, no: 3 }, errors: 0, note: 'no such field', standing: [] },
+        ],
+      }],
+    });
+
+    draw();
+
+    expect(await screen.findByText('1 sent · 1 error')).toHaveAttribute('title', 'More than 50 publishes a second; this one was dropped.');
+    expect(screen.getByText('yes 2 · no 3')).toHaveAttribute('title', 'no such field');
+  });
+
   it('says a node is not deployed when the flow is not running', async () => {
     draw(button, false);
 

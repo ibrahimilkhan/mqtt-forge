@@ -49,6 +49,9 @@ function NodePane({ flow, node, problems, facts }: { flow: FlowDto; node: FlowNo
   const edit = useFlowDraftStore((state) => state.edit);
   const select = useFlowDraftStore((state) => state.select);
   const spec = specOf(node.type);
+  // The server's last word on the node as it runs: the value it last read or sent, or what last
+  // went wrong. The status line under the node counts errors; this says what they were.
+  const note = useFlowStatusStore((state) => state.nodes[nodeKey(flow.id, node.id)]?.note ?? null);
 
   // Merged into the settings as they are in the draft at the moment of the keystroke, not as they
   // were when this render happened: two quick keystrokes in two boxes must both survive.
@@ -69,6 +72,12 @@ function NodePane({ flow, node, problems, facts }: { flow: FlowDto; node: FlowNo
           {problem}
         </p>
       ))}
+
+      {note !== null && (
+        <p className={panel.note}>
+          Last: <span className={styles.mono}>{note}</span>
+        </p>
+      )}
 
       <NodeSettings flowId={flow.id} node={node} set={set} facts={facts} />
 
@@ -117,6 +126,8 @@ function FlowPane({ flow, deployed, running, overtaken, problems }: FlowPaneProp
   const forget = useFlowDraftStore((state) => state.forget);
   const rebase = useFlowDraftStore((state) => state.rebase);
   const discard = useFlowDraftStore((state) => state.discard);
+  // What last stopped the running flow: an event that ran too many nodes, say.
+  const fault = useFlowStatusStore((state) => state.flows[flow.id]?.fault ?? null);
   const queryClient = useQueryClient();
   const [asking, setAsking] = useState(false);
 
@@ -218,6 +229,7 @@ function FlowPane({ flow, deployed, running, overtaken, problems }: FlowPaneProp
       </label>
 
       <p className={panel.note}>{state}</p>
+      {fault !== null && <p className={panel.fault}>{fault}</p>}
 
       {flow.nodes.length === 0 && (
         <p className={panel.hint}>Add a trigger from the left, wire it to an action, and press Deploy.</p>
