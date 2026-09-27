@@ -6,7 +6,7 @@ import { Field } from '../../components/Field';
 import { nodeKey, useFlowStatusStore } from '../../stores/flowStatusStore';
 import { logFault } from '../../stores/logStore';
 import panel from '../../styles/panel.module.css';
-import type { FlowDto, FlowNodeDto } from '../../types/api';
+import type { FlowDto, FlowNodeDto, FlowsDto } from '../../types/api';
 import { removeNodes, setConfig, type Problems } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
 import { NodeSettings } from './NodeSettings';
@@ -94,12 +94,28 @@ function FlowPane({ flow, deployed, running, problems }: { flow: FlowDto; deploy
 
   const remove = useMutation({
     // A flow that was never deployed has nothing on the server to delete.
-    mutationFn: async () => {
-      if (deployed) await deleteFlow(flow.id);
+    mutationFn: async (id: string) => {
+      if (deployed) await deleteFlow(id);
     },
-    onSuccess: () => {
-      forget(flow.id);
-      useFlowStatusStore.getState().forget(flow.id);
+    // The id comes with the answer rather than from the flow on screen: a mutation still out is
+    // handed the callbacks of the latest render, and by the time the answer comes the reader may
+    // be looking at another flow.
+    onSuccess: async (_, id) => {
+      // A read of the list already out was answered before the delete, and would put the flow back.
+      await queryClient.cancelQueries({ queryKey: queryKeys.flows });
+      // Out of the list at once, not when the read after the delete comes back: until then its tab
+      // would stay, and the page would go on showing the flow that is gone.
+      queryClient.setQueryData<FlowsDto>(
+        queryKeys.flows,
+        (old) =>
+          old && {
+            ...old,
+            flows: old.flows.filter((one) => one.id !== id),
+            problems: old.problems.filter((problem) => problem.flowId !== id),
+          },
+      );
+      forget(id);
+      useFlowStatusStore.getState().forget(id);
       void queryClient.invalidateQueries({ queryKey: queryKeys.flows });
     },
     onError: (error) => logFault('Flow not deleted', error),
@@ -162,7 +178,7 @@ function FlowPane({ flow, deployed, running, problems }: { flow: FlowDto; deploy
             <button type="button" className="ghost" onClick={() => setAsking(false)}>
               Keep it
             </button>
-            <button type="button" className="ends" disabled={remove.isPending} onClick={() => remove.mutate()}>
+            <button type="button" className="ends" disabled={remove.isPending} onClick={() => remove.mutate(flow.id)}>
               Delete it
             </button>
           </div>

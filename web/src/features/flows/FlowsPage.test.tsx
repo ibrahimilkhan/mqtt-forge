@@ -73,6 +73,7 @@ const refusal = (errors: Record<string, string[]>) =>
 function keeping(initial: FlowDto[] = [], over: Partial<FlowsDto> = {}) {
   const kept = [...initial];
   const puts: FlowDto[] = [];
+  const deletes: string[] = [];
 
   server.use(
     http.get('/api/flows', () =>
@@ -86,9 +87,17 @@ function keeping(initial: FlowDto[] = [], over: Partial<FlowsDto> = {}) {
       else kept.push(flow);
       return HttpResponse.json({ flow });
     }),
+    http.delete('/api/flows/:id', ({ params }) => {
+      const id = String(params.id);
+      deletes.push(id);
+      const at = kept.findIndex((one) => one.id === id);
+      if (at < 0) return HttpResponse.json({ title: 'No such flow', reason: 'flowUnknown' }, { status: 404 });
+      kept.splice(at, 1);
+      return new HttpResponse(null, { status: 204 });
+    }),
   );
 
-  return { kept, puts };
+  return { kept, puts, deletes };
 }
 
 describe('Flows page', () => {
@@ -856,6 +865,95 @@ describe('deploying', () => {
     reading = null;
     simPut.release();
     expect(await screen.findByText('All deployed')).toBeInTheDocument();
+  });
+});
+
+describe('deleting a flow', () => {
+  // The question is about one flow. On localhost the delete and the read after it are over well
+  // inside a double-click, so a question still standing for the next flow is one click from
+  // deleting a flow nobody chose.
+  it('does not offer the next flow for deletion once the first is gone', async () => {
+    const { deletes } = keeping([watch, sim]);
+    render(<FlowsPage />);
+    await screen.findByText('Boiler watch', { selector: 'h3' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete flow' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+
+    expect(await screen.findByText('Boiler simulator', { selector: 'h3' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete it' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete flow' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /^Boiler watch/ })).not.toBeInTheDocument();
+    expect(deletes).toEqual(['watch']);
+  });
+
+  // The answer is about the flow that was deleted, whichever tab the reader has gone on to since.
+  it('forgets the draft of the flow it deleted, whatever is on screen when the answer comes', async () => {
+    const { kept } = keeping([watch, sim]);
+    const answer = held();
+    server.use(
+      http.delete('/api/flows/watch', async () => {
+        await answer.until;
+        kept.splice(kept.findIndex((one) => one.id === 'watch'), 1);
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    const store = useFlowDraftStore.getState();
+    store.edit(watch, (flow) => ({ ...flow, name: 'Boiler watch 2' }));
+    store.edit(sim, (flow) => ({ ...flow, name: 'Boiler simulator 2' }));
+    store.show('watch');
+    render(<FlowsPage />);
+    await screen.findByText('Boiler watch 2', { selector: 'h3' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete flow' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+    await userEvent.click(screen.getByRole('tab', { name: /^Boiler simulator 2/ }));
+    answer.release();
+
+    await waitFor(() => expect(screen.queryByRole('tab', { name: /^Boiler watch/ })).not.toBeInTheDocument());
+    expect(useFlowDraftStore.getState().drafts.watch).toBeUndefined();
+    expect(useFlowDraftStore.getState().drafts.sim?.name).toBe('Boiler simulator 2');
+    expect(useFlowDraftStore.getState().current).toBe('sim');
+    expect(screen.getByText('Boiler simulator 2', { selector: 'h3' })).toBeInTheDocument();
+  });
+
+  // Until the read after the delete comes back, a tab still standing for the flow would show the
+  // flow that is gone, and could be picked.
+  it('takes the flow off the page at once, without waiting for the read after the delete', async () => {
+    const { kept, deletes } = keeping([watch, sim]);
+    render(<FlowsPage />);
+    await screen.findByText('Boiler watch', { selector: 'h3' });
+    const read = held();
+    server.use(
+      http.get('/api/flows', async () => {
+        const flows = [...kept];
+        await read.until;
+        return HttpResponse.json({ flows, problems: [], unreadable: false, allowWebhooks: true, alertTopicPrefix: 'mqttforge/alerts/' });
+      }),
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete flow' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+    await waitFor(() => expect(deletes).toEqual(['watch']));
+
+    await waitFor(() => expect(screen.queryByRole('tab', { name: /^Boiler watch/ })).not.toBeInTheDocument());
+    expect(screen.getByText('Boiler simulator', { selector: 'h3' })).toBeInTheDocument();
+    read.release();
+  });
+
+  // A flow that was never deployed is only a draft, and there is nothing on the server to delete.
+  it('drops a flow that was never deployed without asking the server', async () => {
+    const { deletes } = keeping();
+    render(<FlowsPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'New flow' }));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete flow' }));
+    expect(screen.getByText('Drop Flow 1? It was never deployed.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+
+    expect(await screen.findByRole('button', { name: 'Start from an example' })).toBeInTheDocument();
+    expect(useFlowDraftStore.getState().drafts).toEqual({});
+    expect(deletes).toEqual([]);
   });
 });
 
