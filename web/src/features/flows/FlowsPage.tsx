@@ -3,10 +3,10 @@ import { ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import { useEffect, useLayoutEffect, useMemo } from 'react';
 import { flushSync } from 'react-dom';
 import { useShallow } from 'zustand/react/shallow';
-import { getFlows, getFlowStatus } from '../../api/flows';
+import { getFlows } from '../../api/flows';
 import { queryKeys } from '../../api/queryKeys';
 import { describeError } from '../../lib/problemDetails';
-import { useFlowStatusStore } from '../../stores/flowStatusStore';
+import { catchUp, useFlowStatusStore } from '../../stores/flowStatusStore';
 import panel from '../../styles/panel.module.css';
 import type { FlowDto, FlowNodeType } from '../../types/api';
 import { DebugStrip } from './DebugStrip';
@@ -81,25 +81,9 @@ function Page() {
   const { screenToFlowPosition } = useReactFlow();
 
   // The numbers the hub has not pushed since the page opened. The store may already hold them —
-  // the bridge feeds it from the moment the console opens — and this only fills a first gap.
-  // Pushes carry nothing to put them in order by, so the answer is kept only if no push has come
-  // in while it was out: one that has is newer than the answer. Every push builds a new picture,
-  // which is what makes an identity check enough. A page that has shut has no gap left to fill.
-  useEffect(() => {
-    let open = true;
-    const asked = useFlowStatusStore.getState().flows;
-
-    getFlowStatus().then(
-      (status) => {
-        if (open && useFlowStatusStore.getState().flows === asked) useFlowStatusStore.getState().setStatus(status);
-      },
-      () => {},
-    );
-
-    return () => {
-      open = false;
-    };
-  }, []);
+  // the bridge feeds it from the moment the console opens — and this only fills a first gap. A page
+  // that has shut has no gap left to fill.
+  useEffect(() => catchUp(), []);
 
   const deployed = useMemo(() => data?.flows ?? [], [data]);
   const byId = useMemo(() => new Map(deployed.map((flow) => [flow.id, flow])), [deployed]);

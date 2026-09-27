@@ -4,7 +4,7 @@ import { queryKeys } from '../api/queryKeys';
 import type { SeenConnectionState } from '../api/useConnectionState';
 import { createFrameBuffer } from '../lib/frameBuffer';
 import { useAlertStore } from '../stores/alertStore';
-import { useFlowStatusStore } from '../stores/flowStatusStore';
+import { catchUp, useFlowStatusStore } from '../stores/flowStatusStore';
 import { useHubStatusStore } from '../stores/hubStatusStore';
 import { useHealthStore } from '../stores/healthStore';
 import { MAX_LOG_ENTRIES, useLogStore } from '../stores/logStore';
@@ -124,6 +124,10 @@ export function useHubBridge(hub: Hub) {
     // When the log last said something about drops. Held across batches, reset with the bridge.
     let saidAt = -DROPS_REPORTED_EVERY;
 
+    // Lets go of the flows' numbers asked for at the last reconnect: a later reconnect asks again,
+    // and its answer is the newer one, and a bridge taken down wants neither.
+    let stopCatchingUp = () => {};
+
     const unsubscribe = hub.subscribe({
       messagesReceived: (messages) => {
         // Stamped here, before the buffer, so a message is dated by when the console actually
@@ -200,6 +204,10 @@ export function useHubBridge(hub: Hub) {
         // — an alertsResolved sent while the hub was down never arrives, and without a snapshot
         // that does not contain it the row stands on screen for the rest of the session.
         void useAlertStore.getState().load();
+        // The flows' numbers are a store too, for the same reason: a push that said a flow stopped
+        // never arrives, and the flow stands as running until something else moves.
+        stopCatchingUp();
+        stopCatchingUp = catchUp();
       },
     });
 
@@ -214,6 +222,7 @@ export function useHubBridge(hub: Hub) {
       stopWatching();
       stopWatchingTree();
       unsubscribe();
+      stopCatchingUp();
       buffer.cancel();
       // The queue went with the buffer, so the figure the control reads has to go with it too.
       usePauseStore.getState().track(0);

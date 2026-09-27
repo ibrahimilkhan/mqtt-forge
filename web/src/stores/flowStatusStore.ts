@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { getFlowStatus } from '../api/flows';
 import type { FlowDebugDto, FlowNodeStatusDto, FlowRunStatusDto, FlowStatusDto } from '../types/api';
 
 /** How many debug lines the console keeps for each flow. The strip is for the last minute, not a log. */
@@ -100,3 +101,28 @@ export const useFlowStatusStore = create<FlowStatusState>()((set) => ({
   forget: (flowId) =>
     set((state) => ({ debug: without(state.debug, flowId), debugClearedAt: without(state.debugClearedAt, flowId) })),
 }));
+
+/**
+ * Reads the numbers from the server, for a reader that may have missed pushes: a page just opened,
+ * a hub just back.
+ *
+ * Pushes carry nothing to put them in order by, so the answer is kept only if no push has come in
+ * while it was out: one that has is newer than the answer. Every push builds a new picture, which is
+ * what makes an identity check enough. Hands back what lets the answer go, for a reader that has
+ * shut before it comes back.
+ */
+export function catchUp(): () => void {
+  let wanted = true;
+  const asked = useFlowStatusStore.getState().flows;
+
+  getFlowStatus().then(
+    (status) => {
+      if (wanted && useFlowStatusStore.getState().flows === asked) useFlowStatusStore.getState().setStatus(status);
+    },
+    () => {},
+  );
+
+  return () => {
+    wanted = false;
+  };
+}

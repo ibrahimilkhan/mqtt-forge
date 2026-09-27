@@ -11,7 +11,7 @@ import { MAX_LOG_ENTRIES, runFor, useLogStore } from '../stores/logStore';
 import { useHealthStore } from '../stores/healthStore';
 import { usePauseStore } from '../stores/pauseStore';
 import { useTopicTreeStore } from '../stores/topicTreeStore';
-import type { AlertDto, MqttMessage } from '../types/api';
+import type { AlertDto, FlowStatusDto, MqttMessage } from '../types/api';
 import { createFakeHub } from './fakeHub';
 import { useHubBridge } from './useHubBridge';
 
@@ -544,5 +544,49 @@ describe('flow events', () => {
 
     expect(Object.keys(useFlowStatusStore.getState().flows)).toEqual(['watch']);
     expect(useFlowStatusStore.getState().debug.watch[0].text).toBe('hello');
+  });
+
+  describe('after a reconnect', () => {
+    beforeEach(() => useFlowStatusStore.setState(useFlowStatusStore.getInitialState()));
+
+    const running = (...ids: string[]): FlowStatusDto => ({ flows: ids.map((id) => ({ id, faults: 0, fault: null, nodes: [] })) });
+
+    // A push sent while the hub was down never arrives: a flow that stopped then would go on
+    // standing as running until something else moved. The alarms are read again for the same reason.
+    it('reads the flows\' numbers again', async () => {
+      server.use(http.get('/api/flows/status', () => HttpResponse.json(running('watch'))));
+      const hub = createFakeHub();
+      renderBridge(hub);
+      act(() => hub.emit('flowStatus', running('sim')));
+
+      act(() => hub.emit('reconnected'));
+
+      await waitFor(() => expect(Object.keys(useFlowStatusStore.getState().flows)).toEqual(['watch']));
+    });
+
+    // Pushes carry nothing to put them in order by. One that lands while the read is out is newer
+    // than the answer, which was made before it.
+    it('keeps a push that lands while that read is out, rather than the older answer', async () => {
+      let release = () => {};
+      const until = new Promise<void>((resolve) => (release = resolve));
+      let answered = false;
+      server.use(
+        http.get('/api/flows/status', async () => {
+          await until;
+          answered = true;
+          return HttpResponse.json(running('watch'));
+        }),
+      );
+      const hub = createFakeHub();
+      renderBridge(hub);
+
+      act(() => hub.emit('reconnected'));
+      act(() => hub.emit('flowStatus', running('sim')));
+      release();
+      await waitFor(() => expect(answered).toBe(true));
+      for (let turn = 0; turn < 5; turn++) await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+
+      expect(Object.keys(useFlowStatusStore.getState().flows)).toEqual(['sim']);
+    });
   });
 });
