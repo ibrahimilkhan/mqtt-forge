@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using MqttForge.Api.Hubs;
 using MqttForge.Api.Realtime;
 using MqttForge.Application.Alerts;
+using MqttForge.Application.Flows;
 using MqttForge.Domain.Abstractions;
 using MqttForge.Domain.Models;
 using NSubstitute;
@@ -105,22 +106,25 @@ public class FanOutMessageNotifierTests
         stuck.SetResult();
     }
 
-    // The two-argument constructor is the one DI uses and the only place the console and the
-    // engine are named together, so it needs a test of its own. Neither of them publishes what
-    // is in its queue, but both publish what fell out of it: handing over one more message than
-    // either queue can hold, and finding drops on both sides, says every message reached both.
+    // The three-argument constructor is the one DI uses and the only place the console and the two
+    // engines are named together. None of them publishes what is in its queue, but all of them count
+    // what fell out of it: handing over one more message than any queue can hold, and finding drops
+    // on every side, says every message reached all three.
     [Fact]
-    public async Task The_console_and_the_engine_are_both_real_targets()
+    public async Task The_console_and_both_engines_are_real_targets()
     {
         var console = new SignalRMessageNotifier(Substitute.For<IHubContext<MqttHub>>());
         var engine = Engine();
-        var sut = new FanOutMessageNotifier(console, engine);
+        var flows = Flows();
+        var sut = new FanOutMessageNotifier(console, engine, flows);
 
-        var overflow = Math.Max(SignalRMessageNotifier.QueueCapacity, AlertEngine.QueueCapacity) + 1;
+        var overflow = Math.Max(
+            Math.Max(SignalRMessageNotifier.QueueCapacity, AlertEngine.QueueCapacity), FlowEngine.QueueCapacity) + 1;
         for (var i = 0; i < overflow; i++) await sut.NotifyMessageReceivedAsync(Arrival);
 
         Assert.True(console.Dropped > 0, "the console was never handed the messages");
-        Assert.True(engine.Dropped > 0, "the engine was never handed the messages");
+        Assert.True(engine.Dropped > 0, "the alert engine was never handed the messages");
+        Assert.True(flows.Dropped > 0, "the flow engine was never handed the messages");
     }
 
     // A real engine over substitutes, never started: the queue exists from construction and
@@ -143,4 +147,11 @@ public class FanOutMessageNotifierTests
             Substitute.For<IMqttSubscriber>(),
             Substitute.For<ILogger<AlertEngine>>());
     }
+
+    // A real flow engine over substitutes, never started: its queue exists from construction.
+    private static FlowEngine Flows() => new(
+        new FlowRuntime(), Substitute.For<IFlowStore>(), Substitute.For<IAlertNotifier>(),
+        Substitute.For<IFlowNotifier>(), Substitute.For<IMqttConnectionManager>(),
+        Substitute.For<IMqttSubscriber>(), Substitute.For<IMqttPublisher>(), new AlertEngineOptions(),
+        Substitute.For<ILogger<FlowEngine>>());
 }

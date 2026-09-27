@@ -1,5 +1,6 @@
 using MqttForge.Api.Realtime;
 using MqttForge.Application.Alerts;
+using MqttForge.Application.Flows;
 using MqttForge.Application.Services;
 using MqttForge.Domain.Abstractions;
 using MqttForge.Infrastructure.Alerts;
@@ -159,6 +160,28 @@ public static class DependencyInjection
             sp.GetRequiredService<ILogger<AlertEngine>>(),
             dispatcher: sp.GetRequiredService<IAlertDispatcher>()));
 
+        // The flows: a store, the pure runtime, the hub's notifier, and the engine around them. The
+        // engine is built by hand for AlertEngine's reason — it needs the subscriber, which is on
+        // the other side of the notifier ring — and it is handed the same notifier and dispatcher
+        // the alert engine has, which is how a flow's alarm reaches the badge, the sound, the
+        // webhook and the broker without a line of either of those changing.
+        services.AddSingleton<IFlowStore>(sp =>
+            new JsonFlowStore(StorePaths.Flows(sp.GetRequiredService<IConfiguration>())));
+        services.AddSingleton(_ => new FlowRuntime());
+        services.AddSingleton<SignalRFlowNotifier>();
+        services.AddSingleton<IFlowNotifier>(sp => sp.GetRequiredService<SignalRFlowNotifier>());
+        services.AddSingleton(sp => new FlowEngine(
+            sp.GetRequiredService<FlowRuntime>(),
+            sp.GetRequiredService<IFlowStore>(),
+            sp.GetRequiredService<IAlertNotifier>(),
+            sp.GetRequiredService<IFlowNotifier>(),
+            sp.GetRequiredService<IMqttConnectionManager>(),
+            new DeferredSubscriber(sp),
+            sp.GetRequiredService<IMqttPublisher>(),
+            sp.GetRequiredService<AlertEngineOptions>(),
+            sp.GetRequiredService<ILogger<FlowEngine>>(),
+            dispatcher: sp.GetRequiredService<IAlertDispatcher>()));
+
         // The message path forks here rather than inside MqttnetSubscriber, which goes on knowing
         // that it hands a message over and nothing about who to. Recording joins the same list.
         //
@@ -172,7 +195,8 @@ public static class DependencyInjection
         // have to answer twice.
         services.AddSingleton(sp => new FanOutMessageNotifier(
             sp.GetRequiredService<SignalRMessageNotifier>(),
-            sp.GetRequiredService<AlertEngine>()));
+            sp.GetRequiredService<AlertEngine>(),
+            sp.GetRequiredService<FlowEngine>()));
         services.AddSingleton<IMessageNotifier>(sp => sp.GetRequiredService<FanOutMessageNotifier>());
 
         services.AddSingleton<ConnectionService>();
@@ -199,6 +223,10 @@ public static class DependencyInjection
         // broker. Registered the other way round, the first seconds of traffic after a reconnect
         // would land in a queue with nothing draining it.
         services.AddHostedService<AlertEngineHost>();
+
+        // After the alert engine and before the supervisor, for the order's own reason: the pump
+        // must be draining before the broker link comes up and starts filling it.
+        services.AddHostedService<FlowEngineHost>();
 
         // Registered by type as well as hosted, because it is now something the API talks to: the
         // reconnect endpoints ask it what it is doing and tell it to stop. Same instance either

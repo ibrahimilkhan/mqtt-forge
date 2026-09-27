@@ -1,4 +1,5 @@
 using MqttForge.Application.Alerts;
+using MqttForge.Application.Flows;
 using MqttForge.Domain.Abstractions;
 using MqttForge.Domain.Models;
 
@@ -37,10 +38,10 @@ public sealed class FanOutMessageNotifier : IMessageNotifier
     /// would make a target that quietly stopped receiving look exactly like a quiet broker.</summary>
     public int Faults => Volatile.Read(ref _faults);
 
-    /// <summary>What DI builds: the console first, because that is today's path unchanged, and
-    /// the engine behind it.</summary>
-    public FanOutMessageNotifier(SignalRMessageNotifier console, AlertEngine alerts)
-        : this([console, new EngineTarget(alerts)])
+    /// <summary>What DI builds: the console first, because that is today's path unchanged, then the
+    /// alert engine, then the flow engine.</summary>
+    public FanOutMessageNotifier(SignalRMessageNotifier console, AlertEngine alerts, FlowEngine flows)
+        : this([console, new EngineTarget(alerts), new FlowTarget(flows)])
     {
     }
 
@@ -88,6 +89,13 @@ public sealed class FanOutMessageNotifier : IMessageNotifier
     // one of those in the container and it is this class. The adapter costs a field and keeps the
     // registration honest.
     private sealed class EngineTarget(AlertEngine engine) : IMessageNotifier
+    {
+        public Task NotifyMessageReceivedAsync(MqttMessage message) =>
+            engine.NotifyMessageReceivedAsync(message);
+    }
+
+    // The flow engine is not an IMessageNotifier either, for EngineTarget's reason.
+    private sealed class FlowTarget(FlowEngine engine) : IMessageNotifier
     {
         public Task NotifyMessageReceivedAsync(MqttMessage message) =>
             engine.NotifyMessageReceivedAsync(message);

@@ -615,4 +615,36 @@ public class BrokerLinkSupervisorTests
         Assert.Null(exception);
         Assert.Equal([2], _attempts);
     }
+
+    private readonly IFlowStore _flows = Substitute.For<IFlowStore>();
+
+    private void FlowsHold(bool enabled) =>
+        _flows.LoadAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(new FlowDocument(
+            [new Flow("f1", "Boiler watch", enabled, [], [])], Unreadable: false)));
+
+    // A container whose only reason to be connected is a flow — a simulator publishing on an Every,
+    // a watch raising alarms — has to dial at start-up exactly as one with an enabled rule does.
+    [Fact]
+    public async Task An_enabled_flow_dials_at_startup_with_no_rules_at_all()
+    {
+        FlowsHold(enabled: true);
+        var sut = new BrokerLinkSupervisor(Service, _rules, _log, _time,
+            options: new BrokerLinkOptions(ConnectOnStart: true), flows: _flows);
+
+        await sut.StartUpAsync(CancellationToken.None);
+
+        Assert.Equal([0], _attempts);
+    }
+
+    [Fact]
+    public async Task A_flow_that_is_off_does_not_dial()
+    {
+        FlowsHold(enabled: false);
+        var sut = new BrokerLinkSupervisor(Service, _rules, _log, _time,
+            options: new BrokerLinkOptions(ConnectOnStart: true), flows: _flows);
+
+        await sut.StartUpAsync(CancellationToken.None);
+
+        Assert.Empty(_attempts);
+    }
 }

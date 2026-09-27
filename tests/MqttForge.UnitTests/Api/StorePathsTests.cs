@@ -130,4 +130,22 @@ public class StorePathsTests
 
         Assert.Equal(Path.Combine(AppContext.BaseDirectory, "alert-state.json"), path);
     }
+
+    [Fact]
+    public void The_flows_live_beside_the_settings_unless_a_path_is_given()
+    {
+        var beside = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["MqttForge:SettingsPath"] = "/data/connection-settings.json" })
+            .Build();
+        var named = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MqttForge:SettingsPath"] = "/data/connection-settings.json",
+                ["MqttForge:FlowsPath"] = "/elsewhere/mine.json",
+            })
+            .Build();
+
+        Assert.Equal(Path.Combine("/data", "flows.json"), StorePaths.Flows(beside));
+        Assert.Equal("/elsewhere/mine.json", StorePaths.Flows(named));
+    }
 }

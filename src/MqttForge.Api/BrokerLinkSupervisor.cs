@@ -44,6 +44,7 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
 
     private readonly ConnectionService _connection;
     private readonly IAlertRuleStore _rules;
+    private readonly IFlowStore? _flows;
     private readonly ILogger<BrokerLinkSupervisor> _log;
     private readonly TimeProvider _time;
     private readonly IReconnectOptionStore _option;
@@ -124,12 +125,14 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
     //
     // The store and the notifier are optional for the same reason and stand in the same way: a
     // supervisor built without them supervises exactly as before and tells nobody, which is what
-    // a test that is only asking about the ladder wants.
+    // a test that is only asking about the ladder wants. The flow store is optional for the same
+    // reason: a supervisor built without one dials for rules alone, as it always did.
     public BrokerLinkSupervisor(
         ConnectionService connection, IAlertRuleStore rules, ILogger<BrokerLinkSupervisor> log,
         TimeProvider? timeProvider = null, AlertPanelCounters? panel = null,
         IReconnectOptionStore? option = null, IReconnectStatusNotifier? notifier = null,
-        BrokerLinkOptions? options = null, ISubscriptionRestorer? restorer = null)
+        BrokerLinkOptions? options = null, ISubscriptionRestorer? restorer = null,
+        IFlowStore? flows = null)
     {
         _connection = connection;
         _rules = rules;
@@ -151,6 +154,7 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
         // only asking about the ladder, and was every host until the console's filters were found
         // to be gone after every redial the supervisor made.
         _restorer = restorer;
+        _flows = flows;
     }
 
     /// <summary>What is being done about the link, and whether anything is allowed to be.</summary>
@@ -194,23 +198,32 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
         {
             var document = await _rules.LoadAsync(ct);
 
+            // Flows are the second reason to be connected. Read second, and only asked when the
+            // rules alone would leave the broker alone, so a host with no flows behaves — and logs
+            // — exactly as it did before flows existed.
+            var rulesWant = !document.Unreadable && document.Rules.Any(rule => rule.Enabled);
+            var flowsWant = !rulesWant && await FlowsWantAsync(ct);
+
             // Not the same as no rules, and told apart in the log because the two need different
             // things done about them. An unreadable file means the engine is running empty until
             // somebody fixes it; connecting on the chance that it once held an enabled rule would
             // be guessing with the user's broker.
-            if (document.Unreadable)
+            if (document.Unreadable && !flowsWant)
             {
                 _log.LogError(
                     "The alert rules could not be read, so no rules are running and the broker is left alone.");
                 return;
             }
 
-            if (!document.Rules.Any(rule => rule.Enabled))
+            if (!rulesWant && !flowsWant)
             {
                 _log.LogInformation(
                     "No alert rules are enabled, so the broker is left alone until somebody connects.");
                 return;
             }
+
+            if (flowsWant)
+                _log.LogInformation("A flow is enabled, so the broker is connected for the flows.");
 
             // Past both guards, so this host has something to be connected for — and it goes on
             // having it. SuperviseAsync reads this flag on every fault, which is how the decision
@@ -227,6 +240,23 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _log.LogError(ex, "Could not work out whether the alert rules need a broker connection.");
+        }
+    }
+
+    /// <summary>Whether an enabled flow wants a broker. False when there is no flow store or it cannot be read.</summary>
+    private async Task<bool> FlowsWantAsync(CancellationToken ct)
+    {
+        if (_flows is null) return false;
+
+        try
+        {
+            var document = await _flows.LoadAsync(ct);
+            return !document.Unreadable && document.Flows.Any(flow => flow.Enabled);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _log.LogError(ex, "Could not read the flows to see whether they need a broker connection.");
+            return false;
         }
     }
 

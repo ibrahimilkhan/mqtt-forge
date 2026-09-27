@@ -10,6 +10,7 @@ public static class StorePaths
     public const string AlertStateFileName = "alert-state.json";
     public const string ReconnectOptionFileName = "reconnect.json";
     public const string InstallTokenFileName = "install-token.txt";
+    public const string FlowsFileName = "flows.json";
 
     public static string ConnectionSettings(IConfiguration config) =>
         config["MqttForge:SettingsPath"]
@@ -45,6 +46,12 @@ public static class StorePaths
     /// </summary>
     public static string AlertState(IConfiguration config) =>
         config["MqttForge:AlertStatePath"] ?? Beside(config, AlertStateFileName);
+
+    /// <summary>
+    /// The flows, beside the rest, so the one mounted volume that keeps the rules keeps them too.
+    /// </summary>
+    public static string Flows(IConfiguration config) =>
+        config["MqttForge:FlowsPath"] ?? Beside(config, FlowsFileName);
 
     /// <summary>
     /// Whether the broker link is supervised. Beside the rest, so one mounted volume still keeps
