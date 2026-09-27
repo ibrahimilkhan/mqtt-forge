@@ -111,4 +111,37 @@ public class TopicFilterMatchTests
     [InlineData("plant/\0", false)]
     public void IsValidFilter_answers_what_the_api_validator_always_answered(string? filter, bool valid) =>
         Assert.Equal(valid, TopicFilterMatch.IsValidFilter(filter));
+
+    // One sentence for every way a filter can be wrong. Seen live: plant/#/temp was answered with
+    // "Write a topic filter", to somebody who had written one and needed to hear where '#' may go.
+    [Theory]
+    [InlineData("", "Write a topic filter, like plant/+/temp.")]
+    [InlineData(null, "Write a topic filter, like plant/+/temp.")]
+    [InlineData("plant/#/temp", "'#' can only be the last level. For one level in the middle, use '+', as in plant/+/temp.")]
+    [InlineData("plant/te#", "'#' has to be a level of its own, as in plant/#.")]
+    [InlineData("plant/te+mp", "'+' has to be a level of its own, as in plant/+/temp.")]
+    [InlineData("plant/\0", "A topic filter cannot contain a NUL character.")]
+    public void FilterProblem_says_what_is_wrong_with_a_filter(string? filter, string problem) =>
+        Assert.Equal(problem, TopicFilterMatch.FilterProblem(filter));
+
+    [Theory]
+    [InlineData("plant/+/temp")]
+    [InlineData("plant/#")]
+    [InlineData("#")]
+    [InlineData("a//b")]
+    public void FilterProblem_finds_nothing_wrong_with_a_well_formed_filter(string filter) =>
+        Assert.Null(TopicFilterMatch.FilterProblem(filter));
+
+    // A string on the wire carries its length in two bytes, and they count UTF-8 bytes, not
+    // characters: 32,768 of 'ü' is 65,536 of them.
+    [Fact]
+    public void FilterProblem_holds_a_filter_to_the_65535_bytes_MQTT_can_carry()
+    {
+        const string tooLong = "MQTT allows a topic filter of at most 65,535 bytes.";
+
+        Assert.Null(TopicFilterMatch.FilterProblem(new string('a', 65_535)));
+        Assert.Equal(tooLong, TopicFilterMatch.FilterProblem(new string('a', 65_536)));
+        Assert.Equal(tooLong, TopicFilterMatch.FilterProblem(new string('ü', 32_768)));
+        Assert.False(TopicFilterMatch.IsValidFilter(new string('a', 65_536)));
+    }
 }

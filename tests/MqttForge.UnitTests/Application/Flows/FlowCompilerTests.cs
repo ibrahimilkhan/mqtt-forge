@@ -95,6 +95,12 @@ public class FlowCompilerTests
     public void MQTT_in_needs_a_well_formed_filter(string filter) =>
         Assert.Equal("node:n1", Only(One("mqttIn", new { filter })).Key);
 
+    // Seen live: plant/#/temp was refused with "Write a topic filter, like plant/+/temp.", which is
+    // what an empty box needs to hear and not what somebody who wrote a filter does.
+    [Fact]
+    public void MQTT_in_says_what_is_wrong_with_its_filter() =>
+        Assert.Contains("'#' can only be the last level", Only(One("mqttIn", new { filter = "plant/#/temp" })).Message);
+
     [Fact]
     public void MQTT_in_may_not_listen_where_alarms_are_published() =>
         Assert.Contains("mqttforge/alerts/", Only(One("mqttIn", new { filter = "mqttforge/#" })).Message);

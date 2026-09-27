@@ -146,8 +146,8 @@ public static partial class FlowCompiler
             {
                 var filter = settings.Text("filter").Trim();
 
-                if (!TopicFilterMatch.IsValidFilter(filter))
-                    problem = "Write a topic filter, like plant/+/temp.";
+                if (TopicFilterMatch.FilterProblem(filter) is { } wrong)
+                    problem = wrong;
                 else if (AlertTopicPrefix.Covers(filter, prefix))
                     problem = $"This filter reaches into {prefix}, where alarms are published. A flow may not listen there.";
 

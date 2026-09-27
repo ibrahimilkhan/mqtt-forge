@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace MqttForge.Domain;
 
 /// <summary>
@@ -108,14 +110,24 @@ public static class TopicFilterMatch
 
     /// <summary>
     /// Whether a string is a well-formed MQTT topic filter. An empty level is legal — 'a//b' has
-    /// three levels and an empty middle one — so only the wildcards and NUL are policed.
+    /// three levels and an empty middle one — so only the wildcards, NUL and the length are policed.
     /// </summary>
     // Here rather than only in Api's validation, because the flow compiler in Application checks
     // filters too and Application does not reference Api. Api's TopicFilter.IsValid asks this.
-    public static bool IsValidFilter(string? filter)
+    public static bool IsValidFilter(string? filter) => FilterProblem(filter) is null;
+
+    /// <summary>What is wrong with a topic filter, said to whoever wrote it, or null when nothing is.</summary>
+    // One sentence for each way to be wrong, because the one there was fitted only the empty box:
+    // "write a topic filter" to somebody who had written plant/#/temp and needed to hear where '#'
+    // may go. What is wrong with the whole filter is said first, then the first level that is wrong.
+    //
+    // NUL is forbidden in every MQTT string, and a string on the wire carries its length in two
+    // bytes — of UTF-8, not characters — so no broker can be handed a longer filter than that.
+    public static string? FilterProblem(string? filter)
     {
-        if (string.IsNullOrEmpty(filter)) return false;
-        if (filter.Contains('\0')) return false;
+        if (string.IsNullOrEmpty(filter)) return "Write a topic filter, like plant/+/temp.";
+        if (filter.Contains('\0')) return "A topic filter cannot contain a NUL character.";
+        if (Encoding.UTF8.GetByteCount(filter) > 65_535) return "MQTT allows a topic filter of at most 65,535 bytes.";
 
         var levels = filter.Split('/');
 
@@ -124,11 +136,19 @@ public static class TopicFilterMatch
             var level = levels[i];
 
             // Both wildcards stand alone in their level; '#' also has to end the filter.
-            if (level == "#") { if (i != levels.Length - 1) return false; continue; }
+            if (level == "#")
+            {
+                if (i != levels.Length - 1)
+                    return "'#' can only be the last level. For one level in the middle, use '+', as in plant/+/temp.";
+
+                continue;
+            }
+
             if (level == "+") continue;
-            if (level.Contains('#') || level.Contains('+')) return false;
+            if (level.Contains('#')) return "'#' has to be a level of its own, as in plant/#.";
+            if (level.Contains('+')) return "'+' has to be a level of its own, as in plant/+/temp.";
         }
 
-        return true;
+        return null;
     }
 }
