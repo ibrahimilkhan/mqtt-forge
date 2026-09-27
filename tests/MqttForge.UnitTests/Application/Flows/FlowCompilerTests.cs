@@ -281,16 +281,35 @@ public class FlowCompilerTests
     // The alert rules' refusal, for its reason. An Alarm node holds one alarm per topic, and a retained
     // record at one fixed topic is each topic's alarm written over the last one's — and the empty
     // message that takes one of them back takes back the record of them all.
-    [Theory]
-    [InlineData("mqttforge/alerts/boiler")]
-    [InlineData("mqttforge/alerts/boiler/{{topic[1]}}")]
-    public void A_retained_alarms_own_topic_has_to_carry_the_topic_it_is_about(string publishTopic)
+    [Fact]
+    public void A_retained_alarms_own_topic_has_to_carry_the_topic_it_is_about()
     {
-        var problem = Only(One("alarm", new { name = "Hot", severity = "warn", publish = true, publishTopic, retain = true }));
+        var problem = Only(One("alarm", new
+        {
+            name = "Hot", severity = "warn", publish = true, publishTopic = "mqttforge/alerts/boiler", retain = true
+        }));
 
         Assert.Equal("node:n1", problem.Key);
         Assert.Equal("A retained alarm's own topic has to carry {topic}, or each topic's alarm replaces the last one's " +
                      "on the broker. Put {topic} in it, or leave it empty for the usual place.", problem.Message);
+    }
+
+    // The flows' templates are the Publish node's and the reason's, and nowhere else. An alarm's own
+    // topic is filled in by the channel that publishes it, which knows {topic} and nothing more:
+    // {{topic}} went out as mqttforge/alerts/{plant/k1/temp}, braces and all, and {{topic[1]}} as
+    // itself — and with {topic} inside it, the first passed the retained rule above.
+    [Theory]
+    [InlineData("mqttforge/alerts/{{topic}}", false)]
+    [InlineData("mqttforge/alerts/{{topic}}", true)]
+    [InlineData("mqttforge/alerts/boiler/{{topic[1]}}", false)]
+    [InlineData("mqttforge/alerts/boiler/{{topic[1]}}", true)]
+    public void An_alarms_own_topic_is_not_a_template(string publishTopic, bool retain)
+    {
+        var problem = Only(One("alarm", new { name = "Hot", severity = "warn", publish = true, publishTopic, retain }));
+
+        Assert.Equal("node:n1", problem.Key);
+        Assert.Equal("An alarm's own topic cannot hold {{…}}, which only Publish and the reason fill in. " +
+                     "Write {topic} for the topic the alarm is about.", problem.Message);
     }
 
     [Theory]

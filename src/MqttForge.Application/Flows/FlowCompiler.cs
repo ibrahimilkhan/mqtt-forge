@@ -370,6 +370,17 @@ public static partial class FlowCompiler
                 return null;
             }
 
+            // The templates are the Publish node's and the reason's. This topic is filled in by the
+            // channel that publishes the alarm, which knows {topic} and nothing else, so {{topic}} went
+            // out with its braces round the topic and {{topic[1]}} as it was written — and the first,
+            // holding {topic}, would pass the retained rule below.
+            if (topic.Contains("{{", StringComparison.Ordinal))
+            {
+                problem = "An alarm's own topic cannot hold {{…}}, which only Publish and the reason fill in. " +
+                          $"Write {AlertTopicPrefix.Placeholder} for the topic the alarm is about.";
+                return null;
+            }
+
             if (topic.Length > 0 && !AlertTopicPrefix.Inside(topic, prefix))
             {
                 problem = $"An alarm's own topic has to stay under {prefix}. Leave it empty for the usual place.";
