@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import { useEffect, useLayoutEffect, useMemo } from 'react';
 import { flushSync } from 'react-dom';
+import { useShallow } from 'zustand/react/shallow';
 import { getFlows, getFlowStatus } from '../../api/flows';
 import { queryKeys } from '../../api/queryKeys';
 import { describeError } from '../../lib/problemDetails';
@@ -65,7 +66,10 @@ function Page() {
   const drafts = useFlowDraftStore((state) => state.drafts);
   const current = useFlowDraftStore((state) => state.current);
   const refusals = useFlowDraftStore((state) => state.refusals);
-  const running = useFlowStatusStore((state) => state.flows);
+  // Which flows run, and nothing else of the numbers: that is all the page draws of them, and every
+  // push brings a new picture. Taken whole, each push drew the whole page again, four times a second.
+  const runningIds = useFlowStatusStore(useShallow((state) => Object.keys(state.flows)));
+  const running = useMemo(() => new Set(runningIds), [runningIds]);
   const deploy = useDeploy();
   const { screenToFlowPosition } = useReactFlow();
 
@@ -182,14 +186,14 @@ function Page() {
       <div id={FLOW_PANEL} role="tabpanel" aria-labelledby={tabIdOf(shown.id)} className={styles.flow}>
         <div className={styles.body}>
           <Palette onAdd={add} />
-          <FlowCanvas key={shown.id} flow={shown} running={running[shown.id] !== undefined} problems={problems[shown.id] ?? NOTHING_WRONG} />
+          <FlowCanvas key={shown.id} flow={shown} running={running.has(shown.id)} problems={problems[shown.id] ?? NOTHING_WRONG} />
           {/* One inspector per flow, like the canvas: what it holds — a delete it is asking about —
               is about the flow it was opened on, and must not stand over the next one. */}
           <Inspector
             key={shown.id}
             flow={shown}
             deployed={byId.get(shown.id)}
-            running={running[shown.id] !== undefined}
+            running={running.has(shown.id)}
             problems={problems[shown.id] ?? NOTHING_WRONG}
             facts={{ allowWebhooks: data.allowWebhooks, alertTopicPrefix: data.alertTopicPrefix }}
           />

@@ -29,13 +29,14 @@ import {
   type DragEvent,
   type KeyboardEvent,
 } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { injectNode } from '../../api/flows';
 import { nodeKey, useFlowStatusStore } from '../../stores/flowStatusStore';
 import { logFault } from '../../stores/logStore';
-import type { FlowDto, FlowNodeDto } from '../../types/api';
+import type { FlowDto, FlowNodeDto, FlowNodeStatusDto } from '../../types/api';
 import { addNode, canConnect, connect, moveNodes, newId, removeEdges, removeNodes, type Problems, type Wire } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
-import { isNodeType, portsOf, specOf, type Ports } from './nodeTypes';
+import { isNodeType, portsOf, specOf, type NodeSpec, type Ports } from './nodeTypes';
 import styles from './FlowCanvas.module.css';
 
 /** What a palette item carries when it is dragged onto the canvas. */
@@ -56,6 +57,18 @@ export const NODE_HEIGHT = 80;
 
 /** The width, where the stylesheet reads it. */
 const NODE_SIZE = { '--node-width': `${NODE_WIDTH}px` } as CSSProperties;
+
+/*
+ * React Flow's options, made once. It copies each one it is handed into its own store when the
+ * object it gets is a new one, and the canvas renders on every frame of a drag: an object written
+ * out where it is passed would be a store update for nothing on each of those frames.
+ */
+
+/** A first view with room round the flow, and never closer than the size the nodes are drawn at. */
+const FIT = { padding: 0.2, maxZoom: 1 };
+
+/** Where a dragged node comes to rest: every 8 pixels, on a dot of the background or halfway between two. */
+const SNAP: [number, number] = [8, 8];
 
 type NodeData = { flowId: string; node: FlowNodeDto; ports: Ports; running: boolean; problems?: readonly string[] };
 type CanvasNode = Node<NodeData, 'flow'>;
@@ -325,11 +338,11 @@ export function FlowCanvas({ flow, running, problems }: { flow: FlowDto; running
         isValidConnection={isValidConnection}
         deleteKeyCode={null}
         fitView
-        fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
+        fitViewOptions={FIT}
         minZoom={0.25}
         maxZoom={2}
         snapToGrid
-        snapGrid={[8, 8]}
+        snapGrid={SNAP}
       >
         <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
         <Controls showInteractive={false} />
@@ -352,16 +365,29 @@ const portTop = (index: number, count: number) => `${((index + 1) * 100) / (coun
  */
 const named = (ports: readonly string[]) => (ports.length > 1 ? Math.max(...ports.map((port) => port.length)) : 0);
 
+/**
+ * What a node draws of its numbers, and nothing more. Every push brings a new object for every
+ * node, so a node that took its whole entry drew itself again four times a second whether anything
+ * on it had moved or not; this is compared field by field, and a node whose line reads the same is
+ * left alone.
+ *
+ * A running flow reports every node of the version it runs, so a node with no numbers is not
+ * deployed: the flow is not running, or the node is only in the draft. "0 in" or "waiting" under it
+ * would be a claim about something that is not running.
+ */
+function drawnOf(spec: NodeSpec, status: FlowNodeStatusDto | undefined) {
+  return status
+    ? { reported: true, line: spec.status(status), failing: status.errors > 0 }
+    : { reported: false, line: 'not deployed', failing: false };
+}
+
 function FlowNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
   const spec = specOf(data.node.type);
   const { ins, outs } = data.ports;
   const Icon = spec.icon;
-  const status = useFlowStatusStore((state) => state.nodes[nodeKey(data.flowId, id)]);
-
-  // A running flow reports every node of the version it runs, so a node with no numbers is not
-  // deployed: the flow is not running, or the node is only in the draft. "0 in" or "waiting" under
-  // it would be a claim about something that is not running.
-  const line = status ? spec.status(status) : 'not deployed';
+  const { reported, line, failing } = useFlowStatusStore(
+    useShallow((state) => drawnOf(spec, state.nodes[nodeKey(data.flowId, id)])),
+  );
 
   return (
     <div
@@ -394,12 +420,10 @@ function FlowNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
           <Icon />
         </span>
         <span className={styles.name}>{spec.label}</span>
-        {data.node.type === 'inject' && (
-          <InjectButton flowId={data.flowId} nodeId={id} ready={data.running && status !== undefined} />
-        )}
+        {data.node.type === 'inject' && <InjectButton flowId={data.flowId} nodeId={id} ready={data.running && reported} />}
       </div>
       <div className={styles.summary}>{spec.summary(data.node.config)}</div>
-      <div className={styles.status} data-errors={status && status.errors > 0 ? '' : undefined}>
+      <div className={styles.status} data-errors={failing ? '' : undefined}>
         {line}
       </div>
 

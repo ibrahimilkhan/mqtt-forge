@@ -5,12 +5,13 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { nodeKey, useFlowStatusStore } from '../../stores/flowStatusStore';
 import { server } from '../../test/server';
 import { renderWithClient as render } from '../../test/renderWithClient';
-import type { FlowDto } from '../../types/api';
+import type { FlowDto, FlowStatusDto } from '../../types/api';
 import { standInForTheBrowser } from './canvasTestbed';
 import { DRAG_TYPE, FlowCanvas } from './FlowCanvas';
 import sheet from './FlowCanvas.module.css?raw';
 import { removeEdges, type Problems } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
+import { NODE_SPECS } from './nodeTypes';
 
 beforeAll(() => standInForTheBrowser());
 afterAll(() => vi.unstubAllGlobals());
@@ -193,6 +194,39 @@ describe('flow canvas', () => {
 
     expect(document.querySelector('[data-flash]')).not.toBeNull();
     expect(useFlowStatusStore.getState().nodes[nodeKey('button', 'go')].outs.out).toBe(2);
+  });
+
+  // Pushes come four times a second, each with a new object for every node, and a flow can hold
+  // two hundred nodes. A node draws again only when what it shows of its numbers has moved.
+  it('draws a node again only when what it shows of its numbers moved', async () => {
+    const status = (sent: number): FlowStatusDto => ({
+      flows: [{
+        id: 'button', faults: 0, fault: null,
+        nodes: [
+          { id: 'go', count: sent, outs: { out: sent }, errors: 0, note: null, standing: [] },
+          { id: 'test', count: 5, outs: { yes: 2, no: 3 }, errors: 0, note: null, standing: [] },
+        ],
+      }],
+    });
+    useFlowStatusStore.getState().setStatus(status(3));
+    const inject = vi.spyOn(NODE_SPECS.inject, 'summary');
+    const branch = vi.spyOn(NODE_SPECS.if, 'summary');
+    draw();
+    await screen.findByText('3 sent');
+    inject.mockClear();
+    branch.mockClear();
+
+    act(() => useFlowStatusStore.getState().setStatus(status(3)));
+    const again = { inject: inject.mock.calls.length, branch: branch.mock.calls.length };
+
+    act(() => useFlowStatusStore.getState().setStatus(status(4)));
+    const moved = { inject: inject.mock.calls.length, branch: branch.mock.calls.length };
+    inject.mockRestore();
+    branch.mockRestore();
+
+    expect(again).toEqual({ inject: 0, branch: 0 });
+    expect(screen.getByText('4 sent')).toBeInTheDocument();
+    expect(moved).toEqual({ inject: 1, branch: 0 });
   });
 
   it('does not light a wire when its count starts again from nothing', async () => {

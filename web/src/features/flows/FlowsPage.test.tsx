@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
+import { Profiler } from 'react';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { queryKeys } from '../../api/queryKeys';
 import { useFlowStatusStore } from '../../stores/flowStatusStore';
@@ -11,6 +12,7 @@ import { standInForTheBrowser } from './canvasTestbed';
 import strip from './DebugStrip.module.css';
 import stripSheet from './DebugStrip.module.css?raw';
 import { NODE_HEIGHT, NODE_WIDTH } from './FlowCanvas';
+import { moveNodes } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
 import FlowsPage from './FlowsPage';
 
@@ -865,6 +867,65 @@ describe('deploying', () => {
     reading = null;
     simPut.release();
     expect(await screen.findByText('All deployed')).toBeInTheDocument();
+  });
+});
+
+/**
+ * The spec's limits are two hundred nodes to a flow and pushes up to four times a second. A push
+ * that moved nothing on screen draws nothing, and a drag that moves one flow's node checks that one
+ * flow for changes, not every draft there is.
+ */
+describe('at the limits', () => {
+  const both = (count: number): FlowStatusDto => ({
+    flows: [{
+      id: 'watch', faults: 0, fault: null,
+      nodes: [
+        { id: 'in', count, outs: { out: count }, errors: 0, note: null, standing: [] },
+        { id: 'test', count, outs: { yes: 3, no: count - 3 }, errors: 0, note: null, standing: [] },
+      ],
+    }],
+  });
+
+  it('draws nothing again for a push that moved nothing', async () => {
+    keeping([watch]);
+    server.use(http.get('/api/flows/status', () => HttpResponse.json(both(412))));
+    const commits = vi.fn();
+    render(
+      <Profiler id="page" onRender={commits}>
+        <FlowsPage />
+      </Profiler>,
+    );
+    await screen.findByText('412 in');
+    await turns();
+    commits.mockClear();
+
+    act(() => useFlowStatusStore.getState().setStatus(both(412)));
+    await turns();
+    const again = commits.mock.calls.length;
+
+    act(() => useFlowStatusStore.getState().setStatus(both(413)));
+
+    expect(again).toBe(0);
+    expect(screen.getByText('413 in')).toBeInTheDocument();
+  });
+
+  it('checks only the flow that changed for whether it still differs from what is running', async () => {
+    const flows = ['a', 'b', 'c'].map((id) => ({ ...watch, id, name: `Flow ${id}` }));
+    keeping(flows);
+    for (const flow of flows) useFlowDraftStore.getState().edit(flow, (one) => ({ ...one, name: `${one.name} 2` }));
+    render(<FlowsPage />);
+    await screen.findByText('3 changes');
+    const stringify = vi.spyOn(JSON, 'stringify');
+
+    act(() => useFlowDraftStore.getState().edit(flows[0], (one) => moveNodes(one, { in: { x: 48, y: 120 } })));
+    const checked = stringify.mock.calls.flatMap(([value]) => {
+      const id = (value as { id?: unknown } | null)?.id;
+      return typeof id === 'string' ? [id] : [];
+    });
+    stringify.mockRestore();
+
+    expect(new Set(checked)).toEqual(new Set(['a']));
+    expect(screen.getByText('3 changes')).toBeInTheDocument();
   });
 });
 

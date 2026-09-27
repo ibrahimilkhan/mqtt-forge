@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { FlowDto } from '../../types/api';
 import {
   addNode,
@@ -100,6 +100,24 @@ describe('flow document', () => {
 
     expect(sameFlow(a, b)).toBe(true);
     expect(sameFlow(a, moveNodes(a, { a: { x: 1, y: 1 } }))).toBe(false);
+  });
+
+  // A flow is never changed in place — every edit makes a new one — so what was worked out about
+  // one flow object stays true of it. The page asks about every draft on every drag frame.
+  it('works out whether two flows are the same once, however often it is asked', () => {
+    const deployed = chain();
+    const draft = { ...deployed, name: 'Chain 2' };
+    const stringify = vi.spyOn(JSON, 'stringify');
+
+    const first = sameFlow(draft, deployed);
+    const made = stringify.mock.calls.length;
+    const again = [sameFlow(draft, deployed), sameFlow(draft, deployed), sameFlow(deployed, deployed)];
+    const madeAgain = stringify.mock.calls.length - made;
+    stringify.mockRestore();
+
+    expect(first).toBe(false);
+    expect(again).toEqual([false, false, true]);
+    expect(madeAgain).toBe(0);
   });
 
   it('lays drafts over the deployed flows, deployed order first and new drafts after', () => {

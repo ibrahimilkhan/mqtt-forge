@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, type FocusEvent, type KeyboardEvent } from 'react';
-import type { FlowDto, FlowRunStatusDto } from '../../types/api';
+import type { FlowDto } from '../../types/api';
 import { useFlowDraftStore } from './flowDraftStore';
 import styles from './Toolbar.module.css';
 
@@ -19,7 +19,8 @@ type Props = {
   /** Flows the server has, whatever their drafts say. */
   deployed: ReadonlySet<string>;
   current: string;
-  running: Readonly<Record<string, FlowRunStatusDto>>;
+  /** Flows running now. */
+  running: ReadonlySet<string>;
   /** Flows the server has said something is wrong with: a refused deploy, or a problem in its file. */
   refused: ReadonlySet<string>;
   deploying: boolean;
@@ -35,7 +36,7 @@ type Props = {
  * it is its changes that are not.
  */
 function stateOf(flowId: string, { changed, deployed, running, refused }: Props): string {
-  const lamp = refused.has(flowId) ? 'refused' : running[flowId] ? 'running' : deployed.has(flowId) ? 'not running' : null;
+  const lamp = refused.has(flowId) ? 'refused' : running.has(flowId) ? 'running' : deployed.has(flowId) ? 'not running' : null;
   const draft = !deployed.has(flowId) ? 'not deployed' : changed.has(flowId) ? 'changes not deployed' : null;
 
   return [lamp, draft].flatMap((words) => (words ? [`, ${words}`] : [])).join('');
@@ -127,7 +128,7 @@ export function Toolbar(props: Props) {
               aria-controls={FLOW_PANEL}
               tabIndex={flow.id === current ? 0 : -1}
               className={styles.tab}
-              data-state={refused.has(flow.id) ? 'refused' : running[flow.id] ? 'running' : 'stopped'}
+              data-state={refused.has(flow.id) ? 'refused' : running.has(flow.id) ? 'running' : 'stopped'}
               onClick={() => show(flow.id)}
             >
               <span className={styles.lamp} aria-hidden="true" />

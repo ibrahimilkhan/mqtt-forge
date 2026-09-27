@@ -167,14 +167,47 @@ export const setConfig = (flow: FlowDto, nodeId: string, config: Record<string, 
   nodes: flow.nodes.map((node) => (node.id === nodeId ? { ...node, config } : node)),
 });
 
+/*
+ * What is worked out about a flow is kept against the flow object, because no flow is ever
+ * changed in place: an edit makes a new object, so an answer about an object never goes stale.
+ * The page asks on every frame of a drag whether each draft still differs from what is running,
+ * and a flow of two hundred nodes is tens of kilobytes of text. Kept, a frame works out the one
+ * flow being dragged, and reads the answers for the rest.
+ */
+
+/** Each flow as text with its keys in order. */
+const texts = new WeakMap<FlowDto, string>();
+
+/** The last answer about each flow, and the flow it was compared with. */
+const verdicts = new WeakMap<FlowDto, { other: FlowDto; same: boolean }>();
+
+/** A flow as text, its keys in order: two flows that are the same flow read the same. */
+function canonical(flow: FlowDto): string {
+  let text = texts.get(flow);
+  if (text === undefined) {
+    text = JSON.stringify(sorted(flow));
+    texts.set(flow, text);
+  }
+  return text;
+}
+
 /**
  * Whether two flows are the same flow, setting for setting.
  *
  * Keys are put in order first, because the server hands back settings in the order they were
  * sent and an editor that rebuilt an object in another order has not changed anything.
  */
-export const sameFlow = (a: FlowDto | undefined, b: FlowDto | undefined): boolean =>
-  a !== undefined && b !== undefined && JSON.stringify(sorted(a)) === JSON.stringify(sorted(b));
+export function sameFlow(a: FlowDto | undefined, b: FlowDto | undefined): boolean {
+  if (a === undefined || b === undefined) return false;
+  if (a === b) return true;
+
+  const last = verdicts.get(a);
+  if (last?.other === b) return last.same;
+
+  const same = canonical(a) === canonical(b);
+  verdicts.set(a, { other: b, same });
+  return same;
+}
 
 function sorted(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sorted);
