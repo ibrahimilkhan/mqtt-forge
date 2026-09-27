@@ -78,8 +78,8 @@ public sealed class FlowEngine
     /// <summary>The QoS the flows' subscriptions ask for — AlertEngine's RuleQos, for its reason.</summary>
     private const int FlowQos = 1;
 
-    /// <summary>How long the flows' filters are left, once the broker did not answer for them, before they are asked for again.</summary>
-    // AlertEngine's pause, and one figure for the two: both pumps wait on the same broker.
+    /// <summary>How long the flows' filters are left, once the broker did not answer for them, before they are asked for again: the first time.</summary>
+    // AlertEngine's pause, and one rule for the two, NoAnswerBackoff: both pumps wait on the same broker.
     public static readonly TimeSpan NoAnswerPause = AlertEngine.NoAnswerPause;
 
     private readonly FlowRuntime _runtime;
@@ -99,8 +99,8 @@ public sealed class FlowEngine
     /// <summary>Filters this broker has refused on this link. Not asked for again until the link or the flows change.</summary>
     private readonly HashSet<string> _refused = new(StringComparer.Ordinal);
 
-    /// <summary>Until when the flows' filters are not asked for, after a broker that did not answer for them. See NoAnswerPause.</summary>
-    private DateTimeOffset _askAgainAt = DateTimeOffset.MinValue;
+    /// <summary>How long the flows' filters are put off, after a broker that did not answer for them. See NoAnswerPause.</summary>
+    private readonly NoAnswerBackoff _noAnswer = new();
 
     // The deploy the pump has not reached yet, and the order everything posted is stamped in. See Hand.
     private readonly Lock _deploying = new();
@@ -124,6 +124,9 @@ public sealed class FlowEngine
     /// <summary>Which broker the flows are running against, as host:port, when that is known.</summary>
     // AlertEngine's _learnedFrom, for the move to another broker that no turn of the pump sees.
     private string? _linkedTo;
+
+    /// <summary>When the link the pump last looked at came up: AlertEngine's, for a redial no turn saw.</summary>
+    private DateTimeOffset? _linkedAt;
 
     /// <summary>What the flows have done, as last pushed. What GET /api/flows/status answers.</summary>
     public FlowStatus Status => Volatile.Read(ref _status);
@@ -239,6 +242,7 @@ public sealed class FlowEngine
         var now = _time.GetUtcNow();
         _linkWasUp = _connection.State == ConnectionState.Connected;
         _linkedTo = _linkWasUp ? EndpointOf(_connection.Link) : null;
+        _linkedAt = _linkWasUp ? _connection.Link?.ConnectedAt : null;
 
         var outcome = FlowOutcome.Merge([_runtime.Deploy(set.Compiled, set.Kept, now), _runtime.OnTick(now, _linkWasUp)]);
         Volatile.Write(ref _injectable, _runtime.Injectable());
@@ -322,13 +326,12 @@ public sealed class FlowEngine
     {
         _resubscribe = true;
         _refused.Clear();
-        _askAgainAt = DateTimeOffset.MinValue;
+        _noAnswer.Lift();
         _linkedTo = endpoint;
     }
 
     /// <summary>Whether the broker did not answer for the filters so lately that asking again now would only wait on it again.</summary>
-    // A pause that ends further off than a whole pause is a clock set back since, and is over.
-    private bool Pausing(DateTimeOffset now) => now < _askAgainAt && _askAgainAt - now <= NoAnswerPause;
+    private bool Pausing(DateTimeOffset now) => _noAnswer.Pausing(now);
 
     private static string? EndpointOf(BrokerLink? link) => link is null ? null : $"{link.Host}:{link.Port}";
 
@@ -403,10 +406,22 @@ public sealed class FlowEngine
             var link = connected ? _connection.Link : null;
             var endpoint = EndpointOf(link);
 
+            // Whether the link came up since the last look, told by when it came up: AlertEngine's
+            // Relinked, and all that tells two links to one broker apart.
+            var relinked = link is not null && _linkedAt is { } seen && seen != link.ConnectedAt;
+            if (link is not null) _linkedAt = link.ConnectedAt;
+
             if (connected && !_linkWasUp)
             {
                 outcomes.Add(_runtime.OnTick(_time.GetUtcNow(), connected: true));
                 _linkWasUp = true;
+                NewLink(endpoint);
+            }
+            // A link that went and came back to the same broker between two turns, which no turn saw
+            // down. A new link all the same: the flows' filters went with the old one, and a pause the
+            // broker left on the old one is not this one's. One to another broker is a move, below.
+            else if (relinked && endpoint == _linkedTo)
+            {
                 NewLink(endpoint);
             }
 
@@ -736,9 +751,13 @@ public sealed class FlowEngine
             foreach (var filter in gone) await _subscriber.UnsubscribeAsync(filter, ct, SubscriptionOwner.Flows);
 
             _resubscribe = false;
+            _noAnswer.Answered();
         }
         catch (MessageRejectedException refusal)
         {
+            // An answer as much as a grant is, so the next silence is the first of a new run.
+            _noAnswer.Answered();
+
             var refused = refusal.Filters.Count > 0
                 ? refusal.Filters
                 : [.. missing.Select(request => request.TopicFilter)];
@@ -754,11 +773,11 @@ public sealed class FlowEngine
         {
             // Not a refusal, and not for the very next turn either: see NoAnswerPause. The flag
             // stays up, so the first turn after the pause asks again.
-            _askAgainAt = _time.GetUtcNow() + NoAnswerPause;
+            var pause = _noAnswer.NotAnswered(_time.GetUtcNow());
 
             _log.LogWarning(silence,
                 "The broker did not answer for the flows' subscriptions. They will be asked for again in {Seconds} seconds.",
-                NoAnswerPause.TotalSeconds);
+                pause.TotalSeconds);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {

@@ -24,9 +24,19 @@ internal sealed class RecordingSubscriber : IMqttSubscriber
     private readonly Lock _gate = new();
     private readonly List<ActiveFilter> _filters = [];
     private readonly List<IReadOnlyList<string>> _batches = [];
+    private readonly List<DateTimeOffset> _askedAt = [];
     private readonly List<string> _unsubscribed = [];
 
     private Exception? _refuse;
+
+    /// <summary>When set, the clock every SubscribeAsync call is stamped by, in <see cref="AskedAt"/>.</summary>
+    public TimeProvider? Clock { get; set; }
+
+    /// <summary>When each SubscribeAsync call was made, by <see cref="Clock"/>, for a test about how long apart they are.</summary>
+    public IReadOnlyList<DateTimeOffset> AskedAt
+    {
+        get { lock (_gate) return [.. _askedAt]; }
+    }
 
     /// <summary>When set, every SubscribeAsync throws it — the broker turning a filter down.</summary>
     // The attempt is still recorded, because the real one sends the packet before it learns the
@@ -64,6 +74,7 @@ internal sealed class RecordingSubscriber : IMqttSubscriber
         lock (_gate)
         {
             _batches.Add([.. requests.Select(request => request.TopicFilter)]);
+            if (Clock is { } clock) _askedAt.Add(clock.GetUtcNow());
 
             if (Refuse is { } refusal) return Task.FromException(refusal);
 

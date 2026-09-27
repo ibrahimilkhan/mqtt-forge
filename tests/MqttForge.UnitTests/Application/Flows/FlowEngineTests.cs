@@ -1056,6 +1056,75 @@ public sealed class FlowEngineTests : IAsyncLifetime
         await ClockStill(() => _subscriber.Filters.Count == 1, "the flows' filters to be asked for on the new link");
     }
 
+    // AlertEngine's backoff, for its reason: a broker that goes on leaving the SUBSCRIBE unanswered is
+    // asked five seconds after the first attempt it left, ten after the second, and so on to a minute.
+    [Fact]
+    public async Task A_broker_that_goes_on_not_answering_is_asked_again_after_a_longer_pause_each_time()
+    {
+        _subscriber.Clock = _time;
+        _subscriber.Refuse = new BrokerDidNotAnswerException("The broker did not answer the SUBSCRIBE for 'plant/+/temp' within 10 seconds.");
+        await RunningAsync(Watch());
+
+        await Eventually.Until(_time, () => _subscriber.Batches.Count == 2, "the filters to be asked for again after the first pause");
+        var again = _subscriber.AskedAt[1];
+        Assert.True(again - T0 >= FlowEngine.NoAnswerPause);
+
+        // Not answered again, so the next is ten seconds off, not five.
+        while (_time.GetUtcNow() < again.AddSeconds(9))
+        {
+            _time.Advance(FlowEngine.TickInterval);
+            await Task.Delay(10);
+        }
+
+        Assert.Equal(2, _subscriber.Batches.Count);
+
+        await Eventually.Until(_time, () => _subscriber.Batches.Count == 3, "the filters to be asked for again after the second pause");
+        Assert.True(_subscriber.AskedAt[2] - again >= TimeSpan.FromSeconds(10));
+    }
+
+    // Yes or no, an answer ends the run: the next silence is paused for five seconds, not twenty.
+    [Fact]
+    public async Task An_answer_makes_the_next_pause_for_the_flows_the_first_again()
+    {
+        var silence = new BrokerDidNotAnswerException("The broker did not answer the SUBSCRIBE within 10 seconds.");
+        _subscriber.Clock = _time;
+        _subscriber.Refuse = silence;
+        var engine = await RunningAsync(Watch());
+
+        await Eventually.Until(_time, () => _subscriber.Batches.Count == 2, "the filters to be asked for again after the first pause");
+        _subscriber.Refuse = null;
+        await Eventually.Until(_time, () => _subscriber.Filters.Count == 1, "the filters to be taken after the second pause");
+
+        // A deploy with a filter of its own, and the broker silent again.
+        _subscriber.Refuse = silence;
+        engine.Post(Deployment(Watch(), new FlowBuilder("f3", "Doors").Node("in", "mqttIn", new { filter = "plant/+/door" }).Build()));
+        await Eventually.Until(_time, () => _subscriber.Batches.Count == 4, "the new filter to be asked for");
+        var unanswered = _subscriber.AskedAt[3];
+
+        _subscriber.Refuse = null;
+        await Eventually.Until(_time, () => _subscriber.Filters.Count == 2, "the new filter to be asked for again after a pause");
+        Assert.InRange(_subscriber.AskedAt[4] - unanswered, FlowEngine.NoAnswerPause, TimeSpan.FromSeconds(9));
+    }
+
+    // AlertEngine's, for its reason: a link that went and came back between two turns, which no turn
+    // saw down, is a new link all the same, told by its ConnectedAt, and asked for its filters at once.
+    [Fact]
+    public async Task A_link_that_came_back_between_two_turns_asks_for_the_flows_filters_at_once_whatever_pause_the_last_one_left()
+    {
+        _connection.Link = new BrokerLink("broker-a.plant.local", 1883, "test", null, false, T0.AddMinutes(-1), false, null, null);
+        _subscriber.Refuse = new BrokerDidNotAnswerException("The broker did not answer the SUBSCRIBE for 'plant/+/temp' within 10 seconds.");
+        var engine = await RunningAsync(Watch());
+        _subscriber.Refuse = null;
+
+        // Dropped and dialled again, to the same broker, with the clock held still at the start, well
+        // inside the pause the first link left.
+        _subscriber.LinkDropped();
+        _connection.Link = new BrokerLink("broker-a.plant.local", 1883, "test", null, false, T0, false, null, null);
+        await engine.NotifyMessageReceivedAsync(Msg("office/door", "open"));
+
+        await ClockStill(() => _subscriber.Filters.Count == 1, "the flows' filters to be asked for on the new link");
+    }
+
     [Fact]
     public async Task A_cancellation_from_a_fault_nobody_foresaw_does_not_stop_the_pump()
     {

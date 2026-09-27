@@ -97,13 +97,15 @@ public sealed class AlertEngine
     // existing alert's Count rather than raising a second one, because an alert belongs to a pair.
     private const int RuleQos = 1;
 
-    /// <summary>How long the rules' filters are left, once the broker did not answer for them, before they are asked for again.</summary>
+    /// <summary>How long the rules' filters are left, once the broker did not answer for them, before they are asked for again: the first time.</summary>
     // Every attempt at a broker that keeps the link and does not answer holds the pump for the
     // subscriber's whole deadline, and the turn after one used to ask again at once: the pump then
     // made one turn per deadline, every rule a reading behind for as long as the broker kept that
-    // up. A pause between the attempts gives the pump turns of its own. Short, because a broker that
-    // was only slow answers the next time, and a new link asks at once whatever the pause.
-    public static readonly TimeSpan NoAnswerPause = TimeSpan.FromSeconds(5);
+    // up. A pause between the attempts gives the pump turns of its own, and a longer one after each
+    // attempt in a row the broker leaves unanswered gives it more (NoAnswerBackoff). Short at first,
+    // because a broker that was only slow answers the next time, and a new link asks at once
+    // whatever the pause.
+    public static readonly TimeSpan NoAnswerPause = NoAnswerBackoff.First;
 
     private readonly AlertEngineCore _core;
     private readonly IAlertRuleStore _rules;
@@ -151,13 +153,16 @@ public sealed class AlertEngine
     // this in the same breath.
     private readonly HashSet<string> _refused = new(StringComparer.Ordinal);
 
-    /// <summary>Until when the rules' filters are not asked for, after a broker that did not answer for them. See NoAnswerPause.</summary>
-    private DateTimeOffset _askAgainAt = DateTimeOffset.MinValue;
+    /// <summary>How long the rules' filters are put off, after a broker that did not answer for them. See NoAnswerPause.</summary>
+    private readonly NoAnswerBackoff _noAnswer = new();
 
     /// <summary>Which broker the pairs in the core were learned from.</summary>
     // See AlertEngineCore.ForgetTopics. A link to a different broker is a different world, and
     // the per-topic state of the old one has nothing true to say about it.
     private string? _learnedFrom;
+
+    /// <summary>When the link the engine last looked at came up. See Relinked.</summary>
+    private DateTimeOffset? _linkedAt;
 
     /// Set when something the state file cares about changed and has not been written yet.
     private bool _unsaved;
@@ -233,7 +238,12 @@ public sealed class AlertEngine
 
         // Where the rules start learning, when the link is up already: FlowEngine's _linkedTo at
         // start. Left for the first turn, a move before it would be taken for the broker learned.
-        if (_linkWasUp) _learnedFrom = EndpointOf(_connection.Link);
+        // And which link that is, so a redial before the first turn is seen for one.
+        if (_linkWasUp)
+        {
+            _learnedFrom = EndpointOf(_connection.Link);
+            _linkedAt = _connection.Link?.ConnectedAt;
+        }
 
         await SyncSubscriptionsAsync(ct);
     }
@@ -320,6 +330,11 @@ public sealed class AlertEngine
             // and an alarm they raised was ended with the move. The line is the new link's
             // ConnectedAt, which a reading's ReceivedAt can be held against: FlowEngine says why.
             var moving = MovedTo();
+
+            // And a link that went and came back to the same broker between two looks, which no tick
+            // saw down. It is a new link all the same: the rules' filters went with the old one, and
+            // a pause the broker left on the old one is not this one's.
+            if (Relinked() && moving is null) NewLink();
 
             var handled = 0;
             while (handled < MaxPerTurn && _queue.Reader.TryRead(out var command))
@@ -477,12 +492,24 @@ public sealed class AlertEngine
         _resubscribe = true;
         _refused.Clear();
         _core.ForgetRefusals();
-        _askAgainAt = DateTimeOffset.MinValue;
+        _noAnswer.Lift();
     }
 
     /// <summary>Whether the broker did not answer for the filters so lately that asking again now would only wait on it again.</summary>
-    // A pause that ends further off than a whole pause is a clock set back since, and is over.
-    private bool Pausing(DateTimeOffset now) => now < _askAgainAt && _askAgainAt - now <= NoAnswerPause;
+    private bool Pausing(DateTimeOffset now) => _noAnswer.Pausing(now);
+
+    /// <summary>Whether the link up now came up since the engine last looked, and so is another link than the one it saw.</summary>
+    // Told by when it came up, which is all that tells two links to one broker apart. The manager
+    // redials in one call, and a link that drops and comes back between two ticks is never seen down.
+    private bool Relinked()
+    {
+        if (_connection.State != ConnectionState.Connected || _connection.Link is not { } link) return false;
+
+        var seen = _linkedAt;
+        _linkedAt = link.ConnectedAt;
+
+        return seen is { } was && was != link.ConnectedAt;
+    }
 
     private static string? EndpointOf(BrokerLink? link) => link is null ? null : $"{link.Host}:{link.Port}";
 
@@ -602,9 +629,13 @@ public sealed class AlertEngine
                 await _subscriber.UnsubscribeAsync(filter, ct, SubscriptionOwner.Rules);
 
             _resubscribe = false;
+            _noAnswer.Answered();
         }
         catch (MessageRejectedException refusal)
         {
+            // An answer as much as a grant is, so the next silence is the first of a new run.
+            _noAnswer.Answered();
+
             // The broker said no to these, so they are not asked for again on this link: it would
             // say no again, once a second, for as long as the link lasted. Whatever else was in
             // the packet is still wanted, so the flag stays up and the next turn asks for the
@@ -643,11 +674,11 @@ public sealed class AlertEngine
         {
             // Not a refusal, and not for the very next turn either: see NoAnswerPause. The flag
             // stays up, so the first turn after the pause asks again.
-            _askAgainAt = _time.GetUtcNow() + NoAnswerPause;
+            var pause = _noAnswer.NotAnswered(_time.GetUtcNow());
 
             _log.LogWarning(silence,
                 "The broker did not answer for the rule subscriptions. They will be asked for again in {Seconds} seconds.",
-                NoAnswerPause.TotalSeconds);
+                pause.TotalSeconds);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {

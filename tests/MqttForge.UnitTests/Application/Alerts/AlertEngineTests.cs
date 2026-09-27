@@ -899,6 +899,85 @@ public class AlertEngineTests
         Assert.Single(harness.Subscriber.Filters);
     }
 
+    // A broker that goes on keeping the link and leaving the SUBSCRIBE unanswered is asked less and
+    // less often: five seconds after the first attempt it left, ten after the second, and so on up to
+    // a minute (NoAnswerBackoff). Each attempt holds the pump for the subscriber's whole deadline, so
+    // five seconds apart such a broker had the pump ten seconds in every fifteen for as long as it
+    // kept the link.
+    [Fact]
+    public async Task A_broker_that_goes_on_not_answering_is_asked_again_after_a_longer_pause_each_time()
+    {
+        await using var harness = Build(Document([Rule("a", "plant/a/#", Over90)]));
+        harness.Subscriber.Clock = harness.Time;
+        harness.Subscriber.Refuse = new BrokerDidNotAnswerException(
+            "The broker did not answer the SUBSCRIBE for 'plant/a/#' within 10 seconds.");
+        await harness.Engine.StartAsync(CancellationToken.None);
+        harness.Run();
+
+        await harness.TickAsync((int)AlertEngine.NoAnswerPause.TotalSeconds);
+        await harness.Until(() => harness.Subscriber.Batches.Count == 2, "the filter to be asked for again after the first pause");
+        var again = harness.Subscriber.AskedAt[1];
+
+        // Not answered again, so the next is ten seconds off, not five.
+        await harness.TickAsync((int)(again.AddSeconds(9) - harness.Time.GetUtcNow()).TotalSeconds);
+        Assert.Equal(2, harness.Subscriber.Batches.Count);
+
+        await harness.TickAsync(1);
+        await harness.Until(() => harness.Subscriber.Batches.Count == 3, "the filter to be asked for again after the second pause");
+        Assert.True(harness.Subscriber.AskedAt[2] - again >= TimeSpan.FromSeconds(10));
+    }
+
+    // Yes or no, an answer ends the run: the next silence is the first of a new one, and paused for
+    // five seconds, not for the twenty the run before it had come to.
+    [Fact]
+    public async Task An_answer_makes_the_next_pause_the_first_again()
+    {
+        var silence = new BrokerDidNotAnswerException("The broker did not answer the SUBSCRIBE within 10 seconds.");
+        await using var harness = Build(Document([Rule("a", "plant/a/#", Over90)]));
+        harness.Subscriber.Clock = harness.Time;
+        harness.Subscriber.Refuse = silence;
+        await harness.Engine.StartAsync(CancellationToken.None);
+        harness.Run();
+
+        await harness.TickAsync((int)AlertEngine.NoAnswerPause.TotalSeconds);
+        await harness.Until(() => harness.Subscriber.Batches.Count == 2, "the filter to be asked for again after the first pause");
+        harness.Subscriber.Refuse = null;
+        await harness.Until(() => harness.Subscriber.Filters.Count == 1, "the filter to be taken after the second pause");
+
+        // A rule saved with a filter of its own, and the broker silent again.
+        harness.Subscriber.Refuse = silence;
+        harness.Engine.Post(new RuleSetChangedCommand([Rule("a", "plant/a/#", Over90), Rule("b", "plant/b/#", Over90)]));
+        await harness.Until(() => harness.Subscriber.Batches.Count == 4, "the new filter to be asked for");
+        var unanswered = harness.Subscriber.AskedAt[3];
+
+        harness.Subscriber.Refuse = null;
+        await harness.Until(() => harness.Subscriber.Filters.Count == 2, "the new filter to be asked for again after a pause");
+        Assert.InRange(harness.Subscriber.AskedAt[4] - unanswered, AlertEngine.NoAnswerPause, TimeSpan.FromSeconds(9));
+    }
+
+    // A link that went and came back between two ticks is a new link as well, though no tick saw it
+    // down: MqttnetConnectionManager dials again in one call. Its ConnectedAt says it is not the link
+    // the broker left unanswered, and the filters are asked for on it at once.
+    [Fact]
+    public async Task A_link_that_came_back_between_two_ticks_asks_for_the_filters_at_once_whatever_pause_the_last_one_left()
+    {
+        await using var harness = Build(Document([Rule("a", "plant/a/#", Over90)]));
+        harness.Connection.Link = new BrokerLink("broker.a", 1883, "test", null, false, Start.AddMinutes(-1), false, null, null);
+        harness.Subscriber.Refuse = new BrokerDidNotAnswerException(
+            "The broker did not answer the SUBSCRIBE for 'plant/a/#' within 10 seconds.");
+        await harness.Engine.StartAsync(CancellationToken.None);
+        harness.Subscriber.Refuse = null;
+        harness.Run();
+
+        // Dropped and dialled again, to the same broker, and the new link's first reading to wake the
+        // pump: with the clock held still at the start, inside the pause the first link left.
+        harness.Subscriber.LinkDropped();
+        harness.Connection.Link = new BrokerLink("broker.a", 1883, "test", null, false, Start, false, null, null);
+        harness.Engine.Post(new ArrivalCommand(Message("plant/a/temp", "20")));
+
+        await harness.ClockStill(() => harness.Subscriber.Filters.Count == 1, "the filter to be asked for on the new link");
+    }
+
     [Fact]
     public async Task A_cancelled_alarm_channel_is_contained_in_that_channel()
     {
