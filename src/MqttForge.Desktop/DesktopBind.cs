@@ -18,6 +18,16 @@ public static class DesktopBind
         loopbackBindSucceeded ? Outcome.LoopbackOnly :
         Outcome.Unavailable;
 
+    // What the window loads: a LAN address, not localhost, so the Mobile panel's
+    // window.location-based QR code has something to encode — a successful bind doesn't guarantee
+    // a phone can reach it. Also the origin of every request the window's page sends, which the
+    // server has to go on taking as its own (see OriginGuard).
+    public static Uri PageAddress(Outcome outcome, int port)
+    {
+        var host = outcome == Outcome.Lan ? LanAddress.ChooseForThisMachine() : IPAddress.Loopback;
+        return new Uri($"http://{host}:{port}");
+    }
+
     // Tests override the bind addresses with an unbindable one to simulate a firewall/permission
     // failure without touching real OS state
     public static async Task<(WebApplication App, Outcome Outcome, int Port)> StartAsync(
