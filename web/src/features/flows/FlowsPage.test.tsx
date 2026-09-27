@@ -1679,8 +1679,8 @@ describe('what did not go through', () => {
     await userEvent.click(deleting);
     answer.release();
 
-    expect(await screen.findByText('Not deleted. The disk is full.')).toBeInTheDocument();
-    expect(outcome('Not deleted. The disk is full.')).not.toBeNull();
+    expect(await screen.findByText('Boiler watch was not deleted. The disk is full.')).toBeInTheDocument();
+    expect(outcome('Boiler watch was not deleted. The disk is full.')).not.toBeNull();
     expect(deletes).toEqual(['watch']);
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Delete it' }));
     expect(screen.getByRole('button', { name: 'Delete it' })).not.toHaveAttribute('aria-disabled');
@@ -1694,7 +1694,29 @@ describe('what did not go through', () => {
     );
     await userEvent.click(screen.getByRole('button', { name: 'Delete it' }));
     expect(await screen.findByRole('button', { name: 'Start from an example' })).toBeInTheDocument();
-    expect(screen.queryByText(/^Not deleted/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/was not deleted/)).not.toBeInTheDocument();
+  });
+
+  // The line stays under the tabs whichever flow is on screen, so it says which flow it is about:
+  // unnamed, a reader who had gone on to another flow read it as theirs. Named as the flow was
+  // named when it failed — in a live region, a name that followed a rename would be read out again
+  // with every letter.
+  it('names the flow a failure is about, for a reader who has gone on to another', async () => {
+    keeping([watch, sim]);
+    server.use(http.delete('/api/flows/watch', () => couldNot('The disk is full.')));
+    render(<FlowsPage />);
+    await screen.findByText('Boiler watch', { selector: 'h3' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete flow' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+    const said = 'Boiler watch was not deleted. The disk is full.';
+    expect(await screen.findByText(said)).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText('Name'), ' 2');
+    await userEvent.click(screen.getByRole('tab', { name: /^Boiler simulator/ }));
+
+    expect(screen.getByText('Boiler simulator', { selector: 'h3' })).toBeInTheDocument();
+    expect(screen.getByText(said)).toBeInTheDocument();
   });
 
   // Storage full, or site data blocked: a reload would bring back an older set of drafts, or none,
@@ -1732,7 +1754,7 @@ describe('what did not go through', () => {
 
     fireEvent.click(inject);
 
-    const said = "Not injected. No running flow 'press' has an Inject node 'go'. Deploy the flow first.";
+    const said = "Nothing was injected into Fan test. No running flow 'press' has an Inject node 'go'. Deploy the flow first.";
     expect(await screen.findByText(said)).toBeInTheDocument();
     expect(outcome(said)).not.toBeNull();
 

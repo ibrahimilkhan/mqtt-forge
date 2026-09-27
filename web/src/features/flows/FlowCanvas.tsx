@@ -493,7 +493,7 @@ function InjectButton({ flowId, nodeId, ready }: { flowId: string; nodeId: strin
         injectNode(flowId, nodeId).catch((error: unknown) => {
           logFault('Inject failed', error);
           // The page covers the log, so the page says it too.
-          failures.failed('inject', error);
+          failures.failed('inject', flowId, error);
         });
       }}
     >

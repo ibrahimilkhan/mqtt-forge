@@ -173,9 +173,9 @@ function FlowPane({ flow, deployed, running, overtaken, problems }: FlowPaneProp
       void queryClient.invalidateQueries({ queryKey: queryKeys.flows });
     },
     // The page covers the log, so the page says it too.
-    onError: (error) => {
+    onError: (error, id) => {
       logFault('Flow not deleted', error);
-      failures.failed('delete', error);
+      failures.failed('delete', id, error);
     },
   });
 

@@ -10,8 +10,11 @@ export type Attempt = 'delete' | 'inject';
 export type Failures = {
   /** It is being tried again, so whatever it last failed with no longer stands. */
   trying: (attempt: Attempt) => void;
-  /** It did not go through, for this reason. */
-  failed: (attempt: Attempt, error: unknown) => void;
+  /**
+   * It did not go through, for this reason. The line stays whichever flow is on screen, so it names
+   * the flow it was about.
+   */
+  failed: (attempt: Attempt, flowId: string, error: unknown) => void;
 };
 
 /**

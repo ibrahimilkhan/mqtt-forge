@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
@@ -9,7 +9,7 @@ import { describeError } from '../../lib/problemDetails';
 import { alarmSource, useFlowAlarmStore } from '../../stores/flowAlarmStore';
 import { catchUp, useFlowStatusStore } from '../../stores/flowStatusStore';
 import panel from '../../styles/panel.module.css';
-import type { FlowDto, FlowNodeType } from '../../types/api';
+import type { FlowDto, FlowNodeType, FlowsDto } from '../../types/api';
 import { DebugStrip } from './DebugStrip';
 import { exampleFlows } from './examples';
 import { Failures, type Attempt } from './failures';
@@ -58,6 +58,9 @@ function refusedIn(names: readonly string[]): string {
   return `The server refused ${listed}, so they were not deployed. What it refused is marked on each.`;
 }
 
+/** A delete or an Inject that did not go through: the flow it was about, and why. */
+type Failed = { name: string; reason: string };
+
 /** The flows whose drafts stand as `wanted`. */
 const standingAs = (standings: ReadonlyArray<readonly [string, DraftStanding]>, wanted: DraftStanding) =>
   new Set(standings.flatMap(([id, standing]) => (standing === wanted ? [id] : [])));
@@ -96,14 +99,23 @@ function Page() {
   const { screenToFlowPosition } = useReactFlow();
 
   // What did not go through besides a deploy, by what was tried — see failures.ts. The inspector
-  // and the nodes are handed the way to say it; the page says it, under the tabs.
-  const [failed, setFailed] = useState<Record<Attempt, string | null>>({ delete: null, inject: null });
+  // and the nodes are handed the way to say it; the page says it, under the tabs, where it stays
+  // whichever flow is on screen. So it names the flow it is about, as the flow was named when it
+  // failed: in a live region, a name that followed a rename would be read out with every letter.
+  const queryClient = useQueryClient();
+  const [failed, setFailed] = useState<Record<Attempt, Failed | null>>({ delete: null, inject: null });
   const failures = useMemo<Failures>(
     () => ({
       trying: (attempt) => setFailed((was) => (was[attempt] === null ? was : { ...was, [attempt]: null })),
-      failed: (attempt, error) => setFailed((was) => ({ ...was, [attempt]: describeError(error) })),
+      failed: (attempt, flowId, error) => {
+        const flow =
+          useFlowDraftStore.getState().drafts[flowId] ??
+          queryClient.getQueryData<FlowsDto>(queryKeys.flows)?.flows.find((one) => one.id === flowId);
+        const name = flow ? flow.name.trim() || 'Untitled' : flowId;
+        setFailed((was) => ({ ...was, [attempt]: { name, reason: describeError(error) } }));
+      },
     }),
-    [],
+    [queryClient],
   );
 
   // The numbers the hub has not pushed since the page opened. The store may already hold them —
@@ -275,8 +287,16 @@ function Page() {
           <div aria-live="polite">
             {deploy.isError && <p className={panel.fault}>Not deployed. {describeError(deploy.error)}</p>}
             {stillRefused.length > 0 && <p className={panel.fault}>{refusedIn(stillRefused.map((one) => one.name))}</p>}
-            {failed.delete !== null && <p className={panel.fault}>Not deleted. {failed.delete}</p>}
-            {failed.inject !== null && <p className={panel.fault}>Not injected. {failed.inject}</p>}
+            {failed.delete !== null && (
+              <p className={panel.fault}>
+                {failed.delete.name} was not deleted. {failed.delete.reason}
+              </p>
+            )}
+            {failed.inject !== null && (
+              <p className={panel.fault}>
+                Nothing was injected into {failed.inject.name}. {failed.inject.reason}
+              </p>
+            )}
             {/* Said once, by the first draft the browser refused: its storage is full, or blocked,
                 and a reload would bring back what it kept before then without a word. */}
             {unkept && (
