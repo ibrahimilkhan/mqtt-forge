@@ -1470,6 +1470,157 @@ describe('a draft and the server\'s copy', () => {
   });
 });
 
+/** The answer the server gives a request it could not carry out, for a reason that is not about the flow. */
+const couldNot = (detail: string, status = 500) =>
+  HttpResponse.json(
+    { title: 'Could not do that', detail, reason: 'flowsNotSaved' },
+    { status, headers: { 'Content-Type': 'application/problem+json' } },
+  );
+
+/** The line under the tabs that says what did not go through, as a screen reader is told it. */
+const outcome = (text: string | RegExp) => screen.getByText(text).closest('[aria-live="polite"]');
+
+/**
+ * What the reader asked of the server that did not go through. The page covers the log, so each is
+ * said under the tabs, where a deploy that did not go through is said — and in one polite live
+ * region, so a reader who cannot see the marks it leaves is told as well.
+ */
+describe('what did not go through', () => {
+  /** A flow with an Inject node, running, so its ▶ can be pressed. */
+  const press: FlowDto = {
+    id: 'press',
+    name: 'Fan test',
+    enabled: true,
+    nodes: [{ id: 'go', type: 'inject', x: 40, y: 80, config: { topic: 'plant/k1/cmd', payload: '{"fan":"on"}' } }],
+    edges: [],
+  };
+  const pressRuns: FlowStatusDto = {
+    flows: [{ id: 'press', faults: 0, fault: null, nodes: [{ id: 'go', count: 0, outs: {}, errors: 0, note: null, standing: [] }] }],
+  };
+
+  it('says a deploy that failed in a live region of its own, not over the whole page', async () => {
+    keeping([watch]);
+    server.use(http.put('/api/flows/watch', () => couldNot('The disk is full.')));
+    render(<FlowsPage />);
+
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Run it once deployed' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+
+    await screen.findByText('Not deployed. The disk is full.');
+    const region = outcome('Not deployed. The disk is full.');
+    expect(region).not.toBeNull();
+    expect(region).not.toContainElement(screen.getByRole('tablist'));
+    expect(region).not.toContainElement(screen.getByRole('tabpanel'));
+  });
+
+  // A refusal marks the nodes it is about, and a flow refused on another tab has only its tab's
+  // lamp to show it. A screen reader was told nothing at all.
+  it('says which flows the server refused, and stops once their refusals lapse', async () => {
+    keeping([watch]);
+    server.use(http.put('/api/flows/watch', () => refusal({ 'node:test': ['Pick a test.'] })));
+    render(<FlowsPage />);
+    const name = await screen.findByLabelText('Name');
+
+    await userEvent.type(name, ' 2');
+    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+
+    const said = /^The server refused Boiler watch 2, so it was not deployed\./;
+    expect(await screen.findByText(said)).toBeInTheDocument();
+    expect(outcome(said)).not.toBeNull();
+
+    // Taken back to what is running, the draft goes, and its refusal with it.
+    await userEvent.type(name, '{Backspace}{Backspace}');
+    expect(screen.queryByText(said)).not.toBeInTheDocument();
+  });
+
+  // The numbers are pushed four times a second. A live region they reached would be read out on
+  // every push.
+  it('says nothing new when the numbers are pushed', async () => {
+    keeping([watch]);
+    server.use(http.put('/api/flows/watch', () => refusal({ 'node:test': ['Pick a test.'] })));
+    render(<FlowsPage />);
+    await userEvent.type(await screen.findByLabelText('Name'), ' 2');
+    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+    const region = (await screen.findByText(/^The server refused/)).closest('[aria-live="polite"]')!;
+
+    const changes: MutationRecord[] = [];
+    const watcher = new MutationObserver((records) => changes.push(...records));
+    watcher.observe(region, { subtree: true, childList: true, characterData: true, attributes: true });
+    act(() => useFlowStatusStore.getState().setStatus(watchHasSeen(1)));
+    act(() => useFlowStatusStore.getState().setStatus(watchHasSeen(2)));
+    act(() => useFlowStatusStore.getState().setStatus({ flows: [] }));
+    await turns();
+    watcher.disconnect();
+
+    expect(screen.getByRole('tab', { name: /^Boiler watch 2, not running/ })).toBeInTheDocument();
+    expect(changes).toEqual([]);
+  });
+
+  it('says a flow that was not deleted, and stays on Delete it to try again', async () => {
+    const { kept, deletes } = keeping([watch]);
+    const answer = held();
+    server.use(
+      http.delete('/api/flows/watch', async () => {
+        deletes.push('watch');
+        await answer.until;
+        return couldNot('The disk is full.');
+      }),
+    );
+    render(<FlowsPage />);
+    await screen.findByText('Boiler watch', { selector: 'h3' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete flow' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+    // Off while the delete is out, but said rather than set, as Deploy is: a button switched off
+    // in the hand that pressed it loses the focus in some browsers.
+    const deleting = screen.getByRole('button', { name: 'Delete it' });
+    expect(deleting).toBeEnabled();
+    expect(deleting).toHaveAttribute('aria-disabled', 'true');
+    await userEvent.click(deleting);
+    answer.release();
+
+    expect(await screen.findByText('Not deleted. The disk is full.')).toBeInTheDocument();
+    expect(outcome('Not deleted. The disk is full.')).not.toBeNull();
+    expect(deletes).toEqual(['watch']);
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Delete it' }));
+    expect(screen.getByRole('button', { name: 'Delete it' })).not.toHaveAttribute('aria-disabled');
+
+    // Tried again, the line goes with the attempt.
+    server.use(
+      http.delete('/api/flows/watch', () => {
+        kept.splice(0, 1);
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+    expect(await screen.findByRole('button', { name: 'Start from an example' })).toBeInTheDocument();
+    expect(screen.queryByText(/^Not deleted/)).not.toBeInTheDocument();
+  });
+
+  it('says a message that was not injected, until the next press', async () => {
+    keeping([press]);
+    server.use(
+      http.get('/api/flows/status', () => HttpResponse.json(pressRuns)),
+      http.post('/api/flows/:flow/nodes/:node/inject', () =>
+        couldNot("No running flow 'press' has an Inject node 'go'. Deploy the flow first.", 404),
+      ),
+    );
+    render(<FlowsPage />);
+    const inject = await screen.findByRole('button', { name: 'Inject' });
+    await waitFor(() => expect(inject).toBeEnabled());
+
+    fireEvent.click(inject);
+
+    const said = "Not injected. No running flow 'press' has an Inject node 'go'. Deploy the flow first.";
+    expect(await screen.findByText(said)).toBeInTheDocument();
+    expect(outcome(said)).not.toBeNull();
+
+    server.use(http.post('/api/flows/:flow/nodes/:node/inject', () => new HttpResponse(null, { status: 202 })));
+    fireEvent.click(inject);
+    await waitFor(() => expect(screen.queryByText(said)).not.toBeInTheDocument());
+  });
+});
+
 /**
  * What the server says of a running flow besides its counts: each node's last word — the value it
  * read, or what went wrong — and what stopped the flow. The page covers the log, so these are the

@@ -6,8 +6,11 @@ import type { FlowDto, FlowsDto } from '../../types/api';
 import { fingerprint, sameFlow } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
 
+/** A flow the server refused, by its id and by the name it was sent with. */
+export type Refused = { id: string; name: string };
+
 /**
- * Deploys flows one at a time, each on its own request.
+ * Deploys flows one at a time, each on its own request, and answers with the ones it refused.
  *
  * A refusal is not a failure of the deploy: it is the server's answer about one flow, and the
  * others still go. It is filed against the flow so the page can mark the nodes it is about, and
@@ -23,7 +26,9 @@ export function useDeploy() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (flows: FlowDto[]) => {
+    mutationFn: async (flows: FlowDto[]): Promise<Refused[]> => {
+      const refused: Refused[] = [];
+
       for (const flow of flows) {
         try {
           const { flow: kept } = await putFlow(flow);
@@ -50,8 +55,11 @@ export function useDeploy() {
         } catch (error) {
           if (!isFlowInvalid(error)) throw error;
           useFlowDraftStore.getState().refuse(flow.id, error.errors ?? { flow: [error.message] });
+          refused.push({ id: flow.id, name: flow.name.trim() || 'Untitled' });
         }
       }
+
+      return refused;
     },
     onError: (error) => logFault('Flows not deployed', error),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: queryKeys.flows }),

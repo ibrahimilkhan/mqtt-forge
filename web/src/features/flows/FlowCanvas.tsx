@@ -21,6 +21,7 @@ import '@xyflow/react/dist/base.css';
 import {
   memo,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -34,6 +35,7 @@ import { injectNode } from '../../api/flows';
 import { nodeKey, useFlowStatusStore } from '../../stores/flowStatusStore';
 import { logFault } from '../../stores/logStore';
 import type { FlowDto, FlowNodeDto, FlowNodeStatusDto } from '../../types/api';
+import { Failures } from './failures';
 import { addNode, canConnect, connect, moveNodes, newId, removeEdges, removeNodes, type Problems, type Wire } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
 import { isNodeType, portsOf, specOf, type NodeSpec, type Ports } from './nodeTypes';
@@ -476,6 +478,8 @@ function FlowNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
 }
 
 function InjectButton({ flowId, nodeId, ready }: { flowId: string; nodeId: string; ready: boolean }) {
+  const failures = useContext(Failures);
+
   return (
     <button
       type="button"
@@ -485,7 +489,12 @@ function InjectButton({ flowId, nodeId, ready }: { flowId: string; nodeId: strin
       title={ready ? 'Send its message now' : 'Deploy the flow first'}
       onClick={(event) => {
         event.stopPropagation();
-        injectNode(flowId, nodeId).catch((error: unknown) => logFault('Inject failed', error));
+        failures.trying('inject');
+        injectNode(flowId, nodeId).catch((error: unknown) => {
+          logFault('Inject failed', error);
+          // The page covers the log, so the page says it too.
+          failures.failed('inject', error);
+        });
       }}
     >
       ▶

@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useContext, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { deleteFlow } from '../../api/flows';
 import { queryKeys } from '../../api/queryKeys';
@@ -8,6 +8,7 @@ import { nodeKey, useFlowStatusStore } from '../../stores/flowStatusStore';
 import { logFault } from '../../stores/logStore';
 import panel from '../../styles/panel.module.css';
 import type { FlowDto, FlowNodeDto, FlowsDto } from '../../types/api';
+import { Failures } from './failures';
 import { focusCanvas } from './FlowCanvas';
 import { fingerprint, removeNodes, setConfig, type Problems } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
@@ -133,6 +134,7 @@ function FlowPane({ flow, deployed, running, overtaken, problems }: FlowPaneProp
   // What last stopped the running flow: an event that ran too many nodes, say.
   const fault = useFlowStatusStore((state) => state.flows[flow.id]?.fault ?? null);
   const queryClient = useQueryClient();
+  const failures = useContext(Failures);
   const [asking, setAsking] = useState(false);
 
   // Either answer takes the question away, and the keyboard with it. The reader goes to the tab of
@@ -148,6 +150,7 @@ function FlowPane({ flow, deployed, running, overtaken, problems }: FlowPaneProp
     mutationFn: async (id: string) => {
       if (deployed) await deleteFlow(id);
     },
+    onMutate: () => failures.trying('delete'),
     // The id comes with the answer rather than from the flow on screen: a mutation still out is
     // handed the callbacks of the latest render, and by the time the answer comes the reader may
     // be looking at another flow.
@@ -169,7 +172,11 @@ function FlowPane({ flow, deployed, running, overtaken, problems }: FlowPaneProp
       useFlowStatusStore.getState().forget(id);
       void queryClient.invalidateQueries({ queryKey: queryKeys.flows });
     },
-    onError: (error) => logFault('Flow not deleted', error),
+    // The page covers the log, so the page says it too.
+    onError: (error) => {
+      logFault('Flow not deleted', error);
+      failures.failed('delete', error);
+    },
   });
 
   const state = running
@@ -258,7 +265,17 @@ function FlowPane({ flow, deployed, running, overtaken, problems }: FlowPaneProp
             <button type="button" className="ghost" onClick={() => setAsking(false)}>
               Keep it
             </button>
-            <button type="button" className="ends" disabled={remove.isPending} onClick={() => remove.mutate(flow.id)}>
+            {/* Off while the delete is out, but said rather than set, as Deploy is: a button switched
+                off in the hand that pressed it loses the focus in some browsers, and a delete that
+                fails leaves the reader on it to try again. */}
+            <button
+              type="button"
+              className="ends"
+              aria-disabled={remove.isPending || undefined}
+              onClick={() => {
+                if (!remove.isPending) remove.mutate(flow.id);
+              }}
+            >
               Delete it
             </button>
           </div>

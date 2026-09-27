@@ -46,6 +46,12 @@
 
 .confirm p { margin: 12px 0 0; color: var(--ink); }
 
+/* Delete it while the delete is out: off to the eye and to the hand, but still a button that can
+   hold the focus it was pressed with — see the markup. Drawn the way global.css draws a disabled
+   button, with the hover global.css only holds back from a real one held back here too. */
+.confirm button[aria-disabled='true'] { opacity: 0.35; cursor: progress; }
+.confirm button[aria-disabled='true']:hover { background: var(--tone); border-color: var(--tone); }
+
 /* A draft the server moved on from under, with the reader's two answers to it: set apart from the
    settings under it, since it is about the whole draft and not about any one of them. */
 .overtaken {

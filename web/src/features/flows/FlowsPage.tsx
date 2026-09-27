@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { ReactFlowProvider, useReactFlow } from '@xyflow/react';
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { useShallow } from 'zustand/react/shallow';
 import { getFlows } from '../../api/flows';
@@ -11,6 +11,7 @@ import panel from '../../styles/panel.module.css';
 import type { FlowDto, FlowNodeType } from '../../types/api';
 import { DebugStrip } from './DebugStrip';
 import { exampleFlows } from './examples';
+import { Failures, type Attempt } from './failures';
 import { CANVAS, FlowCanvas, NODE_HEIGHT, NODE_WIDTH } from './FlowCanvas';
 import {
   addNode,
@@ -48,6 +49,14 @@ const NODE_BOX = { width: NODE_WIDTH, height: NODE_HEIGHT };
 /** The empty page's first way to start, where the keyboard goes once the last flow has gone. */
 const START = 'flows-start';
 
+/** What the page says of the flows a deploy had refused, by their names: "A", "A and B", "A, B and C". */
+function refusedIn(names: readonly string[]): string {
+  if (names.length === 1) return `The server refused ${names[0]}, so it was not deployed. What it refused is marked on it.`;
+
+  const listed = `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  return `The server refused ${listed}, so they were not deployed. What it refused is marked on each.`;
+}
+
 /** The flows whose drafts stand as `wanted`. */
 const standingAs = (standings: ReadonlyArray<readonly [string, DraftStanding]>, wanted: DraftStanding) =>
   new Set(standings.flatMap(([id, standing]) => (standing === wanted ? [id] : [])));
@@ -83,6 +92,17 @@ function Page() {
   const deploy = useDeploy();
   const { screenToFlowPosition } = useReactFlow();
 
+  // What did not go through besides a deploy, by what was tried — see failures.ts. The inspector
+  // and the nodes are handed the way to say it; the page says it, under the tabs.
+  const [failed, setFailed] = useState<Record<Attempt, string | null>>({ delete: null, inject: null });
+  const failures = useMemo<Failures>(
+    () => ({
+      trying: (attempt) => setFailed((was) => (was[attempt] === null ? was : { ...was, [attempt]: null })),
+      failed: (attempt, error) => setFailed((was) => ({ ...was, [attempt]: describeError(error) })),
+    }),
+    [],
+  );
+
   // The numbers the hub has not pushed since the page opened. The store may already hold them —
   // the bridge feeds it from the moment the console opens — and this only fills a first gap. A page
   // that has shut has no gap left to fill.
@@ -110,6 +130,11 @@ function Page() {
   // this one answer, so no pane can call a flow clean that another marks as wrong.
   const problems = useMemo(() => ({ ...serverProblems, ...refusals }), [serverProblems, refusals]);
   const refused = useMemo(() => new Set(Object.keys(problems)), [problems]);
+
+  // The flows the last deploy had refused, while their refusals stand. Named as they were sent:
+  // said in a live region, a name read from the draft would be said again with every letter of a
+  // rename.
+  const stillRefused = deploy.isSuccess ? deploy.data.filter((one) => one.id in refusals) : [];
 
   // A draft that holds nothing of the reader's goes: kept, it would hide a newer copy another
   // console deploys, and go back out over it with the next Deploy of anything. A draft that does
@@ -200,56 +225,66 @@ function Page() {
   };
 
   return (
-    <div className={styles.page}>
-      <div className={styles.top}>
-        <Toolbar
-          flows={flows}
-          changed={changed}
-          overtaken={overtaken}
-          deployed={deployedIds}
-          current={shown.id}
-          running={running}
-          refused={refused}
-          deploying={deploy.isPending}
-          onNew={() => {
-            const flow = emptyFlow(nextName(flows));
-            store.put(flow);
-            store.show(flow.id);
-          }}
-          // Not for a draft held back. Its pane says why it is held, with Keep mine and Discard under
-          // the sentence — where the reader is looking when they choose, and the one place both
-          // answers are — so a second Discard up here would only ask the same question twice.
-          onDiscard={changed.has(shown.id) && byId.has(shown.id) ? () => store.discard(shown.id) : undefined}
-          onDeploy={() => deploy.mutate(flows.filter((flow) => changed.has(flow.id)))}
-        />
-
-        {/* The page covers the log, so a deploy that did not go through says why here as well.
-            A refusal is not one of these: it marks the nodes it is about instead. */}
-        {deploy.isError && <p className={panel.fault}>Not deployed. {describeError(deploy.error)}</p>}
-      </div>
-
-      {/* What the tabs control: everything under them is about the flow on screen, the palette
-          included, since what it adds goes into that flow. */}
-      <div id={FLOW_PANEL} role="tabpanel" aria-labelledby={tabIdOf(shown.id)} className={styles.flow}>
-        <div className={styles.body}>
-          <Palette onAdd={add} />
-          <FlowCanvas key={shown.id} flow={shown} running={running.has(shown.id)} problems={problems[shown.id] ?? NOTHING_WRONG} />
-          {/* One inspector per flow, like the canvas: what it holds — a delete it is asking about —
-              is about the flow it was opened on, and must not stand over the next one. */}
-          <Inspector
-            key={shown.id}
-            flow={shown}
-            deployed={byId.get(shown.id)}
-            running={running.has(shown.id)}
-            overtaken={overtaken.has(shown.id)}
-            problems={problems[shown.id] ?? NOTHING_WRONG}
-            facts={{ allowWebhooks: data.allowWebhooks, alertTopicPrefix: data.alertTopicPrefix }}
+    <Failures.Provider value={failures}>
+      <div className={styles.page}>
+        <div className={styles.top}>
+          <Toolbar
+            flows={flows}
+            changed={changed}
+            overtaken={overtaken}
+            deployed={deployedIds}
+            current={shown.id}
+            running={running}
+            refused={refused}
+            deploying={deploy.isPending}
+            onNew={() => {
+              const flow = emptyFlow(nextName(flows));
+              store.put(flow);
+              store.show(flow.id);
+            }}
+            // Not for a draft held back. Its pane says why it is held, with Keep mine and Discard under
+            // the sentence — where the reader is looking when they choose, and the one place both
+            // answers are — so a second Discard up here would only ask the same question twice.
+            onDiscard={changed.has(shown.id) && byId.has(shown.id) ? () => store.discard(shown.id) : undefined}
+            onDeploy={() => deploy.mutate(flows.filter((flow) => changed.has(flow.id)))}
           />
+
+          {/* The page covers the log, so what did not go through is said here: a deploy that
+              failed, or that the server refused — which marks the nodes it is about, but a flow
+              refused on another tab has only its lamp to show it — a flow not deleted, a message
+              not injected. One polite live region, so a reader who cannot see the marks is told as
+              well, and nothing in it is drawn from the numbers, so a push of them says nothing. */}
+          <div aria-live="polite">
+            {deploy.isError && <p className={panel.fault}>Not deployed. {describeError(deploy.error)}</p>}
+            {stillRefused.length > 0 && <p className={panel.fault}>{refusedIn(stillRefused.map((one) => one.name))}</p>}
+            {failed.delete !== null && <p className={panel.fault}>Not deleted. {failed.delete}</p>}
+            {failed.inject !== null && <p className={panel.fault}>Not injected. {failed.inject}</p>}
+          </div>
         </div>
 
-        <DebugStrip flow={shown} />
+        {/* What the tabs control: everything under them is about the flow on screen, the palette
+            included, since what it adds goes into that flow. */}
+        <div id={FLOW_PANEL} role="tabpanel" aria-labelledby={tabIdOf(shown.id)} className={styles.flow}>
+          <div className={styles.body}>
+            <Palette onAdd={add} />
+            <FlowCanvas key={shown.id} flow={shown} running={running.has(shown.id)} problems={problems[shown.id] ?? NOTHING_WRONG} />
+            {/* One inspector per flow, like the canvas: what it holds — a delete it is asking about —
+                is about the flow it was opened on, and must not stand over the next one. */}
+            <Inspector
+              key={shown.id}
+              flow={shown}
+              deployed={byId.get(shown.id)}
+              running={running.has(shown.id)}
+              overtaken={overtaken.has(shown.id)}
+              problems={problems[shown.id] ?? NOTHING_WRONG}
+              facts={{ allowWebhooks: data.allowWebhooks, alertTopicPrefix: data.alertTopicPrefix }}
+            />
+          </div>
+
+          <DebugStrip flow={shown} />
+        </div>
       </div>
-    </div>
+    </Failures.Provider>
   );
 }
 
