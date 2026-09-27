@@ -200,7 +200,7 @@ public sealed class AlertEngine
             events.AddRange(AlertEvent.Of(_core.Restore(restored, now)));
 
         Publish();
-        await DeliverAsync(events);
+        await DeliverAsync(events, ct);
 
         // Anything the reconciliation ended has to be written down before the next crash, or the
         // hand-over file offers the same dead alarm again on every start.
@@ -355,19 +355,23 @@ public sealed class AlertEngine
                 changed = true;
             }
 
-            if (_resubscribe) await SyncSubscriptionsAsync(ct);
-
             // Before the telling, so a console that reacts to a raised alert by fetching the
             // snapshot finds the alert already in it.
             if (changed) Publish();
 
             if (events.Count > 0) _unsaved = true;
 
-            await DeliverAsync(events);
-            await AnnounceDropsAsync(dropped);
+            // What the turn decided goes out, and is written down, before the filters are looked
+            // at. That look reads the subscriber and may wait on a SUBSCRIBE, so ahead of this a
+            // broker slow to answer held every alarm of the turn back with it, and anything it
+            // threw took them to the catch below: raised in the core and told to nobody.
+            await DeliverAsync(events, ct);
+            await AnnounceDropsAsync(dropped, ct);
             await SaveStateAsync(ct);
+
+            if (_resubscribe) await SyncSubscriptionsAsync(ct);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             throw;
         }
@@ -376,6 +380,11 @@ public sealed class AlertEngine
             // Nothing escapes the pump. The core contains a faulting rule itself, and every call
             // below has its own catch, so reaching this line means a fault nobody predicted — and
             // the answer to that is still not "take the host down and stop alerting entirely".
+            //
+            // That includes a cancellation nobody here asked for. RunAsync reads any cancellation
+            // that reaches it as shutdown, so one from anywhere else — MQTTnet failing a SUBSCRIBE
+            // as it tears its own link down — ended the pump for good, with the process still up,
+            // no rule judged again, and not a line in the log to say so.
             _log.LogError(ex, "A turn of the alert engine failed. The engine is carrying on.");
         }
     }
@@ -509,11 +518,16 @@ public sealed class AlertEngine
                 "The broker refused {Count} rule filter(s); they will not be asked for again on this link.",
                 refusal.Filters.Count);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             // Everything else — a link that went in the middle of the packet, a broker that never
             // answered. None of it may stop the pump, and none of it is permanent: the flag is
             // left set, so the next turn asks again.
+            //
+            // A cancellation is one of these unless it is this pump's own. MQTTnet 5 can fail a
+            // SUBSCRIBE that was waiting when its keep-alive gave up on the link with the
+            // cancellation of its own receive loop, which is the link going and not the engine
+            // stopping.
             _log.LogWarning(ex,
                 "The alert engine could not apply its rule subscriptions. It will try again.");
         }
@@ -521,7 +535,7 @@ public sealed class AlertEngine
 
     private void Publish() => Volatile.Write(ref _snapshot, _core.Snapshot());
 
-    private async Task AnnounceDropsAsync(int dropped)
+    private async Task AnnounceDropsAsync(int dropped, CancellationToken ct)
     {
         if (dropped == _announced) return;
 
@@ -531,7 +545,7 @@ public sealed class AlertEngine
         {
             await _notifier.DroppedAsync(dropped);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             _log.LogError(ex, "An alert notifier threw while being told the drop total.");
         }
@@ -553,7 +567,7 @@ public sealed class AlertEngine
             _unsaved = false;
             _lastSaved = now;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             _lastSaved = now;
             _log.LogWarning(ex, "The alert state could not be written. It will be tried again.");
@@ -578,7 +592,7 @@ public sealed class AlertEngine
 
             return document;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             // The store promises never to throw for a file it cannot parse — it says Unreadable
             // instead — so this is the fault it makes no promise about: a directory where the file
@@ -596,7 +610,7 @@ public sealed class AlertEngine
         {
             return await _state.LoadAsync(ct);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             // A hand-over, not a record. Losing it costs one round of resolved bodies and a few
             // mutes; refusing to start over it would cost every alert from now until somebody
@@ -609,7 +623,12 @@ public sealed class AlertEngine
     }
 
     // Each channel is told the events in the order they happened, a run of one kind per call.
-    private async Task DeliverAsync(IReadOnlyList<AlertEvent> events)
+    //
+    // Every channel's catch lets a cancellation through only when it is the engine stopping, the
+    // rule SyncSubscriptionsAsync keeps and for its reason. No channel is handed the engine's token,
+    // so a cancellation from one is that channel giving up — a send called off, a queue closing —
+    // and not a reason to skip the channel after it, or the rest of the turn.
+    private async Task DeliverAsync(IReadOnlyList<AlertEvent> events, CancellationToken ct)
     {
         if (events.Count == 0) return;
 
@@ -618,7 +637,7 @@ public sealed class AlertEngine
             foreach (var (raised, alerts) in AlertEvent.Runs(events))
                 await (raised ? _notifier.RaisedAsync(alerts) : _notifier.ResolvedAsync(alerts));
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             // Telling is downstream of judging. A webhook endpoint that has gone away, or a hub
             // with no clients, must not stop this engine noticing the next thing that goes wrong.
@@ -628,11 +647,11 @@ public sealed class AlertEngine
         // After the notifier and in its own try, both deliberately. The console is the fast local
         // channel and a screen notice must not wait behind a POST; and a fault in either of them
         // is a fault in one channel, never in the other and never in the pump.
-        await DispatchAsync(events);
+        await DispatchAsync(events, ct);
     }
 
     /// <summary>Hands on the alerts whose rules asked for something outside this process.</summary>
-    private async Task DispatchAsync(IReadOnlyList<AlertEvent> events)
+    private async Task DispatchAsync(IReadOnlyList<AlertEvent> events, CancellationToken ct)
     {
         if (_dispatcher is null) return;
 
@@ -646,7 +665,7 @@ public sealed class AlertEngine
             foreach (var (raised, alerts) in AlertEvent.Runs(leaving))
                 await (raised ? _dispatcher.RaisedAsync(alerts) : _dispatcher.ResolvedAsync(alerts));
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             // One line for the turn rather than one per alert, and Error rather than Warning: an
             // alert that was meant to leave the machine and did not is the failure this whole

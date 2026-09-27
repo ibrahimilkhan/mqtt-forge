@@ -79,10 +79,15 @@ public class AlertEngineTests
     /// Stands for the notifier and the dispatcher both, when a test is about the order the two are
     /// told in. <see cref="Harness.Notifier"/> then hears nothing.
     /// </param>
+    /// <param name="probe">
+    /// Stands in front of <see cref="Harness.Subscriber"/>, for a subscriber that does what the
+    /// recording one cannot: wait on a broker that never answers, or throw when read.
+    /// </param>
     private static Harness Build(
         AlertRuleDocument? rules = null,
         ConnectionState state = ConnectionState.Connected,
-        AlarmCallLog? alarms = null)
+        AlarmCallLog? alarms = null,
+        Func<RecordingSubscriber, IMqttSubscriber>? probe = null)
     {
         var time = new FakeTimeProvider(Start);
         var ruleStore = new FakeAlertRuleStore { Document = rules ?? new AlertRuleDocument([], false, []) };
@@ -94,8 +99,8 @@ public class AlertEngineTests
 
         var engine = new AlertEngine(
             new AlertEngineCore(new AlertEngineOptions()),
-            ruleStore, stateStore, (IAlertNotifier?)alarms ?? notifier, connection, subscriber, log, time,
-            alarms);
+            ruleStore, stateStore, (IAlertNotifier?)alarms ?? notifier, connection,
+            probe?.Invoke(subscriber) ?? subscriber, log, time, alarms);
 
         return new Harness
         {
@@ -589,6 +594,94 @@ public class AlertEngineTests
         Assert.Equal(
             ["told raised a", "told resolved a", "told raised b", "sent raised a", "sent resolved a", "sent raised b"],
             log.Alarms);
+    }
+
+    // ---- faults that are not shutdown ----
+
+    // What MQTTnet 5 can hand back for a SUBSCRIBE that was waiting when its keep-alive gave up on
+    // the link: the cancellation of the client's own receive loop, which is the link going and not
+    // this engine stopping.
+    private static OperationCanceledException LinkCalledOff() =>
+        new("The link went while the SUBSCRIBE was out.");
+
+    [Fact]
+    public async Task A_subscribe_the_link_called_off_is_asked_for_again_and_the_rules_are_judged_meanwhile()
+    {
+        await using var harness = Build(Document([Rule("a", "plant/a/#", Over90)]));
+        await harness.Engine.StartAsync(CancellationToken.None);
+        harness.Run();
+
+        harness.Subscriber.Refuse = LinkCalledOff();
+        harness.Engine.Post(new RuleSetChangedCommand([Rule("a", "plant/a/#", Over90), Rule("b", "plant/b/#", Over90)]));
+        await harness.Until(() => harness.Subscriber.Batches.Count >= 2, "the SUBSCRIBE the link called off");
+
+        harness.Engine.Post(new ArrivalCommand(Message("plant/a/temp", "94.2")));
+        await harness.Until(() => harness.Notifier.Raised.Count == 1, "the next arrival to be judged");
+
+        harness.Subscriber.Refuse = null;
+
+        await harness.Until(() => harness.Subscriber.Filters.Any(filter => filter.Filter == "plant/b/#"),
+            "the filter to be asked for again");
+        Assert.False(harness.Engine.Snapshot.Rules.Single(rule => rule.RuleId == "b").Faulted);
+    }
+
+    [Fact]
+    public async Task A_subscribe_the_link_called_off_at_start_does_not_keep_the_engine_from_starting()
+    {
+        await using var harness = Build(Document([Rule("a", "plant/a/#", Over90)]));
+        harness.Subscriber.Refuse = LinkCalledOff();
+
+        await harness.Engine.StartAsync(CancellationToken.None);
+
+        harness.Subscriber.Refuse = null;
+        harness.Run();
+
+        await harness.Until(() => harness.Subscriber.Filters.Count == 1, "the filter to be asked for again");
+    }
+
+    [Fact]
+    public async Task A_cancelled_alarm_channel_is_contained_in_that_channel()
+    {
+        var cancelled = new OperationCanceledException("The channel gave up.");
+        var log = new AlarmCallLog { NotifierFault = cancelled, DispatcherFault = cancelled };
+        await using var harness = Build(Document([Hot(over: 90)]), alarms: log);
+        await harness.Engine.StartAsync(CancellationToken.None);
+        harness.Run();
+
+        harness.Engine.Post(new ArrivalCommand(Message("plant/boiler/temp", "95")));
+
+        // Neither channel is handed the engine's token, so neither can be telling it to stop: the
+        // broker's channel is still tried after the console's gave up, each failure is said as that
+        // channel's own, and the pump is there for the next reading.
+        await harness.Until(() => harness.Log.Lines.Any(line => line.Message.StartsWith("An alert dispatcher threw")),
+            "the dispatcher's own failure to be logged");
+        Assert.Equal(["told raised", "sent raised"], log.Calls);
+
+        harness.Engine.Post(new ArrivalCommand(Message("plant/kiln/temp", "95")));
+
+        await harness.Until(() => log.Calls.Count == 4, "the next reading to be judged and told");
+        Assert.DoesNotContain(harness.Log.Lines, line => line.Message.StartsWith("A turn of the alert engine failed"));
+    }
+
+    [Fact]
+    public async Task A_subscribe_the_broker_does_not_answer_does_not_hold_back_what_its_turn_decided()
+    {
+        SubscriberProbe? probe = null;
+        await using var harness = Build(Document([Rule("a", "plant/a/#", Over90)]),
+            probe: inner => probe = new SubscriberProbe(inner));
+        await harness.Engine.StartAsync(CancellationToken.None);
+
+        // One turn: a reading that rings, and a rule set whose new filter goes to a broker that
+        // never answers the SUBSCRIBE.
+        probe!.Stall = true;
+        harness.Engine.Post(new ArrivalCommand(Message("plant/a/temp", "94.2")));
+        harness.Engine.Post(new RuleSetChangedCommand([Rule("a", "plant/a/#", Over90), Rule("b", "plant/b/#", Over90)]));
+        harness.Run();
+
+        await harness.Until(() => probe.Held == 1, "the SUBSCRIBE to be waiting on the broker");
+        await harness.Until(() => harness.Notifier.Raised.Count == 1 && harness.State.Saves.Count == 1,
+            "the turn's alarm to be told and written down while it waits");
+        Assert.Single(harness.Engine.Snapshot.Active);
     }
 
     /// <summary>A rule that rings over <paramref name="over"/> and asks for its alarm on the broker.</summary>
