@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using MqttForge.Api.Contracts;
 using MqttForge.Api.Realtime;
 using MqttForge.Application.Alerts;
+using MqttForge.Application.Flows;
 using MqttForge.Application.Services;
 using MqttForge.Domain.Exceptions;
 using MqttForge.Domain.Models;
@@ -35,14 +36,17 @@ public sealed class AlertController : ControllerBase
     // deliberately not on that interface. See SignalRAlertNotifier for why.
     private readonly SignalRAlertNotifier _console;
 
+    private readonly FlowEngine _flows;
+
     public AlertController(AlertRuleService rules, AlertEngine engine, AlertEngineOptions options,
-                           AlertPanelCounters panel, SignalRAlertNotifier console)
+                           AlertPanelCounters panel, SignalRAlertNotifier console, FlowEngine flows)
     {
         _rules = rules;
         _engine = engine;
         _options = options;
         _panel = panel;
         _console = console;
+        _flows = flows;
     }
 
     /// <summary>The rule set, and the two things about this host a rule editor has to know.</summary>
@@ -110,7 +114,27 @@ public sealed class AlertController : ControllerBase
     // AlertPanelCounters for why they are not on the snapshot.
     [HttpGet("alerts")]
     public IActionResult GetAlerts() =>
-        Ok(AlertsDto.Of(_engine.Snapshot, _panel.WebhooksDropped, _panel.BlindSeconds));
+        Ok(AlertsDto.Of(WithFlows(_engine.Snapshot), _panel.WebhooksDropped, _panel.BlindSeconds));
+
+    /// <summary>The alert engine's snapshot with the flow engine's alarms laid into its two lists.</summary>
+    // Load-bearing, not a convenience. The console replaces its whole alarm store with this answer —
+    // on start, on every hub reconnect, and every three seconds while the Alerts panel is open — so
+    // a flow alarm that had only ever been said on the hub would be wiped off the rail's badge by
+    // the next read. History is interleaved by when each alarm went out and cut to the engine's own
+    // depth, so the console's list is the same length whichever engine the alarms came from.
+    private AlertSnapshot WithFlows(AlertSnapshot snapshot)
+    {
+        var flows = _flows.Alarms;
+        if (flows.Active.Count == 0 && flows.History.Count == 0) return snapshot;
+
+        return snapshot with
+        {
+            Active = [.. snapshot.Active, .. flows.Active],
+            History = [.. snapshot.History.Concat(flows.History)
+                .OrderByDescending(alert => alert.ResolvedAt)
+                .Take(_options.HistoryDepth)],
+        };
+    }
 
     /// <summary>Empties the session's alert history. The active alarms are not history.</summary>
     [HttpDelete("alerts/history")]

@@ -36,6 +36,9 @@ public sealed class MqttExceptionHandler : IExceptionHandler
             // their colour rules could not be saved. Both types are sealed and neither derives
             // from the other, so the order of these arms carries no trap.
             AlertRulesNotSavedException => (StatusCodes.Status500InternalServerError, "Could not save the alert rules"),
+            // The flows' twins of the two alert-rule arms above, for the same two reasons.
+            FlowsUnreadableException => (StatusCodes.Status409Conflict, "The flows file could not be read"),
+            FlowsNotSavedException => (StatusCodes.Status500InternalServerError, "Could not save the flows"),
             _ => (0, string.Empty)
         };
 
@@ -63,6 +66,8 @@ public sealed class MqttExceptionHandler : IExceptionHandler
             // meet — a 409 also means 'not connected' and 'connect aborted' on this API.
             AlertRulesUnreadableException => "rulesUnreadable",
             AlertRulesNotSavedException => "alertRulesNotSaved",
+            FlowsUnreadableException => "flowsUnreadable",
+            FlowsNotSavedException => "flowsNotSaved",
             _ => null
         };
 

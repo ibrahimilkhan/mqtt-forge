@@ -1,0 +1,150 @@
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+using MqttForge.IntegrationTests.Support;
+using Xunit;
+
+namespace MqttForge.IntegrationTests.Api;
+
+// No broker: everything here is reachable without one, including a flow alarm — an Inject node
+// wired to an Alarm raises it, which is the one route to GET /api/alerts that needs no traffic.
+public sealed class FlowEndpointTests : IClassFixture<MqttForgeApiFactory>
+{
+    private readonly MqttForgeApiFactory _factory;
+    private readonly HttpClient _client;
+
+    public FlowEndpointTests(MqttForgeApiFactory factory)
+    {
+        _factory = factory;
+        _client = factory.CreateClient();
+    }
+
+    private static object Flow(string id, string alarmName = "Pressed", string injectId = "go") => new
+    {
+        id,
+        name = "Button",
+        enabled = true,
+        nodes = new object[]
+        {
+            new { id = injectId, type = "inject", x = 40, y = 80, config = new { topic = "plant/k1/button", payload = "1" } },
+            new { id = "ring", type = "alarm", x = 260, y = 80, config = new { name = alarmName, severity = "warn", reason = "{{topic}} pressed" } },
+        },
+        edges = new object[] { new { id = "e1", from = injectId, fromPort = "out", to = "ring", toPort = "raise" } },
+    };
+
+    private static async Task<JsonElement> Json(HttpResponseMessage response) =>
+        JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.Clone();
+
+    private static async Task Until(Func<Task<bool>> settled, string what)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (await settled()) return;
+            await Task.Delay(50);
+        }
+
+        Assert.Fail($"Timed out waiting until {what}.");
+    }
+
+    [Fact]
+    public async Task A_fresh_host_lists_no_flows_and_the_two_facts_an_editor_needs()
+    {
+        using var fresh = new MqttForgeApiFactory();
+        var body = await Json(await fresh.CreateClient().GetAsync("/api/flows"));
+
+        Assert.Equal(0, body.GetProperty("flows").GetArrayLength());
+        Assert.False(body.GetProperty("unreadable").GetBoolean());
+        Assert.False(body.GetProperty("allowWebhooks").GetBoolean());
+        Assert.Equal("mqttforge/alerts/", body.GetProperty("alertTopicPrefix").GetString());
+    }
+
+    [Fact]
+    public async Task A_deployed_flow_is_kept_listed_and_written_down()
+    {
+        var response = await _client.PutAsJsonAsync("/api/flows/listed", Flow("listed"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("listed", (await Json(response)).GetProperty("flow").GetProperty("id").GetString());
+
+        var list = await Json(await _client.GetAsync("/api/flows"));
+        Assert.Contains(list.GetProperty("flows").EnumerateArray(), flow => flow.GetProperty("id").GetString() == "listed");
+        Assert.Contains("\"listed\"", await File.ReadAllTextAsync(_factory.FlowsPath));
+    }
+
+    [Fact]
+    public async Task A_flow_that_does_not_compile_is_a_400_naming_the_node()
+    {
+        var response = await _client.PutAsJsonAsync("/api/flows/broken", new
+        {
+            id = "broken", name = "Broken", enabled = true,
+            nodes = new[] { new { id = "n1", type = "teleport", x = 0, y = 0, config = new { } } },
+            edges = Array.Empty<object>(),
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await Json(response);
+        Assert.Equal("flowInvalid", problem.GetProperty("reason").GetString());
+        Assert.True(problem.GetProperty("errors").TryGetProperty("node:n1", out _));
+    }
+
+    [Fact]
+    public async Task An_id_in_the_address_that_differs_from_the_body_is_refused() =>
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await _client.PutAsJsonAsync("/api/flows/other", Flow("mismatch"))).StatusCode);
+
+    [Fact]
+    public async Task Deleting_a_flow_is_204_and_deleting_nothing_is_404()
+    {
+        await _client.PutAsJsonAsync("/api/flows/doomed", Flow("doomed"));
+
+        Assert.Equal(HttpStatusCode.NoContent, (await _client.DeleteAsync("/api/flows/doomed")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await _client.DeleteAsync("/api/flows/doomed")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Injecting_a_node_no_running_flow_has_is_404() =>
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await _client.PostAsync("/api/flows/nobody/nodes/nothing/inject", null)).StatusCode);
+
+    [Fact]
+    public async Task An_injected_alarm_is_in_the_flow_status_and_in_GET_alerts()
+    {
+        await _client.PutAsJsonAsync("/api/flows/button", Flow("button", alarmName: "Button pressed"));
+
+        await Until(async () =>
+            (await _client.PostAsync("/api/flows/button/nodes/go/inject", null)).StatusCode == HttpStatusCode.Accepted,
+            "the deployed flow to accept an inject");
+
+        await Until(async () =>
+        {
+            var alerts = await Json(await _client.GetAsync("/api/alerts"));
+            return alerts.GetProperty("active").EnumerateArray().Any(alert =>
+                alert.GetProperty("ruleId").GetString() == "flow-button-ring" &&
+                alert.GetProperty("ruleName").GetString() == "Button · Button pressed" &&
+                alert.GetProperty("reason").GetString() == "plant/k1/button pressed");
+        }, "the flow alarm to be in GET /api/alerts");
+
+        await Until(async () =>
+        {
+            var status = await Json(await _client.GetAsync("/api/flows/status"));
+            return status.GetProperty("flows").EnumerateArray().Any(flow =>
+                flow.GetProperty("id").GetString() == "button" &&
+                flow.GetProperty("nodes").EnumerateArray().Any(node =>
+                    node.GetProperty("id").GetString() == "ring" && node.GetProperty("standing").GetArrayLength() == 1));
+        }, "the status to show the standing alarm");
+    }
+
+    [Fact]
+    public async Task A_file_this_build_cannot_read_is_a_409_and_is_left_alone()
+    {
+        using var damaged = new MqttForgeApiFactory();
+        await File.WriteAllTextAsync(damaged.FlowsPath, "not json");
+
+        var response = await damaged.CreateClient().PutAsJsonAsync("/api/flows/x", Flow("x"));
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("flowsUnreadable", (await Json(response)).GetProperty("reason").GetString());
+        Assert.Equal("not json", await File.ReadAllTextAsync(damaged.FlowsPath));
+    }
+}

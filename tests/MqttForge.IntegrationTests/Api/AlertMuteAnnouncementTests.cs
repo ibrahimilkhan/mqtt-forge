@@ -7,6 +7,7 @@ using MqttForge.Api.Controllers;
 using MqttForge.Api.Hubs;
 using MqttForge.Api.Realtime;
 using MqttForge.Application.Alerts;
+using MqttForge.Application.Flows;
 using MqttForge.Application.Services;
 using MqttForge.Domain.Abstractions;
 using MqttForge.Domain.Enums;
@@ -99,12 +100,26 @@ public class AlertMuteAnnouncementTests
             Substitute.For<IMqttSubscriber>(),
             Substitute.For<ILogger<AlertEngine>>());
 
+        // Never started: this class is about the mute announcement, which never touches the flow
+        // engine, so it stands here only to satisfy GetAlerts' merge — see AlertController.WithFlows.
+        var flows = new FlowEngine(
+            new FlowRuntime(),
+            Substitute.For<IFlowStore>(),
+            Substitute.For<IAlertNotifier>(),
+            Substitute.For<IFlowNotifier>(),
+            Substitute.For<IMqttConnectionManager>(),
+            Substitute.For<IMqttSubscriber>(),
+            Substitute.For<IMqttPublisher>(),
+            options,
+            Substitute.For<ILogger<FlowEngine>>());
+
         return new AlertController(
             new AlertRuleService(Substitute.For<IAlertRuleStore>(), engine),
             engine,
             options,
             new AlertPanelCounters(),
-            new SignalRAlertNotifier(Hub()));
+            new SignalRAlertNotifier(Hub()),
+            flows);
     }
 
     // The spec's worked example, with the cooldown at zero so that the one reading below is

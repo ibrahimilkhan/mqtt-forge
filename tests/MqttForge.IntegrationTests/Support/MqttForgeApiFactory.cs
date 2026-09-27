@@ -13,6 +13,7 @@ public sealed class MqttForgeApiFactory : WebApplicationFactory<Program>
     private readonly string _alertRulesPath;
     private readonly string _alertStatePath;
     private readonly string _reconnectPath;
+    private readonly string _flowsPath;
     private readonly bool _ownsFiles;
 
     public MqttForgeApiFactory()
@@ -36,12 +37,15 @@ public sealed class MqttForgeApiFactory : WebApplicationFactory<Program>
         // off leave every host started after it unsupervised, which is a failure that lands
         // in whichever class happens to run second.
         _reconnectPath = Temp("reconnect");
+        // The flows, for the reason every store above has its own file: without it every test
+        // host would share one flows.json in the temp directory.
+        _flowsPath = Temp("flows");
         _ownsFiles = true;
     }
 
     private MqttForgeApiFactory(
         string settingsPath, string colourRulesPath, string savedProfilesPath,
-        string alertRulesPath, string alertStatePath, string reconnectPath)
+        string alertRulesPath, string alertStatePath, string reconnectPath, string? flowsPath = null)
     {
         _settingsPath = settingsPath;
         _colourRulesPath = colourRulesPath;
@@ -49,6 +53,7 @@ public sealed class MqttForgeApiFactory : WebApplicationFactory<Program>
         _alertRulesPath = alertRulesPath;
         _alertStatePath = alertStatePath;
         _reconnectPath = reconnectPath;
+        _flowsPath = flowsPath ?? Temp("flows");
         _ownsFiles = false;
     }
 
@@ -65,12 +70,13 @@ public sealed class MqttForgeApiFactory : WebApplicationFactory<Program>
     public static MqttForgeApiFactory PointedAt(
         string settingsPath, string colourRulesPath, string? savedProfilesPath = null,
         string? alertRulesPath = null, string? alertStatePath = null,
-        string? reconnectPath = null) =>
+        string? reconnectPath = null, string? flowsPath = null) =>
         new(settingsPath, colourRulesPath,
             savedProfilesPath ?? Temp("brokers"),
             alertRulesPath ?? Temp("alert-rules"),
             alertStatePath ?? Temp("alert-state"),
-            reconnectPath ?? Temp("reconnect"));
+            reconnectPath ?? Temp("reconnect"),
+            flowsPath);
 
     public string SettingsPath => _settingsPath;
     public string ColourRulesPath => _colourRulesPath;
@@ -78,6 +84,7 @@ public sealed class MqttForgeApiFactory : WebApplicationFactory<Program>
     public string AlertRulesPath => _alertRulesPath;
     public string AlertStatePath => _alertStatePath;
     public string ReconnectPath => _reconnectPath;
+    public string FlowsPath => _flowsPath;
 
     private static string Temp(string what) =>
         Path.Combine(Path.GetTempPath(), $"mqttforge-{what}-{Guid.NewGuid():N}.json");
@@ -93,6 +100,7 @@ public sealed class MqttForgeApiFactory : WebApplicationFactory<Program>
                 ["MqttForge:AlertRulesPath"] = _alertRulesPath,
                 ["MqttForge:AlertStatePath"] = _alertStatePath,
                 ["MqttForge:ReconnectOptionPath"] = _reconnectPath,
+                ["MqttForge:FlowsPath"] = _flowsPath,
 
                 // Off unless a test turns it back on. The product ships with webhooks enabled and
                 // deliberately does not block local addresses — so a rules file with a webhook in
@@ -112,7 +120,7 @@ public sealed class MqttForgeApiFactory : WebApplicationFactory<Program>
         foreach (var path in new[]
                  {
                      _settingsPath, _colourRulesPath, _savedProfilesPath, _alertRulesPath,
-                     _alertStatePath, _reconnectPath
+                     _alertStatePath, _reconnectPath, _flowsPath
                  })
             if (File.Exists(path)) File.Delete(path);
     }

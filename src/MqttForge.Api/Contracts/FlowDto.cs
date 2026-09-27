@@ -1,4 +1,6 @@
+using System.Text.Json;
 using MqttForge.Application.Flows;
+using MqttForge.Domain.Models;
 
 namespace MqttForge.Api.Contracts;
 
@@ -29,3 +31,42 @@ public sealed record FlowDebugDto(string FlowId, string NodeId, DateTimeOffset A
     public static FlowDebugDto Of(FlowDebugEntry entry) =>
         new(entry.FlowId, entry.NodeId, entry.At, entry.Kind, entry.Topic, entry.Text);
 }
+
+/// <summary>One flow on the wire: the file's shape, one for one.</summary>
+// Every member nullable, on purpose. [ApiController] treats a non-nullable reference as [Required]
+// and answers a missing one with its own 400 before the controller runs — a different shape from
+// every other refusal a deploy can meet. Here a missing name is simply an empty one, and the
+// compiler says so in the same sentence-per-node form as everything else.
+public sealed record FlowDto(
+    string? Id, string? Name, bool Enabled, IReadOnlyList<FlowNodeDto>? Nodes, IReadOnlyList<FlowEdgeDto>? Edges)
+{
+    public Flow ToFlow() => new(
+        Id ?? "", Name ?? "", Enabled,
+        [.. (Nodes ?? []).Select(node => new FlowNode(
+            node.Id ?? "", node.Type ?? "", node.X, node.Y, FlowJson.OrEmpty(node.Config)))],
+        [.. (Edges ?? []).Select(edge => new FlowEdge(
+            edge.Id ?? "", edge.From ?? "", edge.FromPort ?? "", edge.To ?? "", edge.ToPort ?? ""))]);
+
+    public static FlowDto Of(Flow flow) => new(
+        flow.Id, flow.Name, flow.Enabled,
+        [.. flow.Nodes.Select(node => new FlowNodeDto(node.Id, node.Type, node.X, node.Y, node.Config))],
+        [.. flow.Edges.Select(edge => new FlowEdgeDto(edge.Id, edge.From, edge.FromPort, edge.To, edge.ToPort))]);
+}
+
+public sealed record FlowNodeDto(string? Id, string? Type, double X, double Y, JsonElement Config);
+
+public sealed record FlowEdgeDto(string? Id, string? From, string? FromPort, string? To, string? ToPort);
+
+/// <summary>A problem with a flow in the file, under the key the console marks.</summary>
+public sealed record FlowProblemDto(string FlowId, string Key, string Message);
+
+/// <summary>GET /api/flows: the flows, what is wrong with any of them, and two facts about this host.</summary>
+public sealed record FlowsDto(
+    IReadOnlyList<FlowDto> Flows,
+    IReadOnlyList<FlowProblemDto> Problems,
+    bool Unreadable,
+    bool AllowWebhooks,
+    string AlertTopicPrefix);
+
+/// <summary>A deploy that went through, with the flow as it was kept.</summary>
+public sealed record FlowSavedDto(FlowDto Flow);

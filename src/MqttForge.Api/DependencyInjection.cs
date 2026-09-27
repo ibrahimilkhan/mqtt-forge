@@ -181,6 +181,7 @@ public static class DependencyInjection
             sp.GetRequiredService<AlertEngineOptions>(),
             sp.GetRequiredService<ILogger<FlowEngine>>(),
             dispatcher: sp.GetRequiredService<IAlertDispatcher>()));
+        services.AddSingleton<FlowService>();
 
         // The message path forks here rather than inside MqttnetSubscriber, which goes on knowing
         // that it hands a message over and nothing about who to. Recording joins the same list.
