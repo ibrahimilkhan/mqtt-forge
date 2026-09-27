@@ -7,10 +7,13 @@ import styles from './Palette.module.css';
  * Every node there is, under the three questions a flow answers: what starts it, what it decides,
  * what it does. Each item can be dragged onto the canvas, and clicked — a click adds the node in
  * the middle of the view, which is the way in for a keyboard and for a trackpad that drags badly.
+ *
+ * A named group rather than a landmark: every item in it adds something, and none of them goes
+ * anywhere, so it has no place among the page's ways around.
  */
 export function Palette({ onAdd }: { onAdd: (type: FlowNodeType) => void }) {
   return (
-    <nav className={styles.palette} aria-label="Nodes">
+    <div className={styles.palette} role="group" aria-label="Nodes">
       {GROUPS.map((group) => (
         <section key={group} className={styles.group}>
           <h3 className={styles.heading}>{group}</h3>
@@ -43,6 +46,6 @@ export function Palette({ onAdd }: { onAdd: (type: FlowNodeType) => void }) {
             })}
         </section>
       ))}
-    </nav>
+    </div>
   );
 }

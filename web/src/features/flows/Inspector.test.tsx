@@ -51,6 +51,15 @@ describe('palette', () => {
     await userEvent.click(screen.getByRole('button', { name: /Publish/ }));
     expect(added).toEqual(['publish']);
   });
+
+  // Every item in it adds a node; none of them goes anywhere. A navigation landmark would be listed
+  // among the page's ways around, and lead a reader who took it to a row of actions.
+  it('stands as a named group of actions, not as a landmark to find the way by', () => {
+    render(<Palette onAdd={() => {}} />);
+
+    expect(screen.getByRole('group', { name: 'Nodes' })).toBeInTheDocument();
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
+  });
 });
 
 describe('inspector', () => {

@@ -177,7 +177,7 @@ describe('Flows page', () => {
     keeping([watch]);
     render(<FlowsPage />);
 
-    await userEvent.click(within(await screen.findByRole('navigation', { name: 'Nodes' })).getByRole('button', { name: /Publish/ }));
+    await userEvent.click(within(await screen.findByRole('group', { name: 'Nodes' })).getByRole('button', { name: /Publish/ }));
 
     expect(screen.getByRole('heading', { name: 'Publish' })).toBeInTheDocument();
     expect(screen.getByText('1 change')).toBeInTheDocument();
@@ -189,7 +189,7 @@ describe('Flows page', () => {
     keeping();
     render(<FlowsPage />);
     await userEvent.click(await screen.findByRole('button', { name: 'New flow' }));
-    const palette = within(screen.getByRole('navigation', { name: 'Nodes' }));
+    const palette = within(screen.getByRole('group', { name: 'Nodes' }));
 
     for (const name of [/^Inject/, /^Debug/, /^Publish/]) await userEvent.click(palette.getByRole('button', { name }));
 
@@ -574,7 +574,7 @@ describe('the tabs', () => {
     expect(panel).toHaveAttribute('aria-labelledby', shownTab().id);
     expect(panel).toHaveAccessibleName(/^Boiler watch/);
     for (const tab of screen.getAllByRole('tab')) expect(tab).toHaveAttribute('aria-controls', panel.id);
-    expect(within(panel).getByRole('navigation', { name: 'Nodes' })).toBeInTheDocument();
+    expect(within(panel).getByRole('group', { name: 'Nodes' })).toBeInTheDocument();
     expect(within(panel).getByRole('complementary', { name: 'Inspector' })).toBeInTheDocument();
     expect(within(panel).getByRole('region', { name: 'Debug' })).toBeInTheDocument();
   });
