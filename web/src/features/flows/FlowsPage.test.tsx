@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -444,6 +444,51 @@ describe('where the keyboard goes', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'New flow' }));
 
     expect(document.activeElement).toBe(screen.getByRole('tab', { name: /^Flow 1/ }));
+  });
+});
+
+/**
+ * Backspace and Delete take away what is picked on the canvas, and only from the canvas. A node
+ * stays picked while the reader goes on to a tab, to Deploy or to the palette, and a Backspace
+ * pressed there is about that control: taking the node away would lose it out of sight.
+ */
+describe('the delete keys', () => {
+  /** A node on the canvas, by the name its type is drawn with. The palette has one of each too. */
+  const drawn = async (name: string) => {
+    await screen.findByRole('tabpanel');
+    return (await within(document.getElementById('flow-canvas')!).findByText(name)).closest<HTMLElement>('.react-flow__node')!;
+  };
+
+  it('take the picked node away while the keyboard is in the canvas', async () => {
+    keeping([watch]);
+    render(<FlowsPage />);
+    const node = await drawn('If');
+
+    // A click picks the node and gives it the keyboard; jsdom's click only does the first.
+    fireEvent.click(node);
+    act(() => node.focus());
+    await userEvent.keyboard('{Backspace}');
+
+    await waitFor(() => expect(useFlowDraftStore.getState().drafts.watch?.nodes.map((one) => one.id)).toEqual(['in']));
+  });
+
+  it('leave the picked node alone while the keyboard is on a tab, or on a button above the canvas', async () => {
+    keeping([watch]);
+    render(<FlowsPage />);
+    // A change, so there is a Discard and a Deploy to be on.
+    await userEvent.type(await screen.findByLabelText('Name'), ' 2');
+    fireEvent.click(await drawn('If'));
+    expect(useFlowDraftStore.getState().selected).toBe('test');
+
+    for (const control of [shownTab(), screen.getByRole('button', { name: 'Discard' }), screen.getByRole('button', { name: 'Deploy' })]) {
+      act(() => control.focus());
+      await userEvent.keyboard('{Backspace}{Delete}');
+      // React Flow deletes a turn after the key, so give it the turns before saying it took nothing.
+      await turns();
+    }
+
+    expect(useFlowDraftStore.getState().drafts.watch.nodes.map((one) => one.id)).toEqual(['in', 'test']);
+    expect(useFlowDraftStore.getState().selected).toBe('test');
   });
 });
 

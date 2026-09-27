@@ -8,6 +8,7 @@ import {
   Position,
   ReactFlow,
   useReactFlow,
+  useStoreApi,
   type Connection,
   type Edge,
   type EdgeChange,
@@ -17,7 +18,17 @@ import {
   type NodeProps,
 } from '@xyflow/react';
 import '@xyflow/react/dist/base.css';
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type DragEvent,
+  type KeyboardEvent,
+} from 'react';
 import { injectNode } from '../../api/flows';
 import { nodeKey, useFlowStatusStore } from '../../stores/flowStatusStore';
 import { logFault } from '../../stores/logStore';
@@ -79,6 +90,10 @@ function firstNode(picks: Iterable<string>): string | null {
   return null;
 }
 
+/** Whether a key went to a box being typed in, where Backspace takes away a letter and not a node. */
+const typedInto = (target: EventTarget) =>
+  target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName));
+
 /**
  * The canvas for one flow.
  *
@@ -99,7 +114,8 @@ export function FlowCanvas({ flow, running, problems }: { flow: FlowDto; running
   const selected = useFlowDraftStore((state) => state.selected);
   const [sizes, setSizes] = useState<Record<string, Size>>({});
   const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set());
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, deleteElements } = useReactFlow();
+  const drawing = useStoreApi<CanvasNode, CanvasEdge>();
 
   // React Flow reports one click as two batches of changes, the nodes' and then the wires' (or the
   // other way round), and both arrive before the canvas renders again. Each batch has to start from
@@ -262,8 +278,36 @@ export function FlowCanvas({ flow, running, problems }: { flow: FlowDto; running
     select(id);
   };
 
+  // Backspace and Delete take away what is picked, and only while the keyboard is in the canvas.
+  // React Flow listens for them on the whole document, where a node picked a while ago went when
+  // the reader pressed Backspace on a tab, on Deploy or in the palette, out of their sight. So it
+  // has no key of its own, and the canvas asks it for the deletion its key made: the picked nodes
+  // and wires, which come back as the same changes as any other and reach the draft the same way.
+  // A key held with another is somebody's shortcut, and a key in a box takes away a letter.
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== 'Backspace' && event.key !== 'Delete') return;
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || typedInto(event.target)) return;
+
+    event.preventDefault();
+    const { nodes, edges } = drawing.getState();
+    void deleteElements({ nodes: nodes.filter((node) => node.selected), edges: edges.filter((edge) => edge.selected) });
+    // As React Flow's own key does: the box drawn round nodes picked together goes with them.
+    drawing.setState({ nodesSelectionActive: false });
+  };
+
   return (
-    <div className={styles.canvas} id="flow-canvas" style={NODE_SIZE} onDragOver={onDragOver} onDrop={onDrop}>
+    <div
+      className={styles.canvas}
+      id="flow-canvas"
+      style={NODE_SIZE}
+      // Clicked anywhere, the empty ground included, the canvas has the keyboard: a pan is a drag
+      // on the ground, and a reader who picked a node and panned to see where it goes is still in
+      // the canvas when they press Delete. Not a stop for the Tab key, which the nodes are.
+      tabIndex={-1}
+      onKeyDown={onKeyDown}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+    >
       <ReactFlow<CanvasNode, CanvasEdge>
         nodes={nodes}
         edges={edges}
@@ -273,7 +317,7 @@ export function FlowCanvas({ flow, running, problems }: { flow: FlowDto; running
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         isValidConnection={isValidConnection}
-        deleteKeyCode={['Backspace', 'Delete']}
+        deleteKeyCode={null}
         fitView
         fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
         minZoom={0.25}

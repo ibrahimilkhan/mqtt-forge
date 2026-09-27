@@ -291,13 +291,15 @@ describe('flow canvas', () => {
     expect(screen.getByText('Inject').closest('[data-group]')).not.toHaveAttribute('data-selected');
   });
 
+  // The keys go where the reader's click put the keyboard: on the wire or the node that was clicked.
   it('takes a picked wire out of the draft when Delete is pressed', async () => {
     draw();
     await screen.findByText('If');
+    const wire = screen.getByLabelText('Edge from go to test');
 
-    fireEvent.click(screen.getByLabelText('Edge from go to test'));
-    fireEvent.keyDown(document, { key: 'Delete' });
-    fireEvent.keyUp(document, { key: 'Delete' });
+    fireEvent.click(wire);
+    fireEvent.keyDown(wire, { key: 'Delete' });
+    fireEvent.keyUp(wire, { key: 'Delete' });
 
     await waitFor(() => expect(useFlowDraftStore.getState().drafts.button?.edges).toEqual([]));
     expect(useFlowDraftStore.getState().drafts.button.nodes.map((node) => node.id)).toEqual(['go', 'test']);
@@ -305,11 +307,12 @@ describe('flow canvas', () => {
 
   it('takes a picked node out of the draft with its wires, and the inspector lets it go', async () => {
     draw();
+    const picked = await screen.findByText('If');
 
-    fireEvent.click(await screen.findByText('If'));
+    fireEvent.click(picked);
     expect(useFlowDraftStore.getState().selected).toBe('test');
-    fireEvent.keyDown(document, { key: 'Backspace' });
-    fireEvent.keyUp(document, { key: 'Backspace' });
+    fireEvent.keyDown(picked, { key: 'Backspace' });
+    fireEvent.keyUp(picked, { key: 'Backspace' });
 
     await waitFor(() => expect(useFlowDraftStore.getState().drafts.button?.nodes.map((node) => node.id)).toEqual(['go']));
     expect(useFlowDraftStore.getState().drafts.button.edges).toEqual([]);
@@ -320,17 +323,20 @@ describe('flow canvas', () => {
   // not picked, or the next Backspace takes it away again without the reader seeing it chosen.
   it('lets go of a deleted node, so Discard brings it back unpicked', async () => {
     drawPage();
+    const picked = await screen.findByText('If');
 
-    fireEvent.click(await screen.findByText('If'));
-    fireEvent.keyDown(document, { key: 'Backspace' });
-    fireEvent.keyUp(document, { key: 'Backspace' });
+    fireEvent.click(picked);
+    fireEvent.keyDown(picked, { key: 'Backspace' });
+    fireEvent.keyUp(picked, { key: 'Backspace' });
     await waitFor(() => expect(useFlowDraftStore.getState().drafts.button?.nodes.map((node) => node.id)).toEqual(['go']));
 
     act(() => useFlowDraftStore.getState().discard('button'));
     expect((await screen.findByText('If')).closest('[data-group]')).not.toHaveAttribute('data-selected');
 
-    fireEvent.keyDown(document, { key: 'Backspace' });
-    fireEvent.keyUp(document, { key: 'Backspace' });
+    // Still in the canvas, where a Backspace would take whatever was picked.
+    const canvas = document.getElementById('flow-canvas')!;
+    fireEvent.keyDown(canvas, { key: 'Backspace' });
+    fireEvent.keyUp(canvas, { key: 'Backspace' });
     // React Flow deletes a turn later, so give it the turn before saying it took nothing.
     await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
     expect(useFlowDraftStore.getState().drafts.button).toBeUndefined();
