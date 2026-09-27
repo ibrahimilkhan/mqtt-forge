@@ -36,6 +36,48 @@ export const addNode = (flow: FlowDto, type: FlowNodeType, at: { x: number; y: n
   nodes: [...flow.nodes, { id, type, x: Math.round(at.x), y: Math.round(at.y), config: NODE_SPECS[type].defaults() }],
 });
 
+/** How much room a node takes on the canvas, as the one putting a node down reckons it. */
+export type Box = { width: number; height: number };
+
+/**
+ * Where a node the palette adds goes: `start` if nothing is there, or else the first place along
+ * from it — `across` places to a row, then down a row, `gap` apart — that touches no node the flow
+ * has. Where the nodes stand decides it, not how many have been added, so a node dragged into the
+ * way is stepped round like any other.
+ *
+ * Every node can stand in the way of four places at most, so one of the first few past four for
+ * each node is free; the count stops the search at that, whatever the flow holds.
+ */
+export function freeSpot(
+  flow: FlowDto,
+  start: { x: number; y: number },
+  box: Box,
+  across: number,
+  gap: number,
+): { x: number; y: number } {
+  const clear = (x: number, y: number) =>
+    flow.nodes.every(
+      (node) =>
+        x + box.width + gap <= node.x ||
+        node.x + box.width + gap <= x ||
+        y + box.height + gap <= node.y ||
+        node.y + box.height + gap <= y,
+    );
+
+  const columns = Math.max(1, Math.floor(across));
+  const place = (index: number) => ({
+    x: start.x + (index % columns) * (box.width + gap),
+    y: start.y + Math.floor(index / columns) * (box.height + gap),
+  });
+
+  for (let index = 0; index <= 4 * flow.nodes.length; index++) {
+    const spot = place(index);
+    if (clear(spot.x, spot.y)) return spot;
+  }
+
+  return start;
+}
+
 /** Where nodes now stand, rounded: a position is a place on a grid somebody looks at, not a measurement. */
 export const moveNodes = (flow: FlowDto, moved: Record<string, { x: number; y: number }>): FlowDto => ({
   ...flow,

@@ -17,7 +17,7 @@ import {
   type NodeProps,
 } from '@xyflow/react';
 import '@xyflow/react/dist/base.css';
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from 'react';
 import { injectNode } from '../../api/flows';
 import { nodeKey, useFlowStatusStore } from '../../stores/flowStatusStore';
 import { logFault } from '../../stores/logStore';
@@ -29,6 +29,22 @@ import styles from './FlowCanvas.module.css';
 
 /** What a palette item carries when it is dragged onto the canvas. */
 export const DRAG_TYPE = 'application/x-mqttforge-node';
+
+/**
+ * How wide a node is drawn. The stylesheet takes it from here, through --node-width on the canvas,
+ * so the page's sums for where a new node goes and the node as drawn cannot come apart.
+ */
+export const NODE_WIDTH = 188;
+
+/**
+ * About how tall a node is drawn, with some to spare for a larger type size. A node's height is
+ * its content's, so nothing is drawn at this: it is the room the page keeps for one when it puts a
+ * new node down.
+ */
+export const NODE_HEIGHT = 80;
+
+/** The width, where the stylesheet reads it. */
+const NODE_SIZE = { '--node-width': `${NODE_WIDTH}px` } as CSSProperties;
 
 type NodeData = { flowId: string; node: FlowNodeDto; running: boolean; problems?: readonly string[] };
 type CanvasNode = Node<NodeData, 'flow'>;
@@ -247,7 +263,7 @@ export function FlowCanvas({ flow, running, problems }: { flow: FlowDto; running
   };
 
   return (
-    <div className={styles.canvas} id="flow-canvas" onDragOver={onDragOver} onDrop={onDrop}>
+    <div className={styles.canvas} id="flow-canvas" style={NODE_SIZE} onDragOver={onDragOver} onDrop={onDrop}>
       <ReactFlow<CanvasNode, CanvasEdge>
         nodes={nodes}
         edges={edges}

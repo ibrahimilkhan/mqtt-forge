@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { ReactFlowProvider, useReactFlow } from '@xyflow/react';
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo } from 'react';
 import { flushSync } from 'react-dom';
 import { getFlows, getFlowStatus } from '../../api/flows';
 import { queryKeys } from '../../api/queryKeys';
@@ -10,8 +10,8 @@ import panel from '../../styles/panel.module.css';
 import type { FlowDto, FlowNodeType } from '../../types/api';
 import { DebugStrip } from './DebugStrip';
 import { exampleFlows } from './examples';
-import { FlowCanvas } from './FlowCanvas';
-import { addNode, emptyFlow, newId, nextName, problemsOf, sameFlow, withDrafts, type Problems } from './flowDocument';
+import { FlowCanvas, NODE_HEIGHT, NODE_WIDTH } from './FlowCanvas';
+import { addNode, emptyFlow, freeSpot, newId, nextName, problemsOf, sameFlow, withDrafts, type Problems } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
 import { Inspector } from './Inspector';
 import { Palette } from './Palette';
@@ -24,6 +24,9 @@ import styles from './FlowsPage.module.css';
  * what it is handed changes, and the page renders again on every push of the numbers.
  */
 const NOTHING_WRONG: Problems = {};
+
+/** The room left between a node the palette adds and the nodes already on the canvas. */
+const ROOM = 24;
 
 /**
  * The Flows page. The default export, because React.lazy loads a module's default.
@@ -51,7 +54,6 @@ function Page() {
   const running = useFlowStatusStore((state) => state.flows);
   const deploy = useDeploy();
   const { screenToFlowPosition } = useReactFlow();
-  const added = useRef(0);
 
   // The numbers the hub has not pushed since the page opened. The store may already hold them —
   // the bridge feeds it from the moment the console opens — and this only fills a first gap.
@@ -120,15 +122,17 @@ function Page() {
   // subscription to them would only re-render the page for nothing.
   const store = useFlowDraftStore.getState();
 
-  // A click in the palette puts the node in the middle of what is on screen, each one a little
-  // down and to the right of the last, so three clicks are three nodes and not one stack.
+  // A click in the palette puts the node in the middle of what is on screen, or, when something is
+  // already there, in the first clear place across from it and then down a row — as many across as
+  // fit between the middle and the right edge of the view — so three clicks are three nodes that
+  // can each be read and grabbed, and not one stack.
   const add = (type: FlowNodeType) => {
     const box = document.getElementById('flow-canvas')?.getBoundingClientRect();
-    const nudge = (added.current++ % 6) * 24;
-    const at = screenToFlowPosition({
-      x: (box ? box.left + box.width / 2 : 0) - 94 + nudge,
-      y: (box ? box.top + box.height / 2 : 0) - 40 + nudge,
-    });
+    const middle = screenToFlowPosition({ x: box ? box.left + box.width / 2 : 0, y: box ? box.top + box.height / 2 : 0 });
+    const edge = screenToFlowPosition({ x: box ? box.right : 0, y: 0 }).x;
+    const start = { x: middle.x - NODE_WIDTH / 2, y: middle.y - NODE_HEIGHT / 2 };
+    const across = Math.floor((edge - start.x + ROOM) / (NODE_WIDTH + ROOM));
+    const at = freeSpot(shown, start, { width: NODE_WIDTH, height: NODE_HEIGHT }, across, ROOM);
     const id = newId('n');
 
     store.edit(shown, (flow) => addNode(flow, type, at, id));

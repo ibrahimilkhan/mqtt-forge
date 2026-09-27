@@ -60,9 +60,11 @@
 
 /* ---- a node ---- */
 
+/* The width is FlowCanvas.tsx's NODE_WIDTH, which the canvas sets as --node-width: the page reckons
+   where a new node goes from the same number. */
 .node {
   position: relative;
-  width: 188px;
+  width: var(--node-width);
   background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: var(--r-plate);

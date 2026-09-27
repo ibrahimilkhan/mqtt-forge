@@ -6,8 +6,9 @@ import { queryKeys } from '../../api/queryKeys';
 import { useFlowStatusStore } from '../../stores/flowStatusStore';
 import { server } from '../../test/server';
 import { renderWithClient as render } from '../../test/renderWithClient';
-import type { FlowDebugDto, FlowDto, FlowsDto, FlowStatusDto } from '../../types/api';
+import type { FlowDebugDto, FlowDto, FlowNodeDto, FlowsDto, FlowStatusDto } from '../../types/api';
 import { standInForTheBrowser } from './canvasTestbed';
+import { NODE_HEIGHT, NODE_WIDTH } from './FlowCanvas';
 import { useFlowDraftStore } from './flowDraftStore';
 import FlowsPage from './FlowsPage';
 
@@ -165,6 +166,24 @@ describe('Flows page', () => {
 
     expect(screen.getByRole('heading', { name: 'Publish' })).toBeInTheDocument();
     expect(screen.getByText('1 change')).toBeInTheDocument();
+  });
+
+  // Three clicks are three nodes that can each be read and grabbed. Stepped a few pixels from the
+  // last, each new node covered the title of the one before and hid its ports under its own.
+  it('puts each node the palette adds where it covers no other', async () => {
+    keeping();
+    render(<FlowsPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'New flow' }));
+    const palette = within(screen.getByRole('navigation', { name: 'Nodes' }));
+
+    for (const name of [/^Inject/, /^Debug/, /^Publish/]) await userEvent.click(palette.getByRole('button', { name }));
+
+    const [flow] = Object.values(useFlowDraftStore.getState().drafts);
+    const apart = (a: FlowNodeDto, b: FlowNodeDto) =>
+      a.x + NODE_WIDTH <= b.x || b.x + NODE_WIDTH <= a.x || a.y + NODE_HEIGHT <= b.y || b.y + NODE_HEIGHT <= a.y;
+    expect(flow.nodes.map((node) => node.type)).toEqual(['inject', 'debug', 'publish']);
+    for (const [i, a] of flow.nodes.entries())
+      for (const b of flow.nodes.slice(i + 1)) expect(apart(a, b), `${a.type} and ${b.type} overlap`).toBe(true);
   });
 
   it('shows what the running flow has done under each node', async () => {

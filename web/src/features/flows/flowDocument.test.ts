@@ -5,6 +5,7 @@ import {
   canConnect,
   connect,
   emptyFlow,
+  freeSpot,
   moveNodes,
   newId,
   nextName,
@@ -126,5 +127,33 @@ describe('flow document', () => {
         rebuilt = connect(rebuilt, edge, edge.id);
       }
     }
+  });
+
+  // The palette's click puts a node in the middle of the view, or beside or below what is already
+  // there. Where the flow's nodes stand decides it, not how many clicks came before.
+  describe('where a node the palette adds goes', () => {
+    const box = { width: 188, height: 80 };
+    const gap = 24;
+    const at = (x: number, y: number): FlowDto => addNode(emptyFlow('Placed'), 'debug', { x, y }, 'there');
+
+    it('goes where it was asked to when nothing is there', () => {
+      expect(freeSpot(emptyFlow('Empty'), { x: 100, y: 50 }, box, 3, gap)).toEqual({ x: 100, y: 50 });
+    });
+
+    it('steps across past a node in the way, and a gap beyond it', () => {
+      expect(freeSpot(at(100, 50), { x: 100, y: 50 }, box, 3, gap)).toEqual({ x: 100 + 188 + 24, y: 50 });
+    });
+
+    it('goes down a row once the row is full', () => {
+      let flow = at(100, 50);
+      flow = addNode(flow, 'debug', { x: 312, y: 50 }, 'beside');
+
+      expect(freeSpot(flow, { x: 100, y: 50 }, box, 2, gap)).toEqual({ x: 100, y: 50 + 80 + 24 });
+    });
+
+    // A node dragged half across the place the click would have used is in the way all the same.
+    it('steps round a node that only covers part of a place', () => {
+      expect(freeSpot(at(200, 90), { x: 100, y: 50 }, box, 1, gap)).toEqual({ x: 100, y: 50 + 2 * (80 + 24) });
+    });
   });
 });
