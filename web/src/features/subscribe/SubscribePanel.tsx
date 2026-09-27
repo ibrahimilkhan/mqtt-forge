@@ -96,28 +96,30 @@ export function SubscribePanel({ onClose }: { onClose: () => void }) {
   const unsubscribeMutation = useMutation({
     mutationFn: unsubscribe,
     onSuccess: (_result, filter) => {
-      // Whether the subscription actually went down. A filter a rule also holds stays up when
-      // the console lets go of its own claim, and saying 'Unsubscribed' about it — and pruning
-      // the tree under it — was the console reporting something that had not happened.
-      const alsoARule = (filters ?? []).find((f) => f.topicFilter === filter)?.rules === true;
+      // Whether the subscription actually went down. A filter an alert rule or a flow's MQTT in
+      // node also holds stays up when the console lets go of its own claim, and saying
+      // 'Unsubscribed' about it — and pruning the tree under it — was the console reporting
+      // something that had not happened.
+      const held = (filters ?? []).find((f) => f.topicFilter === filter);
+      const holder = held?.rules ? 'an alert rule' : held?.flows ? 'a flow' : null;
 
       useLogStore.getState().push(
-        alsoARule
+        holder
           ? {
               kind: 'ok',
               verb: 'Claim dropped',
               topic: filter,
-              body: 'Held by an alert rule.',
+              body: `Held by ${holder}.`,
             }
           : { kind: 'ok', verb: 'Unsubscribed', topic: filter },
       );
 
       // Read off the list this panel is showing, minus the chip that just went: the refetch
       // below has not landed yet, and the tree should not wait a round trip to stop showing
-      // topics nothing is listening to any more. A filter a rule keeps is still listening, so
-      // nothing is pruned for it. It goes from the log and from anything the reader paused as
-      // well as from the tree — see forgetTopics.
-      if (!alsoARule) {
+      // topics nothing is listening to any more. A filter a rule or a flow keeps is still
+      // listening, so nothing is pruned for it. It goes from the log and from anything the reader
+      // paused as well as from the tree — see forgetTopics.
+      if (!holder) {
         forgetUnsubscribed(
           filter,
           (filters ?? []).filter((f) => f.topicFilter !== filter).map((f) => f.topicFilter),

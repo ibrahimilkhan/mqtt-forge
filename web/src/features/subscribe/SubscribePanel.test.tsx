@@ -107,6 +107,38 @@ describe('SubscribePanel', () => {
     expect(useTopicTreeStore.getState().root.children.has('devices')).toBe(true);
   });
 
+  // An alert rule and a flow's MQTT in node hold their filters the same way. Letting go of the
+  // console's own claim leaves the subscription up, so nothing may say it went down, or take its
+  // topics away.
+  it.each([
+    ['an alert rule', { rules: true, flows: false }],
+    ['a flow', { rules: false, flows: true }],
+  ])('says only the console\'s claim went when %s also holds the filter, and keeps its topics', async (holder, holds) => {
+    server.use(
+      http.get('/api/subscriptions', () => HttpResponse.json([{ topicFilter: 'plant/#', console: true, ...holds }])),
+      http.delete('/api/subscriptions', () => new HttpResponse(null, { status: 204 })),
+    );
+    useTopicTreeStore.getState().apply([
+      {
+        topic: 'plant/k1/temp',
+        payload: '94.2',
+        mode: 'text',
+        size: 4,
+        qos: 0,
+        retain: false,
+        receivedAt: '2026-09-26T09:14:22Z',
+      },
+    ]);
+
+    renderPanel();
+    await userEvent.click(await screen.findByRole('button', { name: 'Unsubscribe from plant/#' }));
+
+    await waitFor(() =>
+      expect(useLogStore.getState().commands[0]).toMatchObject({ kind: 'ok', verb: 'Claim dropped', topic: 'plant/#', body: `Held by ${holder}.` }),
+    );
+    expect(useTopicTreeStore.getState().root.children.has('plant')).toBe(true);
+  });
+
   it('logs the subscription with its QoS stamp', async () => {
     server.use(http.post('/api/subscriptions', () => new HttpResponse(null, { status: 202 })));
 
