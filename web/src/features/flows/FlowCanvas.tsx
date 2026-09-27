@@ -35,7 +35,7 @@ import { logFault } from '../../stores/logStore';
 import type { FlowDto, FlowNodeDto } from '../../types/api';
 import { addNode, canConnect, connect, moveNodes, newId, removeEdges, removeNodes, type Problems, type Wire } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
-import { isNodeType, NODE_SPECS } from './nodeTypes';
+import { isNodeType, portsOf, specOf, type Ports } from './nodeTypes';
 import styles from './FlowCanvas.module.css';
 
 /** What a palette item carries when it is dragged onto the canvas. */
@@ -57,7 +57,7 @@ export const NODE_HEIGHT = 80;
 /** The width, where the stylesheet reads it. */
 const NODE_SIZE = { '--node-width': `${NODE_WIDTH}px` } as CSSProperties;
 
-type NodeData = { flowId: string; node: FlowNodeDto; running: boolean; problems?: readonly string[] };
+type NodeData = { flowId: string; node: FlowNodeDto; ports: Ports; running: boolean; problems?: readonly string[] };
 type CanvasNode = Node<NodeData, 'flow'>;
 type CanvasEdge = Edge<{ flowId: string; problems?: readonly string[] }, 'wire'>;
 
@@ -164,11 +164,11 @@ export function FlowCanvas({ flow, running, problems }: { flow: FlowDto; running
         id: node.id,
         type: 'flow',
         position: { x: node.x, y: node.y },
-        data: { flowId: flow.id, node, running, problems: problems[NODE + node.id] },
+        data: { flowId: flow.id, node, ports: portsOf(node, flow.edges), running, problems: problems[NODE + node.id] },
         selected: picked.has(NODE + node.id),
         measured: sizes[node.id],
       })),
-    [flow.id, flow.nodes, picked, problems, running, sizes],
+    [flow.edges, flow.id, flow.nodes, picked, problems, running, sizes],
   );
 
   const edges = useMemo<CanvasEdge[]>(
@@ -353,7 +353,8 @@ const portTop = (index: number, count: number) => `${((index + 1) * 100) / (coun
 const named = (ports: readonly string[]) => (ports.length > 1 ? Math.max(...ports.map((port) => port.length)) : 0);
 
 function FlowNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
-  const spec = NODE_SPECS[data.node.type];
+  const spec = specOf(data.node.type);
+  const { ins, outs } = data.ports;
   const Icon = spec.icon;
   const status = useFlowStatusStore((state) => state.nodes[nodeKey(data.flowId, id)]);
 
@@ -365,25 +366,25 @@ function FlowNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
   return (
     <div
       className={styles.node}
-      style={{ '--in-names': named(spec.ins), '--out-names': named(spec.outs) } as CSSProperties}
-      data-group={spec.group}
+      style={{ '--in-names': named(ins), '--out-names': named(outs) } as CSSProperties}
+      data-group={spec.group ?? undefined}
       data-selected={selected ? '' : undefined}
       data-problem={data.problems ? '' : undefined}
       title={data.problems?.join(' ')}
     >
-      {spec.ins.map((port, index) => (
+      {ins.map((port, index) => (
         <Handle
           key={port}
           type="target"
           position={Position.Left}
           id={port}
           className={styles.handle}
-          style={{ top: portTop(index, spec.ins.length) }}
+          style={{ top: portTop(index, ins.length) }}
         />
       ))}
-      {spec.ins.length > 1 &&
-        spec.ins.map((port, index) => (
-          <span key={port} className={styles.portIn} style={{ top: portTop(index, spec.ins.length) }}>
+      {ins.length > 1 &&
+        ins.map((port, index) => (
+          <span key={port} className={styles.portIn} style={{ top: portTop(index, ins.length) }}>
             {port}
           </span>
         ))}
@@ -402,20 +403,20 @@ function FlowNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
         {line}
       </div>
 
-      {spec.outs.length > 1 &&
-        spec.outs.map((port, index) => (
-          <span key={port} className={styles.portOut} style={{ top: portTop(index, spec.outs.length) }}>
+      {outs.length > 1 &&
+        outs.map((port, index) => (
+          <span key={port} className={styles.portOut} style={{ top: portTop(index, outs.length) }}>
             {port}
           </span>
         ))}
-      {spec.outs.map((port, index) => (
+      {outs.map((port, index) => (
         <Handle
           key={port}
           type="source"
           position={Position.Right}
           id={port}
           className={styles.handle}
-          style={{ top: portTop(index, spec.outs.length) }}
+          style={{ top: portTop(index, outs.length) }}
         />
       ))}
     </div>

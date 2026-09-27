@@ -3,7 +3,7 @@ import { QosSelect } from '../../components/QosSelect';
 import { Segmented } from '../../components/Segmented';
 import panel from '../../styles/panel.module.css';
 import type { FlowNodeDto } from '../../types/api';
-import { IF_TESTS, SEVERITIES, TEMPLATE_HELP } from './nodeTypes';
+import { IF_TESTS, isNodeType, SEVERITIES, TEMPLATE_HELP } from './nodeTypes';
 import styles from './Inspector.module.css';
 
 type Facts = { allowWebhooks: boolean; alertTopicPrefix: string };
@@ -77,7 +77,11 @@ export function NodeSettings({ flowId, node, set, facts }: Props) {
 
   const templates = <p className={panel.hint}>Fills in: {TEMPLATE_HELP}</p>;
 
-  switch (node.type) {
+  // A node a newer build wrote can be of a type this one has no form for. It is taken as null, so
+  // the switch covers every node there is — see its default.
+  const known = isNodeType(node.type) ? node.type : null;
+
+  switch (known) {
     case 'mqttIn':
       return (
         <>
@@ -182,5 +186,17 @@ export function NodeSettings({ flowId, node, set, facts }: Props) {
 
     case 'debug':
       return <p className={panel.note}>Prints every message it is given in Debug, under the canvas.</p>;
+
+    default:
+      // Every type this build knows has its case above, and this line stops the build when one
+      // does not: only null — a type it does not know — may reach it. Such a node's settings are
+      // kept as they came, untouched, and Remove node under this still takes it out.
+      known satisfies null;
+      return (
+        <p className={panel.note}>
+          This build does not know a node called “{node.type}”. Its settings are kept as they are, and the flow will
+          not deploy until it is removed.
+        </p>
+      );
   }
 }

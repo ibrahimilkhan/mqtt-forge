@@ -1,5 +1,5 @@
 import type { FlowDto, FlowNodeType, FlowProblemDto } from '../../types/api';
-import { NODE_SPECS } from './nodeTypes';
+import { NODE_SPECS, specOf } from './nodeTypes';
 
 /*
  * Every change the page makes to a flow, as a function from one flow to the next. Nothing here
@@ -121,15 +121,16 @@ export function removeEdges(flow: FlowDto, ids: readonly string[]): FlowDto {
  * Whether a wire may be drawn: both ends on nodes, ports that exist, not back to its own node,
  * not a second wire between the same two ports, and not closing a circle. The server refuses the
  * same five things; saying no while the wire is still being dragged is kinder than saying it at
- * deploy.
+ * deploy. A node of a type this build does not know has no ports here, as it has none on the
+ * server, so no wire goes to or from it.
  */
 export function canConnect(flow: FlowDto, wire: Wire): boolean {
   const from = flow.nodes.find((node) => node.id === wire.from);
   const to = flow.nodes.find((node) => node.id === wire.to);
   if (!from || !to || from.id === to.id) return false;
 
-  if (!NODE_SPECS[from.type].outs.includes(wire.fromPort)) return false;
-  if (!NODE_SPECS[to.type].ins.includes(wire.toPort)) return false;
+  if (!specOf(from.type).outs.includes(wire.fromPort)) return false;
+  if (!specOf(to.type).ins.includes(wire.toPort)) return false;
 
   const twice = flow.edges.some(
     (edge) =>

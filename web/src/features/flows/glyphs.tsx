@@ -84,6 +84,16 @@ export const SendGlyph = () => (
   </Glyph>
 );
 
+/** A node this build does not know: a question. */
+export const UnknownGlyph = () => (
+  <Glyph>
+    <>
+      <path d="M9 9a3 3 0 1 1 5.6 1.5c-1 .6-2.6 1.3-2.6 2.7v1" />
+      <path d="M12 18v.01" />
+    </>
+  </Glyph>
+);
+
 /** Debug: a prompt. */
 export const DebugGlyph = () => (
   <Glyph>

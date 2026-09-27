@@ -96,6 +96,22 @@ describe('flow canvas', () => {
     expect(screen.getByText('no')).toBeInTheDocument();
   });
 
+  // A newer build's node, in a flow the server kept. It is drawn by its type, and its wires still
+  // have ports to meet: the ones they name, since this build knows no others for it.
+  it('draws a node of a type it does not know by that type, meeting the wires it has', async () => {
+    draw({
+      ...button,
+      nodes: [...button.nodes, { id: 'fn', type: 'function', x: 560, y: 80, config: { code: 'return msg;' } }],
+      edges: [...button.edges, { id: 'e2', from: 'test', fromPort: 'yes', to: 'fn', toPort: 'in' }],
+    });
+
+    expect(await screen.findByText('function')).toBeInTheDocument();
+    expect(screen.getByText('not known to this build')).toBeInTheDocument();
+    expect(port('fn', 'in')).not.toBeNull();
+    expect(document.querySelectorAll('.react-flow__handle[data-nodeid="fn"]')).toHaveLength(1);
+    expect(screen.getByLabelText('Edge from test to fn')).toBeInTheDocument();
+  });
+
   it('says a node is not deployed when the flow is not running', async () => {
     draw(button, false);
 

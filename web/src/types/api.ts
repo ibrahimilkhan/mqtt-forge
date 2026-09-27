@@ -467,10 +467,14 @@ export type FlowNodeType =
 /**
  * A node as flows.json keeps it. Its settings are a plain object the server's compiler reads,
  * and a number typed into a box may arrive as its text — the compiler reads "0.5" as 0.5.
+ *
+ * `type` is any text, not only a FlowNodeType: the server keeps a flow a newer build wrote, with
+ * node types this build has never heard of, and hands it back. nodeTypes.ts's specOf is how the
+ * page asks what a type is, and it has an answer for those too.
  */
 export type FlowNodeDto = {
   id: string;
-  type: FlowNodeType;
+  type: string;
   x: number;
   y: number;
   config: Record<string, unknown>;

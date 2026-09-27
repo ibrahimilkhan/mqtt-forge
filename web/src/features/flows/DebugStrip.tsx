@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { leftOut, useFlowStatusStore, type DebugLine } from '../../stores/flowStatusStore';
 import type { FlowDto } from '../../types/api';
-import { NODE_SPECS } from './nodeTypes';
+import { specOf } from './nodeTypes';
 import styles from './DebugStrip.module.css';
 
 const OPEN_KEY = 'mqttforge.flows.debugOpen';
@@ -40,7 +40,7 @@ export function DebugStrip({ flow }: { flow: FlowDto }) {
 
   const labelOf = (nodeId: string) => {
     const node = flow.nodes.find((one) => one.id === nodeId);
-    return node ? NODE_SPECS[node.type].label : nodeId;
+    return node ? specOf(node.type).label : nodeId;
   };
 
   const toggle = () =>

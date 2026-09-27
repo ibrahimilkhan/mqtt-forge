@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FlowNodeStatusDto } from '../../types/api';
-import { GROUPS, isNodeType, NODE_SPECS } from './nodeTypes';
+import { GROUPS, isNodeType, NODE_SPECS, specOf } from './nodeTypes';
 
 const counted = (over: Partial<FlowNodeStatusDto>): FlowNodeStatusDto => ({
   id: 'n', count: 0, outs: {}, errors: 0, note: null, standing: [], ...over,
@@ -51,5 +51,15 @@ describe('node registry', () => {
   it('knows its own names', () => {
     expect(isNodeType('forEach')).toBe(true);
     expect(isNodeType('teleport')).toBe(false);
+  });
+
+  // The server keeps a flow a newer build wrote, whatever its nodes are, and hands it back.
+  it('draws a type it does not know by that type\'s own name, with no ports of its own', () => {
+    const spec = specOf('function');
+
+    expect(spec).toMatchObject({ label: 'function', ins: [], outs: [] });
+    expect(spec.summary({ code: 'return msg;' })).toBe('not known to this build');
+    expect(spec.status(counted({ count: 2, errors: 1 }))).toBe('2 in · 1 error');
+    expect(specOf('if')).toBe(NODE_SPECS.if);
   });
 });

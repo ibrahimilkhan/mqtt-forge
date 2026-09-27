@@ -74,6 +74,15 @@ describe('flow document', () => {
     expect(connect(flow, { from: 'c', fromPort: 'out', to: 'b', toPort: 'in' })).toBe(flow);
   });
 
+  // The server refuses every wire to or from a node it does not know, so the canvas does too; and
+  // a node of a type written by a newer build must not be the end of the page.
+  it('refuses a wire to or from a node of a type this build does not know', () => {
+    const flow: FlowDto = { ...chain(), nodes: [...chain().nodes, { id: 'fn', type: 'function', x: 600, y: 0, config: {} }] };
+
+    expect(canConnect(flow, { from: 'c', fromPort: 'out', to: 'fn', toPort: 'in' })).toBe(false);
+    expect(canConnect(flow, { from: 'fn', fromPort: 'out', to: 'b', toPort: 'in' })).toBe(false);
+  });
+
   it('replaces a node\'s settings and nothing else', () => {
     const before = chain();
     const flow = setConfig(before, 'c', { count: 5, seconds: 0 });

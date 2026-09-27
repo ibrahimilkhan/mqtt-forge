@@ -10,7 +10,7 @@ import type { FlowDto, FlowNodeDto, FlowsDto } from '../../types/api';
 import { removeNodes, setConfig, type Problems } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
 import { NodeSettings } from './NodeSettings';
-import { NODE_SPECS } from './nodeTypes';
+import { specOf } from './nodeTypes';
 import styles from './Inspector.module.css';
 
 type Facts = { allowWebhooks: boolean; alertTopicPrefix: string };
@@ -35,7 +35,7 @@ export function Inspector({ flow, deployed, running, problems, facts }: Props) {
       {node ? (
         <NodePane flow={flow} node={node} problems={problems[`node:${node.id}`]} facts={facts} />
       ) : (
-        <FlowPane flow={flow} deployed={deployed} running={running} problems={problems.flow} />
+        <FlowPane flow={flow} deployed={deployed} running={running} problems={problems} />
       )}
     </aside>
   );
@@ -44,7 +44,7 @@ export function Inspector({ flow, deployed, running, problems, facts }: Props) {
 function NodePane({ flow, node, problems, facts }: { flow: FlowDto; node: FlowNodeDto; problems?: readonly string[]; facts: Facts }) {
   const edit = useFlowDraftStore((state) => state.edit);
   const select = useFlowDraftStore((state) => state.select);
-  const spec = NODE_SPECS[node.type];
+  const spec = specOf(node.type);
 
   // Merged into the settings as they are in the draft at the moment of the keystroke, not as they
   // were when this render happened: two quick keystrokes in two boxes must both survive.
@@ -86,7 +86,27 @@ function NodePane({ flow, node, problems, facts }: { flow: FlowDto; node: FlowNo
   );
 }
 
-function FlowPane({ flow, deployed, running, problems }: { flow: FlowDto; deployed: FlowDto | undefined; running: boolean; problems?: readonly string[] }) {
+/**
+ * What the server said about the flow as a whole, and about each of its wires. A node's own
+ * problems are in its pane and on the node; a wire has no pane, and on the canvas only its colour,
+ * so this is the one place its reason is said — named by the nodes it runs between, as the reader
+ * sees it drawn. A wire the flow no longer has is not listed, as a node that is gone has no pane.
+ */
+function flowProblems(flow: FlowDto, problems: Problems): string[] {
+  const nameOf = (nodeId: string) => {
+    const node = flow.nodes.find((one) => one.id === nodeId);
+    return node ? specOf(node.type).label : nodeId;
+  };
+
+  return [
+    ...(problems.flow ?? []),
+    ...flow.edges.flatMap((edge) =>
+      (problems[`edge:${edge.id}`] ?? []).map((problem) => `${nameOf(edge.from)} → ${nameOf(edge.to)}: ${problem}`),
+    ),
+  ];
+}
+
+function FlowPane({ flow, deployed, running, problems }: { flow: FlowDto; deployed: FlowDto | undefined; running: boolean; problems: Problems }) {
   const edit = useFlowDraftStore((state) => state.edit);
   const forget = useFlowDraftStore((state) => state.forget);
   const queryClient = useQueryClient();
@@ -135,8 +155,8 @@ function FlowPane({ flow, deployed, running, problems }: { flow: FlowDto; deploy
         <h3 className={styles.title}>{flow.name.trim() || 'Untitled'}</h3>
       </div>
 
-      {problems?.map((problem) => (
-        <p key={problem} className={panel.fault}>
+      {flowProblems(flow, problems).map((problem, index) => (
+        <p key={index} className={panel.fault}>
           {problem}
         </p>
       ))}

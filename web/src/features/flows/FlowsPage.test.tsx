@@ -957,6 +957,93 @@ describe('deleting a flow', () => {
   });
 });
 
+/**
+ * A flow a newer build wrote, with a node this one does not know. The server keeps such a flow and
+ * hands it back, refusing to run it, and says what it refused: the node, and every wire to or from
+ * it, since a type it does not know has no ports it could check.
+ */
+describe('a node this build does not know', () => {
+  const odd: FlowDto = {
+    id: 'odd',
+    name: 'From a newer build',
+    enabled: true,
+    nodes: [
+      { id: 'in', type: 'mqttIn', x: 40, y: 120, config: { filter: 'plant/+/temp', replay: false } },
+      { id: 'fn', type: 'function', x: 300, y: 120, config: { code: 'return msg;' } },
+      { id: 'print', type: 'debug', x: 560, y: 120, config: {} },
+    ],
+    edges: [
+      { id: 'e1', from: 'in', fromPort: 'out', to: 'fn', toPort: 'in' },
+      { id: 'e2', from: 'fn', fromPort: 'out', to: 'print', toPort: 'in' },
+    ],
+  };
+
+  const refused: Partial<FlowsDto> = {
+    problems: [
+      { flowId: 'odd', key: 'node:fn', message: "This build does not know a node called 'function'." },
+      { flowId: 'odd', key: 'edge:e1', message: "That node has no input called 'in'." },
+      { flowId: 'odd', key: 'edge:e2', message: "This node has no output called 'out'." },
+    ],
+  };
+
+  /** A node on the canvas, by the name it is drawn with. */
+  const drawn = async (name: string) => {
+    await screen.findByRole('tabpanel');
+    return (await within(document.getElementById('flow-canvas')!).findByText(name)).closest<HTMLElement>('.react-flow__node')!;
+  };
+
+  it('opens the flow, draws the node by its type, and lets the flow be deleted', async () => {
+    const { deletes } = keeping([odd], refused);
+    render(<FlowsPage />);
+
+    const node = await drawn('function');
+    expect(within(node).getByTitle("This build does not know a node called 'function'.")).toHaveAttribute('data-problem');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete flow' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+
+    expect(await screen.findByRole('button', { name: 'Start from an example' })).toBeInTheDocument();
+    expect(deletes).toEqual(['odd']);
+  });
+
+  // The wires are marked red on the canvas, and this is where the reader learns why.
+  it('lists each refused wire in the flow pane, by its ends and with the reason', async () => {
+    keeping([odd], refused);
+    render(<FlowsPage />);
+    const pane = await screen.findByRole('complementary', { name: 'Inspector' });
+
+    expect(await within(pane).findByText("MQTT in → function: That node has no input called 'in'.")).toBeInTheDocument();
+    expect(within(pane).getByText("function → Debug: This node has no output called 'out'.")).toBeInTheDocument();
+  });
+
+  it('says in the node pane that it does not know the node, and still takes it out', async () => {
+    keeping([odd], refused);
+    render(<FlowsPage />);
+
+    fireEvent.click(await drawn('function'));
+
+    const pane = screen.getByRole('complementary', { name: 'Inspector' });
+    expect(within(pane).getByRole('heading', { name: 'function' })).toBeInTheDocument();
+    expect(within(pane).getByText(/^This build does not know a node called “function”/)).toBeInTheDocument();
+
+    await userEvent.click(within(pane).getByRole('button', { name: 'Remove node' }));
+
+    expect(useFlowDraftStore.getState().drafts.odd.nodes.map((node) => node.id)).toEqual(['in', 'print']);
+    expect(useFlowDraftStore.getState().drafts.odd.edges).toEqual([]);
+  });
+
+  it('names the node in the debug strip by its type', async () => {
+    keeping([odd], refused);
+    render(<FlowsPage />);
+    await drawn('function');
+
+    act(() => useFlowStatusStore.getState().addDebug([{ flowId: 'odd', nodeId: 'fn', at: '2026-09-26T09:14:22Z', kind: 'error', topic: '', text: 'It stopped.' }], 0));
+
+    const line = within(screen.getByRole('region', { name: 'Debug' })).getByText('It stopped.').closest('li')!;
+    expect(within(line).getByText('function')).toBeInTheDocument();
+  });
+});
+
 describe('what the server says is wrong with a flow in its file', () => {
   // A flow written into the file by hand that does not compile. The server does not run it, and
   // the inspector says why; the canvas and the tab have to say it from the same answer, or the

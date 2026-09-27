@@ -1,17 +1,32 @@
 import type { ReactElement } from 'react';
-import type { FlowNodeStatusDto, FlowNodeType } from '../../types/api';
+import type { FlowEdgeDto, FlowNodeDto, FlowNodeStatusDto, FlowNodeType } from '../../types/api';
 import { Bell } from '../brand/icons';
-import { BranchGlyph, ClockGlyph, DebugGlyph, EachGlyph, InGlyph, PlayGlyph, RepeatGlyph, SendGlyph } from './glyphs';
+import {
+  BranchGlyph,
+  ClockGlyph,
+  DebugGlyph,
+  EachGlyph,
+  InGlyph,
+  PlayGlyph,
+  RepeatGlyph,
+  SendGlyph,
+  UnknownGlyph,
+} from './glyphs';
 
 export type NodeGroup = 'Triggers' | 'Logic' | 'Actions';
 
 /** The palette's three headings, in the order a flow reads: what starts it, what it decides, what it does. */
 export const GROUPS: readonly NodeGroup[] = ['Triggers', 'Logic', 'Actions'];
 
+/** A node's ports, top to bottom on each side. */
+export type Ports = { ins: readonly string[]; outs: readonly string[] };
+
 export type NodeSpec = {
-  type: FlowNodeType;
+  /** The type as flows.json names it. */
+  type: string;
   label: string;
-  group: NodeGroup;
+  /** Null for a type this build does not know, which belongs to none of the palette's groups. */
+  group: NodeGroup | null;
   /** Under the palette item: what the node is for, in a few words. */
   blurb: string;
   icon: () => ReactElement;
@@ -67,7 +82,10 @@ const withErrors = (line: string, status: FlowNodeStatusDto) =>
 
 const testLabel = (test: unknown) => IF_TESTS.find((one) => one.value === test)?.label ?? '?';
 
-export const NODE_SPECS: Record<FlowNodeType, NodeSpec> = {
+/** A type this build knows: one the palette can offer and the inspector has a form for. */
+type KnownSpec = NodeSpec & { type: FlowNodeType; group: NodeGroup };
+
+export const NODE_SPECS: Record<FlowNodeType, KnownSpec> = {
   mqttIn: {
     type: 'mqttIn',
     label: 'MQTT in',
@@ -204,3 +222,44 @@ export const NODE_SPECS: Record<FlowNodeType, NodeSpec> = {
 
 export const isNodeType = (value: unknown): value is FlowNodeType =>
   typeof value === 'string' && Object.hasOwn(NODE_SPECS, value);
+
+/**
+ * What a node of this type is, for anything that draws or names one.
+ *
+ * The server keeps a flow a newer build wrote and hands it back, so a node can be of a type this
+ * build has never heard of. It is named by that type, with a mark that says it is not understood,
+ * and has no ports of its own: the server refuses every wire to or from it, so no new one can be
+ * drawn (the wires the flow already has still meet it — see portsOf). Everything else about the
+ * flow — its other nodes, deleting it, taking the node out so the rest can deploy — goes on working.
+ */
+export function specOf(type: string): NodeSpec {
+  if (isNodeType(type)) return NODE_SPECS[type];
+
+  return {
+    type,
+    label: type,
+    group: null,
+    blurb: 'Not known to this build',
+    icon: UnknownGlyph,
+    ins: [],
+    outs: [],
+    defaults: () => ({}),
+    summary: () => 'not known to this build',
+    status: (status) => withErrors(`${status.count} in`, status),
+  };
+}
+
+/**
+ * The ports a node is drawn with: its type's, or — for a type this build does not know, which has
+ * none here — the ones its wires name, so the wires the flow already has still meet it and can be
+ * seen, and picked, and read about. No new wire can be drawn to them: canConnect asks specOf.
+ */
+export function portsOf(node: FlowNodeDto, edges: readonly FlowEdgeDto[]): Ports {
+  if (isNodeType(node.type)) return NODE_SPECS[node.type];
+
+  const once = (ports: string[]) => [...new Set(ports)];
+  return {
+    ins: once(edges.filter((edge) => edge.to === node.id).map((edge) => edge.toPort)),
+    outs: once(edges.filter((edge) => edge.from === node.id).map((edge) => edge.fromPort)),
+  };
+}
