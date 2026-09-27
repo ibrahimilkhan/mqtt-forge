@@ -220,6 +220,21 @@ public sealed class FlowServiceTests : IAsyncLifetime
         await Until(() => _engine.CanInject("f1", "go"), "the written flow to run");
     }
 
+    // While the answer waits for the engine. The flow is written and runs all the same, and a flow that
+    // runs needs the link: a host that dials for its flows has to be asked, whoever stayed to hear.
+    [Fact]
+    public async Task A_client_that_goes_away_while_its_deploy_waits_still_has_the_link_asked_for()
+    {
+        using var client = new CancellationTokenSource();
+        var saving = _sut.SaveAsync(Pressed(), client.Token);
+        Assert.False(saving.IsCompleted);
+
+        await client.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => saving);
+
+        await _link.Received(1).WantedAsync(Arg.Is<CancellationToken>(ct => !ct.IsCancellationRequested));
+    }
+
     [Fact]
     public async Task A_client_that_goes_away_once_its_flow_is_deleted_still_has_it_stopped()
     {

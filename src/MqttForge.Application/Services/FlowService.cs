@@ -70,11 +70,18 @@ public sealed class FlowService
         // Waited for after the gate: the pump may be held up for a moment, and no other deploy has to
         // wait with it. What the answer means: the flows page presses a new Inject node's button the
         // moment Deploy comes back, and before the engine had the flow that was a 404.
-        await running;
-
-        // A dial can take seconds, and no other deploy has to wait for it either. Only a host that
-        // dials at start-up will dial here — see ILinkForRules.
-        if (flow.Enabled) await _link.WantedAsync(ct);
+        try
+        {
+            await running;
+        }
+        finally
+        {
+            // Asked whatever became of the wait, and with no token: the flow is written and runs whether
+            // or not its client stayed for the answer, and a flow that runs needs the link. A dial can
+            // take seconds, and no other deploy has to wait for it either. Only a host that dials at
+            // start-up will dial here — see ILinkForRules.
+            if (flow.Enabled) await _link.WantedAsync(CancellationToken.None);
+        }
 
         return new FlowSaveResult(flow, []);
     }
