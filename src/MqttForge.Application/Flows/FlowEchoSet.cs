@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using MqttForge.Domain.Models;
@@ -5,10 +6,12 @@ using MqttForge.Domain.Models;
 namespace MqttForge.Application.Flows;
 
 /// <summary>What a flow has just published, so it does not answer itself.</summary>
-// A hash and not the payload: a thousand 64 KB payloads is 64 MB held to answer "was that me?".
-// Keyed by topic first, so the common arrival — a topic this flow never published to — costs a
-// dictionary miss and no hashing at all. Not consumed on a match: a broker may deliver one
-// publish twice to a client with overlapping subscriptions, and the second copy would loop.
+// A hash of the topic and the payload, and neither of them: a thousand 64 KB payloads is 64 MB held
+// to answer "was that me?", and a topic may be as long as MQTT allows, which a thousand times over is
+// twice that again. The common arrival — a topic this flow never published to — still costs no
+// hashing: the topic's own hash code is kept too, four bytes, as a first look that can only miss.
+// Not consumed on a match: a broker may deliver one publish twice to a client with overlapping
+// subscriptions, and the second copy would loop.
 //
 // A hash of the bytes on both sides, never of text. What goes out is the rendered payload's
 // UTF-8; what comes back is text only when those bytes read as text, and base64 of them when
@@ -20,27 +23,32 @@ namespace MqttForge.Application.Flows;
 // so that no rate a flow can be given makes this hold more than a thousand hashes.
 public sealed class FlowEchoSet
 {
-    private readonly Dictionary<string, List<(string Hash, DateTimeOffset Until)>> _byTopic = new(StringComparer.Ordinal);
-    private readonly Queue<(string Topic, string Hash, DateTimeOffset Until)> _order = new();
+    // Each fingerprint live now, and how many of its entries are: one publish may be made twice.
+    private readonly Dictionary<string, int> _live = new(StringComparer.Ordinal);
+
+    // How many live entries have a topic of each hash code. Two topics that share one cost a
+    // fingerprint, and never a wrong answer.
+    private readonly Dictionary<int, int> _topics = [];
+
+    private readonly Queue<(string Fingerprint, int Topic, DateTimeOffset Until)> _order = new();
 
     public void Remember(string topic, byte[] payload, DateTimeOffset now)
     {
         Expire(now);
         if (_order.Count >= FlowLimits.EchoFingerprints) Forget(_order.Dequeue());
 
-        var entry = (Hash(payload), now + FlowLimits.EchoWindow);
-        if (!_byTopic.TryGetValue(topic, out var list)) _byTopic[topic] = list = [];
-        list.Add(entry);
-        _order.Enqueue((topic, entry.Item1, entry.Item2));
+        var entry = (Fingerprint(topic, payload), TopicKey(topic), now + FlowLimits.EchoWindow);
+        _live[entry.Item1] = _live.GetValueOrDefault(entry.Item1) + 1;
+        _topics[entry.Item2] = _topics.GetValueOrDefault(entry.Item2) + 1;
+        _order.Enqueue(entry);
     }
 
     public bool Heard(MqttMessage message, DateTimeOffset now)
     {
         Expire(now);
-        if (!_byTopic.TryGetValue(message.Topic, out var list)) return false;
+        if (!_topics.ContainsKey(TopicKey(message.Topic))) return false;
 
-        var hash = Hash(BytesOf(message));
-        return list.Exists(entry => entry.Hash == hash);
+        return _live.ContainsKey(Fingerprint(message.Topic, BytesOf(message)));
     }
 
     /// <summary>The bytes the broker delivered, as near as the message can say.</summary>
@@ -67,13 +75,32 @@ public sealed class FlowEchoSet
         while (_order.TryPeek(out var oldest) && oldest.Until <= now) Forget(_order.Dequeue());
     }
 
-    private void Forget((string Topic, string Hash, DateTimeOffset Until) entry)
+    private void Forget((string Fingerprint, int Topic, DateTimeOffset Until) entry)
     {
-        if (!_byTopic.TryGetValue(entry.Topic, out var list)) return;
-
-        list.Remove((entry.Hash, entry.Until));
-        if (list.Count == 0) _byTopic.Remove(entry.Topic);
+        Release(_live, entry.Fingerprint);
+        Release(_topics, entry.Topic);
     }
 
-    private static string Hash(byte[] payload) => Convert.ToHexString(SHA1.HashData(payload));
+    private static void Release<TKey>(Dictionary<TKey, int> counts, TKey key) where TKey : notnull
+    {
+        if (counts[key] == 1) counts.Remove(key);
+        else counts[key]--;
+    }
+
+    private static int TopicKey(string topic) => StringComparer.Ordinal.GetHashCode(topic);
+
+    // The topic's length goes in first, so that no two pairs of topic and payload are the same bytes.
+    private static string Fingerprint(string topic, byte[] payload)
+    {
+        var topicBytes = Encoding.UTF8.GetBytes(topic);
+        Span<byte> length = stackalloc byte[sizeof(int)];
+        BinaryPrimitives.WriteInt32LittleEndian(length, topicBytes.Length);
+
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
+        hash.AppendData(length);
+        hash.AppendData(topicBytes);
+        hash.AppendData(payload);
+
+        return Convert.ToHexString(hash.GetHashAndReset());
+    }
 }
