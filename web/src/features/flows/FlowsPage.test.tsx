@@ -1105,6 +1105,22 @@ describe('a node this build does not know', () => {
   });
 });
 
+describe('drafts kept from an earlier visit', () => {
+  // What storage holds outlives the build that wrote it. A draft short of a name, kept as the
+  // flow on screen, took the page down on every open, and a reload landed on it again.
+  it('open the page when one of them is not a whole flow', async () => {
+    keeping([watch]);
+    localStorage.setItem('mqttforge.flows.drafts', JSON.stringify({ state: { drafts: { broken: { id: 'broken' } }, current: 'broken' }, version: 0 }));
+    vi.resetModules();
+    const { default: Reopened } = await import('./FlowsPage');
+
+    render(<Reopened />);
+
+    expect(await screen.findByRole('tab', { name: /^Boiler watch/ })).toBeInTheDocument();
+    expect(screen.getAllByRole('tab')).toHaveLength(1);
+  });
+});
+
 describe('what the server says is wrong with a flow in its file', () => {
   // A flow written into the file by hand that does not compile. The server does not run it, and
   // the inspector says why; the canvas and the tab have to say it from the same answer, or the
