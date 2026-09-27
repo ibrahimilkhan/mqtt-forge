@@ -208,22 +208,29 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
             // things done about them. An unreadable file means the engine is running empty until
             // somebody fixes it; connecting on the chance that it once held an enabled rule would
             // be guessing with the user's broker.
-            if (document.Unreadable && !flowsWant)
+            //
+            // Said whenever the file cannot be read, decoupled from whatever is decided next about
+            // the dial. A flow that still wants the broker must not leave the operator reading only
+            // "a flow is enabled" and concluding their rules are fine — they are not running at
+            // all, and the sentence says so either way.
+            if (document.Unreadable)
             {
-                _log.LogError(
-                    "The alert rules could not be read, so no rules are running and the broker is left alone.");
-                return;
-            }
+                _log.LogError(flowsWant
+                    ? "The alert rules could not be read, so no rules are running. A flow is enabled, so the broker is connected for the flows."
+                    : "The alert rules could not be read, so no rules are running and the broker is left alone.");
 
-            if (!rulesWant && !flowsWant)
+                if (!flowsWant) return;
+            }
+            else if (!rulesWant && !flowsWant)
             {
                 _log.LogInformation(
                     "No alert rules are enabled, so the broker is left alone until somebody connects.");
                 return;
             }
-
-            if (flowsWant)
+            else if (flowsWant)
+            {
                 _log.LogInformation("A flow is enabled, so the broker is connected for the flows.");
+            }
 
             // Past both guards, so this host has something to be connected for — and it goes on
             // having it. SuperviseAsync reads this flag on every fault, which is how the decision

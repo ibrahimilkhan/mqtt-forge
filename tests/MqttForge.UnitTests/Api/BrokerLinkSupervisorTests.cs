@@ -647,4 +647,23 @@ public class BrokerLinkSupervisorTests
 
         Assert.Empty(_attempts);
     }
+
+    // A flow that dials must not leave the operator thinking their rules are running: the file
+    // being unreadable is worth an error of its own, whether or not something else is what ends
+    // up connecting the broker.
+    [Fact]
+    public async Task An_unreadable_rules_file_is_said_out_loud_even_when_a_flow_dials()
+    {
+        _rules.LoadAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new AlertRuleDocument([], Unreadable: true, [])));
+        FlowsHold(enabled: true);
+        var sut = new BrokerLinkSupervisor(Service, _rules, _log, _time,
+            options: new BrokerLinkOptions(ConnectOnStart: true), flows: _flows);
+
+        await sut.StartUpAsync(CancellationToken.None);
+
+        Assert.Equal([0], _attempts);
+        Assert.Contains(_log.Entries, entry =>
+            entry.Level == LogLevel.Error && entry.Message.Contains("alert rules could not be read"));
+    }
 }
