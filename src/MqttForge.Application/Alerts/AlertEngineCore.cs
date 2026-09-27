@@ -1068,13 +1068,41 @@ public sealed class AlertEngineCore
     // The panel already draws a faulted rule and its reason, and a rule whose filter the broker
     // refused is exactly that: it will be sent nothing, so every count on it stands still and a
     // reader with no line to read concludes the rule is wrong rather than the broker's answer.
-    // It is cleared with the rest of the faults when the rule set is set again — see SetRules.
-    public void MarkFilterRefused(string ruleId, string filter) =>
+    // It is cleared with the rest of the faults when the rule set is set again — see SetRules —
+    // and on its own when the link is new: see ForgetRefusals.
+    //
+    // A rule already set aside for a fault of its own keeps that one. It is the truer sentence,
+    // and it is the one a new link must not take back.
+    public void MarkFilterRefused(string ruleId, string filter)
+    {
+        if (_faults.ContainsKey(ruleId) && !_refusedRules.Contains(ruleId)) return;
+
         _faults[ruleId] =
             $"The broker refused this rule's filter '{filter}', so nothing is being watched for it.";
+        _refusedRules.Add(ruleId);
+    }
 
-    private void Fault(AlertRule rule, string reason) =>
+    /// <summary>Takes back every refusal: a new link is a new answer.</summary>
+    // A refusal is one broker's answer on one link. A broker restarted with another ACL, or another
+    // broker altogether, may well take the filter — and a rule left set aside then would be sent
+    // its messages and judge none of them, under a reason that was no longer true. The engine asks
+    // for the filters again in the same breath, and marks again whatever is refused again.
+    public void ForgetRefusals()
+    {
+        foreach (var ruleId in _refusedRules) _faults.Remove(ruleId);
+        _refusedRules.Clear();
+    }
+
+    // The rules whose fault is a refusal and nothing else. See ForgetRefusals.
+    private readonly HashSet<string> _refusedRules = new(StringComparer.Ordinal);
+
+    private void Fault(AlertRule rule, string reason)
+    {
         _faults[rule.Id] = reason.Length <= MaxFaultReason ? reason : reason[..MaxFaultReason];
+
+        // Its own fault now, whatever it was before, and not the broker's to take back.
+        _refusedRules.Remove(rule.Id);
+    }
 
     /// <summary>
     /// Evaluates one condition for one pair and never lets anything past. Returns Skipped for
@@ -1209,6 +1237,7 @@ public sealed class AlertEngineCore
         // panel's fault row exists to send the user to the editor, which would then be the one
         // thing that could not fix it.
         _faults.Clear();
+        _refusedRules.Clear();
 
         // The pair a silence rule could never open for itself: a filter with no wildcard is the
         // topic's own name, so 'this device has never spoken' is checkable without a message.

@@ -312,6 +312,70 @@ public class AlertEngineTests
         Assert.Equal(["plant/a/#"], harness.Subscriber.Batches[1]);
     }
 
+    [Fact]
+    public async Task Rule_filters_that_went_between_two_ticks_are_asked_for_again_on_the_next()
+    {
+        await using var harness = Build(Document([Rule("a", "plant/a/#", Over90)]));
+        await harness.Engine.StartAsync(CancellationToken.None);
+        harness.Run();
+
+        // The link went and came back between two ticks, so no tick saw it down, and the subscriber
+        // let the rules' filters go all the same.
+        harness.Subscriber.LinkDropped();
+
+        await harness.Until(() => harness.Subscriber.Filters.Count == 1, "the filter to be asked for again");
+        Assert.Equal(["plant/a/#"], harness.Subscriber.Batches[1]);
+    }
+
+    // MqttnetConnectionManager moves a live link to another broker in one call, and the state is
+    // other than Connected only for the handshake: tens of milliseconds against a tick a second.
+    [Fact]
+    public async Task A_move_to_another_broker_that_no_tick_saw_down_asks_it_again_for_what_the_last_one_refused()
+    {
+        await using var harness = Build(Document([Rule("a", "plant/a/#", Over90)]));
+        harness.Connection.At("broker.a", 1883);
+        harness.Subscriber.Refuse = new MessageRejectedException("Not authorised.", ["plant/a/#"]);
+        await harness.Engine.StartAsync(CancellationToken.None);
+        harness.Subscriber.Refuse = null;
+        harness.Run();
+        await harness.TickAsync(2);
+
+        // The reader points the one link at broker B, which takes the filter A refused.
+        harness.Connection.At("broker.b", 1883);
+        harness.Subscriber.LinkDropped();
+
+        await harness.Until(() => harness.Subscriber.Filters.Count == 1, "the filter to be asked of the new broker");
+
+        // And the rule is watching again: the refusal was broker A's answer, not the rule's fault.
+        harness.Engine.Post(new ArrivalCommand(Message("plant/a/temp", "94.2")));
+
+        await harness.Until(() => harness.Notifier.Raised.Count == 1, "the rule to judge the new broker's reading");
+        Assert.False(Assert.Single(harness.Engine.Snapshot.Rules).Faulted);
+    }
+
+    [Fact]
+    public async Task A_rule_whose_filter_was_refused_judges_again_once_a_new_link_takes_the_filter()
+    {
+        await using var harness = Build(Document([Rule("a", "plant/a/#", Over90)]));
+        harness.Subscriber.Refuse = new MessageRejectedException("Not authorised.", ["plant/a/#"]);
+        await harness.Engine.StartAsync(CancellationToken.None);
+        harness.Run();
+
+        // The broker is restarted with an ACL that allows the filter.
+        harness.Connection.State = ConnectionState.Disconnected;
+        harness.Subscriber.LinkDropped();
+        await harness.TickAsync(2);
+        harness.Subscriber.Refuse = null;
+        harness.Connection.State = ConnectionState.Connected;
+
+        await harness.Until(() => harness.Subscriber.Filters.Count == 1, "the filter to be asked for on the new link");
+
+        harness.Engine.Post(new ArrivalCommand(Message("plant/a/temp", "94.2")));
+
+        await harness.Until(() => harness.Notifier.Raised.Count == 1, "the rule to judge the reading");
+        Assert.False(Assert.Single(harness.Engine.Snapshot.Rules).Faulted);
+    }
+
     // A silence rule judges 'nothing has arrived on this topic for N seconds', and it keeps that
     // per topic. Moving the link to another broker used to carry every topic learned at the first
     // one into the second, where they do not exist — so within N seconds each of them rang, about

@@ -173,6 +173,41 @@ public class AlertEngineFaultContainmentTests
         Assert.Null(diagnostic.FaultReason);
     }
 
+    // A refusal is one broker's answer on one link, and a new link is a new answer: the rule is let
+    // back in to judge what the new link sends it.
+    [Fact]
+    public void A_refusal_is_taken_back_by_a_new_link()
+    {
+        var engine = Engine();
+        engine.SetRules([Rule("hot", new ThresholdCondition(ThresholdOp.Gt, 90))], T0);
+        engine.MarkFilterRefused("hot", "plant/#");
+
+        engine.ForgetRefusals();
+        var outcome = engine.OnMessage(Message("plant/boiler/temp", "94.2", T0), T0);
+
+        Assert.Single(outcome.Raised);
+        Assert.False(DiagnosticFor(engine, "hot").Faulted);
+    }
+
+    // What a new link must not take back: a fault of the rule's own, which the broker's answer
+    // neither caused nor mends — and which keeps its own sentence on the panel, the truer one.
+    [Fact]
+    public void A_rule_faulted_on_its_own_account_stays_set_aside_through_a_refusal_and_a_new_link()
+    {
+        var engine = Engine();
+        engine.SetRules([Rule("boom", new ExplodingCondition())], T0);
+        engine.OnMessage(Message("plant/boiler/temp", "42", T0), T0);
+
+        engine.MarkFilterRefused("boom", "plant/#");
+        Assert.Contains(nameof(NotSupportedException), DiagnosticFor(engine, "boom").FaultReason!);
+
+        engine.ForgetRefusals();
+
+        var diagnostic = DiagnosticFor(engine, "boom");
+        Assert.True(diagnostic.Faulted);
+        Assert.Contains(nameof(NotSupportedException), diagnostic.FaultReason!);
+    }
+
     // Clearing costs one more throw when the rule is still broken, and buys a rule that works
     // again the moment it is repaired — without a restart.
     [Fact]

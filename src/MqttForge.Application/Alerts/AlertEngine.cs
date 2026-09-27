@@ -131,8 +131,9 @@ public sealed class AlertEngine
     // as abuse. So a refused filter is set aside and not asked for again.
     //
     // Not for ever: the set is emptied whenever the question is genuinely new — a link made again
-    // (a broker restarted with a different ACL is the ordinary case) and a rule set the reader has
-    // just edited. Both already force a resubscribe, so both clear this in the same breath.
+    // (a broker restarted with a different ACL is the ordinary case) or moved to another broker,
+    // and a rule set the reader has just edited. Each of them forces a resubscribe, so each clears
+    // this in the same breath.
     private readonly HashSet<string> _refused = new(StringComparer.Ordinal);
 
     /// <summary>Which broker the pairs in the core were learned from.</summary>
@@ -293,7 +294,10 @@ public sealed class AlertEngine
             _core.SetDropped(dropped);
 
             var now = _time.GetUtcNow();
-            if (now >= _nextTick)
+            var tick = now >= _nextTick;
+            var connected = false;
+
+            if (tick)
             {
                 // Set before the tick runs, not after. If OnTick were ever to throw, an unmoved
                 // _nextTick would make every following iteration due immediately and turn a
@@ -308,12 +312,12 @@ public sealed class AlertEngine
                 // engine, but that is a delivery channel with its own queue: a tick that asks the
                 // manager gets the truth as of this instant, while a tick that waits to be told
                 // could judge a whole second of silence against a link that had already gone.
-                var connected = _connection.State == ConnectionState.Connected;
+                connected = _connection.State == ConnectionState.Connected;
 
                 // And if it IS a different broker, everything the rules learned at the last one
                 // goes — before the tick judges anything, so no silence rule fires about a topic
-                // that belongs to a broker nobody is connected to. Read on every turn rather than
-                // only on the transition above: the reader can move the link from one live broker
+                // that belongs to a broker nobody is connected to. Read on every tick rather than
+                // only on the transition below: the reader can move the link from one live broker
                 // to another without it ever being seen down.
                 if (connected)
                 {
@@ -326,6 +330,10 @@ public sealed class AlertEngine
                         _log.LogInformation(
                             "The link moved from {Was} to {Now}, so the rules start again: what they had learned was the other broker's.",
                             _learnedFrom, endpoint);
+
+                        // A move no tick saw down is a new link all the same: the rules' filters
+                        // went with the old one, and a refusal was the other broker's answer.
+                        NewLink();
                     }
 
                     if (endpoint is not null) _learnedFrom = endpoint;
@@ -333,18 +341,7 @@ public sealed class AlertEngine
 
                 events.AddRange(AlertEvent.Of(_core.OnTick(now, connected)));
 
-                // Subscriptions die with the connection — MqttnetSubscriber clears its own set on
-                // disconnect — so the link coming back is the third of the three moments the rule
-                // set has to be applied.
-                if (connected && !_linkWasUp)
-                {
-                    _resubscribe = true;
-
-                    // A new link is a new answer: the broker may have been restarted with a
-                    // different ACL, or be a different broker altogether.
-                    _refused.Clear();
-                }
-
+                if (connected && !_linkWasUp) NewLink();
 
                 _linkWasUp = connected;
 
@@ -368,6 +365,12 @@ public sealed class AlertEngine
             await DeliverAsync(events, ct);
             await AnnounceDropsAsync(dropped, ct);
             await SaveStateAsync(ct);
+
+            // And filters that went with no transition to show for it: a link that dropped and came
+            // back between two ticks, a move to a broker the manager had not named yet. Once a tick,
+            // what the rules want is held against what the subscriber holds for them — in memory,
+            // so the look costs nothing and asks the broker nothing.
+            if (tick && connected && !_resubscribe && FiltersMissing()) _resubscribe = true;
 
             if (_resubscribe) await SyncSubscriptionsAsync(ct);
         }
@@ -428,9 +431,49 @@ public sealed class AlertEngine
         }
     }
 
+    /// <summary>What a new link, or a link to another broker, asks of the rules' subscriptions.</summary>
+    // Subscriptions die with the connection — MqttnetSubscriber clears its own set on disconnect and
+    // puts back only the console's — so a new link is the third of the three moments the rule set
+    // has to be applied. And it is a new answer: the broker may have been restarted with a different
+    // ACL, or be a different broker altogether, so what was refused is asked for again, and a rule
+    // set aside over a refusal is let back in to be refused again or not.
+    private void NewLink()
+    {
+        _resubscribe = true;
+        _refused.Clear();
+        _core.ForgetRefusals();
+    }
+
+    /// <summary>Whether a filter an enabled rule wants, and the broker has not refused, is not held for the rules.</summary>
+    private bool FiltersMissing()
+    {
+        var held = HeldForRules();
+
+        foreach (var rule in _live)
+            if (rule.Enabled && !held.Contains(rule.Filter) && !_refused.Contains(rule.Filter))
+                return true;
+
+        return false;
+    }
+
+    /// <summary>The filters the subscriber holds on the rules' behalf, whoever else holds them too.</summary>
+    // Only what this engine owns. A filter the console put up is the console's business, and
+    // unsubscribing it because no rule wants it would empty the user's own Filters panel.
+    private HashSet<string> HeldForRules()
+    {
+        var held = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var filter in _subscriber.Filters)
+            if (filter.Owners.HasFlag(SubscriptionOwner.Rules))
+                held.Add(filter.Filter);
+
+        return held;
+    }
+
     /// <summary>
     /// Puts the filters the enabled rules want up, and takes down the ones only a departed rule
-    /// wanted. Called on startup, on every rule set, and on every reconnect.
+    /// wanted. Called on startup, on every rule set, on every new link, and on a tick that finds a
+    /// filter missing.
     /// </summary>
     // The spec's "Kuralın filtresi bir aboneliktir": without this the engine is deaf. The user
     // writes a rule, no message matching it is ever subscribed, the rule never fires, and nothing
@@ -450,12 +493,7 @@ public sealed class AlertEngine
             if (rule.Enabled)
                 wanted.Add(rule.Filter);
 
-        // Only what this engine owns. A filter the console put up is the console's business, and
-        // unsubscribing it because no rule wants it would empty the user's own Filters panel.
-        var held = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var filter in _subscriber.Filters)
-            if (filter.Owners.HasFlag(SubscriptionOwner.Rules))
-                held.Add(filter.Filter);
+        var held = HeldForRules();
 
         var missing = new List<SubscriptionRequest>();
         foreach (var filter in wanted)
