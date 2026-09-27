@@ -579,7 +579,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
     // ---- faults that are not shutdown ----
 
     [Fact]
-    public async Task A_cancellation_that_is_not_shutdown_does_not_stop_the_pump()
+    public async Task A_push_the_hub_gives_up_on_is_contained_in_the_push()
     {
         var engine = await RunningAsync(Watch());
         _console.Fault = new OperationCanceledException("The hub gave up on a send.");
@@ -591,6 +591,11 @@ public sealed class FlowEngineTests : IAsyncLifetime
         await engine.NotifyMessageReceivedAsync(Msg("plant/k2/temp", "{\"temp\":95}"));
 
         await Eventually.Until(_time, () => _publisher.Sent.Count == 2, "the next arrival to be run");
+
+        // Said as the push's own failure. The turn's catch would keep the pump going too, but it
+        // would take the rest of the turn with it — the look at the filters that comes after.
+        Assert.Contains(_log.Lines, line => line.Message.StartsWith("Could not tell the console"));
+        Assert.DoesNotContain(_log.Lines, line => line.Message.StartsWith("A turn of the flow engine failed"));
     }
 
     [Fact]
