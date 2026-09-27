@@ -4,6 +4,7 @@ import { queryKeys } from '../api/queryKeys';
 import type { SeenConnectionState } from '../api/useConnectionState';
 import { createFrameBuffer } from '../lib/frameBuffer';
 import { useAlertStore } from '../stores/alertStore';
+import { useFlowStatusStore } from '../stores/flowStatusStore';
 import { useHubStatusStore } from '../stores/hubStatusStore';
 import { useHealthStore } from '../stores/healthStore';
 import { MAX_LOG_ENTRIES, useLogStore } from '../stores/logStore';
@@ -185,6 +186,10 @@ export function useHubBridge(hub: Hub) {
       alertsResolved: (alerts) => useAlertStore.getState().resolved(alerts),
       alertMuted: (ruleId, topic, until) => useAlertStore.getState().mute(ruleId, topic, until),
       alertsDropped: (total) => useAlertStore.getState().droppedTotal(total),
+      // The flows page's live numbers. A hand-off and nothing more, for the reason the four alert
+      // events above give: what a flow's numbers mean is the page's business.
+      flowStatus: (status) => useFlowStatusStore.getState().setStatus(status),
+      flowDebug: (entries, dropped) => useFlowStatusStore.getState().addDebug(entries, dropped),
       reconnecting: () => useHubStatusStore.getState().setStatus('reconnecting'),
       // Broker state may have moved on while the hub was down; refetch, don't trust the cache.
       reconnected: () => {

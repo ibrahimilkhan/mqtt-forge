@@ -54,6 +54,17 @@ const defaultHandlers = [
   // A test host owns no window, so it offers neither dialog — which is the browser's answer too.
   http.get('/api/export/folder', () => HttpResponse.json({ folder: null, canChoose: false })),
   http.get('/api/connection/certificate-file', () => HttpResponse.json({ canChoose: false })),
+  // The Flows page reads both on open. No flows and nothing running is the quiet answer.
+  http.get('/api/flows', () =>
+    HttpResponse.json({
+      flows: [],
+      problems: [],
+      unreadable: false,
+      allowWebhooks: false,
+      alertTopicPrefix: 'mqttforge/alerts/',
+    }),
+  ),
+  http.get('/api/flows/status', () => HttpResponse.json({ flows: [] })),
 ];
 
 export const server = setupServer(...defaultHandlers);

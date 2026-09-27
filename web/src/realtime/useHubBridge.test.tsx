@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { queryKeys } from '../api/queryKeys';
 import { server } from '../test/server';
 import { emptyAlerts, useAlertStore } from '../stores/alertStore';
+import { useFlowStatusStore } from '../stores/flowStatusStore';
 import { MAX_LOG_ENTRIES, runFor, useLogStore } from '../stores/logStore';
 import { useHealthStore } from '../stores/healthStore';
 import { usePauseStore } from '../stores/pauseStore';
@@ -519,5 +520,29 @@ describe('useHubBridge and the alert engine', () => {
 
     hub.emit('reconnected');
     await waitFor(() => expect(useAlertStore.getState().active).toHaveLength(0));
+  });
+});
+
+describe('flow events', () => {
+  it('hands the status and the debug lines to the flow store and does nothing else with them', () => {
+    const hub = createFakeHub();
+    const client = new QueryClient();
+    renderHook(() => useHubBridge(hub), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      ),
+    });
+
+    act(() => {
+      hub.emit('flowStatus', {
+        flows: [{ id: 'watch', faults: 0, fault: null, nodes: [] }],
+      });
+      hub.emit('flowDebug', [
+        { flowId: 'watch', nodeId: 'say', at: '2026-09-26T09:00:00Z', kind: 'message', topic: 'a', text: 'hello' },
+      ], 0);
+    });
+
+    expect(Object.keys(useFlowStatusStore.getState().flows)).toEqual(['watch']);
+    expect(useFlowStatusStore.getState().debug[0].text).toBe('hello');
   });
 });

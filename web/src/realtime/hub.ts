@@ -1,5 +1,5 @@
 import * as signalR from '@microsoft/signalr';
-import type { AlertDto, ConnectionStateResponse, MqttMessage, ReconnectStatus } from '../types/api';
+import type { AlertDto, ConnectionStateResponse, FlowDebugDto, FlowStatusDto, MqttMessage, ReconnectStatus } from '../types/api';
 
 export type HubEvents = {
   // Batched server-side: a busy broker outruns one frame per message.
@@ -28,6 +28,10 @@ export type HubEvents = {
   alertMuted: (ruleId: string, topic: string, until: string | null) => void;
   /** Running total of what the alert engine never judged, sent only when it moves. */
   alertsDropped: (total: number) => void;
+  /** What every running flow has done, at most four times a second and only when it moved. */
+  flowStatus: (status: FlowStatusDto) => void;
+  /** Debug lines, oldest first, and how many the server left out since the last batch. */
+  flowDebug: (entries: FlowDebugDto[], dropped: number) => void;
   reconnecting: () => void;
   reconnected: () => void;
 };
@@ -115,6 +119,8 @@ export function createSignalRHub(url = '/hubs/mqtt'): Hub {
       bind('alertsResolved');
       bind('alertMuted');
       bind('alertsDropped');
+      bind('flowStatus');
+      bind('flowDebug');
 
       // signalR has no lifecycle-handler removal API; harmless since the connection outlives the app.
       if (handlers.reconnecting) {

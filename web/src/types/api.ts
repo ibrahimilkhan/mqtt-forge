@@ -97,6 +97,11 @@ export type ActiveFilter = {
   topicFilter: string;
   console: boolean;
   rules: boolean;
+  /**
+   * Held by a flow's MQTT in node. Optional because the server has always sent it since flows
+   * existed and every fixture written before then leaves it out; missing means no flow holds it.
+   */
+  flows?: boolean;
 };
 
 export type ConnectionStateResponse = {
@@ -441,3 +446,88 @@ export type SaveWarningDto = { ruleId: string; reason: string };
 
 /** What a PUT answers: what was written, and what was allowed but is not going to happen. */
 export type AlertRulesSavedDto = { rules: AlertRuleDto[]; warnings: SaveWarningDto[] };
+
+// ---- flows ----
+
+/**
+ * A node's kind. The server's FlowPorts names one for one; web/src/features/flows/nodeTypes.ts
+ * says what each one is to a reader.
+ */
+export type FlowNodeType =
+  | 'mqttIn'
+  | 'every'
+  | 'inject'
+  | 'if'
+  | 'forEach'
+  | 'repeat'
+  | 'alarm'
+  | 'publish'
+  | 'debug';
+
+/**
+ * A node as flows.json keeps it. Its settings are a plain object the server's compiler reads,
+ * and a number typed into a box may arrive as its text — the compiler reads "0.5" as 0.5.
+ */
+export type FlowNodeDto = {
+  id: string;
+  type: FlowNodeType;
+  x: number;
+  y: number;
+  config: Record<string, unknown>;
+};
+
+/** A wire from one node's output port to another node's input port. */
+export type FlowEdgeDto = { id: string; from: string; fromPort: string; to: string; toPort: string };
+
+export type FlowDto = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  nodes: FlowNodeDto[];
+  edges: FlowEdgeDto[];
+};
+
+/** Something wrong with a flow in the file, under the key the page marks: flow, node:{id} or edge:{id}. */
+export type FlowProblemDto = { flowId: string; key: string; message: string };
+
+/** GET /api/flows: the flows, what is wrong with any of them, and two facts about this host. */
+export type FlowsDto = {
+  flows: FlowDto[];
+  problems: FlowProblemDto[];
+  unreadable: boolean;
+  allowWebhooks: boolean;
+  alertTopicPrefix: string;
+};
+
+export type FlowSavedDto = { flow: FlowDto };
+
+/** A flow alarm that is up, as its Alarm node's inspector lists it. */
+export type FlowStandingDto = { topic: string; firedAt: string; reason: string; count: number };
+
+/**
+ * One node's numbers. `outs` is keyed by output port, plus four counters that are not ports:
+ * `skipped` (If, For each), `echo` (MQTT in), `sent` (Publish), `raised` and `cleared` (Alarm).
+ */
+export type FlowNodeStatusDto = {
+  id: string;
+  count: number;
+  outs: Record<string, number>;
+  errors: number;
+  note: string | null;
+  standing: FlowStandingDto[];
+};
+
+export type FlowRunStatusDto = { id: string; faults: number; fault: string | null; nodes: FlowNodeStatusDto[] };
+
+/** Every running flow. A flow that is not in it is not running. */
+export type FlowStatusDto = { flows: FlowRunStatusDto[] };
+
+/** A line for the debug strip: what a Debug node printed, or what went wrong. */
+export type FlowDebugDto = {
+  flowId: string;
+  nodeId: string;
+  at: string;
+  kind: 'message' | 'error';
+  topic: string;
+  text: string;
+};

@@ -7,6 +7,7 @@ export const queryKeys = {
   subscriptions: ['subscriptions'] as const,
   colourRules: ['colour-rules'] as const,
   alertRules: ['alert-rules'] as const,
+  flows: ['flows'] as const,
   exportFolder: ['export', 'folder'] as const,
   certificateDialog: ['connection', 'certificate-file'] as const,
 };
