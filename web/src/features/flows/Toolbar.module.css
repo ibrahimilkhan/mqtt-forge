@@ -1,0 +1,65 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.beta {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--warn);
+  border-radius: var(--r-control);
+  font-family: var(--mono);
+  font-size: var(--t-nano);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--warn);
+}
+
+/* The tabs and the + after them, scrolling sideways together once there are more than fit. */
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.tabList { display: flex; align-items: center; gap: 4px; flex: none; }
+
+/* A tab says a flow's name in the reader's own capitalisation, against the global rule that
+   shouts every button: the name is something they typed, the way a saved broker's is. */
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 5px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--t-small);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+.tab[aria-selected='true'] { border-color: var(--signal); box-shadow: inset 0 -2px 0 var(--signal); }
+
+/* The flow's state, as a lamp: running green, refused red, anything else the rail's grey. */
+.lamp { width: 7px; height: 7px; border-radius: 50%; background: var(--rule); }
+.tab[data-state='running'] .lamp { background: var(--live); }
+.tab[data-state='refused'] .lamp { background: var(--fault); }
+
+.changed { color: var(--warn); font-weight: 700; }
+
+.add { flex: none; padding: 3px 10px; font-size: var(--t-body); }
+
+.count {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  color: var(--muted);
+}

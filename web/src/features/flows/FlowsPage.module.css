@@ -9,6 +9,11 @@
   gap: var(--channel);
 }
 
+/* The toolbar, and under it the line that says a deploy did not go through. min-width, because a
+   grid item is otherwise as wide as its content, and the tabs are meant to scroll, not widen the
+   page. */
+.top { min-width: 0; }
+
 .body {
   display: grid;
   grid-template-columns: 172px minmax(0, 1fr) 300px;
@@ -19,6 +24,14 @@
 .missing {
   margin: 0;
   color: var(--muted);
+}
+
+/* No flows yet: the console's own empty-page block, with the two ways to start under the sentence
+   rather than beside it. The block lays its children out in a row, which suits one sentence and
+   nothing else. */
+.start {
+  composes: nothingYet from '../../styles/panel.module.css';
+  flex-direction: column;
 }
 
 @media (max-width: 900px) {
