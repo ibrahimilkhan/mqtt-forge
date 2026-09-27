@@ -1,4 +1,5 @@
 import { useAlertStore } from '../../stores/alertStore';
+import { isFlowAlarm, useFlowAlarmStore } from '../../stores/flowAlarmStore';
 import type { AlertDto, AlertSeverity } from '../../types/api';
 import type { PanelId } from '../panels';
 import { clock, RANK } from './AlertsPanel';
@@ -38,6 +39,16 @@ export function AlertWall({ open }: { open: (id: PanelId) => void }) {
       Date.parse(other.firedAt) - Date.parse(one.firedAt),
   );
 
+  // A rule's alarm opens the Alerts panel, where its rule is. A flow alarm has no rule there — the
+  // panel lists rules, not alarms, and would say nothing about it — so its row opens the Flows
+  // page on the flow and the Alarm node it came from, whose pane lists what the node holds up.
+  const opening = (alert: AlertDto) => {
+    if (!isFlowAlarm(alert.ruleId)) return open('alerts');
+
+    useFlowAlarmStore.getState().ask(alert.ruleId);
+    open('flows');
+  };
+
   return (
     <aside
       className={styles.wall}
@@ -58,7 +69,7 @@ export function AlertWall({ open }: { open: (id: PanelId) => void }) {
         <p className={styles.quiet}>Nothing is alarming.</p>
       ) : (
         standing.map((alert) => (
-          <Row key={alert.id} alert={alert} onOpen={() => open('alerts')} />
+          <Row key={alert.id} alert={alert} onOpen={() => opening(alert)} />
         ))
       )}
     </aside>

@@ -5,6 +5,7 @@ import { http, HttpResponse } from 'msw';
 import { Profiler, StrictMode } from 'react';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { queryKeys } from '../../api/queryKeys';
+import { useFlowAlarmStore } from '../../stores/flowAlarmStore';
 import { useFlowStatusStore } from '../../stores/flowStatusStore';
 import panelStyles from '../../styles/panel.module.css';
 import { server } from '../../test/server';
@@ -28,6 +29,7 @@ beforeEach(() => {
   localStorage.clear();
   useFlowDraftStore.setState({ drafts: {}, bases: {}, current: null, selected: null, refusals: {}, unkept: false });
   useFlowStatusStore.setState(useFlowStatusStore.getInitialState());
+  useFlowAlarmStore.setState({ asked: null });
 });
 
 const watch: FlowDto = {
@@ -1639,6 +1641,56 @@ describe('what did not go through', () => {
     server.use(http.post('/api/flows/:flow/nodes/:node/inject', () => new HttpResponse(null, { status: 202 })));
     fireEvent.click(inject);
     await waitFor(() => expect(screen.queryByText(said)).not.toBeInTheDocument());
+  });
+});
+
+/**
+ * A flow alarm's row on the alarm wall opens this page, on the flow the alarm came from with its
+ * Alarm node picked. The node's pane lists the alarms it holds up; the Alerts panel, a list of
+ * rules, has nothing to say about one.
+ */
+describe('a flow alarm the reader asked to see', () => {
+  const alarmed: FlowDto = {
+    ...watch,
+    nodes: [
+      ...watch.nodes,
+      {
+        id: 'hot', type: 'alarm', x: 580, y: 40,
+        config: { name: 'Boiler too hot', severity: 'warn', reason: '{{topic}}', value: '', sound: false, webhook: '', publish: false, publishTopic: '', qos: 1, retain: false },
+      },
+    ],
+    edges: [...watch.edges, { id: 'e2', from: 'test', fromPort: 'yes', to: 'hot', toPort: 'raise' }],
+  };
+  const inspecting = () => within(screen.getByRole('complementary', { name: 'Inspector' }));
+
+  it('opens on the flow it came from, with its Alarm node picked', async () => {
+    keeping([sim, alarmed]);
+    useFlowAlarmStore.getState().ask('flow-watch-hot');
+    render(<FlowsPage />);
+
+    expect(await screen.findByRole('tab', { name: /^Boiler watch/, selected: true })).toBeInTheDocument();
+    expect(inspecting().getByRole('heading', { name: 'Alarm' })).toBeInTheDocument();
+    expect(useFlowAlarmStore.getState().asked).toBeNull();
+  });
+
+  it('turns to it when asked with the page already open', async () => {
+    keeping([sim, alarmed]);
+    render(<FlowsPage />);
+    await screen.findByText('Boiler simulator', { selector: 'h3' });
+
+    act(() => useFlowAlarmStore.getState().ask('flow-watch-hot'));
+
+    expect(screen.getByRole('tab', { name: /^Boiler watch/, selected: true })).toBeInTheDocument();
+    expect(inspecting().getByRole('heading', { name: 'Alarm' })).toBeInTheDocument();
+  });
+
+  it('lets the question go when the flow is not there any more', async () => {
+    keeping([sim]);
+    useFlowAlarmStore.getState().ask('flow-watch-hot');
+    render(<FlowsPage />);
+
+    expect(await screen.findByText('Boiler simulator', { selector: 'h3' })).toBeInTheDocument();
+    await waitFor(() => expect(useFlowAlarmStore.getState().asked).toBeNull());
   });
 });
 

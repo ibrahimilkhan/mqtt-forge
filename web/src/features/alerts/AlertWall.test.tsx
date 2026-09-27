@@ -7,6 +7,7 @@ import { App } from '../../App';
 import { createFakeHub } from '../../realtime/fakeHub';
 import { useAlertStore } from '../../stores/alertStore';
 import { useAppearanceStore } from '../../stores/appearanceStore';
+import { useFlowAlarmStore } from '../../stores/flowAlarmStore';
 import { server } from '../../test/server';
 import type { AlertDto } from '../../types/api';
 import { useSoundStore } from './alertSound';
@@ -69,6 +70,7 @@ beforeEach(() => {
   // No gesture has happened in a fresh test, and the armed flag is not persisted — set it back
   // anyway, so a test that arms it cannot reach the one after it.
   useSoundStore.setState({ armed: false });
+  useFlowAlarmStore.setState({ asked: null });
 });
 
 const rows = () => screen.queryAllByTestId('alert-wall-row');
@@ -211,6 +213,26 @@ describe('a row as a way in', () => {
     await userEvent.click(screen.getByRole('button', { name: /Open the Kiln too hot alert/ }));
 
     expect(open).toHaveBeenCalledWith('alerts');
+    expect(useFlowAlarmStore.getState().asked).toBeNull();
+  });
+
+  // The Alerts panel lists rules, and a flow alarm has none there: it would open on a page that
+  // says nothing about it. Its row opens the Flows page instead, on the flow and the Alarm node it
+  // came from, whose pane lists the alarms it holds up.
+  it('sends the reader to the flow a flow alarm came from', async () => {
+    const open = vi.fn();
+    render(<AlertWall open={open} />);
+    act(() =>
+      useAlertStore.setState({
+        active: [alertOf('a1', { ruleId: 'flow-watch-hot', ruleName: 'Boiler watch · Boiler too hot', topic: 'plant/k1/temp' })],
+      }),
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /Open the Boiler watch · Boiler too hot alert/ }));
+
+    expect(open).toHaveBeenCalledWith('flows');
+    expect(open).not.toHaveBeenCalledWith('alerts');
+    expect(useFlowAlarmStore.getState().asked).toBe('flow-watch-hot');
   });
 });
 

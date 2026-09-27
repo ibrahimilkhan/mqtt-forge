@@ -6,6 +6,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { getFlows } from '../../api/flows';
 import { queryKeys } from '../../api/queryKeys';
 import { describeError } from '../../lib/problemDetails';
+import { alarmSource, useFlowAlarmStore } from '../../stores/flowAlarmStore';
 import { catchUp, useFlowStatusStore } from '../../stores/flowStatusStore';
 import panel from '../../styles/panel.module.css';
 import type { FlowDto, FlowNodeType } from '../../types/api';
@@ -86,6 +87,7 @@ function Page() {
   const current = useFlowDraftStore((state) => state.current);
   const refusals = useFlowDraftStore((state) => state.refusals);
   const unkept = useFlowDraftStore((state) => state.unkept);
+  const asked = useFlowAlarmStore((state) => state.asked);
   // Which flows run, and nothing else of the numbers: that is all the page draws of them, and every
   // push brings a new picture. Taken whole, each push drew the whole page again, four times a second.
   const runningIds = useFlowStatusStore(useShallow((state) => Object.keys(state.flows)));
@@ -169,6 +171,20 @@ function Page() {
     const lapsed = Object.keys(refusals).filter((id) => !(id in drafts));
     if (lapsed.length > 0) useFlowDraftStore.getState().lapse(lapsed);
   }, [drafts, refusals]);
+
+  // A flow alarm the reader asked to see, from its row on the alarm wall: the page opens on the
+  // flow it came from, with its Alarm node picked. Only once the flows are read, since until then
+  // none of them can be found; and one no flow has any more is let go.
+  useLayoutEffect(() => {
+    if (asked === null || !data) return;
+
+    const source = data.unreadable ? null : alarmSource(asked, deployed);
+    if (source) {
+      useFlowDraftStore.getState().show(source.flowId);
+      useFlowDraftStore.getState().select(source.nodeId);
+    }
+    useFlowAlarmStore.getState().answered();
+  }, [asked, data, deployed]);
 
   const shown = flows.find((flow) => flow.id === current) ?? flows[0];
 
