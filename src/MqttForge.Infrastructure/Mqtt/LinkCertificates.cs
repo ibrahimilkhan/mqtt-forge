@@ -34,6 +34,12 @@ public sealed class LinkCertificates : IDisposable
         return certificates;
     }
 
+    /// <summary>What it holds now, to be looked at. Still this holder's to dispose of.</summary>
+    // Nothing in the product reads it. It is how a test sees that options whose building failed on a
+    // later file still held the certificate read before it — MQTTnet is never handed that one — and
+    // sees it on every platform, where the keychain it would leave behind is macOS's alone.
+    public IReadOnlyList<X509Certificate2> Held => [.. _held];
+
     /// <summary>Everything held, in a holder of its own. This one is left holding nothing.</summary>
     // How an attempt gives the link it made what it loaded, from inside the using that lets them go
     // when the attempt ends any other way.

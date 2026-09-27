@@ -84,25 +84,39 @@ public sealed class MqttnetConnectionManagerCertificateTests(ClientCertificateFi
     }
 
     // Our certificate is read before the CA file, and a CA file that cannot be read ends the attempt
-    // before MQTTnet is handed anything, so only what it leaves behind can show it went. macOS is
-    // where that shows: a keychain in $TMPDIR.
+    // before MQTTnet is handed anything. The attempt puts it down to the file, and what it had read
+    // goes with what the attempt holds, on this way out as on the ones above.
     [Fact]
-    public async Task A_certificate_read_before_a_CA_file_that_cannot_be_read_is_let_go_all_the_same()
+    public async Task An_attempt_a_CA_file_that_cannot_be_read_ends_is_put_down_to_the_file()
     {
-        if (!OperatingSystem.IsMacOS()) return;
-
-        var before = ClientCertificateFiles.Keychains();
-        var settings = Mutual with
-        {
-            Tls = Mutual.TlsSettings with { CertificateAuthorityPath = Path.Combine(files.Directory, "absent.crt") },
-        };
-
         var error = await Assert.ThrowsAsync<BrokerUnreachableException>(
-            () => CreateSut().ConnectAsync(settings, CancellationToken.None));
+            () => CreateSut().ConnectAsync(UnreadableAuthority, CancellationToken.None));
 
         Assert.Equal(BrokerFailureReason.CertificateFileUnreadable, error.Reason);
-        Assert.Empty(ClientCertificateFiles.Keychains().Except(before));
     }
+
+    // ...and that the certificate read first is among what the attempt holds, though MQTTnet never
+    // saw it, is seen where the options are built: by its handle, on every platform. Held only once
+    // the CA file had been read as well, it would be let go by nothing, and on macOS it would leave a
+    // keychain in $TMPDIR.
+    [Fact]
+    public void A_certificate_read_before_a_CA_file_that_cannot_be_read_is_held_to_be_let_go_with_the_rest()
+    {
+        using var certificates = new LinkCertificates();
+
+        Assert.Throws<CertificateFileException>(() => MqttClientOptionsFactory.Build(
+            UnreadableAuthority, MqttProtocolLevel.V500, new TlsCertificateInspector(), certificates));
+        var read = Assert.Single(certificates.Held);
+
+        certificates.Dispose();
+
+        Assert.True(Disposed(read));
+    }
+
+    private BrokerConnectionSettings UnreadableAuthority => Mutual with
+    {
+        Tls = Mutual.TlsSettings with { CertificateAuthorityPath = Path.Combine(files.Directory, "absent.crt") },
+    };
 
     // Auto walks three versions against a broker that refuses each of them: three loads, and all
     // three let go, not only the last.
