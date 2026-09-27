@@ -43,11 +43,11 @@ public sealed class TestCertificates : IDisposable
 
         var server = CreateSigned("localhost", authentication: "1.3.6.1.5.5.7.3.1", subjectAlternativeName);
         Write("server.crt", server.ExportCertificatePem());
-        Write("server.key", server.GetRSAPrivateKey()!.ExportPkcs8PrivateKeyPem());
+        Write("server.key", PrivateKeyPem(server));
 
         var client = CreateSigned("mqttforge-client", authentication: "1.3.6.1.5.5.7.3.2");
         Write("client.crt", client.ExportCertificatePem());
-        Write("client.key", client.GetRSAPrivateKey()!.ExportPkcs8PrivateKeyPem());
+        Write("client.key", PrivateKeyPem(client));
         File.WriteAllBytes(Path.Combine(Directory, "client.pfx"), client.Export(X509ContentType.Pkcs12, ClientPassword));
 
         // Correctly formed, signed by nobody the broker knows. What a rejected client
@@ -83,6 +83,15 @@ public sealed class TestCertificates : IDisposable
 
     private void Write(string name, string contents) =>
         File.WriteAllText(Path.Combine(Directory, name), contents);
+
+    // The certificate's own copy of its key, let go once it is written. On macOS that copy holds the
+    // certificate's temporary keychain in $TMPDIR open after the certificate itself is disposed, and
+    // left to the finalizer it outlived the run whenever no collection came first.
+    private static string PrivateKeyPem(X509Certificate2 certificate)
+    {
+        using var key = certificate.GetRSAPrivateKey()!;
+        return key.ExportPkcs8PrivateKeyPem();
+    }
 
     private static X509Certificate2 CreateAuthority()
     {
