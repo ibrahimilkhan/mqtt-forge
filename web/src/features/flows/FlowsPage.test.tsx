@@ -569,6 +569,22 @@ describe('the tabs', () => {
     expect(document.activeElement).toBe(tabs()[0]);
     expect(onScreen()).toBe('Boiler watch');
   });
+
+  // A browser that gives the keyboard to a tab hanging half off the end of the row leaves it
+  // there, its name and its ring cut off at the row's edge. It only scrolls to one it cannot see
+  // at all.
+  it('bring the tab they land on wholly into the row', async () => {
+    keeping([watch, sim]);
+    render(<FlowsPage />);
+    await screen.findByText('Boiler watch', { selector: 'h3' });
+    const [first, second] = screen.getAllByRole('tab');
+    second.scrollIntoView = vi.fn();
+
+    act(() => first.focus());
+    await userEvent.keyboard('{ArrowRight}');
+
+    expect(second.scrollIntoView).toHaveBeenCalledWith({ inline: 'nearest', block: 'nearest' });
+  });
 });
 
 /** A line a Debug node printed, in a flow. */

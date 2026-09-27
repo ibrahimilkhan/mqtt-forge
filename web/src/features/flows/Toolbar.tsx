@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, type KeyboardEvent } from 'react';
+import { useLayoutEffect, useRef, type FocusEvent, type KeyboardEvent } from 'react';
 import type { FlowDto, FlowRunStatusDto } from '../../types/api';
 import { useFlowDraftStore } from './flowDraftStore';
 import styles from './Toolbar.module.css';
@@ -40,6 +40,17 @@ function stateOf(flowId: string, { changed, deployed, running, refused }: Props)
 
   return [lamp, draft].flatMap((words) => (words ? [`, ${words}`] : [])).join('');
 }
+
+/**
+ * Brings what took the keyboard in the tab row wholly into view. The browser does not: it scrolls
+ * to a tab it cannot see at all, and leaves one it can see part of exactly where it is, focused,
+ * with its name and its ring cut off at the row's edge — as the chart's field chips once were.
+ * `nearest` and the row's scroll-padding put it clear of the edge, and move nothing when the tab
+ * is already wholly in the row.
+ */
+const reveal = (event: FocusEvent) => {
+  if (event.target instanceof HTMLElement) event.target.scrollIntoView?.({ inline: 'nearest', block: 'nearest' });
+};
 
 /** Where each key a tab list answers to goes, from `at` in a list of `count`. */
 function step(key: string, at: number, count: number): number | null {
@@ -104,7 +115,7 @@ export function Toolbar(props: Props) {
 
       {/* The + scrolls with the tabs, so it is always just after the last one. It stands beside
           the tab list rather than in it, because ARIA lets a tab list own tabs and nothing else. */}
-      <div className={styles.tabs}>
+      <div className={styles.tabs} onFocus={reveal}>
         <div className={styles.tabList} role="tablist" aria-label="Tabs" onKeyDown={onKeyDown}>
           {flows.map((flow) => (
             <button
