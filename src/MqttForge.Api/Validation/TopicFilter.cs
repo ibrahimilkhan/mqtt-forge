@@ -11,4 +11,15 @@ namespace MqttForge.Api.Validation;
 public static class TopicFilter
 {
     public static bool IsValid(string? filter) => TopicFilterMatch.IsValidFilter(filter);
+
+    /// <summary>Whether MQTT could carry the filter at all.</summary>
+    // Asked first, and the rule after it not asked at all when this fails (CascadeMode.Stop). That
+    // rule quotes the filter back, which is how whoever wrote it finds the one at fault among a
+    // hundred — and quoted, one too long to carry puts up to 65 KB into the error and into the log,
+    // and still does not say what is wrong with it. It is said instead in the sentence the flows'
+    // MQTT in hears.
+    public static bool FitsMqtt(string? filter) => !TopicFilterMatch.IsTooLong(filter);
+
+    /// <summary>What is said of a filter that does not.</summary>
+    public const string TooLong = TopicFilterMatch.FilterTooLong;
 }

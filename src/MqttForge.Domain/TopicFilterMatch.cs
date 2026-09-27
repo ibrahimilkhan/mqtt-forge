@@ -116,6 +116,12 @@ public static class TopicFilterMatch
     // filters too and Application does not reference Api. Api's TopicFilter.IsValid asks this.
     public static bool IsValidFilter(string? filter) => FilterProblem(filter) is null;
 
+    /// <summary>What <see cref="FilterProblem"/> says of a filter <see cref="IsTooLong"/>.</summary>
+    public const string FilterTooLong = "MQTT allows a topic filter of at most 65,535 bytes.";
+
+    /// <summary>Whether a filter is longer than MQTT can carry: 65,535 bytes of UTF-8.</summary>
+    public static bool IsTooLong(string? filter) => filter is not null && Encoding.UTF8.GetByteCount(filter) > 65_535;
+
     /// <summary>What is wrong with a topic filter, said to whoever wrote it, or null when nothing is.</summary>
     // One sentence for each way to be wrong, because the one there was fitted only the empty box:
     // "write a topic filter" to somebody who had written plant/#/temp and needed to hear where '#'
@@ -127,7 +133,7 @@ public static class TopicFilterMatch
     {
         if (string.IsNullOrEmpty(filter)) return "Write a topic filter, like plant/+/temp.";
         if (filter.Contains('\0')) return "A topic filter cannot contain a NUL character.";
-        if (Encoding.UTF8.GetByteCount(filter) > 65_535) return "MQTT allows a topic filter of at most 65,535 bytes.";
+        if (IsTooLong(filter)) return FilterTooLong;
 
         var levels = filter.Split('/');
 

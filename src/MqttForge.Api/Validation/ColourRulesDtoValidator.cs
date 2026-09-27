@@ -29,6 +29,9 @@ public sealed partial class ColourRulesDtoValidator : AbstractValidator<ColourRu
         RuleForEach(x => x.Rules).ChildRules(rule =>
         {
             rule.RuleFor(x => x.Filter)
+                .Cascade(CascadeMode.Stop)
+                .Must(TopicFilter.FitsMqtt)
+                .WithMessage(TopicFilter.TooLong)
                 .Must(TopicFilter.IsValid)
                 .WithMessage("'{PropertyValue}' is not a valid topic filter.");
 

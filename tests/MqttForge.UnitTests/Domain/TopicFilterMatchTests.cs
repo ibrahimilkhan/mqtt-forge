@@ -109,7 +109,7 @@ public class TopicFilterMatchTests
     [InlineData("plant/te+mp", false)]
     [InlineData("plant/te#", false)]
     [InlineData("plant/\0", false)]
-    public void IsValidFilter_answers_what_the_api_validator_always_answered(string? filter, bool valid) =>
+    public void IsValidFilter_accepts_a_well_formed_filter_and_refuses_a_malformed_one(string? filter, bool valid) =>
         Assert.Equal(valid, TopicFilterMatch.IsValidFilter(filter));
 
     // One sentence for every way a filter can be wrong. Seen live: plant/#/temp was answered with

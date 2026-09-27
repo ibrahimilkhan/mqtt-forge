@@ -106,6 +106,9 @@ public sealed partial class AlertRulesDtoValidator : AbstractValidator<AlertRule
             rule.RuleFor(x => x.Name).NotEmpty().MaximumLength(MaxNameLength);
 
             rule.RuleFor(x => x.Filter)
+                .Cascade(CascadeMode.Stop)
+                .Must(TopicFilter.FitsMqtt)
+                .WithMessage(TopicFilter.TooLong)
                 .Must(TopicFilter.IsValid)
                 .WithMessage("'{PropertyValue}' is not a valid topic filter.");
 

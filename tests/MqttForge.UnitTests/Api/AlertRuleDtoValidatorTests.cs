@@ -79,6 +79,15 @@ public class AlertRuleDtoValidatorTests
         Assert.False(IsValid(Rule(filter: filter)));
     }
 
+    // Quoted back, a filter longer than MQTT can carry put 65 KB into the error, and the log, and
+    // still did not say what was wrong with it.
+    [Fact]
+    public void A_filter_too_long_for_MQTT_is_said_to_be_that_and_not_quoted_back()
+    {
+        Assert.Equal("MQTT allows a topic filter of at most 65,535 bytes.",
+            Message(Rule(filter: new string('a', 65_536))));
+    }
+
     // The loop. The engine publishes its own alarms under the prefix and drops anything arriving
     // from under it, so a rule filtering over that tree is not a feedback loop — it is worse: a
     // subscription that costs bandwidth, matches messages, and can never once fire. Refusing it is

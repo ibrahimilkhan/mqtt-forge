@@ -45,6 +45,16 @@ public class ColourRulesDtoValidatorTests
         Assert.False(IsValid(new ColourRuleDto(filter, "#b45309")));
     }
 
+    // Quoted back, a filter longer than MQTT can carry put 65 KB into the error, and the log, and
+    // still did not say what was wrong with it.
+    [Fact]
+    public void A_filter_too_long_for_MQTT_is_said_to_be_that_and_not_quoted_back()
+    {
+        var result = _validator.Validate(new ColourRulesDto([new ColourRuleDto(new string('a', 65_536), "#b45309")]));
+
+        Assert.Equal("MQTT allows a topic filter of at most 65,535 bytes.", Assert.Single(result.Errors).ErrorMessage);
+    }
+
     [Theory]
     [InlineData("#b45309")]
     [InlineData("#B45309")]
