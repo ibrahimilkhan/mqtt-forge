@@ -65,5 +65,16 @@ With that set, a rule's webhook action is never delivered and no HTTP request le
 for one. Everything else about alerting carries on, including the action that publishes the alert
 back onto your own broker — that one goes nowhere the broker connection was not already going.
 
-Neither of these is a vulnerability report; they are how the app is built. Something that lets a
+## Flows
+
+Flows (an experimental page) are drawn from nodes and run on the server, whether or not a console
+is open. A deployed flow is a standing instruction in the same way an alert rule is: anyone who can
+reach the port can deploy one, and it keeps running after they have gone — publishing on a timer,
+answering messages, raising alarms. Each flow is held to fifty publishes a second.
+
+A flow's alarm webhook goes through the same `MqttForge:AllowWebhooks` switch as a rule's, and its
+MQTT alarm stays under the alert prefix, as a rule's does. Flows are kept in `flows.json` beside the
+other settings.
+
+None of these is a vulnerability report; they are how the app is built. Something that lets a
 person do more than the above is worth telling me about.
