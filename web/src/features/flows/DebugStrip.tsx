@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { leftOut, useFlowStatusStore, type DebugLine } from '../../stores/flowStatusStore';
 import type { FlowDto } from '../../types/api';
 import { NODE_SPECS } from './nodeTypes';
@@ -36,6 +36,7 @@ export function DebugStrip({ flow }: { flow: FlowDto }) {
   const dropped = useFlowStatusStore((state) => leftOut(state, flow.id));
   const clear = useFlowStatusStore((state) => state.clearDebug);
   const [open, setOpen] = useState(readOpen);
+  const fold = useRef<HTMLButtonElement>(null);
 
   const labelOf = (nodeId: string) => {
     const node = flow.nodes.find((one) => one.id === nodeId);
@@ -55,12 +56,20 @@ export function DebugStrip({ flow }: { flow: FlowDto }) {
   return (
     <section className={styles.debug} data-open={open ? '' : undefined} aria-label="Debug">
       <div className={styles.head}>
-        <button type="button" className={styles.fold} aria-expanded={open} onClick={toggle}>
+        <button ref={fold} type="button" className={styles.fold} aria-expanded={open} onClick={toggle}>
           <span aria-hidden="true">{open ? '▾' : '▸'}</span> Debug <span className={styles.count}>{lines.length}</span>
         </button>
         {dropped > 0 && <span className={styles.dropped}>{dropped} left out, from any flow</span>}
         {open && (lines.length > 0 || dropped > 0) && (
-          <button type="button" className="ghost ends" onClick={() => clear(flow.id)}>
+          <button
+            type="button"
+            className="ghost ends"
+            onClick={() => {
+              // Clear goes with what it cleared, and the keyboard with it; the fold stays.
+              clear(flow.id);
+              fold.current?.focus();
+            }}
+          >
             Clear
           </button>
         )}

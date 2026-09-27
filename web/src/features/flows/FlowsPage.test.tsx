@@ -8,6 +8,8 @@ import { server } from '../../test/server';
 import { renderWithClient as render } from '../../test/renderWithClient';
 import type { FlowDebugDto, FlowDto, FlowNodeDto, FlowsDto, FlowStatusDto } from '../../types/api';
 import { standInForTheBrowser } from './canvasTestbed';
+import strip from './DebugStrip.module.css';
+import stripSheet from './DebugStrip.module.css?raw';
 import { NODE_HEIGHT, NODE_WIDTH } from './FlowCanvas';
 import { useFlowDraftStore } from './flowDraftStore';
 import FlowsPage from './FlowsPage';
@@ -672,6 +674,26 @@ describe('the debug strip', () => {
     // What went wrong is not about a message, so an error with no topic has nothing missing.
     const error = within(debugStrip()).getByText('The flow stopped.').closest('li')!;
     expect(within(error).queryByText('no topic')).not.toBeInTheDocument();
+
+    // Said quieter than what was printed, so the words cannot be taken for a topic or a payload.
+    expect(within(empty).getByText('no topic')).toHaveClass(strip.none);
+    expect(within(empty).getByText('empty payload')).toHaveClass(strip.none);
+    expect(within(error).getByText('The flow stopped.')).not.toHaveClass(strip.none);
+    expect(stripSheet.replace(/\/\*[\s\S]*?\*\//g, '')).toMatch(/\.none\s*\{[^}]*color:\s*var\(--muted\)/);
+  });
+
+  // Clear goes with the lines it cleared, and a browser hands the keyboard of a button taken out
+  // to the body. The strip's own fold stays, so the reader stays in the strip.
+  it('hands the keyboard to its fold when Clear takes itself away', async () => {
+    keeping([watch]);
+    render(<FlowsPage />);
+    await screen.findByText('Boiler watch', { selector: 'h3' });
+    act(() => useFlowStatusStore.getState().addDebug([printed('watch', 'w1')], 0));
+
+    await userEvent.click(within(debugStrip()).getByRole('button', { name: 'Clear' }));
+
+    expect(within(debugStrip()).queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(within(debugStrip()).getByRole('button', { name: /Debug/ }));
   });
 });
 
