@@ -55,7 +55,7 @@ public class FrameAncestorsTests
     [InlineData("https://ha.example.com\"")]
     [InlineData("https://ha.example.com\u0000")]
     [InlineData("https://ha.example.com\n")]
-    [InlineData("https://Kitchen.example.com")]
+    [InlineData("https://\u212Aitchen.example.com")]
     [InlineData("https://*.com")]
     [InlineData("*.local:8123")]
     public void Anything_else_stops_the_app_starting_and_names_the_setting(string setting)
