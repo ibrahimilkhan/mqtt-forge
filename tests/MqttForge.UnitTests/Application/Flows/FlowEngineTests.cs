@@ -995,21 +995,36 @@ public sealed class FlowEngineTests : IAsyncLifetime
     // AlertEngine's pause, for its reason: each attempt at a broker that keeps the link and does not
     // answer holds the pump for the subscriber's whole deadline, and one a turn left the pump a turn
     // per deadline. The flows run meanwhile, and the filter is asked for again once the pause is over.
+    //
+    // The last second is moved on only once the pump is waiting for it, the every test's arrangement:
+    // a turn that has read the clock and not yet made its delay makes it from the moved clock, a
+    // second late, and with the clock then held still the end of the pause never came. The arrival is
+    // run early in the pause, a second in, where it is told to the console at once rather than a
+    // quarter of a second after the start's: from there on every wait ends on a whole second, and at
+    // the last one before the end the pump has nothing but its tick to do.
     [Fact]
     public async Task A_subscribe_the_broker_did_not_answer_is_asked_again_after_a_pause_and_not_on_the_next_turn()
     {
+        var clock = new WatchedClock(_time);
+        _clock = clock;
         _subscriber.Refuse = new BrokerDidNotAnswerException("The broker did not answer the SUBSCRIBE for 'plant/+/temp' within 10 seconds.");
         var engine = await RunningAsync(Watch());
         _subscriber.Refuse = null;
 
-        for (var second = 1; second < FlowEngine.NoAnswerPause.TotalSeconds; second++)
+        await ClockStill(() => clock.Waits(T0.AddSeconds(1)), "the pump to wait for its first tick");
+        _time.Advance(FlowEngine.TickInterval);
+
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+        await ClockStill(() => _publisher.Sent.Count == 1, "the arrival to be run during the pause");
+
+        for (var second = 2; second < FlowEngine.NoAnswerPause.TotalSeconds; second++)
         {
             _time.Advance(FlowEngine.TickInterval);
             await Task.Delay(10);
         }
 
-        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
-        await ClockStill(() => _publisher.Sent.Count == 1, "the arrival to be run during the pause");
+        var over = T0 + FlowEngine.NoAnswerPause;
+        await ClockStill(() => clock.Waits(over), "the pump to wait for the end of the pause");
         Assert.Single(_subscriber.Batches);
 
         _time.Advance(FlowEngine.TickInterval);
