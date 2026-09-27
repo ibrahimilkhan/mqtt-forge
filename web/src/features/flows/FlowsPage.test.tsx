@@ -589,7 +589,27 @@ describe('the tabs', () => {
     await userEvent.type(screen.getByLabelText('Name'), ' 2');
     await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
 
-    expect(await screen.findByRole('tab', { name: 'Boiler watch 2, refused, changes not deployed' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('tab', { name: 'Boiler watch 2, not running, refused, changes not deployed' }),
+    ).toBeInTheDocument();
+  });
+
+  // A refused deploy leaves the flow running what it ran before, and the tab says both.
+  it('go on saying a flow runs when the server refuses its changes', async () => {
+    keeping([watch]);
+    server.use(
+      http.get('/api/flows/status', () => HttpResponse.json(watchHasSeen(0))),
+      http.put('/api/flows/watch', () => refusal({ 'node:test': ['Pick a test.'] })),
+    );
+    render(<FlowsPage />);
+    await screen.findByRole('tab', { name: 'Boiler watch, running' });
+
+    await userEvent.type(screen.getByLabelText('Name'), ' 2');
+    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+
+    expect(
+      await screen.findByRole('tab', { name: 'Boiler watch 2, running, refused, changes not deployed' }),
+    ).toBeInTheDocument();
   });
 
   // A colour on its own says nothing to a reader who cannot tell these apart, so each state has a

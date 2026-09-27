@@ -49,9 +49,13 @@ type Props = {
  * What a tab's lamp and dot say, in words, for a reader who cannot see them. A flow never deployed
  * is not deployed; one that was, and has been edited since, is still running what was deployed, so
  * it is its changes that are not. A draft the server moved on from under says that instead.
+ *
+ * The lamp shows a refusal over whether the flow runs, and the words say both: a flow whose new
+ * version was refused goes on running the one it had.
  */
 function stateOf(flowId: string, { changed, overtaken, deployed, running, refused }: Props): string {
-  const lamp = refused.has(flowId) ? 'refused' : running.has(flowId) ? 'running' : deployed.has(flowId) ? 'not running' : null;
+  const runs = running.has(flowId) ? 'running' : deployed.has(flowId) ? 'not running' : null;
+  const verdict = refused.has(flowId) ? 'refused' : null;
   const draft = overtaken.has(flowId)
     ? `${deployed.has(flowId) ? 'changed' : 'deleted'} on the server since you started`
     : !deployed.has(flowId)
@@ -60,7 +64,7 @@ function stateOf(flowId: string, { changed, overtaken, deployed, running, refuse
         ? 'changes not deployed'
         : null;
 
-  return [lamp, draft].flatMap((words) => (words ? [`, ${words}`] : [])).join('');
+  return [runs, verdict, draft].flatMap((words) => (words ? [`, ${words}`] : [])).join('');
 }
 
 /** What the count beside Deploy says: the changes it sends, and the ones it holds back. */
