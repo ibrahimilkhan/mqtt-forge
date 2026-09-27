@@ -40,10 +40,25 @@ export const addNode = (flow: FlowDto, type: FlowNodeType, at: { x: number; y: n
 export type Box = { width: number; height: number };
 
 /**
+ * Where the palette's adds start in the view, and how many places go to a row before the next row:
+ * a node centred on the middle of the view, and as many beside it as fit, `gap` apart, before the
+ * view's right edge. The middle and the edge are in the canvas's own units, so its zoom is already
+ * in them.
+ */
+export function placesInView(middle: { x: number; y: number }, right: number, box: Box, gap: number) {
+  const start = { x: middle.x - box.width / 2, y: middle.y - box.height / 2 };
+  return { start, across: Math.floor((right - start.x + gap) / (box.width + gap)) };
+}
+
+/**
  * Where a node the palette adds goes: `start` if nothing is there, or else the first place along
  * from it — `across` places to a row, then down a row, `gap` apart — that touches no node the flow
  * has. Where the nodes stand decides it, not how many have been added, so a node dragged into the
  * way is stepped round like any other.
+ *
+ * The places are reckoned from `start` rounded, because that is where a node put there is kept
+ * (see addNode). Reckoned from up to half a pixel short of it, the node just put down reached that
+ * far into the next place along, and every add passed over a place that was free.
  *
  * Every node can stand in the way of four places at most, so one of the first few past four for
  * each node is free; the count stops the search at that, whatever the flow holds.
@@ -55,6 +70,7 @@ export function freeSpot(
   across: number,
   gap: number,
 ): { x: number; y: number } {
+  const first = { x: Math.round(start.x), y: Math.round(start.y) };
   const clear = (x: number, y: number) =>
     flow.nodes.every(
       (node) =>
@@ -66,8 +82,8 @@ export function freeSpot(
 
   const columns = Math.max(1, Math.floor(across));
   const place = (index: number) => ({
-    x: start.x + (index % columns) * (box.width + gap),
-    y: start.y + Math.floor(index / columns) * (box.height + gap),
+    x: first.x + (index % columns) * (box.width + gap),
+    y: first.y + Math.floor(index / columns) * (box.height + gap),
   });
 
   for (let index = 0; index <= 4 * flow.nodes.length; index++) {
@@ -75,7 +91,7 @@ export function freeSpot(
     if (clear(spot.x, spot.y)) return spot;
   }
 
-  return start;
+  return first;
 }
 
 /** Where nodes now stand, rounded: a position is a place on a grid somebody looks at, not a measurement. */

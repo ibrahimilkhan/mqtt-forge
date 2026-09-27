@@ -9,6 +9,7 @@ import {
   moveNodes,
   newId,
   nextName,
+  placesInView,
   problemsOf,
   removeEdges,
   removeNodes,
@@ -154,6 +155,31 @@ describe('flow document', () => {
     // A node dragged half across the place the click would have used is in the way all the same.
     it('steps round a node that only covers part of a place', () => {
       expect(freeSpot(at(200, 90), { x: 100, y: 50 }, box, 1, gap)).toEqual({ x: 100, y: 50 + 2 * (80 + 24) });
+    });
+
+    // The middle of the view is seldom on a whole pixel, and a node is kept on one. Reckoned from
+    // the start as given, the node just put there stood half a pixel into the next place along,
+    // and every add passed over a place that was free.
+    it('reckons its places from where a node put at the start is kept', () => {
+      const start = { x: 100.6, y: 50.6 };
+      let flow = emptyFlow('Placed');
+      for (const id of ['a', 'b', 'c', 'd']) flow = addNode(flow, 'debug', freeSpot(flow, start, box, 3, gap), id);
+
+      expect(flow.nodes.map(({ x, y }) => [x, y])).toEqual([[101, 51], [313, 51], [525, 51], [101, 155]]);
+    });
+
+    // As many to a row as fit between the middle of the view and its right edge. The page in jsdom
+    // has a canvas of no width and only ever gets one, so the sum is pinned here.
+    it('puts as many to a row as the view has room for, from a node centred in it', () => {
+      // A view from 0 to its width, at a zoom of 1.
+      const view = (width: number) => placesInView({ x: width / 2, y: 300 }, width, box, gap);
+
+      expect(view(800)).toEqual({ start: { x: 400 - 94, y: 300 - 40 }, across: 2 });
+      // Two need 188 + 24 + 188 from the first one's left edge, which is 94 left of the middle.
+      expect(view(611).across).toBe(1);
+      expect(view(612).across).toBe(2);
+      expect(view(1035).across).toBe(2);
+      expect(view(1036).across).toBe(3);
     });
   });
 });

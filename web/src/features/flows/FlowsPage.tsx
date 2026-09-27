@@ -11,7 +11,18 @@ import type { FlowDto, FlowNodeType } from '../../types/api';
 import { DebugStrip } from './DebugStrip';
 import { exampleFlows } from './examples';
 import { FlowCanvas, NODE_HEIGHT, NODE_WIDTH } from './FlowCanvas';
-import { addNode, emptyFlow, freeSpot, newId, nextName, problemsOf, sameFlow, withDrafts, type Problems } from './flowDocument';
+import {
+  addNode,
+  emptyFlow,
+  freeSpot,
+  newId,
+  nextName,
+  placesInView,
+  problemsOf,
+  sameFlow,
+  withDrafts,
+  type Problems,
+} from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
 import { Inspector } from './Inspector';
 import { Palette } from './Palette';
@@ -27,6 +38,9 @@ const NOTHING_WRONG: Problems = {};
 
 /** The room left between a node the palette adds and the nodes already on the canvas. */
 const ROOM = 24;
+
+/** The room a node takes, as the palette reckons it when it puts one down. */
+const NODE_BOX = { width: NODE_WIDTH, height: NODE_HEIGHT };
 
 /**
  * The Flows page. The default export, because React.lazy loads a module's default.
@@ -129,10 +143,9 @@ function Page() {
   const add = (type: FlowNodeType) => {
     const box = document.getElementById('flow-canvas')?.getBoundingClientRect();
     const middle = screenToFlowPosition({ x: box ? box.left + box.width / 2 : 0, y: box ? box.top + box.height / 2 : 0 });
-    const edge = screenToFlowPosition({ x: box ? box.right : 0, y: 0 }).x;
-    const start = { x: middle.x - NODE_WIDTH / 2, y: middle.y - NODE_HEIGHT / 2 };
-    const across = Math.floor((edge - start.x + ROOM) / (NODE_WIDTH + ROOM));
-    const at = freeSpot(shown, start, { width: NODE_WIDTH, height: NODE_HEIGHT }, across, ROOM);
+    const right = screenToFlowPosition({ x: box ? box.right : 0, y: 0 }).x;
+    const { start, across } = placesInView(middle, right, NODE_BOX, ROOM);
+    const at = freeSpot(shown, start, NODE_BOX, across, ROOM);
     const id = newId('n');
 
     store.edit(shown, (flow) => addNode(flow, type, at, id));
