@@ -76,11 +76,14 @@ public sealed class FlowRuntime
             if (seen.Add(flow.Id) && flow.Enabled)
                 wanted.Add(flow.Id, flow);
 
+        var stranded = false;
+
         foreach (var id in _flows.Keys.Where(id => !wanted.ContainsKey(id)).ToList())
         {
             var reason = kept.Contains(id) ? FlowAlarmBook.FlowOff : FlowAlarmBook.FlowRemoved;
             into.Resolved(_alarms.ResolveFlow(id, reason, now));
             _flows.Remove(id);
+            stranded = true;
         }
 
         foreach (var flow in wanted.Values)
@@ -91,10 +94,13 @@ public sealed class FlowRuntime
             // moved a node, or deployed a different flow, did not ask for this one to start over.
             if (running is not null && running.Flow.Fingerprint == flow.Fingerprint) continue;
 
-            if (running is not null) into.Resolved(_alarms.Reconcile(running.Flow, flow, now));
+            if (running is not null)
+            {
+                into.Resolved(_alarms.Reconcile(running.Flow, flow, now));
+                stranded = true;
+            }
 
-            // A new generation strands whatever the old one had scheduled: those entries are skipped
-            // when they come due rather than hunted down in the queue now.
+            // A new generation strands whatever the old one had scheduled, and it goes below.
             var state = new FlowState(flow, ++_generation, now);
             _flows[flow.Id] = state;
 
@@ -102,8 +108,27 @@ public sealed class FlowRuntime
                 _schedule.Enqueue(Scheduled.Tick(state, every), now + every.Interval);
         }
 
+        if (stranded) DropStranded();
+
         Touch();
         return into.Outcome();
+    }
+
+    /// <summary>Takes out of the schedule every tick and copy whose flow has gone, or been replaced, since it was queued.</summary>
+    // Taken now rather than skipped when it comes due: an Every's next tick can be a day away and a
+    // Repeat's next copy an hour, each holding its message all that time, and a flow edited every few
+    // minutes would leave a day's worth of them behind. The schedule is rebuilt whole, which is as
+    // many entries as there are, once a deploy.
+    private void DropStranded()
+    {
+        var current = _schedule.UnorderedItems
+            .Where(item => _flows.TryGetValue(item.Element.FlowId, out var state) && state.Generation == item.Element.Generation)
+            .ToList();
+
+        if (current.Count == _schedule.Count) return;
+
+        _schedule.Clear();
+        _schedule.EnqueueRange(current);
     }
 
     public FlowOutcome OnMessage(MqttMessage message, DateTimeOffset now)

@@ -355,6 +355,46 @@ public class FlowRuntimeTests
         Assert.Equal(["new"], _runtime.OnTick(T0.AddSeconds(5), connected: true).Debug.Select(entry => entry.Text));
     }
 
+    // Taken, not left to be skipped when it comes due: an Every's next tick can be a day away, and it
+    // holds its message all that time. The old tick is due at +10 and the new one at +11, so what is
+    // due next says which of them is still queued.
+    [Fact]
+    public void A_redeployed_flow_takes_its_old_timers_with_it()
+    {
+        static FlowBuilder Ticker(string payload) => new FlowBuilder()
+            .Node("tick", "every", new { seconds = 10, payload })
+            .Node("say", "debug")
+            .Wire("tick", "out", "say", "in");
+
+        Start(Ticker("old").Compile());
+        _runtime.Deploy([Ticker("new").Compile()], ["f1"], T0.AddSeconds(1));
+
+        Assert.Equal(T0.AddSeconds(11), _runtime.NextDue);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void A_flow_turned_off_or_taken_away_takes_its_timers_and_its_repeats_with_it(bool keptInTheFile)
+    {
+        FlowBuilder Flow() => new FlowBuilder()
+            .Node("tick", "every", new { seconds = 10 })
+            .Node("go", "inject")
+            .Node("again", "repeat", new { count = 3, seconds = 60 })
+            .Node("say", "debug")
+            .Wire("tick", "out", "say", "in")
+            .Wire("go", "out", "again", "in")
+            .Wire("again", "out", "say", "in");
+
+        Start(Flow().Compile());
+        _runtime.Inject("f1", "go", T0);
+
+        if (keptInTheFile) _runtime.Deploy([Flow().Off().Compile()], ["f1"], T0.AddSeconds(1));
+        else _runtime.Deploy([], [], T0.AddSeconds(1));
+
+        Assert.Null(_runtime.NextDue);
+    }
+
     [Fact]
     public void A_repeat_sequence_gives_its_place_back_when_its_last_copy_goes()
     {
