@@ -1512,9 +1512,12 @@ public sealed class FlowEngineTests : IAsyncLifetime
 
         await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
         await ClockStill(() => _publisher.Sent.Count == 1, "the arrival to be run");
-        _time.Advance(FlowLimits.StatusEvery);
 
-        await ClockStill(() => _console.Statuses.Count == 2, "the push a quarter second later, not a day later");
+        // Moved on a second at a time rather than once by a quarter: the pump makes its delay only
+        // after it has read the clock, and a single step taken in between fell due a whole wait late
+        // with the clock then held still. A push held until the clock caught up would still be a day
+        // of these steps away.
+        await Eventually.Until(_time, () => _console.Statuses.Count == 2, "the next push, not one a day later");
     }
 
     [Fact]
