@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using MqttForge.Application.Alerts;
 using MqttForge.Application.Flows;
@@ -33,8 +34,12 @@ public sealed class FlowEngineTests : IAsyncLifetime
     private readonly FakeConnection _connection = new() { State = ConnectionState.Connected };
     private readonly RecordingSubscriber _subscriber = new();
     private readonly RecordingPublisher _publisher = new();
+    private readonly RecordingLogger<FlowEngine> _log = new();
     private readonly CancellationTokenSource _stop = new();
     private Task? _pump;
+
+    /// <summary>The engine's clock, when a test needs one the fake cannot be: one that is set back.</summary>
+    private TimeProvider? _clock;
 
     private async Task<FlowEngine> RunningAsync(params Flow[] flows) =>
         Run(await StartedAsync(_alerts, _dispatcher, flows));
@@ -43,13 +48,14 @@ public sealed class FlowEngineTests : IAsyncLifetime
         Run(await StartedAsync(alerts, dispatcher, flows));
 
     /// <summary>Built and started with no pump yet, so whatever is posted now waits in the queue.</summary>
-    private async Task<FlowEngine> StartedAsync(IAlertNotifier alerts, IAlertDispatcher dispatcher, Flow[] flows)
+    private async Task<FlowEngine> StartedAsync(
+        IAlertNotifier alerts, IAlertDispatcher dispatcher, Flow[] flows, IMqttSubscriber? subscriber = null)
     {
         _store.Flows = flows;
 
         var engine = new FlowEngine(
-            new FlowRuntime(new Random(7)), _store, alerts, _console, _connection, _subscriber, _publisher,
-            new AlertEngineOptions(), new RecordingLogger<FlowEngine>(), _time, dispatcher);
+            new FlowRuntime(new Random(7)), _store, alerts, _console, _connection, subscriber ?? _subscriber,
+            _publisher, new AlertEngineOptions(), _log, _clock ?? _time, dispatcher);
 
         await engine.StartAsync(CancellationToken.None);
         return engine;
@@ -424,7 +430,10 @@ public sealed class FlowEngineTests : IAsyncLifetime
 
         // Both halves, AlertEngineTests' warning: the SUBSCRIBE and the UNSUBSCRIBE go in one turn,
         // one after the other, so a wait that ended at the first could return before the second.
-        await Eventually.Until(_time, () => _subscriber.Batches.Count == 2 && _subscriber.Unsubscribed.Count == 1,
+        // And with the clock held still: the diff belongs to the deploy's own turn, not to the next
+        // tick's look at what is missing, which would find the new filter a second later but never
+        // take down the old one.
+        await ClockStill(() => _subscriber.Batches.Count == 2 && _subscriber.Unsubscribed.Count == 1,
             "the new filter to go up and the old one to come down");
 
         Assert.Equal(["plant/+/door"], _subscriber.Batches[1]);
@@ -593,6 +602,236 @@ public sealed class FlowEngineTests : IAsyncLifetime
         await Eventually.Until(_time, () => _publisher.Sent.Count == 1, "the arrival to be run while the SUBSCRIBE keeps failing");
 
         _subscriber.Refuse = null;
+
+        await Eventually.Until(_time, () => _subscriber.Filters.Count == 1, "the filter to be asked for again");
+    }
+
+    [Fact]
+    public async Task A_cancellation_from_a_fault_nobody_foresaw_does_not_stop_the_pump()
+    {
+        var subscriber = new SubscriberProbe(_subscriber);
+        Run(await StartedAsync(_alerts, _dispatcher, [Watch()], subscriber));
+
+        // Nothing along this path catches a fault of its own, so only the turn's last line of defence
+        // stands between it and RunAsync, which would read any cancellation as shutdown.
+        subscriber.FiltersFault = new OperationCanceledException("A fault nobody foresaw.");
+        _subscriber.LinkDropped();
+        await Eventually.Until(_time, () => _log.Lines.Any(line => line.Message.StartsWith("A turn of the flow engine failed")),
+            "the fault to be logged");
+
+        subscriber.FiltersFault = null;
+
+        await Eventually.Until(_time, () => _subscriber.Filters.Count == 1, "the pump to carry on and ask for the filter again");
+    }
+
+    [Fact]
+    public async Task A_cancelled_alarm_channel_is_contained_in_that_channel()
+    {
+        var cancelled = new OperationCanceledException("The channel gave up.");
+        var log = new AlarmCallLog { NotifierFault = cancelled, DispatcherFault = cancelled };
+        var engine = await RunningAsync(log, log, Watch(webhook: "https://hooks.example.com/boiler"));
+
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+
+        // Neither channel is handed the engine's token, so neither can be telling it to stop: the
+        // webhook is still tried after the console's channel gave up, and its own failure is said as
+        // that — not as a turn of the pump that failed and took the rest of the turn with it.
+        await Eventually.Until(_time, () => _log.Lines.Any(line => line.Message.StartsWith("An alert dispatcher threw")),
+            "the dispatcher's own failure to be logged");
+        Assert.Equal(["told raised", "sent raised"], log.Calls);
+        Assert.DoesNotContain(_log.Lines, line => line.Message.StartsWith("A turn of the flow engine failed"));
+    }
+
+    [Fact]
+    public async Task A_console_cancelled_at_start_does_not_keep_the_flows_from_starting()
+    {
+        _console.Fault = new OperationCanceledException("The hub gave up on a send.");
+        var engine = await RunningAsync(Watch());
+        _console.Fault = null;
+
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+
+        await Eventually.Until(_time, () => _publisher.Sent.Count == 1, "the flow to run");
+    }
+
+    [Fact]
+    public async Task A_command_that_throws_is_skipped_and_the_rest_of_its_turn_still_happens()
+    {
+        var engine = await StartedAsync(_alerts, _dispatcher, [Watch()]);
+
+        // Three commands for one turn, the middle one poisoned. Nothing the product posts is known
+        // to throw, which is the point: the pump must not bet two good arrivals on it.
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+        engine.Post(new FlowArrival(null!));
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k2/temp", "{\"temp\":95}"));
+        Run(engine);
+
+        await Eventually.Until(_time, () => _publisher.Sent.Count == 2 && _alerts.Raised.Count == 2,
+            "both good arrivals to be published and told");
+        Assert.Equal(["plant/k1/cmd", "plant/k2/cmd"], _publisher.Sent.Select(request => request.Topic));
+        Assert.Contains(_log.Lines, line => line.Level == LogLevel.Error && line.Message.Contains(nameof(FlowArrival)));
+    }
+
+    // ---- the link, as the pump sees it ----
+
+    [Fact]
+    public async Task A_link_that_comes_back_is_known_before_what_came_with_it_is_judged()
+    {
+        var engine = await RunningAsync(Watch());
+
+        _connection.State = ConnectionState.Disconnected;
+        _subscriber.LinkDropped();
+        await Eventually.Until(_time, () => _console.Statuses.Count >= 2, "the pump to see the link go");
+
+        // A redial puts the console's own filters back before the flows', so an arrival a flow
+        // listens for can reach the queue in the very turn the pump first sees the link again.
+        _connection.State = ConnectionState.Connected;
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+
+        await ClockStill(() => _publisher.Sent.Count == 1, "the arrival's publish to go out");
+    }
+
+    [Fact]
+    public async Task Filters_that_went_between_two_turns_are_asked_for_again_on_the_next_tick()
+    {
+        await RunningAsync(Watch());
+
+        // The link went and came back between two turns — or moved to another broker — so no turn
+        // saw it down, and the subscriber let the flows' filters go all the same.
+        _subscriber.LinkDropped();
+        _time.Advance(FlowEngine.TickInterval);
+
+        await ClockStill(() => _subscriber.Filters.Count == 1, "the filter to be asked for again");
+        Assert.Equal(2, _subscriber.Batches.Count);
+    }
+
+    [Fact]
+    public async Task A_move_to_another_broker_that_no_turn_saw_ends_the_alarms_and_asks_again_for_what_was_refused()
+    {
+        _connection.At("broker-a.plant.local", 1883);
+        _subscriber.Refuse = new MessageRejectedException("Not authorised.", ["plant/+/temp"]);
+        var engine = await RunningAsync(Watch());
+        _subscriber.Refuse = null;
+
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+        await Eventually.Until(_time, () => _alerts.Raised.Count == 1, "the alarm to stand");
+
+        // MqttnetConnectionManager.ConnectAsync moves a live link to another broker in one call, and
+        // State is other than Connected only for the handshake: no turn need ever see it down.
+        _connection.At("broker-b.plant.local", 1883);
+        _subscriber.LinkDropped();
+
+        // The next turn is enough, with the clock held still: a move is seen when it is seen, and not
+        // left for the next tick's look at what is missing — which would skip the refused filter anyway.
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k2/temp", "{\"temp\":50}"));
+
+        await ClockStill(() => _alerts.Resolved.Count == 1 && _subscriber.Filters.Count == 1,
+            "the alarm to end and the refused filter to be asked for on the new broker");
+        Assert.Equal(FlowAlarmBook.ConnectionEnded, _alerts.Resolved[0].ResolvedBy);
+    }
+
+    [Fact]
+    public async Task A_link_seen_coming_back_has_the_flows_filters_asked_for_at_once()
+    {
+        var engine = await RunningAsync(Watch());
+
+        _connection.State = ConnectionState.Disconnected;
+        _subscriber.LinkDropped();
+        await Eventually.Until(_time, () => _console.Statuses.Count >= 2, "the pump to see the link go");
+
+        // Any turn will do — here a message no flow listens for — and the clock is held still, so the
+        // filters go back up in the turn that sees the link, not a second later on the next tick's
+        // look at what is missing.
+        _connection.State = ConnectionState.Connected;
+        await engine.NotifyMessageReceivedAsync(Msg("office/door", "open"));
+
+        await ClockStill(() => _subscriber.Batches.Count == 2, "the flows' filters to go back up");
+    }
+
+    [Fact]
+    public async Task A_link_whose_broker_is_named_only_after_it_came_up_is_not_taken_for_a_move()
+    {
+        _connection.At("broker-a.plant.local", 1883);
+        var engine = await RunningAsync(Watch());
+
+        _connection.State = ConnectionState.Disconnected;
+        _connection.Link = null;
+        await Eventually.Until(_time, () => _console.Statuses.Count >= 2, "the pump to see the link go");
+
+        // The manager's own order on a connect: MQTTnet says connected before the manager has
+        // recorded where to, so a turn can see a link that is up and a broker nobody has named.
+        _connection.State = ConnectionState.Connected;
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+        await Eventually.Until(_time, () => engine.Alarms.Active.Count == 1, "the first alarm to stand");
+
+        _connection.At("broker-b.plant.local", 1883);
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k2/temp", "{\"temp\":95}"));
+
+        await Eventually.Until(_time, () => engine.Alarms.Active.Count == 2, "both alarms to stand");
+        Assert.Empty(_alerts.Resolved);
+    }
+
+    [Fact]
+    public async Task The_flows_filters_are_asked_for_at_qos_1()
+    {
+        var subscriber = new SubscriberProbe(_subscriber);
+        await StartedAsync(_alerts, _dispatcher, [Watch()], subscriber);
+
+        // AlertEngine's RuleQos, and its reason: at QoS 0 a broker may drop the very message a flow
+        // was drawn to catch, and say nothing.
+        Assert.Equal(1, Assert.Single(subscriber.Requests).Qos);
+    }
+
+    // ---- a clock that is set back ----
+
+    [Fact]
+    public async Task A_clock_set_back_does_not_hold_the_next_push_until_it_catches_up()
+    {
+        var clock = new SteppingClock(_time);
+        _clock = clock;
+        var engine = await RunningAsync(Watch());
+
+        // NTP pulling in a clock that ran a day fast: the last push now happened a day from now.
+        clock.StepBack(TimeSpan.FromDays(1));
+
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+        await ClockStill(() => _publisher.Sent.Count == 1, "the arrival to be run");
+        _time.Advance(FlowLimits.StatusEvery);
+
+        await ClockStill(() => _console.Statuses.Count == 2, "the push a quarter second later, not a day later");
+    }
+
+    [Fact]
+    public async Task A_clock_set_back_does_not_stop_the_pump_looking_at_the_link()
+    {
+        var clock = new SteppingClock(_time);
+        _clock = clock;
+        await RunningAsync(Watch());
+
+        clock.StepBack(TimeSpan.FromDays(1));
+        _subscriber.LinkDropped();
+
+        // A tick a second as before: the tick that was due by the old time must not become one due a
+        // day from now, with the link unwatched until then.
+        await Eventually.Until(_time, () => _subscriber.Filters.Count == 1, "the filter to be asked for again");
+    }
+
+    [Fact]
+    public async Task A_clock_set_back_in_the_middle_of_a_turn_does_not_put_the_pump_to_sleep()
+    {
+        var clock = new SteppingClock(_time);
+        _clock = clock;
+        var subscriber = new SubscriberProbe(_subscriber);
+        Run(await StartedAsync(_alerts, _dispatcher, [Watch()], subscriber));
+
+        // Set back between the turn's reading of the clock and the pump's next one, for its wait — the
+        // SUBSCRIBE a turn sends is squarely in between — so no turn is left to put the tick right.
+        subscriber.OnSubscribe = () => clock.StepBack(TimeSpan.FromDays(1));
+        _subscriber.LinkDropped();
+        await Eventually.Until(_time, () => _subscriber.Filters.Count == 1, "the SUBSCRIBE the clock goes back in");
+
+        // Then something only a pump that is still waking up would notice.
+        _subscriber.LinkDropped();
 
         await Eventually.Until(_time, () => _subscriber.Filters.Count == 1, "the filter to be asked for again");
     }

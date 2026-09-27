@@ -1,6 +1,9 @@
+using Microsoft.Extensions.Time.Testing;
 using MqttForge.Application.Flows;
 using MqttForge.Domain.Abstractions;
+using MqttForge.Domain.Enums;
 using MqttForge.Domain.Models;
+using MqttForge.UnitTests.Application.Alerts;
 
 namespace MqttForge.UnitTests.Application.Flows;
 
@@ -181,6 +184,12 @@ internal sealed class AlarmCallLog : IAlertNotifier, IAlertDispatcher
         set => Volatile.Write(ref _engine, value);
     }
 
+    /// <summary>When set, every call to the notifier half is recorded and then throws it.</summary>
+    public Exception? NotifierFault { get; init; }
+
+    /// <summary>When set, every call to the dispatcher half is recorded and then throws it.</summary>
+    public Exception? DispatcherFault { get; init; }
+
     public IReadOnlyList<string> Calls
     {
         get { lock (_gate) return [.. _calls]; }
@@ -201,20 +210,93 @@ internal sealed class AlarmCallLog : IAlertNotifier, IAlertDispatcher
             _upWhenTold.Add(up);
         }
 
-        return Task.CompletedTask;
+        return NotifierFault is { } fault ? Task.FromException(fault) : Task.CompletedTask;
     }
 
-    Task IAlertNotifier.ResolvedAsync(IReadOnlyList<Alert> alerts) => Add("told resolved");
+    Task IAlertNotifier.ResolvedAsync(IReadOnlyList<Alert> alerts) => Add("told resolved", NotifierFault);
 
     Task IAlertNotifier.DroppedAsync(int total) => Task.CompletedTask;
 
-    Task IAlertDispatcher.RaisedAsync(IReadOnlyList<Alert> alerts) => Add("sent raised");
+    Task IAlertDispatcher.RaisedAsync(IReadOnlyList<Alert> alerts) => Add("sent raised", DispatcherFault);
 
-    Task IAlertDispatcher.ResolvedAsync(IReadOnlyList<Alert> alerts) => Add("sent resolved");
+    Task IAlertDispatcher.ResolvedAsync(IReadOnlyList<Alert> alerts) => Add("sent resolved", DispatcherFault);
 
-    private Task Add(string call)
+    private Task Add(string call, Exception? fault)
     {
         lock (_gate) _calls.Add(call);
-        return Task.CompletedTask;
+        return fault is null ? Task.CompletedTask : Task.FromException(fault);
     }
+}
+
+/// <summary>A wall clock that can be set back, over a fake one whose timers keep their own time.</summary>
+// FakeTimeProvider only ever moves forward. A real clock can be set back — NTP pulling in one that
+// ran fast, a virtual machine restored — and what then goes back is the wall time alone: a delay is
+// a duration, and the timers under Task.Delay go on counting it. So the time read here steps back
+// and every timer is the fake's, fired by its Advance as before.
+internal sealed class SteppingClock(FakeTimeProvider time) : TimeProvider
+{
+    private long _backTicks;
+
+    public void StepBack(TimeSpan by) => Interlocked.Add(ref _backTicks, by.Ticks);
+
+    public override DateTimeOffset GetUtcNow() => time.GetUtcNow() - TimeSpan.FromTicks(Interlocked.Read(ref _backTicks));
+
+    public override TimeZoneInfo LocalTimeZone => time.LocalTimeZone;
+
+    public override long TimestampFrequency => time.TimestampFrequency;
+
+    public override long GetTimestamp() => time.GetTimestamp();
+
+    public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period) =>
+        time.CreateTimer(callback, state, dueTime, period);
+}
+
+/// <summary>
+/// RecordingSubscriber and two things it cannot do: keep the QoS every filter was asked for at, and
+/// throw from its list of filters.
+/// </summary>
+// A decorator here rather than a change to the alert engine's fake: that one is shared with every
+// alert test, and both questions are only this file's.
+internal sealed class SubscriberProbe(RecordingSubscriber inner) : IMqttSubscriber
+{
+    private readonly Lock _gate = new();
+    private readonly List<SubscriptionRequest> _requests = [];
+
+    private Exception? _filtersFault;
+    private Action? _onSubscribe;
+
+    public IReadOnlyList<SubscriptionRequest> Requests
+    {
+        get { lock (_gate) return [.. _requests]; }
+    }
+
+    /// <summary>Run once, inside the next SUBSCRIBE: something a test needs to happen in the middle of a turn.</summary>
+    public Action? OnSubscribe
+    {
+        get => Volatile.Read(ref _onSubscribe);
+        set => Volatile.Write(ref _onSubscribe, value);
+    }
+
+    /// <summary>When set, reading the filters throws it: a fault no real subscriber is known to have.</summary>
+    public Exception? FiltersFault
+    {
+        get => Volatile.Read(ref _filtersFault);
+        set => Volatile.Write(ref _filtersFault, value);
+    }
+
+    public IReadOnlyCollection<string> ActiveFilters => inner.ActiveFilters;
+
+    public IReadOnlyCollection<ActiveFilter> Filters => FiltersFault is { } fault ? throw fault : inner.Filters;
+
+    public Task SubscribeAsync(IReadOnlyList<SubscriptionRequest> requests, CancellationToken ct,
+                               SubscriptionOwner owner = SubscriptionOwner.Console)
+    {
+        lock (_gate) _requests.AddRange(requests);
+        Interlocked.Exchange(ref _onSubscribe, null)?.Invoke();
+        return inner.SubscribeAsync(requests, ct, owner);
+    }
+
+    public Task UnsubscribeAsync(string topicFilter, CancellationToken ct,
+                                 SubscriptionOwner owner = SubscriptionOwner.Console) =>
+        inner.UnsubscribeAsync(topicFilter, ct, owner);
 }

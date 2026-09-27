@@ -102,6 +102,10 @@ public sealed class FlowEngine
     private bool _linkWasUp;
     private bool _resubscribe;
 
+    /// <summary>Which broker the flows are running against, as host:port, when that is known.</summary>
+    // AlertEngine's _learnedFrom, for the move to another broker that no turn of the pump sees.
+    private string? _linkedTo;
+
     /// <summary>What the flows have done, as last pushed. What GET /api/flows/status answers.</summary>
     public FlowStatus Status => Volatile.Read(ref _status);
 
@@ -136,14 +140,15 @@ public sealed class FlowEngine
 
         var now = _time.GetUtcNow();
         _linkWasUp = _connection.State == ConnectionState.Connected;
+        _linkedTo = _linkWasUp ? EndpointOf(_connection.Link) : null;
 
         var outcome = FlowOutcome.Merge([_runtime.Deploy(set.Compiled, set.Kept, now), _runtime.OnTick(now, _linkWasUp)]);
         Volatile.Write(ref _injectable, _runtime.Injectable());
 
         _resubscribe = true;
-        await CarryOutAsync(outcome, now);
+        await CarryOutAsync(outcome, now, ct);
         await SyncSubscriptionsAsync(ct);
-        await PushAsync(now, force: true);
+        await PushAsync(now, force: true, ct);
     }
 
     /// <summary>The pump and the timer, in one loop, for the life of the process.</summary>
@@ -164,6 +169,14 @@ public sealed class FlowEngine
 
                 var wait = Wake() - _time.GetUtcNow();
                 if (wait < TimeSpan.Zero) wait = TimeSpan.Zero;
+
+                // Never longer than a tick, whatever the clock says. Everything the pump waits for is
+                // at most a tick away by the clock the turn read, so a longer wait can only mean the
+                // clock was set back since — in the middle of the turn, where no turn is left to put
+                // it right — and sleeping it out would leave the link unwatched for as long as the
+                // clock went back. Past 49 days Task.Delay would throw, here where no catch keeps the
+                // pump alive.
+                if (wait > TickInterval) wait = TickInterval;
 
                 // The delay is what makes time an event: an Every due in 100 ms and a status push due
                 // in 250 ms both have to happen with no message arriving to prompt them.
@@ -195,6 +208,43 @@ public sealed class FlowEngine
         }
     }
 
+    /// <summary>What a new link, or a link to another broker, asks of the engine.</summary>
+    // Subscriptions die with the connection, and a new link is a new answer to a refusal. The broker
+    // is taken as the link says, unknown included: a link up before the manager has said where to
+    // must not be taken for a move when it does.
+    private void NewLink(string? endpoint)
+    {
+        _resubscribe = true;
+        _refused.Clear();
+        _linkedTo = endpoint;
+    }
+
+    private static string? EndpointOf(BrokerLink? link) => link is null ? null : $"{link.Host}:{link.Port}";
+
+    /// <summary>Whether a filter the running flows want, and the broker has not refused, is not held for them.</summary>
+    private bool FiltersMissing()
+    {
+        var held = HeldForFlows();
+
+        foreach (var filter in _runtime.Filters())
+            if (!held.Contains(filter) && !_refused.Contains(filter))
+                return true;
+
+        return false;
+    }
+
+    /// <summary>The filters the subscriber holds on the flows' behalf, whoever else holds them too.</summary>
+    private HashSet<string> HeldForFlows()
+    {
+        var held = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var filter in _subscriber.Filters)
+            if (filter.Owners.HasFlag(SubscriptionOwner.Flows))
+                held.Add(filter.Filter);
+
+        return held;
+    }
+
     private DateTimeOffset Wake()
     {
         var wake = _nextTick;
@@ -203,40 +253,94 @@ public sealed class FlowEngine
         return wake;
     }
 
-    /// <summary>One turn: drain what is queued, let the clock and the link move, carry out, tell.</summary>
+    /// <summary>One turn: the link, what is queued, the clock and the filters; then carry out, and tell.</summary>
     private async Task TurnAsync(CancellationToken ct)
     {
         try
         {
             var outcomes = new List<FlowOutcome>();
-            var handled = 0;
-
-            while (handled < MaxPerTurn && _queue.Reader.TryRead(out var command))
-            {
-                handled++;
-                outcomes.Add(Apply(command, _time.GetUtcNow()));
-            }
-
-            var now = _time.GetUtcNow();
-            if (now >= _nextTick) _nextTick = now + TickInterval;
 
             // Read every turn rather than only on the tick: it is a property read, and a flow that
             // publishes on an Every should find out the link went the turn it went.
+            //
+            // Read before the queue, and told to the runtime lopsidedly: up before the commands are
+            // applied, down only after them. Up first because the runtime refuses every publish until
+            // it has been told the link is up, and a redial puts the console's own filters back before
+            // the flows' — so an arrival a flow listens for can be in this very turn's queue, or an
+            // Inject, and either would be refused with a "No broker link" that was no longer true.
+            // Down last because whatever is queued arrived while the link was there, and is judged
+            // as such before "connection ended" takes its alarms away.
             var connected = _connection.State == ConnectionState.Connected;
+            var endpoint = connected ? EndpointOf(_connection.Link) : null;
+
             if (connected && !_linkWasUp)
             {
-                // Subscriptions die with the connection, and a new link is a new answer to a refusal.
-                _resubscribe = true;
-                _refused.Clear();
+                outcomes.Add(_runtime.OnTick(_time.GetUtcNow(), connected: true));
+                _linkWasUp = true;
+                NewLink(endpoint);
             }
 
-            _linkWasUp = connected;
+            var handled = 0;
+            while (handled < MaxPerTurn && _queue.Reader.TryRead(out var command))
+            {
+                handled++;
+
+                try
+                {
+                    outcomes.Add(Apply(command, _time.GetUtcNow()));
+                }
+                catch (Exception ex)
+                {
+                    // One command's fault, and confined to it. Nothing the product posts is known to
+                    // throw here, but if one ever did, the turn's catch below would take every other
+                    // command's outcome with it: publishes never sent, and alarms already in the book
+                    // that nobody would ever be told about.
+                    _log.LogError(ex, "The flow engine could not apply a {Command}, so it was skipped.",
+                        command.GetType().Name);
+                }
+            }
+
+            var now = _time.GetUtcNow();
+
+            // A clock set back — NTP pulling in one that ran fast, a virtual machine restored — would
+            // otherwise leave the next push waiting for the last one's time to come round again, and
+            // the next tick as far off as the clock went back: the console told nothing and the link
+            // unwatched for as long as that is. Both are measured from now again instead.
+            if (now < _lastPush) _lastPush = now;
+
+            var tick = now >= _nextTick;
+            if (tick || _nextTick - now > TickInterval) _nextTick = now + TickInterval;
+
             outcomes.Add(_runtime.OnTick(now, connected));
+            _linkWasUp = connected;
+
+            // A move to another broker that no turn saw. MqttnetConnectionManager goes from one live
+            // link to the next in one call and is other than Connected only for the handshake — tens
+            // of milliseconds against a poll up to a second apart. It is a down and an up all the
+            // same: the alarms standing were about a plant seen through the other broker, the flows'
+            // filters went with the old link, and a refusal was the other broker's answer. Told after
+            // the queue, as any down is, and after the tick above has run the schedule, so nothing
+            // due now is judged against a link that is only notionally gone.
+            if (endpoint is not null && _linkedTo is not null && endpoint != _linkedTo)
+            {
+                outcomes.Add(_runtime.OnTick(now, connected: false));
+                outcomes.Add(_runtime.OnTick(now, connected: true));
+                NewLink(endpoint);
+            }
+            else if (endpoint is not null)
+            {
+                _linkedTo = endpoint;
+            }
+
+            // And filters that went with no transition to show for it — a link that dropped and came
+            // back between two turns, a move whose new endpoint was not known yet. Once a tick, what
+            // the flows want is held against what the subscriber is holding for them.
+            if (tick && connected && !_resubscribe && FiltersMissing()) _resubscribe = true;
 
             if (_resubscribe) await SyncSubscriptionsAsync(ct);
 
-            await CarryOutAsync(FlowOutcome.Merge(outcomes), now);
-            await PushAsync(now, force: false);
+            await CarryOutAsync(FlowOutcome.Merge(outcomes), now, ct);
+            await PushAsync(now, force: false, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -284,7 +388,7 @@ public sealed class FlowEngine
         }
     }
 
-    private async Task CarryOutAsync(FlowOutcome outcome, DateTimeOffset now)
+    private async Task CarryOutAsync(FlowOutcome outcome, DateTimeOffset now, CancellationToken ct)
     {
         if (outcome.IsEmpty) return;
 
@@ -306,17 +410,21 @@ public sealed class FlowEngine
         // Before the telling, AlertEngine's order: a console that reacts to alertsRaised by reading
         // GET /api/alerts has to find the alarm already there, or the badge flickers back to nothing.
         Volatile.Write(ref _alarms, _runtime.Alarms());
-        await DeliverAsync(outcome.Raised, outcome.Resolved);
+        await DeliverAsync(outcome.Raised, outcome.Resolved, ct);
     }
 
-    private async Task DeliverAsync(IReadOnlyList<Alert> raised, IReadOnlyList<Alert> resolved)
+    // Every channel's catch lets a cancellation through only when it is the engine stopping, the rule
+    // SyncSubscriptionsAsync keeps and for its reason. None of these channels is handed the engine's
+    // token, so a cancellation from one of them is that channel giving up — a hub send, a queue
+    // closing — and not a reason to skip the channel after it or the rest of the turn.
+    private async Task DeliverAsync(IReadOnlyList<Alert> raised, IReadOnlyList<Alert> resolved, CancellationToken ct)
     {
         try
         {
             if (raised.Count > 0) await _notifier.RaisedAsync(raised);
             if (resolved.Count > 0) await _notifier.ResolvedAsync(resolved);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             _log.LogError(ex, "An alert notifier threw. The flow alarms it was given were not delivered.");
         }
@@ -332,7 +440,7 @@ public sealed class FlowEngine
             if (leaving.Count > 0) await _dispatcher.RaisedAsync(leaving);
             if (leavingResolved.Count > 0) await _dispatcher.ResolvedAsync(leavingResolved);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             _log.LogError(ex, "An alert dispatcher threw. The flow alarms it was given were not delivered.");
         }
@@ -343,7 +451,7 @@ public sealed class FlowEngine
         [.. alerts.Where(alert => alert.Actions.Any(action => action is WebhookAction or PublishAction))];
 
     /// <summary>Tells the console what moved, at most four times a second.</summary>
-    private async Task PushAsync(DateTimeOffset now, bool force)
+    private async Task PushAsync(DateTimeOffset now, bool force, CancellationToken ct)
     {
         var moved = _runtime.Version != _pushed || _debug.Count > 0 || _debugDropped > 0;
         if (!moved)
@@ -376,7 +484,7 @@ public sealed class FlowEngine
             await _console.StatusAsync(status);
             if (debug.Count > 0 || dropped > 0) await _console.DebugAsync(debug, dropped);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             _log.LogWarning(ex, "Could not tell the console what the flows are doing.");
         }
@@ -434,11 +542,7 @@ public sealed class FlowEngine
         if (_connection.State != ConnectionState.Connected) return;
 
         var wanted = _runtime.Filters();
-
-        var held = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var filter in _subscriber.Filters)
-            if (filter.Owners.HasFlag(SubscriptionOwner.Flows))
-                held.Add(filter.Filter);
+        var held = HeldForFlows();
 
         var missing = wanted.Where(filter => !held.Contains(filter) && !_refused.Contains(filter))
             .Select(filter => new SubscriptionRequest(filter, FlowQos))
