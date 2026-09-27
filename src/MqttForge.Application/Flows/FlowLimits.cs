@@ -34,7 +34,15 @@ public static class FlowLimits
     public const int PayloadBytes = 64 * 1024;
 
     public const int TopicTemplateLength = 1_024;
+
+    /// <summary>The longest topic MQTT carries, in bytes once encoded. A topic rendered longer is not published.</summary>
+    public const int TopicBytes = 65_535;
+
     public const int NameLength = 80;
+
+    /// <summary>The longest reason an Alarm node may be given, placeholders and all. What it renders is cut at <see cref="ReasonLength"/>.</summary>
+    public const int ReasonTemplateLength = 1_024;
+
     public const int ReasonLength = 200;
     public const int SampleLength = 4_096;
 

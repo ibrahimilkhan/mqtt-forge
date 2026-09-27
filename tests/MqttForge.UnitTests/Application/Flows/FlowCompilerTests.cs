@@ -166,6 +166,37 @@ public class FlowCompilerTests
             });
     }
 
+    // Capped as a topic is: a reason is rendered for every alarm raised, and its template is the
+    // most text one raise can be asked to work through.
+    [Fact]
+    public void An_alarms_reason_is_at_most_1024_characters()
+    {
+        object Reason(int length) => new { name = "Hot", severity = "warn", reason = new string('r', length) };
+
+        Assert.Empty(Problems(One("alarm", Reason(FlowLimits.ReasonTemplateLength))));
+        Assert.Equal($"A reason is at most {FlowLimits.ReasonTemplateLength} characters.",
+            Only(One("alarm", Reason(FlowLimits.ReasonTemplateLength + 1))).Message);
+    }
+
+    // What a Publish may send, an Every or an Inject may hold: every one of their messages carries it,
+    // and an Every holds it for as long as the flow runs.
+    [Theory]
+    [InlineData("publish")]
+    [InlineData("every")]
+    [InlineData("inject")]
+    public void A_payload_is_at_most_64_KB(string type)
+    {
+        object Config(string payload) => type switch
+        {
+            "publish" => new { topic = "sim/x", payload },
+            "every" => new { seconds = 1, payload },
+            _ => new { payload },
+        };
+
+        Assert.Empty(Problems(One(type, Config(new string('x', FlowLimits.PayloadBytes)))));
+        Assert.Equal("A payload is at most 64 KB.", Only(One(type, Config(new string('x', FlowLimits.PayloadBytes + 1)))).Message);
+    }
+
     [Fact]
     public void An_alarms_webhook_has_to_be_an_http_address() =>
         Assert.Equal("node:n1", Only(One("alarm", new { name = "Hot", severity = "warn", webhook = "ftp://x" })).Key);

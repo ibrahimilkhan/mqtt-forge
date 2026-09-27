@@ -480,7 +480,31 @@ public sealed class FlowRuntime
     private void Publish(Run run, PublishNode node, FlowMessage message)
     {
         var state = run.State;
-        var topic = node.Topic.Render(message, run.Now, _random);
+
+        // The link and the rate before anything is rendered. A publish either of them drops would
+        // otherwise pay for its render first, and at the rate limit that is every publish past the
+        // fiftieth each second. A publish that then renders wrong has had its turn at the rate.
+        if (!_linkUp)
+        {
+            Fail(state, node.Id, "No broker link, so nothing was published.", message.Topic, run.Now, run.Into);
+            return;
+        }
+
+        if (!state.Bucket.TryTake(run.Now))
+        {
+            Fail(state, node.Id, $"More than {FlowLimits.PublishesPerSecond} publishes a second; this one was dropped.",
+                message.Topic, run.Now, run.Into);
+            return;
+        }
+
+        var topic = node.Topic.Render(message, run.Now, _random, FlowLimits.TopicBytes, out var topicCut);
+
+        if (topicCut || Encoding.UTF8.GetByteCount(topic) > FlowLimits.TopicBytes)
+        {
+            Fail(state, node.Id, "The topic came out longer than the 65,535 bytes MQTT allows, so nothing was published.",
+                message.Topic, run.Now, run.Into);
+            return;
+        }
 
         if (topic.Length == 0 || topic.AsSpan().IndexOfAny('+', '#') >= 0 || topic.Contains('\0'))
         {
@@ -488,25 +512,14 @@ public sealed class FlowRuntime
             return;
         }
 
-        var payload = node.Payload.Render(message, run.Now, _random);
-        var bytes = Encoding.UTF8.GetBytes(payload);
+        // Rendered to the limit in characters at most. A character is at least a byte, so a payload
+        // that was cut there is over 64 KB whatever it held, and one that was not is measured.
+        var payload = node.Payload.Render(message, run.Now, _random, FlowLimits.PayloadBytes, out var payloadCut);
+        var bytes = payloadCut ? null : Encoding.UTF8.GetBytes(payload);
 
-        if (bytes.Length > FlowLimits.PayloadBytes)
+        if (bytes is null || bytes.Length > FlowLimits.PayloadBytes)
         {
             Fail(state, node.Id, "The payload came out larger than 64 KB and was not published.", topic, run.Now, run.Into);
-            return;
-        }
-
-        if (!_linkUp)
-        {
-            Fail(state, node.Id, "No broker link, so nothing was published.", topic, run.Now, run.Into);
-            return;
-        }
-
-        if (!state.Bucket.TryTake(run.Now))
-        {
-            Fail(state, node.Id, $"More than {FlowLimits.PublishesPerSecond} publishes a second; this one was dropped.",
-                topic, run.Now, run.Into);
             return;
         }
 

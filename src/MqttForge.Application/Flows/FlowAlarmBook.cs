@@ -63,7 +63,7 @@ public sealed class FlowAlarmBook
             ResolvedBy: null,
             MutedUntil: null,
             Count: 1,
-            Clip(node.Reason.Render(message, now, random), FlowLimits.ReasonLength),
+            node.Reason.Render(message, now, random, FlowLimits.ReasonLength, out _),
             value,
             Clip(message.Payload, FlowLimits.SampleLength),
             node.Actions);

@@ -164,11 +164,14 @@ public static partial class FlowCompiler
                 var interval = Seconds(settings.Number("seconds") ?? 0);
                 if (interval < FlowLimits.MinInterval || interval > FlowLimits.MaxEvery)
                     problem = "Every needs an interval between 0.1 seconds and 24 hours.";
+                else
+                    problem = PayloadProblem(settings.Text("payload"));
 
                 return new EveryNode(node.Id, interval, settings.Text("topic"), settings.Text("payload"));
             }
 
             case FlowPorts.Inject:
+                problem = PayloadProblem(settings.Text("payload"));
                 return new InjectNode(node.Id, settings.Text("topic"), settings.Text("payload"));
 
             case FlowPorts.If:
@@ -214,8 +217,8 @@ public static partial class FlowCompiler
                     problem = "A topic to publish to cannot hold + or #.";
                 else if (payloadProblem is not null)
                     problem = payloadProblem;
-                else if (Encoding.UTF8.GetByteCount(settings.Text("payload")) > FlowLimits.PayloadBytes)
-                    problem = "A payload is at most 64 KB.";
+                else if (PayloadProblem(settings.Text("payload")) is { } tooLarge)
+                    problem = tooLarge;
                 else if (qos is < 0 or > 2)
                     problem = "QoS is 0, 1 or 2.";
 
@@ -318,8 +321,16 @@ public static partial class FlowCompiler
                 return null;
         }
 
-        // A reason left blank says the alarm's own name, which is at least a sentence.
+        // A reason left blank says the alarm's own name, which is at least a sentence. Capped as a
+        // topic is: a reason is rendered for every alarm raised, and what it renders is cut at 200
+        // characters anyway.
         var reasonText = settings.Text("reason").Trim();
+        if (reasonText.Length > FlowLimits.ReasonTemplateLength)
+        {
+            problem = $"A reason is at most {FlowLimits.ReasonTemplateLength} characters.";
+            return null;
+        }
+
         var reason = FlowTemplate.Parse(reasonText.Length == 0 ? name : reasonText, out problem);
         if (problem is not null) return null;
 
@@ -428,6 +439,11 @@ public static partial class FlowCompiler
 
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(shape)));
     }
+
+    // One limit for every payload a flow holds. A Publish's is what it sends; an Every's or an
+    // Inject's is carried by each message it makes, and an Every keeps its own for as long as it runs.
+    private static string? PayloadProblem(string payload) =>
+        Encoding.UTF8.GetByteCount(payload) > FlowLimits.PayloadBytes ? "A payload is at most 64 KB." : null;
 
     private static TimeSpan Seconds(double seconds) =>
         double.IsFinite(seconds) && seconds is >= 0 and <= 1e7 ? TimeSpan.FromSeconds(seconds) : TimeSpan.MaxValue;

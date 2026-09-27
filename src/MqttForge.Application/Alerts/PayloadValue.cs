@@ -55,38 +55,62 @@ public static class PayloadValue
             return true;
         }
 
-        text = null;
+        // Disposed here rather than kept: the engine holds readings, not payloads, and the
+        // extracted text is all that outlives this call.
+        using var document = Open(payload);
+        return TryExtract(payload, document, field, out text);
+    }
 
+    /// <summary>
+    /// The payload as a document to read fields out of, or null when it is not one — for a caller
+    /// that reads several fields of one payload and would otherwise parse it once for each. The
+    /// caller disposes it.
+    /// </summary>
+    public static JsonDocument? Open(string payload)
+    {
         // series.ts's parse() in three lines. A body that does not open as an object or an array
         // is not a document, and this is not an optimisation: it is the difference between 'the
         // path is not in there' and 'there is nothing to look in'. Both answer false, so the
         // cheap test comes first and JsonDocument never sees a plain reading — which is the
         // common case on a topic somebody has pointed a field rule at by mistake.
         var body = payload.AsMemory().Trim();
-        if (body.Length == 0) return false;
+        if (body.Length == 0) return null;
 
         var opening = body.Span[0];
-        if (opening != '{' && opening != '[') return false;
+        if (opening != '{' && opening != '[') return null;
 
         try
         {
             // Parsed from the trimmed memory, so the body is not copied into a second string
-            // first. JsonDocument is pooled and disposed here rather than kept: the engine holds
-            // readings, not payloads, and the extracted text is all that outlives this call.
-            using var document = JsonDocument.Parse(body);
-
-            if (!TryWalk(document.RootElement, field, out var found)) return false;
-
-            text = TextOf(found);
-            return true;
+            // first. JsonDocument is pooled, which is why whoever holds it must dispose it.
+            return JsonDocument.Parse(body);
         }
         catch (JsonException)
         {
             // A body that opens like a document and then is not one. Malformed JSON on a live
             // topic is ordinary — a truncated publish, a device with a broken serialiser — so it
             // is a skip and not a fault, and the pair's skipped counter says how often it happens.
-            return false;
+            return null;
         }
+    }
+
+    /// <summary>
+    /// <see cref="TryExtract(string, string?, out string?)"/>, over a payload <see cref="Open"/> has
+    /// already read: <paramref name="document"/> is what it answered for <paramref name="payload"/>.
+    /// </summary>
+    public static bool TryExtract(string payload, JsonDocument? document, string? field, out string? text)
+    {
+        if (string.IsNullOrEmpty(field))
+        {
+            text = payload;
+            return true;
+        }
+
+        text = null;
+        if (document is null || !TryWalk(document.RootElement, field, out var found)) return false;
+
+        text = TextOf(found);
+        return true;
     }
 
     /// <summary>The number the text is, or null when it is not one.</summary>

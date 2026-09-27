@@ -488,6 +488,87 @@ public class FlowRuntimeTests
     }
 
     [Fact]
+    public void A_topic_that_renders_longer_than_MQTT_allows_is_not_published()
+    {
+        Start(new FlowBuilder()
+            .Node("go", "inject", new { payload = new string('k', FlowLimits.TopicBytes) })
+            .Node("send", "publish", new { topic = "plant/{{payload}}", payload = "x" })
+            .Wire("go", "out", "send", "in")
+            .Compile());
+
+        Assert.Empty(_runtime.Inject("f1", "go", T0).Publishes);
+        Assert.Equal(1, Node("send").Errors);
+        Assert.StartsWith("The topic came out longer than", Node("send").Note);
+    }
+
+    [Fact]
+    public void A_payload_that_renders_past_64_KB_is_not_published_and_is_counted()
+    {
+        Start(new FlowBuilder()
+            .Node("go", "inject", new { payload = new string('x', FlowLimits.PayloadBytes / 2 + 1) })
+            .Node("send", "publish", new { topic = "sim/x", payload = "{{payload}}{{payload}}" })
+            .Wire("go", "out", "send", "in")
+            .Compile());
+
+        Assert.Empty(_runtime.Inject("f1", "go", T0).Publishes);
+        Assert.Equal(1, Node("send").Errors);
+        Assert.Equal("The payload came out larger than 64 KB and was not published.", Node("send").Note);
+    }
+
+    // Every publish the rate drops, and every one while there is no link, would otherwise pay for a
+    // render first. The random number in the payload counts the renders.
+    [Fact]
+    public void A_publish_the_link_or_the_rate_would_refuse_is_never_rendered()
+    {
+        var random = new CountingRandom(7);
+        var runtime = new FlowRuntime(random);
+        var flow = new FlowBuilder()
+            .Node("go", "inject")
+            .Node("again", "repeat", new { count = 60, seconds = 0 })
+            .Node("send", "publish", new { topic = "sim/x", payload = "{{random(0,1)}}" })
+            .Wire("go", "out", "again", "in")
+            .Wire("again", "out", "send", "in")
+            .Compile();
+        runtime.Deploy([flow], ["f1"], T0);
+        runtime.OnTick(T0, connected: true);
+
+        Assert.Equal(FlowLimits.PublishesPerSecond, runtime.Inject("f1", "go", T0).Publishes.Count);
+        Assert.Equal(FlowLimits.PublishesPerSecond, random.Draws);
+
+        runtime.OnTick(T0.AddSeconds(2), connected: false);
+        runtime.Inject("f1", "go", T0.AddSeconds(2));
+
+        Assert.Equal(FlowLimits.PublishesPerSecond, random.Draws);
+    }
+
+    [Fact]
+    public void An_alarms_reason_is_cut_at_200_characters_and_its_sample_at_4_KB()
+    {
+        Start(new FlowBuilder()
+            .Node("go", "inject", new { topic = "plant/k1/temp", payload = new string('p', 5_000) })
+            .Node("hot", "alarm", new { name = "Hot", severity = "warn", reason = "{{payload}}" })
+            .Wire("go", "out", "hot", "raise")
+            .Compile());
+
+        var alarm = Assert.Single(_runtime.Inject("f1", "go", T0).Raised);
+
+        Assert.Equal(new string('p', FlowLimits.ReasonLength), alarm.Reason);
+        Assert.Equal(new string('p', FlowLimits.SampleLength), alarm.Sample);
+    }
+
+    /// <summary>A Random that counts its draws: each {{random}} a render fills is one.</summary>
+    private sealed class CountingRandom(int seed) : Random(seed)
+    {
+        public int Draws { get; private set; }
+
+        public override double NextDouble()
+        {
+            Draws++;
+            return base.NextDouble();
+        }
+    }
+
+    [Fact]
     public void Nothing_is_published_while_the_link_is_down()
     {
         Start(new FlowBuilder()
