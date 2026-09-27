@@ -21,9 +21,12 @@ public sealed class AlertEngineHost : BackgroundService
     private readonly IAlertStateStore _state;
     private readonly ILogger<AlertEngineHost> _log;
 
-    // Whether this process ever took ownership of the state file. Until it has, whatever is on
-    // disk is newer than whatever the core holds, and the core holds nothing.
-    private bool _owns;
+    // Whether this process ever took ownership of the state file, and whether it still holds it:
+    // 1 until StopAsync has handed it back, 0 after. An int and not a bool, because
+    // WebApplicationFactory is documented to call StopAsync more than once on the same instance on
+    // the way out (dotnet/aspnetcore #40271, #50622) — a plain bool would let two overlapping calls
+    // both read it true before either set it false, and both would then save.
+    private int _owns;
 
     public AlertEngineHost(
         AlertEngine engine, AlertEngineCore core, IAlertStateStore state, ILogger<AlertEngineHost> log)
@@ -54,7 +57,7 @@ public sealed class AlertEngineHost : BackgroundService
         // alert restored against a rule set that had not loaded yet would be reconciled against
         // nothing and resolve itself on the spot.
         await _engine.StartAsync(cancellationToken);
-        _owns = true;
+        Volatile.Write(ref _owns, 1);
 
         await base.StartAsync(cancellationToken);
     }
@@ -85,8 +88,17 @@ public sealed class AlertEngineHost : BackgroundService
         // A process that never took the state on must not be the one that writes it back. An
         // empty core saved over alert-state.json is every active alert deleted, and the ones it
         // would delete are exactly the ones a restart exists to hand over.
-        if (!_owns) return;
-        _owns = false;
+        //
+        // Interlocked, not a read of _owns followed by an assignment: WebApplicationFactory calls
+        // StopAsync on the same hosted service instance more than once on the way out — a shape
+        // .NET's own issue tracker calls out by name (dotnet/aspnetcore #40271, #50622) rather than
+        // something this class did wrong — and two such calls running one after the other, or
+        // together, would otherwise both read "still owned" before either had set it down, and both
+        // would then save. An end-to-end test that starts and stops a real host caught exactly
+        // that: a state file the test had already cleaned up reappearing moments later, written by
+        // the second call. Only the call that actually flips the flag from held to let-go may save;
+        // every other one, whenever it arrives, finds it already let go and returns at once.
+        if (Interlocked.Exchange(ref _owns, 0) == 0) return;
 
         try
         {
