@@ -861,6 +861,30 @@ public class AlertEngineTests
         Assert.Single(harness.Engine.Snapshot.Active);
     }
 
+    // The turn's own catch, and nothing in front of it: a tick's look at the filters reads the
+    // subscriber outside every channel's catch and the SUBSCRIBE's. A cancellation out of there that
+    // is not the engine's is a failed turn like any other fault, and the pump carries on judging.
+    // Read as shutdown, it ended the pump for good, with nothing in the log to say so.
+    [Fact]
+    public async Task A_cancellation_out_of_a_look_at_the_filters_is_a_failed_turn_and_the_rules_are_judged_after_it()
+    {
+        SubscriberProbe? probe = null;
+        await using var harness = Build(Document([Rule("a", "plant/a/#", Over90)]),
+            probe: inner => probe = new SubscriberProbe(inner));
+        await harness.Engine.StartAsync(CancellationToken.None);
+        harness.Run();
+
+        probe!.FiltersFault = new OperationCanceledException("A read of the filters was called off.");
+        await harness.Until(
+            () => harness.Log.Lines.Any(line => line.Message.StartsWith("A turn of the alert engine failed", StringComparison.Ordinal)),
+            "the tick's look at the filters to fail its turn");
+        probe.FiltersFault = null;
+
+        harness.Engine.Post(new ArrivalCommand(Message("plant/a/temp", "94.2")));
+
+        await harness.Until(() => harness.Notifier.Raised.Count == 1, "the next reading to be judged");
+    }
+
     // ---- a console that is slow to read ----
 
     // SignalR writes one message at a time to a connection, so a frame to a console that has
