@@ -25,9 +25,11 @@ public interface IMqttSubscriber
     // only a refusal is: the engines stop asking for those on this link. A broker that kept the link
     // and did not answer in time is a BrokerDidNotAnswerException, and a link that went is a
     // NotConnectedException, and both are worth asking again. A broker that refuses by ending the
-    // link is a refusal only as far as the link says so: a DISCONNECT packet does, and so does a TLS
-    // link cut off mid-stream; a plain TCP socket closed, with a FIN or a reset, reads as the link
-    // going, since nothing tells it from a link that went for any other reason.
+    // link is a refusal only as far as the link says so: a DISCONNECT packet does, and a bare
+    // communication failure is taken to, which is how Azure IoT Hub is reported to refuse (not
+    // verified here). A socket closed under the SUBSCRIBE, plain TCP or TLS, with a FIN, a
+    // close_notify or a reset, reads as the link going, since nothing tells it from a link that
+    // went for any other reason.
     Task SubscribeAsync(IReadOnlyList<SubscriptionRequest> requests, CancellationToken ct,
                         SubscriptionOwner owner = SubscriptionOwner.Console);
 

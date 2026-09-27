@@ -59,9 +59,10 @@ public class MqttnetSubscriberTests
     private static IReadOnlyList<SubscriptionRequest> Asking(params string[] filters) =>
         [.. filters.Select(filter => new SubscriptionRequest(filter, 0))];
 
-    // Azure IoT Hub is 3.1.1-only and answers a filter it does not allow by closing the TCP
-    // socket with no packet at all. Read as 'the link died' it left the filter unnamed and the
-    // reader with nothing to narrow.
+    // Azure IoT Hub is 3.1.1-only and is reported to answer a filter it does not allow by ending the
+    // link with no packet at all, in a shape that reaches the subscriber as a bare communication
+    // failure; that was not verified here. Read as 'the link died' it left the filter unnamed and
+    // the reader with nothing to narrow.
     [Fact]
     public async Task A_session_closed_while_subscribing_is_a_refused_filter()
     {
