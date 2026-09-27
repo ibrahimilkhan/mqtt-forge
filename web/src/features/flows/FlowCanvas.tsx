@@ -84,6 +84,57 @@ type CanvasEdge = Edge<{ flowId: string; problems?: readonly string[] }, 'wire'>
 
 type Size = { width: number; height: number };
 
+/*
+ * Each node as React Flow was last handed it, kept against the node it draws, as flowDocument keeps
+ * what it works out about a flow: no node is ever changed in place, so an entry made for one never
+ * goes stale. React Flow draws a node again only when it is handed a new object for it, and the
+ * canvas works its nodes out again whenever the wires change — at two hundred nodes to a flow, one
+ * wire drawn or taken away drew two hundred nodes again. So a node whose drawing has not changed is
+ * handed over as the object it was. A node of a type this build knows takes its ports from its type
+ * and never from the wires; only one it does not know takes them from its wires (see portsOf), and
+ * it is new when a change to them changed its own ports.
+ */
+const handed = new WeakMap<FlowNodeDto, CanvasNode>();
+
+const sameNames = (a: readonly string[], b: readonly string[]) =>
+  a === b || (a.length === b.length && a.every((name, at) => name === b[at]));
+
+const samePorts = (a: Ports, b: Ports) => a === b || (sameNames(a.ins, b.ins) && sameNames(a.outs, b.outs));
+
+/** A node as React Flow is handed it: the object it had last time, when nothing it draws has changed. */
+function canvasNode(
+  flowId: string,
+  node: FlowNodeDto,
+  ports: Ports,
+  running: boolean,
+  problems: readonly string[] | undefined,
+  selected: boolean,
+  measured: Size | undefined,
+): CanvasNode {
+  const last = handed.get(node);
+  if (
+    last !== undefined &&
+    last.data.flowId === flowId &&
+    last.data.running === running &&
+    last.data.problems === problems &&
+    last.selected === selected &&
+    last.measured === measured &&
+    samePorts(last.data.ports, ports)
+  )
+    return last;
+
+  const made: CanvasNode = {
+    id: node.id,
+    type: 'flow',
+    position: { x: node.x, y: node.y },
+    data: { flowId, node, ports, running, problems },
+    selected,
+    measured,
+  };
+  handed.set(node, made);
+  return made;
+}
+
 const wireOf = (connection: Connection | CanvasEdge): Wire => ({
   from: connection.source,
   fromPort: connection.sourceHandle ?? '',
@@ -179,16 +230,21 @@ export function FlowCanvas({ flow, running, problems }: { flow: FlowDto; running
     if (next.length !== now.size || next.some((pick) => !now.has(pick))) choose(new Set(next));
   }, [choose, flow.edges, flow.nodes, selected]);
 
+  // Worked out again whenever any of these changes, and each node handed over as the object it was
+  // unless what it draws changed with it — see canvasNode.
   const nodes = useMemo<CanvasNode[]>(
     () =>
-      flow.nodes.map((node) => ({
-        id: node.id,
-        type: 'flow',
-        position: { x: node.x, y: node.y },
-        data: { flowId: flow.id, node, ports: portsOf(node, flow.edges), running, problems: problems[NODE + node.id] },
-        selected: picked.has(NODE + node.id),
-        measured: sizes[node.id],
-      })),
+      flow.nodes.map((node) =>
+        canvasNode(
+          flow.id,
+          node,
+          portsOf(node, flow.edges),
+          running,
+          problems[NODE + node.id],
+          picked.has(NODE + node.id),
+          sizes[node.id],
+        ),
+      ),
     [flow.edges, flow.id, flow.nodes, picked, problems, running, sizes],
   );
 

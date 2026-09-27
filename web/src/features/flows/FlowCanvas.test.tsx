@@ -9,7 +9,7 @@ import type { FlowDto, FlowStatusDto } from '../../types/api';
 import { standInForTheBrowser } from './canvasTestbed';
 import { DRAG_TYPE, FlowCanvas } from './FlowCanvas';
 import sheet from './FlowCanvas.module.css?raw';
-import { removeEdges, type Problems } from './flowDocument';
+import { connect, removeEdges, type Problems } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
 import { NODE_SPECS } from './nodeTypes';
 
@@ -246,6 +246,75 @@ describe('flow canvas', () => {
     expect(again).toEqual({ inject: 0, branch: 0 });
     expect(screen.getByText('4 sent')).toBeInTheDocument();
     expect(moved).toEqual({ inject: 1, branch: 0 });
+  });
+
+  // A wire drawn or taken away changes nothing a node draws, but the ports of a node of a type this
+  // build does not know, which takes its ports from its wires. A flow holds up to two hundred
+  // nodes, and each connect and each delete drew every one of them again.
+  describe('a wire drawn or taken away', () => {
+    const inject = () => vi.spyOn(NODE_SPECS.inject, 'summary');
+    const branch = () => vi.spyOn(NODE_SPECS.if, 'summary');
+
+    /** A few turns of the clock, for the canvas to measure what it drew and draw it again. */
+    const settled = async () => {
+      for (let turn = 0; turn < 5; turn++) await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    };
+
+    it('draws no node again but the one that takes its ports from its wires', async () => {
+      const odd: FlowDto = {
+        ...button,
+        nodes: [...button.nodes, { id: 'fn', type: 'function', x: 560, y: 80, config: {} }],
+        edges: [...button.edges, { id: 'e2', from: 'test', fromPort: 'yes', to: 'fn', toPort: 'in' }],
+      };
+      const [go, test] = [inject(), branch()];
+      render(
+        <ReactFlowProvider>
+          <div style={{ width: 800, height: 600 }}>
+            <Page flow={odd} />
+          </div>
+        </ReactFlowProvider>,
+      );
+      await screen.findByLabelText('Edge from test to fn');
+      await settled();
+      go.mockClear();
+      test.mockClear();
+
+      const edit = (change: (flow: FlowDto) => FlowDto) => act(() => useFlowDraftStore.getState().edit(odd, change));
+      edit((flow) => removeEdges(flow, ['e1']));
+      edit((flow) => connect(flow, { from: 'go', fromPort: 'out', to: 'test', toPort: 'in' }));
+      edit((flow) => removeEdges(flow, ['e2']));
+      await settled();
+      const drawn = { inject: go.mock.calls.length, branch: test.mock.calls.length };
+      go.mockRestore();
+      test.mockRestore();
+
+      expect(drawn).toEqual({ inject: 0, branch: 0 });
+      expect(screen.getByLabelText('Edge from go to test')).toBeInTheDocument();
+      // The node that takes its ports from its wires lost the one its wire met.
+      expect(document.querySelectorAll('.react-flow__handle[data-nodeid="fn"]')).toHaveLength(0);
+    });
+
+    it('draws no node again when a picked wire is taken away with the Delete key', async () => {
+      const [go, test] = [inject(), branch()];
+      drawPage();
+      const wire = await screen.findByLabelText('Edge from go to test');
+      await settled();
+      fireEvent.click(wire);
+      act(() => wire.focus());
+      await settled();
+      go.mockClear();
+      test.mockClear();
+
+      fireEvent.keyDown(wire, { key: 'Delete' });
+      await waitFor(() => expect(wire.isConnected).toBe(false));
+      await settled();
+      const drawn = { inject: go.mock.calls.length, branch: test.mock.calls.length };
+      go.mockRestore();
+      test.mockRestore();
+
+      expect(drawn).toEqual({ inject: 0, branch: 0 });
+      expect(useFlowDraftStore.getState().drafts.button?.edges).toEqual([]);
+    });
   });
 
   it('does not light a wire when its count starts again from nothing', async () => {
