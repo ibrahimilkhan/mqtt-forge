@@ -39,6 +39,10 @@ public sealed class MqttExceptionHandler : IExceptionHandler
             // The flows' twins of the two alert-rule arms above, for the same two reasons.
             FlowsUnreadableException => (StatusCodes.Status409Conflict, "The flows file could not be read"),
             FlowsNotSavedException => (StatusCodes.Status500InternalServerError, "Could not save the flows"),
+            // A request the server refused while it was being read — a body past its endpoint's
+            // limit, which is Kestrel's 413 — keeps the status it was refused with. Left to the
+            // default it would be a 500, which says the server failed at something it did on purpose.
+            BadHttpRequestException refused => (refused.StatusCode, "The request was refused"),
             _ => (0, string.Empty)
         };
 

@@ -227,6 +227,53 @@ public class FlowCompilerTests
         Assert.Equal("flow", Only(flow).Key);
     }
 
+    // Refused on the count alone, before one node is read. Every node here is wrong in a way of its
+    // own, so any node the compiler did read would be a problem of its own beside the count's — and
+    // a flow fifty times over the limit costs what one node over it costs.
+    [Fact]
+    public void A_flow_far_over_the_node_limit_is_refused_before_any_node_is_read()
+    {
+        var flow = new FlowBuilder();
+        for (var i = 0; i < 10_000; i++) flow.Node($"n{i}", "teleport");
+
+        var problem = Only(flow);
+
+        Assert.Equal("flow", problem.Key);
+        Assert.Equal($"A flow holds at most {FlowLimits.NodesPerFlow} nodes.", problem.Message);
+    }
+
+    // The wires' twin: each of these leads to a node nobody drew, so any wire the compiler read would
+    // be refused as well — and so would the circle check that walks every wire once per node.
+    [Fact]
+    public void A_flow_far_over_the_wire_limit_is_refused_before_any_wire_is_read()
+    {
+        var flow = new FlowBuilder().Node("a", "inject");
+        for (var i = 0; i < 100_000; i++) flow.Wire("a", "out", $"ghost{i}", "in");
+
+        var problem = Only(flow);
+
+        Assert.Equal("flow", problem.Key);
+        Assert.Equal($"A flow holds at most {FlowLimits.EdgesPerFlow} wires.", problem.Message);
+    }
+
+    [Fact]
+    public void A_flow_holds_four_hundred_wires_and_not_one_more()
+    {
+        // Three Injects, each wired to every one of 134 Debug nodes: 402 wires to take from.
+        FlowBuilder Wired(int wires)
+        {
+            var flow = new FlowBuilder();
+            for (var i = 0; i < 3; i++) flow.Node($"go{i}", "inject");
+            for (var j = 0; j < 134; j++) flow.Node($"say{j}", "debug");
+
+            for (var n = 0; n < wires; n++) flow.Wire($"go{n % 3}", "out", $"say{n / 3}", "in");
+            return flow;
+        }
+
+        Assert.Empty(Problems(Wired(FlowLimits.EdgesPerFlow)));
+        Assert.Equal($"A flow holds at most {FlowLimits.EdgesPerFlow} wires.", Only(Wired(FlowLimits.EdgesPerFlow + 1)).Message);
+    }
+
     [Fact]
     public void Two_wires_may_not_share_an_id()
     {

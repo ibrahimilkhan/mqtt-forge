@@ -41,11 +41,16 @@ public static partial class FlowCompiler
         var rawNodes = flow.Nodes ?? [];
         var rawEdges = flow.Edges ?? [];
 
-        if (rawNodes.Count > FlowLimits.NodesPerFlow)
-            problems.Add(new(null, null, $"A flow holds at most {FlowLimits.NodesPerFlow} nodes."));
+        // Refused on the counts alone, before one node is read. Everything past this grows with the
+        // flow — every node compiled, every wire checked, and the circle check walks every wire once
+        // for each node — so a flow fifty times over the limit, compiled whole on the request thread
+        // only to be refused, would cost a core for minutes where one node over costs nothing.
+        var nodesOver = rawNodes.Count > FlowLimits.NodesPerFlow;
+        var edgesOver = rawEdges.Count > FlowLimits.EdgesPerFlow;
 
-        if (rawEdges.Count > FlowLimits.EdgesPerFlow)
-            problems.Add(new(null, null, $"A flow holds at most {FlowLimits.EdgesPerFlow} wires."));
+        if (nodesOver) problems.Add(new(null, null, $"A flow holds at most {FlowLimits.NodesPerFlow} nodes."));
+        if (edgesOver) problems.Add(new(null, null, $"A flow holds at most {FlowLimits.EdgesPerFlow} wires."));
+        if (nodesOver || edgesOver) return new FlowCompileResult(null, problems);
 
         // Types are kept for every node with a usable id, compiled or not, so a wire to a node whose
         // settings are wrong is judged on its ports and is not also reported as dangling.

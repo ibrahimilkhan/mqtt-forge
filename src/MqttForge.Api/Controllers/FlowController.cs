@@ -10,6 +10,20 @@ namespace MqttForge.Api.Controllers;
 [Route("api/flows")]
 public sealed class FlowController : ControllerBase
 {
+    /// <summary>The largest body a deploy may send, in bytes.</summary>
+    // Worked out from the compiler's own limits, so that every flow it would run fits. A node at its
+    // largest is a Publish, an Every or an Inject: a 64 KiB payload and a 1,024-character topic, which
+    // UTF-8 makes at most 3 KiB — 67 KiB. Two hundred of those are 13.1 MiB, and their ids, types,
+    // positions and setting names, with the 400 wires between them, add 0.1 MiB more. The 2.8 MiB
+    // left is JSON's own escaping: a quote or a backslash in a template is two bytes on the wire, so
+    // a fifth of every template can be quotes. (FlowDeployLimitTests sends exactly that flow.)
+    // A setting with no limit of its own — an If's value, a field path, a webhook address — has
+    // this one.
+    //
+    // Kestrel's default is 30 MB, and a body that size of nothing but tiny nodes is work for the
+    // model binder before the compiler can refuse it on the count.
+    public const long DeployBodyBytes = 16 * 1024 * 1024;
+
     private readonly FlowService _flows;
     private readonly FlowEngine _engine;
 
@@ -38,6 +52,7 @@ public sealed class FlowController : ControllerBase
 
     /// <summary>A deploy: the flow is kept and run, or refused with every reason on the node it is about.</summary>
     [HttpPut("{id}")]
+    [RequestSizeLimit(DeployBodyBytes)]
     public async Task<IActionResult> Deploy(string id, FlowDto dto, CancellationToken ct)
     {
         var flow = dto.ToFlow();
