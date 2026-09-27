@@ -171,6 +171,46 @@ public sealed class OriginGuardEndpointTests : IClassFixture<MqttForgeApiFactory
         Assert.Equal("{}\u001e", await Handshake(hub));
     }
 
+    // The dev server as it is really reached. Over https with the per-machine certificates, its
+    // /hubs proxy keeps Host and the API sees http, and a WebSocket upgrade carries no Sec-Fetch-
+    // Site: Origin decides, and it differs from the address in its scheme. On the LAN, a phone off
+    // the QR code is a plain-http page on a name, which sends no Sec-Fetch-Site at all, and /api is
+    // proxied with Host rewritten to the API's. Both are the dev server's page on its port.
+    [Theory]
+    [InlineData("https://localhost:5173")]
+    [InlineData("http://kitchen-pi.local:5173")]
+    [InlineData("https://192.168.1.24:5173")]
+    public async Task Development_takes_the_dev_servers_page_at_any_address_it_is_served_from(string page)
+    {
+        using var factory = new MqttForgeApiFactory();
+        using var dev = factory.WithWebHostBuilder(b => b.UseEnvironment("Development"));
+        var client = dev.CreateClient();
+        await Deploy(client, "lan");
+
+        var inject = await Send(client, HttpMethod.Post, "/api/flows/lan/nodes/ours/inject", page, host: "localhost:5169");
+        Assert.Equal(HttpStatusCode.Accepted, inject.StatusCode);
+
+        using var hub = await OpenHub(dev, page, host: new Uri(page).Authority);
+        Assert.Equal("{}\u001e", await Handshake(hub));
+    }
+
+    [Theory]
+    [InlineData("https://localhost:5173")]
+    [InlineData("http://kitchen-pi.local:5173")]
+    public async Task Production_takes_no_dev_server_at_any_address(string page)
+    {
+        using var factory = new MqttForgeApiFactory();
+        using var production = factory.WithWebHostBuilder(b => b.UseEnvironment("Production"));
+        var client = production.CreateClient();
+        await Deploy(client, "shipped");
+
+        var inject = await Send(client, HttpMethod.Post, "/api/flows/shipped/nodes/ours/inject", page, host: "localhost:5169");
+        Assert.Equal(HttpStatusCode.Forbidden, inject.StatusCode);
+
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => OpenHub(production, page, host: "localhost:5169"));
+        Assert.Contains("status code: 403", refused.Message);
+    }
+
     // A shipped package serves its console itself, so it has no dev server to trust.
     [Fact]
     public async Task Production_does_not_trust_the_dev_servers_origin()

@@ -144,6 +144,27 @@ public class OriginGuardTests
             Request("POST", Inject, "http://localhost:5173", site, host: "localhost:5169"), Nobody));
     }
 
+    // ---- the dev server ----
+
+    // Vite serves the console on its port at whatever address it was reached by: localhost, over
+    // https once the per-machine certificates are there, and the machine's LAN name or address for
+    // a phone off the QR code. Every one of those is an origin on port 5173, and nothing else is.
+    [Theory]
+    [InlineData("http://localhost:5173", true)]
+    [InlineData("https://localhost:5173", true)]
+    [InlineData("http://kitchen-pi.local:5173", true)]
+    [InlineData("https://192.168.1.24:5173", true)]
+    [InlineData("http://[::1]:5173", true)]
+    [InlineData("http://localhost:5174", false)]
+    [InlineData("http://localhost", false)]
+    [InlineData("ws://localhost:5173", false)]
+    [InlineData("http://evil@localhost:5173", false)]
+    [InlineData("http://localhost:5173/console", false)]
+    [InlineData("http://localhost:5173, http://evil.example", false)]
+    [InlineData("null", false)]
+    public void Knows_the_dev_servers_pages_by_their_port(string origin, bool devServer) =>
+        Assert.Equal(devServer, OriginGuard.IsDevServer(origin));
+
     // ---- refused for the scheme alone ----
 
     // Behind a proxy that ends TLS the page is https and this app sees http. A WebSocket upgrade

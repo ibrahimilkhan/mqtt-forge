@@ -49,8 +49,9 @@ public static class OriginGuard
     public const string FetchSite = "Sec-Fetch-Site";
 
     /// <param name="trusted">
-    /// Origins besides the app's own whose pages may send it anyway: those the CORS policy names,
-    /// which is the dev server's in Development and nobody's in a shipped package.
+    /// Origins besides the app's own whose pages may send it anyway: in Development the dev
+    /// server's, the one its CORS policy names and every other address it answers at (see
+    /// IsDevServer); nobody's in a shipped package.
     /// </param>
     public static bool IsAllowed(HttpRequest request, Func<string, bool> trusted)
     {
@@ -94,6 +95,26 @@ public static class OriginGuard
         return !string.Equals(origin[..separator], request.Scheme, StringComparison.OrdinalIgnoreCase)
                && string.Equals(origin[(separator + 3)..], request.Host.ToUriComponent(), StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>The Vite dev server's port, where it serves the console in development.</summary>
+    public const int DevServerPort = 5173;
+
+    /// <summary>
+    /// Whether an origin is a page of the Vite dev server: any host, on its port, over http or https.
+    /// Trusted in Development only — see MqttForgeHost.
+    /// </summary>
+    // Any host, because the dev server answers at whatever address it was reached by: localhost, the
+    // machine's LAN name or address for the phone off the QR code. And https as well, once the
+    // per-machine certificates are there. Its /api proxy rewrites Host to the API's and its /hubs
+    // proxy keeps it while the API sees http, and neither a WebSocket upgrade nor a plain-http LAN page
+    // carries Sec-Fetch-Site, so without this the dev console lost its WebSocket and a LAN browser
+    // every change. Compared whole, as IsAllowed compares: an origin is a scheme and an authority
+    // and nothing more, so one with a user, a path or a second origin joined on is not this.
+    public static bool IsDevServer(string origin) =>
+        Uri.TryCreate(origin, UriKind.Absolute, out var page)
+        && page.Scheme is "http" or "https"
+        && page.Port == DevServerPort
+        && string.Equals(origin, $"{page.Scheme}://{page.Authority}", StringComparison.OrdinalIgnoreCase);
 
     // Anything but a read, and anything on the hub, whose WebSocket upgrade is a GET. The path is
     // matched as routing matches it, ignoring case.

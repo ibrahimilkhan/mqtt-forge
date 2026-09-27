@@ -120,7 +120,7 @@ public static class MqttForgeHost
         // Whether or not the guard above stands: a name the operator chose is no more a reason to
         // take a request from another site's page than an address is. See OriginGuard for which
         // requests, and why one that names no origin is still served.
-        var trusted = TrustedOrigins(app.Services);
+        var trusted = TrustedOrigins(app.Services, app.Environment);
         var refusals = app.Services.GetRequiredService<OriginGuardLog>();
         app.Use(async (context, next) =>
         {
@@ -160,14 +160,19 @@ public static class MqttForgeHost
 
     /// <summary>
     /// The origins besides the app's own whose pages may change things here: those the CORS policy
-    /// lets read an answer, so that the two cannot come to disagree. Only Development has a policy,
-    /// naming the dev server; a shipped package trusts no other origin at all.
+    /// lets read an answer, and in Development the dev server's pages at every address it answers
+    /// at. Only Development has a policy, naming the dev server on localhost; a shipped package
+    /// trusts no other origin at all.
     /// </summary>
-    private static Func<string, bool> TrustedOrigins(IServiceProvider services)
+    // The dev server's other addresses are trusted here and not added to the policy: a page served
+    // through its proxy is the same origin as its /api and /hubs as far as the browser knows, so it
+    // needs no answer to read across origins, only not to be refused. See OriginGuard.IsDevServer.
+    private static Func<string, bool> TrustedOrigins(IServiceProvider services, IHostEnvironment environment)
     {
         var cors = services.GetRequiredService<IOptions<CorsOptions>>().Value;
+        var policy = cors.GetPolicy(cors.DefaultPolicyName)?.IsOriginAllowed ?? (_ => false);
 
-        return cors.GetPolicy(cors.DefaultPolicyName)?.IsOriginAllowed ?? (_ => false);
+        return environment.IsDevelopment() ? origin => policy(origin) || OriginGuard.IsDevServer(origin) : policy;
     }
 
     // Vite hashes every asset filename, so those are safe to keep forever. index.html is the
