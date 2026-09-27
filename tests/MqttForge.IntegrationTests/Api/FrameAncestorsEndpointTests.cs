@@ -63,15 +63,19 @@ public sealed class FrameAncestorsEndpointTests : IClassFixture<MqttForgeApiFact
     }
 
     // A setting that would put something else in the policy does not start the app, rather than
-    // starting one that sends it.
-    [Fact]
-    public void A_setting_that_is_no_page_stops_the_app_starting()
+    // starting one that sends it. The line break is the one a value from a YAML file ends with: let
+    // through, it started an app that failed every answer, since no server will send it in a header,
+    // and the error named no setting.
+    [Theory]
+    [InlineData("https://ha.example.com; script-src *")]
+    [InlineData("https://ha.example.com\n")]
+    public void A_setting_that_is_no_page_stops_the_app_starting(string setting)
     {
         using var factory = new MqttForgeApiFactory();
         using var broken = factory.WithWebHostBuilder(b => b.ConfigureAppConfiguration((_, config) =>
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                [FrameAncestors.Setting] = "https://ha.example.com; script-src *",
+                [FrameAncestors.Setting] = setting,
             })));
 
         var refused = Assert.ThrowsAny<Exception>(() => broken.CreateClient());

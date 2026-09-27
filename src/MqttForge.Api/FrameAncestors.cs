@@ -25,11 +25,20 @@ public static class FrameAncestors
     // A page, in the frame-ancestors grammar, with a host always: http or https if a scheme is
     // given, a host that is a name or an IPv4 address, or a wildcard below a domain, and a port and
     // a path if wanted. Nothing that names no host — '*', a scheme on its own — since either lets
-    // every site frame the console, which is the one thing this is for; no keyword, since 'self' is
-    // always there and 'none' would take it away; and nothing a browser would read as more policy.
+    // every site frame the console, which is the one thing this is for; no wildcard over a whole
+    // top-level domain, '*.com', for the same reason; no keyword, since 'self' is always there and
+    // 'none' would take it away; and nothing a browser would read as more policy.
+    //
+    // ASCII, spelled out, and never matched blind to case: a case-blind match takes the Kelvin sign
+    // for a 'k' and the long s for an 's', and no server will send either in a header. Ended by \z
+    // and not $, which also matches before a line break at the very end, the one a value from a YAML
+    // file or a ConfigMap ends with. Let through, either started an app that could send no answer at
+    // all, and said so without naming this setting.
+    private const string Label = "[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?";
+
     private static readonly Regex Page = new(
-        @"^(?:https?://)?(?:\*\.)?[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*(?::(?:[0-9]{1,5}|\*))?(?:/[a-z0-9\-._~%!$&()*+=:@/]*)?$",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+        $@"^(?:[Hh][Tt][Tt][Pp][Ss]?://)?(?:\*\.{Label}(?:\.{Label})+|{Label}(?:\.{Label})*)(?::(?:[0-9]{{1,5}}|\*))?(?:/[A-Za-z0-9\-._~%!$&()*+=:@/]*)?\z",
+        RegexOptions.None, TimeSpan.FromMilliseconds(100));
 
     /// <summary>
     /// The Content-Security-Policy every answer carries: 'self', and each page the setting names.
@@ -46,7 +55,7 @@ public static class FrameAncestors
 
             if (!Page.IsMatch(source))
                 throw new InvalidOperationException(
-                    $"{Setting} names '{source}', which is not a page that may frame the console. Name each page by its " +
+                    $"{Setting} names '{Shown(source)}', which is not a page that may frame the console. Name each page by its " +
                     "origin — https://homeassistant.local:8123 — with a space or a comma between them.");
 
             if (!sources.Contains(source, StringComparer.OrdinalIgnoreCase)) sources.Add(source);
@@ -54,4 +63,9 @@ public static class FrameAncestors
 
         return "frame-ancestors " + string.Join(' ', sources);
     }
+
+    // What was written, with anything but printable ASCII spelled out: a line break at the end or a
+    // letter that only looks like a K cannot be seen in the value, and the refusal is where to see it.
+    private static string Shown(string source) =>
+        string.Concat(source.Select(c => c is >= ' ' and <= '~' ? c.ToString() : $"\\u{(int)c:X4}"));
 }

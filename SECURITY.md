@@ -80,7 +80,9 @@ docker run -d -p 5169:5169 -e MqttForge__FrameAncestors=https://homeassistant.lo
 
 A current browser goes by that list and lets the page frame the console; one too old for
 `frame-ancestors` keeps the console to itself. A value that is not a page — `*`, a scheme on its own,
-anything with a `;` in it — stops the app from starting rather than letting every site in. The
+a wildcard over a whole top-level domain such as `*.com`, anything with a `;` in it — stops the app
+from starting rather than letting every site in, and so does a line break at the end of the value,
+which a YAML file or a ConfigMap can add without your seeing it; the error names the setting. The
 desktop window shows the console as its own page, not in a frame, and is not affected.
 
 ## Alerts that leave the machine
