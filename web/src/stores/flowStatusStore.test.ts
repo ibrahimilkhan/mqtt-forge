@@ -117,4 +117,17 @@ describe('flow status store', () => {
     expect(texts('busy')).toEqual(['d']);
     expect(state().debugClearedAt.busy).toBe(3);
   });
+
+  // A batch the server sent before the delete landed can arrive after it, and the lines it brought
+  // back would sit under a flow with no strip left to clear them.
+  it('drops the lines of a flow deleted in this session, however late they come', () => {
+    state().forget('watch');
+
+    state().addDebug([line('late', 'watch'), line('b', 'busy')], 1);
+
+    expect(state().debug.watch).toBeUndefined();
+    expect(texts('busy')).toEqual(['b']);
+    // What the server says it left out is still counted: it never says whose it was.
+    expect(leftOut(state(), 'busy')).toBe(1);
+  });
 });

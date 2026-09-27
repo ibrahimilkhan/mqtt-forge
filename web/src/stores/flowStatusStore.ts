@@ -22,13 +22,19 @@ type FlowStatusState = {
   debugDropped: number;
   /** What debugDropped stood at when each flow's strip was last cleared. */
   debugClearedAt: Record<string, number>;
+  /**
+   * The flows deleted since the console opened. A batch the server sent before a delete landed
+   * can arrive after it, and its lines are dropped rather than kept under a flow with no strip.
+   */
+  deleted: Record<string, true>;
   setStatus: (status: FlowStatusDto) => void;
   addDebug: (entries: FlowDebugDto[], dropped: number) => void;
   /** Empties one flow's strip, and starts its count of lines left out again. */
   clearDebug: (flowId: string) => void;
   /**
-   * The flow was deleted: its lines, and where its strip was last cleared, go with it. Nothing else
-   * would let them go — a strip's own Clear is the only other way, and it has no strip now.
+   * The flow was deleted: its lines, and where its strip was last cleared, go with it, and any
+   * that come for it later are dropped. Nothing else would let them go — a strip's own Clear is the
+   * only other way, and it has no strip now.
    */
   forget: (flowId: string) => void;
 };
@@ -64,6 +70,7 @@ export const useFlowStatusStore = create<FlowStatusState>()((set) => ({
   debug: {},
   debugDropped: 0,
   debugClearedAt: {},
+  deleted: {},
 
   setStatus: (status) => {
     const flows: Record<string, FlowRunStatusDto> = {};
@@ -83,9 +90,10 @@ export const useFlowStatusStore = create<FlowStatusState>()((set) => ({
   addDebug: (entries, dropped) =>
     set((state) => {
       const added: Record<string, DebugLine[]> = {};
-      for (const entry of entries) (added[entry.flowId] ??= []).push({ ...entry, seq: ++arrived });
+      for (const entry of entries)
+        if (!(entry.flowId in state.deleted)) (added[entry.flowId] ??= []).push({ ...entry, seq: ++arrived });
 
-      const debug = entries.length === 0 ? state.debug : { ...state.debug };
+      const debug = Object.keys(added).length === 0 ? state.debug : { ...state.debug };
       for (const [flowId, lines] of Object.entries(added))
         debug[flowId] = [...lines.reverse(), ...(state.debug[flowId] ?? [])].slice(0, DEBUG_KEPT);
 
@@ -99,7 +107,11 @@ export const useFlowStatusStore = create<FlowStatusState>()((set) => ({
     })),
 
   forget: (flowId) =>
-    set((state) => ({ debug: without(state.debug, flowId), debugClearedAt: without(state.debugClearedAt, flowId) })),
+    set((state) => ({
+      debug: without(state.debug, flowId),
+      debugClearedAt: without(state.debugClearedAt, flowId),
+      deleted: { ...state.deleted, [flowId]: true },
+    })),
 }));
 
 /**
