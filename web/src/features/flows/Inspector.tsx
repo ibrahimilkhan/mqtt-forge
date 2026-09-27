@@ -8,6 +8,7 @@ import { nodeKey, useFlowStatusStore } from '../../stores/flowStatusStore';
 import { logFault } from '../../stores/logStore';
 import panel from '../../styles/panel.module.css';
 import type { FlowDto, FlowNodeDto, FlowsDto } from '../../types/api';
+import { focusCanvas } from './FlowCanvas';
 import { fingerprint, removeNodes, setConfig, type Problems } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
 import { NodeSettings } from './NodeSettings';
@@ -90,6 +91,9 @@ function NodePane({ flow, node, problems, facts }: { flow: FlowDto; node: FlowNo
           onClick={() => {
             edit(flow, (current) => removeNodes(current, [node.id]));
             select(null);
+            // The pane goes with the node, and this button with it. The reader was working on the
+            // canvas, and goes back to it.
+            focusCanvas();
           }}
         >
           Remove node

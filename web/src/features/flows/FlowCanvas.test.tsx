@@ -1,4 +1,4 @@
-import { ReactFlowProvider, useReactFlow } from '@xyflow/react';
+import { ReactFlowProvider, useReactFlow, useStoreApi } from '@xyflow/react';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -607,5 +607,92 @@ describe('flow canvas', () => {
     await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
 
     expect(useFlowDraftStore.getState().drafts.button).toBeUndefined();
+  });
+});
+
+/** Puts up the box React Flow draws round nodes picked together, as a drag across them does. */
+function BoxThem() {
+  const drawing = useStoreApi();
+  return (
+    <button type="button" onClick={() => drawing.setState({ nodesSelectionActive: true })}>
+      Box them
+    </button>
+  );
+}
+
+/**
+ * A delete key takes away what the keyboard may be on: the node, a wire of it, the box round nodes
+ * picked together. A browser hands the focus of an element taken out to the body, and the next key
+ * would miss the canvas, so the keyboard stays in the canvas instead.
+ */
+describe('where the keyboard goes when a key takes something away', () => {
+  const canvas = () => document.getElementById('flow-canvas');
+  const ids = () => useFlowDraftStore.getState().drafts.button?.nodes.map((node) => node.id);
+
+  it('stays in the canvas when Backspace takes away the node it was on', async () => {
+    drawPage();
+    const node = (await screen.findByText('If')).closest<HTMLElement>('.react-flow__node')!;
+
+    fireEvent.click(node);
+    act(() => node.focus());
+    fireEvent.keyDown(node, { key: 'Backspace' });
+
+    await waitFor(() => expect(node.isConnected).toBe(false));
+    expect(ids()).toEqual(['go']);
+    expect(document.activeElement).toBe(canvas());
+  });
+
+  it('stays in the canvas when Delete takes away the wire it was on', async () => {
+    drawPage();
+    await screen.findByText('If');
+    const wire = screen.getByLabelText('Edge from go to test');
+
+    fireEvent.click(wire);
+    act(() => wire.focus());
+    fireEvent.keyDown(wire, { key: 'Delete' });
+
+    await waitFor(() => expect(wire.isConnected).toBe(false));
+    expect(useFlowDraftStore.getState().drafts.button?.edges).toEqual([]);
+    expect(document.activeElement).toBe(canvas());
+  });
+
+  it('stays in the canvas when the box round nodes picked together goes with them', async () => {
+    render(
+      <ReactFlowProvider>
+        <div style={{ width: 800, height: 600 }}>
+          <Page flow={button} />
+        </div>
+        <BoxThem />
+      </ReactFlowProvider>,
+    );
+    const more = navigator.userAgent.includes('Mac') ? 'Meta' : 'Control';
+    fireEvent.click(await screen.findByText('Inject'));
+    fireEvent.keyDown(window, { key: more });
+    fireEvent.click(screen.getByText('If'));
+    fireEvent.keyUp(window, { key: more });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Box them' }));
+    const box = await waitFor(() => document.querySelector<HTMLElement>('.react-flow__nodesselection-rect')!);
+    await waitFor(() => expect(document.activeElement).toBe(box));
+    fireEvent.keyDown(box, { key: 'Backspace' });
+
+    await waitFor(() => expect(box.isConnected).toBe(false));
+    expect(ids()).toEqual([]);
+    expect(document.activeElement).toBe(canvas());
+  });
+
+  // Only what goes takes the keyboard with it. A node it was on that stays, stays on.
+  it('leaves the keyboard on a node that is not taken away', async () => {
+    drawPage();
+    const inject = (await screen.findByText('Inject')).closest<HTMLElement>('.react-flow__node')!;
+
+    const branch = screen.getByText('If').closest<HTMLElement>('.react-flow__node')!;
+    fireEvent.click(branch);
+    act(() => inject.focus());
+    fireEvent.keyDown(inject, { key: 'Backspace' });
+
+    await waitFor(() => expect(branch.isConnected).toBe(false));
+    expect(ids()).toEqual(['go']);
+    expect(document.activeElement).toBe(inject);
   });
 });

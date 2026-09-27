@@ -515,6 +515,46 @@ describe('where the keyboard goes', () => {
 
     expect(document.activeElement).toBe(screen.getByRole('tab', { name: /^Flow 1/ }));
   });
+
+  // Remove node takes its own pane away with the node. The reader was working on the canvas.
+  it('goes to the canvas when Remove node takes the node away', async () => {
+    keeping([watch]);
+    render(<FlowsPage />);
+    await screen.findByRole('tabpanel');
+    fireEvent.click(
+      (await within(document.getElementById('flow-canvas')!).findByText('If')).closest<HTMLElement>('.react-flow__node')!,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Remove node' }));
+
+    expect(useFlowDraftStore.getState().drafts.watch.nodes.map((node) => node.id)).toEqual(['in']);
+    expect(document.activeElement).toBe(document.getElementById('flow-canvas'));
+  });
+
+  // The question goes with the flow it was about, and the flow's pane with it.
+  it('goes to the tab of the flow now on screen when a flow is deleted', async () => {
+    keeping([watch, sim]);
+    render(<FlowsPage />);
+    await screen.findByText('Boiler watch', { selector: 'h3' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete flow' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+
+    expect(await screen.findByText('Boiler simulator', { selector: 'h3' })).toBeInTheDocument();
+    await waitFor(() => expect(document.activeElement).toBe(shownTab()));
+  });
+
+  it('goes to the first way to start again when the last flow is deleted', async () => {
+    keeping([watch]);
+    render(<FlowsPage />);
+    await screen.findByText('Boiler watch', { selector: 'h3' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete flow' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+
+    const start = await screen.findByRole('button', { name: 'Start from an example' });
+    await waitFor(() => expect(document.activeElement).toBe(start));
+  });
 });
 
 /**

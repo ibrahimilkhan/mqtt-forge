@@ -42,6 +42,12 @@ import styles from './FlowCanvas.module.css';
 /** What a palette item carries when it is dragged onto the canvas. */
 export const DRAG_TYPE = 'application/x-mqttforge-node';
 
+/** The canvas's own id: the page finds it to put a new node in the middle of it. */
+export const CANVAS = 'flow-canvas';
+
+/** Puts the keyboard in the canvas, for a control that has just taken away the node it was about. */
+export const focusCanvas = () => document.getElementById(CANVAS)?.focus();
+
 /**
  * How wide a node is drawn. The stylesheet takes it from here, through --node-width on the canvas,
  * so the page's sums for where a new node goes and the node as drawn cannot come apart.
@@ -303,13 +309,31 @@ export function FlowCanvas({ flow, running, problems }: { flow: FlowDto; running
   // key on a button or a link is that control's own: the Inject node's ▶ stops its click from
   // reaching the canvas, so it never picks the node it sits in, and a Backspace on it would only
   // take away whatever else is picked instead — maybe a node panned out of sight a while ago.
-  const onKeyDown = (event: KeyboardEvent) => {
+  //
+  // What goes may be what the keyboard is on: the node, a wire of it, the box round nodes picked
+  // together. A browser hands the focus of an element taken out to the body, and the next key
+  // would miss the canvas; so the keyboard is put in the canvas first. A node or a wire it was on
+  // that stays keeps it.
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'Backspace' && event.key !== 'Delete') return;
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || typedInto(event.target) || onAControl(event.target)) return;
 
     event.preventDefault();
     const { nodes, edges } = drawing.getState();
-    void deleteElements({ nodes: nodes.filter((node) => node.selected), edges: edges.filter((edge) => edge.selected) });
+    const nodesGoing = nodes.filter((node) => node.selected);
+    const cut = new Set(nodesGoing.map((node) => node.id));
+    // A node takes its wires with it.
+    const wiresGoing = new Set(
+      edges.filter((edge) => edge.selected || cut.has(edge.source) || cut.has(edge.target)).map((edge) => edge.id),
+    );
+
+    const on = event.target instanceof Element ? event.target : null;
+    const node = on?.closest('.react-flow__node')?.getAttribute('data-id');
+    const wire = on?.closest('.react-flow__edge')?.getAttribute('data-id');
+    const stays = node ? !cut.has(node) : wire ? !wiresGoing.has(wire) : false;
+    if (!stays && (cut.size > 0 || wiresGoing.size > 0)) event.currentTarget.focus();
+
+    void deleteElements({ nodes: nodesGoing, edges: edges.filter((edge) => edge.selected) });
     // As React Flow's own key does: the box drawn round nodes picked together goes with them.
     drawing.setState({ nodesSelectionActive: false });
   };
@@ -317,7 +341,7 @@ export function FlowCanvas({ flow, running, problems }: { flow: FlowDto; running
   return (
     <div
       className={styles.canvas}
-      id="flow-canvas"
+      id={CANVAS}
       style={NODE_SIZE}
       // Clicked anywhere, the empty ground included, the canvas has the keyboard: a pan is a drag
       // on the ground, and a reader who picked a node and panned to see where it goes is still in

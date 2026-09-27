@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { ReactFlowProvider, useReactFlow } from '@xyflow/react';
-import { useEffect, useLayoutEffect, useMemo } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import { useShallow } from 'zustand/react/shallow';
 import { getFlows } from '../../api/flows';
@@ -11,7 +11,7 @@ import panel from '../../styles/panel.module.css';
 import type { FlowDto, FlowNodeType } from '../../types/api';
 import { DebugStrip } from './DebugStrip';
 import { exampleFlows } from './examples';
-import { FlowCanvas, NODE_HEIGHT, NODE_WIDTH } from './FlowCanvas';
+import { CANVAS, FlowCanvas, NODE_HEIGHT, NODE_WIDTH } from './FlowCanvas';
 import {
   addNode,
   emptyFlow,
@@ -44,6 +44,9 @@ const ROOM = 24;
 
 /** The room a node takes, as the palette reckons it when it puts one down. */
 const NODE_BOX = { width: NODE_WIDTH, height: NODE_HEIGHT };
+
+/** The empty page's first way to start, where the keyboard goes once the last flow has gone. */
+const START = 'flows-start';
 
 /** The flows whose drafts stand as `wanted`. */
 const standingAs = (standings: ReadonlyArray<readonly [string, DraftStanding]>, wanted: DraftStanding) =>
@@ -141,6 +144,24 @@ function Page() {
     if (lapsed.length > 0) useFlowDraftStore.getState().lapse(lapsed);
   }, [drafts, refusals]);
 
+  const shown = flows.find((flow) => flow.id === current) ?? flows[0];
+
+  // The flow on screen went — deleted here or on another console — and took whatever the keyboard
+  // was on with it: its pane's own buttons, its tab, a node. A browser hands that focus to the
+  // body, and the next Tab starts again from the top of the document. The reader goes to the tab of
+  // the flow now on screen instead, or, with no flow left, to the first way to start one. Only when
+  // the focus did fall: a reader who has gone on to something else stays there.
+  const wasShown = useRef(shown?.id ?? null);
+  useLayoutEffect(() => {
+    const was = wasShown.current;
+    wasShown.current = shown?.id ?? null;
+    if (was === null || was === wasShown.current || flows.some((flow) => flow.id === was)) return;
+    if (document.activeElement !== null && document.activeElement !== document.body) return;
+
+    if (shown) focusTab(shown.id);
+    else document.getElementById(START)?.focus();
+  }, [flows, shown]);
+
   if (isPending) return <p className={styles.missing}>Reading the flows…</p>;
 
   // Only when there has never been an answer. A read that fails once the flows are on screen
@@ -156,7 +177,6 @@ function Page() {
       </p>
     );
 
-  const shown = flows.find((flow) => flow.id === current) ?? flows[0];
   if (!shown) return <Start />;
 
   // For its actions, which the handlers below call when they run. Actions never change, so a
@@ -168,7 +188,7 @@ function Page() {
   // fit between the middle and the right edge of the view — so three clicks are three nodes that
   // can each be read and grabbed, and not one stack.
   const add = (type: FlowNodeType) => {
-    const box = document.getElementById('flow-canvas')?.getBoundingClientRect();
+    const box = document.getElementById(CANVAS)?.getBoundingClientRect();
     const middle = screenToFlowPosition({ x: box ? box.left + box.width / 2 : 0, y: box ? box.top + box.height / 2 : 0 });
     const right = screenToFlowPosition({ x: box ? box.right : 0, y: 0 }).x;
     const { start, across } = placesInView(middle, right, NODE_BOX, ROOM);
@@ -255,7 +275,7 @@ function Start() {
         flows run on the server, with this page open or not.
       </p>
       <div className={panel.actions}>
-        <button type="button" onClick={() => begin(exampleFlows())}>
+        <button id={START} type="button" onClick={() => begin(exampleFlows())}>
           Start from an example
         </button>
         <button type="button" className="ghost" onClick={() => begin([emptyFlow('Flow 1')])}>
