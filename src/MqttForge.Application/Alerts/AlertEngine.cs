@@ -194,17 +194,17 @@ public sealed class AlertEngine
         // is holding — an alarm whose rule has gone, or whose ConfigHash moved while the process
         // was down, resolves instead of coming back — and reconciling against an empty set would
         // end every alarm on every restart.
-        var outcome = _core.SetRules(_live, now);
+        var events = new List<AlertEvent>(AlertEvent.Of(_core.SetRules(_live, now)));
 
         if (await LoadStateAsync(ct) is { } restored)
-            outcome = Merge(outcome, _core.Restore(restored, now));
+            events.AddRange(AlertEvent.Of(_core.Restore(restored, now)));
 
         Publish();
-        await DeliverAsync(outcome);
+        await DeliverAsync(events);
 
         // Anything the reconciliation ended has to be written down before the next crash, or the
         // hand-over file offers the same dead alarm again on every start.
-        _unsaved = outcome.Resolved.Count > 0;
+        _unsaved = events.Count > 0;
 
         // The link may well be down at this point — the supervisor connects on its own schedule —
         // in which case this does nothing and the flag stays set for the reconnect to honour.
@@ -271,8 +271,8 @@ public sealed class AlertEngine
     /// <summary>One turn: drain what is queued, tick if a tick is due, then tell everybody.</summary>
     private async Task TurnAsync(CancellationToken ct)
     {
-        var raised = new List<Alert>();
-        var resolved = new List<Alert>();
+        // In the order they happened, call after call. See AlertEvent.
+        var events = new List<AlertEvent>();
         var changed = false;
         var dropped = Dropped;
 
@@ -284,9 +284,7 @@ public sealed class AlertEngine
                 handled++;
                 changed = true;
 
-                var outcome = Apply(command, _time.GetUtcNow());
-                raised.AddRange(outcome.Raised);
-                resolved.AddRange(outcome.Resolved);
+                events.AddRange(AlertEvent.Of(Apply(command, _time.GetUtcNow())));
             }
 
             // The one number the core cannot work out for itself: the queue in front of it did the
@@ -333,9 +331,7 @@ public sealed class AlertEngine
                     if (endpoint is not null) _learnedFrom = endpoint;
                 }
 
-                var outcome = _core.OnTick(now, connected);
-                raised.AddRange(outcome.Raised);
-                resolved.AddRange(outcome.Resolved);
+                events.AddRange(AlertEvent.Of(_core.OnTick(now, connected)));
 
                 // Subscriptions die with the connection — MqttnetSubscriber clears its own set on
                 // disconnect — so the link coming back is the third of the three moments the rule
@@ -365,9 +361,9 @@ public sealed class AlertEngine
             // snapshot finds the alert already in it.
             if (changed) Publish();
 
-            if (raised.Count > 0 || resolved.Count > 0) _unsaved = true;
+            if (events.Count > 0) _unsaved = true;
 
-            await DeliverAsync(new EngineOutcome(raised, resolved));
+            await DeliverAsync(events);
             await AnnounceDropsAsync(dropped);
             await SaveStateAsync(ct);
         }
@@ -612,23 +608,15 @@ public sealed class AlertEngine
         }
     }
 
-    private static EngineOutcome Merge(EngineOutcome first, EngineOutcome second)
+    // Each channel is told the events in the order they happened, a run of one kind per call.
+    private async Task DeliverAsync(IReadOnlyList<AlertEvent> events)
     {
-        if (first.Raised.Count == 0 && first.Resolved.Count == 0) return second;
-        if (second.Raised.Count == 0 && second.Resolved.Count == 0) return first;
-
-        return new EngineOutcome([.. first.Raised, .. second.Raised],
-                                 [.. first.Resolved, .. second.Resolved]);
-    }
-
-    private async Task DeliverAsync(EngineOutcome outcome)
-    {
-        if (outcome.Raised.Count == 0 && outcome.Resolved.Count == 0) return;
+        if (events.Count == 0) return;
 
         try
         {
-            if (outcome.Raised.Count > 0) await _notifier.RaisedAsync(outcome.Raised);
-            if (outcome.Resolved.Count > 0) await _notifier.ResolvedAsync(outcome.Resolved);
+            foreach (var (raised, alerts) in AlertEvent.Runs(events))
+                await (raised ? _notifier.RaisedAsync(alerts) : _notifier.ResolvedAsync(alerts));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -640,23 +628,23 @@ public sealed class AlertEngine
         // After the notifier and in its own try, both deliberately. The console is the fast local
         // channel and a screen notice must not wait behind a POST; and a fault in either of them
         // is a fault in one channel, never in the other and never in the pump.
-        await DispatchAsync(outcome);
+        await DispatchAsync(events);
     }
 
     /// <summary>Hands on the alerts whose rules asked for something outside this process.</summary>
-    private async Task DispatchAsync(EngineOutcome outcome)
+    private async Task DispatchAsync(IReadOnlyList<AlertEvent> events)
     {
         if (_dispatcher is null) return;
 
-        var raised = Outgoing(outcome.Raised);
-        var resolved = Outgoing(outcome.Resolved);
-
-        if (raised.Count == 0 && resolved.Count == 0) return;
+        // Cut into runs after the screen-only alerts are taken out, so an alert the dispatcher never
+        // sees cannot split one of its calls in two.
+        var leaving = Outgoing(events);
+        if (leaving.Count == 0) return;
 
         try
         {
-            if (raised.Count > 0) await _dispatcher.RaisedAsync(raised);
-            if (resolved.Count > 0) await _dispatcher.ResolvedAsync(resolved);
+            foreach (var (raised, alerts) in AlertEvent.Runs(leaving))
+                await (raised ? _dispatcher.RaisedAsync(alerts) : _dispatcher.ResolvedAsync(alerts));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -676,15 +664,15 @@ public sealed class AlertEngine
     //
     // Allocating nothing when nothing qualifies is the common case and worth the extra line: the
     // shipped product's example rules are screen and sound.
-    private static IReadOnlyList<Alert> Outgoing(IReadOnlyList<Alert> alerts)
+    private static IReadOnlyList<AlertEvent> Outgoing(IReadOnlyList<AlertEvent> events)
     {
-        List<Alert>? outgoing = null;
+        List<AlertEvent>? outgoing = null;
 
-        foreach (var alert in alerts)
-            foreach (var action in alert.Actions)
+        foreach (var one in events)
+            foreach (var action in one.Alert.Actions)
                 if (action is WebhookAction or PublishAction)
                 {
-                    (outgoing ??= []).Add(alert);
+                    (outgoing ??= []).Add(one);
                     break;
                 }
 

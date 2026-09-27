@@ -1,9 +1,11 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using MqttForge.Application.Alerts;
+using MqttForge.Domain.Abstractions;
 using MqttForge.Domain.Enums;
 using MqttForge.Domain.Exceptions;
 using MqttForge.Domain.Models;
+using MqttForge.UnitTests.Application.Flows;
 
 namespace MqttForge.UnitTests.Application.Alerts;
 
@@ -73,9 +75,14 @@ public class AlertEngineTests
         }
     }
 
+    /// <param name="alarms">
+    /// Stands for the notifier and the dispatcher both, when a test is about the order the two are
+    /// told in. <see cref="Harness.Notifier"/> then hears nothing.
+    /// </param>
     private static Harness Build(
         AlertRuleDocument? rules = null,
-        ConnectionState state = ConnectionState.Connected)
+        ConnectionState state = ConnectionState.Connected,
+        AlarmCallLog? alarms = null)
     {
         var time = new FakeTimeProvider(Start);
         var ruleStore = new FakeAlertRuleStore { Document = rules ?? new AlertRuleDocument([], false, []) };
@@ -87,7 +94,8 @@ public class AlertEngineTests
 
         var engine = new AlertEngine(
             new AlertEngineCore(new AlertEngineOptions()),
-            ruleStore, stateStore, notifier, connection, subscriber, log, time);
+            ruleStore, stateStore, (IAlertNotifier?)alarms ?? notifier, connection, subscriber, log, time,
+            alarms);
 
         return new Harness
         {
@@ -557,6 +565,37 @@ public class AlertEngineTests
 
         await harness.Until(() => harness.Engine.Snapshot.History.Count == 0, "the history was cleared");
     }
+
+    // A channel outside the process knows an alert by its rule and its topic alone: the broker's
+    // channel publishes to a topic named by the two, and a webhook's body carries no alert id. So
+    // an alarm that ends and the next one on the same pair are one alarm out there, and the order
+    // they are told in is the only thing that says which of them stands.
+    [Fact]
+    public async Task An_alarm_an_edit_ends_and_the_next_reading_raises_again_in_one_turn_are_told_and_sent_in_that_order()
+    {
+        var log = new AlarmCallLog();
+        await using var harness = Build(Document([Hot(over: 90)]), alarms: log);
+        await harness.Engine.StartAsync(CancellationToken.None);
+
+        // The boiler rings; the reader lowers the threshold while it stands, which ends it, as any
+        // change to what a ringing rule judges does; and the next reading rings it again under the
+        // edited rule. All three wait for the same turn.
+        harness.Engine.Post(new ArrivalCommand(Message("plant/boiler/temp", "95")));
+        harness.Engine.Post(new RuleSetChangedCommand([Hot(over: 85)]));
+        harness.Engine.Post(new ArrivalCommand(Message("plant/boiler/temp", "95")));
+        harness.Run();
+
+        await harness.Until(() => log.Alarms.Count == 6, "every end of both alarms to be told and sent");
+        Assert.Equal(
+            ["told raised a", "told resolved a", "told raised b", "sent raised a", "sent resolved a", "sent raised b"],
+            log.Alarms);
+    }
+
+    /// <summary>A rule that rings over <paramref name="over"/> and asks for its alarm on the broker.</summary>
+    private static AlertRule Hot(double over) =>
+        new("hot", "Boiler temperature", Enabled: true, "plant/+/temp", Field: null,
+            new ThresholdCondition(ThresholdOp.Gt, over), Clear: null, For: null, Cooldown: null,
+            AlertSeverity.Critical, [new ScreenAction(), new PublishAction(null, 1, true)]);
 
     [Fact]
     public async Task Posting_from_many_threads_while_the_pump_runs_loses_nothing_and_corrupts_nothing()
