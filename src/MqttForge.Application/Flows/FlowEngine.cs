@@ -644,11 +644,16 @@ public sealed class FlowEngine
         _pushed = _runtime.Version;
 
         var status = _runtime.Status();
-        Volatile.Write(ref _status, status);
         Volatile.Write(ref _alarms, _runtime.Alarms());
 
+        // Handed to the console's loop before it is published as Status, so whoever reads Status and
+        // finds this picture finds it in that loop's hands already. The other way round, a loop that
+        // woke between the two took the picture before it, while Status showed this one. Nothing
+        // reads Status to learn what the loop was given; GET /api/flows/status is an answer of its own.
         _pushes.Status(status);
         if (_debug.Count > 0 || _debugDropped > 0) _pushes.Debug([.. _debug], _debugDropped);
+
+        Volatile.Write(ref _status, status);
 
         _debug.Clear();
         _debugDropped = 0;

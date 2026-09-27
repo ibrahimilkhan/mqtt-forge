@@ -1243,9 +1243,13 @@ public sealed class FlowEngineTests : IAsyncLifetime
         await Eventually.Until(_time, () => Errors(engine, "fan") == 1, "the failure to be counted on its node all the same");
     }
 
+    // Each second is moved on only once the pump is waiting for it: a publish is sent from a loop of
+    // its own, so seeing it says nothing about whether the pump has made its next delay yet.
     [Fact]
     public async Task An_every_that_comes_due_in_the_turn_that_sees_a_move_is_not_refused_for_want_of_a_link()
     {
+        var clock = new WatchedClock(_time);
+        _clock = clock;
         _connection.At("broker-a.plant.local", 1883);
         await RunningAsync(new FlowBuilder()
             .Node("tick", "every", new { seconds = 1, topic = "plant/sim/ping", payload = "on" })
@@ -1253,8 +1257,10 @@ public sealed class FlowEngineTests : IAsyncLifetime
             .Wire("tick", "out", "send", "in")
             .Build());
 
+        await ClockStill(() => clock.Waits(T0.AddSeconds(1)), "the pump to wait for the first emission");
         _time.Advance(TimeSpan.FromSeconds(1));
         await ClockStill(() => _publisher.Sent.Count == 1, "the first emission, on broker A");
+        await ClockStill(() => clock.Waits(T0.AddSeconds(2)), "the pump to wait for the next emission");
 
         // The move, seen by the very turn the next emission wakes. The link was never down, so
         // nothing that comes due in that turn may be told it was.

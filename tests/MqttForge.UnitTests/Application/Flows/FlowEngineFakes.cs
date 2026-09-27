@@ -419,6 +419,43 @@ internal sealed class SteppingClock(FakeTimeProvider time) : TimeProvider
         time.CreateTimer(callback, state, dueTime, period);
 }
 
+/// <summary>The fake clock, and the time every timer made on it is due: what the pump is waiting for.</summary>
+// The pump reads the clock at the end of a turn, works out how long to wait, and only then makes the
+// delay it waits on. A test that moves the clock on in between — because it saw what the turn did
+// from another loop, a publish the publish loop has sent — moves it past a reading the pump already
+// took: the delay is then made from the new time, falls due a whole wait late, and a test that holds
+// the clock still waits for ever. So a test that means "when the pump next wakes" waits first for
+// the delay to be made, due when it should be.
+internal sealed class WatchedClock(FakeTimeProvider time) : TimeProvider
+{
+    private readonly Lock _gate = new();
+    private readonly List<DateTimeOffset> _due = [];
+
+    /// <summary>Whether a timer due at <paramref name="due"/> has been made.</summary>
+    public bool Waits(DateTimeOffset due)
+    {
+        lock (_gate) return _due.Contains(due);
+    }
+
+    public override DateTimeOffset GetUtcNow() => time.GetUtcNow();
+
+    public override TimeZoneInfo LocalTimeZone => time.LocalTimeZone;
+
+    public override long TimestampFrequency => time.TimestampFrequency;
+
+    public override long GetTimestamp() => time.GetTimestamp();
+
+    // Recorded once the fake holds it, so a test that sees it can move the clock and have it fire.
+    public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+    {
+        var made = time.GetUtcNow();
+        var timer = time.CreateTimer(callback, state, dueTime, period);
+
+        lock (_gate) _due.Add(made + dueTime);
+        return timer;
+    }
+}
+
 /// <summary>
 /// RecordingSubscriber and three things it cannot do: keep the QoS every filter was asked for at,
 /// throw from its list of filters, and wait on a broker that does not answer.
