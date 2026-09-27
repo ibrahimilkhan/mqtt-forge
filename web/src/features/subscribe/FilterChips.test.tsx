@@ -132,3 +132,18 @@ it('will not drop a filter only a flow holds, and says why', () => {
   expect(cross).toBeDisabled();
   expect(cross).toHaveAttribute('title', 'Held by a flow — turn the flow off to drop this.');
 });
+
+// Held by both, the chip says the rule. One reason is enough to say why there is nothing to drop,
+// and turning the flow off would not free it while the rule still holds it.
+it('says the rule when a rule and a flow both hold a filter the console does not', () => {
+  render(
+    <FilterChips
+      filters={[{ topicFilter: 'plant/+/temp', console: false, rules: true, flows: true }]}
+      onRemove={() => {}}
+    />,
+  );
+
+  const cross = screen.getByRole('button', { name: 'plant/+/temp is held by an alert rule' });
+  expect(cross).toBeDisabled();
+  expect(cross).toHaveAttribute('title', 'Held by an alert rule — disable it to drop this.');
+});
