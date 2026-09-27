@@ -607,10 +607,13 @@ public sealed class AlertEngineCore
         _ => false,
     };
 
+    /// <summary>What an alert ended by a move to another broker says: the spec's "connection ended", and a flow alarm's.</summary>
+    public const string ConnectionEnded = "connection ended";
+
     /// <summary>
-    /// The link is back at the same endpoint. Every clock the outage stopped is pulled to this moment.
+    /// Throws away everything learned from a broker that is no longer the one connected, and ends
+    /// every alarm standing there.
     /// </summary>
-    /// <summary>Throws away everything learned from a broker that is no longer the one connected.</summary>
     // A silence rule is the reason this exists. Its whole judgement is 'nothing has arrived on
     // this topic for N seconds', and it keeps that per topic — so a console moved from one broker
     // to another carried every topic it had learned at the first one into the second, where those
@@ -619,14 +622,43 @@ public sealed class AlertEngineCore
     //
     // The windows go with it. A ring of readings is a history of one sensor at one broker, and
     // averaging the new broker's values into the old broker's run is the same mistake more
-    // quietly. Active alarms go too: they were raised about the other broker's world.
-    public void ForgetTopics()
+    // quietly. Mutes go with their pairs.
+    //
+    // Active alarms end rather than go: they were raised about the other broker's world, and every
+    // channel that heard one go up has to hear it come down, or the webhook's endpoint, the retained
+    // record and the console's badge go on saying it stands. Dropped in silence, they did, and they
+    // went on holding their slots under the active ceiling and their rules' topic counts until the
+    // next save recounted them. Now they end as a flow's alarm does on a move, "connection ended",
+    // through Close and Announce as every other end does: into the history, the slot given back, a
+    // muted pair's end not announced. In the order they went up, so every channel hears them so.
+    public EngineOutcome ForgetTopics(DateTimeOffset now)
     {
+        var resolved = new List<Alert>();
+
+        var standing = _pairs.Values
+            .Where(state => state.Active is not null)
+            .OrderBy(state => state.Active!.FiredAt)
+            .ThenBy(state => state.RuleId, StringComparer.Ordinal)
+            .ThenBy(state => state.Topic, StringComparer.Ordinal)
+            .ToList();
+
+        foreach (var state in standing)
+        {
+            var ended = state.Active! with { ResolvedAt = now, ResolvedBy = ConnectionEnded };
+            Close(state, ended);
+            Announce(state, ended, resolved, now);
+        }
+
         _pairs.Clear();
-        _history.Clear();
         _readings = 0;
+        foreach (var tally in _tallies.Values) tally.Topics = 0;
+
+        return resolved.Count == 0 ? EngineOutcome.Empty : new EngineOutcome([], resolved);
     }
 
+    /// <summary>
+    /// The link is back at the same endpoint. Every clock the outage stopped is pulled to this moment.
+    /// </summary>
     private void Resume(DateTimeOffset now)
     {
         foreach (var state in _pairs.Values)

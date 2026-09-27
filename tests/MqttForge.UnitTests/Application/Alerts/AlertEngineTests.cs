@@ -398,8 +398,7 @@ public class AlertEngineTests
         await harness.Engine.StartAsync(CancellationToken.None);
         harness.Run();
 
-        // One tick, so the engine has seen which broker it is on. It reads that on the tick, and
-        // an arrival makes a pair without one.
+        // A couple of ticks at the first broker, which the engine has known it is on since it started.
         await harness.TickAsync(2);
 
         // A reading at the first broker is what makes a pair to be silent about.
@@ -416,6 +415,44 @@ public class AlertEngineTests
         // ...and nothing rings about a topic that belonged to the broker that was left.
         await harness.TickAsync(60);
         Assert.Empty(harness.Notifier.Raised);
+    }
+
+    // The move ends the alarms standing at the old broker, as it ends a flow's, and every channel hears
+    // each end in its place: after the old broker's last reading, before the new broker's first. The
+    // line between them is the new link's ConnectedAt, as the flow engine draws it, so both brokers'
+    // readings can wait in the turn that sees the move and each is judged on its own side.
+    [Fact]
+    public async Task A_move_to_another_broker_ends_the_alarms_standing_there_on_every_channel_and_the_new_ones_readings_raise_afresh()
+    {
+        var log = new AlarmCallLog();
+        await using var harness = Build(Document([Hot(over: 90)]), alarms: log);
+        harness.Connection.At("broker.a", 1883);
+        await harness.Engine.StartAsync(CancellationToken.None);
+
+        // All of it waits for the pump's first turn, as it would behind a pump held up for the length
+        // of the move: two boilers ringing at broker A, a third boiler's reading that A sent before
+        // the reader moved the link to broker B, and B's first reading of the first boiler.
+        harness.Engine.Post(new ArrivalCommand(Message("plant/k1/temp", "95")));
+        harness.Engine.Post(new ArrivalCommand(Message("plant/k2/temp", "96")));
+        harness.Engine.Post(new ArrivalCommand(new MqttMessage("plant/k3/temp", "97", "text", 0, false, Start.AddMilliseconds(500))));
+        harness.Connection.Link = new BrokerLink("broker.b", 1883, "test", null, false, Start.AddSeconds(1), false, null, null);
+        harness.Engine.Post(new ArrivalCommand(new MqttMessage("plant/k1/temp", "95", "text", 0, false, Start.AddSeconds(2))));
+        harness.Run();
+
+        await harness.Until(() => log.Alarms.Count == 14, "the alarms, the move and the new broker's alarm to be told and sent");
+        Assert.Equal(
+            [
+                "told raised a", "told raised b", "told raised c",
+                "told resolved a", "told resolved b", "told resolved c", "told raised d",
+                "sent raised a", "sent raised b", "sent raised c",
+                "sent resolved a", "sent resolved b", "sent resolved c", "sent raised d",
+            ],
+            log.Alarms);
+
+        var snapshot = harness.Engine.Snapshot;
+        Assert.Equal(["plant/k1/temp"], snapshot.Active.Select(alert => alert.Topic));
+        Assert.Equal(3, snapshot.History.Count);
+        Assert.All(snapshot.History, alert => Assert.Equal(AlertEngineCore.ConnectionEnded, alert.ResolvedBy));
     }
 
     [Fact]

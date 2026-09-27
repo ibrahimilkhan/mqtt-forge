@@ -14,7 +14,7 @@ public sealed class FlowAlarmBook
     public const string FlowChanged = "flow changed";
     public const string FlowOff = "flow off";
     public const string FlowRemoved = "flow removed";
-    public const string ConnectionEnded = "connection ended";
+    public const string ConnectionEnded = AlertEngineCore.ConnectionEnded;
 
     private readonly Dictionary<Key, Alert> _standing = [];
 

@@ -230,6 +230,11 @@ public sealed class AlertEngine
         _resubscribe = true;
         _refused.Clear();
         _linkWasUp = _connection.State == ConnectionState.Connected;
+
+        // Where the rules start learning, when the link is up already: FlowEngine's _linkedTo at
+        // start. Left for the first turn, a move before it would be taken for the broker learned.
+        if (_linkWasUp) _learnedFrom = EndpointOf(_connection.Link);
+
         await SyncSubscriptionsAsync(ct);
     }
 
@@ -306,13 +311,38 @@ public sealed class AlertEngine
 
         try
         {
+            // A move to another broker, looked for on every turn and not only on the tick, and told
+            // where it falls in the queue: FlowEngine's arrangement, for its reason. The reader can
+            // move the link from one live broker to another without it ever being seen down, and the
+            // new broker's first readings are queued within milliseconds of it — on the console's own
+            // filters, before the rules have asked for theirs. Looked for on the tick, the move came
+            // after them: they were judged against the old broker's pairs, counted on its alarms,
+            // and an alarm they raised was ended with the move. The line is the new link's
+            // ConnectedAt, which a reading's ReceivedAt can be held against: FlowEngine says why.
+            var moving = MovedTo();
+
             var handled = 0;
             while (handled < MaxPerTurn && _queue.Reader.TryRead(out var command))
             {
                 handled++;
                 changed = true;
 
+                if (moving is not null && FallsAfter(command, moving))
+                {
+                    events.AddRange(Move(moving, _time.GetUtcNow()));
+                    moving = null;
+                }
+
                 events.AddRange(AlertEvent.Of(Apply(command, _time.GetUtcNow())));
+            }
+
+            // Nothing queued came after the move, so it goes after the queue — unless the turn
+            // stopped at its limit, when the next turn sees the same move and reads on through what
+            // is left of the old broker's readings first.
+            if (moving is not null && handled < MaxPerTurn)
+            {
+                events.AddRange(Move(moving, _time.GetUtcNow()));
+                changed = true;
             }
 
             // The one number the core cannot work out for itself: the queue in front of it did the
@@ -341,31 +371,9 @@ public sealed class AlertEngine
                 // could judge a whole second of silence against a link that had already gone.
                 connected = _connection.State == ConnectionState.Connected;
 
-                // And if it IS a different broker, everything the rules learned at the last one
-                // goes — before the tick judges anything, so no silence rule fires about a topic
-                // that belongs to a broker nobody is connected to. Read on every tick rather than
-                // only on the transition below: the reader can move the link from one live broker
-                // to another without it ever being seen down.
-                if (connected)
-                {
-                    var link = _connection.Link;
-                    var endpoint = link is null ? null : $"{link.Host}:{link.Port}";
-
-                    if (endpoint is not null && _learnedFrom is not null && endpoint != _learnedFrom)
-                    {
-                        _core.ForgetTopics();
-                        _log.LogInformation(
-                            "The link moved from {Was} to {Now}, so the rules start again: what they had learned was the other broker's.",
-                            _learnedFrom, endpoint);
-
-                        // A move no tick saw down is a new link all the same: the rules' filters
-                        // went with the old one, and a refusal was the other broker's answer.
-                        NewLink();
-                    }
-
-                    if (endpoint is not null) _learnedFrom = endpoint;
-                }
-
+                // A move to another broker has been told by now, above, and before the tick judges
+                // anything: no silence rule fires about a topic that belongs to a broker nobody is
+                // connected to.
                 events.AddRange(AlertEvent.Of(_core.OnTick(now, connected)));
 
                 if (connected && !_linkWasUp) NewLink();
@@ -475,6 +483,49 @@ public sealed class AlertEngine
     /// <summary>Whether the broker did not answer for the filters so lately that asking again now would only wait on it again.</summary>
     // A pause that ends further off than a whole pause is a clock set back since, and is over.
     private bool Pausing(DateTimeOffset now) => now < _askAgainAt && _askAgainAt - now <= NoAnswerPause;
+
+    private static string? EndpointOf(BrokerLink? link) => link is null ? null : $"{link.Host}:{link.Port}";
+
+    /// <summary>The link, when it is up at another broker than the one the pairs were learned from.</summary>
+    // A link that is up before the manager has said where to is not a move, and not a broker learned:
+    // the move is seen once it is named. A link back at the same broker is not one either — that is
+    // Resume's business, on the tick, and the alarms standing there stand on.
+    private BrokerLink? MovedTo()
+    {
+        if (_connection.State != ConnectionState.Connected) return null;
+
+        var link = _connection.Link;
+        if (EndpointOf(link) is not { } endpoint) return null;
+
+        if (_learnedFrom is not null && endpoint != _learnedFrom) return link;
+
+        _learnedFrom = endpoint;
+        return null;
+    }
+
+    /// <summary>Whether a command falls after the move to <paramref name="link"/>, so the move is told before it.</summary>
+    // FlowEngine.FallsAfter: a reading by when it was received against when the new link came up. The
+    // other commands carry no time and act on the link that is up now, so the move goes before them.
+    private static bool FallsAfter(AlertCommand command, BrokerLink link) =>
+        command is not ArrivalCommand arrival || arrival.Message.ReceivedAt >= link.ConnectedAt;
+
+    /// <summary>The move to <paramref name="to"/>: what the rules learned at the old broker ends there, and the new one is a new link.</summary>
+    private IEnumerable<AlertEvent> Move(BrokerLink to, DateTimeOffset now)
+    {
+        var endpoint = EndpointOf(to);
+
+        _log.LogInformation(
+            "The link moved from {Was} to {Now}, so the rules start again: their alarms there have ended, and what they had learned was the other broker's.",
+            _learnedFrom, endpoint);
+
+        _learnedFrom = endpoint;
+
+        // A move no tick saw down is a new link all the same: the rules' filters went with the old
+        // one, and a refusal was the other broker's answer.
+        NewLink();
+
+        return [.. AlertEvent.Of(_core.ForgetTopics(now))];
+    }
 
     /// <summary>Whether a filter an enabled rule wants, and the broker has not refused, is not held for the rules.</summary>
     private bool FiltersMissing()

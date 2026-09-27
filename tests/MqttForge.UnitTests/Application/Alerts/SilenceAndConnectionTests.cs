@@ -1,3 +1,4 @@
+using MqttForge.Application.Alerts;
 using MqttForge.Domain.Models;
 using static MqttForge.UnitTests.Application.Alerts.AlertEngineFixture;
 
@@ -198,5 +199,44 @@ public class SilenceAndConnectionTests
         // Windows, active alarms, mutes and cooldowns all survive a blink. Only a different
         // broker throws them away, and that is the rule set's reconciliation, not this.
         Assert.Single(core.Snapshot().Active);
+    }
+
+    // The spec's move to another broker: everything learned there goes, and the alarms standing there
+    // end with "connection ended", as a flow's do — told like any other end, and in the history. The
+    // two ceilings they held are free again, so the new broker's first readings raise afresh.
+    [Fact]
+    public void A_move_to_another_broker_ends_the_alarms_standing_there_and_frees_what_they_held()
+    {
+        var core = new AlertEngineCore(new AlertEngineOptions { MaxActiveAlerts = 2, MaxTopicsPerRule = 2 });
+        core.SetRules([Rule(Above(90), filter: "plant/+/temp")], T0);
+        core.OnTick(T0, connected: true);
+        core.OnMessage(Message("95", T0, "plant/k1/temp"), T0);
+        core.OnMessage(Message("96", T0, "plant/k2/temp"), T0);
+
+        var moved = T0.AddSeconds(1);
+        var outcome = core.ForgetTopics(moved);
+
+        Assert.Empty(outcome.Raised);
+        Assert.Equal(["plant/k1/temp", "plant/k2/temp"], outcome.Resolved.Select(alert => alert.Topic).Order());
+        Assert.All(outcome.Resolved, alert =>
+        {
+            Assert.Equal(AlertEngineCore.ConnectionEnded, alert.ResolvedBy);
+            Assert.Equal(moved, alert.ResolvedAt);
+        });
+
+        var snapshot = core.Snapshot();
+        Assert.Empty(snapshot.Active);
+        Assert.Equal(outcome.Resolved.Select(alert => alert.Id).Order(), snapshot.History.Select(alert => alert.Id).Order());
+        Assert.Equal(0, Assert.Single(snapshot.Rules).Topics);
+
+        // The same topics and a new one at the new broker: each a new alarm, none turned away.
+        var later = T0.AddSeconds(2);
+        var again = core.OnMessage(Message("95", later, "plant/k1/temp"), later);
+        var fresh = core.OnMessage(Message("97", later, "plant/k3/temp"), later);
+
+        Assert.DoesNotContain(Assert.Single(again.Raised).Id, outcome.Resolved.Select(alert => alert.Id));
+        Assert.Single(fresh.Raised);
+        Assert.Equal(0, core.Snapshot().Suppressed);
+        Assert.Empty(core.Snapshot().Capped);
     }
 }
