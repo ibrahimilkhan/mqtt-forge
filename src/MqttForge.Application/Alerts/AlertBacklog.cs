@@ -36,15 +36,23 @@ public sealed class AlertBacklog(int bound)
         get { lock (_gate) return _events.Count; }
     }
 
-    /// <summary>Events that happened after every one added before them. Never waits.</summary>
-    public void Add(IReadOnlyList<AlertEvent> events)
+    /// <summary>
+    /// Events that happened after every one added before them. Never waits, and says how many
+    /// waiting events it let go to stay within the bound.
+    /// </summary>
+    public int Add(IReadOnlyList<AlertEvent> events)
     {
-        if (events.Count == 0) return;
+        if (events.Count == 0) return 0;
 
         lock (_gate)
         {
             _events.AddRange(events);
-            if (_events.Count > bound) Compact();
+            if (_events.Count <= bound) return 0;
+
+            var before = _events.Count;
+            Compact();
+
+            return before - _events.Count;
         }
     }
 

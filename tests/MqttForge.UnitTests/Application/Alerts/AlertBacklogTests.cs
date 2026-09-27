@@ -57,7 +57,8 @@ public class AlertBacklogTests
         var waiting = new List<AlertEvent> { Down("told-1") };
         for (var i = 0; i < Bound; i++) waiting.AddRange([Up($"brief-{i}"), Down($"brief-{i}")]);
         waiting.AddRange([Up("standing"), Down("told-2")]);
-        backlog.Add(waiting);
+
+        Assert.Equal(2 * Bound, backlog.Add(waiting));
 
         var taken = backlog.Take()!.Value;
         Assert.Equal(["down told-1", "up standing", "down told-2"], Lines(taken));
@@ -72,7 +73,7 @@ public class AlertBacklogTests
     {
         var backlog = new AlertBacklog(Bound);
 
-        backlog.Add([.. Enumerable.Range(0, Bound + 5).Select(i => Down($"gone-{i}"))]);
+        Assert.Equal(5, backlog.Add([.. Enumerable.Range(0, Bound + 5).Select(i => Down($"gone-{i}"))]));
 
         var taken = backlog.Take()!.Value;
         Assert.Equal(Bound, taken.Events.Count);
