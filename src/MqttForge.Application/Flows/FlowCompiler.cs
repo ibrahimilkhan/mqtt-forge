@@ -165,13 +165,13 @@ public static partial class FlowCompiler
                 if (interval < FlowLimits.MinInterval || interval > FlowLimits.MaxEvery)
                     problem = "Every needs an interval between 0.1 seconds and 24 hours.";
                 else
-                    problem = PayloadProblem(settings.Text("payload"));
+                    problem = MessageTopicProblem(settings.Text("topic")) ?? PayloadProblem(settings.Text("payload"));
 
                 return new EveryNode(node.Id, interval, settings.Text("topic"), settings.Text("payload"));
             }
 
             case FlowPorts.Inject:
-                problem = PayloadProblem(settings.Text("payload"));
+                problem = MessageTopicProblem(settings.Text("topic")) ?? PayloadProblem(settings.Text("payload"));
                 return new InjectNode(node.Id, settings.Text("topic"), settings.Text("payload"));
 
             case FlowPorts.If:
@@ -347,12 +347,29 @@ public static partial class FlowCompiler
                 return null;
             }
 
+            // The alert rules' refusal, for its reason: a password in an address is sent on to
+            // every redirect and written into every log on the way.
+            if (!string.IsNullOrEmpty(url.UserInfo))
+            {
+                problem = "A webhook address cannot carry a username or password.";
+                return null;
+            }
+
             actions.Add(new WebhookAction(webhook, new Dictionary<string, string>()));
         }
 
         if (settings.Bool("publish"))
         {
             var topic = settings.Text("publishTopic").Trim();
+
+            // A publication goes to one topic, and a broker refuses a PUBLISH to a filter: an
+            // alarm that asked for one would never arrive, and nothing would say why.
+            if (TopicFilterMatch.HasWildcard(topic) || topic.Contains('\0'))
+            {
+                problem = "An alarm's own topic cannot hold +, # or a NUL character.";
+                return null;
+            }
+
             if (topic.Length > 0 && !AlertTopicPrefix.Inside(topic, prefix))
             {
                 problem = $"An alarm's own topic has to stay under {prefix}. Leave it empty for the usual place.";
@@ -444,6 +461,15 @@ public static partial class FlowCompiler
     // Inject's is carried by each message it makes, and an Every keeps its own for as long as it runs.
     private static string? PayloadProblem(string payload) =>
         Encoding.UTF8.GetByteCount(payload) > FlowLimits.PayloadBytes ? "A payload is at most 64 KB." : null;
+
+    // The topic an Every or an Inject gives its messages stands for the topic an arrival came on, so it
+    // is one a message could have come on: no wildcard, no NUL. Anything else would be refused by a
+    // Publish of {{topic}} at every single message, far from the node that caused it. Empty is theirs
+    // to leave, as the spec has it.
+    private static string? MessageTopicProblem(string topic) =>
+        topic.Length > FlowLimits.TopicTemplateLength ? $"A topic is at most {FlowLimits.TopicTemplateLength} characters."
+        : TopicFilterMatch.HasWildcard(topic) || topic.Contains('\0') ? "A message's topic cannot hold +, # or a NUL character."
+        : null;
 
     private static TimeSpan Seconds(double seconds) =>
         double.IsFinite(seconds) && seconds is >= 0 and <= 1e7 ? TimeSpan.FromSeconds(seconds) : TimeSpan.MaxValue;

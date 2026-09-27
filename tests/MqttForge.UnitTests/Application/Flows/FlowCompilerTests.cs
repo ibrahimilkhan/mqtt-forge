@@ -201,6 +201,76 @@ public class FlowCompilerTests
     public void An_alarms_webhook_has_to_be_an_http_address() =>
         Assert.Equal("node:n1", Only(One("alarm", new { name = "Hot", severity = "warn", webhook = "ftp://x" })).Key);
 
+    // The alert rules' own refusal, and its reason: a password in an address goes to every redirect
+    // and into every log on the way.
+    [Fact]
+    public void An_alarms_webhook_may_not_carry_a_username_or_password()
+    {
+        var problem = Only(One("alarm", new { name = "Hot", severity = "warn", webhook = "https://plant:s3cret@hooks.example.com/boiler" }));
+
+        Assert.Equal("node:n1", problem.Key);
+        Assert.Equal("A webhook address cannot carry a username or password.", problem.Message);
+    }
+
+    [Theory]
+    [InlineData("mqttforge/alerts/+/boiler")]
+    [InlineData("mqttforge/alerts/#")]
+    [InlineData("mqttforge/alerts/boil\0er")]
+    public void An_alarms_own_topic_cannot_hold_a_wildcard_or_a_NUL(string publishTopic) =>
+        Assert.Equal("An alarm's own topic cannot hold +, # or a NUL character.",
+            Only(One("alarm", new { name = "Hot", severity = "warn", publish = true, publishTopic })).Message);
+
+    // The topic an Every or an Inject gives its messages is one a message could have arrived on. With
+    // a wildcard in it, a Publish of {{topic}} downstream would be refused at every message.
+    [Theory]
+    [InlineData("every", "plant/+/tick")]
+    [InlineData("every", "plant/#")]
+    [InlineData("every", "plant/ti\0ck")]
+    [InlineData("inject", "plant/+/button")]
+    [InlineData("inject", "#")]
+    [InlineData("inject", "plant/but\0ton")]
+    public void An_Every_or_Inject_topic_cannot_hold_a_wildcard_or_a_NUL(string type, string topic) =>
+        Assert.Equal("A message's topic cannot hold +, # or a NUL character.", Only(One(type, new { seconds = 1, topic })).Message);
+
+    [Theory]
+    [InlineData("every")]
+    [InlineData("inject")]
+    [InlineData("publish")]
+    public void A_topic_is_at_most_1024_characters(string type)
+    {
+        object Config(int length) => new { seconds = 1, topic = new string('t', length), payload = "x" };
+
+        Assert.Empty(Problems(One(type, Config(FlowLimits.TopicTemplateLength))));
+        Assert.Equal($"A topic is at most {FlowLimits.TopicTemplateLength} characters.",
+            Only(One(type, Config(FlowLimits.TopicTemplateLength + 1))).Message);
+    }
+
+    [Fact]
+    public void An_Every_or_Inject_may_leave_its_topic_empty()
+    {
+        Assert.Empty(Problems(One("every", new { seconds = 1, topic = "" })));
+        Assert.Empty(Problems(One("inject", new { topic = "" })));
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(3)]
+    public void A_publish_or_an_alarms_own_publish_asks_for_QoS_0_1_or_2(int qos)
+    {
+        Assert.Equal("QoS is 0, 1 or 2.", Only(One("publish", new { topic = "sim/x", payload = "x", qos })).Message);
+        Assert.Equal("QoS is 0, 1 or 2.", Only(One("alarm", new { name = "Hot", severity = "warn", publish = true, qos })).Message);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void Every_QoS_MQTT_has_is_taken(int qos)
+    {
+        Assert.Empty(Problems(One("publish", new { topic = "sim/x", payload = "x", qos })));
+        Assert.Empty(Problems(One("alarm", new { name = "Hot", severity = "warn", publish = true, qos })));
+    }
+
     [Fact]
     public void An_alarms_own_topic_has_to_stay_under_the_alert_prefix() =>
         Assert.Equal("node:n1", Only(One("alarm", new
