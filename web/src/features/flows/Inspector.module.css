@@ -26,7 +26,10 @@
 
 .kind { font-size: var(--t-small); color: var(--muted); }
 
-.mono { font-family: var(--mono); font-size: var(--t-code); }
+/* What a node last read or sent, and the topics its alarms stand on: JSON and topics, with no space
+   to break at, in a pane with some 270 pixels across for text. Broken anywhere rather than run past
+   its edge. */
+.mono { font-family: var(--mono); font-size: var(--t-code); overflow-wrap: anywhere; }
 
 /* A box and the sentence it answers, in the console's own set for one — panel.module.css's
    `.checks label`, as the Broker panel's Clean session has it — rather than in the capitals the

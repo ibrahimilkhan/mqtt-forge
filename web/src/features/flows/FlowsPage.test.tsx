@@ -19,6 +19,8 @@ import { NODE_HEIGHT, NODE_WIDTH } from './FlowCanvas';
 import { moveNodes } from './flowDocument';
 import { DRAFT_PREFIX, useFlowDraftStore } from './flowDraftStore';
 import FlowsPage from './FlowsPage';
+import inspector from './Inspector.module.css';
+import inspectorSheet from './Inspector.module.css?raw';
 import toolbar from './Toolbar.module.css';
 import toolbarSheet from './Toolbar.module.css?raw';
 
@@ -1877,6 +1879,41 @@ describe('what a running flow says', () => {
 
     const pane = await screen.findByRole('complementary', { name: 'Inspector' });
     expect(await within(pane).findByText('An event ran more than 10000 nodes and was stopped.')).toHaveClass(panelStyles.fault);
+  });
+
+  /** The watch's MQTT in, having read one message, with its last word on it. */
+  const lastRead = (note: string): FlowStatusDto => ({
+    flows: [{ id: 'watch', faults: 0, fault: null, nodes: [{ id: 'in', count: 1, outs: { out: 1 }, errors: 0, note, standing: [] }] }],
+  });
+
+  /** The pane of the watch's MQTT in, once the reader has picked it. */
+  const inPane = async () => {
+    fireEvent.click((await screen.findByText('1 in')).closest<HTMLElement>('.react-flow__node')!);
+    return within(screen.getByRole('complementary', { name: 'Inspector' }));
+  };
+
+  // The pane has some 270 pixels across for text, and a note is up to eighty characters of JSON or
+  // of a topic with no space in it to break at: it ran on past the pane's edge, and gave the pane a
+  // scrollbar across.
+  it('breaks a node\'s last word to the width of its pane', async () => {
+    const long = '{"temp":94.2,"unit":"C","probe":"kiln-2/boiler-room/a"}';
+    keeping([watch]);
+    server.use(http.get('/api/flows/status', () => HttpResponse.json(lastRead(long))));
+    render(<FlowsPage />);
+
+    expect((await inPane()).getByText(long)).toHaveClass(inspector.mono);
+    expect(ruleOf(inspectorSheet, '.mono')).toMatch(/overflow-wrap: anywhere/);
+  });
+
+  // A message with nothing in it is still a message. "Last:" with nothing after it reads as a pane
+  // that failed to draw; the debug strip says what a message was missing in words, and so does this.
+  it('says a node\'s last word was empty, rather than leaving the line bare', async () => {
+    keeping([watch]);
+    server.use(http.get('/api/flows/status', () => HttpResponse.json(lastRead(''))));
+    render(<FlowsPage />);
+
+    const note = (await inPane()).getByText(/^Last:/);
+    expect(note).toHaveTextContent(/^Last: \(empty\)$/);
   });
 });
 

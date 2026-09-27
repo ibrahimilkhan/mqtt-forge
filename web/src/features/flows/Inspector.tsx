@@ -52,7 +52,8 @@ function NodePane({ flow, node, problems, facts }: { flow: FlowDto; node: FlowNo
   const select = useFlowDraftStore((state) => state.select);
   const spec = specOf(node.type);
   // The server's last word on the node as it runs: the value it last read or sent, or what last
-  // went wrong. The status line under the node counts errors; this says what they were.
+  // went wrong. The status line under the node counts errors; this says what they were. A value
+  // with nothing in it is said to be empty, as the pane says "(no topic)" of an alarm's.
   const note = useFlowStatusStore((state) => state.nodes[nodeKey(flow.id, node.id)]?.note ?? null);
 
   // Merged into the settings as they are in the draft at the moment of the keystroke, not as they
@@ -77,7 +78,7 @@ function NodePane({ flow, node, problems, facts }: { flow: FlowDto; node: FlowNo
 
       {note !== null && (
         <p className={panel.note}>
-          Last: <span className={styles.mono}>{note}</span>
+          Last: <span className={styles.mono}>{note || '(empty)'}</span>
         </p>
       )}
 
