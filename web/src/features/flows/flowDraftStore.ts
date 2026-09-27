@@ -38,6 +38,12 @@ type DraftState = {
   selected: string | null;
   /** What the server said about each flow's last refused deploy: flow id, then flow / node:{id} / edge:{id}. */
   refusals: Record<string, Record<string, string[]>>;
+  /**
+   * This browser would not keep a draft — its storage is full, or site data is blocked — so a
+   * reload brings back older drafts than the ones on screen, or none. Set by the first draft it
+   * refuses, and not cleared: what it kept before then is still what a reload finds.
+   */
+  unkept: boolean;
 
   /** Changes a flow, starting its draft from `base` — the copy on screen, the server's — if it has none yet. */
   edit: (base: FlowDto, change: (flow: FlowDto) => FlowDto) => void;
@@ -91,12 +97,15 @@ function read(area: Area, key: string): string | null {
   }
 }
 
-function write(area: Area, key: string, value: string | null) {
+/** Whether it was kept. */
+function write(area: Area, key: string, value: string | null): boolean {
   try {
     if (value === null) area().removeItem(key);
     else area().setItem(key, value);
+    return true;
   } catch {
     // Nowhere to keep it.
+    return false;
   }
 }
 
@@ -194,11 +203,12 @@ function draftsKept(): Pick<DraftState, 'drafts' | 'bases'> {
  * Moves what was kept all together under the old key to where it is kept now: each draft to a key
  * of its own, and the flow that was on screen to this tab. Only whole flows move, and a draft
  * already under its own key was written since, so it stays. The drafts that moved are handed back
- * as well, so a storage too full to take them still has them on screen for this visit.
+ * as well, so a storage too full to take them still has them on screen for this visit — and says
+ * so, since the next visit will not.
  */
-function moveOld(): Record<string, FlowDto> {
+function moveOld(): { moved: Record<string, FlowDto>; unkept: boolean } {
   const text = read(local, OLD_KEY);
-  if (text === null) return {};
+  if (text === null) return { moved: {}, unkept: false };
 
   let old: unknown = null;
   try {
@@ -209,17 +219,18 @@ function moveOld(): Record<string, FlowDto> {
 
   const state = isRecord(old) && isRecord(old.state) ? old.state : {};
   const drafts: Record<string, FlowDto> = {};
+  let unkept = false;
 
   // Kept with no start: these drafts never knew one.
   for (const flow of Object.values(isRecord(state.drafts) ? state.drafts : {})) {
     if (!isWholeFlow(flow) || read(local, keyOf(flow.id)) !== null) continue;
     drafts[flow.id] = flow;
-    write(local, keyOf(flow.id), kept(flow, undefined));
+    if (!write(local, keyOf(flow.id), kept(flow, undefined))) unkept = true;
   }
 
   if (isText(state.current) && read(session, CURRENT_KEY) === null) write(session, CURRENT_KEY, state.current);
   write(local, OLD_KEY, null);
-  return drafts;
+  return { moved: drafts, unkept };
 }
 
 const without = <T>(record: Record<string, T>, ...keys: readonly string[]): Record<string, T> =>
@@ -246,7 +257,7 @@ const baseOf = (bases: Record<string, string | null>, id: string) => (id in base
  * A factory, so a test can open a second tab on the same storage.
  */
 export function createFlowDraftStore() {
-  const moved = moveOld();
+  const { moved, unkept } = moveOld();
   const stored = draftsKept();
 
   const store = create<DraftState>()((set) => ({
@@ -255,6 +266,7 @@ export function createFlowDraftStore() {
     current: read(session, CURRENT_KEY),
     selected: null,
     refusals: {},
+    unkept,
 
     edit: (base, change) =>
       set((state) => {
@@ -322,16 +334,21 @@ export function createFlowDraftStore() {
   store.subscribe((state, before) => {
     if (hearing) return;
 
+    let refused = false;
     if (state.drafts !== before.drafts || state.bases !== before.bases)
       for (const id of new Set([...Object.keys(before.drafts), ...Object.keys(state.drafts)])) {
         const draft = state.drafts[id];
         const base = baseOf(state.bases, id);
         if (draft === before.drafts[id] && base === baseOf(before.bases, id)) continue;
 
-        write(local, keyOf(id), draft ? kept(draft, base) : null);
+        if (!write(local, keyOf(id), draft ? kept(draft, base) : null)) refused = true;
       }
 
     if (state.current !== before.current) write(session, CURRENT_KEY, state.current);
+
+    // Said once. A full storage refuses every keystroke after the first, and the page is told
+    // the first time.
+    if (refused && !state.unkept) store.setState({ unkept: true });
   });
 
   const hear = (event: StorageEvent) => {

@@ -85,6 +85,7 @@ function Page() {
   const bases = useFlowDraftStore((state) => state.bases);
   const current = useFlowDraftStore((state) => state.current);
   const refusals = useFlowDraftStore((state) => state.refusals);
+  const unkept = useFlowDraftStore((state) => state.unkept);
   // Which flows run, and nothing else of the numbers: that is all the page draws of them, and every
   // push brings a new picture. Taken whole, each push drew the whole page again, four times a second.
   const runningIds = useFlowStatusStore(useShallow((state) => Object.keys(state.flows)));
@@ -252,13 +253,22 @@ function Page() {
           {/* The page covers the log, so what did not go through is said here: a deploy that
               failed, or that the server refused — which marks the nodes it is about, but a flow
               refused on another tab has only its lamp to show it — a flow not deleted, a message
-              not injected. One polite live region, so a reader who cannot see the marks is told as
-              well, and nothing in it is drawn from the numbers, so a push of them says nothing. */}
+              not injected — and drafts this browser would not keep. One polite live region, so a
+              reader who cannot see the marks is told as well, and nothing in it is drawn from the
+              numbers, so a push of them says nothing. */}
           <div aria-live="polite">
             {deploy.isError && <p className={panel.fault}>Not deployed. {describeError(deploy.error)}</p>}
             {stillRefused.length > 0 && <p className={panel.fault}>{refusedIn(stillRefused.map((one) => one.name))}</p>}
             {failed.delete !== null && <p className={panel.fault}>Not deleted. {failed.delete}</p>}
             {failed.inject !== null && <p className={panel.fault}>Not injected. {failed.inject}</p>}
+            {/* Said once, by the first draft the browser refused: its storage is full, or blocked,
+                and a reload would bring back what it kept before then without a word. */}
+            {unkept && (
+              <p className={panel.fault}>
+                This browser would not keep the drafts, so a reload may bring back older ones, or none. Deploy what you
+                want to keep.
+              </p>
+            )}
           </div>
         </div>
 

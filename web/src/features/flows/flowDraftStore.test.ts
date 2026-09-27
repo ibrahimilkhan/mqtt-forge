@@ -8,7 +8,7 @@ const OLD_KEY = 'mqttforge.flows.drafts';
 beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
-  useFlowDraftStore.setState({ drafts: {}, bases: {}, current: null, selected: null, refusals: {} });
+  useFlowDraftStore.setState({ drafts: {}, bases: {}, current: null, selected: null, refusals: {}, unkept: false });
 });
 
 /** The store as a page opened now would have it: a second copy, read afresh from what storage holds. */
@@ -275,6 +275,58 @@ describe('what storage keeps', () => {
     expect(localStorage.getItem(`${DRAFT_PREFIX}garbled`)).toBeNull();
     expect(localStorage.getItem(`${DRAFT_PREFIX}bare`)).toBeNull();
     expect(localStorage.getItem(DRAFT_PREFIX + newer.id)).not.toBeNull();
+  });
+});
+
+/** Storage that takes nothing more, the way a full one or a blocked one answers every write. */
+const fullStorage = () =>
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+  });
+
+/**
+ * Storage full, or site data blocked: the drafts live on this page and no longer, and what a
+ * reload brings back is older than what is on screen, or nothing.
+ */
+describe('a browser that will not keep the drafts', () => {
+  it('says so once, however many drafts it refuses, and keeps them on the page', () => {
+    const full = fullStorage();
+    // What the page reads, as it reads it: each value the store holds, once it holds it.
+    const seen: boolean[] = [];
+    const stop = useFlowDraftStore.subscribe((state) => {
+      if (state.unkept !== (seen.at(-1) ?? false)) seen.push(state.unkept);
+    });
+    const flow = emptyFlow('Too much');
+
+    useFlowDraftStore.getState().edit(flow, (one) => ({ ...one, name: 'Too much 1' }));
+    useFlowDraftStore.getState().edit(flow, (one) => ({ ...one, name: 'Too much 12' }));
+    useFlowDraftStore.getState().put(emptyFlow('And more'));
+    stop();
+    full.mockRestore();
+
+    expect(seen).toEqual([true]);
+    expect(useFlowDraftStore.getState().drafts[flow.id].name).toBe('Too much 12');
+  });
+
+  // The drafts kept all together before move to keys of their own when the page opens, and a
+  // storage too full for them keeps them for this visit only.
+  it('says so when the drafts kept from before cannot be moved', async () => {
+    const flow = emptyFlow('From before');
+    localStorage.setItem(OLD_KEY, JSON.stringify({ state: { drafts: { [flow.id]: flow }, current: null }, version: 0 }));
+    const full = fullStorage();
+
+    const opened = await reopened();
+    full.mockRestore();
+
+    expect(opened.getState().drafts).toEqual({ [flow.id]: flow });
+    expect(opened.getState().unkept).toBe(true);
+  });
+
+  it('says nothing while the drafts are kept', async () => {
+    useFlowDraftStore.getState().put(emptyFlow('Kept'));
+
+    expect(useFlowDraftStore.getState().unkept).toBe(false);
+    expect((await reopened()).getState().unkept).toBe(false);
   });
 });
 

@@ -26,7 +26,7 @@ afterAll(() => vi.unstubAllGlobals());
 
 beforeEach(() => {
   localStorage.clear();
-  useFlowDraftStore.setState({ drafts: {}, bases: {}, current: null, selected: null, refusals: {} });
+  useFlowDraftStore.setState({ drafts: {}, bases: {}, current: null, selected: null, refusals: {}, unkept: false });
   useFlowStatusStore.setState(useFlowStatusStore.getInitialState());
 });
 
@@ -1595,6 +1595,27 @@ describe('what did not go through', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Delete it' }));
     expect(await screen.findByRole('button', { name: 'Start from an example' })).toBeInTheDocument();
     expect(screen.queryByText(/^Not deleted/)).not.toBeInTheDocument();
+  });
+
+  // Storage full, or site data blocked: a reload would bring back an older set of drafts, or none,
+  // without a word. Said once, when the first draft is refused, and not again with each keystroke.
+  it('says once, not with every keystroke, that the browser will not keep the drafts', async () => {
+    keeping([watch]);
+    render(<FlowsPage />);
+    const name = await screen.findByLabelText('Name');
+    const full = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+    });
+
+    await userEvent.type(name, ' 2');
+    const said = /^This browser would not keep the drafts/;
+    const note = screen.getByText(said);
+    expect(outcome(said)).not.toBeNull();
+    await userEvent.type(name, '3');
+    full.mockRestore();
+
+    expect(screen.getAllByText(said)).toEqual([note]);
+    expect(screen.getByRole('tab', { name: /^Boiler watch 23/ })).toBeInTheDocument();
   });
 
   it('says a message that was not injected, until the next press', async () => {
