@@ -40,11 +40,16 @@ public sealed record FlowDebugDto(string FlowId, string NodeId, DateTimeOffset A
 public sealed record FlowDto(
     string? Id, string? Name, bool Enabled, IReadOnlyList<FlowNodeDto>? Nodes, IReadOnlyList<FlowEdgeDto>? Edges)
 {
+    // A node or edge in the array can itself be JSON null — STJ allows a hole in the middle of an
+    // array same as it allows the array to be missing — and FlowCompiler already turns that into
+    // its own flow-level problem ("A node in this flow is empty." / "A wire in this flow is
+    // empty."). So a null here is passed through as a null rather than dereferenced, and the
+    // compiler is left to say why it is refused, the same way it says why any other node is.
     public Flow ToFlow() => new(
         Id ?? "", Name ?? "", Enabled,
-        [.. (Nodes ?? []).Select(node => new FlowNode(
+        [.. (Nodes ?? []).Select(node => node is null ? null! : new FlowNode(
             node.Id ?? "", node.Type ?? "", node.X, node.Y, FlowJson.OrEmpty(node.Config)))],
-        [.. (Edges ?? []).Select(edge => new FlowEdge(
+        [.. (Edges ?? []).Select(edge => edge is null ? null! : new FlowEdge(
             edge.Id ?? "", edge.From ?? "", edge.FromPort ?? "", edge.To ?? "", edge.ToPort ?? ""))]);
 
     public static FlowDto Of(Flow flow) => new(

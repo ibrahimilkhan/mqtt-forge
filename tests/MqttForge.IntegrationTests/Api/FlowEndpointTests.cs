@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using MqttForge.IntegrationTests.Support;
 using Xunit;
@@ -88,6 +89,24 @@ public sealed class FlowEndpointTests : IClassFixture<MqttForgeApiFactory>
         Assert.True(problem.GetProperty("errors").TryGetProperty("node:n1", out _));
     }
 
+    // A hand-built body — the console never sends a hole in either array, but a PUT typed by hand
+    // or replayed from a bad client can. FlowCompiler already answers a null element with a
+    // flow-level problem ("A node in this flow is empty." / "A wire in this flow is empty."); this
+    // is only proof that FlowDto.ToFlow() hands it the null rather than dereferencing it first.
+    [Theory]
+    [InlineData("""{"id":"hole","name":"Hole","enabled":true,"nodes":[null],"edges":[]}""")]
+    [InlineData("""{"id":"hole","name":"Hole","enabled":true,"nodes":[],"edges":[null]}""")]
+    public async Task A_null_node_or_edge_in_the_body_is_a_400_rather_than_a_500(string body)
+    {
+        var response = await _client.PutAsync("/api/flows/hole",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await Json(response);
+        Assert.Equal("flowInvalid", problem.GetProperty("reason").GetString());
+        Assert.True(problem.GetProperty("errors").TryGetProperty("flow", out _));
+    }
+
     [Fact]
     public async Task An_id_in_the_address_that_differs_from_the_body_is_refused() =>
         Assert.Equal(HttpStatusCode.BadRequest,
@@ -133,6 +152,61 @@ public sealed class FlowEndpointTests : IClassFixture<MqttForgeApiFactory>
                 flow.GetProperty("nodes").EnumerateArray().Any(node =>
                     node.GetProperty("id").GetString() == "ring" && node.GetProperty("standing").GetArrayLength() == 1));
         }, "the status to show the standing alarm");
+    }
+
+    // The other half of the merge AlertController.WithFlows does: GET /api/alerts replaces its
+    // whole active/history state on every read, so a flow alarm that cleared has to leave active
+    // and land in history in the very same answer, the way an alert-rule alarm does.
+    [Fact]
+    public async Task A_cleared_flow_alarm_leaves_active_and_lands_in_history_as_cleared()
+    {
+        var flow = new
+        {
+            id = "toggle",
+            name = "Toggle",
+            enabled = true,
+            nodes = new object[]
+            {
+                new { id = "raiseGo", type = "inject", x = 40, y = 40, config = new { topic = "plant/k1/button", payload = "1" } },
+                new { id = "clearGo", type = "inject", x = 40, y = 160, config = new { topic = "plant/k1/button", payload = "0" } },
+                new { id = "ring", type = "alarm", x = 260, y = 100, config = new { name = "Pressed", severity = "warn", reason = "{{topic}} pressed" } },
+            },
+            edges = new object[]
+            {
+                new { id = "e1", from = "raiseGo", fromPort = "out", to = "ring", toPort = "raise" },
+                new { id = "e2", from = "clearGo", fromPort = "out", to = "ring", toPort = "clear" },
+            },
+        };
+
+        await _client.PutAsJsonAsync("/api/flows/toggle", flow);
+
+        await Until(async () =>
+            (await _client.PostAsync("/api/flows/toggle/nodes/raiseGo/inject", null)).StatusCode == HttpStatusCode.Accepted,
+            "the deployed flow to accept the raise inject");
+
+        await Until(async () =>
+        {
+            var alerts = await Json(await _client.GetAsync("/api/alerts"));
+            return alerts.GetProperty("active").EnumerateArray()
+                .Any(alert => alert.GetProperty("ruleId").GetString() == "flow-toggle-ring");
+        }, "the raised alarm to reach GET /api/alerts");
+
+        await Until(async () =>
+            (await _client.PostAsync("/api/flows/toggle/nodes/clearGo/inject", null)).StatusCode == HttpStatusCode.Accepted,
+            "the deployed flow to accept the clear inject");
+
+        await Until(async () =>
+        {
+            var alerts = await Json(await _client.GetAsync("/api/alerts"));
+
+            var stillActive = alerts.GetProperty("active").EnumerateArray()
+                .Any(alert => alert.GetProperty("ruleId").GetString() == "flow-toggle-ring");
+            var clearedInHistory = alerts.GetProperty("history").EnumerateArray()
+                .Any(alert => alert.GetProperty("ruleId").GetString() == "flow-toggle-ring" &&
+                              alert.GetProperty("resolvedBy").GetString() == "clear");
+
+            return !stillActive && clearedInHistory;
+        }, "the cleared alarm to leave active and land in history");
     }
 
     [Fact]
