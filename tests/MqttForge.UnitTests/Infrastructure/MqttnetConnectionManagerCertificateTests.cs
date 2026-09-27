@@ -20,7 +20,7 @@ namespace MqttForge.UnitTests.Infrastructure;
 // disposed them. An attempt now owns what it loaded until it makes a link, the link owns it after
 // that, and whichever of the two is over lets it go.
 [Collection(ClientCertificateFiles.Collection)]
-public sealed class MqttnetConnectionManagerCertificateTests(ClientCertificateFiles files)
+public sealed class MqttnetConnectionManagerCertificateTests(ClientCertificateFiles files) : IDisposable
 {
     private readonly IMqttClient _client = Substitute.For<IMqttClient>();
     private readonly IConnectionStateNotifier _notifier = Substitute.For<IConnectionStateNotifier>();
@@ -28,13 +28,27 @@ public sealed class MqttnetConnectionManagerCertificateTests(ClientCertificateFi
     // The certificate MQTTnet was handed with each CONNECT, in order.
     private readonly List<X509Certificate2> _presented = [];
 
+    // Every manager a test made, stopped when the test is over, as the host stops its own. A test
+    // that ends with a link up leaves that link its certificate, and a keychain in $TMPDIR with it,
+    // until something lets the manager go.
+    private readonly List<MqttnetConnectionManager> _made = [];
+
     private BrokerConnectionSettings Mutual => new(
         "localhost", 8884, "id", null, null, UseTls: true, ProtocolVersion: MqttProtocolLevel.V500,
         Tls: new BrokerTlsSettings(
             ClientCertificatePath: files.Pfx, ClientCertificatePassword: ClientCertificateFiles.Password));
 
-    private MqttnetConnectionManager CreateSut(TimeSpan? connectTimeout = null) =>
-        new(new MqttnetClientProvider(_client), _notifier, connectTimeout);
+    private MqttnetConnectionManager CreateSut(TimeSpan? connectTimeout = null)
+    {
+        var sut = new MqttnetConnectionManager(new MqttnetClientProvider(_client), _notifier, connectTimeout);
+        _made.Add(sut);
+        return sut;
+    }
+
+    public void Dispose()
+    {
+        foreach (var sut in _made) sut.Dispose();
+    }
 
     public enum Failure { Unreachable, Refused, TimedOut, CalledOff }
 
