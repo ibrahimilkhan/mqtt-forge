@@ -153,12 +153,14 @@ public sealed class FlowEngine
     /// <see cref="DeployPatience"/> ran out first — the deploy is not lost, and runs when the pump
     /// is free.
     /// </summary>
-    // Handed over before the first await, so a caller can hold a lock around the handing over alone
-    // and wait for the answer outside it.
-    public async Task<bool> DeployAsync(FlowDeploy deploy, CancellationToken ct)
-    {
-        var running = Hand(deploy);
+    // Handed over before it returns, so a caller can hold a lock around the handing over alone and wait
+    // for the answer outside it.
+    public Task<bool> DeployAsync(FlowDeploy deploy, CancellationToken ct) => AnsweredAsync(Hand(deploy), ct);
 
+    // Apart from DeployAsync, whose parameters an await would keep for as long as it waits: the wait
+    // holds the answer and not the deploy, which a newer one may replace in its slot meanwhile.
+    private async Task<bool> AnsweredAsync(Task<bool> running, CancellationToken ct)
+    {
         try
         {
             return await running.WaitAsync(DeployPatience, _time, ct);
@@ -178,8 +180,10 @@ public sealed class FlowEngine
     // by a newer one, which is everything the older said and more, and takes the older one's place in
     // the order: every command posted after the first of them meets flows at least that new.
     //
-    // The queue still gets an entry, which is the pump's wake-up and nothing else. If the queue has to
-    // let that entry go, it was full, the pump is draining it, and the slot is found all the same.
+    // The queue still gets an entry, which is the pump's wake-up and nothing else — nothing of the
+    // deploy, so a replaced one is held by nothing, however long the pump takes to read its entry. If
+    // the queue has to let that entry go, it was full, the pump is draining it, and the slot is found
+    // all the same.
     private Task<bool> Hand(FlowDeploy deploy)
     {
         Task<bool> running;
@@ -190,7 +194,7 @@ public sealed class FlowEngine
             running = _pending.Running.Task;
         }
 
-        _queue.Writer.TryWrite(new Queued(Interlocked.Increment(ref _stamp), deploy));
+        _queue.Writer.TryWrite(new Queued(Interlocked.Increment(ref _stamp), DeployWaiting.Marker));
         return running;
     }
 
@@ -450,7 +454,7 @@ public sealed class FlowEngine
                 // A deploy goes in at its own place, whether or not the queue kept its entry: ahead of
                 // the first command posted after it. The entry itself is its wake-up and nothing more.
                 if (TakeDeploy(before: queued.Stamp) is { } pending) Deploy(pending);
-                if (queued.Command is not FlowDeploy) Handle(queued.Command);
+                if (queued.Command is not DeployWaiting) Handle(queued.Command);
             }
 
             // One handed over after everything the turn read, or whose entry the queue let go with
@@ -763,7 +767,7 @@ public sealed class FlowEngine
     private void OnDropped(Queued queued)
     {
         // A deploy's entry is only its wake-up: the deploy itself is in its slot, and lost is what it is not.
-        if (queued.Command is FlowDeploy) return;
+        if (queued.Command is DeployWaiting) return;
 
         Interlocked.Increment(ref _dropped);
 
@@ -773,6 +777,12 @@ public sealed class FlowEngine
 
     /// <summary>A command, and when it was posted, as the order of everything posted.</summary>
     private readonly record struct Queued(long Stamp, FlowCommand Command);
+
+    /// <summary>A deploy's entry in the queue: its place in the order, and the pump's wake-up. The deploy is in its slot.</summary>
+    private sealed record DeployWaiting : FlowCommand
+    {
+        public static DeployWaiting Marker { get; } = new();
+    }
 
     /// <summary>The newest deploy the pump has not reached, where the first of them was stamped, and everyone waiting on it.</summary>
     private sealed class PendingDeploy(long stamp)

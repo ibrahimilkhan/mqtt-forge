@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using MqttForge.Application.Alerts;
@@ -706,6 +707,34 @@ public sealed class FlowEngineTests : IAsyncLifetime
         Assert.Equal("plant/k1/temp", Assert.Single(_alerts.Raised).Topic);
         Assert.Equal(FlowAlarmBook.FlowRemoved, _alerts.Resolved[0].ResolvedBy);
         Assert.Empty(engine.Alarms.Active);
+    }
+
+    // Replaced in its slot, a deploy is one no flow will ever run. A pump held up — a broker slow with
+    // a SUBSCRIBE, say — must not hold on to every one handed over meanwhile, each a compiled set of up
+    // to fifty flows, until it reads their places in the queue.
+    [Fact]
+    public async Task A_deploy_replaced_before_the_pump_reached_it_is_held_by_nothing()
+    {
+        var engine = await StartedAsync(_alerts, _dispatcher, []);
+
+        var (replaced, answer) = HandOver(engine, new FlowBuilder("f1").Node("go", "inject").Build());
+        engine.Post(Deployment(new FlowBuilder("f2", "Second").Node("go", "inject").Build()));
+
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        Assert.False(replaced.IsAlive, "the replaced deploy is still held");
+        Assert.False(answer.IsCompleted);
+    }
+
+    /// <summary>Hands a deploy of <paramref name="flow"/> over as FlowService does, and keeps only a weak hold on it.</summary>
+    // Made in a method of its own, so no local of the test's keeps the deploy alive in a debug build.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static (WeakReference Deploy, Task<bool> Answer) HandOver(FlowEngine engine, Flow flow)
+    {
+        var deploy = Deployment(flow);
+        return (new WeakReference(deploy), engine.DeployAsync(deploy, CancellationToken.None));
     }
 
     // A deploy is the whole of what should run, so of two the pump has not reached only the newer is
