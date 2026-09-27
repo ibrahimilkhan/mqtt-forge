@@ -155,16 +155,7 @@ public sealed class FlowRuntime
     public FlowOutcome OnTick(DateTimeOffset now, bool connected)
     {
         var into = new Collector();
-
-        if (_linkUp && !connected)
-        {
-            // The alert engine's "connection ended": with no link nothing is being watched, and an
-            // alarm left standing would be a claim about a plant nobody can see.
-            into.Resolved.AddRange(_alarms.ResolveAll(FlowAlarmBook.ConnectionEnded, now));
-            Touch();
-        }
-
-        _linkUp = connected;
+        Link(connected, now, into);
 
         while (_schedule.TryPeek(out var item, out var due) && due <= now)
         {
@@ -198,6 +189,18 @@ public sealed class FlowRuntime
             Finish(run, node);
             Touch();
         }
+
+        return into.Outcome();
+    }
+
+    /// <summary>The link went to another broker between two looks at it: a down and an up, and nothing run between.</summary>
+    // Not OnTick down and up. The down would run whatever has come due against a link that was never
+    // gone and refuse every publish in it; the next tick runs it, on the link that is up.
+    public FlowOutcome OnMove(DateTimeOffset now)
+    {
+        var into = new Collector();
+        Link(connected: false, now, into);
+        Link(connected: true, now, into);
 
         return into.Outcome();
     }
@@ -266,6 +269,19 @@ public sealed class FlowRuntime
     public FlowAlarms Alarms() => new(_alarms.Active(), _alarms.History());
 
     // ---- one event ----
+
+    private void Link(bool connected, DateTimeOffset now, Collector into)
+    {
+        if (_linkUp && !connected)
+        {
+            // The alert engine's "connection ended": with no link nothing is being watched, and an
+            // alarm left standing would be a claim about a plant nobody can see.
+            into.Resolved.AddRange(_alarms.ResolveAll(FlowAlarmBook.ConnectionEnded, now));
+            Touch();
+        }
+
+        _linkUp = connected;
+    }
 
     private void Emit(Run run, CompiledNode from, string port, FlowMessage message)
     {

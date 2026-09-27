@@ -43,6 +43,29 @@ public class FlowAlarmTests
         Assert.Single(_runtime.Alarms().History);
     }
 
+    // A live link that went to another broker between two looks: its alarms end as a dropped link's
+    // do, and nothing else happens. What came due is the next tick's, and the link is still up for it.
+    [Fact]
+    public void A_move_to_another_broker_resolves_every_standing_alarm_and_runs_nothing_that_is_due()
+    {
+        var ticker = new FlowBuilder("f2", "Simulator")
+            .Node("tick", "every", new { seconds = 1, topic = "plant/sim/ping", payload = "on" })
+            .Node("send", "publish", new { topic = "{{topic}}", payload = "{{payload}}" })
+            .Wire("tick", "out", "send", "in")
+            .Compile();
+        _runtime.Deploy([Watch().Compile(), ticker], ["f1", "f2"], T0);
+        _runtime.OnTick(T0, connected: true);
+        _runtime.OnMessage(new MqttMessage("plant/k1/temp", "{\"temp\":95}", "text", 0, false, T0), T0);
+
+        var moved = _runtime.OnMove(T0.AddSeconds(1));
+
+        Assert.Equal("connection ended", Assert.Single(moved.Resolved).ResolvedBy);
+        Assert.Empty(moved.Publishes);
+        Assert.Empty(_runtime.Alarms().Active);
+        Assert.Equal(["plant/sim/ping"],
+            _runtime.OnTick(T0.AddSeconds(1), connected: true).Publishes.Select(publish => publish.Request.Topic));
+    }
+
     [Fact]
     public void Turning_a_flow_off_resolves_its_alarms_as_flow_off()
     {

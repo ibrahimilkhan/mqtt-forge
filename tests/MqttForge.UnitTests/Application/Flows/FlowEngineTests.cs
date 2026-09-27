@@ -109,6 +109,10 @@ public sealed class FlowEngineTests : IAsyncLifetime
 
     private static MqttMessage Msg(string topic, string payload) => new(topic, payload, "text", 0, false, T0);
 
+    /// <summary>A live link to a broker, up since <paramref name="connectedAt"/>.</summary>
+    private static BrokerLink LinkTo(string host, DateTimeOffset connectedAt) =>
+        new(host, 1883, "test", null, false, connectedAt, false, null, null);
+
     private static long Errors(FlowEngine engine, string node) =>
         engine.Status.Flows.SelectMany(flow => flow.Nodes).FirstOrDefault(one => one.Id == node)?.Errors ?? 0;
 
@@ -728,6 +732,68 @@ public sealed class FlowEngineTests : IAsyncLifetime
         await ClockStill(() => _alerts.Resolved.Count == 1 && _subscriber.Filters.Count == 1,
             "the alarm to end and the refused filter to be asked for on the new broker");
         Assert.Equal(FlowAlarmBook.ConnectionEnded, _alerts.Resolved[0].ResolvedBy);
+    }
+
+    [Fact]
+    public async Task An_alarm_raised_by_the_new_brokers_first_arrival_in_the_turn_that_sees_the_move_stays_up()
+    {
+        _connection.At("broker-a.plant.local", 1883);
+        var engine = await RunningAsync(Watch());
+
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+        await ClockStill(() => _alerts.Raised.Count == 1, "the old broker's alarm to stand");
+
+        // The move, and broker B's first message after it, both waiting for the same turn — the
+        // console's own filters go back up on B before the flows see the move.
+        _connection.At("broker-b.plant.local", 1883);
+        _subscriber.LinkDropped();
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k2/temp", "{\"temp\":95}"));
+
+        await ClockStill(() => _alerts.Raised.Count == 2 && _alerts.Resolved.Count >= 1,
+            "the move and the new broker's alarm to be told");
+        Assert.Equal(["plant/k1/temp"], _alerts.Resolved.Select(alert => alert.Topic));
+        Assert.Equal(["plant/k2/temp"], engine.Alarms.Active.Select(alert => alert.Topic));
+    }
+
+    [Fact]
+    public async Task An_arrival_the_old_broker_sent_before_the_move_is_judged_before_it()
+    {
+        _connection.At("broker-a.plant.local", 1883);
+        var engine = await StartedAsync(_alerts, _dispatcher, [Watch()]);
+
+        // Received from broker A, and still queued when the pump first looks: a pump held up for
+        // the whole of the move. Broker B came up a second after it arrived.
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+        _connection.Link = LinkTo("broker-b.plant.local", connectedAt: T0.AddSeconds(1));
+        _subscriber.LinkDropped();
+        Run(engine);
+
+        // Judged as broker A's, and ended by the move like any other alarm of A's — not left
+        // standing on B as a claim about a plant nobody is watching.
+        await ClockStill(() => _alerts.Resolved.Count == 1, "the old broker's alarm to end with the move");
+        Assert.Equal(FlowAlarmBook.ConnectionEnded, _alerts.Resolved[0].ResolvedBy);
+        Assert.Empty(engine.Alarms.Active);
+    }
+
+    [Fact]
+    public async Task An_every_that_comes_due_in_the_turn_that_sees_a_move_is_not_refused_for_want_of_a_link()
+    {
+        _connection.At("broker-a.plant.local", 1883);
+        await RunningAsync(new FlowBuilder()
+            .Node("tick", "every", new { seconds = 1, topic = "plant/sim/ping", payload = "on" })
+            .Node("send", "publish", new { topic = "{{topic}}", payload = "{{payload}}" })
+            .Wire("tick", "out", "send", "in")
+            .Build());
+
+        _time.Advance(TimeSpan.FromSeconds(1));
+        await ClockStill(() => _publisher.Sent.Count == 1, "the first emission, on broker A");
+
+        // The move, seen by the very turn the next emission wakes. The link was never down, so
+        // nothing that comes due in that turn may be told it was.
+        _connection.At("broker-b.plant.local", 1883);
+        _time.Advance(TimeSpan.FromSeconds(1));
+
+        await ClockStill(() => _publisher.Sent.Count == 2, "the next emission to go out on broker B");
     }
 
     [Fact]

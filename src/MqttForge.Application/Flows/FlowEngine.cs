@@ -221,6 +221,17 @@ public sealed class FlowEngine
 
     private static string? EndpointOf(BrokerLink? link) => link is null ? null : $"{link.Host}:{link.Port}";
 
+    /// <summary>Tells the runtime of a move to <paramref name="to"/>, and takes that as a new link.</summary>
+    private FlowOutcome Move(BrokerLink to)
+    {
+        NewLink(EndpointOf(to));
+        return _runtime.OnMove(_time.GetUtcNow());
+    }
+
+    /// <summary>Whether a command is a message received before this link came up, so through the one before it.</summary>
+    private static bool ArrivedBefore(FlowCommand command, BrokerLink link) =>
+        command is FlowArrival { Message: { } message } && message.ReceivedAt < link.ConnectedAt;
+
     /// <summary>Whether a filter the running flows want, and the broker has not refused, is not held for them.</summary>
     private bool FiltersMissing()
     {
@@ -271,7 +282,8 @@ public sealed class FlowEngine
             // Down last because whatever is queued arrived while the link was there, and is judged
             // as such before "connection ended" takes its alarms away.
             var connected = _connection.State == ConnectionState.Connected;
-            var endpoint = connected ? EndpointOf(_connection.Link) : null;
+            var link = connected ? _connection.Link : null;
+            var endpoint = EndpointOf(link);
 
             if (connected && !_linkWasUp)
             {
@@ -280,10 +292,34 @@ public sealed class FlowEngine
                 NewLink(endpoint);
             }
 
+            // A move to another broker that no turn saw. MqttnetConnectionManager goes from one live
+            // link to the next in one call and is other than Connected only for the handshake — tens
+            // of milliseconds against a poll up to a second apart. It is a down and an up all the
+            // same: the alarms standing were about a plant seen through the other broker, the flows'
+            // filters went with the old link, and a refusal was the other broker's answer.
+            //
+            // Told where it falls in the queue. After the queue, it ended at once the alarms the new
+            // broker's first arrivals raised; before it, the old broker's last arrivals would be judged
+            // as the new one's and left standing there. The line is the new link's ConnectedAt, which
+            // ReceivedAt can be held against: both are read from the system clock, MQTTnet hands over
+            // the old link's last message before the manager may dial again, and a clean session is
+            // sent nothing before it has subscribed, a round trip after it came up. What can still
+            // misplace an arrival is a broker that kept the session and sends its backlog before the
+            // link is stamped, or a clock set back in the middle of a move. Other commands carry no
+            // time and act on the link that is up now, so the move goes before the first of them.
+            var moving = endpoint is not null && _linkedTo is not null && endpoint != _linkedTo ? link : null;
+            if (moving is null && endpoint is not null) _linkedTo = endpoint;
+
             var handled = 0;
             while (handled < MaxPerTurn && _queue.Reader.TryRead(out var command))
             {
                 handled++;
+
+                if (moving is not null && !ArrivedBefore(command, moving))
+                {
+                    outcomes.Add(Move(moving));
+                    moving = null;
+                }
 
                 try
                 {
@@ -300,6 +336,11 @@ public sealed class FlowEngine
                 }
             }
 
+            // Nothing queued came after the move, so it goes after the queue, as any down does —
+            // unless the turn stopped at its limit, when the next one sees the same move and goes on
+            // through what is left of the old broker's arrivals first.
+            if (moving is not null && handled < MaxPerTurn) outcomes.Add(Move(moving));
+
             var now = _time.GetUtcNow();
 
             // A clock set back — NTP pulling in one that ran fast, a virtual machine restored — would
@@ -313,24 +354,6 @@ public sealed class FlowEngine
 
             outcomes.Add(_runtime.OnTick(now, connected));
             _linkWasUp = connected;
-
-            // A move to another broker that no turn saw. MqttnetConnectionManager goes from one live
-            // link to the next in one call and is other than Connected only for the handshake — tens
-            // of milliseconds against a poll up to a second apart. It is a down and an up all the
-            // same: the alarms standing were about a plant seen through the other broker, the flows'
-            // filters went with the old link, and a refusal was the other broker's answer. Told after
-            // the queue, as any down is, and after the tick above has run the schedule, so nothing
-            // due now is judged against a link that is only notionally gone.
-            if (endpoint is not null && _linkedTo is not null && endpoint != _linkedTo)
-            {
-                outcomes.Add(_runtime.OnTick(now, connected: false));
-                outcomes.Add(_runtime.OnTick(now, connected: true));
-                NewLink(endpoint);
-            }
-            else if (endpoint is not null)
-            {
-                _linkedTo = endpoint;
-            }
 
             // And filters that went with no transition to show for it — a link that dropped and came
             // back between two turns, a move whose new endpoint was not known yet. Once a tick, what
