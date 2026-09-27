@@ -3,7 +3,7 @@ import { QosSelect } from '../../components/QosSelect';
 import { Segmented } from '../../components/Segmented';
 import panel from '../../styles/panel.module.css';
 import type { FlowNodeDto } from '../../types/api';
-import { IF_TESTS, isNodeType, SEVERITIES, TEMPLATE_HELP } from './nodeTypes';
+import { IF_TESTS, isNodeType, levelOf, SEVERITIES, TEMPLATE_HELP } from './nodeTypes';
 import styles from './Inspector.module.css';
 
 type Facts = { allowWebhooks: boolean; alertTopicPrefix: string };
@@ -151,7 +151,7 @@ export function NodeSettings({ flowId, node, set, facts }: Props) {
             label="Level"
             name={id('severity')}
             options={SEVERITIES}
-            value={(text('severity') || 'warn') as (typeof SEVERITIES)[number]['value']}
+            value={levelOf(config.severity)}
             onChange={(severity) => set({ severity })}
           />
           {box('reason', 'Reason', '{{topic[1]}} is at {{$.temp}} °C')}

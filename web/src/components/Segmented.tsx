@@ -8,7 +8,8 @@ type Props<T extends string> = {
   /** Unique on the page: this is the radio group's name and the row's accessible name. */
   name: string;
   options: readonly Option<T>[];
-  value: T;
+  /** Null picks none: a setting that has no value yet, or one none of the options is. */
+  value: T | null;
   onChange: (value: T) => void;
   /** One line under the row, about whichever option is chosen. */
   note?: string;

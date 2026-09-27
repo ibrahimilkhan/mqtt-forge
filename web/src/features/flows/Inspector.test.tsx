@@ -121,6 +121,23 @@ describe('inspector', () => {
     expect(screen.getByText('k1 is at 94.2 °C')).toBeInTheDocument();
   });
 
+  // An Alarm written into flows.json by hand can come with no level, or one the server does not
+  // know. The server says to pick one, and the form must not look as though one were picked.
+  it.each([
+    ['no level', undefined],
+    ['a level the server does not know', 'loud'],
+  ])('picks no level for an Alarm node with %s, and takes the one the reader picks', async (_, severity) => {
+    const [test, hot] = watch.nodes;
+    const odd = { ...watch, nodes: [test, { ...hot, config: { ...hot.config, severity } }] };
+    useFlowDraftStore.getState().select('hot');
+    render(<Inspector flow={odd} deployed={odd} running overtaken={false} problems={{}} facts={facts} />);
+
+    for (const level of ['Info', 'Warn', 'Critical']) expect(screen.getByRole('radio', { name: level })).not.toBeChecked();
+
+    await userEvent.click(screen.getByRole('radio', { name: 'Critical' }));
+    expect(useFlowDraftStore.getState().drafts.watch.nodes[1].config.severity).toBe('critical');
+  });
+
   it('says when this host will not send webhooks', () => {
     useFlowDraftStore.getState().select('hot');
     render(<Inspector flow={watch} deployed={watch} running overtaken={false} problems={{}} facts={{ ...facts, allowWebhooks: false }} />);

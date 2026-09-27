@@ -36,6 +36,10 @@ describe('node registry', () => {
     expect(NODE_SPECS.repeat.summary({ count: 3, seconds: 0 })).toBe('3 times at once');
     expect(NODE_SPECS.repeat.summary({ count: 3, seconds: '1.5' })).toBe('3 times, 1.5 s apart');
     expect(NODE_SPECS.alarm.summary({ name: 'Too hot', severity: 'critical' })).toBe('critical · Too hot');
+    // Written by hand with no level, or one the server does not know: it says "Pick a level", and
+    // the node does not claim one.
+    expect(NODE_SPECS.alarm.summary({ name: 'Too hot' })).toBe('no level · Too hot');
+    expect(NODE_SPECS.alarm.summary({ name: 'Too hot', severity: 'loud' })).toBe('no level · Too hot');
     expect(NODE_SPECS.publish.summary({ topic: 'plant/{{topic[1]}}/cmd' })).toBe('plant/{{topic[1]}}/cmd');
   });
 

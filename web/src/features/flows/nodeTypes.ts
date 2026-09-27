@@ -62,6 +62,13 @@ export const SEVERITIES = [
   { value: 'critical', label: 'Critical' },
 ] as const;
 
+/**
+ * An Alarm's level, or null when it has none the server takes: a node written into flows.json by
+ * hand with no level, or with one the server does not know. The server refuses both with "Pick a
+ * level", so neither the form nor the node on the canvas claims one.
+ */
+export const levelOf = (value: unknown) => SEVERITIES.find((one) => one.value === value)?.value ?? null;
+
 /** Every placeholder a Publish or an Alarm can fill in, as the inspector lists them. */
 export const TEMPLATE_HELP = '{{topic}}  {{topic[1]}}  {{payload}}  {{$.field}}  {{index}}  {{now}}  {{random(80,95)}}';
 
@@ -191,7 +198,7 @@ export const NODE_SPECS: Record<FlowNodeType, KnownSpec> = {
       qos: 1,
       retain: false,
     }),
-    summary: (config) => `${text(config.severity) || 'warn'} · ${text(config.name) || 'Alarm'}`,
+    summary: (config) => `${levelOf(config.severity) ?? 'no level'} · ${text(config.name) || 'Alarm'}`,
     status: (status) => withErrors(`${status.standing.length} up · ${out(status, 'raised')} raised`, status),
   },
   publish: {
