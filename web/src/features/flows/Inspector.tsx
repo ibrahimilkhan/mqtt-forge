@@ -99,6 +99,7 @@ function FlowPane({ flow, deployed, running, problems }: { flow: FlowDto; deploy
     },
     onSuccess: () => {
       forget(flow.id);
+      useFlowStatusStore.getState().forget(flow.id);
       void queryClient.invalidateQueries({ queryKey: queryKeys.flows });
     },
     onError: (error) => logFault('Flow not deleted', error),

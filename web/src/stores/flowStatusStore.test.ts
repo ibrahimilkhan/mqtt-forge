@@ -102,4 +102,19 @@ describe('flow status store', () => {
     expect(leftOut(state(), 'watch')).toBe(2);
     expect(leftOut(state(), 'busy')).toBe(5);
   });
+
+  // Only a strip's own Clear let them go, and a deleted flow has no strip left to clear.
+  it('forgets a deleted flow\'s lines, and where its strip was last cleared, and keeps the others\'', () => {
+    state().addDebug([line('a', 'watch'), line('b', 'busy')], 3);
+    state().clearDebug('watch');
+    state().clearDebug('busy');
+    state().addDebug([line('c', 'watch'), line('d', 'busy')], 0);
+
+    state().forget('watch');
+
+    expect(state().debug.watch).toBeUndefined();
+    expect(state().debugClearedAt.watch).toBeUndefined();
+    expect(texts('busy')).toEqual(['d']);
+    expect(state().debugClearedAt.busy).toBe(3);
+  });
 });

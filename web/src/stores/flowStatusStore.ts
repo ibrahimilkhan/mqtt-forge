@@ -25,6 +25,11 @@ type FlowStatusState = {
   addDebug: (entries: FlowDebugDto[], dropped: number) => void;
   /** Empties one flow's strip, and starts its count of lines left out again. */
   clearDebug: (flowId: string) => void;
+  /**
+   * The flow was deleted: its lines, and where its strip was last cleared, go with it. Nothing else
+   * would let them go — a strip's own Clear is the only other way, and it has no strip now.
+   */
+  forget: (flowId: string) => void;
 };
 
 /**
@@ -91,4 +96,7 @@ export const useFlowStatusStore = create<FlowStatusState>()((set) => ({
       debug: without(state.debug, flowId),
       debugClearedAt: { ...state.debugClearedAt, [flowId]: state.debugDropped },
     })),
+
+  forget: (flowId) =>
+    set((state) => ({ debug: without(state.debug, flowId), debugClearedAt: without(state.debugClearedAt, flowId) })),
 }));

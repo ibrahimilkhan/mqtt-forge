@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useFlowStatusStore } from '../../stores/flowStatusStore';
 import { server } from '../../test/server';
 import { renderWithClient as render } from '../../test/renderWithClient';
-import type { FlowDto } from '../../types/api';
+import type { FlowDebugDto, FlowDto } from '../../types/api';
 import { useFlowDraftStore } from './flowDraftStore';
 import { Inspector } from './Inspector';
 import { Palette } from './Palette';
@@ -145,5 +145,26 @@ describe('inspector', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Delete it' }));
     await vi.waitFor(() => expect(deleted).toHaveBeenCalledOnce());
     expect(useFlowDraftStore.getState().current).toBeNull();
+  });
+
+  // What a flow printed is kept per flow until its strip is cleared, and a deleted flow's strip is
+  // gone with it: nothing else would ever let its lines go.
+  it('lets go of what a deleted flow printed, and of no other flow\'s', async () => {
+    server.use(http.delete('/api/flows/watch', () => new HttpResponse(null, { status: 204 })));
+    const line = (flowId: string): FlowDebugDto => ({
+      flowId, nodeId: 'test', at: '2026-09-26T09:14:22Z', kind: 'message', topic: 'plant/k1/temp', text: '94.2',
+    });
+    const status = useFlowStatusStore.getState();
+    status.addDebug([line('watch'), line('fan')], 1);
+    status.clearDebug('watch');
+    status.addDebug([line('watch')], 0);
+    render(<Inspecting />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete flow' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+
+    await vi.waitFor(() => expect(useFlowStatusStore.getState().debug.watch).toBeUndefined());
+    expect(useFlowStatusStore.getState().debugClearedAt.watch).toBeUndefined();
+    expect(useFlowStatusStore.getState().debug.fan).toHaveLength(1);
   });
 });
