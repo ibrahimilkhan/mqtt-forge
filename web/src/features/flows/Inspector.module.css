@@ -46,6 +46,15 @@
 
 .confirm p { margin: 12px 0 0; color: var(--ink); }
 
+/* A draft the server moved on from under, with the reader's two answers to it: set apart from the
+   settings under it, since it is about the whole draft and not about any one of them. */
+.overtaken {
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--rule);
+}
+.overtaken p { margin-top: 0; }
+
 .standing { margin-top: 14px; }
 
 .subTitle {

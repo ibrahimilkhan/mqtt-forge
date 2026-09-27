@@ -3,7 +3,7 @@ import { isFlowInvalid, putFlow } from '../../api/flows';
 import { queryKeys } from '../../api/queryKeys';
 import { logFault } from '../../stores/logStore';
 import type { FlowDto, FlowsDto } from '../../types/api';
-import { sameFlow } from './flowDocument';
+import { fingerprint, sameFlow } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
 
 /**
@@ -42,10 +42,11 @@ export function useDeploy() {
             },
           );
 
+          // What was typed while the request was out is an edit of the copy just kept.
           const store = useFlowDraftStore.getState();
           const since = store.drafts[flow.id];
           store.deployed(flow.id);
-          if (since !== undefined && !sameFlow(since, flow)) store.put(since);
+          if (since !== undefined && !sameFlow(since, flow)) store.put(since, fingerprint(kept));
         } catch (error) {
           if (!isFlowInvalid(error)) throw error;
           useFlowDraftStore.getState().refuse(flow.id, error.errors ?? { flow: [error.message] });

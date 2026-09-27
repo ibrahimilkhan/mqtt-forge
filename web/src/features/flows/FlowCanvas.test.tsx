@@ -18,7 +18,7 @@ afterAll(() => vi.unstubAllGlobals());
 
 beforeEach(() => {
   localStorage.clear();
-  useFlowDraftStore.setState({ drafts: {}, current: null, selected: null, refusals: {} });
+  useFlowDraftStore.setState({ drafts: {}, bases: {}, current: null, selected: null, refusals: {} });
   useFlowStatusStore.setState(useFlowStatusStore.getInitialState());
 });
 

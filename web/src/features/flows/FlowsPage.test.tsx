@@ -1,3 +1,4 @@
+import type { QueryClient } from '@tanstack/react-query';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
@@ -13,7 +14,7 @@ import strip from './DebugStrip.module.css';
 import stripSheet from './DebugStrip.module.css?raw';
 import { NODE_HEIGHT, NODE_WIDTH } from './FlowCanvas';
 import { moveNodes } from './flowDocument';
-import { useFlowDraftStore } from './flowDraftStore';
+import { DRAFT_PREFIX, useFlowDraftStore } from './flowDraftStore';
 import FlowsPage from './FlowsPage';
 
 beforeAll(() => standInForTheBrowser());
@@ -21,7 +22,7 @@ afterAll(() => vi.unstubAllGlobals());
 
 beforeEach(() => {
   localStorage.clear();
-  useFlowDraftStore.setState({ drafts: {}, current: null, selected: null, refusals: {} });
+  useFlowDraftStore.setState({ drafts: {}, bases: {}, current: null, selected: null, refusals: {} });
   useFlowStatusStore.setState(useFlowStatusStore.getInitialState());
 });
 
@@ -293,6 +294,34 @@ describe('Flows page', () => {
     await screen.findByRole('button', { name: 'Deploy' });
     expect(kept[0].name).toBe('Boiler watch 2');
     expect(screen.getByRole('tab', { name: /Boiler watch 2b/ })).toBeInTheDocument();
+    expect(screen.getByText('1 change')).toBeInTheDocument();
+  });
+
+  // Taken back to the copy the server had while the change was on its way, the draft is not
+  // nothing: the server is about to have the change, and what was typed says to undo it.
+  it('keeps an edit taken back while the deploy of it was on its way', async () => {
+    const { kept } = keeping([watch]);
+    const answer = held();
+    server.use(
+      http.put('/api/flows/:id', async ({ request }) => {
+        const flow = (await request.json()) as FlowDto;
+        await answer.until;
+        kept[0] = flow;
+        return HttpResponse.json({ flow });
+      }),
+    );
+    render(<FlowsPage />);
+
+    const name = await screen.findByLabelText('Name');
+    await userEvent.type(name, ' 2');
+    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+    await screen.findByRole('button', { name: 'Deploying…' });
+    await userEvent.type(name, '{Backspace}{Backspace}');
+    answer.release();
+
+    await screen.findByRole('button', { name: 'Deploy' });
+    expect(kept[0].name).toBe('Boiler watch 2');
+    expect(screen.getByRole('tab', { name: 'Boiler watch, not running, changes not deployed' })).toBeInTheDocument();
     expect(screen.getByText('1 change')).toBeInTheDocument();
   });
 
@@ -769,8 +798,8 @@ describe('deploying', () => {
         return refusal({ 'node:test': ['Pick a test.'] });
       }),
     );
-    useFlowDraftStore.getState().put({ ...watch, name: 'Boiler watch 2' });
-    useFlowDraftStore.getState().put({ ...sim, name: 'Boiler simulator 2' });
+    useFlowDraftStore.getState().edit(watch, (flow) => ({ ...flow, name: 'Boiler watch 2' }));
+    useFlowDraftStore.getState().edit(sim, (flow) => ({ ...flow, name: 'Boiler simulator 2' }));
     render(<FlowsPage />);
 
     await userEvent.click(await screen.findByRole('button', { name: 'Deploy' }));
@@ -785,8 +814,8 @@ describe('deploying', () => {
   // A draft that says what is already running is no change, however it came to be there.
   it('sends only the flows that differ from what is running', async () => {
     const { puts } = keeping([watch, sim]);
-    useFlowDraftStore.getState().put({ ...watch });
-    useFlowDraftStore.getState().put({ ...sim, name: 'Boiler simulator 2' });
+    useFlowDraftStore.getState().edit(watch, (flow) => ({ ...flow }));
+    useFlowDraftStore.getState().edit(sim, (flow) => ({ ...flow, name: 'Boiler simulator 2' }));
     render(<FlowsPage />);
 
     await userEvent.click(await screen.findByRole('button', { name: 'Deploy' }));
@@ -808,8 +837,8 @@ describe('deploying', () => {
         );
       }),
     );
-    useFlowDraftStore.getState().put({ ...watch, name: 'Boiler watch 2' });
-    useFlowDraftStore.getState().put({ ...sim, name: 'Boiler simulator 2' });
+    useFlowDraftStore.getState().edit(watch, (flow) => ({ ...flow, name: 'Boiler watch 2' }));
+    useFlowDraftStore.getState().edit(sim, (flow) => ({ ...flow, name: 'Boiler simulator 2' }));
     render(<FlowsPage />);
 
     await userEvent.click(await screen.findByRole('button', { name: 'Deploy' }));
@@ -843,8 +872,8 @@ describe('deploying', () => {
         return HttpResponse.json({ flow });
       }),
     );
-    useFlowDraftStore.getState().put({ ...watch, name: 'Boiler watch 2' });
-    useFlowDraftStore.getState().put({ ...sim, name: 'Boiler simulator 2' });
+    useFlowDraftStore.getState().edit(watch, (flow) => ({ ...flow, name: 'Boiler watch 2' }));
+    useFlowDraftStore.getState().edit(sim, (flow) => ({ ...flow, name: 'Boiler simulator 2' }));
     useFlowDraftStore.getState().show('watch');
     const { queryClient } = render(<FlowsPage />);
 
@@ -1102,6 +1131,198 @@ describe('a node this build does not know', () => {
 
     const line = within(screen.getByRole('region', { name: 'Debug' })).getByText('It stopped.').closest('li')!;
     expect(within(line).getByText('function')).toBeInTheDocument();
+  });
+});
+
+/**
+ * Two consoles editing two different flows must not undo each other's work. A draft that holds
+ * nothing of the reader's goes; one started from a copy the server has since replaced or deleted
+ * is not deployed over the newer copy unless the reader says so.
+ */
+describe('a draft and the server\'s copy', () => {
+  /** The watch as another console deployed it: the If now asks for more than 95. */
+  const v2: FlowDto = { ...watch, nodes: [watch.nodes[0], { ...watch.nodes[1], config: { ...watch.nodes[1].config, value: '95' } }] };
+
+  /**
+   * Another console deploys or deletes, and this one reads the list again. The query tells the page
+   * a turn of the clock after the read comes back, so the turns are waited for too.
+   */
+  const elsewhere = async (queryClient: QueryClient, change: () => void) => {
+    change();
+    await act(() => queryClient.invalidateQueries({ queryKey: queryKeys.flows }));
+    await turns();
+  };
+
+  // The reviewer's sequence: a letter typed and taken back left a draft of v1 behind, which hid
+  // another console's v2, and went out with the next Deploy of an unrelated flow.
+  it('keeps no draft of an edit taken back, so another console\'s deploy is neither hidden nor undone', async () => {
+    const { kept, puts } = keeping([watch]);
+    const { queryClient } = render(<FlowsPage />);
+    const name = await screen.findByLabelText('Name');
+
+    await userEvent.type(name, 'x');
+    await userEvent.type(name, '{Backspace}');
+    expect(screen.getByText('All deployed')).toBeInTheDocument();
+    expect(localStorage.getItem(DRAFT_PREFIX + 'watch')).toBeNull();
+
+    await elsewhere(queryClient, () => (kept[0] = v2));
+    expect(await screen.findByText('$.temp > 95')).toBeInTheDocument();
+    expect(screen.getByText('All deployed')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'New flow' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+
+    await waitFor(() => expect(puts.map((flow) => flow.name)).toEqual(['Flow 1']));
+    expect(kept.find((flow) => flow.id === 'watch')).toEqual(v2);
+  });
+
+  it('drops a draft that is back to what is running however it got there, and leaves the pick alone', async () => {
+    keeping([watch]);
+    render(<FlowsPage />);
+    const run = await screen.findByRole('checkbox', { name: 'Run it once deployed' });
+
+    await userEvent.click(run);
+    await userEvent.click(run);
+    expect(useFlowDraftStore.getState().drafts.watch).toBeUndefined();
+
+    act(() => useFlowDraftStore.getState().select('test'));
+    act(() => useFlowDraftStore.getState().edit(watch, (flow) => moveNodes(flow, { test: { x: 348, y: 120 } })));
+    expect(screen.getByText('1 change')).toBeInTheDocument();
+    act(() => useFlowDraftStore.getState().edit(watch, (flow) => moveNodes(flow, { test: { x: 300, y: 120 } })));
+
+    expect(useFlowDraftStore.getState().drafts.watch).toBeUndefined();
+    expect(screen.getByText('All deployed')).toBeInTheDocument();
+    expect(useFlowDraftStore.getState().selected).toBe('test');
+    expect(screen.getByRole('heading', { name: 'If' })).toBeInTheDocument();
+  });
+
+  it('holds back an edit of a copy another console has since replaced, until the reader keeps it', async () => {
+    const { kept, puts } = keeping([watch]);
+    const { queryClient } = render(<FlowsPage />);
+    await userEvent.type(await screen.findByLabelText('Name'), ' 2');
+
+    await elsewhere(queryClient, () => (kept[0] = v2));
+
+    expect(
+      await screen.findByRole('tab', { name: 'Boiler watch 2, not running, changed on the server since you started' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/^Changed on the server since you started/)).toBeInTheDocument();
+    expect(screen.getByText('1 held back')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Deploy' })).toBeDisabled();
+
+    // Deploy sends the rest and leaves this one out.
+    await userEvent.click(screen.getByRole('button', { name: 'New flow' }));
+    expect(screen.getByText('1 change · 1 held back')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+    await waitFor(() => expect(puts.map((flow) => flow.name)).toEqual(['Flow 1']));
+    expect(await screen.findByText('1 held back')).toBeInTheDocument();
+    expect(kept.find((flow) => flow.id === 'watch')).toEqual(v2);
+
+    // Kept, it is an ordinary change, and goes with the next Deploy.
+    await userEvent.click(screen.getByRole('tab', { name: /^Boiler watch 2/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Keep mine' }));
+    expect(screen.getByRole('tab', { name: 'Boiler watch 2, not running, changes not deployed' })).toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByRole('tab', { selected: true }));
+    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+
+    await waitFor(() => expect(puts.map((flow) => flow.name)).toEqual(['Flow 1', 'Boiler watch 2']));
+  });
+
+  it('puts the server\'s newer copy on screen when the reader discards theirs', async () => {
+    const { kept } = keeping([watch]);
+    const { queryClient } = render(<FlowsPage />);
+    await userEvent.type(await screen.findByLabelText('Name'), ' 2');
+    await elsewhere(queryClient, () => (kept[0] = v2));
+
+    const pane = screen.getByRole('complementary', { name: 'Inspector' });
+    await userEvent.click(await within(pane).findByRole('button', { name: 'Discard' }));
+
+    expect(screen.getByText('$.temp > 95')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Boiler watch, not running' })).toBeInTheDocument();
+    expect(screen.getByText('All deployed')).toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByRole('tab', { selected: true }));
+  });
+
+  it('drops a draft taken back to the copy it started from, once the server has moved on from that copy', async () => {
+    const { kept } = keeping([watch]);
+    const { queryClient } = render(<FlowsPage />);
+    const name = await screen.findByLabelText('Name');
+    await userEvent.type(name, ' 2');
+    await elsewhere(queryClient, () => (kept[0] = v2));
+    await screen.findByText(/^Changed on the server since you started/);
+
+    await userEvent.type(name, '{Backspace}{Backspace}');
+
+    expect(useFlowDraftStore.getState().drafts.watch).toBeUndefined();
+    expect(screen.getByText('$.temp > 95')).toBeInTheDocument();
+    expect(screen.getByText('All deployed')).toBeInTheDocument();
+  });
+
+  // A flow deleted on another console must not come back as a new one with the next Deploy.
+  it('holds back an edit of a flow another console has since deleted, and deploys it again only when kept', async () => {
+    const { kept, puts } = keeping([watch, sim]);
+    // On the watch's tab, as a reader who picked it is. With no flow picked the page shows the
+    // first, and a flow the server no longer has goes to the end of the row.
+    useFlowDraftStore.getState().show('watch');
+    const { queryClient } = render(<FlowsPage />);
+    await userEvent.type(await screen.findByLabelText('Name'), ' 2');
+
+    await elsewhere(queryClient, () => kept.splice(0, 1));
+
+    expect(await screen.findByRole('tab', { name: 'Boiler watch 2, deleted on the server since you started' })).toBeInTheDocument();
+    expect(screen.getByText(/^Deleted on the server since you started/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Deploy' })).toBeDisabled();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Keep mine' }));
+    expect(screen.getByRole('tab', { name: 'Boiler watch 2, not deployed' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+
+    await waitFor(() => expect(puts.map((flow) => flow.name)).toEqual(['Boiler watch 2']));
+  });
+
+  it('lets an edit of a flow deleted elsewhere go on Discard, and the flow with it', async () => {
+    const { kept } = keeping([watch, sim]);
+    useFlowDraftStore.getState().show('watch');
+    const { queryClient } = render(<FlowsPage />);
+    await userEvent.type(await screen.findByLabelText('Name'), ' 2');
+    await elsewhere(queryClient, () => kept.splice(0, 1));
+
+    // The pane's: the toolbar's Discard is for going back to a flow the server has.
+    await userEvent.click(await screen.findByRole('button', { name: 'Discard' }));
+
+    expect(screen.queryByRole('tab', { name: /^Boiler watch/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /^Boiler simulator/, selected: true })).toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByRole('tab', { selected: true }));
+  });
+
+  it('drops a draft of a flow deleted elsewhere that holds nothing of the reader\'s', async () => {
+    const { kept } = keeping([watch, sim]);
+    useFlowDraftStore.getState().show('watch');
+    const { queryClient } = render(<FlowsPage />);
+    const name = await screen.findByLabelText('Name');
+    await userEvent.type(name, ' 2');
+    await elsewhere(queryClient, () => kept.splice(0, 1));
+    await screen.findByText(/^Deleted on the server since you started/);
+
+    await userEvent.type(name, '{Backspace}{Backspace}');
+
+    expect(useFlowDraftStore.getState().drafts.watch).toBeUndefined();
+    expect(screen.queryByRole('tab', { name: /^Boiler watch/ })).not.toBeInTheDocument();
+  });
+
+  // Drafts kept before they remembered where they started are taken to be of the copy the server
+  // has when the page first reads it, as they always were, and are held to it from then on.
+  it('places a draft kept before drafts remembered their start on the copy the server has now', async () => {
+    const { kept } = keeping([watch]);
+    localStorage.setItem(DRAFT_PREFIX + 'watch', JSON.stringify({ version: 1, flow: { ...watch, name: 'Boiler watch 2' } }));
+    vi.resetModules();
+    const { default: Reopened } = await import('./FlowsPage');
+    const { queryClient } = render(<Reopened />);
+
+    expect(await screen.findByText('1 change')).toBeInTheDocument();
+
+    await elsewhere(queryClient, () => (kept[0] = v2));
+    expect(await screen.findByText('1 held back')).toBeInTheDocument();
   });
 });
 

@@ -209,6 +209,74 @@ export function sameFlow(a: FlowDto | undefined, b: FlowDto | undefined): boolea
   return same;
 }
 
+/** Each flow's fingerprint. */
+const prints = new WeakMap<FlowDto, string>();
+
+/**
+ * A short stand-in for everything a flow says: what a draft keeps to remember which copy on the
+ * server it was started from. The server sends no version of a flow, so the page makes one from the
+ * flow itself. Two copies that are the same flow have the same fingerprint however their keys were
+ * ordered, and a copy that anybody has changed since has another.
+ *
+ * A hash, not the text, because it is kept beside every draft, and a flow's text is tens of
+ * kilobytes. 53 bits of cyrb53, which is quick and which anybody could forge: nothing here guards
+ * against anybody, it only tells apart the copies of one flow that consoles deploy.
+ */
+export function fingerprint(flow: FlowDto): string {
+  let print = prints.get(flow);
+  if (print === undefined) {
+    print = hashOf(canonical(flow));
+    prints.set(flow, print);
+  }
+  return print;
+}
+
+function hashOf(text: string): string {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+
+  for (let at = 0; at < text.length; at++) {
+    const code = text.charCodeAt(at);
+    h1 = Math.imul(h1 ^ code, 2654435761);
+    h2 = Math.imul(h2 ^ code, 1597334677);
+  }
+
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
+  h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
+  h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
+
+/**
+ * How a draft stands against the server's copy of its flow.
+ *
+ * - `nothing`: nothing of the reader's is in it. It says what the server has, or it says what the
+ *   server had when it was started and the server has since moved on from, or let go of. It goes:
+ *   kept, it would hide the server's newer copy, and go back out with the next Deploy.
+ * - `changed`: an edit of the copy the server has, or a flow the server never had. Deploy sends it.
+ * - `overtaken`: an edit of a copy the server has since replaced, or deleted. Deploy holds it back
+ *   until the reader keeps it over the server's copy or discards it: sent as it stands, it would
+ *   undo another console's work, or bring back a flow somebody deleted.
+ * - `unplaced`: kept before drafts remembered where they started. The page places it on the copy the
+ *   server has when it first reads one, which is how every draft was taken before.
+ *
+ * `base` is the fingerprint of the copy the draft was started from: null for a flow started here,
+ * undefined when it is not known.
+ */
+export type DraftStanding = 'nothing' | 'changed' | 'overtaken' | 'unplaced';
+
+export function standingOf(draft: FlowDto, base: string | null | undefined, deployed: FlowDto | undefined): DraftStanding {
+  if (sameFlow(draft, deployed)) return 'nothing';
+  if (base === undefined) return 'unplaced';
+
+  const now = deployed ? fingerprint(deployed) : null;
+  if (base === now) return 'changed';
+
+  return base !== null && fingerprint(draft) === base ? 'nothing' : 'overtaken';
+}
+
 function sorted(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sorted);
   if (value === null || typeof value !== 'object') return value;

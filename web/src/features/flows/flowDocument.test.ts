@@ -5,6 +5,7 @@ import {
   canConnect,
   connect,
   emptyFlow,
+  fingerprint,
   freeSpot,
   moveNodes,
   newId,
@@ -15,6 +16,7 @@ import {
   removeNodes,
   sameFlow,
   setConfig,
+  standingOf,
   withDrafts,
 } from './flowDocument';
 import { exampleFlows } from './examples';
@@ -128,6 +130,57 @@ describe('flow document', () => {
     const shown = withDrafts(deployed, { [renamed.id]: renamed, [fresh.id]: fresh });
 
     expect(shown.map((flow) => flow.name)).toEqual(['One', 'Two, renamed', 'Three']);
+  });
+
+  // The server sends no version of a flow, so a draft remembers the copy it was started from by a
+  // fingerprint of that copy.
+  it('fingerprints a flow by what it says, not by how its keys were ordered or which object it is', () => {
+    const base = chain();
+    const same = setConfig(base, 'c', { seconds: 1, count: 3 });
+    const reordered = setConfig(base, 'c', { count: 3, seconds: 1 });
+
+    expect(fingerprint(same)).toBe(fingerprint(reordered));
+    expect(fingerprint(same)).toBe(fingerprint(JSON.parse(JSON.stringify(same)) as FlowDto));
+    expect(fingerprint(moveNodes(same, { a: { x: 8, y: 0 } }))).not.toBe(fingerprint(same));
+    expect(fingerprint({ ...same, name: 'Chain 2' })).not.toBe(fingerprint(same));
+    expect(fingerprint(same)).toMatch(/^[0-9a-z]{1,12}$/);
+  });
+
+  /**
+   * A draft against the server's copy of its flow. `v1` is the copy a draft was started from; the
+   * server may since have moved on to `v2`, or deleted the flow.
+   */
+  describe('how a draft stands', () => {
+    const v1 = chain();
+    const v2 = { ...v1, name: 'Chain, from another console' };
+    const edited = { ...v1, enabled: false };
+
+    it('holds nothing of the reader\'s when it says what the server has', () => {
+      expect(standingOf({ ...v1 }, fingerprint(v1), v1)).toBe('nothing');
+      expect(standingOf({ ...v2 }, fingerprint(v1), v2)).toBe('nothing');
+    });
+
+    it('is a change to deploy when it is an edit of the copy the server has, or of a flow the server never had', () => {
+      expect(standingOf(edited, fingerprint(v1), v1)).toBe('changed');
+      expect(standingOf(edited, null, undefined)).toBe('changed');
+    });
+
+    it('holds nothing of the reader\'s when it is the copy it started from, and the server has moved on or let it go', () => {
+      expect(standingOf({ ...v1 }, fingerprint(v1), v2)).toBe('nothing');
+      expect(standingOf({ ...v1 }, fingerprint(v1), undefined)).toBe('nothing');
+    });
+
+    it('is overtaken when it is an edit of a copy the server has since replaced or deleted', () => {
+      expect(standingOf(edited, fingerprint(v1), v2)).toBe('overtaken');
+      expect(standingOf(edited, fingerprint(v1), undefined)).toBe('overtaken');
+      expect(standingOf(edited, null, v1)).toBe('overtaken');
+    });
+
+    it('is unplaced when it was kept before drafts remembered where they started', () => {
+      expect(standingOf(edited, undefined, v1)).toBe('unplaced');
+      expect(standingOf(edited, undefined, undefined)).toBe('unplaced');
+      expect(standingOf({ ...v1 }, undefined, v1)).toBe('nothing');
+    });
   });
 
   it('files the server\'s problems by flow and key', () => {

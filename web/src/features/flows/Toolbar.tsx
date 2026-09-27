@@ -12,10 +12,24 @@ export const tabIdOf = (flowId: string) => `flow-tab-${flowId}`;
 /** Puts the keyboard on a flow's tab, for a control that is about to go out from under it. */
 export const focusTab = (flowId: string) => document.getElementById(tabIdOf(flowId))?.focus();
 
+/**
+ * Puts the keyboard on the tab of the flow on screen, whichever flow that now is: for a control
+ * that took its flow away with it. The region the tabs control says which tab names it.
+ */
+export function focusShownTab() {
+  const tab = document.getElementById(FLOW_PANEL)?.getAttribute('aria-labelledby');
+  if (tab) document.getElementById(tab)?.focus();
+}
+
 type Props = {
   flows: FlowDto[];
-  /** Flows whose draft differs from what is running, and flows never deployed. */
+  /** Flows with a draft Deploy sends: an edit of what the server has, or a flow it never had. */
   changed: ReadonlySet<string>;
+  /**
+   * Flows whose draft was started from a copy the server has since replaced, or deleted. Deploy
+   * holds them back until the reader keeps or discards them, in the flow's own pane.
+   */
+  overtaken: ReadonlySet<string>;
   /** Flows the server has, whatever their drafts say. */
   deployed: ReadonlySet<string>;
   current: string;
@@ -33,13 +47,28 @@ type Props = {
 /**
  * What a tab's lamp and dot say, in words, for a reader who cannot see them. A flow never deployed
  * is not deployed; one that was, and has been edited since, is still running what was deployed, so
- * it is its changes that are not.
+ * it is its changes that are not. A draft the server moved on from under says that instead.
  */
-function stateOf(flowId: string, { changed, deployed, running, refused }: Props): string {
+function stateOf(flowId: string, { changed, overtaken, deployed, running, refused }: Props): string {
   const lamp = refused.has(flowId) ? 'refused' : running.has(flowId) ? 'running' : deployed.has(flowId) ? 'not running' : null;
-  const draft = !deployed.has(flowId) ? 'not deployed' : changed.has(flowId) ? 'changes not deployed' : null;
+  const draft = overtaken.has(flowId)
+    ? `${deployed.has(flowId) ? 'changed' : 'deleted'} on the server since you started`
+    : !deployed.has(flowId)
+      ? 'not deployed'
+      : changed.has(flowId)
+        ? 'changes not deployed'
+        : null;
 
   return [lamp, draft].flatMap((words) => (words ? [`, ${words}`] : [])).join('');
+}
+
+/** What the count beside Deploy says: the changes it sends, and the ones it holds back. */
+function tally(count: number, held: number): string {
+  const said = [
+    ...(count > 0 ? [`${count} ${count === 1 ? 'change' : 'changes'}`] : []),
+    ...(held > 0 ? [`${held} held back`] : []),
+  ];
+  return said.length > 0 ? said.join(' · ') : 'All deployed';
 }
 
 /**
@@ -74,20 +103,21 @@ function step(key: string, at: number, count: number): number | null {
  *
  * Deploy sends every changed flow, not the one on screen: a reader who edited two flows and
  * pressed Deploy meant both, and a button that quietly left one behind would leave a draft
- * nobody remembers making. Discard is only about the flow on screen, and only offered when that
- * flow has a deployed version to go back to. For a flow never deployed, going back would throw
- * the whole flow away, and that is Delete flow's job, which asks first.
+ * nobody remembers making. The one kind it does leave behind says so, beside it and on its tab: a
+ * draft of a copy another console has since replaced or deleted, which would undo that console's
+ * work. Discard is only about the flow on screen, and only offered when that flow has a deployed
+ * version to go back to. For a flow never deployed, going back would throw the whole flow away,
+ * and that is Delete flow's job, which asks first.
  *
  * The tabs are one stop on the Tab key, and the arrows, Home and End go along them. Selection
  * follows the focus: showing a flow is instant, and a reader going along the tabs is looking for
  * one. The + stands outside the list, which may own tabs and nothing else.
  */
 export function Toolbar(props: Props) {
-  const { flows, changed, current, running, refused, deploying, onNew, onDiscard, onDeploy } = props;
+  const { flows, changed, overtaken, current, running, refused, deploying, onNew, onDiscard, onDeploy } = props;
   const show = useFlowDraftStore((state) => state.show);
   const deployButton = useRef<HTMLButtonElement>(null);
-  const count = changed.size;
-  const nothing = count === 0;
+  const nothing = changed.size === 0;
 
   // A run that leaves nothing to deploy turns Deploy off in the hand that pressed it, and a browser
   // drops the focus of a button that cannot be pressed. The reader goes to the tab of the flow they
@@ -133,8 +163,8 @@ export function Toolbar(props: Props) {
             >
               <span className={styles.lamp} aria-hidden="true" />
               {flow.name.trim() || 'Untitled'}
-              {changed.has(flow.id) && (
-                <span className={styles.changed} aria-hidden="true">
+              {(changed.has(flow.id) || overtaken.has(flow.id)) && (
+                <span className={styles.changed} data-overtaken={overtaken.has(flow.id) ? '' : undefined} aria-hidden="true">
                   •
                 </span>
               )}
@@ -149,7 +179,7 @@ export function Toolbar(props: Props) {
       </div>
 
       <span className={styles.count} aria-live="polite">
-        {nothing ? 'All deployed' : `${count} ${count === 1 ? 'change' : 'changes'}`}
+        {tally(changed.size, overtaken.size)}
       </span>
 
       {onDiscard && (

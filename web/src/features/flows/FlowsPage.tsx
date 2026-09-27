@@ -15,13 +15,15 @@ import { FlowCanvas, NODE_HEIGHT, NODE_WIDTH } from './FlowCanvas';
 import {
   addNode,
   emptyFlow,
+  fingerprint,
   freeSpot,
   newId,
   nextName,
   placesInView,
   problemsOf,
-  sameFlow,
+  standingOf,
   withDrafts,
+  type DraftStanding,
   type Problems,
 } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
@@ -42,6 +44,10 @@ const ROOM = 24;
 
 /** The room a node takes, as the palette reckons it when it puts one down. */
 const NODE_BOX = { width: NODE_WIDTH, height: NODE_HEIGHT };
+
+/** The flows whose drafts stand as `wanted`. */
+const standingAs = (standings: ReadonlyArray<readonly [string, DraftStanding]>, wanted: DraftStanding) =>
+  new Set(standings.flatMap(([id, standing]) => (standing === wanted ? [id] : [])));
 
 /**
  * The Flows page. The default export, because React.lazy loads a module's default.
@@ -64,6 +70,7 @@ export default function FlowsPage() {
 function Page() {
   const { data, isPending } = useQuery({ queryKey: queryKeys.flows, queryFn: getFlows });
   const drafts = useFlowDraftStore((state) => state.drafts);
+  const bases = useFlowDraftStore((state) => state.bases);
   const current = useFlowDraftStore((state) => state.current);
   const refusals = useFlowDraftStore((state) => state.refusals);
   // Which flows run, and nothing else of the numbers: that is all the page draws of them, and every
@@ -98,10 +105,17 @@ function Page() {
   const byId = useMemo(() => new Map(deployed.map((flow) => [flow.id, flow])), [deployed]);
   const deployedIds = useMemo(() => new Set(byId.keys()), [byId]);
   const flows = useMemo(() => withDrafts(deployed, drafts), [deployed, drafts]);
-  const changed = useMemo(
-    () => new Set(flows.filter((flow) => drafts[flow.id] && !sameFlow(drafts[flow.id], byId.get(flow.id))).map((flow) => flow.id)),
-    [flows, drafts, byId],
+
+  // How each draft stands against the server's copy of its flow — see standingOf. Worked out on
+  // every frame of a drag, and cheap for all but the flow being dragged: what it asks is kept
+  // against each flow object.
+  const standings = useMemo(
+    () => Object.entries(drafts).map(([id, draft]) => [id, standingOf(draft, id in bases ? bases[id] : undefined, byId.get(id))] as const),
+    [bases, byId, drafts],
   );
+  // What Deploy sends, and what it holds back until the reader keeps it or lets it go.
+  const changed = useMemo(() => standingAs(standings, 'changed'), [standings]);
+  const overtaken = useMemo(() => standingAs(standings, 'overtaken'), [standings]);
   const serverProblems = useMemo(() => problemsOf(data?.problems ?? []), [data]);
 
   // What the server has said is wrong with each flow: its answer to this page's last deploy of it,
@@ -110,13 +124,38 @@ function Page() {
   const problems = useMemo(() => ({ ...serverProblems, ...refusals }), [serverProblems, refusals]);
   const refused = useMemo(() => new Set(Object.keys(problems)), [problems]);
 
-  // A flow edited back to what is running has no draft left for its refusal to be about. Only the
-  // page holds both halves of that comparison, so it is the one that tells the store. Before the
-  // paint, so the flow is never drawn for a frame with the old refusal still on it.
+  // A draft that holds nothing of the reader's goes: kept, it would hide a newer copy another
+  // console deploys, and go back out over it with the next Deploy of anything. A draft that does
+  // not know where it started is placed on the copy the server has now. Only the page holds both
+  // halves of that comparison, so it is the one that tells the store; before the paint, so no
+  // frame shows a change that is not one; and only once the server's copies have been read, since
+  // until then every flow would look deleted.
+  //
+  // A flow on its way to the server keeps its draft until the answer comes. What was typed in the
+  // meantime is an edit of the copy that was sent (see useDeploy), and taken back to the copy the
+  // server had, it says to undo the change, not that there is nothing to keep.
+  const sending = deploy.isPending ? deploy.variables : undefined;
   useLayoutEffect(() => {
-    const lapsed = Object.keys(refusals).filter((id) => !changed.has(id));
+    if (!data || data.unreadable) return;
+
+    const store = useFlowDraftStore.getState();
+    const spent = standings.flatMap(([id, standing]) =>
+      standing === 'nothing' && !sending?.some((flow) => flow.id === id) ? [id] : [],
+    );
+    if (spent.length > 0) store.settle(spent);
+
+    for (const [id, standing] of standings) {
+      const copy = byId.get(id);
+      if (standing === 'unplaced') store.rebase(id, copy ? fingerprint(copy) : null);
+    }
+  }, [byId, data, sending, standings]);
+
+  // A refusal is the server's answer about a draft. One whose draft has gone — taken back, or let go
+  // in another tab — has nothing left to be about.
+  useLayoutEffect(() => {
+    const lapsed = Object.keys(refusals).filter((id) => !(id in drafts));
     if (lapsed.length > 0) useFlowDraftStore.getState().lapse(lapsed);
-  }, [changed, refusals]);
+  }, [drafts, refusals]);
 
   if (isPending) return <p className={styles.missing}>Reading the flows…</p>;
 
@@ -162,6 +201,7 @@ function Page() {
         <Toolbar
           flows={flows}
           changed={changed}
+          overtaken={overtaken}
           deployed={deployedIds}
           current={shown.id}
           running={running}
@@ -172,7 +212,9 @@ function Page() {
             store.put(flow);
             store.show(flow.id);
           }}
-          onDiscard={changed.has(shown.id) && byId.has(shown.id) ? () => store.discard(shown.id) : undefined}
+          onDiscard={
+            (changed.has(shown.id) || overtaken.has(shown.id)) && byId.has(shown.id) ? () => store.discard(shown.id) : undefined
+          }
           onDeploy={() => deploy.mutate(flows.filter((flow) => changed.has(flow.id)))}
         />
 
@@ -194,6 +236,7 @@ function Page() {
             flow={shown}
             deployed={byId.get(shown.id)}
             running={running.has(shown.id)}
+            overtaken={overtaken.has(shown.id)}
             problems={problems[shown.id] ?? NOTHING_WRONG}
             facts={{ allowWebhooks: data.allowWebhooks, alertTopicPrefix: data.alertTopicPrefix }}
           />
@@ -214,7 +257,7 @@ function Start() {
   // of the first flow made, which has to be drawn before it can be given the focus.
   const begin = (flows: FlowDto[]) => {
     flushSync(() => {
-      flows.forEach(put);
+      for (const flow of flows) put(flow);
       show(flows[0].id);
     });
     focusTab(flows[0].id);

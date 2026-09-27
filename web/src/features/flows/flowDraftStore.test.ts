@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { emptyFlow } from './flowDocument';
+import { emptyFlow, fingerprint } from './flowDocument';
 import { DRAFT_PREFIX, useFlowDraftStore } from './flowDraftStore';
 
 /** Where every draft was kept together before each had a key of its own. */
@@ -8,7 +8,7 @@ const OLD_KEY = 'mqttforge.flows.drafts';
 beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
-  useFlowDraftStore.setState({ drafts: {}, current: null, selected: null, refusals: {} });
+  useFlowDraftStore.setState({ drafts: {}, bases: {}, current: null, selected: null, refusals: {} });
 });
 
 /** The store as a page opened now would have it: a second copy, read afresh from what storage holds. */
@@ -98,7 +98,7 @@ describe('flow drafts', () => {
     expect(useFlowDraftStore.getState().current).toBe(flow.id);
   });
 
-  it('lets the refusals of flows back to what is running lapse, and keeps the drafts and the rest', () => {
+  it('lets the refusals of some flows lapse, and keeps the drafts and the other refusals', () => {
     const back = emptyFlow('Back');
     const still = emptyFlow('Still refused');
     const store = useFlowDraftStore.getState();
@@ -130,6 +130,58 @@ describe('flow drafts', () => {
 
     expect(useFlowDraftStore.getState().selected).toBeNull();
   });
+
+  // The server sends no version of a flow, so a draft remembers a fingerprint of the copy it was
+  // started from, and keeps it however the draft changes after.
+  it('remembers the copy on the server a draft was started from', () => {
+    const deployed = emptyFlow('Boiler watch');
+
+    useFlowDraftStore.getState().edit(deployed, (flow) => ({ ...flow, name: 'Boiler house' }));
+    useFlowDraftStore.getState().edit({ ...deployed, name: 'Another copy' }, (flow) => ({ ...flow, enabled: false }));
+
+    expect(useFlowDraftStore.getState().bases[deployed.id]).toBe(fingerprint(deployed));
+  });
+
+  it('starts a flow made here from no copy on the server', () => {
+    const flow = emptyFlow('Made here');
+
+    useFlowDraftStore.getState().put(flow);
+
+    expect(useFlowDraftStore.getState().bases[flow.id]).toBeNull();
+  });
+
+  // A draft that holds nothing of the reader's goes, and the reader stays where they were: the same
+  // flow on screen, the same node in the inspector.
+  it('settles drafts that hold nothing, and leaves the flow on screen and the pick alone', () => {
+    const back = emptyFlow('Back');
+    const other = emptyFlow('Other');
+    const store = useFlowDraftStore.getState();
+    store.edit(back, (flow) => ({ ...flow, enabled: false }));
+    store.put(other);
+    store.show(back.id);
+    store.select('n1');
+    store.refuse(back.id, { flow: ['Name the flow.'] });
+
+    useFlowDraftStore.getState().settle([back.id]);
+
+    const after = useFlowDraftStore.getState();
+    expect(Object.keys(after.drafts)).toEqual([other.id]);
+    expect(after.refusals).toEqual({});
+    expect(Object.keys(after.bases)).toEqual([other.id]);
+    expect(after.current).toBe(back.id);
+    expect(after.selected).toBe('n1');
+    expect(localStorage.getItem(DRAFT_PREFIX + back.id)).toBeNull();
+  });
+
+  it('counts a draft as made on another copy once the reader keeps it over that copy', () => {
+    const deployed = emptyFlow('Kept over');
+    useFlowDraftStore.getState().edit(deployed, (flow) => ({ ...flow, enabled: false }));
+
+    useFlowDraftStore.getState().rebase(deployed.id, 'k3y');
+
+    expect(useFlowDraftStore.getState().bases[deployed.id]).toBe('k3y');
+    expect(JSON.parse(localStorage.getItem(DRAFT_PREFIX + deployed.id)!).base).toBe('k3y');
+  });
 });
 
 describe('what storage keeps', () => {
@@ -142,7 +194,35 @@ describe('what storage keeps', () => {
     useFlowDraftStore.getState().discard(one.id);
 
     expect(localStorage.getItem(DRAFT_PREFIX + one.id)).toBeNull();
-    expect(JSON.parse(localStorage.getItem(DRAFT_PREFIX + two.id)!)).toEqual({ version: 1, flow: two });
+    expect(JSON.parse(localStorage.getItem(DRAFT_PREFIX + two.id)!)).toEqual({ version: 1, flow: two, base: null });
+  });
+
+  it('keeps with each draft the copy it was started from, through a reload', async () => {
+    const deployed = emptyFlow('Deployed');
+    const made = emptyFlow('Made here');
+    useFlowDraftStore.getState().edit(deployed, (flow) => ({ ...flow, enabled: false }));
+    useFlowDraftStore.getState().put(made);
+
+    const reloaded = await reopened();
+
+    expect(JSON.parse(localStorage.getItem(DRAFT_PREFIX + deployed.id)!)).toEqual({
+      version: 1,
+      flow: { ...deployed, enabled: false },
+      base: fingerprint(deployed),
+    });
+    expect(reloaded.getState().bases).toEqual({ [deployed.id]: fingerprint(deployed), [made.id]: null });
+  });
+
+  // A draft kept before drafts remembered where they started has no start to read, and says so by
+  // having none: the page places it on the server's copy when it first reads one.
+  it('reads no start for a draft kept before drafts remembered one', async () => {
+    const flow = emptyFlow('From before');
+    localStorage.setItem(DRAFT_PREFIX + flow.id, JSON.stringify({ version: 1, flow }));
+
+    const opened = await reopened();
+
+    expect(opened.getState().drafts).toEqual({ [flow.id]: flow });
+    expect(flow.id in opened.getState().bases).toBe(false);
   });
 
   // Drafts kept before each had a key of their own are the reader's work: they move, not go.
@@ -224,11 +304,12 @@ describe('two tabs', () => {
 
     const theirs = emptyFlow('Theirs');
     let before = held();
-    useFlowDraftStore.getState().put(theirs);
+    useFlowDraftStore.getState().edit(theirs, (flow) => ({ ...flow, enabled: false }));
     useFlowDraftStore.getState().show(theirs.id);
     announce(before);
 
     expect(other.getState().drafts[theirs.id]?.name).toBe('Theirs');
+    expect(other.getState().bases[theirs.id]).toBe(fingerprint(theirs));
     expect(other.getState().drafts[mine.id]?.name).toBe('Mine');
     expect(other.getState().current).toBe(mine.id);
     expect(other.getState().selected).toBe('n1');

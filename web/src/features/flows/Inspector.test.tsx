@@ -31,12 +31,12 @@ const shown = () => useFlowDraftStore.getState().drafts.watch ?? watch;
 
 function Inspecting({ running = true }: { running?: boolean }) {
   const flow = useFlowDraftStore((state) => state.drafts.watch) ?? watch;
-  return <Inspector flow={flow} deployed={watch} running={running} problems={{}} facts={facts} />;
+  return <Inspector flow={flow} deployed={watch} running={running} overtaken={false} problems={{}} facts={facts} />;
 }
 
 beforeEach(() => {
   localStorage.clear();
-  useFlowDraftStore.setState({ drafts: {}, current: 'watch', selected: null, refusals: {} });
+  useFlowDraftStore.setState({ drafts: {}, bases: {}, current: 'watch', selected: null, refusals: {} });
   useFlowStatusStore.setState(useFlowStatusStore.getInitialState());
 });
 
@@ -114,7 +114,7 @@ describe('inspector', () => {
 
   it('says when this host will not send webhooks', () => {
     useFlowDraftStore.getState().select('hot');
-    render(<Inspector flow={watch} deployed={watch} running problems={{}} facts={{ ...facts, allowWebhooks: false }} />);
+    render(<Inspector flow={watch} deployed={watch} running overtaken={false} problems={{}} facts={{ ...facts, allowWebhooks: false }} />);
 
     expect(screen.getByText(/Webhooks are turned off on this host/)).toBeInTheDocument();
   });

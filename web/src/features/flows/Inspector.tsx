@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { flushSync } from 'react-dom';
 import { deleteFlow } from '../../api/flows';
 import { queryKeys } from '../../api/queryKeys';
 import { Field } from '../../components/Field';
@@ -7,26 +8,29 @@ import { nodeKey, useFlowStatusStore } from '../../stores/flowStatusStore';
 import { logFault } from '../../stores/logStore';
 import panel from '../../styles/panel.module.css';
 import type { FlowDto, FlowNodeDto, FlowsDto } from '../../types/api';
-import { removeNodes, setConfig, type Problems } from './flowDocument';
+import { fingerprint, removeNodes, setConfig, type Problems } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
 import { NodeSettings } from './NodeSettings';
 import { specOf } from './nodeTypes';
+import { focusShownTab } from './Toolbar';
 import styles from './Inspector.module.css';
 
 type Facts = { allowWebhooks: boolean; alertTopicPrefix: string };
 
 type Props = {
   flow: FlowDto;
-  /** The flow as it is running, or undefined when it was never deployed. */
+  /** The flow as the server has it, or undefined when it has none: never deployed, or deleted since. */
   deployed: FlowDto | undefined;
   running: boolean;
+  /** The flow's draft was started from a copy the server has since replaced, or deleted. */
+  overtaken: boolean;
   /** What the server said last, keyed flow / node:{id} / edge:{id}. */
   problems: Problems;
   facts: Facts;
 };
 
 /** The picked node's settings, or — with nothing picked — the flow's own. */
-export function Inspector({ flow, deployed, running, problems, facts }: Props) {
+export function Inspector({ flow, deployed, running, overtaken, problems, facts }: Props) {
   const selected = useFlowDraftStore((state) => state.selected);
   const node = flow.nodes.find((one) => one.id === selected);
 
@@ -35,7 +39,7 @@ export function Inspector({ flow, deployed, running, problems, facts }: Props) {
       {node ? (
         <NodePane flow={flow} node={node} problems={problems[`node:${node.id}`]} facts={facts} />
       ) : (
-        <FlowPane flow={flow} deployed={deployed} running={running} problems={problems} />
+        <FlowPane flow={flow} deployed={deployed} running={running} overtaken={overtaken} problems={problems} />
       )}
     </aside>
   );
@@ -106,11 +110,23 @@ function flowProblems(flow: FlowDto, problems: Problems): string[] {
   ];
 }
 
-function FlowPane({ flow, deployed, running, problems }: { flow: FlowDto; deployed: FlowDto | undefined; running: boolean; problems: Problems }) {
+type FlowPaneProps = { flow: FlowDto; deployed: FlowDto | undefined; running: boolean; overtaken: boolean; problems: Problems };
+
+function FlowPane({ flow, deployed, running, overtaken, problems }: FlowPaneProps) {
   const edit = useFlowDraftStore((state) => state.edit);
   const forget = useFlowDraftStore((state) => state.forget);
+  const rebase = useFlowDraftStore((state) => state.rebase);
+  const discard = useFlowDraftStore((state) => state.discard);
   const queryClient = useQueryClient();
   const [asking, setAsking] = useState(false);
+
+  // Either answer takes the question away, and the keyboard with it. The reader goes to the tab of
+  // the flow on screen: this one, or — once a discard has let a flow deleted elsewhere go — the
+  // next, which has to be drawn before it can be given the focus.
+  const choose = (choice: () => void) => {
+    flushSync(choice);
+    focusShownTab();
+  };
 
   const remove = useMutation({
     // A flow that was never deployed has nothing on the server to delete.
@@ -144,7 +160,9 @@ function FlowPane({ flow, deployed, running, problems }: { flow: FlowDto; deploy
   const state = running
     ? 'Running.'
     : !deployed
-      ? 'Never deployed.'
+      ? overtaken
+        ? 'Not on the server.'
+        : 'Never deployed.'
       : deployed.enabled
         ? 'Not running. Deploy it to start it.'
         : 'Off.';
@@ -154,6 +172,26 @@ function FlowPane({ flow, deployed, running, problems }: { flow: FlowDto; deploy
       <div className={styles.paneHead}>
         <h3 className={styles.title}>{flow.name.trim() || 'Untitled'}</h3>
       </div>
+
+      {/* Sent as it stands, this draft would undo what another console deployed, or bring back a
+          flow somebody deleted. So Deploy leaves it out until the reader says which it is to be. */}
+      {overtaken && (
+        <div className={styles.overtaken}>
+          <p className={panel.fault}>
+            {deployed
+              ? 'Changed on the server since you started, so Deploy holds your changes back. Keep yours to deploy them over it, or discard them for what the server has now.'
+              : 'Deleted on the server since you started, so Deploy holds your changes back. Keep yours to deploy the flow again, or discard them.'}
+          </p>
+          <div className={panel.actions}>
+            <button type="button" className="ghost" onClick={() => choose(() => rebase(flow.id, deployed ? fingerprint(deployed) : null))}>
+              Keep mine
+            </button>
+            <button type="button" className="ghost ends" onClick={() => choose(() => discard(flow.id))}>
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
 
       {flowProblems(flow, problems).map((problem, index) => (
         <p key={index} className={panel.fault}>
@@ -193,7 +231,13 @@ function FlowPane({ flow, deployed, running, problems }: { flow: FlowDto; deploy
         </div>
       ) : (
         <div className={styles.confirm}>
-          <p>{deployed ? `Delete ${flow.name}? It stops running.` : `Drop ${flow.name}? It was never deployed.`}</p>
+          <p>
+            {deployed
+              ? `Delete ${flow.name}? It stops running.`
+              : overtaken
+                ? `Drop ${flow.name}? It is no longer on the server.`
+                : `Drop ${flow.name}? It was never deployed.`}
+          </p>
           <div className={panel.actions}>
             <button type="button" className="ghost" onClick={() => setAsking(false)}>
               Keep it
