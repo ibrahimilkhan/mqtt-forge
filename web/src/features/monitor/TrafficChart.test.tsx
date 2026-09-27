@@ -656,7 +656,16 @@ describe('the csv a chart saves', () => {
       body: `${20 + i}`,
     }));
 
-  /** What the chart hands the exporter, read off the download it falls back to. */
+  afterEach(() => vi.restoreAllMocks());
+
+  /**
+   * What the chart hands the exporter, read off the download it falls back to.
+   *
+   * The download is a link to the file, clicked. Its click is stopped where it hands the file
+   * over: followed, it sent jsdom off to a document it cannot load, and a run of the whole suite
+   * printed "Not implemented: navigation to another Document" for each of these. What it handed
+   * over is kept, and checked.
+   */
   async function saved(topic: string): Promise<string> {
     let written = '';
     const create = vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
@@ -664,12 +673,18 @@ describe('the csv a chart saves', () => {
       return 'blob:csv';
     });
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    const handed: Array<{ name: string; href: string }> = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      handed.push({ name: this.download, href: this.href });
+    });
 
     render(<TrafficChart runs={asRuns(withTopic(topic))} />);
     await userEvent.click(screen.getByRole('button', { name: /csv/i }));
     await waitFor(() => expect(create).toHaveBeenCalled());
     await waitFor(() => expect(written).not.toBe(''));
 
+    // One file, under the run's own name, and it is the one the text was read from.
+    expect(handed).toEqual([{ name: `${topic}.csv`, href: 'blob:csv' }]);
     return written;
   }
 
