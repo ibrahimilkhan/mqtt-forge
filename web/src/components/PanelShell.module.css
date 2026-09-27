@@ -66,11 +66,12 @@
    panel, it lay outside the scrolling, and the last thing on the page came to rest on the panel's
    edge. The same 24px as `.panel` above — change one and change both.
 
-   And 3px of it above and at either side, taken back out of the panel's padding with a margin, so
-   nothing inside moves. A block that scrolls cuts off whatever reaches past its padding, and the
-   ring round a focused control — global.css, 2px drawn 1px out — reaches 3px past the control:
-   Deploy stands against the block's top and right edges, and lost the top and the right of its
-   ring. Change the ring and change these.
+   And 3px of it above and at either side, so nothing inside moves. At either side that is taken
+   back out of the panel's own padding; above, it is the band's own margin-bottom it comes out of
+   instead, which already stands clear of the panel's padding by then. A block that scrolls cuts
+   off whatever reaches past its padding, and the ring round a focused control — global.css, 2px
+   drawn 1px out — reaches 3px past the control: a control standing against the block's top or
+   right edge would otherwise lose that much of its ring. Change the ring and change these.
 
    The block keeps no least height of its own. The body in it holds its own, and what that
    overflows the block by is what scrolls; sized to its content instead, the block would ask for
