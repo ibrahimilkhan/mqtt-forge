@@ -138,6 +138,9 @@ export function withDrafts(deployed: readonly FlowDto[], drafts: Readonly<Record
   ];
 }
 
+/** What is wrong with one flow, as the server said it: keyed flow, node:{id} and edge:{id}. */
+export type Problems = Readonly<Record<string, readonly string[]>>;
+
 /** The server's problems, filed by flow and then by the key the page marks. */
 export function problemsOf(problems: readonly FlowProblemDto[]): Record<string, Record<string, string[]>> {
   const filed: Record<string, Record<string, string[]>> = {};

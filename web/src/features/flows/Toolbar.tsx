@@ -8,6 +8,8 @@ type Props = {
   changed: ReadonlySet<string>;
   current: string;
   running: Readonly<Record<string, FlowRunStatusDto>>;
+  /** Flows the server has said something is wrong with: a refused deploy, or a problem in its file. */
+  refused: ReadonlySet<string>;
   deploying: boolean;
   onNew: () => void;
   /** Puts the flow on screen back to what is running. Left out when there is nothing to go back to. */
@@ -24,9 +26,8 @@ type Props = {
  * flow has a deployed version to go back to. For a flow never deployed, going back would throw
  * the whole flow away, and that is Delete flow's job, which asks first.
  */
-export function Toolbar({ flows, changed, current, running, deploying, onNew, onDiscard, onDeploy }: Props) {
+export function Toolbar({ flows, changed, current, running, refused, deploying, onNew, onDiscard, onDeploy }: Props) {
   const show = useFlowDraftStore((state) => state.show);
-  const refusals = useFlowDraftStore((state) => state.refusals);
   const count = changed.size;
 
   return (
@@ -47,7 +48,7 @@ export function Toolbar({ flows, changed, current, running, deploying, onNew, on
               aria-selected={flow.id === current}
               aria-controls="flow-canvas"
               className={styles.tab}
-              data-state={refusals[flow.id] ? 'refused' : running[flow.id] ? 'running' : 'stopped'}
+              data-state={refused.has(flow.id) ? 'refused' : running[flow.id] ? 'running' : 'stopped'}
               onClick={() => show(flow.id)}
             >
               <span className={styles.lamp} aria-hidden="true" />

@@ -10,13 +10,19 @@ import type { FlowNodeType } from '../../types/api';
 import { DebugStrip } from './DebugStrip';
 import { exampleFlows } from './examples';
 import { FlowCanvas } from './FlowCanvas';
-import { addNode, emptyFlow, newId, nextName, problemsOf, sameFlow, withDrafts } from './flowDocument';
+import { addNode, emptyFlow, newId, nextName, problemsOf, sameFlow, withDrafts, type Problems } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
 import { Inspector } from './Inspector';
 import { Palette } from './Palette';
 import { Toolbar } from './Toolbar';
 import { useDeploy } from './useDeploy';
 import styles from './FlowsPage.module.css';
+
+/**
+ * The problems of a flow with none. One object for every render: the canvas rebuilds its nodes when
+ * what it is handed changes, and the page renders again on every push of the numbers.
+ */
+const NOTHING_WRONG: Problems = {};
 
 /**
  * The Flows page. The default export, because React.lazy loads a module's default.
@@ -76,6 +82,12 @@ function Page() {
   );
   const serverProblems = useMemo(() => problemsOf(data?.problems ?? []), [data]);
 
+  // What the server has said is wrong with each flow: its answer to this page's last deploy of it,
+  // or else what it found reading its own file. The tabs, the canvas and the inspector all mark
+  // this one answer, so no pane can call a flow clean that another marks as wrong.
+  const problems = useMemo(() => ({ ...serverProblems, ...refusals }), [serverProblems, refusals]);
+  const refused = useMemo(() => new Set(Object.keys(problems)), [problems]);
+
   // A flow edited back to what is running has no draft left for its refusal to be about. Only the
   // page holds both halves of that comparison, so it is the one that tells the store. Before the
   // paint, so the flow is never drawn for a frame with the old refusal still on it.
@@ -129,6 +141,7 @@ function Page() {
           changed={changed}
           current={shown.id}
           running={running}
+          refused={refused}
           deploying={deploy.isPending}
           onNew={() => {
             const flow = emptyFlow(nextName(flows));
@@ -146,12 +159,12 @@ function Page() {
 
       <div className={styles.body}>
         <Palette onAdd={add} />
-        <FlowCanvas key={shown.id} flow={shown} running={running[shown.id] !== undefined} />
+        <FlowCanvas key={shown.id} flow={shown} running={running[shown.id] !== undefined} problems={problems[shown.id] ?? NOTHING_WRONG} />
         <Inspector
           flow={shown}
           deployed={byId.get(shown.id)}
           running={running[shown.id] !== undefined}
-          problems={refusals[shown.id] ?? serverProblems[shown.id] ?? {}}
+          problems={problems[shown.id] ?? NOTHING_WRONG}
           facts={{ allowWebhooks: data.allowWebhooks, alertTopicPrefix: data.alertTopicPrefix }}
         />
       </div>

@@ -9,7 +9,7 @@ import type { FlowDto } from '../../types/api';
 import { standInForTheBrowser } from './canvasTestbed';
 import { DRAG_TYPE, FlowCanvas } from './FlowCanvas';
 import sheet from './FlowCanvas.module.css?raw';
-import { removeEdges } from './flowDocument';
+import { removeEdges, type Problems } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
 
 beforeAll(() => standInForTheBrowser());
@@ -32,11 +32,11 @@ const button: FlowDto = {
   edges: [{ id: 'e1', from: 'go', fromPort: 'out', to: 'test', toPort: 'in' }],
 };
 
-const draw = (flow: FlowDto = button, running = true) =>
+const draw = (flow: FlowDto = button, running = true, problems: Problems = {}) =>
   render(
     <ReactFlowProvider>
       <div style={{ width: 800, height: 600 }}>
-        <FlowCanvas flow={flow} running={running} />
+        <FlowCanvas flow={flow} running={running} problems={problems} />
       </div>
     </ReactFlowProvider>,
   );
@@ -44,7 +44,7 @@ const draw = (flow: FlowDto = button, running = true) =>
 /** The canvas as the page draws it: the flow's draft once it has one, the deployed flow until then. */
 function Page({ flow }: { flow: FlowDto }) {
   const draft = useFlowDraftStore((state) => state.drafts[flow.id]);
-  return <FlowCanvas flow={draft ?? flow} running />;
+  return <FlowCanvas flow={draft ?? flow} running problems={{}} />;
 }
 
 /** The button flow on screen the way the page puts it there, so a Discard redraws the canvas. */
@@ -116,13 +116,13 @@ describe('flow canvas', () => {
     expect(screen.queryByText('waiting')).toBeNull();
   });
 
-  it('marks a node the server refused, with its reason', async () => {
-    useFlowDraftStore.getState().refuse('button', { 'node:test': ['Pick a test.'] });
-
-    draw();
+  it('marks a node and a wire the server said are wrong, the node with its reason', async () => {
+    draw(button, true, { 'node:test': ['Pick a test.'], 'edge:e1': ['Not this wire.'] });
 
     const refused = await screen.findByTitle('Pick a test.');
     expect(refused).toHaveAttribute('data-problem');
+    expect(screen.getByLabelText('Edge from go to test').querySelector('.react-flow__edge-path')).toHaveAttribute('data-problem');
+    expect(screen.getByText('Inject').closest('[data-group]')).not.toHaveAttribute('data-problem');
   });
 
   it('presses a running Inject node on the server', async () => {
@@ -242,6 +242,17 @@ describe('flow canvas', () => {
     expect(at('selected')).toBeGreaterThan(-1);
     expect(at('flash')).toBeGreaterThan(at('selected'));
     expect(at('problem')).toBeGreaterThan(at('flash'));
+  });
+
+  // A wire that was clicked has the focus as well as the pick, and React Flow draws a focused wire
+  // in its own selected colour by a rule that outweighs the marks above. It reads that colour from
+  // a variable, so a lit wire and a refused one say their colour there too.
+  it('keeps a clicked wire lit, and a refused one red', () => {
+    const rules = sheet.replace(/\/\*[\s\S]*?\*\//g, '');
+    const body = (mark: string) => new RegExp(String.raw`\.wire\[data-${mark}\]\s*\{([^}]*)\}`).exec(rules)?.[1] ?? '';
+
+    expect(body('flash')).toMatch(/--xy-edge-stroke-selected:\s*var\(--signal\)/);
+    expect(body('problem')).toMatch(/--xy-edge-stroke-selected:\s*var\(--fault\)/);
   });
 
   // React Flow tells the canvas about one click in two reports, the nodes' and the wires', one

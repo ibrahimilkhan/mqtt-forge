@@ -147,10 +147,18 @@
 /* The three marks weigh the same, so where two meet the later one wins, and the order is the
    point. A flash comes after a pick, so a picked wire still lights when a message goes down it.
    A refusal comes last and sets only the colour: a busy wire stays lit, and must not hide what
-   the server refused, so a refused wire that carries something thickens and stays red. */
+   the server refused, so a refused wire that carries something thickens and stays red.
+   A wire that was clicked also has the focus, and base.css draws a focused wire in the selected
+   colour by a rule that outweighs these three. That rule reads the colour from a variable, so
+   the flash and the refusal set the variable as well, and win there in the same order. */
 .canvas .wire[data-selected] { stroke: var(--ink); stroke-width: 2; }
-.canvas .wire[data-flash] { stroke: var(--signal); stroke-width: 2.5; transition: none; }
-.canvas .wire[data-problem] { stroke: var(--fault); }
+.canvas .wire[data-flash] {
+  stroke: var(--signal);
+  stroke-width: 2.5;
+  transition: none;
+  --xy-edge-stroke-selected: var(--signal);
+}
+.canvas .wire[data-problem] { stroke: var(--fault); --xy-edge-stroke-selected: var(--fault); }
 
 @media (prefers-reduced-motion: reduce) {
   .canvas .wire { transition: none; }

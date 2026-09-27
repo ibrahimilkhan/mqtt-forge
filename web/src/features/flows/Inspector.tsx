@@ -7,7 +7,7 @@ import { nodeKey, useFlowStatusStore } from '../../stores/flowStatusStore';
 import { logFault } from '../../stores/logStore';
 import panel from '../../styles/panel.module.css';
 import type { FlowDto, FlowNodeDto } from '../../types/api';
-import { removeNodes, setConfig } from './flowDocument';
+import { removeNodes, setConfig, type Problems } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
 import { NodeSettings } from './NodeSettings';
 import { NODE_SPECS } from './nodeTypes';
@@ -21,7 +21,7 @@ type Props = {
   deployed: FlowDto | undefined;
   running: boolean;
   /** What the server said last, keyed flow / node:{id} / edge:{id}. */
-  problems: Record<string, string[]>;
+  problems: Problems;
   facts: Facts;
 };
 
@@ -41,7 +41,7 @@ export function Inspector({ flow, deployed, running, problems, facts }: Props) {
   );
 }
 
-function NodePane({ flow, node, problems, facts }: { flow: FlowDto; node: FlowNodeDto; problems?: string[]; facts: Facts }) {
+function NodePane({ flow, node, problems, facts }: { flow: FlowDto; node: FlowNodeDto; problems?: readonly string[]; facts: Facts }) {
   const edit = useFlowDraftStore((state) => state.edit);
   const select = useFlowDraftStore((state) => state.select);
   const spec = NODE_SPECS[node.type];
@@ -86,7 +86,7 @@ function NodePane({ flow, node, problems, facts }: { flow: FlowDto; node: FlowNo
   );
 }
 
-function FlowPane({ flow, deployed, running, problems }: { flow: FlowDto; deployed: FlowDto | undefined; running: boolean; problems?: string[] }) {
+function FlowPane({ flow, deployed, running, problems }: { flow: FlowDto; deployed: FlowDto | undefined; running: boolean; problems?: readonly string[] }) {
   const edit = useFlowDraftStore((state) => state.edit);
   const forget = useFlowDraftStore((state) => state.forget);
   const queryClient = useQueryClient();

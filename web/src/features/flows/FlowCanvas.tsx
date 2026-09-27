@@ -22,7 +22,7 @@ import { injectNode } from '../../api/flows';
 import { nodeKey, useFlowStatusStore } from '../../stores/flowStatusStore';
 import { logFault } from '../../stores/logStore';
 import type { FlowDto, FlowNodeDto } from '../../types/api';
-import { addNode, canConnect, connect, moveNodes, newId, removeEdges, removeNodes, type Wire } from './flowDocument';
+import { addNode, canConnect, connect, moveNodes, newId, removeEdges, removeNodes, type Problems, type Wire } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
 import { isNodeType, NODE_SPECS } from './nodeTypes';
 import styles from './FlowCanvas.module.css';
@@ -30,9 +30,9 @@ import styles from './FlowCanvas.module.css';
 /** What a palette item carries when it is dragged onto the canvas. */
 export const DRAG_TYPE = 'application/x-mqttforge-node';
 
-type NodeData = { flowId: string; node: FlowNodeDto; running: boolean };
+type NodeData = { flowId: string; node: FlowNodeDto; running: boolean; problems?: readonly string[] };
 type CanvasNode = Node<NodeData, 'flow'>;
-type CanvasEdge = Edge<{ flowId: string }, 'wire'>;
+type CanvasEdge = Edge<{ flowId: string; problems?: readonly string[] }, 'wire'>;
 
 type Size = { width: number; height: number };
 
@@ -72,8 +72,12 @@ function firstNode(picks: Iterable<string>): string | null {
  * this flow", it is the one Deploy sends, and a canvas can never drift from it. What is kept here
  * is only what React Flow measures (each node's size, which it needs handed back or it hides the
  * node) and what the reader has picked.
+ *
+ * What it marks as wrong is handed in, not looked up: the page decides what the server has said
+ * about the flow — a refusal of this page's deploy, or a problem in the server's own file — and the
+ * canvas, the tab and the inspector all mark that one answer.
  */
-export function FlowCanvas({ flow, running }: { flow: FlowDto; running: boolean }) {
+export function FlowCanvas({ flow, running, problems }: { flow: FlowDto; running: boolean; problems: Problems }) {
   const edit = useFlowDraftStore((state) => state.edit);
   const select = useFlowDraftStore((state) => state.select);
   const selected = useFlowDraftStore((state) => state.selected);
@@ -125,11 +129,11 @@ export function FlowCanvas({ flow, running }: { flow: FlowDto; running: boolean 
         id: node.id,
         type: 'flow',
         position: { x: node.x, y: node.y },
-        data: { flowId: flow.id, node, running },
+        data: { flowId: flow.id, node, running, problems: problems[NODE + node.id] },
         selected: picked.has(NODE + node.id),
         measured: sizes[node.id],
       })),
-    [flow.id, flow.nodes, picked, running, sizes],
+    [flow.id, flow.nodes, picked, problems, running, sizes],
   );
 
   const edges = useMemo<CanvasEdge[]>(
@@ -142,9 +146,9 @@ export function FlowCanvas({ flow, running }: { flow: FlowDto; running: boolean 
         target: edge.to,
         targetHandle: edge.toPort,
         selected: picked.has(EDGE + edge.id),
-        data: { flowId: flow.id },
+        data: { flowId: flow.id, problems: problems[EDGE + edge.id] },
       })),
-    [flow.id, flow.edges, picked],
+    [flow.id, flow.edges, picked, problems],
   );
 
   const pick = useCallback(
@@ -279,7 +283,6 @@ function FlowNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
   const spec = NODE_SPECS[data.node.type];
   const Icon = spec.icon;
   const status = useFlowStatusStore((state) => state.nodes[nodeKey(data.flowId, id)]);
-  const problems = useFlowDraftStore((state) => state.refusals[data.flowId]?.[`node:${id}`]);
 
   // A running flow reports every node of the version it runs, so a node with no numbers is not
   // deployed: the flow is not running, or the node is only in the draft. "0 in" or "waiting" under
@@ -291,8 +294,8 @@ function FlowNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
       className={styles.node}
       data-group={spec.group}
       data-selected={selected ? '' : undefined}
-      data-problem={problems ? '' : undefined}
-      title={problems?.join(' ')}
+      data-problem={data.problems ? '' : undefined}
+      title={data.problems?.join(' ')}
     >
       {spec.ins.map((port, index) => (
         <Handle
@@ -386,7 +389,6 @@ function WireView({
 }: EdgeProps<CanvasEdge>) {
   const flowId = data?.flowId ?? '';
   const count = useFlowStatusStore((state) => state.nodes[nodeKey(flowId, source)]?.outs[sourceHandleId ?? 'out'] ?? 0);
-  const problem = useFlowDraftStore((state) => state.refusals[flowId]?.[`edge:${id}`]);
   const [flash, setFlash] = useState(false);
   const seen = useRef(count);
 
@@ -418,7 +420,7 @@ function WireView({
       className={styles.wire}
       data-flash={flash ? '' : undefined}
       data-selected={selected ? '' : undefined}
-      data-problem={problem ? '' : undefined}
+      data-problem={data?.problems ? '' : undefined}
     />
   );
 }

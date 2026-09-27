@@ -508,6 +508,27 @@ describe('deploying', () => {
   });
 });
 
+describe('what the server says is wrong with a flow in its file', () => {
+  // A flow written into the file by hand that does not compile. The server does not run it, and
+  // the inspector says why; the canvas and the tab have to say it from the same answer, or the
+  // flow looks clean everywhere but one pane.
+  it('is marked on the canvas and on the tab, from the answer the inspector reads', async () => {
+    keeping([watch], {
+      problems: [
+        { flowId: 'watch', key: 'flow', message: 'The flow is not right.' },
+        { flowId: 'watch', key: 'node:test', message: 'Pick a test.' },
+        { flowId: 'watch', key: 'edge:e1', message: 'Not this wire.' },
+      ],
+    });
+    render(<FlowsPage />);
+
+    expect(await screen.findByText('The flow is not right.')).toBeInTheDocument();
+    expect(await screen.findByTitle('Pick a test.')).toHaveAttribute('data-problem');
+    expect(screen.getByLabelText('Edge from in to test').querySelector('[data-problem]')).not.toBeNull();
+    expect(screen.getByRole('tab', { name: /Boiler watch/ })).toHaveAttribute('data-state', 'refused');
+  });
+});
+
 describe('a refusal', () => {
   // A refusal is about a draft. Edited back to what is running, the flow has no draft for it to be
   // about: nothing may go on saying the server refused it beside "All deployed", and the next edit
