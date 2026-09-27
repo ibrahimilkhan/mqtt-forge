@@ -127,4 +127,44 @@ public class AlertEngineHostTests
 
         await _state.Received(1).SaveAsync(Arg.Any<AlertState>(), Arg.Any<CancellationToken>());
     }
+
+    // Stopping_twice_writes_the_state_once awaits its two calls one after the other, so it cannot
+    // tell a shared hand-over from a race that happened to land safely — the second call there
+    // never starts until the first has already returned. WebApplicationFactory's two stop chains
+    // (dotnet/aspnetcore #40271, #50622) do not behave that way: both can reach StopAsync while
+    // the other is still in flight, on different threads. This test holds SaveAsync open on a gate
+    // so both calls are genuinely overlapping — neither has returned — while the one save is still
+    // running, and only then lets it finish.
+    [Fact]
+    public async Task Concurrent_stops_wait_for_the_one_save_and_it_runs_once()
+    {
+        var sut = CreateSut();
+        var gate = new TaskCompletionSource();
+        var saveCalls = 0;
+
+        _state.SaveAsync(Arg.Any<AlertState>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                Interlocked.Increment(ref saveCalls);
+                await gate.Task;
+            });
+
+        await sut.StartAsync(CancellationToken.None);
+
+        // Not awaited between them, on purpose: this is what makes the two calls overlap rather
+        // than run one after the other.
+        var first = sut.StopAsync(CancellationToken.None);
+        var second = sut.StopAsync(CancellationToken.None);
+
+        await Task.Delay(TimeSpan.FromMilliseconds(50));
+
+        Assert.False(first.IsCompleted, "a stop returned before the hand-over it shares had finished");
+        Assert.False(second.IsCompleted, "a stop returned before the hand-over it shares had finished");
+
+        gate.SetResult();
+        await Task.WhenAll(first, second);
+
+        Assert.Equal(1, saveCalls);
+        await _state.Received(1).SaveAsync(Arg.Any<AlertState>(), Arg.Any<CancellationToken>());
+    }
 }

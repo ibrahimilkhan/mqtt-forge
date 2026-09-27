@@ -22,11 +22,23 @@ public sealed class AlertEngineHost : BackgroundService
     private readonly ILogger<AlertEngineHost> _log;
 
     // Whether this process ever took ownership of the state file, and whether it still holds it:
-    // 1 until StopAsync has handed it back, 0 after. An int and not a bool, because
+    // 1 until the hand-over below has captured it, 0 after. An int and not a bool, because
     // WebApplicationFactory is documented to call StopAsync more than once on the same instance on
     // the way out (dotnet/aspnetcore #40271, #50622) — a plain bool would let two overlapping calls
     // both read it true before either set it false, and both would then save.
     private int _owns;
+
+    // The one hand-over, shared by every call to StopAsync rather than done again by each one.
+    // Whichever call reaches StopAsync first creates it and does the work; every other call —
+    // whether it arrives later or is running at the very same time, on WebApplicationFactory's
+    // other stop chain — finds this already set and awaits it instead of starting a save of its
+    // own or, worse, returning before the one save that is happening has actually finished. An
+    // earlier version of this class only guarded *which* call saved (with the same Interlocked
+    // idea, on _owns alone) and left the *other* call free to return at once — which is exactly
+    // how a real end-to-end test still caught the state file being written after the test that
+    // owned it had already deleted it and moved on: the call it awaited was not always the one
+    // doing the saving.
+    private TaskCompletionSource? _handover;
 
     public AlertEngineHost(
         AlertEngine engine, AlertEngineCore core, IAlertStateStore state, ILogger<AlertEngineHost> log)
@@ -85,23 +97,32 @@ public sealed class AlertEngineHost : BackgroundService
         // exactly once this has returned, and not a line earlier.
         await base.StopAsync(cancellationToken);
 
-        // A process that never took the state on must not be the one that writes it back. An
-        // empty core saved over alert-state.json is every active alert deleted, and the ones it
-        // would delete are exactly the ones a restart exists to hand over.
-        //
-        // Interlocked, not a read of _owns followed by an assignment: WebApplicationFactory calls
-        // StopAsync on the same hosted service instance more than once on the way out — a shape
-        // .NET's own issue tracker calls out by name (dotnet/aspnetcore #40271, #50622) rather than
-        // something this class did wrong — and two such calls running one after the other, or
-        // together, would otherwise both read "still owned" before either had set it down, and both
-        // would then save. An end-to-end test that starts and stops a real host caught exactly
-        // that: a state file the test had already cleaned up reappearing moments later, written by
-        // the second call. Only the call that actually flips the flag from held to let-go may save;
-        // every other one, whenever it arrives, finds it already let go and returns at once.
-        if (Interlocked.Exchange(ref _owns, 0) == 0) return;
+        // Whichever call gets here first — this is a race, not a queue, when WebApplicationFactory
+        // is the caller — creates the one hand-over and does the work below; CompareExchange hands
+        // every later or concurrent call back the same instance instead. Awaiting somebody else's
+        // TaskCompletionSource rather than returning is the whole fix: a call that only checked
+        // whether it was the one to save, and returned at once when it was not, could still return
+        // before the call that *was* saving had finished — which is exactly the shape of the leak
+        // this replaced.
+        var mine = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handover = Interlocked.CompareExchange(ref _handover, mine, null);
+
+        if (handover is not null)
+        {
+            await handover.Task;
+            return;
+        }
 
         try
         {
+            // A process that never took the state on must not be the one that writes it back. An
+            // empty core saved over alert-state.json is every active alert deleted, and the ones
+            // it would delete are exactly the ones a restart exists to hand over. Only the winner
+            // of _handover above ever reaches this line, so nothing races this read any more — it
+            // is still Interlocked rather than a plain read because that is what gives it the same
+            // cross-thread visibility Volatile.Write gave the write in StartAsync.
+            if (Interlocked.Exchange(ref _owns, 0) == 0) return;
+
             await _state.SaveAsync(_core.Capture(), cancellationToken);
         }
         catch (Exception ex)
@@ -109,6 +130,13 @@ public sealed class AlertEngineHost : BackgroundService
             // The one moment where a throw has nowhere useful to go. A full disk costs the
             // handover; it should not also cost a clean exit code.
             _log.LogError(ex, "Could not write the alert state on the way out.");
+        }
+        finally
+        {
+            // Set last, and unconditionally: every other call is awaiting exactly this, and a path
+            // above that returned early — no ownership, or a caught exception — still has to let
+            // them go rather than leave them waiting on a promise that is never kept.
+            mine.SetResult();
         }
     }
 }
