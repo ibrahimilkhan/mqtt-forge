@@ -10,6 +10,10 @@ namespace MqttForge.Infrastructure.Mqtt;
 public static class CertificateFiles
 {
     /// <summary>Our own certificate, for a broker that authenticates clients by certificate.</summary>
+    /// <remarks>
+    /// The caller disposes of it. Loaded with its key, it is a temporary keychain in $TMPDIR on
+    /// macOS and a key in the user's store on Windows until it is disposed; see LinkCertificates.
+    /// </remarks>
     public static X509Certificate2 LoadClientCertificate(BrokerTlsSettings settings)
     {
         var path = settings.ClientCertificatePath!;
@@ -24,16 +28,19 @@ public static class CertificateFiles
 
         try
         {
-            var loaded = IsPkcs12(path)
-                ? X509CertificateLoader.LoadPkcs12FromFile(path, password)
-                : FromPem(path, key, password);
+            if (IsPkcs12(path))
+                return X509CertificateLoader.LoadPkcs12FromFile(path, password);
 
             // A certificate whose key came from a PEM cannot be used for a TLS handshake as it
             // stands on Windows — the key is ephemeral and SslStream will not touch it. Round
             // -tripping through PKCS#12 attaches it properly, and costs nothing anywhere else.
-            return IsPkcs12(path)
-                ? loaded
-                : X509CertificateLoader.LoadPkcs12(loaded.Export(X509ContentType.Pkcs12), null);
+            //
+            // The certificate the round trip starts from goes as soon as it is done. It holds the
+            // key too, in a temporary keychain of its own on macOS, and left to the finalizer it
+            // outlived the process whenever no collection came first.
+            using var fromPem = FromPem(path, key, password);
+
+            return X509CertificateLoader.LoadPkcs12(fromPem.Export(X509ContentType.Pkcs12), null);
         }
         catch (Exception ex) when (ex is CryptographicException or IOException or UnauthorizedAccessException)
         {
