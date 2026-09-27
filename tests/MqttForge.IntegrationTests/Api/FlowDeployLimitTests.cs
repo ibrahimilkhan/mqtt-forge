@@ -7,15 +7,17 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.DependencyInjection;
 using MqttForge.Api;
+using MqttForge.Api.Contracts;
 using MqttForge.Api.Controllers;
+using MqttForge.Application.Alerts;
 using MqttForge.Application.Flows;
 using Xunit;
 
 namespace MqttForge.IntegrationTests.Api;
 
-// The flows PUT reads no more than the largest flow the compiler accepts needs. Only Kestrel holds a
-// request to a size: TestServer, which MqttForgeApiFactory runs on, has no such feature and lets any
-// body through, so this host is a real one, on a port of its own.
+// The flows PUT reads no more than a flow at every limit needs, written with ordinary payloads. Only
+// Kestrel holds a request to a size: TestServer, which MqttForgeApiFactory runs on, has no such feature
+// and lets any body through, so this host is a real one, on a port of its own.
 public sealed class FlowDeployLimitTests : IAsyncLifetime
 {
     // How the console writes a body: JSON.stringify leaves every character but a quote, a backslash
@@ -100,9 +102,9 @@ public sealed class FlowDeployLimitTests : IAsyncLifetime
     // The limit's own arithmetic, sent: every node at its largest — a 64 KiB payload with a fifth of
     // it quotes, each two bytes on the wire, and a 1,024-character topic of three-byte characters —
     // two hundred of them, and nearly four hundred wires. If this does not fit, the limit refuses a
-    // flow the compiler would have run.
+    // flow written the ordinary way.
     [Fact]
-    public async Task The_largest_flow_the_compiler_accepts_fits()
+    public async Task A_flow_at_every_limit_fits_with_a_fifth_of_each_payload_escaped()
     {
         var payload = string.Create(FlowLimits.PayloadBytes, 0, (chars, _) =>
         {
@@ -132,5 +134,33 @@ public sealed class FlowDeployLimitTests : IAsyncLifetime
         using var response = await _client!.SendAsync(Put("largest", body));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    // What the limit does not hold: a flow heavy in what JSON escapes. A control character is six
+    // bytes on the wire, so fifty nodes of 64 KiB of them — a flow the compiler would run — are past it.
+    [Fact]
+    public async Task A_flow_the_compiler_would_run_is_refused_unread_when_escaping_takes_it_past_the_limit()
+    {
+        var payload = new string('\u0001', FlowLimits.PayloadBytes);
+
+        var nodes = new List<object> { new { id = "go", type = "inject", x = 0, y = 0, config = new { topic = "sim/x", payload } } };
+        var edges = new List<object>();
+
+        for (var j = 0; j < 49; j++)
+        {
+            nodes.Add(new { id = $"send{j}", type = "publish", x = 0, y = 0, config = new { topic = "sim/x", payload } });
+            edges.Add(new { id = $"e{j}", from = "go", fromPort = "out", to = $"send{j}", toPort = "in" });
+        }
+
+        var body = JsonSerializer.SerializeToUtf8Bytes(
+            new { id = "escaped", name = "Escaped", enabled = false, nodes, edges }, AsTheConsoleWrites);
+
+        var flow = JsonSerializer.Deserialize<FlowDto>(body, FlowJson.Options)!.ToFlow();
+        Assert.Empty(FlowCompiler.Compile(flow, new AlertEngineOptions().TopicPrefix).Problems);
+        Assert.True(body.Length > FlowController.DeployBodyBytes, $"The body is {body.Length} bytes, within the limit.");
+
+        using var response = await _client!.SendAsync(Put("escaped", body));
+
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
     }
 }

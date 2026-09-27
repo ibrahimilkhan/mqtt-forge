@@ -11,17 +11,22 @@ namespace MqttForge.Api.Controllers;
 public sealed class FlowController : ControllerBase
 {
     /// <summary>The largest body a deploy may send, in bytes.</summary>
-    // Worked out from the compiler's own limits, so that every flow it would run fits. A node at its
-    // largest is a Publish, an Every or an Inject: a 64 KiB payload and a 1,024-character topic, which
-    // UTF-8 makes at most 3 KiB — 67 KiB. Two hundred of those are 13.1 MiB, and their ids, types,
-    // positions and setting names, with the 400 wires between them, add 0.1 MiB more. The 2.8 MiB
-    // left is JSON's own escaping: a quote or a backslash in a template is two bytes on the wire, so
-    // a fifth of every template can be quotes. (FlowDeployLimitTests sends exactly that flow.)
+    // Worked out from the compiler's own limits, for a flow written with ordinary payloads. A node at
+    // its largest is a Publish, an Every or an Inject: a 64 KiB payload and a 1,024-character topic,
+    // which UTF-8 makes at most 3 KiB — 67 KiB. Two hundred of those are 13.1 MiB, and their ids,
+    // types, positions and setting names, with the 400 wires between them, add 0.1 MiB more. The
+    // 2.8 MiB left is JSON's own escaping, which the compiler's limits do not count: the console
+    // writes a quote or a backslash as two bytes, so every node can be at its largest with a fifth of
+    // each template quotes. (FlowDeployLimitTests sends exactly that flow.)
+    //
+    // Not every flow the compiler would run fits. A control character goes on the wire as \u00XX, six
+    // bytes for one, so a payload of 64 KiB of them is 384 KiB, and two hundred are 75 MiB. A limit
+    // that let those through would let 75 MiB of anything through — two and a half times Kestrel's own
+    // default of 30 MB — for the model binder to read before the compiler can refuse it on the count.
+    // So such a flow is refused with a 413, unread.
+    //
     // A setting with no limit of its own — an If's value, a field path, a webhook address — has
     // this one.
-    //
-    // Kestrel's default is 30 MB, and a body that size of nothing but tiny nodes is work for the
-    // model binder before the compiler can refuse it on the count.
     public const long DeployBodyBytes = 16 * 1024 * 1024;
 
     private readonly FlowService _flows;
