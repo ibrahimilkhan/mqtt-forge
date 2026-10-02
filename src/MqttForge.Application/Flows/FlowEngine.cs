@@ -38,12 +38,12 @@ public sealed class FlowEngine
         _notifier = notifier;
         _pushes = new FlowConsoleSender(console, log);
         _connection = connection;
-        _subscriber = subscriber;
         _publisher = publisher;
         _prefix = options.TopicPrefix;
         _log = log;
         _time = timeProvider ?? TimeProvider.System;
         _dispatcher = dispatcher;
+        _filters = new FilterSync(subscriber, SubscriptionOwner.Flows, FlowQos, _time, log, "flow");
 
         _queue = Channel.CreateBounded<Queued>(
             new BoundedChannelOptions(QueueCapacity) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true },
@@ -83,7 +83,6 @@ public sealed class FlowEngine
     private readonly IAlertNotifier _notifier;
     private readonly FlowConsoleSender _pushes;
     private readonly IMqttConnectionManager _connection;
-    private readonly IMqttSubscriber _subscriber;
     private readonly IMqttPublisher _publisher;
     private readonly string _prefix;
     private readonly ILogger<FlowEngine> _log;
@@ -92,11 +91,8 @@ public sealed class FlowEngine
     private readonly Channel<Queued> _queue;
     private readonly Channel<FlowPublish> _outbox;
 
-    /// <summary>Filters this broker has refused on this link. Not asked for again until the link or the flows change.</summary>
-    private readonly HashSet<string> _refused = new(StringComparer.Ordinal);
-
-    /// <summary>How long the flows' filters are put off, after a broker that did not answer for them: AlertEngine's rule, NoAnswerBackoff, since both pumps wait on the same broker.</summary>
-    private readonly NoAnswerBackoff _noAnswer = new();
+    /// <summary>The flows' filters at the broker, and what it refused of them on this link: AlertEngine's, under the flows' own owner.</summary>
+    private readonly FilterSync _filters;
 
     // The deploy the pump has not reached yet, and the order everything posted is stamped in. See Hand.
     private readonly Lock _deploying = new();
@@ -321,13 +317,9 @@ public sealed class FlowEngine
     private void NewLink(string? endpoint)
     {
         _resubscribe = true;
-        _refused.Clear();
-        _noAnswer.Lift();
+        _filters.NewLink();
         _linkedTo = endpoint;
     }
-
-    /// <summary>Whether the broker did not answer for the filters so lately that asking again now would only wait on it again.</summary>
-    private bool Pausing(DateTimeOffset now) => _noAnswer.Pausing(now);
 
     private static string? EndpointOf(BrokerLink? link) => link is null ? null : $"{link.Host}:{link.Port}";
 
@@ -350,28 +342,7 @@ public sealed class FlowEngine
     };
 
     /// <summary>Whether a filter the running flows want, and the broker has not refused, is not held for them.</summary>
-    private bool FiltersMissing()
-    {
-        var held = HeldForFlows();
-
-        foreach (var filter in _runtime.Filters())
-            if (!held.Contains(filter) && !_refused.Contains(filter))
-                return true;
-
-        return false;
-    }
-
-    /// <summary>The filters the subscriber holds on the flows' behalf, whoever else holds them too.</summary>
-    private HashSet<string> HeldForFlows()
-    {
-        var held = new HashSet<string>(StringComparer.Ordinal);
-
-        foreach (var filter in _subscriber.Filters)
-            if (filter.Owners.HasFlag(SubscriptionOwner.Flows))
-                held.Add(filter.Filter);
-
-        return held;
-    }
+    private bool FiltersMissing() => _filters.Missing(_runtime.Filters());
 
     private DateTimeOffset Wake()
     {
@@ -516,7 +487,7 @@ public sealed class FlowEngine
             // the flows want is held against what the subscriber is holding for them.
             if (tick && connected && !_resubscribe && FiltersMissing()) _resubscribe = true;
 
-            if (_resubscribe && !Pausing(now))
+            if (_resubscribe && !_filters.Pausing(now))
             {
                 var version = _runtime.Version;
                 await SyncSubscriptionsAsync(ct);
@@ -555,15 +526,10 @@ public sealed class FlowEngine
                 var outcome = _runtime.Deploy(deploy.Flows, deploy.Kept, now);
                 Volatile.Write(ref _injectable, _runtime.Injectable());
 
-                // New flows, new filters — and a filter the broker refused is worth asking about
-                // again once somebody has edited the flow that wanted it.
+                // New flows, new filters, and whoever deployed them is waiting to see them run: see
+                // FilterSync.Changed.
                 _resubscribe = true;
-                _refused.Clear();
-
-                // And whoever deployed them is waiting to see them run: the filters are asked for on
-                // this turn, whatever pause a broker that did not answer left. AlertEngine's rule for
-                // a save, and its reason.
-                _noAnswer.Interrupt();
+                _filters.Changed();
                 return outcome;
 
             case FlowInject inject:
@@ -731,66 +697,14 @@ public sealed class FlowEngine
         _ => $"The publish failed: {ex.Message}",
     };
 
-    /// <summary>AlertEngine.SyncSubscriptionsAsync, for the flows' own filters and owner.</summary>
-    // A diff and not a refresh, for that method's reason: re-sending the whole set would have the
-    // broker replay every retained value under every filter on every deploy.
+    /// <summary>AlertEngine.SyncSubscriptionsAsync, for the flows' own filters.</summary>
     private async Task SyncSubscriptionsAsync(CancellationToken ct)
     {
         if (_connection.State != ConnectionState.Connected) return;
 
-        var wanted = _runtime.Filters();
-        var held = HeldForFlows();
-
-        var missing = wanted.Where(filter => !held.Contains(filter) && !_refused.Contains(filter))
-            .Select(filter => new SubscriptionRequest(filter, FlowQos))
-            .ToList();
-        var gone = held.Where(filter => !wanted.Contains(filter)).ToList();
-
-        try
-        {
-            if (missing.Count > 0) await _subscriber.SubscribeAsync(missing, ct, SubscriptionOwner.Flows);
-            foreach (var filter in gone) await _subscriber.UnsubscribeAsync(filter, ct, SubscriptionOwner.Flows);
-
-            _resubscribe = false;
-            _noAnswer.Answered();
-        }
-        catch (MessageRejectedException refusal)
-        {
-            // An answer as much as a grant is, so the next silence is the first of a new run.
-            _noAnswer.Answered();
-
-            var refused = refusal.Filters.Count > 0
-                ? refusal.Filters
-                : [.. missing.Select(request => request.TopicFilter)];
-
-            foreach (var filter in refused) _refused.Add(filter);
-            _runtime.MarkRefused(refused);
-
-            _log.LogWarning(refusal,
-                "The broker refused {Count} flow filter(s); they will not be asked for again on this link.",
-                refused.Count);
-        }
-        catch (BrokerDidNotAnswerException silence)
-        {
-            // Not a refusal, and not for the very next turn either: see AlertEngine.NoAnswerPause. The flag
-            // stays up, so the first turn after the pause asks again.
-            var pause = _noAnswer.NotAnswered(_time.GetUtcNow());
-
-            _log.LogWarning(silence,
-                "The broker did not answer for the flows' subscriptions. They will be asked for again in {Seconds} seconds.",
-                pause.TotalSeconds);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
-        {
-            // A link that went mid-packet, a fault nobody foresaw: the flag stays up and the next
-            // turn asks again.
-            //
-            // A cancellation is one of these unless it is this pump's own. MQTTnet 5 can fail a
-            // SUBSCRIBE that was waiting when its keep-alive gave up on the link with the
-            // cancellation of its own receive loop — the link going, not the engine stopping — and
-            // letting that through would also lose everything else the turn had decided.
-            _log.LogWarning(ex, "The flow engine could not apply its subscriptions. It will try again.");
-        }
+        var (done, refused) = await _filters.SyncAsync(_runtime.Filters(), ct);
+        if (done) _resubscribe = false;
+        if (refused.Count > 0) _runtime.MarkRefused(refused);
     }
 
     private async Task<FlowDocument> LoadAsync(CancellationToken ct)

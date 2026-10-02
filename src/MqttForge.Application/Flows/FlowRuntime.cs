@@ -39,7 +39,7 @@ public sealed class FlowRuntime
     /// <summary>When the next Every tick or Repeat copy is due, if any is.</summary>
     public DateTimeOffset? NextDue => _schedule.TryPeek(out _, out var due) ? due : null;
 
-    public IReadOnlyCollection<string> Filters()
+    public IReadOnlySet<string> Filters()
     {
         var filters = new HashSet<string>(StringComparer.Ordinal);
         foreach (var state in _flows.Values)

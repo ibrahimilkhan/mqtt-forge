@@ -39,7 +39,6 @@ public sealed class AlertEngine
         _state = state;
         _notifier = notifier;
         _connection = connection;
-        _subscriber = subscriber;
         _log = log;
         _dispatcher = dispatcher;
         _console = console is null ? null : new AlertConsoleSender(console, log);
@@ -47,6 +46,7 @@ public sealed class AlertEngine
         // MqttnetConnectionManager's signature exactly, for the same reason: production wires
         // nothing and the tests hand in a clock they can move.
         _time = timeProvider ?? TimeProvider.System;
+        _filters = new FilterSync(subscriber, SubscriptionOwner.Rules, RuleQos, _time, log, "rule");
 
         _queue = Channel.CreateBounded<AlertCommand>(
             new BoundedChannelOptions(QueueCapacity)
@@ -120,7 +120,6 @@ public sealed class AlertEngine
     /// predates it and in any host with no console to tell.
     private readonly AlertConsoleSender? _console;
     private readonly IMqttConnectionManager _connection;
-    private readonly IMqttSubscriber _subscriber;
     private readonly ILogger<AlertEngine> _log;
     private readonly TimeProvider _time;
     private readonly Channel<AlertCommand> _queue;
@@ -141,20 +140,14 @@ public sealed class AlertEngine
     /// Set when the filters the rules want may differ from the filters the subscriber holds.
     private bool _resubscribe;
 
-    /// <summary>Filters this broker has already refused, on this link.</summary>
+    /// <summary>The rules' filters at the broker, and what it refused of them on this link.</summary>
     // The engine used to leave the resubscribe flag up after a refusal, so the same filter was
     // asked for again on the next turn — once a second, for as long as the link lasted. A broker
     // that said no says no again: it is a wasted round trip a second, and some brokers count that
-    // as abuse. So a refused filter is set aside and not asked for again.
-    //
-    // Not for ever: the set is emptied whenever the question is genuinely new — a link made again
-    // (a broker restarted with a different ACL is the ordinary case) or moved to another broker,
-    // and a rule set the reader has just edited. Each of them forces a resubscribe, so each clears
-    // this in the same breath.
-    private readonly HashSet<string> _refused = new(StringComparer.Ordinal);
-
-    /// <summary>How long the rules' filters are put off, after a broker that did not answer for them. See NoAnswerPause.</summary>
-    private readonly NoAnswerBackoff _noAnswer = new();
+    // as abuse. So a refused filter is set aside and not asked for again — until the question is
+    // genuinely new: a link made again (a broker restarted with a different ACL is the ordinary
+    // case) or moved to another broker, and a rule set the reader has just edited.
+    private readonly FilterSync _filters;
 
     /// <summary>Which broker the pairs in the core were learned from.</summary>
     // See AlertEngineCore.ForgetTopics. A link to a different broker is a different world, and
@@ -233,7 +226,7 @@ public sealed class AlertEngine
         // The link may well be down at this point — the supervisor connects on its own schedule —
         // in which case this does nothing and the flag stays set for the reconnect to honour.
         _resubscribe = true;
-        _refused.Clear();
+        _filters.Changed();
         _linkWasUp = _connection.State == ConnectionState.Connected;
 
         // Where the rules start learning, when the link is up already: FlowEngine's _linkedTo at
@@ -429,7 +422,7 @@ public sealed class AlertEngine
             // so the look costs nothing and asks the broker nothing.
             if (tick && connected && !_resubscribe && FiltersMissing()) _resubscribe = true;
 
-            if (_resubscribe && !Pausing(now)) await SyncSubscriptionsAsync(ct);
+            if (_resubscribe && !_filters.Pausing(now)) await SyncSubscriptionsAsync(ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -464,15 +457,9 @@ public sealed class AlertEngine
                 _live = change.Rules;
                 _resubscribe = true;
 
-                // The reader has just edited the rules, which is the other way a refused filter
-                // becomes worth asking about again — most obviously by being narrowed.
-                _refused.Clear();
-
-                // And the reader is waiting to see them at work, so the filters are asked for on this
-                // turn, whatever pause a broker that did not answer left: up to a minute of it. The
-                // run of pauses goes on if the broker leaves this attempt unanswered too
-                // (NoAnswerBackoff.Interrupt).
-                _noAnswer.Interrupt();
+                // The reader has just edited the rules, and is waiting to see them at work: see
+                // FilterSync.Changed.
+                _filters.Changed();
 
                 return _core.SetRules(change.Rules, now);
 
@@ -503,13 +490,9 @@ public sealed class AlertEngine
     private void NewLink()
     {
         _resubscribe = true;
-        _refused.Clear();
+        _filters.NewLink();
         _core.ForgetRefusals();
-        _noAnswer.Lift();
     }
-
-    /// <summary>Whether the broker did not answer for the filters so lately that asking again now would only wait on it again.</summary>
-    private bool Pausing(DateTimeOffset now) => _noAnswer.Pausing(now);
 
     /// <summary>Whether the link up now came up since the engine last looked, and so is another link than the one it saw.</summary>
     // Told by when it came up, which is all that tells two links to one broker apart. The manager
@@ -568,29 +551,16 @@ public sealed class AlertEngine
     }
 
     /// <summary>Whether a filter an enabled rule wants, and the broker has not refused, is not held for the rules.</summary>
-    private bool FiltersMissing()
-    {
-        var held = HeldForRules();
+    private bool FiltersMissing() => _filters.Missing(Wanted());
 
+    private HashSet<string> Wanted()
+    {
+        var wanted = new HashSet<string>(StringComparer.Ordinal);
         foreach (var rule in _live)
-            if (rule.Enabled && !held.Contains(rule.Filter) && !_refused.Contains(rule.Filter))
-                return true;
+            if (rule.Enabled)
+                wanted.Add(rule.Filter);
 
-        return false;
-    }
-
-    /// <summary>The filters the subscriber holds on the rules' behalf, whoever else holds them too.</summary>
-    // Only what this engine owns. A filter the console put up is the console's business, and
-    // unsubscribing it because no rule wants it would empty the user's own Filters panel.
-    private HashSet<string> HeldForRules()
-    {
-        var held = new HashSet<string>(StringComparer.Ordinal);
-
-        foreach (var filter in _subscriber.Filters)
-            if (filter.Owners.HasFlag(SubscriptionOwner.Rules))
-                held.Add(filter.Filter);
-
-        return held;
+        return wanted;
     }
 
     /// <summary>
@@ -601,9 +571,6 @@ public sealed class AlertEngine
     // The spec's "Kuralın filtresi bir aboneliktir": without this the engine is deaf. The user
     // writes a rule, no message matching it is ever subscribed, the rule never fires, and nothing
     // anywhere says why — and in Docker there is nobody to open the Filters panel and notice.
-    //
-    // A diff and not a refresh. Re-sending the whole set every time would make the broker replay
-    // every retained value under every filter on each pass, which is an alarm storm on a timer.
     private async Task SyncSubscriptionsAsync(CancellationToken ct)
     {
         // Nothing can be subscribed on a client that is not connected — MqttnetSubscriber throws
@@ -611,101 +578,24 @@ public sealed class AlertEngine
         // went with the socket. The flag stays set, so the reconnect brings the whole set back.
         if (_connection.State != ConnectionState.Connected) return;
 
-        var wanted = new HashSet<string>(StringComparer.Ordinal);
+        var (done, refused) = await _filters.SyncAsync(Wanted(), ct);
+        if (done) _resubscribe = false;
+        if (refused.Count == 0) return;
+
+        var marked = false;
         foreach (var rule in _live)
-            if (rule.Enabled)
-                wanted.Add(rule.Filter);
-
-        var held = HeldForRules();
-
-        var missing = new List<SubscriptionRequest>();
-        foreach (var filter in wanted)
-            if (!held.Contains(filter) && !_refused.Contains(filter))
-                missing.Add(new SubscriptionRequest(filter, RuleQos));
-
-        var gone = new List<string>();
-        foreach (var filter in held)
-            if (!wanted.Contains(filter))
-                gone.Add(filter);
-
-        try
         {
-            // One SUBSCRIBE for the lot: the round trip costs the same whether it carries one
-            // filter or a hundred, and it is the round trip that makes subscribing in bulk slow.
-            if (missing.Count > 0)
-                await _subscriber.SubscribeAsync(missing, ct, SubscriptionOwner.Rules);
+            if (!rule.Enabled || !_filters.IsRefused(rule.Filter)) continue;
 
-            // One at a time, because that is the shape UNSUBSCRIBE has here — and because a
-            // filter the console also holds must survive, which is the subscriber's ownership
-            // arithmetic and not this loop's business.
-            foreach (var filter in gone)
-                await _subscriber.UnsubscribeAsync(filter, ct, SubscriptionOwner.Rules);
-
-            _resubscribe = false;
-            _noAnswer.Answered();
+            _core.MarkFilterRefused(rule.Id, rule.Filter);
+            marked = true;
         }
-        catch (MessageRejectedException refusal)
-        {
-            // An answer as much as a grant is, so the next silence is the first of a new run.
-            _noAnswer.Answered();
 
-            // The broker said no to these, so they are not asked for again on this link: it would
-            // say no again, once a second, for as long as the link lasted. Whatever else was in
-            // the packet is still wanted, so the flag stays up and the next turn asks for the
-            // rest — which is also how a session the broker closed over one filter comes back
-            // with the others.
-            // What the broker named, or — when it named nothing, which is what an older broker
-            // closing the session amounts to — everything this packet asked for. Either way the
-            // engine must come away knowing not to ask again, or the retry it was left with is
-            // the once-a-second loop this is here to end.
-            var refused = refusal.Filters.Count > 0
-                ? refusal.Filters
-                : [.. missing.Select(request => request.TopicFilter)];
-
-            foreach (var filter in refused) _refused.Add(filter);
-
-            var marked = false;
-            foreach (var rule in _live)
-            {
-                if (!rule.Enabled || !_refused.Contains(rule.Filter)) continue;
-
-                _core.MarkFilterRefused(rule.Id, rule.Filter);
-                marked = true;
-            }
-
-            // The panel is told at once rather than on the next thing that happens to change: a
-            // rule that will never be sent anything produces no arrivals and no ticks worth
-            // publishing for, so waiting for one would leave the reason unread for as long as the
-            // link lasted.
-            if (marked) Publish();
-
-            _log.LogWarning(refusal,
-                "The broker refused {Count} rule filter(s); they will not be asked for again on this link.",
-                refusal.Filters.Count);
-        }
-        catch (BrokerDidNotAnswerException silence)
-        {
-            // Not a refusal, and not for the very next turn either: see NoAnswerPause. The flag
-            // stays up, so the first turn after the pause asks again.
-            var pause = _noAnswer.NotAnswered(_time.GetUtcNow());
-
-            _log.LogWarning(silence,
-                "The broker did not answer for the rule subscriptions. They will be asked for again in {Seconds} seconds.",
-                pause.TotalSeconds);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
-        {
-            // Everything else — a link that went in the middle of the packet, a fault nobody
-            // foresaw. None of it may stop the pump, and none of it is permanent: the flag is
-            // left set, so the next turn asks again.
-            //
-            // A cancellation is one of these unless it is this pump's own. MQTTnet 5 can fail a
-            // SUBSCRIBE that was waiting when its keep-alive gave up on the link with the
-            // cancellation of its own receive loop, which is the link going and not the engine
-            // stopping.
-            _log.LogWarning(ex,
-                "The alert engine could not apply its rule subscriptions. It will try again.");
-        }
+        // The panel is told at once rather than on the next thing that happens to change: a
+        // rule that will never be sent anything produces no arrivals and no ticks worth
+        // publishing for, so waiting for one would leave the reason unread for as long as the
+        // link lasted.
+        if (marked) Publish();
     }
 
     private void Publish() => Volatile.Write(ref _snapshot, _core.Snapshot());
