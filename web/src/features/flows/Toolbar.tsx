@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, type FocusEvent, type KeyboardEvent } from 'react';
 import type { FlowDto } from '../../types/api';
 import { Warning } from '../brand/icons';
+import { titleOf } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
 import styles from './Toolbar.module.css';
 
@@ -175,7 +176,7 @@ export function Toolbar(props: Props) {
               <span className={styles.lamp} aria-hidden="true">
                 {refused.has(flow.id) && <Warning />}
               </span>
-              {flow.name.trim() || 'Untitled'}
+              {titleOf(flow)}
               {(changed.has(flow.id) || overtaken.has(flow.id)) && (
                 <span className={styles.changed} data-overtaken={overtaken.has(flow.id) ? '' : undefined} aria-hidden="true">
                   •

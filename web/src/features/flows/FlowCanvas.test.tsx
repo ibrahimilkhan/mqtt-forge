@@ -6,7 +6,7 @@ import { nodeKey, useFlowStatusStore } from '../../stores/flowStatusStore';
 import { server } from '../../test/server';
 import { renderWithClient as render } from '../../test/renderWithClient';
 import type { FlowDto, FlowStatusDto } from '../../types/api';
-import { standInForTheBrowser } from './canvasTestbed';
+import { forgetDrafts, standInForTheBrowser, withoutComments } from './canvasTestbed';
 import { DRAG_TYPE, FlowCanvas } from './FlowCanvas';
 import sheet from './FlowCanvas.module.css?raw';
 import { connect, removeEdges, type Problems } from './flowDocument';
@@ -18,7 +18,7 @@ afterAll(() => vi.unstubAllGlobals());
 
 beforeEach(() => {
   localStorage.clear();
-  useFlowDraftStore.setState({ drafts: {}, bases: {}, current: null, selected: null, refusals: {} });
+  forgetDrafts();
   useFlowStatusStore.setState(useFlowStatusStore.getInitialState());
 });
 
@@ -374,7 +374,7 @@ describe('flow canvas', () => {
   // written later wins: a flash after a pick, so a picked wire still lights, and a refusal after
   // both, so a busy wire cannot hide what the server refused.
   it('lets a picked wire light, and keeps a refused one marked while it does', () => {
-    const rules = sheet.replace(/\/\*[\s\S]*?\*\//g, '');
+    const rules = withoutComments(sheet);
     const at = (mark: string) => rules.indexOf(`.wire[data-${mark}]`);
 
     expect(at('selected')).toBeGreaterThan(-1);
@@ -386,7 +386,7 @@ describe('flow canvas', () => {
   // properties, the refusal, written later, took the pick's place, and the pick was gone. Each is
   // a shape of its own instead: the pick a ring standing off the node, the refusal its own edge.
   it('keeps the pick on a node the server refused, each mark a shape of its own', () => {
-    const rules = sheet.replace(/\/\*[\s\S]*?\*\//g, '');
+    const rules = withoutComments(sheet);
     const set = (mark: string) =>
       [...(new RegExp(String.raw`\.node\[data-${mark}\]\s*\{([^}]*)\}`).exec(rules)?.[1] ?? '').matchAll(/([\w-]+)\s*:/g)].map(
         ([, property]) => property,
@@ -401,7 +401,7 @@ describe('flow canvas', () => {
   // in its own selected colour by a rule that outweighs the marks above. It reads that colour from
   // a variable, so a lit wire and a refused one say their colour there too.
   it('keeps a clicked wire lit, and a refused one red', () => {
-    const rules = sheet.replace(/\/\*[\s\S]*?\*\//g, '');
+    const rules = withoutComments(sheet);
     const body = (mark: string) => new RegExp(String.raw`\.wire\[data-${mark}\]\s*\{([^}]*)\}`).exec(rules)?.[1] ?? '';
 
     expect(body('flash')).toMatch(/--xy-edge-stroke-selected:\s*var\(--signal\)/);

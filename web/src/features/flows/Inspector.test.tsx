@@ -9,6 +9,7 @@ import type { FlowDebugDto, FlowDto } from '../../types/api';
 import { useFlowDraftStore } from './flowDraftStore';
 import { Inspector } from './Inspector';
 import { Palette } from './Palette';
+import { forgetDrafts } from './canvasTestbed';
 
 const facts = { allowWebhooks: true, alertTopicPrefix: 'mqttforge/alerts/' };
 
@@ -36,7 +37,7 @@ function Inspecting({ running = true }: { running?: boolean }) {
 
 beforeEach(() => {
   localStorage.clear();
-  useFlowDraftStore.setState({ drafts: {}, bases: {}, current: 'watch', selected: null, refusals: {} });
+  forgetDrafts('watch');
   useFlowStatusStore.setState(useFlowStatusStore.getInitialState());
 });
 

@@ -1,11 +1,35 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { getFlows, isFlowInvalid, putFlow } from '../../api/flows';
 import { queryKeys } from '../../api/queryKeys';
 import { ApiError, describeError } from '../../lib/problemDetails';
 import { logFault } from '../../stores/logStore';
 import type { FlowDto, FlowsDto } from '../../types/api';
-import { fingerprint, sameFlow, standingOf } from './flowDocument';
+import { fingerprint, sameFlow, standingOf, titleOf } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
+
+/**
+ * Puts what the server now has of one flow into the list the page reads — `kept`, or nothing once
+ * it is deleted — with no problems filed against it, without waiting for the read that follows.
+ *
+ * A read of the list already on its way — the window came back into focus, say — was answered
+ * before this, and let in after it would put the old flow back. So it is called off first.
+ */
+export async function putInList(queryClient: QueryClient, id: string, kept: FlowDto | null) {
+  await queryClient.cancelQueries({ queryKey: queryKeys.flows });
+  queryClient.setQueryData<FlowsDto>(queryKeys.flows, (old) => {
+    if (!old) return old;
+
+    const others = old.flows.filter((one) => one.id !== id);
+    // A kept flow stays where it was in the list, so its tab does not move.
+    const flows =
+      kept === null
+        ? others
+        : old.flows.some((one) => one.id === id)
+          ? old.flows.map((one) => (one.id === id ? kept : one))
+          : [...old.flows, kept];
+    return { ...old, flows, problems: old.problems.filter((problem) => problem.flowId !== id) };
+  });
+}
 
 /** A flow the server refused, by its id and by the name it was sent with. */
 export type Refused = { id: string; name: string };
@@ -80,19 +104,8 @@ export function useDeploy() {
         try {
           const { flow: kept } = await putFlow(flow);
 
-          // A read of the list already on its way — the window came back into focus, say — was
-          // answered before this flow was kept. Let in after the write below, it would put the
-          // old flow back under a tab whose draft is about to go.
-          await queryClient.cancelQueries({ queryKey: queryKeys.flows });
-          queryClient.setQueryData<FlowsDto>(queryKeys.flows, (old) =>
-            old && {
-              ...old,
-              flows: old.flows.some((one) => one.id === kept.id)
-                ? old.flows.map((one) => (one.id === kept.id ? kept : one))
-                : [...old.flows, kept],
-              problems: old.problems.filter((problem) => problem.flowId !== kept.id),
-            },
-          );
+          // Before its draft goes, so the tab never shows the old flow in between.
+          await putInList(queryClient, kept.id, kept);
 
           // What was typed while the request was out is an edit of the copy just kept.
           const store = useFlowDraftStore.getState();
@@ -102,7 +115,7 @@ export function useDeploy() {
         } catch (error) {
           if (!isFlowInvalid(error)) throw error;
           useFlowDraftStore.getState().refuse(flow.id, error.errors ?? { flow: [error.message] });
-          refused.push({ id: flow.id, name: flow.name.trim() || 'Untitled' });
+          refused.push({ id: flow.id, name: titleOf(flow) });
         }
       }
 

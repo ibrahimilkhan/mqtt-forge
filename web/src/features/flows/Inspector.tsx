@@ -7,17 +7,17 @@ import { Field } from '../../components/Field';
 import { nodeKey, useFlowStatusStore } from '../../stores/flowStatusStore';
 import { logFault } from '../../stores/logStore';
 import panel from '../../styles/panel.module.css';
-import type { FlowDto, FlowNodeDto, FlowsDto } from '../../types/api';
+import type { FlowDto, FlowNodeDto } from '../../types/api';
+import { clock } from '../alerts/AlertsPanel';
 import { Failures } from './failures';
 import { focusCanvas } from './FlowCanvas';
-import { fingerprint, removeNodes, setConfig, type Problems } from './flowDocument';
+import { fingerprint, removeNodes, setConfig, titleOf, type Problems } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
-import { NodeSettings } from './NodeSettings';
+import { NodeSettings, type Facts } from './NodeSettings';
 import { specOf } from './nodeTypes';
 import { focusShownTab } from './Toolbar';
+import { putInList } from './useDeploy';
 import styles from './Inspector.module.css';
-
-type Facts = { allowWebhooks: boolean; alertTopicPrefix: string };
 
 type Props = {
   flow: FlowDto;
@@ -176,19 +176,9 @@ function FlowPane({ flow, deployed, running, overtaken, problems }: FlowPaneProp
     // handed the callbacks of the latest render, and by the time the answer comes the reader may
     // be looking at another flow.
     onSuccess: async (_, id) => {
-      // A read of the list already out was answered before the delete, and would put the flow back.
-      await queryClient.cancelQueries({ queryKey: queryKeys.flows });
       // Out of the list at once, not when the read after the delete comes back: until then its tab
       // would stay, and the page would go on showing the flow that is gone.
-      queryClient.setQueryData<FlowsDto>(
-        queryKeys.flows,
-        (old) =>
-          old && {
-            ...old,
-            flows: old.flows.filter((one) => one.id !== id),
-            problems: old.problems.filter((problem) => problem.flowId !== id),
-          },
-      );
+      await putInList(queryClient, id, null);
       discard(id);
       useFlowStatusStore.getState().forget(id);
       void queryClient.invalidateQueries({ queryKey: queryKeys.flows });
@@ -213,7 +203,7 @@ function FlowPane({ flow, deployed, running, overtaken, problems }: FlowPaneProp
   return (
     <>
       <div className={styles.paneHead}>
-        <h3 className={styles.title}>{flow.name.trim() || 'Untitled'}</h3>
+        <h3 className={styles.title}>{titleOf(flow)}</h3>
       </div>
 
       {/* Sent as it stands, this draft would undo what another console deployed, or bring back a
@@ -305,10 +295,6 @@ function FlowPane({ flow, deployed, running, overtaken, problems }: FlowPaneProp
     </>
   );
 }
-
-/** Hours and minutes, the way the alerts panel says a time. */
-const clock = (at: string) =>
-  new Date(at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
 
 function Standing({ flowId, nodeId }: { flowId: string; nodeId: string }) {
   const standing = useFlowStatusStore((state) => state.nodes[nodeKey(flowId, nodeId)]?.standing);

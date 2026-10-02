@@ -22,7 +22,7 @@ import { afterAll, beforeAll, it, vi } from 'vitest';
 import './styles/global.css';
 import { App } from './App';
 import { queryKeys } from './api/queryKeys';
-import { standInForTheBrowser } from './features/flows/canvasTestbed';
+import { forgetDrafts, standInForTheBrowser } from './features/flows/canvasTestbed';
 import { exampleFlows } from './features/flows/examples';
 import { NODE_WIDTH } from './features/flows/FlowCanvas';
 import { useFlowDraftStore } from './features/flows/flowDraftStore';
@@ -271,7 +271,7 @@ async function console_(title, { flow, picked, down, changing = null }) {
   useAlertStore.setState({ active: ALARMS });
 
   const drafts = useFlowDraftStore.getState();
-  useFlowDraftStore.setState({ drafts: {}, bases: {}, current: null, selected: null, refusals: {}, unkept: false });
+  forgetDrafts();
   if (changing) drafts.edit(flow, changing);
   drafts.show(flow.id);
   drafts.select(picked);

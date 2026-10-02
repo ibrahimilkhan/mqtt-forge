@@ -11,7 +11,7 @@ import panelStyles from '../../styles/panel.module.css';
 import { server } from '../../test/server';
 import { renderWithClient as render } from '../../test/renderWithClient';
 import type { FlowDebugDto, FlowDto, FlowNodeDto, FlowsDto, FlowStatusDto } from '../../types/api';
-import { standInForTheBrowser } from './canvasTestbed';
+import { forgetDrafts, standInForTheBrowser, withoutComments } from './canvasTestbed';
 import { DebugStrip } from './DebugStrip';
 import strip from './DebugStrip.module.css';
 import stripSheet from './DebugStrip.module.css?raw';
@@ -29,7 +29,7 @@ afterAll(() => vi.unstubAllGlobals());
 
 beforeEach(() => {
   localStorage.clear();
-  useFlowDraftStore.setState({ drafts: {}, bases: {}, current: null, selected: null, refusals: {}, unkept: false });
+  forgetDrafts();
   useFlowStatusStore.setState(useFlowStatusStore.getInitialState());
   useFlowAlarmStore.setState({ asked: null });
 });
@@ -63,7 +63,7 @@ const watchHasSeen = (count: number): FlowStatusDto => ({
 
 /** What a stylesheet declares for one selector, its comments left out. */
 function ruleOf(sheet: string, selector: string) {
-  const rules = sheet.replace(/\/\*[\s\S]*?\*\//g, '');
+  const rules = withoutComments(sheet);
   const at = rules.indexOf(`${selector} {`);
   return at < 0 ? '' : rules.slice(at + selector.length, rules.indexOf('}', at));
 }
@@ -85,6 +85,13 @@ const refusal = (errors: Record<string, string[]>) =>
   HttpResponse.json(
     { title: 'The flow was not deployed', detail: Object.values(errors)[0][0], reason: 'flowInvalid', errors },
     { status: 400, headers: { 'Content-Type': 'application/problem+json' } },
+  );
+
+/** The answer the server gives a request it could not carry out: a file it could not write, say. */
+const couldNot = (detail: string, status = 500) =>
+  HttpResponse.json(
+    { title: 'Could not do that', detail, reason: 'flowsNotSaved' },
+    { status, headers: { 'Content-Type': 'application/problem+json' } },
   );
 
 /** A server that keeps what it is sent, the way the real one does. `reads` counts the lists it has sent. */
@@ -163,12 +170,7 @@ describe('Flows page', () => {
   it('marks what the server refused and keeps the draft', async () => {
     keeping([watch]);
     server.use(
-      http.put('/api/flows/watch', () =>
-        HttpResponse.json(
-          { title: 'The flow was not deployed', detail: 'Pick a test.', reason: 'flowInvalid', errors: { 'node:test': ['Pick a test.'] } },
-          { status: 400, headers: { 'Content-Type': 'application/problem+json' } },
-        ),
-      ),
+      http.put('/api/flows/watch', () => refusal({ 'node:test': ['Pick a test.'] })),
     );
     render(<FlowsPage />);
 
@@ -241,19 +243,6 @@ describe('Flows page', () => {
     expect(await screen.findByText('412 in')).toBeInTheDocument();
     expect(screen.getByText('yes 3 · no 409')).toBeInTheDocument();
     expect(screen.getByText('Running.')).toBeInTheDocument();
-  });
-
-  it('prints the debug lines of the flow on screen', async () => {
-    keeping([watch]);
-    render(<FlowsPage />);
-    await screen.findByText('Boiler watch', { selector: 'h3' });
-
-    useFlowStatusStore.getState().addDebug(
-      [{ flowId: 'watch', nodeId: 'in', at: '2026-09-26T09:14:22Z', kind: 'message', topic: 'plant/k1/temp', text: '{"temp":94.2}' }],
-      0,
-    );
-
-    expect(await screen.findByText('{"temp":94.2}')).toBeInTheDocument();
   });
 
   it('says a flows file the server cannot read, and draws nothing over it', async () => {
@@ -360,26 +349,6 @@ describe('Flows page', () => {
     await screen.findByRole('button', { name: 'Deploy' });
     expect(kept[0].name).toBe('Boiler watch 2');
     expect(screen.getByRole('tab', { name: 'Boiler watch, not running, changes not deployed' })).toBeInTheDocument();
-    expect(screen.getByText('1 change')).toBeInTheDocument();
-  });
-
-  // The page covers the log, so a deploy that did not go through says why where it was pressed.
-  it('says why a deploy did not go through', async () => {
-    keeping([watch]);
-    server.use(
-      http.put('/api/flows/watch', () =>
-        HttpResponse.json(
-          { title: 'Could not save the flows', detail: 'The disk is full.', reason: 'flowsNotSaved' },
-          { status: 500, headers: { 'Content-Type': 'application/problem+json' } },
-        ),
-      ),
-    );
-    render(<FlowsPage />);
-
-    await userEvent.click(await screen.findByRole('checkbox', { name: 'Run it once deployed' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
-
-    expect(await screen.findByText('Not deployed. The disk is full.')).toBeInTheDocument();
     expect(screen.getByText('1 change')).toBeInTheDocument();
   });
 
@@ -859,7 +828,7 @@ describe('the debug strip', () => {
     expect(within(empty).getByText('no topic')).toHaveClass(strip.none);
     expect(within(empty).getByText('empty payload')).toHaveClass(strip.none);
     expect(within(error).getByText('The flow stopped.')).not.toHaveClass(strip.none);
-    expect(stripSheet.replace(/\/\*[\s\S]*?\*\//g, '')).toMatch(/\.none\s*\{[^}]*[{;\s]color:\s*var\(--muted\)/);
+    expect(withoutComments(stripSheet)).toMatch(/\.none\s*\{[^}]*[{;\s]color:\s*var\(--muted\)/);
   });
 
   // The line's colour says it is an error only to a reader who can tell its red from the ink.
@@ -987,10 +956,7 @@ describe('deploying', () => {
     server.use(
       http.put('/api/flows/watch', async ({ request }) => {
         puts.push((await request.json()) as FlowDto);
-        return HttpResponse.json(
-          { title: 'Could not save the flows', detail: 'The disk is full.', reason: 'flowsNotSaved' },
-          { status: 500, headers: { 'Content-Type': 'application/problem+json' } },
-        );
+        return couldNot('The disk is full.');
       }),
     );
     useFlowDraftStore.getState().edit(watch, (flow) => ({ ...flow, name: 'Boiler watch 2' }));
@@ -1586,12 +1552,6 @@ describe('a draft and the server\'s copy', () => {
 });
 
 /** The answer the server gives a request it could not carry out, for a reason that is not about the flow. */
-const couldNot = (detail: string, status = 500) =>
-  HttpResponse.json(
-    { title: 'Could not do that', detail, reason: 'flowsNotSaved' },
-    { status, headers: { 'Content-Type': 'application/problem+json' } },
-  );
-
 /** The line under the tabs that says what did not go through, as a screen reader is told it. */
 const outcome = (text: string | RegExp) => screen.getByText(text).closest('[aria-live="polite"]');
 

@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyFlow, fingerprint } from './flowDocument';
 import { createFlowDraftStore, DRAFT_PREFIX, useFlowDraftStore } from './flowDraftStore';
+import { forgetDrafts } from './canvasTestbed';
 
 beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
-  useFlowDraftStore.setState({ drafts: {}, bases: {}, current: null, selected: null, refusals: {}, unkept: false });
+  forgetDrafts();
 });
 
 /** The store as a page opened now would have it: a second copy, read afresh from what storage holds. */

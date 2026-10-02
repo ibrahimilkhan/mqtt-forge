@@ -23,6 +23,7 @@ import {
   placesInView,
   problemsOf,
   standingOf,
+  titleOf,
   withDrafts,
   type DraftStanding,
   type Problems,
@@ -110,7 +111,7 @@ function Page() {
         const flow =
           useFlowDraftStore.getState().drafts[flowId] ??
           queryClient.getQueryData<FlowsDto>(queryKeys.flows)?.flows.find((one) => one.id === flowId);
-        const name = flow ? flow.name.trim() || 'Untitled' : flowId;
+        const name = flow ? titleOf(flow) : flowId;
         setFailed((was) => ({ ...was, [attempt]: { name, reason: describeError(error) } }));
       },
     }),

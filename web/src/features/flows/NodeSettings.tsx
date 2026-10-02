@@ -2,11 +2,12 @@ import { Field } from '../../components/Field';
 import { QosSelect } from '../../components/QosSelect';
 import { Segmented } from '../../components/Segmented';
 import panel from '../../styles/panel.module.css';
-import type { FlowNodeDto } from '../../types/api';
-import { IF_TESTS, isNodeType, levelOf, SEVERITIES, TEMPLATE_HELP } from './nodeTypes';
+import type { FlowNodeDto, FlowsDto } from '../../types/api';
+import { IF_TESTS, isNodeType, levelOf, SEVERITIES, TEMPLATE_HELP, textOf } from './nodeTypes';
 import styles from './Inspector.module.css';
 
-type Facts = { allowWebhooks: boolean; alertTopicPrefix: string };
+/** What the server says about this host that the forms need: whether webhooks may be sent, and where alarms are published. */
+export type Facts = Pick<FlowsDto, 'allowWebhooks' | 'alertTopicPrefix'>;
 
 type Props = {
   flowId: string;
@@ -24,8 +25,7 @@ type Props = {
 export function NodeSettings({ flowId, node, set, facts }: Props) {
   const config = node.config;
   const id = (name: string) => `${flowId}-${node.id}-${name}`;
-  const text = (name: string) =>
-    typeof config[name] === 'string' ? (config[name] as string) : typeof config[name] === 'number' ? String(config[name]) : '';
+  const text = (name: string) => textOf(config[name]);
   const flag = (name: string) => config[name] === true;
 
   const box = (name: string, label: string, placeholder = '', mono = true) => (

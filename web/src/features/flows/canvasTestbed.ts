@@ -1,4 +1,5 @@
 import { vi } from 'vitest';
+import { useFlowDraftStore } from './flowDraftStore';
 
 /**
  * What React Flow needs from a browser that jsdom does not have: something to measure elements
@@ -78,3 +79,11 @@ export function standInForTheBrowser() {
   (SVGElement.prototype as unknown as { getBBox: () => DOMRect }).getBBox = () =>
     ({ x: 0, y: 0, width: 0, height: 0 }) as DOMRect;
 }
+
+/** No drafts, nothing refused, nothing picked: the draft store as a page that has never been opened finds it. */
+export function forgetDrafts(current: string | null = null) {
+  useFlowDraftStore.setState({ drafts: {}, bases: {}, current, selected: null, refusals: {}, unkept: false });
+}
+
+/** A stylesheet with its comments left out, so a test reads only what it declares. */
+export const withoutComments = (sheet: string) => sheet.replace(/\/\*[\s\S]*?\*\//g, '');

@@ -13,7 +13,7 @@ import {
   UnknownGlyph,
 } from './glyphs';
 
-export type NodeGroup = 'Triggers' | 'Logic' | 'Actions';
+type NodeGroup = 'Triggers' | 'Logic' | 'Actions';
 
 /** The palette's three headings, in the order a flow reads: what starts it, what it decides, what it does. */
 export const GROUPS: readonly NodeGroup[] = ['Triggers', 'Logic', 'Actions'];
@@ -72,12 +72,13 @@ export const levelOf = (value: unknown) => SEVERITIES.find((one) => one.value ==
 /** Every placeholder a Publish or an Alarm can fill in, as the inspector lists them. */
 export const TEMPLATE_HELP = '{{topic}}  {{topic[1]}}  {{payload}}  {{$.field}}  {{index}}  {{now}}  {{random(80,95)}}';
 
-const text = (value: unknown) =>
+/** A setting as the text a box shows: a number typed in is kept as either. */
+export const textOf = (value: unknown) =>
   typeof value === 'string' ? value : typeof value === 'number' ? String(value) : '';
 
 /** A number typed into a box arrives as its text; either is read the way the server reads it. */
 const number = (value: unknown) => {
-  const read = typeof value === 'number' ? value : Number.parseFloat(text(value));
+  const read = typeof value === 'number' ? value : Number.parseFloat(textOf(value));
   return Number.isFinite(read) ? read : 0;
 };
 
@@ -102,7 +103,7 @@ export const NODE_SPECS: Record<FlowNodeType, KnownSpec> = {
     ins: [],
     outs: ['out'],
     defaults: () => ({ filter: '', replay: false }),
-    summary: (config) => text(config.filter) || 'no filter yet',
+    summary: (config) => textOf(config.filter) || 'no filter yet',
     status: (status) => withErrors(`${status.count} in`, status),
   },
   every: {
@@ -126,7 +127,7 @@ export const NODE_SPECS: Record<FlowNodeType, KnownSpec> = {
     ins: [],
     outs: ['out'],
     defaults: () => ({ topic: '', payload: '' }),
-    summary: (config) => text(config.topic) || text(config.payload) || 'an empty message',
+    summary: (config) => textOf(config.topic) || textOf(config.payload) || 'an empty message',
     status: (status) => withErrors(`${status.count} sent`, status),
   },
   if: {
@@ -139,10 +140,10 @@ export const NODE_SPECS: Record<FlowNodeType, KnownSpec> = {
     outs: ['yes', 'no'],
     defaults: () => ({ field: '', test: 'gt', value: '', value2: '' }),
     summary: (config) => {
-      const field = text(config.field) || 'payload';
+      const field = textOf(config.field) || 'payload';
       if (config.test === 'exists') return `${field} exists`;
-      if (config.test === 'between') return `${field} between ${text(config.value)} and ${text(config.value2)}`;
-      return `${field} ${testLabel(config.test)} ${text(config.value)}`.trim();
+      if (config.test === 'between') return `${field} between ${textOf(config.value)} and ${textOf(config.value2)}`;
+      return `${field} ${testLabel(config.test)} ${textOf(config.value)}`.trim();
     },
     status: (status) => {
       const skipped = out(status, 'skipped');
@@ -159,7 +160,7 @@ export const NODE_SPECS: Record<FlowNodeType, KnownSpec> = {
     ins: ['in'],
     outs: ['out'],
     defaults: () => ({ field: '' }),
-    summary: (config) => `each of ${text(config.field) || 'the payload'}`,
+    summary: (config) => `each of ${textOf(config.field) || 'the payload'}`,
     status: (status) => withErrors(`${out(status, 'out')} out`, status),
   },
   repeat: {
@@ -198,7 +199,7 @@ export const NODE_SPECS: Record<FlowNodeType, KnownSpec> = {
       qos: 1,
       retain: false,
     }),
-    summary: (config) => `${levelOf(config.severity) ?? 'no level'} · ${text(config.name) || 'Alarm'}`,
+    summary: (config) => `${levelOf(config.severity) ?? 'no level'} · ${textOf(config.name) || 'Alarm'}`,
     status: (status) => withErrors(`${status.standing.length} up · ${out(status, 'raised')} raised`, status),
   },
   publish: {
@@ -210,7 +211,7 @@ export const NODE_SPECS: Record<FlowNodeType, KnownSpec> = {
     ins: ['in'],
     outs: [],
     defaults: () => ({ topic: '', payload: '', qos: 0, retain: false }),
-    summary: (config) => text(config.topic) || 'no topic yet',
+    summary: (config) => textOf(config.topic) || 'no topic yet',
     status: (status) => withErrors(`${out(status, 'sent')} sent`, status),
   },
   debug: {
