@@ -71,7 +71,7 @@ export function useDeploy() {
       const going = now.unreadable
         ? []
         : flows.filter(
-            (flow) => standingOf(flow, flow.id in bases ? bases[flow.id] : undefined, copies.get(flow.id)) === 'changed',
+            (flow) => standingOf(flow, bases[flow.id] ?? null, copies.get(flow.id)) === 'changed',
           );
 
       const refused: Refused[] = [];
@@ -97,7 +97,7 @@ export function useDeploy() {
           // What was typed while the request was out is an edit of the copy just kept.
           const store = useFlowDraftStore.getState();
           const since = store.drafts[flow.id];
-          store.deployed(flow.id);
+          store.settle([flow.id]);
           if (since !== undefined && !sameFlow(since, flow)) store.put(since, fingerprint(kept));
         } catch (error) {
           if (!isFlowInvalid(error)) throw error;

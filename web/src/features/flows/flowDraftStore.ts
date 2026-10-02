@@ -9,14 +9,7 @@ export const DRAFT_PREFIX = 'mqttforge.flows.draft.';
 const CURRENT_KEY = 'mqttforge.flows.current';
 
 /**
- * Where every draft was kept together, with the flow on screen, before each draft had a key of its
- * own: zustand's persist wrote `{ state: { drafts, current }, version: 0 }` here. Read once, moved,
- * and removed.
- */
-const OLD_KEY = 'mqttforge.flows.drafts';
-
-/**
- * The shape a draft is kept in: `{ version, flow, base }`, `base` left out when it is not known. A
+ * The shape a draft is kept in: `{ version, flow, base }`. A
  * draft kept in a newer shape was written by a newer build of the console, in another tab or before
  * a downgrade; it is left where it is, unread.
  */
@@ -29,7 +22,7 @@ type DraftState = {
    * The copy on the server each draft was started from, as flowDocument's fingerprint of it; null
    * for a flow started here, which the server never had. The server sends no version of a flow, so
    * this is how the page tells a draft of the copy the server has from one of a copy it has since
-   * replaced (see standingOf). A draft with no entry was kept before drafts remembered this.
+   * replaced (see standingOf). Every draft has one.
    */
   bases: Record<string, string | null>;
   /** The flow on screen. */
@@ -53,17 +46,18 @@ type DraftState = {
    */
   put: (flow: FlowDto, base?: string | null) => void;
   /**
-   * These drafts hold nothing of the reader's any more — see standingOf — and go, with their
-   * refusals. Unlike a discard, the flow on screen and the node picked stay: the reader is where they
-   * were, looking at the same flow, which is now simply the server's copy.
+   * These drafts hold nothing of the reader's any more — the server has them now, or they say what
+   * it has (see standingOf) — and go, with their refusals. Unlike a discard, the flow on screen and
+   * the node picked stay: the reader is where they were, looking at the same flow, which is now
+   * simply the server's copy.
    */
   settle: (flowIds: readonly string[]) => void;
-  /**
-   * The draft now counts as made on the copy `base` fingerprints: the reader chose to keep it over
-   * that copy, or the page placed a draft that did not know where it started.
-   */
+  /** The draft now counts as made on the copy `base` fingerprints: the reader chose to keep it over that copy. */
   rebase: (flowId: string, base: string | null) => void;
-  /** Throws a flow's edits away. Clears the selection too, but only if this is the flow on screen. */
+  /**
+   * Throws a flow's draft away: its edits, or the whole flow once it has been deleted. Clears the
+   * selection too, but only if this is the flow on screen.
+   */
   discard: (id: string) => void;
   show: (id: string | null) => void;
   select: (nodeId: string | null) => void;
@@ -73,10 +67,6 @@ type DraftState = {
    * about a flow, and that draft is no longer there to be refused, so the refusals go.
    */
   lapse: (flowIds: readonly string[]) => void;
-  /** The server has the flow now; there is nothing left to keep here. */
-  deployed: (flowId: string) => void;
-  /** The flow was deleted. */
-  forget: (flowId: string) => void;
 };
 
 /*
@@ -151,17 +141,15 @@ function isWholeFlow(value: unknown): value is FlowDto {
 
 const keyOf = (flowId: string) => DRAFT_PREFIX + flowId;
 
-/** A draft as it is kept: the flow, and the copy on the server it was started from, when that is known. */
-type Kept = { flow: FlowDto; base: string | null | undefined };
+/** A draft as it is kept: the flow, and the copy on the server it was started from. */
+type Kept = { flow: FlowDto; base: string | null };
 
-const kept = (flow: FlowDto, base: string | null | undefined) =>
-  JSON.stringify(base === undefined ? { version: VERSION, flow } : { version: VERSION, flow, base });
+const kept = (flow: FlowDto, base: string | null) => JSON.stringify({ version: VERSION, flow, base });
 
 /**
  * What one key holds: its draft; `later` for a draft a newer build kept, which is left for it; or
- * null for anything else — nothing, text that is not a draft, a flow short of something, or one
- * kept under another flow's key — which no build can use. A start that is not one is taken as not
- * known, which is no reason to lose the draft.
+ * null for anything else — nothing, text that is not a draft, a flow short of something or of its
+ * start, or one kept under another flow's key — which no build can use.
  */
 function draftIn(key: string, text: string | null): Kept | 'later' | null {
   if (text === null) return null;
@@ -176,8 +164,9 @@ function draftIn(key: string, text: string | null): Kept | 'later' | null {
   if (!isRecord(value)) return null;
   if (typeof value.version === 'number' && value.version > VERSION) return 'later';
   if (value.version !== VERSION || !isWholeFlow(value.flow) || keyOf(value.flow.id) !== key) return null;
+  if (value.base !== null && !isText(value.base)) return null;
 
-  return { flow: value.flow, base: value.base === null || isText(value.base) ? value.base : undefined };
+  return { flow: value.flow, base: value.base };
 }
 
 /** Every draft storage holds, each under its own key. What no build can use is taken out on the way. */
@@ -192,52 +181,15 @@ function draftsKept(): Pick<DraftState, 'drafts' | 'bases'> {
     if (draft === null) write(local, key, null);
     else if (draft !== 'later') {
       drafts[draft.flow.id] = draft.flow;
-      if (draft.base !== undefined) bases[draft.flow.id] = draft.base;
+      bases[draft.flow.id] = draft.base;
     }
   }
 
   return { drafts, bases };
 }
 
-/**
- * Moves what was kept all together under the old key to where it is kept now: each draft to a key
- * of its own, and the flow that was on screen to this tab. Only whole flows move, and a draft
- * already under its own key was written since, so it stays. The drafts that moved are handed back
- * as well, so a storage too full to take them still has them on screen for this visit — and says
- * so, since the next visit will not.
- */
-function moveOld(): { moved: Record<string, FlowDto>; unkept: boolean } {
-  const text = read(local, OLD_KEY);
-  if (text === null) return { moved: {}, unkept: false };
-
-  let old: unknown = null;
-  try {
-    old = JSON.parse(text);
-  } catch {
-    // Nothing in it can be read, so there is nothing to move.
-  }
-
-  const state = isRecord(old) && isRecord(old.state) ? old.state : {};
-  const drafts: Record<string, FlowDto> = {};
-  let unkept = false;
-
-  // Kept with no start: these drafts never knew one.
-  for (const flow of Object.values(isRecord(state.drafts) ? state.drafts : {})) {
-    if (!isWholeFlow(flow) || read(local, keyOf(flow.id)) !== null) continue;
-    drafts[flow.id] = flow;
-    if (!write(local, keyOf(flow.id), kept(flow, undefined))) unkept = true;
-  }
-
-  if (isText(state.current) && read(session, CURRENT_KEY) === null) write(session, CURRENT_KEY, state.current);
-  write(local, OLD_KEY, null);
-  return { moved: drafts, unkept };
-}
-
 const without = <T>(record: Record<string, T>, ...keys: readonly string[]): Record<string, T> =>
   Object.fromEntries(Object.entries(record).filter(([id]) => !keys.includes(id)));
-
-/** What is known of a draft's start: its entry, or undefined when there is none. */
-const baseOf = (bases: Record<string, string | null>, id: string) => (id in bases ? bases[id] : undefined);
 
 /**
  * What the page has changed and not deployed.
@@ -257,16 +209,15 @@ const baseOf = (bases: Record<string, string | null>, id: string) => (id in base
  * A factory, so a test can open a second tab on the same storage.
  */
 export function createFlowDraftStore() {
-  const { moved, unkept } = moveOld();
   const stored = draftsKept();
 
   const store = create<DraftState>()((set) => ({
-    drafts: { ...moved, ...stored.drafts },
+    drafts: stored.drafts,
     bases: stored.bases,
     current: read(session, CURRENT_KEY),
     selected: null,
     refusals: {},
-    unkept,
+    unkept: false,
 
     edit: (base, change) =>
       set((state) => {
@@ -306,26 +257,7 @@ export function createFlowDraftStore() {
 
     refuse: (flowId, errors) => set((state) => ({ refusals: { ...state.refusals, [flowId]: errors } })),
 
-    lapse: (flowIds) =>
-      set((state) => ({
-        refusals: Object.fromEntries(Object.entries(state.refusals).filter(([id]) => !flowIds.includes(id))),
-      })),
-
-    deployed: (flowId) =>
-      set((state) => ({
-        drafts: without(state.drafts, flowId),
-        bases: without(state.bases, flowId),
-        refusals: without(state.refusals, flowId),
-      })),
-
-    forget: (flowId) =>
-      set((state) => ({
-        drafts: without(state.drafts, flowId),
-        bases: without(state.bases, flowId),
-        refusals: without(state.refusals, flowId),
-        current: state.current === flowId ? null : state.current,
-        selected: state.current === flowId ? null : state.selected,
-      })),
+    lapse: (flowIds) => set((state) => ({ refusals: without(state.refusals, ...flowIds) })),
   }));
 
   // True while this store takes in another tab's write, which is already in storage.
@@ -338,8 +270,8 @@ export function createFlowDraftStore() {
     if (state.drafts !== before.drafts || state.bases !== before.bases)
       for (const id of new Set([...Object.keys(before.drafts), ...Object.keys(state.drafts)])) {
         const draft = state.drafts[id];
-        const base = baseOf(state.bases, id);
-        if (draft === before.drafts[id] && base === baseOf(before.bases, id)) continue;
+        const base = state.bases[id] ?? null;
+        if (draft === before.drafts[id] && base === (before.bases[id] ?? null)) continue;
 
         if (!write(local, keyOf(id), draft ? kept(draft, base) : null)) refused = true;
       }
@@ -378,11 +310,8 @@ export function createFlowDraftStore() {
         // A draft this tab already has, word for word, stays the object it is: what the page has
         // worked out about a flow is kept against its object.
         const same = sameFlow(draft.flow, drafts[id]);
-        if (same && draft.base === baseOf(bases, id)) return;
-        next = {
-          drafts: same ? drafts : { ...drafts, [id]: draft.flow },
-          bases: draft.base === undefined ? without(bases, id) : { ...bases, [id]: draft.base },
-        };
+        if (same && draft.base === bases[id]) return;
+        next = { drafts: same ? drafts : { ...drafts, [id]: draft.flow }, bases: { ...bases, [id]: draft.base } };
       }
     }
 

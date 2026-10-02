@@ -195,6 +195,7 @@ describe('inspector', () => {
         return new HttpResponse(null, { status: 204 });
       }),
     );
+    useFlowDraftStore.getState().put({ ...watch, name: 'Boiler watch 2' });
     render(<Inspecting />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Delete flow' }));
@@ -202,7 +203,8 @@ describe('inspector', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Delete it' }));
     await vi.waitFor(() => expect(deleted).toHaveBeenCalledOnce());
-    expect(useFlowDraftStore.getState().current).toBeNull();
+    // Its draft goes with it: kept, it would bring the flow back with the next Deploy.
+    await vi.waitFor(() => expect(useFlowDraftStore.getState().drafts).toEqual({}));
   });
 
   // What a flow printed is kept per flow until its strip is cleared, and a deleted flow's strip is

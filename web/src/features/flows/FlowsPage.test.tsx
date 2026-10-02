@@ -1509,21 +1509,6 @@ describe('a draft and the server\'s copy', () => {
     expect(screen.queryByRole('tab', { name: /^Boiler watch/ })).not.toBeInTheDocument();
   });
 
-  // Drafts kept before they remembered where they started are taken to be of the copy the server
-  // has when the page first reads it, as they always were, and are held to it from then on.
-  it('places a draft kept before drafts remembered their start on the copy the server has now', async () => {
-    const { kept } = keeping([watch]);
-    localStorage.setItem(DRAFT_PREFIX + 'watch', JSON.stringify({ version: 1, flow: { ...watch, name: 'Boiler watch 2' } }));
-    vi.resetModules();
-    const { default: Reopened } = await import('./FlowsPage');
-    const { queryClient } = render(<Reopened />);
-
-    expect(await screen.findByText('1 change')).toBeInTheDocument();
-
-    await elsewhere(queryClient, () => (kept[0] = v2));
-    expect(await screen.findByText('1 held back')).toBeInTheDocument();
-  });
-
   /*
    * Two consoles side by side on two screens: neither is ever brought back into focus, and neither
    * hears the other deploy, so the list the page read last is all it knows. Deploy reads the list
@@ -1926,7 +1911,8 @@ describe('drafts kept from an earlier visit', () => {
   // flow on screen, took the page down on every open, and a reload landed on it again.
   it('open the page when one of them is not a whole flow', async () => {
     keeping([watch]);
-    localStorage.setItem('mqttforge.flows.drafts', JSON.stringify({ state: { drafts: { broken: { id: 'broken' } }, current: 'broken' }, version: 0 }));
+    localStorage.setItem(`${DRAFT_PREFIX}broken`, JSON.stringify({ version: 1, flow: { id: 'broken' }, base: null }));
+    sessionStorage.setItem('mqttforge.flows.current', 'broken');
     vi.resetModules();
     const { default: Reopened } = await import('./FlowsPage');
 

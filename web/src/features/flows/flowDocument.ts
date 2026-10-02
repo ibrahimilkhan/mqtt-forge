@@ -259,17 +259,13 @@ function hashOf(text: string): string {
  * - `overtaken`: an edit of a copy the server has since replaced, or deleted. Deploy holds it back
  *   until the reader keeps it over the server's copy or discards it: sent as it stands, it would
  *   undo another console's work, or bring back a flow somebody deleted.
- * - `unplaced`: kept before drafts remembered where they started. The page places it on the copy the
- *   server has when it first reads one, which is how every draft was taken before.
  *
- * `base` is the fingerprint of the copy the draft was started from: null for a flow started here,
- * undefined when it is not known.
+ * `base` is the fingerprint of the copy the draft was started from: null for a flow started here.
  */
-export type DraftStanding = 'nothing' | 'changed' | 'overtaken' | 'unplaced';
+export type DraftStanding = 'nothing' | 'changed' | 'overtaken';
 
-export function standingOf(draft: FlowDto, base: string | null | undefined, deployed: FlowDto | undefined): DraftStanding {
+export function standingOf(draft: FlowDto, base: string | null, deployed: FlowDto | undefined): DraftStanding {
   if (sameFlow(draft, deployed)) return 'nothing';
-  if (base === undefined) return 'unplaced';
 
   const now = deployed ? fingerprint(deployed) : null;
   if (base === now) return 'changed';

@@ -143,7 +143,6 @@ type FlowPaneProps = { flow: FlowDto; deployed: FlowDto | undefined; running: bo
 
 function FlowPane({ flow, deployed, running, overtaken, problems }: FlowPaneProps) {
   const edit = useFlowDraftStore((state) => state.edit);
-  const forget = useFlowDraftStore((state) => state.forget);
   const rebase = useFlowDraftStore((state) => state.rebase);
   const discard = useFlowDraftStore((state) => state.discard);
   // What last stopped the running flow: an event that ran too many nodes, say.
@@ -190,7 +189,7 @@ function FlowPane({ flow, deployed, running, overtaken, problems }: FlowPaneProp
             problems: old.problems.filter((problem) => problem.flowId !== id),
           },
       );
-      forget(id);
+      discard(id);
       useFlowStatusStore.getState().forget(id);
       void queryClient.invalidateQueries({ queryKey: queryKeys.flows });
     },

@@ -2,9 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyFlow, fingerprint } from './flowDocument';
 import { createFlowDraftStore, DRAFT_PREFIX, useFlowDraftStore } from './flowDraftStore';
 
-/** Where every draft was kept together before each had a key of its own. */
-const OLD_KEY = 'mqttforge.flows.drafts';
-
 beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
@@ -91,7 +88,7 @@ describe('flow drafts', () => {
     useFlowDraftStore.getState().show(flow.id);
     useFlowDraftStore.getState().refuse(flow.id, { flow: ['Name the flow.'] });
 
-    useFlowDraftStore.getState().deployed(flow.id);
+    useFlowDraftStore.getState().settle([flow.id]);
 
     expect(useFlowDraftStore.getState().drafts).toEqual({});
     expect(useFlowDraftStore.getState().refusals).toEqual({});
@@ -111,17 +108,6 @@ describe('flow drafts', () => {
 
     expect(Object.keys(useFlowDraftStore.getState().refusals)).toEqual([still.id]);
     expect(Object.keys(useFlowDraftStore.getState().drafts)).toEqual([back.id, still.id]);
-  });
-
-  it('forgets a flow that was deleted, moving off it if it was on screen', () => {
-    const flow = emptyFlow('Deleted');
-    useFlowDraftStore.getState().put(flow);
-    useFlowDraftStore.getState().show(flow.id);
-
-    useFlowDraftStore.getState().forget(flow.id);
-
-    expect(useFlowDraftStore.getState().drafts).toEqual({});
-    expect(useFlowDraftStore.getState().current).toBeNull();
   });
 
   it('shows a flow with nothing selected on it', () => {
@@ -213,59 +199,17 @@ describe('what storage keeps', () => {
     expect(reloaded.getState().bases).toEqual({ [deployed.id]: fingerprint(deployed), [made.id]: null });
   });
 
-  // A draft kept before drafts remembered where they started has no start to read, and says so by
-  // having none: the page places it on the server's copy when it first reads one.
-  it('reads no start for a draft kept before drafts remembered one', async () => {
-    const flow = emptyFlow('From before');
-    localStorage.setItem(DRAFT_PREFIX + flow.id, JSON.stringify({ version: 1, flow }));
-
-    const opened = await reopened();
-
-    expect(opened.getState().drafts).toEqual({ [flow.id]: flow });
-    expect(flow.id in opened.getState().bases).toBe(false);
-  });
-
-  // Drafts kept before each had a key of their own are the reader's work: they move, not go.
-  it('moves the drafts kept all together before, and the flow that was on screen, to keys of their own', async () => {
-    const flow = emptyFlow('From before');
-    localStorage.setItem(OLD_KEY, JSON.stringify({ state: { drafts: { [flow.id]: flow }, current: flow.id }, version: 0 }));
-
-    const opened = await reopened();
-
-    expect(opened.getState().drafts).toEqual({ [flow.id]: flow });
-    expect(opened.getState().current).toBe(flow.id);
-    expect(JSON.parse(localStorage.getItem(DRAFT_PREFIX + flow.id)!)).toEqual({ version: 1, flow });
-    expect(localStorage.getItem(OLD_KEY)).toBeNull();
-
-    // Moved, not only read: the next reload finds both where they are kept now.
-    const again = await reopened();
-    expect(again.getState().drafts).toEqual({ [flow.id]: flow });
-    expect(again.getState().current).toBe(flow.id);
-  });
-
   // Storage outlives the build that wrote it, and a hand in the devtools can write anything. One
   // draft short of a name took the whole page down on every open.
-  it('drops a draft kept from before that is not a whole flow, and opens with the rest', async () => {
-    const whole = emptyFlow('Whole');
-    const noNodes = { ...emptyFlow('No nodes'), nodes: undefined };
-    const oddNode = { ...emptyFlow('Odd node'), nodes: [{ id: 'n1', type: 'if' }] };
-    localStorage.setItem(
-      OLD_KEY,
-      JSON.stringify({ state: { drafts: { [whole.id]: whole, broken: { id: 'broken' }, [noNodes.id]: noNodes, [oddNode.id]: oddNode }, current: 'broken' }, version: 0 }),
-    );
-
-    const opened = await reopened();
-
-    expect(Object.keys(opened.getState().drafts)).toEqual([whole.id]);
-  });
-
   it('drops a draft kept under its own key that is not a whole flow, and leaves one a newer build kept', async () => {
     const whole = emptyFlow('Whole');
     const newer = emptyFlow('Newer');
-    localStorage.setItem(DRAFT_PREFIX + whole.id, JSON.stringify({ version: 1, flow: whole }));
+    localStorage.setItem(DRAFT_PREFIX + whole.id, JSON.stringify({ version: 1, flow: whole, base: null }));
     localStorage.setItem(`${DRAFT_PREFIX}broken`, JSON.stringify({ version: 1, flow: { id: 'broken' } }));
     localStorage.setItem(`${DRAFT_PREFIX}garbled`, '{"version":1,"fl');
     localStorage.setItem(`${DRAFT_PREFIX}bare`, JSON.stringify(emptyFlow('Bare')));
+    const startless = emptyFlow('No start');
+    localStorage.setItem(DRAFT_PREFIX + startless.id, JSON.stringify({ version: 1, flow: startless }));
     localStorage.setItem(DRAFT_PREFIX + newer.id, JSON.stringify({ version: 2, flow: newer }));
 
     const opened = await reopened();
@@ -274,6 +218,7 @@ describe('what storage keeps', () => {
     expect(localStorage.getItem(`${DRAFT_PREFIX}broken`)).toBeNull();
     expect(localStorage.getItem(`${DRAFT_PREFIX}garbled`)).toBeNull();
     expect(localStorage.getItem(`${DRAFT_PREFIX}bare`)).toBeNull();
+    expect(localStorage.getItem(DRAFT_PREFIX + startless.id)).toBeNull();
     expect(localStorage.getItem(DRAFT_PREFIX + newer.id)).not.toBeNull();
   });
 });
@@ -306,20 +251,6 @@ describe('a browser that will not keep the drafts', () => {
 
     expect(seen).toEqual([true]);
     expect(useFlowDraftStore.getState().drafts[flow.id].name).toBe('Too much 12');
-  });
-
-  // The drafts kept all together before move to keys of their own when the page opens, and a
-  // storage too full for them keeps them for this visit only.
-  it('says so when the drafts kept from before cannot be moved', async () => {
-    const flow = emptyFlow('From before');
-    localStorage.setItem(OLD_KEY, JSON.stringify({ state: { drafts: { [flow.id]: flow }, current: null }, version: 0 }));
-    const full = fullStorage();
-
-    const opened = await reopened();
-    full.mockRestore();
-
-    expect(opened.getState().drafts).toEqual({ [flow.id]: flow });
-    expect(opened.getState().unkept).toBe(true);
   });
 
   it('says nothing while the drafts are kept', async () => {

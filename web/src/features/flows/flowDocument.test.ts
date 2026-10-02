@@ -176,11 +176,6 @@ describe('flow document', () => {
       expect(standingOf(edited, null, v1)).toBe('overtaken');
     });
 
-    it('is unplaced when it was kept before drafts remembered where they started', () => {
-      expect(standingOf(edited, undefined, v1)).toBe('unplaced');
-      expect(standingOf(edited, undefined, undefined)).toBe('unplaced');
-      expect(standingOf({ ...v1 }, undefined, v1)).toBe('nothing');
-    });
   });
 
   it('files the server\'s problems by flow and key', () => {

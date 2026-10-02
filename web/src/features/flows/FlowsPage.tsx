@@ -17,7 +17,6 @@ import { CANVAS, FlowCanvas, NODE_HEIGHT, NODE_WIDTH } from './FlowCanvas';
 import {
   addNode,
   emptyFlow,
-  fingerprint,
   freeSpot,
   newId,
   nextName,
@@ -132,7 +131,7 @@ function Page() {
   // every frame of a drag, and cheap for all but the flow being dragged: what it asks is kept
   // against each flow object.
   const standings = useMemo(
-    () => Object.entries(drafts).map(([id, draft]) => [id, standingOf(draft, id in bases ? bases[id] : undefined, byId.get(id))] as const),
+    () => Object.entries(drafts).map(([id, draft]) => [id, standingOf(draft, bases[id] ?? null, byId.get(id))] as const),
     [bases, byId, drafts],
   );
   // What Deploy sends, and what it holds back until the reader keeps it or lets it go.
@@ -152,9 +151,8 @@ function Page() {
   const stillRefused = deploy.isSuccess ? deploy.data.filter((one) => one.id in refusals) : [];
 
   // A draft that holds nothing of the reader's goes: kept, it would hide a newer copy another
-  // console deploys, and go back out over it with the next Deploy of anything. A draft that does
-  // not know where it started is placed on the copy the server has now. Only the page holds both
-  // halves of that comparison, so it is the one that tells the store; before the paint, so no
+  // console deploys, and go back out over it with the next Deploy of anything. Only the page holds
+  // both halves of that comparison, so it is the one that tells the store; before the paint, so no
   // frame shows a change that is not one; and only once the server's copies have been read, since
   // until then every flow would look deleted.
   //
@@ -165,17 +163,11 @@ function Page() {
   useLayoutEffect(() => {
     if (!data || data.unreadable) return;
 
-    const store = useFlowDraftStore.getState();
     const spent = standings.flatMap(([id, standing]) =>
       standing === 'nothing' && !sending?.some((flow) => flow.id === id) ? [id] : [],
     );
-    if (spent.length > 0) store.settle(spent);
-
-    for (const [id, standing] of standings) {
-      const copy = byId.get(id);
-      if (standing === 'unplaced') store.rebase(id, copy ? fingerprint(copy) : null);
-    }
-  }, [byId, data, sending, standings]);
+    if (spent.length > 0) useFlowDraftStore.getState().settle(spent);
+  }, [data, sending, standings]);
 
   // A refusal is the server's answer about a draft. One whose draft has gone — taken back, or let go
   // in another tab — has nothing left to be about.
