@@ -1,3 +1,4 @@
+using MqttForge.Application.Alerts;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 
@@ -38,13 +39,8 @@ public sealed class FlowConsoleSender
     private readonly Channel<bool> _bell = Channel.CreateBounded<bool>(
         new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropWrite, SingleReader = true });
 
-    // A list under a lock rather than a channel: what Compact does needs the whole of it at once.
-    private readonly Lock _gate = new();
-    private List<FlowAlarmEvent> _alarms = [];
-
-    // Alarms that came and went untold, and events let go past the bound, not yet said in the log.
-    private int _untold;
-    private int _alarmsLost;
+    // What is let go past the bound, and why, is AlertBacklog's: the rules' alarms face the same question.
+    private readonly AlertBacklog _alarms = new(AlarmEvents);
 
     private FlowStatus? _status;
 
@@ -75,16 +71,11 @@ public sealed class FlowConsoleSender
     }
 
     /// <summary>Alarms that went up and came down, in the order they did, after every one handed over before. Never waits.</summary>
-    public void Alarms(IReadOnlyList<FlowAlarmEvent> alarms)
+    public void Alarms(IReadOnlyList<AlertEvent> alarms)
     {
         if (alarms.Count == 0) return;
 
-        lock (_gate)
-        {
-            _alarms.AddRange(alarms);
-            if (_alarms.Count > AlarmEvents) Compact();
-        }
-
+        _alarms.Add(alarms);
         _bell.Writer.TryWrite(true);
     }
 
@@ -117,7 +108,7 @@ public sealed class FlowConsoleSender
     // Taken the other way round, a status could count an alarm handed over after the alarms were taken,
     // and light a node for an alarm the badge had not been told of.
     //
-    // Within the bound, that is. Past it, Compact lets go both ends of an alarm that came and went
+    // Within the bound, that is. Past it, AlertBacklog lets go both ends of an alarm that came and went
     // while waiting, and the status waiting beside them may have been made while that alarm stood:
     // it then counts an alarm the console is never told of, until the next push, a quarter second on.
     private async Task SendWaitingAsync(CancellationToken ct)
@@ -129,7 +120,7 @@ public sealed class FlowConsoleSender
 
             if (TakeAlarms() is { } alarms)
             {
-                foreach (var (raised, alerts) in FlowAlarmEvent.Runs(alarms))
+                foreach (var (raised, alerts) in AlertEvent.Runs(alarms))
                     await SendAsync(() => raised ? _console.RaisedAsync(alerts, ct) : _console.ResolvedAsync(alerts, ct), ct);
 
                 sent = true;
@@ -154,68 +145,22 @@ public sealed class FlowConsoleSender
         }
     }
 
-    private List<FlowAlarmEvent>? TakeAlarms()
+    private IReadOnlyList<AlertEvent>? TakeAlarms()
     {
-        List<FlowAlarmEvent> alarms;
-        int untold, lost;
-
-        lock (_gate)
-        {
-            if (_alarms.Count == 0) return null;
-
-            alarms = _alarms;
-            _alarms = [];
-            (untold, _untold) = (_untold, 0);
-            (lost, _alarmsLost) = (_alarmsLost, 0);
-        }
+        if (_alarms.Take() is not { } taken) return null;
 
         // Said once the console is taking again, rather than every time the list was cut back. The log
         // and not the alert history, which keeps the last hundred to end: past the bound these are
         // thousands, and most of them are gone from it by now.
-        if (untold > 0)
+        if (taken.Untold > 0)
             _log.LogWarning("{Count} flow alarms went up and came down while the console was not taking what it was sent. " +
-                            "It was not told of them; the log was.", untold);
+                            "It was not told of them; the log was.", taken.Untold);
 
-        if (lost > 0)
+        if (taken.Lost > 0)
             _log.LogWarning("The console fell {Count} flow alarm events behind, and the oldest were let go. " +
-                            "It shows the alarms as they stand the next time it reads them.", lost);
+                            "It shows the alarms as they stand the next time it reads them.", taken.Lost);
 
-        return alarms;
-    }
-
-    /// <summary>What the console still needs of the alarms waiting for it, cut to that once there are too many.</summary>
-    // An alarm that went up and came down while the console was not taking is let go, both ends of it:
-    // a console never told it went up has nothing to take down, and what it missed is in the log. Every
-    // other event stays, in its order. What is left is then at most the alarms standing now, whose
-    // ends have not come, and the ends of those standing when the console stopped taking, whose
-    // raises it has — twice FlowLimits.StandingAlarms, at any rate of alarms.
-    //
-    // Only past the bound: a console that never has more than AlarmEvents waiting is told of every
-    // alarm, however briefly it stood. One that keeps up can still get here, when a single turn hands
-    // over more than that at once. And the oldest go after all if that is still too many, which no
-    // alarm book that keeps its ceiling can make happen, so that the bound holds whatever the pump
-    // hands over.
-    private void Compact()
-    {
-        var ended = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var alarm in _alarms)
-            if (!alarm.Raised) ended.Add(alarm.Alert.Id);
-
-        var cameAndWent = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var alarm in _alarms)
-            if (alarm.Raised && ended.Contains(alarm.Alert.Id)) cameAndWent.Add(alarm.Alert.Id);
-
-        if (cameAndWent.Count > 0)
-        {
-            _alarms.RemoveAll(alarm => cameAndWent.Contains(alarm.Alert.Id));
-            _untold += cameAndWent.Count;
-        }
-
-        if (_alarms.Count <= AlarmEvents) return;
-
-        var over = _alarms.Count - AlarmEvents;
-        _alarms.RemoveRange(0, over);
-        _alarmsLost += over;
+        return taken.Events.Count > 0 ? taken.Events : null;
     }
 
     // FlowEngine's rule for every channel: a cancellation is let through only when it is the engine

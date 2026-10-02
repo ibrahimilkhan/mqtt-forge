@@ -8,14 +8,14 @@ namespace MqttForge.Api.Contracts;
 public sealed record FlowStatusDto(IReadOnlyList<FlowRunStatusDto> Flows)
 {
     public static FlowStatusDto Of(FlowStatus status) => new([.. status.Flows.Select(flow => new FlowRunStatusDto(
-        flow.Id, flow.Faults, flow.Fault,
+        flow.Id, flow.Fault,
         [.. flow.Nodes.Select(node => new FlowNodeStatusDto(
             node.Id, node.Count, node.Outs, node.Errors, node.Note,
             [.. node.Standing.Select(standing => new FlowStandingDto(
                 standing.Topic, standing.FiredAt, standing.Reason, standing.Count))]))]))]);
 }
 
-public sealed record FlowRunStatusDto(string Id, long Faults, string? Fault, IReadOnlyList<FlowNodeStatusDto> Nodes);
+public sealed record FlowRunStatusDto(string Id, string? Fault, IReadOnlyList<FlowNodeStatusDto> Nodes);
 
 // Outs is written with its keys as they are — "yes", "sent", "raised" — because ASP.NET's naming
 // policy renames properties and never dictionary keys, and the console reads them by those names.

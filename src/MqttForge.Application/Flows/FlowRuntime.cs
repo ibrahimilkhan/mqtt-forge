@@ -291,7 +291,6 @@ public sealed class FlowRuntime
 
         return new([.. _flows.Values.Select(state => new FlowRunStatus(
             state.Flow.Id,
-            state.Faults,
             state.Fault,
             [.. state.Flow.Nodes.Keys.Select(id =>
             {
@@ -585,7 +584,6 @@ public sealed class FlowRuntime
         if (!run.Exhausted) return;
 
         var state = run.State;
-        state.Faults++;
         state.Fault = $"An event ran more than {FlowLimits.StepsPerEvent} nodes and was stopped.";
         run.Into.Debug.Add(DebugLine(state, start.Id, run.Now, FlowDebugEntry.Error, "", state.Fault));
     }
@@ -604,7 +602,7 @@ public sealed class FlowRuntime
     // with {{payload}} in its template is as long as the payload, and its reason may quote it again.
     private static FlowDebugEntry DebugLine(
         FlowState state, string nodeId, DateTimeOffset at, string kind, string topic, string text) =>
-        new(state.Flow.Id, nodeId, at, kind, Clip(topic, FlowLimits.DebugExcerpt), Clip(text, FlowLimits.DebugExcerpt));
+        new(state.Flow.Id, nodeId, at, kind, FlowTemplate.Clip(topic, FlowLimits.DebugExcerpt), FlowTemplate.Clip(text, FlowLimits.DebugExcerpt));
 
     private void Touch() => _version++;
 
@@ -626,13 +624,8 @@ public sealed class FlowRuntime
     {
         if (text.Length <= FlowLimits.NoteLength) return text.ReplaceLineEndings(" ");
 
-        var keep = FlowLimits.NoteLength - 1;
-        if (char.IsHighSurrogate(text[keep - 1])) keep--;
-
-        return text[..keep].ReplaceLineEndings(" ") + "…";
+        return FlowTemplate.Clip(text, FlowLimits.NoteLength - 1).ReplaceLineEndings(" ") + "…";
     }
-
-    private static string Clip(string text, int most) => text.Length <= most ? text : text[..most];
 
     // ---- state ----
 
@@ -645,7 +638,6 @@ public sealed class FlowRuntime
         public Dictionary<string, int> Sequences { get; } = new(StringComparer.Ordinal);
         public FlowEchoSet Echo { get; } = new();
         public TokenBucket Bucket { get; } = new(now);
-        public long Faults { get; set; }
         public string? Fault { get; set; }
 
         public NodeCounter Counter(string id)
@@ -725,14 +717,14 @@ public sealed class FlowRuntime
     private sealed class Collector
     {
         public List<FlowPublish> Publishes { get; } = [];
-        public List<FlowAlarmEvent> Alarms { get; } = [];
+        public List<AlertEvent> Alarms { get; } = [];
         public List<FlowDebugEntry> Debug { get; } = [];
 
-        public void Raised(Alert alert) => Alarms.Add(new FlowAlarmEvent(alert, Raised: true));
+        public void Raised(Alert alert) => Alarms.Add(new AlertEvent(alert, Raised: true));
 
         public void Resolved(IEnumerable<Alert> alerts)
         {
-            foreach (var alert in alerts) Alarms.Add(new FlowAlarmEvent(alert, Raised: false));
+            foreach (var alert in alerts) Alarms.Add(new AlertEvent(alert, Raised: false));
         }
 
         public FlowOutcome Outcome() =>

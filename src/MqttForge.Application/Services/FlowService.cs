@@ -51,11 +51,8 @@ public sealed class FlowService
         await _deploying.WaitAsync(ct);
         try
         {
+            // A file that cannot be read is the store's to refuse, on the write below.
             var document = await _store.LoadAsync(ct);
-            if (document.Unreadable)
-                throw new FlowsUnreadableException(
-                    "The flows file could not be read, so nothing was deployed. Repair it or move it aside first.");
-
             if (document.Flows.All(one => one.Id != flow.Id) && document.Flows.Count >= FlowLimits.Flows)
                 return new FlowSaveResult(null, [new FlowProblem(null, null, $"At most {FlowLimits.Flows} flows can be kept.")]);
 

@@ -1017,13 +1017,13 @@ public sealed class FlowEngineTests : IAsyncLifetime
         await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
         await ClockStill(() => _publisher.Sent.Count == 1, "the arrival to be run during the pause");
 
-        for (var second = 2; second < FlowEngine.NoAnswerPause.TotalSeconds; second++)
+        for (var second = 2; second < AlertEngine.NoAnswerPause.TotalSeconds; second++)
         {
             _time.Advance(FlowEngine.TickInterval);
             await Task.Delay(10);
         }
 
-        var over = T0 + FlowEngine.NoAnswerPause;
+        var over = T0 + AlertEngine.NoAnswerPause;
         await ClockStill(() => clock.Waits(over), "the pump to wait for the end of the pause");
         Assert.Single(_subscriber.Batches);
 
@@ -1067,7 +1067,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
 
         await Eventually.Until(_time, () => _subscriber.Batches.Count == 2, "the filters to be asked for again after the first pause");
         var again = _subscriber.AskedAt[1];
-        Assert.True(again - T0 >= FlowEngine.NoAnswerPause);
+        Assert.True(again - T0 >= AlertEngine.NoAnswerPause);
 
         // Not answered again, so the next is ten seconds off, not five.
         while (_time.GetUtcNow() < again.AddSeconds(9))
@@ -1103,7 +1103,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
 
         _subscriber.Refuse = null;
         await Eventually.Until(_time, () => _subscriber.Filters.Count == 2, "the new filter to be asked for again after a pause");
-        Assert.InRange(_subscriber.AskedAt[4] - unanswered, FlowEngine.NoAnswerPause, TimeSpan.FromSeconds(9));
+        Assert.InRange(_subscriber.AskedAt[4] - unanswered, AlertEngine.NoAnswerPause, TimeSpan.FromSeconds(9));
     }
 
     // AlertEngine's, for its reason: a link that went and came back between two turns, which no turn

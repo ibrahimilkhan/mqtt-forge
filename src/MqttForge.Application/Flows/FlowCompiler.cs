@@ -27,19 +27,19 @@ public static partial class FlowCompiler
     {
         var problems = new List<FlowProblem>();
 
-        if (flow.Id is null || !IdPattern.IsMatch(flow.Id))
+        if (!IdPattern.IsMatch(flow.Id))
             problems.Add(new(null, null, "A flow's id is 1 to 40 letters, digits, '-' or '_'."));
 
-        var name = flow.Name?.Trim() ?? "";
+        var name = flow.Name.Trim();
         if (name.Length is 0 or > FlowLimits.NameLength)
             problems.Add(new(null, null, $"Name the flow, in at most {FlowLimits.NameLength} characters."));
 
-        // STJ only promises Nodes/Edges are never null at compile time: a hand-edited flows.json,
-        // or a PUT body built by hand rather than by the console, can still leave either out, or
-        // leave a hole in the middle of one. None of that is a reason to throw instead of answering
-        // with the same kind of problem list a bad node or a bad wire gets.
-        var rawNodes = flow.Nodes ?? [];
-        var rawEdges = flow.Edges ?? [];
+        // The lists and every name in them arrive whole: FlowDto.ToFlow turns a missing one into an
+        // empty one, and the store reads a file that leaves one out as unreadable. What a PUT body
+        // built by hand can still hold is a hole in the middle of a list — a null node or wire —
+        // which is answered with the same kind of problem a bad node or a bad wire gets.
+        var rawNodes = flow.Nodes;
+        var rawEdges = flow.Edges;
 
         // Refused on the counts alone, before one node is read. Everything past this grows with the
         // flow — every node compiled, every wire checked, and the circle check walks every wire once
@@ -65,7 +65,7 @@ public static partial class FlowCompiler
                 continue;
             }
 
-            if (node.Id is null || !IdPattern.IsMatch(node.Id))
+            if (!IdPattern.IsMatch(node.Id))
             {
                 problems.Add(new(null, null, "A node's id is 1 to 40 letters, digits, '-' or '_'."));
                 continue;
@@ -417,14 +417,10 @@ public static partial class FlowCompiler
         FlowEdge edge, IReadOnlyDictionary<string, string> types, ISet<string> ids,
         ISet<(string, string, string, string)> joined)
     {
-        if (edge.Id is null || !IdPattern.IsMatch(edge.Id) || !ids.Add(edge.Id))
+        if (!IdPattern.IsMatch(edge.Id) || !ids.Add(edge.Id))
             return "A wire needs its own id.";
 
-        // Dictionary.TryGetValue throws on a null key rather than answering false, so a null
-        // From or To has to be turned away before it ever reaches one — the same problem a wire
-        // to an id nothing declared gets, since to whoever drew this a missing end is no different.
-        if (edge.From is null || edge.To is null ||
-            !types.TryGetValue(edge.From, out var from) || !types.TryGetValue(edge.To, out var to))
+        if (!types.TryGetValue(edge.From, out var from) || !types.TryGetValue(edge.To, out var to))
             return "This wire does not start and end on nodes.";
 
         if (edge.From == edge.To)
@@ -467,15 +463,12 @@ public static partial class FlowCompiler
 
     private static string Fingerprint(Flow flow)
     {
-        // Reached only once Compile has found no problem, which for Nodes/Edges means neither is
-        // null and neither holds a null element — but the list itself can still be the null STJ
-        // leaves it as when a hand-edited file omits the property, so it is coalesced again here
-        // rather than trusted a second time from a flow this method never validated itself.
+        // Reached only once Compile has found no problem, so neither list holds a null element.
         var shape = JsonSerializer.Serialize(new
         {
             flow.Name,
-            Nodes = (flow.Nodes ?? []).Select(node => new { node.Id, node.Type, Config = node.Config.ValueKind == JsonValueKind.Undefined ? "{}" : node.Config.GetRawText() }),
-            Edges = flow.Edges ?? [],
+            Nodes = flow.Nodes.Select(node => new { node.Id, node.Type, Config = node.Config.ValueKind == JsonValueKind.Undefined ? "{}" : node.Config.GetRawText() }),
+            flow.Edges,
         }, FlowJson.Options);
 
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(shape)));

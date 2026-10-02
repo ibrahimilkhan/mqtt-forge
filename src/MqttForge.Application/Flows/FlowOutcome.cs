@@ -1,3 +1,4 @@
+using MqttForge.Application.Alerts;
 using MqttForge.Domain.Models;
 
 namespace MqttForge.Application.Flows;
@@ -10,33 +11,6 @@ public sealed record FlowDebugEntry(string FlowId, string NodeId, DateTimeOffset
 {
     public const string Message = "message";
     public const string Error = "error";
-}
-
-/// <summary>An alarm that went up, or one that came down.</summary>
-public sealed record FlowAlarmEvent(Alert Alert, bool Raised)
-{
-    /// <summary>The alarms in their order, cut wherever a raise follows an end or an end a raise.</summary>
-    // One call a run and not one an alarm: the forty alarms a lost link ends are still one call to
-    // each channel, as they always were, and only a change of kind costs another.
-    public static IEnumerable<(bool Raised, IReadOnlyList<Alert> Alerts)> Runs(IReadOnlyList<FlowAlarmEvent> alarms)
-    {
-        var run = new List<Alert>();
-        var raised = false;
-
-        foreach (var alarm in alarms)
-        {
-            if (run.Count > 0 && alarm.Raised != raised)
-            {
-                yield return (raised, run);
-                run = [];
-            }
-
-            raised = alarm.Raised;
-            run.Add(alarm.Alert);
-        }
-
-        if (run.Count > 0) yield return (raised, run);
-    }
 }
 
 /// <summary>Everything one call into the runtime decided, for the engine to carry out.</summary>
@@ -55,7 +29,7 @@ public sealed record FlowAlarmEvent(Alert Alert, bool Raised)
 // the new alarm end with the old one.
 public sealed record FlowOutcome(
     IReadOnlyList<FlowPublish> Publishes,
-    IReadOnlyList<FlowAlarmEvent> Alarms,
+    IReadOnlyList<AlertEvent> Alarms,
     IReadOnlyList<FlowDebugEntry> Debug)
 {
     public static FlowOutcome Empty { get; } = new([], [], []);

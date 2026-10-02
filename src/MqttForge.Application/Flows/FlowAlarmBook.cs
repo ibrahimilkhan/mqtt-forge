@@ -65,7 +65,7 @@ public sealed class FlowAlarmBook
             Count: 1,
             node.Reason.Render(message, now, random, FlowLimits.ReasonLength, out _),
             value,
-            Clip(message.Payload, FlowLimits.SampleLength),
+            FlowTemplate.Clip(message.Payload, FlowLimits.SampleLength),
             node.Actions);
 
         _standing[key] = alert;
@@ -151,8 +151,6 @@ public sealed class FlowAlarmBook
 
         return done;
     }
-
-    private static string Clip(string text, int most) => text.Length <= most ? text : text[..most];
 
     private readonly record struct Key(string FlowId, string NodeId, string Topic);
 }

@@ -1,3 +1,4 @@
+using MqttForge.Application.Alerts;
 using MqttForge.Application.Flows;
 using MqttForge.Domain.Enums;
 using MqttForge.Domain.Models;
@@ -47,15 +48,15 @@ public sealed class FlowConsoleSenderTests : IAsyncLifetime
 
     private static FlowDebugEntry Line(int n) => new("f1", "say", T0, FlowDebugEntry.Message, "a/b", $"line {n}");
 
-    private static FlowStatus Picture(int n) => new([new FlowRunStatus($"f{n}", 0, null, [])]);
+    private static FlowStatus Picture(int n) => new([new FlowRunStatus($"f{n}", null, [])]);
 
     private static Alert Alarm(string id) => new(id, "flow-f1-hot", "Watch · Hot", $"plant/{id}/temp", AlertSeverity.Critical,
         FiredAt: T0, LastSeenAt: T0, ResolvedAt: null, ResolvedBy: null, MutedUntil: null, Count: 1,
         Reason: "hot", Value: null, Sample: null, Actions: [new ScreenAction()]);
 
-    private static FlowAlarmEvent Up(string id) => new(Alarm(id), Raised: true);
+    private static AlertEvent Up(string id) => new(Alarm(id), Raised: true);
 
-    private static FlowAlarmEvent Down(string id) => new(Alarm(id) with { ResolvedAt = T0, ResolvedBy = "clear" }, Raised: false);
+    private static AlertEvent Down(string id) => new(Alarm(id) with { ResolvedAt = T0, ResolvedBy = "clear" }, Raised: false);
 
     // ---- alarms ----
 
@@ -109,7 +110,7 @@ public sealed class FlowConsoleSenderTests : IAsyncLifetime
         // One turn's worth: an end, a flood of alarms that each went up and came down, a new one that
         // stands, and the other end. More than the bound, all of it waiting on the stuck picture.
         const int flood = FlowConsoleSender.AlarmEvents / 2 + 50;
-        var turn = new List<FlowAlarmEvent> { Down("told-1") };
+        var turn = new List<AlertEvent> { Down("told-1") };
         for (var i = 0; i < flood; i++) turn.AddRange([Up($"brief-{i}"), Down($"brief-{i}")]);
         turn.AddRange([Up("standing"), Down("told-2")]);
         _sender.Alarms(turn);

@@ -521,7 +521,7 @@ export type FlowNodeStatusDto = {
   standing: FlowStandingDto[];
 };
 
-export type FlowRunStatusDto = { id: string; faults: number; fault: string | null; nodes: FlowNodeStatusDto[] };
+export type FlowRunStatusDto = { id: string; fault: string | null; nodes: FlowNodeStatusDto[] };
 
 /** Every running flow. A flow that is not in it is not running. */
 export type FlowStatusDto = { flows: FlowRunStatusDto[] };

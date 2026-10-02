@@ -109,7 +109,7 @@ describe('inspector', () => {
     useFlowDraftStore.getState().select('hot');
     useFlowStatusStore.getState().setStatus({
       flows: [{
-        id: 'watch', faults: 0, fault: null,
+        id: 'watch', fault: null,
         nodes: [{ id: 'hot', count: 3, outs: { raised: 1 }, errors: 0, note: null,
           standing: [{ topic: 'plant/k1/temp', firedAt: '2026-09-26T09:14:00Z', reason: 'k1 is at 94.2 °C', count: 3 }] }],
       }],

@@ -11,7 +11,7 @@ public sealed record FlowStatus(IReadOnlyList<FlowRunStatus> Flows)
 }
 
 /// <summary>One running flow: how often an event of it had to be stopped, and why the last one was.</summary>
-public sealed record FlowRunStatus(string Id, long Faults, string? Fault, IReadOnlyList<FlowNodeStatus> Nodes);
+public sealed record FlowRunStatus(string Id, string? Fault, IReadOnlyList<FlowNodeStatus> Nodes);
 
 /// <summary>
 /// One node: how many messages it took (or, for a trigger, sent), what left by each port, how many

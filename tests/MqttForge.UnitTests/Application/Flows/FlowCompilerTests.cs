@@ -435,22 +435,10 @@ public class FlowCompilerTests
         Assert.Equal("A wire needs its own id.", problem.Message);
     }
 
-    // System.Text.Json only promises these are never null at compile time. A hand-edited
-    // flows.json, or a PUT body built by hand rather than by the console, can still leave any of
-    // them out, and the compiler has to answer with problems, the same as it does for anything
-    // else somebody got wrong — not with an exception that skips every other flow being compiled
+    // A PUT body built by hand rather than by the console can leave a hole in a list, or a name
+    // out, and the compiler has to answer with problems, the same as it does for anything else
+    // somebody got wrong — not with an exception that skips every other flow being compiled
     // alongside this one.
-
-    [Fact]
-    public void Missing_node_and_edge_lists_compile_as_an_empty_flow_not_a_crash()
-    {
-        var flow = new FlowBuilder().Build() with { Nodes = null!, Edges = null! };
-
-        var result = FlowCompiler.Compile(flow, FlowBuilder.Prefix);
-
-        Assert.Empty(result.Problems);
-        Assert.Empty(result.Flow!.Nodes);
-    }
 
     [Fact]
     public void A_null_node_in_the_list_is_a_flow_problem_not_a_crash()
@@ -468,30 +456,6 @@ public class FlowCompilerTests
 
         Assert.Equal("flow", problem.Key);
         Assert.Equal("A wire in this flow is empty.", problem.Message);
-    }
-
-    [Fact]
-    public void A_wire_with_no_source_node_is_refused_not_a_crash()
-    {
-        var flow = new FlowBuilder().Node("a", "inject").Node("b", "debug").Build();
-        var broken = flow with { Edges = [new FlowEdge("e1", null!, "out", "b", "in")] };
-
-        var problem = Only(broken);
-
-        Assert.Equal("edge:e1", problem.Key);
-        Assert.Equal("This wire does not start and end on nodes.", problem.Message);
-    }
-
-    [Fact]
-    public void A_wire_with_no_destination_node_is_refused_not_a_crash()
-    {
-        var flow = new FlowBuilder().Node("a", "inject").Node("b", "debug").Build();
-        var broken = flow with { Edges = [new FlowEdge("e1", "a", "out", null!, "in")] };
-
-        var problem = Only(broken);
-
-        Assert.Equal("edge:e1", problem.Key);
-        Assert.Equal("This wire does not start and end on nodes.", problem.Message);
     }
 
     [Fact]

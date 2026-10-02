@@ -6,7 +6,6 @@ const status: FlowStatusDto = {
   flows: [
     {
       id: 'watch',
-      faults: 0,
       fault: null,
       nodes: [
         { id: 'in', count: 412, outs: { out: 412 }, errors: 0, note: '{"temp":94.2}', standing: [] },

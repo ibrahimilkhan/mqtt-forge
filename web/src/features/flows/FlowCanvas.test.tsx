@@ -84,7 +84,7 @@ function viewport(): [number, number, number] {
 describe('flow canvas', () => {
   it('draws each node with its name, its settings and what it has done', async () => {
     useFlowStatusStore.getState().setStatus({
-      flows: [{ id: 'button', faults: 0, fault: null, nodes: [{ id: 'test', count: 5, outs: { yes: 2, no: 3 }, errors: 0, note: null, standing: [] }] }],
+      flows: [{ id: 'button', fault: null, nodes: [{ id: 'test', count: 5, outs: { yes: 2, no: 3 }, errors: 0, note: null, standing: [] }] }],
     });
 
     draw();
@@ -118,7 +118,7 @@ describe('flow canvas', () => {
   it('gives each node\'s status line the server\'s last word on it', async () => {
     useFlowStatusStore.getState().setStatus({
       flows: [{
-        id: 'button', faults: 0, fault: null,
+        id: 'button', fault: null,
         nodes: [
           { id: 'go', count: 1, outs: {}, errors: 1, note: 'More than 50 publishes a second; this one was dropped.', standing: [] },
           { id: 'test', count: 5, outs: { yes: 2, no: 3 }, errors: 0, note: 'no such field', standing: [] },
@@ -142,7 +142,7 @@ describe('flow canvas', () => {
   // that is only in the draft. "Waiting" would say it is running and has had nothing yet.
   it('says a node the running flow does not report is not deployed', async () => {
     useFlowStatusStore.getState().setStatus({
-      flows: [{ id: 'button', faults: 0, fault: null, nodes: [{ id: 'go', count: 3, outs: { out: 3 }, errors: 0, note: null, standing: [] }] }],
+      flows: [{ id: 'button', fault: null, nodes: [{ id: 'go', count: 3, outs: { out: 3 }, errors: 0, note: null, standing: [] }] }],
     });
 
     draw();
@@ -170,7 +170,7 @@ describe('flow canvas', () => {
       }),
     );
     useFlowStatusStore.getState().setStatus({
-      flows: [{ id: 'button', faults: 0, fault: null, nodes: [{ id: 'go', count: 0, outs: {}, errors: 0, note: null, standing: [] }] }],
+      flows: [{ id: 'button', fault: null, nodes: [{ id: 'go', count: 0, outs: {}, errors: 0, note: null, standing: [] }] }],
     });
 
     draw();
@@ -203,7 +203,7 @@ describe('flow canvas', () => {
 
   it('lights a wire when the node it leaves sends something down it', async () => {
     const status = (sent: number) => ({
-      flows: [{ id: 'button', faults: 0, fault: null, nodes: [{ id: 'go', count: sent, outs: { out: sent }, errors: 0, note: null, standing: [] }] }],
+      flows: [{ id: 'button', fault: null, nodes: [{ id: 'go', count: sent, outs: { out: sent }, errors: 0, note: null, standing: [] }] }],
     });
     useFlowStatusStore.getState().setStatus(status(1));
     draw();
@@ -220,7 +220,7 @@ describe('flow canvas', () => {
   it('draws a node again only when what it shows of its numbers moved', async () => {
     const status = (sent: number): FlowStatusDto => ({
       flows: [{
-        id: 'button', faults: 0, fault: null,
+        id: 'button', fault: null,
         nodes: [
           { id: 'go', count: sent, outs: { out: sent }, errors: 0, note: null, standing: [] },
           { id: 'test', count: 5, outs: { yes: 2, no: 3 }, errors: 0, note: null, standing: [] },
@@ -319,7 +319,7 @@ describe('flow canvas', () => {
 
   it('does not light a wire when its count starts again from nothing', async () => {
     const status = (sent: number) => ({
-      flows: [{ id: 'button', faults: 0, fault: null, nodes: [{ id: 'go', count: sent, outs: { out: sent }, errors: 0, note: null, standing: [] }] }],
+      flows: [{ id: 'button', fault: null, nodes: [{ id: 'go', count: sent, outs: { out: sent }, errors: 0, note: null, standing: [] }] }],
     });
     useFlowStatusStore.getState().setStatus(status(5));
     draw();
@@ -350,7 +350,7 @@ describe('flow canvas', () => {
       ],
     };
     const status = (yes: number, no: number, count = yes + no) => ({
-      flows: [{ id: 'button', faults: 0, fault: null, nodes: [{ id: 'test', count, outs: { yes, no }, errors: 0, note: null, standing: [] }] }],
+      flows: [{ id: 'button', fault: null, nodes: [{ id: 'test', count, outs: { yes, no }, errors: 0, note: null, standing: [] }] }],
     });
     const lit = (to: string) => screen.getByLabelText(`Edge from test to ${to}`).querySelector('[data-flash]') !== null;
     useFlowStatusStore.getState().setStatus(status(1, 1));
@@ -605,7 +605,7 @@ describe('flow canvas', () => {
   // else is picked, quite possibly a node panned out of sight a while ago.
   it('leaves a node picked elsewhere alone when Backspace is pressed on the Inject button', async () => {
     useFlowStatusStore.getState().setStatus({
-      flows: [{ id: 'button', faults: 0, fault: null, nodes: [{ id: 'go', count: 0, outs: {}, errors: 0, note: null, standing: [] }] }],
+      flows: [{ id: 'button', fault: null, nodes: [{ id: 'go', count: 0, outs: {}, errors: 0, note: null, standing: [] }] }],
     });
     draw();
     const picked = await screen.findByText('If');

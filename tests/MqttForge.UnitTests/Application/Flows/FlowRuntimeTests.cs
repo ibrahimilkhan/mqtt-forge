@@ -639,7 +639,7 @@ public class FlowRuntimeTests
 
         Assert.Contains(outcome.Debug, entry => entry.Kind == FlowDebugEntry.Error && entry.NodeId == "go");
         Assert.True(outcome.Debug.Count(entry => entry.Kind == FlowDebugEntry.Message) < FlowLimits.StepsPerEvent);
-        Assert.Equal(1, _runtime.Status().Flows.Single().Faults);
+        Assert.NotNull(_runtime.Status().Flows.Single().Fault);
     }
 
     // Each hostile text costs the pattern its 50 ms. Carried on past the first, a For each of a
@@ -665,7 +665,7 @@ public class FlowRuntimeTests
         Assert.Equal(1, Node("test").Errors);
         Assert.Equal("The pattern took longer than 50 ms, so the event was stopped.", Node("test").Note);
         Assert.Equal(FlowDebugEntry.Error, Assert.Single(outcome.Debug).Kind);
-        Assert.Equal(0, _runtime.Status().Flows.Single().Faults);
+        Assert.Null(_runtime.Status().Flows.Single().Fault);
     }
 
     // An arrival runs once for each MQTT in node it matches, and three of them on one filter, all wired

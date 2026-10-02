@@ -78,10 +78,6 @@ public sealed class FlowEngine
     /// <summary>The QoS the flows' subscriptions ask for — AlertEngine's RuleQos, for its reason.</summary>
     private const int FlowQos = 1;
 
-    /// <summary>How long the flows' filters are left, once the broker did not answer for them, before they are asked for again: the first time.</summary>
-    // AlertEngine's pause, and one rule for the two, NoAnswerBackoff: both pumps wait on the same broker.
-    public static readonly TimeSpan NoAnswerPause = AlertEngine.NoAnswerPause;
-
     private readonly FlowRuntime _runtime;
     private readonly IFlowStore _store;
     private readonly IAlertNotifier _notifier;
@@ -99,7 +95,7 @@ public sealed class FlowEngine
     /// <summary>Filters this broker has refused on this link. Not asked for again until the link or the flows change.</summary>
     private readonly HashSet<string> _refused = new(StringComparer.Ordinal);
 
-    /// <summary>How long the flows' filters are put off, after a broker that did not answer for them. See NoAnswerPause.</summary>
+    /// <summary>How long the flows' filters are put off, after a broker that did not answer for them: AlertEngine's rule, NoAnswerBackoff, since both pumps wait on the same broker.</summary>
     private readonly NoAnswerBackoff _noAnswer = new();
 
     // The deploy the pump has not reached yet, and the order everything posted is stamped in. See Hand.
@@ -619,11 +615,11 @@ public sealed class FlowEngine
     // SyncSubscriptionsAsync keeps and for its reason. None of these channels is handed the engine's
     // token, so a cancellation from one of them is that channel giving up — a hub send, a queue
     // closing — and not a reason to skip the channel after it or the rest of the turn.
-    private async Task DeliverAsync(IReadOnlyList<FlowAlarmEvent> alarms, CancellationToken ct)
+    private async Task DeliverAsync(IReadOnlyList<AlertEvent> alarms, CancellationToken ct)
     {
         try
         {
-            foreach (var (raised, alerts) in FlowAlarmEvent.Runs(alarms))
+            foreach (var (raised, alerts) in AlertEvent.Runs(alarms))
                 await (raised ? _notifier.RaisedAsync(alerts) : _notifier.ResolvedAsync(alerts));
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
@@ -642,7 +638,7 @@ public sealed class FlowEngine
 
         try
         {
-            foreach (var (raised, alerts) in FlowAlarmEvent.Runs(leaving))
+            foreach (var (raised, alerts) in AlertEvent.Runs(leaving))
                 await (raised ? _dispatcher.RaisedAsync(alerts) : _dispatcher.ResolvedAsync(alerts));
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
@@ -652,7 +648,7 @@ public sealed class FlowEngine
     }
 
     /// <summary>The alarms whose node asked for a channel outside this process — AlertEngine's filter.</summary>
-    private static IReadOnlyList<FlowAlarmEvent> Outgoing(IReadOnlyList<FlowAlarmEvent> alarms) =>
+    private static IReadOnlyList<AlertEvent> Outgoing(IReadOnlyList<AlertEvent> alarms) =>
         [.. alarms.Where(alarm => alarm.Alert.Actions.Any(action => action is WebhookAction or PublishAction))];
 
     /// <summary>Hands the console what moved, at most four times a second. Never waits on it: see FlowConsoleSender.</summary>
@@ -776,7 +772,7 @@ public sealed class FlowEngine
         }
         catch (BrokerDidNotAnswerException silence)
         {
-            // Not a refusal, and not for the very next turn either: see NoAnswerPause. The flag
+            // Not a refusal, and not for the very next turn either: see AlertEngine.NoAnswerPause. The flag
             // stays up, so the first turn after the pause asks again.
             var pause = _noAnswer.NotAnswered(_time.GetUtcNow());
 

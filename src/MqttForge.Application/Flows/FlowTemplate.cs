@@ -124,8 +124,11 @@ public sealed partial class FlowTemplate
     /// <summary>How much of <paramref name="text"/> fits in <paramref name="room"/> characters without cutting one in two.</summary>
     // A surrogate pair split down the middle is not text any more: it would go out as a lone half
     // that every reader after this one replaces with '?'.
-    private static int Fit(string text, int room) =>
+    internal static int Fit(string text, int room) =>
         room > 0 && char.IsHighSurrogate(text[room - 1]) ? room - 1 : room;
+
+    /// <summary>At most <paramref name="most"/> characters of <paramref name="text"/>, never cut between the halves of a pair.</summary>
+    internal static string Clip(string text, int most) => text.Length <= most ? text : text[..Fit(text, most)];
 
     private static bool TryRead(string inner, out Part part, out string? problem)
     {

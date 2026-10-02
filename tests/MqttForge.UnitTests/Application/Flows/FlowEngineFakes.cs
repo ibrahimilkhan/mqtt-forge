@@ -1,3 +1,4 @@
+using MqttForge.Domain.Exceptions;
 using Microsoft.Extensions.Time.Testing;
 using MqttForge.Application.Flows;
 using MqttForge.Domain.Abstractions;
@@ -33,6 +34,8 @@ internal sealed class FakeFlowStore : IFlowStore
     public Task SaveAsync(Flow flow, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
+        // As JsonFlowStore does: a file it cannot read is not written over.
+        if (Unreadable) throw new FlowsUnreadableException("The flows file could not be read.");
 
         lock (_gate)
         {

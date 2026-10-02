@@ -56,7 +56,7 @@ const sim: FlowDto = {
 /** What the server says the watch has done, with this many messages in. */
 const watchHasSeen = (count: number): FlowStatusDto => ({
   flows: [{
-    id: 'watch', faults: 0, fault: null,
+    id: 'watch', fault: null,
     nodes: [{ id: 'in', count, outs: { out: count }, errors: 0, note: null, standing: [] }],
   }],
 });
@@ -227,7 +227,7 @@ describe('Flows page', () => {
       http.get('/api/flows/status', () =>
         HttpResponse.json({
           flows: [{
-            id: 'watch', faults: 0, fault: null,
+            id: 'watch', fault: null,
             nodes: [
               { id: 'in', count: 412, outs: { out: 412 }, errors: 0, note: null, standing: [] },
               { id: 'test', count: 412, outs: { yes: 3, no: 409 }, errors: 0, note: null, standing: [] },
@@ -1067,7 +1067,7 @@ describe('deploying', () => {
 describe('at the limits', () => {
   const both = (count: number): FlowStatusDto => ({
     flows: [{
-      id: 'watch', faults: 0, fault: null,
+      id: 'watch', fault: null,
       nodes: [
         { id: 'in', count, outs: { out: count }, errors: 0, note: null, standing: [] },
         { id: 'test', count, outs: { yes: 3, no: count - 3 }, errors: 0, note: null, standing: [] },
@@ -1610,7 +1610,7 @@ describe('what did not go through', () => {
     edges: [],
   };
   const pressRuns: FlowStatusDto = {
-    flows: [{ id: 'press', faults: 0, fault: null, nodes: [{ id: 'go', count: 0, outs: {}, errors: 0, note: null, standing: [] }] }],
+    flows: [{ id: 'press', fault: null, nodes: [{ id: 'go', count: 0, outs: {}, errors: 0, note: null, standing: [] }] }],
   };
 
   it('says a deploy that failed in a live region of its own, not over the whole page', async () => {
@@ -1837,7 +1837,7 @@ describe('a flow alarm the reader asked to see', () => {
 describe('what a running flow says', () => {
   const refusedFilter = (fault: string | null = null): FlowStatusDto => ({
     flows: [{
-      id: 'watch', faults: fault ? 1 : 0, fault,
+      id: 'watch', fault,
       nodes: [
         { id: 'in', count: 0, outs: {}, errors: 1, note: 'The broker refused this filter.', standing: [] },
         { id: 'test', count: 0, outs: {}, errors: 0, note: null, standing: [] },
@@ -1872,7 +1872,7 @@ describe('what a running flow says', () => {
 
   /** The watch's MQTT in, having read one message, with its last word on it. */
   const lastRead = (note: string): FlowStatusDto => ({
-    flows: [{ id: 'watch', faults: 0, fault: null, nodes: [{ id: 'in', count: 1, outs: { out: 1 }, errors: 0, note, standing: [] }] }],
+    flows: [{ id: 'watch', fault: null, nodes: [{ id: 'in', count: 1, outs: { out: 1 }, errors: 0, note, standing: [] }] }],
   });
 
   /** The pane of the watch's MQTT in, once the reader has picked it. */

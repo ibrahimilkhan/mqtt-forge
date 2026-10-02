@@ -535,7 +535,7 @@ describe('flow events', () => {
 
     act(() => {
       hub.emit('flowStatus', {
-        flows: [{ id: 'watch', faults: 0, fault: null, nodes: [] }],
+        flows: [{ id: 'watch', fault: null, nodes: [] }],
       });
       hub.emit('flowDebug', [
         { flowId: 'watch', nodeId: 'say', at: '2026-09-26T09:00:00Z', kind: 'message', topic: 'a', text: 'hello' },
@@ -549,7 +549,7 @@ describe('flow events', () => {
   describe('after a reconnect', () => {
     beforeEach(() => useFlowStatusStore.setState(useFlowStatusStore.getInitialState()));
 
-    const running = (...ids: string[]): FlowStatusDto => ({ flows: ids.map((id) => ({ id, faults: 0, fault: null, nodes: [] })) });
+    const running = (...ids: string[]): FlowStatusDto => ({ flows: ids.map((id) => ({ id, fault: null, nodes: [] })) });
 
     // A push sent while the hub was down never arrives: a flow that stopped then would go on
     // standing as running until something else moved. The alarms are read again for the same reason.

@@ -176,7 +176,7 @@ const STANDING = [
 const RUNNING = {
   flows: [
     {
-      id: 'simulator', faults: 0, fault: null,
+      id: 'simulator', fault: null,
       nodes: [
         { id: 'tick', count: 300, outs: { out: 300 }, errors: 0, note: '["k1","k2","k3"]', standing: [] },
         { id: 'each', count: 300, outs: { out: 900 }, errors: 0, note: 'k3', standing: [] },
@@ -184,7 +184,7 @@ const RUNNING = {
       ],
     },
     {
-      id: 'watch', faults: 0, fault: null,
+      id: 'watch', fault: null,
       nodes: [
         { id: 'in', count: 900, outs: { out: 900 }, errors: 0, note: '{"temp": 91.8}', standing: [] },
         { id: 'test', count: 900, outs: { yes: 312, no: 588 }, errors: 0, note: '91.8', standing: [] },
