@@ -212,7 +212,8 @@ public sealed partial class FlowTemplate
         return false;
     }
 
-    private static FlowTemplate Verbatim(string text) => new([Part.Literal(text)]);
+    /// <summary>A template that renders <paramref name="text"/> as it is, braces and all: it is never read for placeholders.</summary>
+    internal static FlowTemplate Verbatim(string text) => new([Part.Literal(text)]);
 
     /// <summary>The furthest level {{topic[N]}} can name: the pattern below takes two digits.</summary>
     private const int FurthestLevel = 99;

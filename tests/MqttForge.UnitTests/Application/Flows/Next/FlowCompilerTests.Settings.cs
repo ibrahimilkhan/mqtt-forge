@@ -136,15 +136,53 @@ public partial class FlowCompilerTests
 
         Assert.Equal("node:x", Only(Decision(new { field = "", test = "eq", value = new string('x', 1025) })).Key);
 
-        // The second value is held to it too, whether or not the test reads one.
-        Assert.Equal("node:x", Only(Decision(new { field = "", test = "eq", value = "on", value2 = new string('x', 1025) })).Key);
+        // The second value is held to it by between, the one test that reads it, and by no other.
+        Assert.Equal("node:x", Only(Decision(new { field = "", test = "between", value = "1", value2 = new string('1', 1025) })).Key);
+        Decision(new { field = "", test = "eq", value = "on", value2 = new string('x', 1025) }).Compile();
     }
 
     [Fact]
     public void An_if_value_with_a_placeholder_it_cannot_fill_in_is_refused()
     {
         Assert.Equal("node:x", Only(Decision(new { field = "", test = "eq", value = "{{nope}}" })).Key);
-        Assert.Contains("nope", Only(Decision(new { field = "", test = "eq", value = "on", value2 = "{{var.nope}}" })).Message);
+        Assert.Contains("nope", Only(Decision(new { field = "", test = "between", value = "1", value2 = "{{var.nope}}" })).Message);
+    }
+
+    // The pane shows value for every test but exists and value2 for between alone, and keeps what was typed
+    // in a box it hides. What is left there is not the node's: it cannot refuse it, and is carried as nothing.
+    [Fact]
+    public void A_second_value_cannot_refuse_a_test_other_than_between_and_is_carried_as_nothing()
+    {
+        var gt = IfFor("gt", "90", "{{var.gone}}");
+        Assert.True(gt.Value2.IsLiteral);
+        Assert.Equal("", Rendered(gt.Value2));
+
+        Assert.Equal(
+            "There is no variable called gone. Add it to the flow's variables.",
+            Only(Decision(new { field = "$.temp", test = "between", value = "80", value2 = "{{var.gone}}" })).Message);
+    }
+
+    [Fact]
+    public void A_value_cannot_refuse_exists_and_is_carried_as_nothing()
+    {
+        var exists = IfFor("exists", "{{var.gone}}", "{{var.gone}}");
+
+        Assert.True(exists.Value.IsLiteral);
+        Assert.Equal("", Rendered(exists.Value));
+        Assert.True(exists.Value2.IsLiteral);
+        Assert.Equal("", Rendered(exists.Value2));
+    }
+
+    // The pane hides times while forever is ticked, and keeps what was typed there.
+    [Fact]
+    public void A_forever_loop_does_not_read_its_times()
+    {
+        var loop = Assert.IsType<ForNode>(
+            Loop("for", new { forever = true, times = "{{var.gone}}" }, "wait", new { seconds = "1" }).Compile().Nodes["loop"]);
+
+        Assert.True(loop.Forever);
+        Assert.True(loop.Times.IsLiteral);
+        Assert.Equal("", Rendered(loop.Times));
     }
 
     [Fact]
@@ -227,6 +265,13 @@ public partial class FlowCompilerTests
     public void Publish_asks_for_qos_0_1_or_2(int qos) =>
         Assert.Equal("QoS is 0, 1 or 2.", Only(Step("publish", new { topic = "a", qos })).Message);
 
+    // A QoS is one of three whole numbers and 1.5 is none of them: it is refused, not cut down to 1.
+    [Theory]
+    [InlineData(1.5)]
+    [InlineData("1.5")]
+    public void A_qos_with_a_fraction_is_refused_and_not_cut_down(object qos) =>
+        Assert.Equal("QoS is 0, 1 or 2.", Only(Step("publish", new { topic = "a", qos })).Message);
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
@@ -284,14 +329,37 @@ public partial class FlowCompilerTests
         Assert.Equal(expected, Assert.IsType<NotifyNode>(Step("notify", new { text = "hot", level }).Compile().Nodes["x"]).Level);
     }
 
+    // The limit is on what is written in the box, and what an alarm shows of its reason is cut far shorter:
+    // the sentence says both, so that nobody takes the one number for the other.
     [Fact]
     public void A_reason_is_at_most_1024_characters_and_one_of_blanks_says_the_alarms_name()
     {
         Alarm(new { name = "Hot", level = "warn", reason = new string('r', 1024) }).Compile();
-        Assert.Equal("node:raise", Only(Alarm(new { name = "Hot", level = "warn", reason = new string('r', 1025) })).Key);
+
+        var tooLong = Only(Alarm(new { name = "Hot", level = "warn", reason = new string('r', 1025) }));
+        Assert.Equal("node:raise", tooLong.Key);
+        Assert.Equal("Write the reason in at most 1024 characters; only the first 200 are shown.", tooLong.Message);
 
         var blank = Assert.IsType<AlarmRaiseNode>(Alarm(new { name = "Hot", level = "warn", reason = "   " }).Compile().Nodes["raise"]);
         Assert.Equal("Hot", Rendered(blank.Reason));
+    }
+
+    // A reason left blank says the name as it was typed. A name is not a template: braces in it are part of
+    // it, so it can neither be refused for a placeholder in a reason nobody wrote nor fill one in.
+    [Fact]
+    public void A_name_with_braces_in_it_is_not_refused_for_a_reason_nobody_wrote()
+    {
+        var raise = Assert.IsType<AlarmRaiseNode>(Alarm(new { name = "Pump {{nope}}", level = "warn" }).Compile().Nodes["raise"]);
+
+        Assert.Equal("Pump {{nope}}", Rendered(raise.Reason));
+    }
+
+    [Fact]
+    public void A_reason_left_blank_fills_in_nothing_the_name_holds()
+    {
+        var raise = Assert.IsType<AlarmRaiseNode>(Alarm(new { name = "{{topic}} is hot", level = "warn" }).Compile().Nodes["raise"]);
+
+        Assert.Equal("{{topic}} is hot", Rendered(raise.Reason, new FlowMessage("plant/k1", "", 0)));
     }
 
     [Fact]
@@ -318,11 +386,15 @@ public partial class FlowCompilerTests
         Assert.Equal("node:raise", Only(Alarm(new { name = "Hot", level = "loud" }, new { alarm = "raise" })).Key);
     }
 
+    // A notice's limit is said the way a reason's is, and for the same reason.
     [Fact]
     public void A_notice_is_at_most_1024_characters_and_carries_its_text_trimmed()
     {
         Step("notify", new { text = new string('t', 1024), level = "info" }).Compile();
-        Assert.Equal("node:x", Only(Step("notify", new { text = new string('t', 1025), level = "info" })).Key);
+
+        var tooLong = Only(Step("notify", new { text = new string('t', 1025), level = "info" }));
+        Assert.Equal("node:x", tooLong.Key);
+        Assert.Equal("Write the notice in at most 1024 characters; only the first 200 are shown.", tooLong.Message);
 
         var notify = Assert.IsType<NotifyNode>(Step("notify", new { text = "  {{topic}} is hot  ", level = "info" }).Compile().Nodes["x"]);
         Assert.Equal("plant/k1 is hot", Rendered(notify.Text, new FlowMessage("plant/k1", "", 0)));
@@ -383,6 +455,17 @@ public partial class FlowCompilerTests
         for (var i = 0; i < FlowLimits.Variables; i++) chart.Var($"v{i}", "1");
 
         chart.Compile();
+    }
+
+    // Past the limit only the count is said, as it is for nodes and wires, and no variable is judged on its
+    // own. A node still reads the names that are there, so it is not told that a variable it reads is missing.
+    [Fact]
+    public void Past_fifty_variables_only_the_count_is_said()
+    {
+        var chart = Step("publish", new { topic = "plant/{{var.limit}}" });
+        for (var i = 0; i <= FlowLimits.Variables; i++) chart.Var("limit", "90");
+
+        Assert.Equal("A flow has at most 50 variables.", Only(chart).Message);
     }
 
     [Fact]
@@ -473,5 +556,24 @@ public partial class FlowCompilerTests
         // The kind of a node is part of what it does: these two read the same settings and are wired alike.
         var both = new { times = "3", array = "$.list" };
         Assert.NotEqual(Print(Loop("for", both)), Print(Loop("forEach", both)));
+    }
+
+    // flows.json is written indented and with every é escaped, and a PUT body arrives compact and as it was
+    // typed. One flow read from either is one flow, and an Update that finds them equal keeps its run.
+    [Theory]
+    [InlineData(
+        "{\"topic\":\"plant/k1/cmd\",\"payload\":\"on\",\"qos\":1}",
+        "{\n  \"topic\": \"plant/k1/cmd\",\n  \"payload\": \"on\",\n  \"qos\": 1\n}")]
+    [InlineData("{\"topic\":\"plant/é/cmd\"}", "{\"topic\":\"plant/\\u00e9/cmd\"}")]
+    public void The_fingerprint_does_not_depend_on_how_the_settings_are_spaced_or_escaped(string sent, string written)
+    {
+        var flow = Step("publish").Build();
+
+        string Print(string config) => FlowCompiler.Compile(flow with
+        {
+            Nodes = [.. flow.Nodes.Select(node => node.Id == "x" ? node with { Config = JsonSerializer.Deserialize<JsonElement>(config) } : node)],
+        }, ChartBuilder.Prefix).Flow!.Fingerprint;
+
+        Assert.Equal(Print(sent), Print(written));
     }
 }

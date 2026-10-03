@@ -290,6 +290,78 @@ public partial class FlowCompilerTests
         Assert.Contains("must wait", problem.Message);
     }
 
+    // A break leaves the turn, so a Wait it goes on to is one the run reaches only once the turn is over:
+    // the loop is refused alike with that Wait and without it, and told where a Wait has to go.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void A_forever_loop_must_wait_in_its_turn_and_not_after_a_break(bool pause)
+    {
+        var chart = new ChartBuilder()
+            .Node("start", "start").Node("loop", "for", new { forever = true })
+            .Node("test", "if", new { field = "$.x", test = "exists" }).Node("end", "end")
+            .Then("start", "loop").Wire("loop", "body", "test").Wire("test", "no", "loop", "next").Wire("loop", "done", "end");
+
+        if (pause) chart.Node("pause", "wait", new { seconds = "1" }).Wire("test", "yes", "pause").Then("pause", "end");
+        else chart.Wire("test", "yes", "end");
+
+        var problem = Only(chart);
+        Assert.Equal("node:loop", problem.Key);
+        Assert.Equal("A forever loop must wait. Put a Wait or an MQTT in in its body, on the way back to its next.", problem.Message);
+    }
+
+    // Nor is a Wait after the loop around it, which the run reaches by breaking out into that loop's next
+    // turn and going on through its done.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void A_forever_loop_must_wait_in_its_turn_and_not_after_the_loop_around_it(bool pause)
+    {
+        var chart = new ChartBuilder()
+            .Node("start", "start").Node("outer", "for", new { times = "3" }).Node("inner", "for", new { forever = true })
+            .Node("test", "if", new { field = "$.x", test = "exists" }).Node("end", "end")
+            .Then("start", "outer").Wire("outer", "body", "inner").Wire("inner", "body", "test")
+            .Wire("test", "yes", "outer", "next").Wire("test", "no", "inner", "next").Wire("inner", "done", "outer", "next");
+
+        if (pause) chart.Node("pause", "wait", new { seconds = "1" }).Wire("outer", "done", "pause").Then("pause", "end");
+        else chart.Wire("outer", "done", "end");
+
+        var problem = Only(chart);
+        Assert.Equal("node:inner", problem.Key);
+        Assert.Contains("must wait", problem.Message);
+    }
+
+    // Nor is a Wait the run passes before it comes to the loop: a turn is looked for in the body alone.
+    [Fact]
+    public void A_forever_loop_must_wait_in_its_turn_and_not_before_it()
+    {
+        var problem = Only(new ChartBuilder()
+            .Node("start", "start").Node("pause", "wait", new { seconds = "1" }).Node("loop", "for", new { forever = true })
+            .Node("say", "debug").Node("end", "end")
+            .Then("start", "pause", "loop").Wire("loop", "body", "say").Wire("say", "out", "loop", "next").Wire("loop", "done", "end"));
+
+        Assert.Equal("node:loop", problem.Key);
+        Assert.Contains("must wait", problem.Message);
+    }
+
+    // A loop inside a forever loop is part of its turn: the inner loop's body leads back to the inner loop,
+    // and the inner loop on to the forever loop's next. So the Wait may be in the inner loop or after it.
+    [Fact]
+    public void A_forever_loop_may_wait_inside_a_loop_it_holds_or_after_one()
+    {
+        new ChartBuilder()
+            .Node("start", "start").Node("forever", "for", new { forever = true }).Node("each", "forEach", new { array = "$.list" })
+            .Node("pause", "wait", new { seconds = "1" }).Node("end", "end")
+            .Then("start", "forever").Wire("forever", "body", "each").Wire("each", "body", "pause").Wire("pause", "out", "each", "next")
+            .Wire("each", "done", "forever", "next").Wire("forever", "done", "end").Compile();
+
+        new ChartBuilder()
+            .Node("start", "start").Node("forever", "for", new { forever = true }).Node("each", "forEach", new { array = "$.list" })
+            .Node("say", "debug").Node("pause", "wait", new { seconds = "1" }).Node("end", "end")
+            .Then("start", "forever").Wire("forever", "body", "each").Wire("each", "body", "say").Wire("say", "out", "each", "next")
+            .Wire("each", "done", "pause").Wire("pause", "out", "forever", "next").Wire("forever", "done", "end").Compile();
+    }
+
     [Fact]
     public void A_forever_loop_is_not_held_to_its_times()
     {

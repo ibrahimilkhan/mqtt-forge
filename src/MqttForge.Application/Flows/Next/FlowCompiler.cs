@@ -152,10 +152,18 @@ public static partial class FlowCompiler
     /// <summary>The flow's variables, judged; and the names it declares, for every reference to one.</summary>
     private static HashSet<string> Variables(IReadOnlyList<FlowVariable> variables, List<FlowProblem> problems)
     {
-        var names = new HashSet<string>(StringComparer.Ordinal);
-
+        // Past the limit only the count is said, as it is for nodes and wires: what is wrong with each variable
+        // can wait until the list is cut down, and said now it would bury the one sentence that matters under
+        // fifty more. Their names are still the ones the nodes read, so that no node is told a variable it
+        // reads is missing when it is there.
         if (variables.Count > FlowLimits.Variables)
+        {
             problems.Add(new(null, null, $"A flow has at most {FlowLimits.Variables} variables."));
+            return new HashSet<string>(
+                variables.Where(variable => variable is not null).Select(variable => variable.Name), StringComparer.Ordinal);
+        }
+
+        var names = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var variable in variables)
         {
@@ -208,8 +216,10 @@ public static partial class FlowCompiler
 
             case FlowPorts.For:
             {
+                // A forever loop counts nothing, and the pane hides times while forever is ticked but keeps what
+                // was typed there: that is taken as empty, so it can neither refuse the node nor be carried into it.
                 var forever = settings.Bool("forever");
-                var timesText = settings.Text("times");
+                var timesText = forever ? "" : settings.Text("times");
                 var times = Template(timesText, declared, out problem);
 
                 if (problem is null && !forever)
@@ -266,7 +276,9 @@ public static partial class FlowCompiler
                 var topic = Template(topicText, declared, out var topicProblem);
                 var payloadText = settings.Text("payload");
                 var payload = Template(payloadText, declared, out var payloadProblem);
-                var qos = (int)(settings.Number("qos") ?? 0);
+                // Judged as the number that was written and made whole only once it is one of the three: a
+                // cast first would take 1.5 for 1 and publish at a QoS nobody chose.
+                var qos = settings.Number("qos") ?? 0;
 
                 if (topicText.Length == 0)
                     problem = "Give the topic to publish to.";
@@ -280,10 +292,10 @@ public static partial class FlowCompiler
                     problem = payloadProblem;
                 else if (PayloadProblem(payloadText) is { } tooLarge)
                     problem = tooLarge;
-                else if (qos is < 0 or > 2)
+                else if (qos is not (0 or 1 or 2))
                     problem = "QoS is 0, 1 or 2.";
 
-                return new PublishNode(node.Id, topic, payload, qos, settings.Bool("retain"));
+                return new PublishNode(node.Id, topic, payload, (int)qos, settings.Bool("retain"));
             }
 
             case FlowPorts.Debug:
@@ -312,7 +324,8 @@ public static partial class FlowCompiler
 
                 if (text.Length > FlowLimits.TextTemplateLength)
                 {
-                    problem = $"A notice is at most {FlowLimits.TextTemplateLength} characters.";
+                    problem = $"Write the notice in at most {FlowLimits.TextTemplateLength} characters; " +
+                              $"only the first {FlowLimits.NoticeLength} are shown.";
                     return null;
                 }
 
@@ -372,8 +385,13 @@ public static partial class FlowCompiler
         var field = Value(settings.Text("field"), declared, out problem);
         if (problem is not null) return null;
 
-        var valueText = settings.Text("value");
-        var value2Text = settings.Text("value2");
+        // The test is read before the values because it says which of them there are: the pane shows
+        // value for every test but exists and value2 for between alone, and keeps what was typed in a box
+        // it hides. A box the test does not read is taken as empty, so what was left in it — a variable
+        // deleted since, say — cannot refuse the node with a sentence about a box nobody can see.
+        var test = settings.Text("test");
+        var valueText = test == "exists" ? "" : settings.Text("value");
+        var value2Text = test == "between" ? settings.Text("value2") : "";
 
         if (valueText.Length > FlowLimits.TextTemplateLength || value2Text.Length > FlowLimits.TextTemplateLength)
         {
@@ -389,7 +407,6 @@ public static partial class FlowCompiler
 
         // A value typed in is judged now, while its writer is looking; one that reads a variable is
         // judged by each run, and a run that finds it wrong says so on the node.
-        var test = settings.Text("test");
         switch (test)
         {
             case "gt" or "gte" or "lt" or "lte":
@@ -466,16 +483,20 @@ public static partial class FlowCompiler
         var level = Level(settings.Text("level"), out problem);
         if (problem is not null) return null;
 
-        // A reason left blank says the alarm's own name, which is at least a sentence. Capped as a topic
-        // is: a reason is rendered for every alarm raised, and what it renders is cut at 200 anyway.
+        // Capped as a topic is: a reason is rendered for every alarm raised, and what it renders is cut at
+        // 200 anyway.
         var reasonText = settings.Text("reason").Trim();
         if (reasonText.Length > FlowLimits.ReasonTemplateLength)
         {
-            problem = $"A reason is at most {FlowLimits.ReasonTemplateLength} characters.";
+            problem = $"Write the reason in at most {FlowLimits.ReasonTemplateLength} characters; " +
+                      $"only the first {FlowLimits.ReasonLength} are shown.";
             return null;
         }
 
-        var reason = Template(reasonText.Length == 0 ? name : reasonText, declared, out problem);
+        // A reason left blank says the alarm's own name, which is at least a sentence. It says it as it was
+        // typed and never as a template: braces in a name are part of it, and a name read as a template could
+        // be refused for a placeholder in a reason nobody wrote, or fill in a topic nobody asked for.
+        var reason = reasonText.Length == 0 ? FlowTemplate.Verbatim(name) : Template(reasonText, declared, out problem);
         if (problem is not null) return null;
 
         var value = Value(settings.Text("value"), declared, out problem);
@@ -578,6 +599,7 @@ public static partial class FlowCompiler
             var after = Region(wires, loop, "done");
             var outside = Reached(start, wires, avoid: loop);
             var returns = wires.Where(wire => wire.To == loop && wire.ToPort == FlowPorts.Next).ToList();
+            var lastSteps = new List<string>();
 
             if (returns.Count == 0)
                 problems.Add(new(loop, null, "Nothing comes back to this loop. Wire the last step of its body to its next."));
@@ -590,15 +612,19 @@ public static partial class FlowCompiler
                 var own = wire.From == loop && wire.FromPort == "body" ||
                           body.Contains(wire.From) && !after.Contains(wire.From) && !outside.Contains(wire.From);
 
-                if (!own)
-                    problems.Add(new(null, wire.Id, "Only the loop's own body comes back to its next."));
+                if (own) lastSteps.Add(wire.From);
+                else problems.Add(new(null, wire.Id, "Only the loop's own body comes back to its next."));
             }
 
-            // A forever loop that never waits would go round as fast as the server can, so its body has
-            // to hold something that waits: a Wait, or an MQTT in reading the next message.
+            // A forever loop that never waits would go round as fast as the server can, so a turn of it
+            // has to hold something that waits: a Wait, or an MQTT in reading the next message. A turn,
+            // and not everything the body leads to: that takes in wherever a break goes as well — an End,
+            // what done leads to, the next turn of a loop around this one — and a Wait out there is one
+            // the run reaches only once it has left the turn.
             if (nodes.GetValueOrDefault(loop) is ForNode { Forever: true } &&
-                !body.Any(id => types[id] is FlowPorts.Wait or FlowPorts.MqttIn))
-                problems.Add(new(loop, null, "A forever loop must wait. Put a Wait or an MQTT in in its body."));
+                !Turn(wires, body, lastSteps).Any(id => types[id] is FlowPorts.Wait or FlowPorts.MqttIn))
+                problems.Add(new(loop, null,
+                    "A forever loop must wait. Put a Wait or an MQTT in in its body, on the way back to its next."));
         }
 
         return start;
@@ -638,6 +664,23 @@ public static partial class FlowCompiler
                     queue.Enqueue(wire.To);
 
         return region;
+    }
+
+    /// <summary>The nodes of a loop's body that a turn goes through: those from which one of its last steps can still be reached.</summary>
+    // A last step is a node whose wire back to the loop's next is the loop's own; an empty body's is the
+    // loop itself, which is no node of its body. Walked backwards from them, through the body alone. A loop
+    // held in the turn brings all of its own body in with it, since that leads back to the loop it is in.
+    private static HashSet<string> Turn(IReadOnlyList<FlowEdge> wires, IReadOnlySet<string> body, IEnumerable<string> lastSteps)
+    {
+        var turn = new HashSet<string>(lastSteps.Where(body.Contains), StringComparer.Ordinal);
+        var queue = new Queue<string>(turn);
+
+        while (queue.TryDequeue(out var id))
+            foreach (var wire in wires)
+                if (wire.To == id && body.Contains(wire.From) && turn.Add(wire.From))
+                    queue.Enqueue(wire.From);
+
+        return turn;
     }
 
     private static string? Wire(
@@ -693,6 +736,9 @@ public static partial class FlowCompiler
 
     private static string Fingerprint(Flow flow)
     {
+        // Each node's settings are written out afresh and not taken as the text they came in: flows.json is
+        // indented and escapes what a PUT body sends compact and as typed, and one flow read from either has
+        // to come out as one flow. The settings keep their order, which is what was written.
         var shape = JsonSerializer.Serialize(new
         {
             flow.Name,
@@ -700,7 +746,7 @@ public static partial class FlowCompiler
             {
                 node.Id,
                 node.Type,
-                Config = node.Config.ValueKind == JsonValueKind.Undefined ? "{}" : node.Config.GetRawText(),
+                Config = node.Config.ValueKind == JsonValueKind.Undefined ? "{}" : JsonSerializer.Serialize(node.Config),
             }),
             flow.Edges,
             flow.Variables,
