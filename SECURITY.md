@@ -132,10 +132,18 @@ already going.
 ## Flows
 
 Flows (an experimental page) are drawn from nodes and run on the server, whether or not a console
-is open. A deployed flow is a standing instruction in the same way an alert rule is: anyone who can
-reach the port can deploy one, and it keeps running after they have gone — publishing on a timer,
-answering messages, raising alarms. Each flow is held to fifty publishes a second, and at most fifty
-flows are kept, so together they can publish up to 2,500 messages a second.
+is open. An active flow is a standing instruction in the same way an alert rule is: anyone who can
+reach the port can switch one on, and it keeps running after they have gone — publishing on a timer,
+answering messages, raising alarms.
+
+A Test of a flow is a standing instruction too, and one that is written down nowhere. Anyone who can
+reach the port can test a flow, or a draft that was never saved, and a test that loops for ever keeps
+running until somebody presses Stop, the flow is deleted or the app restarts. It is not in
+`flows.json`, and `GET /api/flows/status` is the only place that lists it.
+
+Each run of a flow is held to fifty publishes a second, and a flow's active run and a Test of it are
+two runs, fifty each. At most fifty flows are kept, and at most fifty tests — of saved flows or of
+drafts — run at once beside them, so together they can publish up to 5,000 messages a second.
 
 A Publish node can write to any topic the broker lets this app write to, and it can set the retain
 flag, so what it writes stays on the broker for every client that subscribes later. That includes
@@ -144,17 +152,21 @@ rule's MQTT alarm has to stay under the prefix, but nothing keeps a Publish node
 something acts on what is published under the prefix, decide who may write there in the broker's
 own access control.
 
-A Webhook node makes this app POST to whatever http or https address the node names, each time a
-deployed flow — or a Test of one, while it runs — reaches it, at most once a second for each Webhook
-node in each run; a deployed flow and its Test count apart. What it posts is the node's body, and
-unless the node says otherwise that is the message the flow is carrying, as it arrived. Local and
-private addresses are reachable, as they are for a rule's webhook, and a redirect is never followed.
-A Webhook node has no headers, so a secret the receiver checks has to go in the address — and an
-address, a node's or a rule's, sits in plain text in `flows.json` or `alert-rules.json`, and the API
-sends it back as it was written. With `MqttForge:AllowWebhooks` set to `false`, no Webhook node
-sends anything. A flow's alarm goes no further than the screen and the app's own log: it carries no
-webhook and publishes nothing to the broker. Flows are kept in `flows.json` beside the other
-settings.
+A Webhook node makes this app POST to whatever http or https address the node names, each time an
+active flow — or a Test of one, while it runs — reaches it, at most once a second for each Webhook
+node in each run; an active flow and its Test count apart. What it posts is the node's body, and
+unless the node says otherwise that is the payload the run is carrying — in a For each, the element
+it has reached, and not the message as it arrived. Local and private addresses are reachable, as
+they are for a rule's webhook, and a redirect is never followed.
+
+A Webhook node has no headers, so a secret the receiver checks has to go in the address. A node's
+address and its body sit in plain text in `flows.json`, as a rule's address does in
+`alert-rules.json`, and the API sends them back as they were written. When a post or a rule's
+webhook fails, the app's log names the address up to its path and leaves the query string out: a
+secret in the query string stays out of the log, and one in the path does not. With
+`MqttForge:AllowWebhooks` set to `false`, no Webhook node sends anything. A flow's alarm goes no
+further than the screen and the app's own log: it carries no webhook and publishes nothing to the
+broker. Flows are kept in `flows.json` beside the other settings.
 
 None of these is a vulnerability report; they are how the app is built. Something that lets a
 person do more than the above is worth telling me about.
