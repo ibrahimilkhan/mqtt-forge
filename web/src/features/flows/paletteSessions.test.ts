@@ -22,13 +22,17 @@ const STEPS = 7;
 const FIRST_SEED = 20261003;
 
 /**
- * Sessions past the first SESSIONS that runs of three thousand found going wrong, each once one thing
- * the palette or the routes do was undone, which the first SESSIONS never showed: a node put down free,
- * or dragged, a wire's margin from another and not the wider room (20261846, 20261989); the names
- * beside the ports left out of what crowds a node (20262043, 20262114); and the routes worked out once,
- * with no second plan for the wires that found no way (20262313). Replayed on every run.
+ * Sessions past the first SESSIONS that larger runs found going wrong, each once one thing the palette
+ * or the routes do was undone, which the first SESSIONS never showed. Runs of three thousand: a node put
+ * down free, or dragged, a wire's margin from another and not the wider room (20261846, 20261989); the
+ * names beside the ports left out of what crowds a node (20262043, 20262114); and the routes worked out
+ * once, with no second plan for the wires that found no way (20262313). Runs of twenty thousand, once a
+ * node put after another kept a wire's margin from what stands round its place: a port of one facing the
+ * other nearer than that room let be (the rest). Replayed on every run.
  */
-const PINNED = [20261846, 20261989, 20262043, 20262114, 20262313];
+const PINNED = [
+  20261846, 20261989, 20262043, 20262114, 20262313, 20264279, 20266008, 20268909, 20273485, 20276218, 20278127,
+];
 
 /** A session's seed, its steps up to the first that left something wrong, and what was wrong then; null when nothing was. */
 function wrongIn(seed: number) {

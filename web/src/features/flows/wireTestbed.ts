@@ -335,7 +335,7 @@ const PLACEABLE = Object.values(NODE_SPECS)
  */
 function standsClear(flow: FlowDto, id: string) {
   const node = flow.nodes.find((one) => one.id === id)!;
-  return flow.nodes.every((other) => other.id === id || !MEASURE.crowds(flow, node, other));
+  return flow.nodes.every((other) => other.id === id || !MEASURE.crowds(flow, node, other, MEASURE.room));
 }
 
 /**

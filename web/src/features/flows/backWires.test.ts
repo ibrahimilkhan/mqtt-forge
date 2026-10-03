@@ -406,6 +406,17 @@ describe('the drawings clicked at random that went wrong', () => {
     expect(endOf(after).x).toBe(endOf(before).x + drawnBox('mqttIn').width + GAP);
   });
 
+  // The End a reader dragged further along stands clear of where the body's last step lands: only the
+  // walk on past the return into the loop's next, from the loop's done, moves it along.
+  it('moves what follows a loop along with its body when nothing moved would land on it', () => {
+    const before = twoStepBody();
+    const end = endOf(before);
+    const far = moveNodes(before, { [end.id]: { x: end.x + 300, y: end.y } });
+    const after = clicked(far, { wire: wireOf(far, 'loop', 'body') }, 'mqttIn', 'read');
+
+    expect(endOf(after).x).toBe(end.x + 300 + drawnBox('mqttIn').width + GAP);
+  });
+
   it('moves a node standing where what moves would land along too, on its row', () => {
     const flow = drawings['a Debug dropped on the row past the End, then an If clicked after MQTT in'];
 

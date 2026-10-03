@@ -153,20 +153,22 @@ export type BoxOf = (type: string) => Box;
 
 /**
  * Whether two nodes, standing where `flow` has them and wired as it has them, crowd each other as
- * they are drawn: nearer than the room the palette keeps between nodes, or a name written beside a
- * port of the one over the other, or in front of one of its ports — where no wire could come in or go
- * out but through the name. Handed in by whoever draws the nodes, which knows where it writes the
- * names and stands the ports.
+ * they are drawn: nearer than `room`; a name written beside a port of the one over the other, or in
+ * front of one of its ports — where no wire could come in or go out but through the name; or a port of
+ * either facing the other nearer than the room a wire takes out of it and round that node, whatever
+ * `room` is. Handed in by whoever draws the nodes, which knows where it writes the names and stands the
+ * ports.
  */
-export type Crowds = (flow: FlowDto, a: FlowNodeDto, b: FlowNodeDto) => boolean;
+export type Crowds = (flow: FlowDto, a: FlowNodeDto, b: FlowNodeDto, room: number) => boolean;
 
 /**
  * How the palette reckons the nodes it puts down, handed in by whoever draws them: the room each
  * takes (boxOf), how tall each is drawn, to stand a node level with the one it follows, the room it
- * keeps clear round a node it puts down, whether two nodes crowd each other (crowds), and how far
- * past its box anything of a node's stands that another node is kept clear of (reach).
+ * keeps clear round a node it puts down free (room), and round one it puts after another (margin),
+ * whether two nodes crowd each other (crowds), and how far past its box anything of a node's stands
+ * that another node is kept clear of (reach).
  */
-export type Measure = { boxOf: BoxOf; heightOf: (type: string) => number; room: number; crowds: Crowds; reach: number };
+export type Measure = { boxOf: BoxOf; heightOf: (type: string) => number; room: number; margin: number; crowds: Crowds; reach: number };
 
 /**
  * How far one node's right edge stands from the next one's left along a row, as the examples are
@@ -215,6 +217,15 @@ const apart = (at: Place, box: Box, node: FlowNodeDto, other: Box, room: number)
  * End pushed along onto it — or a step of another branch standing where the chain goes: whatever a
  * moved node would crowd (see Crowds) moves along too, with what a run gets to from it standing at or
  * right of it, until nothing moved crowds anything that stays.
+ *
+ * In the way, and landing on what stays, is crowding by a wire's margin (`measure.margin`), not by the
+ * wider room a node put down free keeps: the rows the palette lays out stand far further apart than
+ * either, and at the wider room an If put on an If's no, 48 under it, counted the If it follows as in
+ * its way and went three places along, and a row a reader laid 40 under a chain was pushed along
+ * with it, or had a node clicked into the chain go two rows down. A port still keeps the wider room in
+ * front of it (see Crowds): the wires out of it and into what it faces need the gap between. The node
+ * it is put after is never in its way: the place is worked out from it, and the wire between the two
+ * is what the place is for.
  */
 export function placeAfter(
   flow: FlowDto,
@@ -223,7 +234,7 @@ export function placeAfter(
   type: FlowNodeType,
   measure: Measure,
 ): { at: Place; moved: Record<string, Place> } {
-  const { boxOf, heightOf, crowds } = measure;
+  const { boxOf, heightOf, crowds, margin } = measure;
   const node = flow.nodes.find((one) => one.id === nodeId)!;
   const middle = node.y + heightOf(node.type) / 2;
   const wanted =
@@ -238,7 +249,7 @@ export function placeAfter(
   const wire = flow.edges.find((edge) => edge.from === nodeId && edge.fromPort === port);
   const drawn = (wire ? insertOnWire(flow, wire.id, type, at, PLACING) : insertAfter(flow, nodeId, type, at, PLACING)) ?? withNode(flow, type, at, PLACING);
   const placed = drawn.nodes.find((one) => one.id === PLACING)!;
-  const inTheWay = flow.nodes.filter((one) => crowds(drawn, placed, one));
+  const inTheWay = flow.nodes.filter((one) => one.id !== nodeId && crowds(drawn, placed, one, margin));
   if (inTheWay.length === 0) return { at, moved: {} };
 
   const led = wire?.to;
@@ -269,7 +280,7 @@ export function placeAfter(
     const mover = landing.pop()!;
     const lands = { ...mover, x: mover.x + by };
     for (const one of flow.nodes)
-      if (!moving.has(one) && crowds(drawn, lands, one))
+      if (!moving.has(one) && crowds(drawn, lands, one, margin))
         for (const pushed of [one, ...ahead(one.id, one.x)])
           if (!moving.has(pushed)) {
             moving.add(pushed);
@@ -365,7 +376,7 @@ export function freeSpot(
   const clear = (x: number, y: number) => {
     if (!flow.nodes.every((node) => apart({ x, y }, box, node, boxOf(node.type), gap))) return false;
     const put: FlowNodeDto = { id: PLACING, type: type as FlowNodeType, x, y, config: {} };
-    return crowding === undefined || flow.nodes.every((node) => !crowding.crowds(flow, put, node));
+    return crowding === undefined || flow.nodes.every((node) => !crowding.crowds(flow, put, node, gap));
   };
 
   const columns = Math.max(1, Math.floor(across));

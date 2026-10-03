@@ -8,16 +8,19 @@ import {
   emptyFlow,
   fingerprint,
   freeSpot,
+  GAP,
   insertAfter,
   insertOnWire,
   moveNodes,
   newId,
   nextName,
   noReturn,
+  placeAfter,
   placesInView,
   problemsOf,
   removeEdges,
   removeNodes,
+  ROW,
   sameFlow,
   setConfig,
   standingOf,
@@ -26,10 +29,11 @@ import {
   withDrafts,
   type Wire,
 } from './flowDocument';
+import * as backWires from './backWires';
 import { exampleFlows } from './examples';
 import { DECISION_HEIGHT, DECISION_WIDTH, MEASURE, NODE_WIDTH, STEP_HEIGHT } from './FlowCanvas';
 import { NODE_SPECS, sideOf } from './nodeTypes';
-import { routedIn, wrongWith } from './wireTestbed';
+import { clicked, freshFlow, named, overlapsIn, routedIn, wrongWith } from './wireTestbed';
 
 /**
  * Start → Wait → Set → End, under a flow id of its own each time, as a flow made on the page has:
@@ -351,9 +355,9 @@ describe('flow document', () => {
       const put: FlowNodeDto = { id: 'put', type: 'publish', x: spot.x, y: spot.y, config: {} };
 
       expect(freeSpot(ending, start, 'publish', MEASURE.boxOf, 1, MEASURE.room)).toEqual(start);
-      expect(MEASURE.crowds(ending, { ...put, ...start }, ending.nodes[0])).toBe(true);
+      expect(MEASURE.crowds(ending, { ...put, ...start }, ending.nodes[0], MEASURE.room)).toBe(true);
       expect(spot).not.toEqual(start);
-      expect(MEASURE.crowds(ending, put, ending.nodes[0])).toBe(false);
+      expect(MEASURE.crowds(ending, put, ending.nodes[0], MEASURE.room)).toBe(false);
     });
 
     // As many to a row as fit between the middle of the view and its right edge. The page in jsdom
@@ -661,6 +665,126 @@ describe("only a loop's own body comes back to its next", () => {
     expect(canConnect(back, wire('l.body>b.in'))).toBe(true);
     expect(canConnect(back, wire('q.no>b.in'))).toBe(false);
     expect(canConnect(back, wire('l.done>b.in'))).toBe(false);
+  });
+});
+
+/*
+ * A palette click puts a node after the one it follows (placeAfter), and moves along what is in the
+ * way. In the way is what crowds the place by a wire's margin, and never the node it follows. At the
+ * wider room a node put down free keeps, an If put on an If's no, 48 under the If, counted that If as
+ * in its way and went three places along; and a row a reader laid 40 under a chain was in the way of a
+ * node clicked into the chain, which went two rows down, or was pushed along with the chain.
+ */
+describe('where a palette click after a node puts it', () => {
+  const wireOf = (flow: FlowDto, from: string, port: string) => flow.edges.find((edge) => edge.from === from && edge.fromPort === port)!.id;
+  const nodeOf = (flow: FlowDto, id: string) => flow.nodes.find((node) => node.id === id)!;
+  const click = (flow: FlowDto, pick: { node: string } | { wire: string }, type: FlowNodeType, id: string) => named(clicked(flow, pick, type, id));
+
+  /** A chain from the Start to the End by hand, steps 284 apart, and a row of two Publishes laid 40 under it, wired one to the other. */
+  const rows = (): FlowDto => ({
+    id: 'rows', name: 'Rows', enabled: false, variables: [],
+    nodes: [
+      { id: 'start', type: 'start', x: 0, y: 0, config: {} },
+      { id: 'a', type: 'debug', x: 284, y: 0, config: {} },
+      { id: 'b', type: 'debug', x: 568, y: 0, config: {} },
+      { id: 'c', type: 'debug', x: 852, y: 0, config: {} },
+      { id: 'end', type: 'end', x: 1136, y: 0, config: {} },
+      { id: 'x', type: 'publish', x: 600, y: 120, config: {} },
+      { id: 'y', type: 'publish', x: 900, y: 120, config: {} },
+    ],
+    edges: [
+      { id: 'e1', from: 'start', fromPort: 'out', to: 'a', toPort: 'in' },
+      { id: 'e2', from: 'a', fromPort: 'out', to: 'b', toPort: 'in' },
+      { id: 'e3', from: 'b', fromPort: 'out', to: 'c', toPort: 'in' },
+      { id: 'e4', from: 'c', fromPort: 'out', to: 'end', toPort: 'in' },
+      { id: 'e5', from: 'x', fromPort: 'out', to: 'y', toPort: 'in' },
+    ],
+  });
+
+  it('puts an If on an If’s no under its foot, and an If on that one’s no under its own', () => {
+    let flow = click(freshFlow(), { node: 'start' }, 'mqttIn', 'read');
+    flow = click(flow, { node: 'read' }, 'if', 'one');
+    const one = nodeOf(flow, 'one');
+
+    flow = click(flow, { wire: wireOf(flow, 'one', 'no') }, 'if', 'two');
+    // Its way in GAP/2 past the foot, its middle a row under the If's.
+    expect(nodeOf(flow, 'two')).toMatchObject({ x: one.x + DECISION_WIDTH / 2 + GAP / 2, y: one.y + ROW });
+    flow = click(flow, { wire: wireOf(flow, 'two', 'no') }, 'if', 'three');
+    expect(nodeOf(flow, 'three')).toMatchObject({ x: one.x + DECISION_WIDTH + GAP, y: one.y + 2 * ROW });
+    expect([...overlapsIn(flow), ...wrongWith(flow)]).toEqual([]);
+  });
+
+  it('puts an If on the watch’s If’s no under its foot, and moves the Clear alarm there along', () => {
+    const watch = exampleFlows()[1];
+    const test = nodeOf(watch, 'test');
+    const cool = nodeOf(watch, 'cool');
+    const flow = click(watch, { wire: wireOf(watch, 'test', 'no') }, 'if', 'check');
+
+    expect(nodeOf(flow, 'check')).toMatchObject({ x: test.x + DECISION_WIDTH / 2 + GAP / 2, y: test.y + ROW });
+    expect(nodeOf(flow, 'cool')).toMatchObject({ x: cool.x + DECISION_WIDTH + GAP, y: cool.y });
+    expect([...overlapsIn(flow), ...wrongWith(flow)]).toEqual([]);
+  });
+
+  it('puts a node clicked into a chain on the chain’s row, past a row laid 40 under it, which stays', () => {
+    const flow = click(rows(), { node: 'a' }, 'debug', 'say');
+
+    expect(nodeOf(flow, 'say')).toMatchObject({ x: 568, y: 0 });
+    expect(['b', 'c', 'end'].map((id) => nodeOf(flow, id).x)).toEqual([852, 1136, 1420]);
+    expect(['x', 'y'].map((id) => nodeOf(flow, id))).toMatchObject([{ x: 600, y: 120 }, { x: 900, y: 120 }]);
+    expect([...overlapsIn(flow), ...wrongWith(flow)]).toEqual([]);
+  });
+
+  // Two nodes may stand a wire's margin apart, but not with a port of either facing the other: its
+  // wire turns along the other node, and the wires to that node come through the same gap. An If's no
+  // came down 36 over a For each, where the loop's returns come down onto its next.
+  it('counts a node a port faces nearer than the room a node put down free keeps as crowding it', () => {
+    const flow = {
+      ...rows(),
+      nodes: [...rows().nodes, { id: 'test', type: 'if' as const, x: 1324, y: 92, config: {} }, { id: 'each', type: 'forEach' as const, x: 1351, y: 256, config: {} }],
+    };
+    const [a, x, test, each] = ['a', 'x', 'test', 'each'].map((id) => nodeOf(flow, id));
+
+    expect(each.y - (test.y + DECISION_HEIGHT)).toBe(36);
+    expect(MEASURE.crowds(flow, test, each, MEASURE.margin)).toBe(true);
+    expect(MEASURE.crowds(flow, { ...test, y: each.y - DECISION_HEIGHT - 56 }, each, MEASURE.margin)).toBe(false);
+    // A step 40 under a chain's step, with no port facing up or down: a margin apart is room enough.
+    expect(MEASURE.crowds(flow, a, { ...x, x: a.x }, MEASURE.margin)).toBe(false);
+  });
+
+  // Whether one node crowds another is asked of every two a click weighs, each node against the place
+  // and each node moved against each that stays: in a chain of two hundred, ten thousand of them.
+  // Worked out again for every one, the names round both made a click there a hundred times as slow.
+  it('works out the names round no node twice for a click, and only round nodes near what it puts down and moves', () => {
+    const count = 200;
+    const flow: FlowDto = {
+      id: 'long', name: 'Long', enabled: false, variables: [],
+      nodes: Array.from({ length: count }, (_, at) => ({
+        id: `n${at}`,
+        type: at === 0 ? 'start' : at === count - 1 ? 'end' : 'debug',
+        x: at * (NODE_WIDTH + GAP),
+        y: 0,
+        config: {},
+      })),
+      edges: Array.from({ length: count - 1 }, (_, at) => ({ id: `e${at}`, from: `n${at}`, fromPort: 'out', to: `n${at + 1}`, toPort: 'in' })),
+    };
+    const names = vi.spyOn(backWires, 'namesOf');
+
+    try {
+      const { moved } = placeAfter(flow, 'n100', 'out', 'debug', MEASURE);
+
+      expect(Object.keys(moved)).toHaveLength(count - 101);
+      expect(names.mock.calls.length).toBeLessThan(count);
+    } finally {
+      names.mockRestore();
+    }
+  });
+
+  it('moves the chain along over a row laid 40 under it, and not the row', () => {
+    const flow = click(rows(), { node: 'start' }, 'debug', 'say');
+
+    expect(['say', 'a', 'b', 'c', 'end'].map((id) => nodeOf(flow, id).x)).toEqual([284, 568, 852, 1136, 1420]);
+    expect(['x', 'y'].map((id) => nodeOf(flow, id))).toMatchObject([{ x: 600, y: 120 }, { x: 900, y: 120 }]);
+    expect([...overlapsIn(flow), ...wrongWith(flow)]).toEqual([]);
   });
 });
 

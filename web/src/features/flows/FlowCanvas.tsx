@@ -113,13 +113,21 @@ const boxOf = (type: string) =>
 const heightOf = (type: string) => (specOf(type).shape === 'decision' ? DECISION_HEIGHT : STEP_HEIGHT);
 
 /**
- * The room the palette keeps clear round a node it puts down: a wire's way between it and the next
- * node, as the routes run one under a node and over another (backWires.ts), past the names of the
+ * The room the palette keeps clear round a node it puts down free: a wire's way between it and the
+ * next node, as the routes run one under a node and over another (backWires.ts), past the names of the
  * ports there. At 24, a node put free under another stood 32 under it, the name of its next a few
  * pixels under the name of the other's foot: a wire out of that foot had no way out of the gap, and
- * with a loop's return run along it, no way at all.
+ * with a loop's return run along it, no way at all. A node put after another keeps a wire's margin
+ * (MARGIN) instead, from what stands round the place it is put (see placeAfter), but for what one of
+ * its ports faces, or what faces one of them, which keeps this room (see crowds).
  */
 const ROOM = 56;
+
+/**
+ * What a flow tells about each of its nodes' names: its ways out with no wire, its loops nothing comes
+ * back to, and which nodes it has.
+ */
+type Wired = { open: ReadonlySet<string>; back: ReadonlySet<string>; has: ReadonlySet<string> };
 
 /**
  * The names the canvas writes beside a node's ports, where the routes reckon them (namesOf), for the
@@ -127,17 +135,21 @@ const ROOM = 56;
  * next. A node not in the flow yet is one being put down free: every way out it has wants a wire but
  * a loop's body, which comes back to the loop's own next (see addNode).
  */
-function namesBeside(flow: FlowDto, node: FlowNodeDto): Box[] {
+function namesBeside(flow: FlowDto, node: FlowNodeDto, { open, back, has }: Wired = wiredIn(flow)): Box[] {
   const ports = portsOf(node, flow.edges);
-  const open = unwiredOuts(flow);
-  const unwired = flow.nodes.some((one) => one.id === node.id)
-    ? [...ports.outs.filter((port) => open.has(`${node.id}:${port}`)), ...(noReturn(flow).has(node.id) ? ['next'] : [])]
+  const unwired = has.has(node.id)
+    ? [...ports.outs.filter((port) => open.has(`${node.id}:${port}`)), ...(back.has(node.id) ? ['next'] : [])]
     : ports.outs.filter((port) => !(isLoop(node.type) && port === 'body'));
   return namesOf(drawnAt(node), node.type, ports, unwired);
 }
 
+const wiredIn = (flow: FlowDto): Wired => ({ open: unwiredOuts(flow), back: noReturn(flow), has: new Set(flow.nodes.map((node) => node.id)) });
+
 /** Where a node stands and how big it is drawn. */
 const drawnAt = (node: FlowNodeDto): Box => ({ x: node.x, y: node.y, width: boxOf(node.type).width, height: heightOf(node.type) });
+
+/** A port's mouth (see mouthsOf): where it stands, the side of its node the port is on, and the line its wire leaves or comes in along. */
+type Mouth = { box: Box; side: Side; line: number };
 
 /**
  * The mouths of a node's ports: the stretch in front of each, MARGIN long and NAME_ROOM either side of
@@ -146,21 +158,21 @@ const drawnAt = (node: FlowNodeDto): Box => ({ x: node.x, y: node.y, width: boxO
  * build does not know spreads its ports along their sides, and has no palette to put it down: it has
  * none here.
  */
-function mouthsOf(flow: FlowDto, node: FlowNodeDto): Box[] {
+function mouthsOf(flow: FlowDto, node: FlowNodeDto): Mouth[] {
   if (!isNodeType(node.type)) return [];
   const { x, y, width, height } = drawnAt(node);
   const slant = specOf(node.type).shape === 'input' ? 0.05 * (width - 2) : 0;
   const ports = portsOf(node, flow.edges);
-  const mouth = (side: Side): Box => {
+  const mouth = (side: Side): Mouth => {
     switch (side) {
       case 'left':
-        return { x: x + 1 + slant - 5 - MARGIN, y: y + height / 2 - NAME_ROOM, width: MARGIN, height: 2 * NAME_ROOM };
+        return { box: { x: x + 1 + slant - 5 - MARGIN, y: y + height / 2 - NAME_ROOM, width: MARGIN, height: 2 * NAME_ROOM }, side, line: y + height / 2 };
       case 'right':
-        return { x: x + width - 1 - slant + 5, y: y + height / 2 - NAME_ROOM, width: MARGIN, height: 2 * NAME_ROOM };
+        return { box: { x: x + width - 1 - slant + 5, y: y + height / 2 - NAME_ROOM, width: MARGIN, height: 2 * NAME_ROOM }, side, line: y + height / 2 };
       case 'top':
-        return { x: x + width / 2 - NAME_ROOM, y: y + 1 - 5 - MARGIN, width: 2 * NAME_ROOM, height: MARGIN };
+        return { box: { x: x + width / 2 - NAME_ROOM, y: y + 1 - 5 - MARGIN, width: 2 * NAME_ROOM, height: MARGIN }, side, line: x + width / 2 };
       case 'bottom':
-        return { x: x + width / 2 - NAME_ROOM, y: y + height - 1 + 5, width: 2 * NAME_ROOM, height: MARGIN };
+        return { box: { x: x + width / 2 - NAME_ROOM, y: y + height - 1 + 5, width: 2 * NAME_ROOM, height: MARGIN }, side, line: x + width / 2 };
     }
   };
   return [...ports.ins.map((port) => mouth(sideOf(port, false))), ...ports.outs.map((port) => mouth(sideOf(port, true)))];
@@ -170,39 +182,101 @@ function mouthsOf(flow: FlowDto, node: FlowNodeDto): Box[] {
 const near = (a: Box, b: Box, room: number) =>
   a.x < b.x + b.width + room && b.x < a.x + a.width + room && a.y < b.y + b.height + room && b.y < a.y + a.height + room;
 
-/**
- * Whether two nodes crowd each other as the canvas draws them (see Crowds): their boxes within ROOM,
- * or a name of either over the other or in a mouth of its ports.
+/** What stands of a node where the canvas draws it: its box, the names beside its ports, and their mouths. */
+type Around = { box: Box; names: readonly Box[]; mouths: readonly Mouth[] };
+
+/*
+ * What stands round each node of a flow, worked out once for each flow and node, as flowDocument keeps
+ * what it works out about a flow: no flow and no node is ever changed in place. The palette asks
+ * whether a node crowds another of every two it weighs — every node of the flow against the place it
+ * reckons, and every node it moves to make room against every node that stays — and worked out again
+ * for each two, what stands round both, and the flow's wiring with it, made a click in a flow of two
+ * hundred nodes tens of milliseconds long.
  */
-function crowds(flow: FlowDto, a: FlowNodeDto, b: FlowNodeDto): boolean {
-  if (near({ x: a.x, y: a.y, ...boxOf(a.type) }, { x: b.x, y: b.y, ...boxOf(b.type) }, ROOM)) return true;
-  const over = (names: readonly Box[], other: FlowNodeDto) => {
-    const [box, mouths] = [drawnAt(other), mouthsOf(flow, other)];
-    return names.some((name) => near(name, box, NAME_ROOM) || mouths.some((mouth) => near(name, mouth, 0)));
-  };
-  return over(namesBeside(flow, a), b) || over(namesBeside(flow, b), a);
+const arounds = new WeakMap<FlowDto, { wired: Wired; nodes: WeakMap<FlowNodeDto, Around> }>();
+
+function aroundOf(flow: FlowDto, node: FlowNodeDto): Around {
+  let kept = arounds.get(flow);
+  if (kept === undefined) {
+    kept = { wired: wiredIn(flow), nodes: new WeakMap() };
+    arounds.set(flow, kept);
+  }
+  let around = kept.nodes.get(node);
+  if (around === undefined) {
+    around = { box: drawnAt(node), names: namesBeside(flow, node, kept.wired), mouths: mouthsOf(flow, node) };
+    kept.nodes.set(node, around);
+  }
+  return around;
 }
 
-/** How far past its box a node's names and the mouths of its ports stand at the most: its ways out with no wire, wire me and all. */
+/**
+ * Whether two nodes crowd each other as the canvas draws them (see Crowds): their boxes within `room`;
+ * a name of either over the other or in a mouth of its ports; or a port of either facing straight at
+ * the other nearer than ROOM.
+ *
+ * A wire out of a port, or into one, runs a margin straight out of it before it turns, and with another
+ * node standing in front of the port it turns along that node, past which the routes run a lane only so
+ * near — or comes in so, and the wires into the other node, and out of it, come through the same gap.
+ * So a port wants the room a node put down free keeps, ROOM, in front of it, even where two nodes may
+ * otherwise stand a wire's margin apart: put after a node within that, an If's no came down onto a For
+ * each 36 under it where the loop's returns come down onto its next, a Clear alarm's foot stood 32 over
+ * a For each whose next its returns came into along the gap from both sides, a Webhook's way out faced
+ * the End's way in 30 off, and a Publish stood 26 in front of a way in two more wires came into. Rows a
+ * reader lays out under a chain, of nodes with no port facing up or down, stand a margin apart as before.
+ *
+ * A name and a port stand within REACH of their node's box, so two nodes further apart than twice that
+ * crowd each other by none of it, and what stands round them is not worked out at all: most of a flow,
+ * for any one click.
+ */
+function crowds(flow: FlowDto, a: FlowNodeDto, b: FlowNodeDto, room: number): boolean {
+  const [boxA, boxB] = [{ x: a.x, y: a.y, ...boxOf(a.type) }, { x: b.x, y: b.y, ...boxOf(b.type) }];
+  if (near(boxA, boxB, room)) return true;
+  if (!near(boxA, boxB, 2 * REACH)) return false;
+  const [one, other] = [aroundOf(flow, a), aroundOf(flow, b)];
+  const over = (names: readonly Box[], { box, mouths }: Around) =>
+    names.some((name) => near(name, box, NAME_ROOM) || mouths.some((mouth) => near(name, mouth.box, 0)));
+  return over(one.names, other) || over(other.names, one) || facing(one, other) || facing(other, one);
+}
+
+/** Whether a port of `one`'s faces straight at `other`'s box — its wire's line across it — nearer than ROOM. */
+function facing(one: Around, other: Around): boolean {
+  const [mine, theirs] = [one.box, other.box];
+  return one.mouths.some(({ side, line }) => {
+    const across = side === 'left' || side === 'right' ? [theirs.y, theirs.y + theirs.height] : [theirs.x, theirs.x + theirs.width];
+    if (line <= across[0] - NAME_ROOM || line >= across[1] + NAME_ROOM) return false;
+    const gap = {
+      right: theirs.x - (mine.x + mine.width),
+      left: mine.x - (theirs.x + theirs.width),
+      bottom: theirs.y - (mine.y + mine.height),
+      top: mine.y - (theirs.y + theirs.height),
+    }[side];
+    return gap >= 0 && gap < ROOM;
+  });
+}
+
+/**
+ * How far past its box a node's names and the mouths of its ports stand at the most, its ways out with
+ * no wire, wire me and all; and half the room a port wants in front of it (see facing), at the least.
+ */
 const REACH = Math.max(
-  MARGIN + NAME_ROOM,
+  ROOM / 2,
   ...Object.values(NODE_SPECS).flatMap((spec) => {
     const node: FlowNodeDto = { id: '', type: spec.type as FlowNodeDto['type'], x: 0, y: 0, config: {} };
     const box = drawnAt(node);
     const alone: FlowDto = { id: '', name: '', enabled: false, variables: [], nodes: [], edges: [] };
-    return namesBeside(alone, node).map((name) =>
-      Math.max(-name.x, -name.y, name.x + name.width - box.width, name.y + name.height - box.height) + NAME_ROOM,
-    );
+    const past = (one: Box) => Math.max(-one.x, -one.y, one.x + one.width - box.width, one.y + one.height - box.height);
+    return [...namesBeside(alone, node).map((name) => past(name) + NAME_ROOM), ...mouthsOf(alone, node).map((mouth) => past(mouth.box))];
   }),
 );
 
 /**
  * The nodes as the palette reckons them when it puts one down (see placeAfter and freeSpot): an If
  * in its own box, every other node in a step's with some to spare under it; each as tall as it is
- * drawn, to stand a node level with the one it follows; ROOM kept clear round the node put down; and
- * none of it crowding another node (crowds), as far as REACH past its box.
+ * drawn, to stand a node level with the one it follows; ROOM kept clear round a node put down free, a
+ * wire's MARGIN round one put after another; and none of it crowding another node (crowds), as far as
+ * REACH past its box.
  */
-export const MEASURE: Measure = { boxOf, heightOf, room: ROOM, crowds, reach: REACH };
+export const MEASURE: Measure = { boxOf, heightOf, room: ROOM, margin: MARGIN, crowds, reach: REACH };
 
 /**
  * The sizes, where the stylesheet reads them: the If's as well, for the same reason as the width; and
