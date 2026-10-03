@@ -35,8 +35,13 @@ public sealed class FlowConsoleSender
 
     /// <summary>Tones and notices kept for a console slow to take them. Past this the oldest go.</summary>
     // They are moments, not records: a tone played a minute late is a tone about nothing, and a stack of
-    // stale notices hides the one that matters. So a console that was slow is sent the newest, and what
+    // stale notices hides the one that matters. So while a console is slow the newest are kept, and what
     // was let go is not counted anywhere — it was never anybody's to keep.
+    //
+    // Where that and the order disagree, the order wins. The loop takes what is waiting before it sends
+    // the alarms, so that a tone never reaches a console ahead of the alarm it is about (SendWaitingAsync
+    // says why), and the ones it took before an alarm frame that stalls, up to this many of each, go out
+    // after that frame however late it is.
     public const int Moments = 16;
 
     private readonly IFlowNotifier _console;

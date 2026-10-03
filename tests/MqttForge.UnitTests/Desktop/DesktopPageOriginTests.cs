@@ -18,8 +18,9 @@ namespace MqttForge.UnitTests.Desktop;
 // has nobody to answer it.
 public sealed class DesktopPageOriginTests
 {
-    // A delete stands for every request that changes something and needs no body to: the kind a page on
-    // another site can send without asking first, and the kind the window's own page has to keep.
+    // A delete stands for every request that changes something. The guard refuses every method but GET,
+    // HEAD, OPTIONS and TRACE from a page on another site, whether or not a browser would have asked the
+    // server first, and the window's own page has to be able to send every one of them.
     [Fact]
     public async Task The_page_in_the_window_can_save_and_delete_a_flow_and_open_the_hub()
     {

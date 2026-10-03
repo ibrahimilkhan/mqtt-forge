@@ -164,6 +164,9 @@ public sealed class FlowEngineTests : IAsyncLifetime
     private static long Errors(FlowEngine engine, string node) =>
         engine.Status.Runs.SelectMany(run => run.Nodes).FirstOrDefault(one => one.Id == node)?.Errors ?? 0;
 
+    private static string? Note(FlowEngine engine, string node) =>
+        engine.Status.Runs.SelectMany(run => run.Nodes).FirstOrDefault(one => one.Id == node)?.Note;
+
     /// <summary>How many messages an MQTT in node has read, as the engine last pushed it.</summary>
     // What left by its way out, and not its count: a run that read a message comes round to wait at the
     // node again, and has then entered it once more than it has read.
@@ -296,6 +299,24 @@ public sealed class FlowEngineTests : IAsyncLifetime
         engine.Post(new FlowTestStop("f1"));
 
         await Eventually.Until(_time, () => !engine.IsTesting("f1"), "the stop to end the test");
+    }
+
+    [Fact]
+    public async Task A_test_waiting_at_an_mqtt_in_subscribes_its_filter_and_a_stop_gives_it_back()
+    {
+        var engine = await RunningAsync();
+
+        engine.Post(Press(Once("f1", ("ack", "mqttIn", new { filter = "plant/k1/ack" }))));
+
+        await Eventually.Until(_time, () => _subscriber.Filters.Count == 1, "the test's filter to go up");
+        var filter = Assert.Single(_subscriber.Filters);
+        Assert.Equal("plant/k1/ack", filter.Filter);
+        Assert.Equal(SubscriptionOwner.Flows, filter.Owners);
+
+        engine.Post(new FlowTestStop("f1"));
+
+        await Eventually.Until(_time, () => _subscriber.Filters.Count == 0, "the stopped test's filter to come down");
+        Assert.Equal(["plant/k1/ack"], _subscriber.Unsubscribed);
     }
 
     [Fact]
@@ -436,6 +457,37 @@ public sealed class FlowEngineTests : IAsyncLifetime
         await engine.NotifyMessageReceivedAsync(Msg("plant/k2/temp", "{\"temp\":95}"));
         await Eventually.Until(_time, () => _publisher.Sent.Count == 1, "the next publish to go out");
         Assert.Equal("plant/k2/cmd", _publisher.Sent[0].Topic);
+    }
+
+    /// <summary>A test that publishes to <paramref name="topic"/> and then waits on plant/k1/ack.</summary>
+    private static Flow Sending(string topic) =>
+        Once("f1", ("send", "publish", new { topic, payload = "on" }), ("ack", "mqttIn", new { filter = "plant/k1/ack" }));
+
+    // Pressed again with the topic put right while the broker still sits on the first test's publish: that
+    // publish fails with the second test in the first one's place, and the failure is the first test's.
+    // Counted on the second, it would be an error on a node whose publish went out.
+    [Fact]
+    public async Task A_publish_that_fails_after_its_test_was_replaced_is_not_counted_on_the_test_in_its_place()
+    {
+        _publisher.Stall = true;
+        var engine = await RunningAsync();
+
+        engine.Post(Press(Sending("plant/k1/cdm")));
+        await ClockStill(() => _publisher.Held == 1, "the first test's publish to be sitting with the broker");
+
+        engine.Post(Press(Sending("plant/k1/cmd")));
+        _publisher.Stall = false;
+        _time.Advance(FlowEngine.PublishTimeout);
+
+        // The publish loop gives the first publish up before it sends the second, and an arrival posted
+        // after that is applied after the failure: once it has ended the second test, the failure is in.
+        await Eventually.Until(_time, () => _publisher.Sent.Count == 1, "the second test's publish to go out");
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/ack", "ok"));
+
+        await Eventually.Until(_time, () => engine.Status.Runs.Any(run => run.State == FlowRunState.Finished),
+            "the second test to finish");
+        Assert.Equal("plant/k1/cmd", Assert.Single(_publisher.Sent).Topic);
+        Assert.Equal(0, Errors(engine, "send"));
     }
 
     [Fact]
@@ -770,6 +822,33 @@ public sealed class FlowEngineTests : IAsyncLifetime
             "the drop to be said in the debug strip");
         Assert.Equal(1, Errors(engine, "hook"));
         Assert.Empty(webhook.Posts);
+    }
+
+    /// <summary>A test that posts to <paramref name="url"/> and then waits on plant/k1/ack.</summary>
+    private static Flow Hooking(string url) =>
+        Once("f1", ("hook", "webhook", new { url }), ("ack", "mqttIn", new { filter = "plant/k1/ack" }));
+
+    // The channel gives the first test's post up with the second test in its place, and then the second
+    // test's own, which is that test's to count. Applied in the order they were said, so once the node
+    // carries the second one's reason, the first one has been looked at too.
+    [Fact]
+    public async Task A_webhook_post_given_up_on_after_its_test_was_replaced_is_not_counted_on_the_test_in_its_place()
+    {
+        var webhook = new RecordingFlowWebhook();
+        var engine = await RunningAsync(webhook);
+
+        engine.Post(Press(Hooking("https://hooks.example.com/typo")));
+        await Eventually.Until(_time, () => webhook.Posts.Count == 1, "the first test's post to reach the channel");
+
+        engine.Post(Press(Hooking("https://hooks.example.com/x")));
+        await Eventually.Until(_time, () => webhook.Posts.Count == 2, "the second test's post to reach the channel");
+
+        webhook.Fail(0, "The endpoint answered 404.");
+        webhook.Fail(1, "The endpoint answered 500.");
+
+        await Eventually.Until(_time, () => Note(engine, "hook") == "The endpoint answered 500.",
+            "the second test's own failure to be counted");
+        Assert.Equal(1, Errors(engine, "hook"));
     }
 
     [Fact]
@@ -1540,8 +1619,10 @@ public sealed class FlowEngineTests : IAsyncLifetime
         var engine = await StartedAsync(_alerts,[Watch()]);
 
         // A publish broker A failed — one in flight when A was torn down, or one it never answered —
-        // comes back to the queue ahead of a message A had already sent. B came up a second later.
-        engine.Post(new FlowStepFailed(new FlowRunKey("f1", FlowRunKind.Active), "fan", "The link went before the broker took the publish."));
+        // comes back to the queue ahead of a message A had already sent. B came up a second later. Its
+        // run is the one StartAsync made, the first this runtime has made: serial 1.
+        engine.Post(new FlowStepFailed(new FlowRunKey("f1", FlowRunKind.Active), Serial: 1, "fan",
+            "The link went before the broker took the publish."));
         await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
         _connection.Link = LinkTo("broker-b.plant.local", connectedAt: T0.AddSeconds(1));
         _subscriber.LinkDropped();

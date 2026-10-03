@@ -497,12 +497,71 @@ public class FlowRuntimeTests
     [Fact]
     public void A_step_the_engine_could_not_carry_out_is_counted_on_its_node()
     {
-        Activate(Line(("pub", "publish", new { topic = "a/b" })).Compile());
+        var publish = Assert.Single(Activate(Line(("pub", "publish", new { topic = "a/b" })).Compile()).Publishes);
 
-        var outcome = _runtime.StepFailed(new FlowRunKey("f1", FlowRunKind.Active), "pub", "The broker said no.", T0);
+        var outcome = _runtime.StepFailed(publish.Run, publish.Serial, publish.NodeId, "The broker said no.", T0);
 
         Assert.Equal(1, Node("pub").Errors);
         Assert.Equal("The broker said no.", Assert.Single(outcome.Debug).Text);
+    }
+
+    // A publish fails in the engine's own loop, and a webhook post is given up on by its channel, a while
+    // after the turn that asked for them. By then an Update or a new Test can have put another run where
+    // the one that asked was, and what comes back is the asking run's alone.
+
+    /// <summary>Start → a publish → a webhook post to <paramref name="url"/> → a read that waits → End.</summary>
+    private static ChartBuilder Asks(string url = "https://hooks.example.com/x") => Line(
+        ("pub", "publish", new { topic = "a/b" }),
+        ("hook", "webhook", new { url }),
+        ("read", "mqttIn", new { filter = "a/ack" }));
+
+    /// <summary>Gives up on the publish and the post a call asked for, as the engine would, and what came of each.</summary>
+    private FlowOutcome[] Failed(FlowOutcome asked)
+    {
+        var publish = Assert.Single(asked.Publishes);
+        var post = Assert.Single(asked.Webhooks);
+
+        return
+        [
+            _runtime.StepFailed(publish.Run, publish.Serial, publish.NodeId, "The broker said no.", T0),
+            _runtime.StepFailed(post.Run, post.Serial, post.NodeId, "The endpoint answered 404.", T0),
+        ];
+    }
+
+    // Pressed again with the address put right: the first test's post fails once the second is in its place.
+    [Fact]
+    public void A_failure_that_comes_back_after_its_test_was_replaced_is_not_counted_on_the_test_in_its_place()
+    {
+        var first = _runtime.StartTest(Asks("https://hooks.example.com/typo").Compile(), T0);
+        _runtime.StartTest(Asks().Compile(), T0);
+
+        Assert.All(Failed(first), outcome => Assert.True(outcome.IsEmpty));
+        Assert.Equal(0, Node("pub", FlowRunKind.Test).Errors);
+        Assert.Equal(0, Node("hook", FlowRunKind.Test).Errors);
+    }
+
+    [Fact]
+    public void A_failure_that_comes_back_after_an_update_is_not_counted_on_the_updated_run()
+    {
+        var first = Activate(Asks("https://hooks.example.com/typo").Compile());
+        Activate(Asks().Compile());
+
+        Assert.All(Failed(first), outcome => Assert.True(outcome.IsEmpty));
+        Assert.Equal(0, Node("pub").Errors);
+        Assert.Equal(0, Node("hook").Errors);
+    }
+
+    // The other side of the two above: a deploy that changed nothing keeps the run, and with it whatever
+    // comes back for it.
+    [Fact]
+    public void A_failure_that_comes_back_after_a_deploy_that_changed_nothing_is_counted_on_the_run_it_kept()
+    {
+        var first = Activate(Asks().Compile());
+        Activate(Asks().Compile());
+
+        Assert.All(Failed(first), outcome => Assert.False(outcome.IsEmpty));
+        Assert.Equal(1, Node("pub").Errors);
+        Assert.Equal(1, Node("hook").Errors);
     }
 
     [Fact]

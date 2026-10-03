@@ -29,6 +29,9 @@ public sealed class FlowRuntime
 
     private long _version;
 
+    // The serial of the last run made: see FlowRun.Serial.
+    private long _serial;
+
     // What the last OnTick was told. A publish is refused while it is false: the engine would only fail
     // it a moment later, and saying so on the node here is what the reader needs to see.
     private bool _linkUp;
@@ -115,7 +118,7 @@ public sealed class FlowRuntime
 
             if (running is not null) into.Resolved(_alarms.Reconcile(running.Flow, flow, now));
 
-            var run = new FlowRun(flow, FlowRunKind.Active, now);
+            var run = new FlowRun(flow, FlowRunKind.Active, ++_serial, now);
             _runs[key] = run;
             Drive(run, now, into);
         }
@@ -132,7 +135,7 @@ public sealed class FlowRuntime
 
         if (_runs.Remove(key)) into.Resolved(_alarms.ResolveRun(key, FlowAlarmBook.TestEnded, now));
 
-        var run = new FlowRun(flow, FlowRunKind.Test, now);
+        var run = new FlowRun(flow, FlowRunKind.Test, ++_serial, now);
         _runs[key] = run;
         Drive(run, now, into);
 
@@ -249,9 +252,16 @@ public sealed class FlowRuntime
     }
 
     /// <summary>The engine could not carry out a step this runtime asked for: a publish, a webhook post.</summary>
-    public FlowOutcome StepFailed(FlowRunKey key, string nodeId, string reason, DateTimeOffset now)
+    // Counted on the run that asked for the step, and on no other. A failure comes back after the step
+    // that asked — at the end of its turn, from the publish loop, or from the webhook's channel once it
+    // has given up — and an Update or a new Test can have put another run where that one stood in the
+    // meantime. Counted there, it would be an error on a run that never asked: a test that failed on an
+    // address since put right, said again on the test that has it right. A run that is gone has nowhere
+    // to show it, so it goes.
+    public FlowOutcome StepFailed(FlowRunKey key, long serial, string nodeId, string reason, DateTimeOffset now)
     {
-        if (!_runs.TryGetValue(key, out var run) || !run.Flow.Nodes.ContainsKey(nodeId)) return FlowOutcome.Empty;
+        if (!_runs.TryGetValue(key, out var run) || run.Serial != serial || !run.Flow.Nodes.ContainsKey(nodeId))
+            return FlowOutcome.Empty;
 
         var into = new Collector();
         Fail(run, nodeId, reason, now, into);
@@ -714,7 +724,7 @@ public sealed class FlowRuntime
         }
 
         run.Echo.Remember(topic, bytes, now);
-        into.Publishes.Add(new FlowPublish(run.Key, node.Id, new PublishRequest(topic, bytes, node.Qos, node.Retain)));
+        into.Publishes.Add(new FlowPublish(run.Key, run.Serial, node.Id, new PublishRequest(topic, bytes, node.Qos, node.Retain)));
 
         var counter = run.Counter(node.Id);
         counter.Out("sent");
@@ -769,7 +779,8 @@ public sealed class FlowRuntime
             return;
         }
 
-        into.Webhooks.Add(new FlowWebhookPost(run.Key, webhook.Id, webhook.Url, body, IsJson(body) ? "application/json" : "text/plain"));
+        into.Webhooks.Add(new FlowWebhookPost(run.Key, run.Serial, webhook.Id, webhook.Url, body,
+            IsJson(body) ? "application/json" : "text/plain"));
         run.Counter(webhook.Id).Out("posted");
     }
 

@@ -3,10 +3,14 @@ using MqttForge.Domain.Models;
 namespace MqttForge.Application.Flows;
 
 /// <summary>Everything that can reach the flow engine's pump, as one closed union.</summary>
-// One order for all of them, for AlertCommand's reason. A deploy posted after an arrival has to be
-// applied after it, and a step that failed has to be counted against the run that was going when it
-// was asked for. The runtime is single-threaded, so this is also the whole list of ways any other
+// One order for all of them, for AlertCommand's reason: a deploy posted after an arrival has to be
+// applied after it. The runtime is single-threaded, so this is also the whole list of ways any other
 // thread is allowed to reach it.
+//
+// A step that failed has to be counted against the run that was going when it was asked for, and no
+// order can see to that on its own: the failure comes back after the turn that asked, when an Update
+// or a new Test may have put another run in that one's place. So it names the run by its serial as
+// well as its key, and the runtime lets it go when that run is gone.
 //
 // One queue for all but a deploy, which waits in a slot of its own because the queue drops its
 // oldest entry when it is full, and takes its place in the queue's order by when it was posted.
@@ -26,7 +30,7 @@ public sealed record FlowTestStart(CompiledFlow Flow) : FlowCommand;
 public sealed record FlowTestStop(string FlowId) : FlowCommand;
 
 /// <summary>The engine could not carry out a step a run asked for: a publish, a webhook post.</summary>
-public sealed record FlowStepFailed(FlowRunKey Run, string NodeId, string Reason) : FlowCommand;
+public sealed record FlowStepFailed(FlowRunKey Run, long Serial, string NodeId, string Reason) : FlowCommand;
 
 /// <summary>Somebody cleared the alert history, which lists the flows' alarms that ended as well as the rules'.</summary>
 public sealed record FlowClearHistory : FlowCommand;

@@ -585,7 +585,7 @@ public sealed class FlowEngine
             }
 
             case FlowStepFailed failed:
-                return _runtime.StepFailed(failed.Run, failed.NodeId, failed.Reason, now);
+                return _runtime.StepFailed(failed.Run, failed.Serial, failed.NodeId, failed.Reason, now);
 
             case FlowClearHistory:
                 _runtime.ClearHistory();
@@ -609,18 +609,18 @@ public sealed class FlowEngine
 
         foreach (var publish in outcome.Publishes)
             if (!_outbox.Writer.TryWrite(publish))
-                debug.AddRange(_runtime.StepFailed(publish.Run, publish.NodeId,
+                debug.AddRange(_runtime.StepFailed(publish.Run, publish.Serial, publish.NodeId,
                     "Too many publishes were waiting for the broker; this one was dropped.", now).Debug);
 
         foreach (var post in outcome.Webhooks)
         {
             var refused = _webhook is null
                 ? "Webhooks are turned off on this host (MqttForge:AllowWebhooks), so nothing was sent."
-                : !_webhook.Post(post, reason => Post(new FlowStepFailed(post.Run, post.NodeId, reason)))
+                : !_webhook.Post(post, reason => Post(new FlowStepFailed(post.Run, post.Serial, post.NodeId, reason)))
                     ? "Too many webhook posts were waiting; this one was dropped."
                     : null;
 
-            if (refused is not null) debug.AddRange(_runtime.StepFailed(post.Run, post.NodeId, refused, now).Debug);
+            if (refused is not null) debug.AddRange(_runtime.StepFailed(post.Run, post.Serial, post.NodeId, refused, now).Debug);
         }
 
         foreach (var entry in debug)
@@ -724,7 +724,7 @@ public sealed class FlowEngine
                 }
                 catch (Exception ex)
                 {
-                    Post(new FlowStepFailed(publish.Run, publish.NodeId, Why(ex, deadline.IsCancellationRequested)));
+                    Post(new FlowStepFailed(publish.Run, publish.Serial, publish.NodeId, Why(ex, deadline.IsCancellationRequested)));
                 }
             }
         }

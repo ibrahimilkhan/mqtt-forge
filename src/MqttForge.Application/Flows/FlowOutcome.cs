@@ -4,8 +4,9 @@ using MqttForge.Domain.Models;
 
 namespace MqttForge.Application.Flows;
 
-/// <summary>A publish a run asked for, and which node asked, so a failure can be counted there.</summary>
-public sealed record FlowPublish(FlowRunKey Run, string NodeId, PublishRequest Request);
+/// <summary>A publish a run asked for, and which run and node asked, so a failure can be counted there.</summary>
+// The run by its serial as well as its key, for the reason FlowRuntime.StepFailed gives.
+public sealed record FlowPublish(FlowRunKey Run, long Serial, string NodeId, PublishRequest Request);
 
 /// <summary>A line for the console's debug strip: what a Debug node printed, or what went wrong.</summary>
 public sealed record FlowDebugEntry(string FlowId, string NodeId, DateTimeOffset At, string Kind, string Topic, string Text, bool Test)
@@ -21,8 +22,8 @@ public sealed record FlowSound(string FlowId, string NodeId, AlertSeverity Level
 public sealed record FlowNotice(
     string FlowId, string FlowName, string NodeId, string Text, AlertSeverity Level, DateTimeOffset At, bool Test);
 
-/// <summary>A Webhook node's post: where, what, and as which kind of content.</summary>
-public sealed record FlowWebhookPost(FlowRunKey Run, string NodeId, string Url, string Body, string ContentType);
+/// <summary>A Webhook node's post: where, what, as which kind of content, and which run and node asked, named as a publish names them.</summary>
+public sealed record FlowWebhookPost(FlowRunKey Run, long Serial, string NodeId, string Url, string Body, string ContentType);
 
 /// <summary>Everything one call into the runtime decided, for the engine to carry out.</summary>
 // The runtime decides and never does. A publish here has not been sent, an alarm has not been told, a

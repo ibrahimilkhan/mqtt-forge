@@ -8,10 +8,11 @@ internal sealed class FlowRun
 {
     private readonly Dictionary<string, NodeCounter> _counters = new(StringComparer.Ordinal);
 
-    public FlowRun(CompiledFlow flow, FlowRunKind kind, DateTimeOffset now)
+    public FlowRun(CompiledFlow flow, FlowRunKind kind, long serial, DateTimeOffset now)
     {
         Flow = flow;
         Key = new FlowRunKey(flow.Id, kind);
+        Serial = serial;
         At = flow.Start;
         Variables = flow.Variables.ToDictionary(variable => variable.Name, variable => variable.Value, StringComparer.Ordinal);
         Bucket = new TokenBucket(now);
@@ -21,6 +22,12 @@ internal sealed class FlowRun
 
     public CompiledFlow Flow { get; }
     public FlowRunKey Key { get; }
+
+    /// <summary>Which of the runs the runtime has made this one is, counting from 1.</summary>
+    // The key says where a run stands, and an Update or a new Test puts a new run where the last one
+    // stood. This tells the two apart, so that what comes back late for the last one is not taken for
+    // this one's: see FlowRuntime.StepFailed.
+    public long Serial { get; }
 
     public FlowRunState State { get; set; } = FlowRunState.Running;
 

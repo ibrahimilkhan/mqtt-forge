@@ -24,7 +24,7 @@ public sealed class FlowController : ControllerBase
     // 30 MB — for the model binder to read before the compiler can refuse it on the count. So such a
     // flow is refused with a 413, unread.
     //
-    // A setting with no limit of its own — an If's field, a variable's name — has this one.
+    // A setting with no limit of its own — an If's field — has this one.
     public const long DeployBodyBytes = 24 * 1024 * 1024;
 
     private readonly FlowService _flows;

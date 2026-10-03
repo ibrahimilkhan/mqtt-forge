@@ -159,7 +159,7 @@ public class FlowAlarmBookTests
     [Fact]
     public void The_outcomes_of_several_calls_go_one_after_another()
     {
-        var publish = new FlowPublish(Active, "pub", new PublishRequest("a/b", [], 0, false));
+        var publish = new FlowPublish(Active, Serial: 1, "pub", new PublishRequest("a/b", [], 0, false));
         var sound = new FlowSound("f1", "beep", AlertSeverity.Warn, Test: false);
 
         var merged = FlowOutcome.Merge([
@@ -313,12 +313,12 @@ public class FlowAlarmBookTests
         Assert.Equal(words, reason);
 
     private FlowOutcome OutcomeOf(string node) => new(
-        [new FlowPublish(Active, node, new PublishRequest("a/b", [], 0, false))],
+        [new FlowPublish(Active, Serial: 1, node, new PublishRequest("a/b", [], 0, false))],
         [new AlertEvent(Raise(message: Reading($"plant/{node}/temp")).Alert!, Raised: true)],
         [new FlowDebugEntry("f1", node, T0, FlowDebugEntry.Message, "a/b", "hot", Test: false)],
         [new FlowSound("f1", node, AlertSeverity.Info, Test: false)],
         [new FlowNotice("f1", "Boiler watch", node, "hot", AlertSeverity.Info, T0, Test: false)],
-        [new FlowWebhookPost(Active, node, "https://example.com/hook", "{}", "application/json")]);
+        [new FlowWebhookPost(Active, Serial: 1, node, "https://example.com/hook", "{}", "application/json")]);
 
     [Fact]
     public void Every_kind_of_outcome_is_merged_in_the_order_of_the_calls()
