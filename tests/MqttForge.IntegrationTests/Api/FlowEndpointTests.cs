@@ -425,4 +425,76 @@ public sealed class FlowEndpointTests : IClassFixture<MqttForgeApiFactory>
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         Assert.Equal("testUnknown", (await Json(response)).GetProperty("reason").GetString());
     }
+
+    /// <summary>Whether GET /api/flows/status shows a test run of the flow, in <paramref name="state"/> when one is given.</summary>
+    private static async Task<bool> TestShown(HttpClient client, string id, string? state = null)
+    {
+        var status = await Json(await client.GetAsync("/api/flows/status"));
+
+        return status.GetProperty("runs").EnumerateArray().Any(run =>
+            run.GetProperty("flowId").GetString() == id &&
+            run.GetProperty("kind").GetString() == "test" &&
+            (state is null || run.GetProperty("state").GetString() == state));
+    }
+
+    // The console deletes a draft that was never saved here as well. Answered "no such flow", its test ran
+    // on, in every status push, until the host restarted.
+    [Fact]
+    public async Task Deleting_a_flow_that_was_never_saved_is_404_and_takes_its_test_away()
+    {
+        Assert.Equal(HttpStatusCode.Accepted, (await _client.PostAsJsonAsync("/api/flows/draft/test", Waiting("draft"))).StatusCode);
+        await Until(() => TestShown(_client, "draft"), "the test to be in the status");
+
+        var response = await _client.DeleteAsync("/api/flows/draft");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal("flowUnknown", (await Json(response)).GetProperty("reason").GetString());
+        await Until(async () => !await TestShown(_client, "draft"), "the test to leave the status");
+    }
+
+    // A test that has ended stays to be read until something takes it away. A stop does, and still answers
+    // that no test was going.
+    [Fact]
+    public async Task Stopping_a_test_that_has_ended_is_404_and_takes_it_away()
+    {
+        var ending = new
+        {
+            id = "ended",
+            name = "Ends",
+            enabled = true,
+            nodes = new[] { Node("start", "start"), Node("end", "end") },
+            edges = new[] { Wire("e1", "start", "out", "end") },
+        };
+        Assert.Equal(HttpStatusCode.Accepted, (await _client.PostAsJsonAsync("/api/flows/ended/test", ending)).StatusCode);
+        await Until(() => TestShown(_client, "ended", "finished"), "the test to finish");
+
+        var response = await _client.DeleteAsync("/api/flows/ended/test");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal("testUnknown", (await Json(response)).GetProperty("reason").GetString());
+        await Until(async () => !await TestShown(_client, "ended"), "the ended test to leave the status");
+    }
+
+    // As many tests can run at once as flows can be kept, and one past that is refused as a save past its
+    // limit is: in the PUT's shape, said of the flow as a whole.
+    [Fact]
+    public async Task A_fifty_first_test_going_is_a_400_said_of_the_flow()
+    {
+        using var fresh = new MqttForgeApiFactory();
+        var client = fresh.CreateClient();
+        var engine = fresh.Services.GetRequiredService<FlowEngine>();
+
+        for (var i = 0; i < FlowLimits.Flows; i++)
+            Assert.Equal(HttpStatusCode.Accepted, (await client.PostAsJsonAsync($"/api/flows/t{i}/test", Waiting($"t{i}"))).StatusCode);
+        await Until(() => Task.FromResult(Enumerable.Range(0, FlowLimits.Flows).All(i => engine.IsTesting($"t{i}"))),
+            "the fifty tests to be going");
+
+        var response = await client.PostAsJsonAsync("/api/flows/more/test", Waiting("more"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await Json(response);
+        Assert.Equal("flowInvalid", problem.GetProperty("reason").GetString());
+        Assert.Equal("The flow was not tested", problem.GetProperty("title").GetString());
+        Assert.Equal("At most 50 tests can run at once. Stop one first.", problem.GetProperty("errors").GetProperty("flow")[0].GetString());
+    }
 }

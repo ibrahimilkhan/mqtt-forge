@@ -4,6 +4,7 @@ using MqttForge.Application.Alerts;
 using MqttForge.Application.Flows;
 using MqttForge.Application.Services;
 using MqttForge.Domain.Abstractions;
+using MqttForge.Domain.Enums;
 using MqttForge.Domain.Exceptions;
 using MqttForge.Domain.Models;
 using MqttForge.UnitTests.Application.Alerts;
@@ -23,6 +24,8 @@ public sealed class FlowServiceTests : IAsyncLifetime
     private readonly FakeFlowStore _store = new();
     private readonly ILinkForRules _link = Substitute.For<ILinkForRules>();
     private readonly IAlertNotifier _alarms = Substitute.For<IAlertNotifier>();
+    private readonly FakeConnection _connection = new();
+    private readonly RecordingPublisher _publisher = new();
     private readonly CancellationTokenSource _stop = new();
     private readonly FlowEngine _engine;
     private readonly FlowService _sut;
@@ -31,7 +34,7 @@ public sealed class FlowServiceTests : IAsyncLifetime
     public FlowServiceTests()
     {
         _engine = new FlowEngine(new FlowRuntime(), _store, _alarms,
-            Substitute.For<IFlowNotifier>(), new FakeConnection(), new RecordingSubscriber(), new RecordingPublisher(),
+            Substitute.For<IFlowNotifier>(), _connection, new RecordingSubscriber(), _publisher,
             new AlertEngineOptions(), NullLogger<FlowEngine>.Instance, _time);
         _sut = new FlowService(_store, _engine, _link, new AlertEngineOptions());
     }
@@ -328,5 +331,101 @@ public sealed class FlowServiceTests : IAsyncLifetime
         await _sut.TestAsync(Listening(), CancellationToken.None);
 
         await _link.Received(1).WantedAsync(Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>A flow that publishes the moment it starts and then waits on an MQTT in: a publish before its first wait.</summary>
+    private static Flow Announcing(string id = "f1") => new ChartBuilder(id)
+        .Node("start", "start").Node("hello", "publish", new { topic = "plant/k1/cmd", payload = "on" })
+        .Node("in", "mqttIn", new { filter = "plant/k1/button" }).Node("end", "end")
+        .Then("start", "hello", "in", "end")
+        .Build();
+
+    // A test runs up to its first wait the moment the pump starts it, and the runtime refuses every publish
+    // until the pump has seen the link up. Handed over before the link was asked for, on a host that dials
+    // for it, a test's publish before its first wait was refused with "No broker link", and the link was up
+    // a moment later.
+    [Fact]
+    public async Task A_test_has_the_link_asked_for_before_it_is_handed_over()
+    {
+        Run();
+
+        // The dial. Once it is over, the engine has run everything it was handed before it — a deploy is
+        // answered once the engine runs it — and the link is up.
+        _link.WantedAsync(Arg.Any<CancellationToken>()).Returns(async _ =>
+        {
+            await _engine.DeployAsync(new FlowDeploy([], []), CancellationToken.None);
+            _connection.State = ConnectionState.Connected;
+        });
+
+        await _sut.TestAsync(Announcing(), CancellationToken.None);
+
+        await Until(() => _publisher.Sent.Count == 1, "the test's publish to go out");
+    }
+
+    // ---- what takes a test away, and how many there can be ----
+
+    /// <summary>The flow's test run as the engine last pushed it, or null when it has none.</summary>
+    private FlowRunStatus? TestRun(string id) =>
+        _engine.Status.Runs.FirstOrDefault(run => run.FlowId == id && run.Kind == FlowRunKind.Test);
+
+    // The console deletes a draft that was never saved here as well. Answered "no such flow", its test ran
+    // on — in every status push, with its compiled flow, its variables and its counters — until a restart.
+    [Fact]
+    public async Task Deleting_a_flow_that_was_never_saved_takes_its_test_away()
+    {
+        Run();
+        await _sut.TestAsync(Listening(), CancellationToken.None);
+        await Eventually.Until(_time, () => TestRun("f1") is not null, "the test to be pushed");
+
+        Assert.False(await _sut.DeleteAsync("f1", CancellationToken.None));
+
+        await Eventually.Until(_time, () => !_engine.IsTesting("f1") && TestRun("f1") is null, "the test to be taken away");
+    }
+
+    // A test that has ended stays to be read — where it ended, what each node did — until something takes
+    // it away. A stop does, and still answers that no test was going.
+    [Fact]
+    public async Task Stopping_a_test_that_has_ended_takes_it_away()
+    {
+        Run();
+        await _sut.TestAsync(Good(), CancellationToken.None);
+        await Eventually.Until(_time, () => TestRun("f1")?.State == FlowRunState.Finished, "the test to finish");
+
+        Assert.False(_sut.StopTest("f1"));
+
+        await Eventually.Until(_time, () => TestRun("f1") is null, "the ended test to be taken away");
+    }
+
+    // Until the pump has started it, nothing says the test is going. The stop is handed over all the same,
+    // and the pump reaches it after the start, or in its place.
+    [Fact]
+    public async Task A_stop_right_after_a_test_leaves_no_test_once_the_pump_has_run()
+    {
+        await _sut.TestAsync(Listening(), CancellationToken.None);
+        Assert.False(_sut.StopTest("f1"));
+
+        Run();
+
+        // Answered once the engine runs it, so by then the engine has run everything handed over before it.
+        await _sut.SaveAsync(Good("later", enabled: false), CancellationToken.None);
+        Assert.False(_engine.IsTesting("f1"));
+    }
+
+    [Fact]
+    public async Task A_fifty_first_test_is_refused_and_one_of_the_fifty_can_still_be_tested_again()
+    {
+        Run();
+        for (var i = 0; i < FlowLimits.Flows; i++) await _sut.TestAsync(Listening($"t{i}"), CancellationToken.None);
+        await Until(() => Enumerable.Range(0, FlowLimits.Flows).All(i => _engine.IsTesting($"t{i}")), "fifty tests to be going");
+
+        var refused = await _sut.TestAsync(Listening("one-too-many"), CancellationToken.None);
+
+        Assert.Null(refused.Flow);
+        var problem = Assert.Single(refused.Problems);
+        Assert.Equal("flow", problem.Key);
+        Assert.Equal("At most 50 tests can run at once. Stop one first.", problem.Message);
+
+        // A test of one of the fifty takes its own one's place, and is not one more.
+        Assert.NotNull((await _sut.TestAsync(Listening("t3"), CancellationToken.None)).Flow);
     }
 }

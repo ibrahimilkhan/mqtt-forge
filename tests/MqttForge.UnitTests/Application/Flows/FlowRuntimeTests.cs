@@ -1143,6 +1143,84 @@ public class FlowRuntimeTests
         Assert.Equal(FlowRunState.Waiting, Run(FlowRunKind.Test).State);
     }
 
+    // ---- how many tests are kept ----
+
+    /// <summary>Start → End: a test that ends the moment it starts.</summary>
+    private static CompiledFlow Ends(string id) =>
+        new ChartBuilder(id).Node("start", "start").Node("end", "end").Then("start", "end").Compile();
+
+    /// <summary>The flows with a test run kept, going or ended.</summary>
+    private IReadOnlyList<string> Tests() =>
+        [.. _runtime.Status().Runs.Where(run => run.Kind == FlowRunKind.Test).Select(run => run.FlowId)];
+
+    [Fact]
+    public void Stopping_a_test_that_has_ended_takes_it_away()
+    {
+        _runtime.StartTest(Ends("t1"), T0);
+        Assert.Equal(["t1"], Tests());
+
+        _runtime.StopTest("t1", T0);
+
+        Assert.Empty(Tests());
+    }
+
+    // A test that has ended stays to be read until something takes it away, and a console that went away
+    // first takes nothing away: the tests of drafts nobody saved would pile up for the life of the process.
+    // The one that goes is the oldest of those that have ended, by when it was started, and not by its name
+    // or by where its flow first stood.
+    [Fact]
+    public void A_test_of_another_flow_lets_the_oldest_ended_test_go_once_fifty_are_kept()
+    {
+        // Started t49 first and t00 last, so the oldest are the last by name. Every tenth ends at once:
+        // t44, t34, t24, t14 and t04, in that order.
+        for (var i = 0; i < FlowLimits.Flows; i++)
+        {
+            var id = $"t{FlowLimits.Flows - 1 - i:00}";
+            _runtime.StartTest(i % 10 == 5 ? Ends(id) : Reader(id), T0);
+        }
+
+        // t44 is tested again, and ends again: now the newest of the five.
+        _runtime.StartTest(Ends("t44"), T0);
+
+        var outcome = _runtime.StartTest(Reader("new"), T0);
+
+        var tests = Tests();
+        Assert.Equal(FlowLimits.Flows, tests.Count);
+        Assert.Contains("new", tests);
+        Assert.DoesNotContain("t34", tests);
+        Assert.Contains("t44", tests);
+        Assert.Contains("t04", tests);
+        Assert.Empty(outcome.Debug);
+    }
+
+    // With every one of them going, a fifty-first is not started. FlowService refuses it before it gets
+    // here, on what the pump last said was going; this is the one handed over faster than the pump said so.
+    [Fact]
+    public void A_test_of_another_flow_is_not_started_while_fifty_are_going_and_says_so()
+    {
+        for (var i = 0; i < FlowLimits.Flows; i++) _runtime.StartTest(Reader($"t{i}"), T0);
+
+        var outcome = _runtime.StartTest(Reader("new"), T0);
+
+        Assert.DoesNotContain("new", Tests());
+        Assert.Equal(FlowLimits.Flows, _runtime.Testing().Count);
+        var line = Assert.Single(outcome.Debug);
+        Assert.Equal(("new", "start", FlowDebugEntry.Error, true), (line.FlowId, line.NodeId, line.Kind, line.Test));
+        Assert.Equal("At most 50 tests can run at once, so this one was not started. Stop one first.", line.Text);
+    }
+
+    [Fact]
+    public void A_test_of_a_flow_with_one_kept_takes_its_place_while_fifty_are_going()
+    {
+        for (var i = 0; i < FlowLimits.Flows; i++) _runtime.StartTest(Reader($"t{i}"), T0);
+
+        var outcome = _runtime.StartTest(Ends("t3"), T0);
+
+        Assert.Equal(FlowLimits.Flows, Tests().Count);
+        Assert.Equal(FlowRunState.Finished, Run(FlowRunKind.Test, "t3").State);
+        Assert.Empty(outcome.Debug);
+    }
+
     // ---- what a step will not send ----
 
     [Fact]

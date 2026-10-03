@@ -968,6 +968,125 @@ public sealed class FlowEngineTests : IAsyncLifetime
         Assert.True(engine.IsActive("f2"));
     }
 
+    // ---- a test's start and its stop ----
+
+    // Somebody pressed Test and was told it would run, and a full queue lets its oldest entry go. Held up
+    // long enough, the pump lost the start: a 202 for a test that never ran.
+    [Fact]
+    public async Task A_test_is_never_lost_to_a_full_queue()
+    {
+        var engine = await StartedAsync(_alerts, []);
+
+        engine.Post(Press(Watch()));
+        for (var i = 0; i < FlowEngine.QueueCapacity; i++)
+            await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":50}"));
+        Run(engine);
+
+        // Started in its place, ahead of every arrival posted after it, and nothing counted as lost.
+        await Eventually.Until(_time, () => Read(engine, "in") == FlowEngine.QueueCapacity,
+            "every arrival to be read by the test");
+        Assert.True(engine.IsTesting("f1"));
+        Assert.Equal(0, engine.Dropped);
+    }
+
+    // The stop a delete posts as well: lost, it left the test of a flow that is gone running on.
+    [Fact]
+    public async Task A_stop_is_never_lost_to_a_full_queue()
+    {
+        var log = new HeldLog();
+        var engine = await RunningAsync(log);
+
+        // A test going, and the pump held up in the middle of a turn by a log slow to take the alarm the
+        // test raised — as a SUBSCRIBE that a busy broker is slow to answer would hold it.
+        engine.Post(Press(Watch()));
+        await Eventually.Until(_time, () => engine.IsTesting("f1"), "the test to be going");
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+        await ClockStill(() => log.Holding, "the pump to be held up telling the alarm");
+
+        engine.Post(new FlowTestStop("f1"));
+        for (var i = 0; i < FlowEngine.QueueCapacity; i++)
+            await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":50}"));
+        log.Go();
+
+        await Eventually.Until(_time, () => !engine.IsTesting("f1"), "the stop to end the test");
+        Assert.Equal(0, engine.Dropped);
+    }
+
+    /// <summary>A log that takes nothing until it is let go: a pump held up in the middle of a turn.</summary>
+    private sealed class HeldLog : IAlertNotifier
+    {
+        private readonly TaskCompletionSource _go = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _holding;
+
+        /// <summary>Whether it has been handed anything: the pump is waiting on it until it is let go.</summary>
+        public bool Holding => Volatile.Read(ref _holding) > 0;
+
+        public void Go() => _go.TrySetResult();
+
+        public Task RaisedAsync(IReadOnlyList<Alert> alerts) => Hold();
+
+        public Task ResolvedAsync(IReadOnlyList<Alert> alerts) => Hold();
+
+        public Task DroppedAsync(int total) => Task.CompletedTask;
+
+        private Task Hold()
+        {
+            Interlocked.Increment(ref _holding);
+            return _go.Task;
+        }
+    }
+
+    /// <summary>A test that says it has started, with a publish on test/started, and then waits on plant/k1/ack.</summary>
+    private static Flow Announcing() =>
+        Once("t1", ("hello", "publish", new { topic = "test/started", payload = "1" }), ("ack", "mqttIn", new { filter = "plant/k1/ack" }));
+
+    // Of a flow's start and stop the pump has not reached, only the newer is worth doing: a stop after a
+    // start is that start never made. What it would have published goes out before the active flow's
+    // publish handed over after it, so once that one is out, it would be too.
+    [Fact]
+    public async Task A_stop_handed_over_before_the_pump_started_its_test_means_the_test_never_starts()
+    {
+        var engine = await StartedAsync(_alerts, [Watch()]);
+
+        engine.Post(Press(Announcing()));
+        engine.Post(new FlowTestStop("t1"));
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+        Run(engine);
+
+        await Eventually.Until(_time, () => _publisher.Sent.Any(sent => sent.Topic == "plant/k1/cmd"), "the active flow's publish to go out");
+        Assert.DoesNotContain(_publisher.Sent, sent => sent.Topic == "test/started");
+        Assert.False(engine.IsTesting("t1"));
+    }
+
+    [Fact]
+    public async Task A_test_handed_over_after_a_stop_the_pump_has_not_reached_is_started()
+    {
+        var engine = await StartedAsync(_alerts, []);
+
+        engine.Post(new FlowTestStop("t1"));
+        engine.Post(Press(Announcing()));
+        Run(engine);
+
+        await Eventually.Until(_time, () => _publisher.Sent.Any(sent => sent.Topic == "test/started"), "the test to start");
+        Assert.True(engine.IsTesting("t1"));
+    }
+
+    // A test starts where it was handed over in the order of everything posted, as a deploy does: what
+    // arrived before it is not its to read, and what arrived after it is.
+    [Fact]
+    public async Task An_arrival_posted_before_a_test_is_not_read_by_it_and_one_posted_after_it_is()
+    {
+        var engine = await StartedAsync(_alerts, []);
+
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+        engine.Post(Press(Watch()));
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k2/temp", "{\"temp\":95}"));
+        Run(engine);
+
+        await Eventually.Until(_time, () => _publisher.Sent.Count == 1, "the test to judge the arrival after it");
+        Assert.Equal("plant/k2/cmd", Assert.Single(_publisher.Sent).Topic);
+    }
+
     // ---- the queue ----
 
     [Fact]

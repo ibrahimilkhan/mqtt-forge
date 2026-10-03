@@ -76,7 +76,7 @@ public sealed class FlowRuntime
         return filters;
     }
 
-    /// <summary>The flows whose test run has not ended: what DELETE /api/flows/{id}/test can stop.</summary>
+    /// <summary>The flows whose test run has not ended: the tests a Stop finds going.</summary>
     public IReadOnlySet<string> Testing() =>
         _runs.Values.Where(run => run.Key.Kind == FlowRunKind.Test && run.Live)
             .Select(run => run.Key.FlowId).ToHashSet(StringComparer.Ordinal);
@@ -127,13 +127,29 @@ public sealed class FlowRuntime
         return into.Outcome();
     }
 
-    /// <summary>Runs a flow's draft once, beside its active run, in place of any test of it there was.</summary>
+    /// <summary>
+    /// Runs a flow's draft once, beside its active run, in place of any test of it there was — or, when as
+    /// many tests are going as can be kept, says in the debug strip that it was not started.
+    /// </summary>
+    // A test that has ended stays to be read until something takes it away: another Test of its flow, a
+    // Stop, the flow's delete. A console that went away first takes nothing away, and a test can be of a
+    // draft nobody ever saved, so without a limit they would pile up for the life of the process — each with
+    // its compiled flow, its variables and its counters, and every one of them in every status push. So no
+    // more tests are kept than the file can keep flows, and a test of a flow with none kept makes room by
+    // letting the oldest that has ended go. FlowService refuses one while that many are going; only a test
+    // handed over faster than the pump could say so is turned away here.
     public FlowOutcome StartTest(CompiledFlow flow, DateTimeOffset now)
     {
         var into = new Collector();
         var key = new FlowRunKey(flow.Id, FlowRunKind.Test);
 
         if (_runs.Remove(key)) into.Resolved(_alarms.ResolveRun(key, FlowAlarmBook.TestEnded, now));
+        else if (!RoomForTest())
+        {
+            into.Debug.Add(new FlowDebugEntry(flow.Id, flow.Start.Id, now, FlowDebugEntry.Error, "",
+                $"At most {FlowLimits.Flows} tests can run at once, so this one was not started. Stop one first.", Test: true));
+            return into.Outcome();
+        }
 
         var run = new FlowRun(flow, FlowRunKind.Test, ++_serial, now);
         _runs[key] = run;
@@ -154,6 +170,20 @@ public sealed class FlowRuntime
 
         Touch();
         return into.Outcome();
+    }
+
+    /// <summary>Whether one more test can be kept: there is room, or the oldest that has ended is let go to make it.</summary>
+    // The oldest by its serial, which counts the runs in the order they were made: a test started again is
+    // a new run, and as young as any. Its alarms ended with it, at its End or where it was stopped.
+    private bool RoomForTest()
+    {
+        var tests = _runs.Values.Where(run => run.Key.Kind == FlowRunKind.Test).ToList();
+        if (tests.Count < FlowLimits.Flows) return true;
+
+        if (tests.Where(run => !run.Live).MinBy(run => run.Serial) is not { } oldest) return false;
+
+        _runs.Remove(oldest.Key);
+        return true;
     }
 
     /// <summary>A message off the broker: into the queue of every MQTT in it matches, and on with the runs it wakes.</summary>

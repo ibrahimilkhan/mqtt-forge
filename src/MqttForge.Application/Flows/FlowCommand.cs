@@ -12,9 +12,9 @@ namespace MqttForge.Application.Flows;
 // or a new Test may have put another run in that one's place. So it names the run by its serial as
 // well as its key, and the runtime lets it go when that run is gone.
 //
-// One queue for all but a deploy, which waits in a slot of its own because the queue drops its
-// oldest entry when it is full, and takes its place in the queue's order by when it was posted.
-// FlowEngine.Hand says the rest.
+// One queue for all but a deploy and a test's start or stop, which wait in slots of their own because
+// the queue drops its oldest entry when it is full, and take their places in the queue's order by when
+// they were posted. FlowEngine's two Hands say the rest.
 public abstract record FlowCommand;
 
 /// <summary>A message off the broker.</summary>

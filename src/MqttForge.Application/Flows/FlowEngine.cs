@@ -95,10 +95,16 @@ public sealed class FlowEngine
     /// <summary>The flows' filters at the broker, and what it refused of them on this link: AlertEngine's, under the flows' own owner.</summary>
     private readonly FilterSync _filters;
 
-    // The deploy the pump has not reached yet, and the order everything posted is stamped in. See Hand.
-    private readonly Lock _deploying = new();
+    // What the queue must not lose and the pump has not reached yet — the deploy, and each flow's test start
+    // or stop — and the order everything posted is stamped in. See the two Hands.
+    private readonly Lock _slots = new();
     private PendingDeploy? _pending;
+    private readonly Dictionary<string, PendingTest> _tests = new(StringComparer.Ordinal);
     private long _stamp;
+
+    // How many of those slots are filled. Written under the lock and read without it, by a turn that looks
+    // for them before every command it reads: one that finds none has no lock to take.
+    private int _filled;
 
     private readonly List<FlowDebugEntry> _debug = [];
 
@@ -106,7 +112,8 @@ public sealed class FlowEngine
     private FlowAlarms _alarms = FlowAlarms.Empty;
 
     // Which flows are switched on and which are being tested, as the pump last left them: what the
-    // service reads before posting a test's Stop, and what a caller reads once its save is answered.
+    // service reads to answer a test's Stop and to count the tests going, and what a caller reads once
+    // its save is answered.
     private IReadOnlySet<string> _active = new HashSet<string>();
     private IReadOnlySet<string> _testing = new HashSet<string>();
 
@@ -145,6 +152,9 @@ public sealed class FlowEngine
     /// <summary>Whether a flow has a test run that has not ended, as the pump last left it.</summary>
     public bool IsTesting(string flowId) => Volatile.Read(ref _testing).Contains(flowId);
 
+    /// <summary>The flows with a test run that has not ended, as the pump last left them.</summary>
+    public IReadOnlySet<string> Testing => Volatile.Read(ref _testing);
+
     private void Snapshot()
     {
         Volatile.Write(ref _active, _runtime.Active());
@@ -154,13 +164,21 @@ public sealed class FlowEngine
     /// <summary>Hands a command to the pump. Never blocks and never throws.</summary>
     public void Post(FlowCommand command)
     {
-        if (command is FlowDeploy deploy)
+        switch (command)
         {
-            Hand(deploy);
-            return;
+            case FlowDeploy deploy:
+                Hand(deploy);
+                break;
+            case FlowTestStart start:
+                Hand(start.Flow.Id, start);
+                break;
+            case FlowTestStop stop:
+                Hand(stop.FlowId, stop);
+                break;
+            default:
+                _queue.Writer.TryWrite(new Queued(Interlocked.Increment(ref _stamp), command));
+                break;
         }
-
-        _queue.Writer.TryWrite(new Queued(Interlocked.Increment(ref _stamp), command));
     }
 
     /// <summary>How long a deploy's answer waits for the pump to be running it.</summary>
@@ -208,28 +226,68 @@ public sealed class FlowEngine
     private Task<bool> Hand(FlowDeploy deploy)
     {
         Task<bool> running;
-        lock (_deploying)
+        lock (_slots)
         {
-            _pending ??= new PendingDeploy(Interlocked.Increment(ref _stamp));
+            if (_pending is null)
+            {
+                _pending = new PendingDeploy(Interlocked.Increment(ref _stamp));
+                Volatile.Write(ref _filled, _filled + 1);
+            }
+
             _pending.Deploy = deploy;
             running = _pending.Running.Task;
         }
 
-        _queue.Writer.TryWrite(new Queued(Interlocked.Increment(ref _stamp), DeployWaiting.Marker));
+        _queue.Writer.TryWrite(new Queued(Interlocked.Increment(ref _stamp), SlotWaiting.Marker));
         return running;
     }
 
-    /// <summary>The deploy waiting in its slot, if it was handed over before the command stamped <paramref name="before"/>.</summary>
-    private PendingDeploy? TakeDeploy(long before)
+    /// <summary>Puts a test's start or stop where the queue cannot lose it, and its place in the queue's order.</summary>
+    // A slot like a deploy's, one for each flow, and for the same reason. Somebody pressed Test and was told
+    // it would run, or pressed Stop, or deleted the flow: a start the queue let go was a test that never ran,
+    // and a stop it let go a test running on — of a flow that is gone, when its delete posted it.
+    //
+    // Of a flow's start and stop the pump has not reached, only the newer is worth doing. A start puts its
+    // test in place of whatever test there was, and a stop takes it away, so the newer alone leaves what
+    // the two would have left; all the older would have added is what it did before the newer ended it —
+    // a stop after a start is that start never made. The newer takes the older one's place in the order,
+    // as a deploy does, and the queue's entry is the wake-up a deploy's is.
+    private void Hand(string flowId, FlowCommand test)
     {
-        if (Volatile.Read(ref _pending) is null) return null;
-
-        lock (_deploying)
+        lock (_slots)
         {
-            if (_pending is not { } pending || pending.Stamp > before) return null;
+            if (_tests.TryGetValue(flowId, out var pending)) pending.Command = test;
+            else
+            {
+                _tests.Add(flowId, new PendingTest(flowId, Interlocked.Increment(ref _stamp), test));
+                Volatile.Write(ref _filled, _filled + 1);
+            }
+        }
 
-            _pending = null;
-            return pending;
+        _queue.Writer.TryWrite(new Queued(Interlocked.Increment(ref _stamp), SlotWaiting.Marker));
+    }
+
+    /// <summary>
+    /// The earliest of what waits in the slots, taken out, if it was handed over before the command
+    /// stamped <paramref name="before"/>.
+    /// </summary>
+    private Pending? Take(long before)
+    {
+        if (Volatile.Read(ref _filled) == 0) return null;
+
+        lock (_slots)
+        {
+            Pending? earliest = _pending;
+            foreach (var test in _tests.Values)
+                if (earliest is null || test.Stamp < earliest.Stamp) earliest = test;
+
+            if (earliest is null || earliest.Stamp > before) return null;
+
+            if (earliest is PendingTest taken) _tests.Remove(taken.FlowId);
+            else _pending = null;
+
+            Volatile.Write(ref _filled, _filled - 1);
+            return earliest;
         }
     }
 
@@ -459,25 +517,35 @@ public sealed class FlowEngine
                 }
             }
 
-            // Answered once it has been applied, whoever handed it over and however many of them it
-            // stands for.
-            void Deploy(PendingDeploy pending) => pending.Running.TrySetResult(Handle(pending.Deploy));
+            // What waits in a slot is applied as any command is. A deploy is answered once it has been,
+            // whoever handed it over and however many of them it stands for.
+            void HandleSlot(Pending pending)
+            {
+                if (pending is PendingDeploy deploy) deploy.Running.TrySetResult(Handle(deploy.Deploy));
+                else if (pending is PendingTest test) Handle(test.Command);
+            }
 
             var handled = 0;
             while (handled < MaxPerTurn && _queue.Reader.TryRead(out var queued))
             {
                 handled++;
 
-                // A deploy goes in at its own place, whether or not the queue kept its entry: ahead of
-                // the first command posted after it. The entry itself is its wake-up and nothing more.
-                if (TakeDeploy(before: queued.Stamp) is { } pending) Deploy(pending);
-                if (queued.Command is not DeployWaiting) Handle(queued.Command);
+                // What waits in a slot goes in at its own place, whether or not the queue kept its entry:
+                // ahead of the first command posted after it, and in the order it was handed over. The
+                // entry itself is its wake-up and nothing more.
+                while (Take(before: queued.Stamp) is { } pending) HandleSlot(pending);
+                if (queued.Command is not SlotWaiting) Handle(queued.Command);
             }
 
-            // One handed over after everything the turn read, or whose entry the queue let go with
-            // nothing after it. A turn that stopped at its limit leaves it for the next, which reads
-            // on to its place first.
-            if (handled < MaxPerTurn && TakeDeploy(before: long.MaxValue) is { } late) Deploy(late);
+            // What was handed over after everything the turn read, or whose entry the queue let go with
+            // nothing after it. A turn that stopped at its limit leaves it for the next, which reads on to
+            // its place first. Only what has been handed over by now, though: Tests pressed one after
+            // another are a stream like any other, and a turn has to come to an end.
+            if (handled < MaxPerTurn)
+            {
+                var last = Interlocked.Read(ref _stamp);
+                while (Take(before: last) is { } late) HandleSlot(late);
+            }
 
             // Nothing queued came after the move, so it goes after the queue, as any down does —
             // unless the turn stopped at its limit, when the next one sees the same move and goes on
@@ -778,8 +846,9 @@ public sealed class FlowEngine
 
     private void OnDropped(Queued queued)
     {
-        // A deploy's entry is only its wake-up: the deploy itself is in its slot, and lost is what it is not.
-        if (queued.Command is DeployWaiting) return;
+        // The entry of a deploy, or of a test's start or stop, is only its wake-up: what it stands for is in
+        // its slot, and lost is what it is not.
+        if (queued.Command is SlotWaiting) return;
 
         Interlocked.Increment(ref _dropped);
 
@@ -790,17 +859,29 @@ public sealed class FlowEngine
     /// <summary>A command, and when it was posted, as the order of everything posted.</summary>
     private readonly record struct Queued(long Stamp, FlowCommand Command);
 
-    /// <summary>A deploy's entry in the queue: its place in the order, and the pump's wake-up. The deploy is in its slot.</summary>
-    private sealed record DeployWaiting : FlowCommand
+    /// <summary>The queue's entry for what waits in a slot: its place in the order, and the pump's wake-up. What it stands for is in the slot.</summary>
+    private sealed record SlotWaiting : FlowCommand
     {
-        public static DeployWaiting Marker { get; } = new();
+        public static SlotWaiting Marker { get; } = new();
+    }
+
+    /// <summary>What waits in a slot, and where the first of what it stands for was stamped.</summary>
+    private abstract class Pending(long stamp)
+    {
+        public long Stamp { get; } = stamp;
     }
 
     /// <summary>The newest deploy the pump has not reached, where the first of them was stamped, and everyone waiting on it.</summary>
-    private sealed class PendingDeploy(long stamp)
+    private sealed class PendingDeploy(long stamp) : Pending(stamp)
     {
-        public long Stamp { get; } = stamp;
         public FlowDeploy Deploy { get; set; } = null!;
         public TaskCompletionSource<bool> Running { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    /// <summary>A flow's newest test start or stop the pump has not reached, and where the first of them was stamped.</summary>
+    private sealed class PendingTest(string flowId, long stamp, FlowCommand command) : Pending(stamp)
+    {
+        public string FlowId { get; } = flowId;
+        public FlowCommand Command { get; set; } = command;
     }
 }
