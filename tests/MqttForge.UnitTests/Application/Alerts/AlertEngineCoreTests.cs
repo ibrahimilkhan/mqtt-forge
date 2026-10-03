@@ -246,6 +246,20 @@ public class AlertEngineCoreTests
         Assert.Equal(1, diagnostic.Skipped);
     }
 
+    // The field is read before any condition is, outside the guard that keeps a condition's fault off the
+    // pump, so a field that cannot be read as text has to be a skip there and not an exception.
+    [Fact]
+    public void A_field_that_cannot_be_read_as_text_is_skipped_like_a_missing_one()
+    {
+        var engine = new AlertEngineCore(Options);
+        engine.SetRules([Rule("boiler", "plant/+/temp", Over90, field: "$.temp")], Start);
+
+        var outcome = engine.OnMessage(Message("plant/boiler/temp", """{"temp":"\ud800"}""", Start), Start);
+
+        Assert.Empty(outcome.Raised);
+        Assert.Equal(1, Assert.Single(engine.Snapshot().Rules).Skipped);
+    }
+
     [Fact]
     public void A_skipped_message_leaves_an_active_alert_where_it_was()
     {

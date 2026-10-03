@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -92,6 +93,14 @@ public static class PayloadValue
             // is a skip and not a fault, and the pair's skipped counter says how often it happens.
             return null;
         }
+        catch (ArgumentException)
+        {
+            // A string holding half of a surrogate pair, which cannot be turned into the UTF-8 a
+            // document is read from. Nothing off the wire is such a string, since a payload is kept as
+            // text only when its bytes are valid UTF-8, which cannot hold half a pair, but a reader
+            // that is total for every string is one no caller has to guard: it is not a document.
+            return null;
+        }
     }
 
     /// <summary>
@@ -109,8 +118,7 @@ public static class PayloadValue
         text = null;
         if (document is null || !TryWalk(document.RootElement, field, out var found)) return false;
 
-        text = TextOf(found);
-        return true;
+        return TryText(found, out text);
     }
 
     /// <summary>The number the text is, or null when it is not one.</summary>
@@ -212,7 +220,7 @@ public static class PayloadValue
             // A path that has run onto a scalar — 'temp.deeper' where temp is 23.5 — has not
             // found anything, and neither has one asking an object for a name it does not carry.
             if (found.ValueKind != JsonValueKind.Object) return false;
-            if (!found.TryGetProperty(name, out var child)) return false;
+            if (!TryProperty(found, name, out var child)) return false;
 
             found = child;
         }
@@ -243,13 +251,78 @@ public static class PayloadValue
         return true;
     }
 
-    /// <summary>What the leaf says, as text.</summary>
+    /// <summary>The object's property of that name, the last of them when there are two, as TryGetProperty answers.</summary>
+    // JsonDocument reads the names it passes on the way to the one asked for, last to first, and a
+    // name that escapes half of a surrogate pair throws there — even when the name asked for is in
+    // the object, if the bad one comes after it. A name that cannot be read as text is not the name
+    // asked for, so after that throw the object is looked through again, one name at a time, with
+    // every name that cannot be read left out.
+    private static bool TryProperty(JsonElement element, ReadOnlySpan<char> name, out JsonElement child)
+    {
+        try
+        {
+            return element.TryGetProperty(name, out child);
+        }
+        catch (InvalidOperationException ex) when (ex is not ObjectDisposedException)
+        {
+            child = default;
+            var found = false;
+
+            foreach (var property in element.EnumerateObject())
+            {
+                if (!NameIs(property, name)) continue;
+
+                child = property.Value;
+                found = true;
+            }
+
+            return found;
+        }
+    }
+
+    private static bool NameIs(JsonProperty property, ReadOnlySpan<char> name)
+    {
+        try
+        {
+            return property.NameEquals(name);
+        }
+        catch (InvalidOperationException ex) when (ex is not ObjectDisposedException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>What a leaf says, as text: false when it is a string that cannot be read as text.</summary>
     // A string gives its value, unquoted and unescaped, because a pattern rule is written about
     // the words a device wrote and not about the quotation marks JSON put round them. Everything
     // else gives the text exactly as it arrived: a number keeps the digits it was published with,
     // so '12.50' stays '12.50' and asReading reads it; true and false read as themselves; null
     // reads as 'null', which is an answer and not an absence; and an object or an array hands
     // back its own JSON, so a pattern rule can still look inside a subtree the path stopped at.
-    private static string TextOf(JsonElement element) =>
-        element.ValueKind == JsonValueKind.String ? element.GetString()! : element.GetRawText();
+    //
+    // A string can be valid JSON and still not be text: "\ud800" escapes half of a surrogate pair,
+    // which no .NET string can be read from, and GetString throws on it. The device has said nothing
+    // that can be read, so it gets the answer a missing field gets — not there — and never an
+    // exception thrown into an engine that read it off somebody else's broker. A document disposed
+    // under the reader is a fault in the caller, and is let through. Public because a flow's For
+    // each reads its elements here too.
+    public static bool TryText(JsonElement element, [NotNullWhen(true)] out string? text)
+    {
+        if (element.ValueKind != JsonValueKind.String)
+        {
+            text = element.GetRawText();
+            return true;
+        }
+
+        try
+        {
+            text = element.GetString()!;
+            return true;
+        }
+        catch (InvalidOperationException ex) when (ex is not ObjectDisposedException)
+        {
+            text = null;
+            return false;
+        }
+    }
 }

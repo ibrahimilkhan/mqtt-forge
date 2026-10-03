@@ -69,6 +69,19 @@ internal sealed class FlowRun
 
     /// <summary>A node's counter to read, which never makes one: a status read leaves no trace.</summary>
     public NodeCounter Peek(string id) => _counters.TryGetValue(id, out var counter) ? counter : NodeCounter.Untouched;
+
+    /// <summary>Lets go of every message the run's MQTT in nodes are holding.</summary>
+    // For a run that has ended, which reads none of them, and stays to be read itself until it is
+    // replaced: for an active run, that can be the life of the process, with a thousand payloads held
+    // for each MQTT in node it had not reached.
+    public void ForgetQueued()
+    {
+        foreach (var queue in Queues.Values)
+        {
+            queue.Clear();
+            queue.TrimExcess();
+        }
+    }
 }
 
 /// <summary>A loop the run is in: what it went in with, how many turns, which one this is.</summary>
@@ -116,10 +129,13 @@ internal sealed class TokenBucket(DateTimeOffset now)
     {
         var elapsed = (now - _at).TotalSeconds;
         if (elapsed > 0)
-        {
             _tokens = Math.Min(FlowLimits.PublishesPerSecond, _tokens + elapsed * FlowLimits.PublishesPerSecond);
-            _at = now;
-        }
+
+        // Moved on a clock set back as well, which counts as no time gone by. Left where it was, the
+        // bucket would refill nothing until the clock had caught up with it again, and every publish
+        // until then — an hour of them, for a clock an hour fast that was put right — would be refused
+        // as over the rate.
+        _at = now;
 
         if (_tokens < 1) return false;
 

@@ -123,6 +123,42 @@ public class PayloadValueTests
         Assert.Null(text);
     }
 
+    // An escaped half of a surrogate pair is valid JSON and no .NET string, and a device can send one as
+    // easily as any other text. It has said nothing that can be read, so it gets the answer a missing
+    // field gets, and not an exception thrown into the engine that read it off the broker.
+    [Theory]
+    [InlineData("""{"temp":"\ud800"}""", "$.temp")]
+    [InlineData("""{"temp":"\udc00 high"}""", "temp")]
+    [InlineData("""{"ids":["k1","\ud800"]}""", "ids[1]")]
+    public void A_string_that_cannot_be_read_as_text_is_not_there(string payload, string field)
+    {
+        Assert.False(PayloadValue.TryExtract(payload, field, out var text));
+        Assert.Null(text);
+    }
+
+    [Fact]
+    public void A_name_that_cannot_be_read_as_text_is_not_the_name_asked_for()
+    {
+        // JsonDocument reads every name it passes on the way to the one asked for, and it passes them
+        // last to first: a bad name after the field is the order that used to throw.
+        Assert.True(PayloadValue.TryExtract("""{"temp":94,"\ud800":1}""", "$.temp", out var text));
+        Assert.Equal("94", text);
+        Assert.False(PayloadValue.TryExtract("""{"te\ud800":1}""", "temp", out _));
+
+        // And of two names alike the last is the one read, as it is when no name is bad.
+        Assert.True(PayloadValue.TryExtract("""{"temp":1,"temp":2,"\ud800":0}""", "temp", out var last));
+        Assert.Equal("2", last);
+    }
+
+    [Fact]
+    public void A_body_holding_half_of_a_surrogate_pair_itself_is_not_a_document()
+    {
+        // Not escaped this time: the half is in the .NET string, which JsonDocument cannot even turn into
+        // the UTF-8 it reads, and it says so with an ArgumentException rather than a JsonException.
+        Assert.Null(PayloadValue.Open("{\"temp\":\"\ud800\"}"));
+        Assert.False(PayloadValue.TryExtract("{\"temp\":\"\ud800\"}", "temp", out _));
+    }
+
     [Fact]
     public void Six_levels_are_walked_and_a_seventh_is_not()
     {

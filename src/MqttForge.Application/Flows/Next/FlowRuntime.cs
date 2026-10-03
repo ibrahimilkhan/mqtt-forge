@@ -152,6 +152,7 @@ public sealed class FlowRuntime
     public FlowOutcome OnMessage(MqttMessage message, DateTimeOffset now)
     {
         var heard = false;
+        HashSet<FlowRun>? woken = null;
 
         foreach (var run in _runs.Values)
         {
@@ -192,13 +193,22 @@ public sealed class FlowRuntime
             }
 
             if (run.State == FlowRunState.Waiting && run.WakeAt is null && run.At is MqttInNode waiting && matching.Contains(waiting))
+            {
                 run.State = FlowRunState.Running;
+                (woken ??= []).Add(run);
+            }
         }
 
         if (!heard) return FlowOutcome.Empty;
 
+        // Only the runs this message woke. A run with steps left over from an earlier call has had its
+        // share, and takes the rest at the next tick, which NextDue makes at once: moved here as well, it
+        // would take another thousand steps at every arrival in a pump turn, and a run that gave up its
+        // turn to a pattern that ran out of time would cost the pump another 50 ms at each.
         var into = new Collector();
-        DriveAll(now, into);
+        if (woken is not null)
+            foreach (var run in Ordered().Where(woken.Contains))
+                Drive(run, now, into);
 
         Touch();
         return into.Outcome();
@@ -315,7 +325,22 @@ public sealed class FlowRuntime
         run.YieldNow = false;
 
         for (var steps = 0; steps < FlowLimits.StepsPerTurn && run.State == FlowRunState.Running && !run.YieldNow; steps++)
-            Step(run, now, into);
+        {
+            var at = run.At;
+
+            try
+            {
+                Step(run, now, into);
+            }
+            catch (Exception ex)
+            {
+                // AlertEngineCore.EvaluateGuarded's rule, for a run: deliberately every exception. A step
+                // that throws leaves the run where it was, so every call after this one would take the
+                // same step and throw again, NextDue would say "at once", and the pump would do nothing
+                // else for any flow. No step is known to throw; this is for the one nobody has thought of.
+                Stop(run, at.Id, $"This step failed, so the run was stopped: {ex.Message}", now, into);
+            }
+        }
 
         Touch();
     }
@@ -400,6 +425,7 @@ public sealed class FlowRuntime
     private void End(FlowRun run, DateTimeOffset now, Collector into)
     {
         run.State = FlowRunState.Finished;
+        run.ForgetQueued();
 
         // A test is over when it reaches an End, and so are its alarms: a test leaves nothing standing.
         // An active run's alarms stay up — they are real, and nothing pretends the plant got better.
@@ -410,7 +436,11 @@ public sealed class FlowRuntime
     private void Stop(FlowRun run, string nodeId, string fault, DateTimeOffset now, Collector into)
     {
         run.State = FlowRunState.Stopped;
-        run.Fault = fault;
+
+        // Cut as a note is, since it stands in the flow's pane the way a note stands under a node: a
+        // fault that quotes an exception is as long as the exception made it. The debug line keeps more.
+        run.Fault = Excerpt(fault);
+        run.ForgetQueued();
         Fail(run, nodeId, fault, now, into, run.Message.Topic);
 
         if (run.Key.Kind == FlowRunKind.Test) into.Resolved(_alarms.ResolveRun(run.Key, FlowAlarmBook.TestEnded, now));
@@ -496,7 +526,7 @@ public sealed class FlowRuntime
         }
 
         var text = loop.Array.Read(run.Message, run.Variables);
-        var items = Items(text, out var more);
+        var items = Items(text, out var more, out var unread);
 
         if (items is null)
         {
@@ -510,6 +540,12 @@ public sealed class FlowRuntime
 
         if (more)
             Fail(run, loop.Id, $"Only the first {FlowLimits.ForEachElements:N0} elements are walked.", now, into, run.Message.Topic);
+
+        if (unread > 0)
+            Fail(run, loop.Id, unread == 1
+                    ? "An element could not be read as text, so it was left out."
+                    : $"{unread} elements could not be read as text, so they were left out.",
+                now, into, run.Message.Topic);
 
         Enter(run, loop, new LoopState(run.Message, items.Count, items));
     }
@@ -608,7 +644,11 @@ public sealed class FlowRuntime
         else
         {
             run.Variables[set.Variable] = value;
-            run.Counter(set.Id).Note = Excerpt($"{set.Variable} = {value}");
+
+            // The value is cut before the sentence is made of it, so the note costs what it shows and not
+            // a copy of a value that may be 64 KB. The note is the same either way: the sentence starts
+            // with at least four characters, and Excerpt keeps no more than the first seventy-nine.
+            run.Counter(set.Id).Note = Excerpt($"{set.Variable} = {FlowTemplate.Clip(value, FlowLimits.NoteLength)}");
         }
 
         Go(run, set, "out");
@@ -745,10 +785,14 @@ public sealed class FlowRuntime
         }
     }
 
-    /// <summary>A JSON array's elements as text — a string as itself, anything else as its JSON — and whether there were more than the limit.</summary>
-    private static List<string>? Items(string? text, out bool more)
+    /// <summary>
+    /// A JSON array's elements as text — a string as itself, anything else as its JSON — whether there
+    /// were more than the limit, and how many could not be read as text.
+    /// </summary>
+    private static List<string>? Items(string? text, out bool more, out int unread)
     {
         more = false;
+        unread = 0;
         if (text is null) return null;
 
         JsonDocument document;
@@ -775,8 +819,11 @@ public sealed class FlowRuntime
                 }
 
                 // A string element is its text, not its JSON: ["k1","k2"] gives k1 and k2, which is what
-                // a topic template wants to put between two slashes.
-                items.Add(element.ValueKind == JsonValueKind.String ? element.GetString()! : element.GetRawText());
+                // a topic template wants to put between two slashes. Read the way every field is read,
+                // so an element that is no text at all, an escaped half of a surrogate pair, is not
+                // there, and the walk goes on without it.
+                if (PayloadValue.TryText(element, out var item)) items.Add(item);
+                else unread++;
             }
 
             return items;

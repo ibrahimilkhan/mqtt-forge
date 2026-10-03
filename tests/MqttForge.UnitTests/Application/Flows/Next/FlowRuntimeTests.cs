@@ -896,6 +896,24 @@ public class FlowRuntimeTests
     }
 
     [Fact]
+    public void A_run_publishes_at_its_rate_a_second_after_the_clock_is_set_back()
+    {
+        // Fifty a turn and a Wait of a second: the bucket is empty when the clock goes back an hour, and
+        // the turn after that must find it refilled by the second it waited, not by the hour to come.
+        var chart = new ChartBuilder()
+            .Node("start", "start").Node("loop", "for", new { forever = true }).Node("burst", "for", new { times = "50" })
+            .Node("pub", "publish", new { topic = "a/{{index}}" }).Node("pause", "wait", new { seconds = "1" }).Node("end", "end")
+            .Then("start", "loop").Wire("loop", "body", "burst").Wire("burst", "body", "pub").Wire("pub", "out", "burst", "next")
+            .Wire("burst", "done", "pause").Wire("pause", "out", "loop", "next").Wire("loop", "done", "end");
+        Assert.Equal(FlowLimits.PublishesPerSecond, Activate(chart.Compile()).Publishes.Count);
+
+        var back = T0.AddHours(-1);
+        _runtime.OnTick(back, connected: true);
+
+        Assert.Equal(FlowLimits.PublishesPerSecond, _runtime.OnTick(back.AddSeconds(1), connected: true).Publishes.Count);
+    }
+
+    [Fact]
     public void A_channel_does_its_job_again_after_the_clock_is_set_back()
     {
         var chart = Body("for", new { times = "2" }, ("beep", "sound", new { level = "info" }), ("pause", "wait", new { seconds = "1" }));
@@ -1169,12 +1187,204 @@ public class FlowRuntimeTests
         Assert.True(allocated < 64 * 1024, $"{allocated:N0} bytes were allocated to run one message into two notes.");
     }
 
+    // A Set's note says the variable and its new value, and costs what it shows in the same way: a value of
+    // sixty thousand characters, which a Set keeps without copying it, is not copied whole into a sentence
+    // to show eighty of them.
+    [Fact]
+    public void A_set_note_costs_what_it_shows_and_not_a_copy_of_the_value()
+    {
+        Activate(Body("for", new { forever = true },
+            ("read", "mqttIn", new { filter = "a/b" }),
+            ("keep", "set", new { variable = "n", value = new string('v', 60_000) })).Var("n", "").Compile());
+        _runtime.OnMessage(Msg("a/b", "warming up"), T0);
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        _runtime.OnMessage(Msg("a/b", "1"), T0);
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.StartsWith("n = vvv", Node("keep").Note);
+        Assert.Equal(FlowLimits.NoteLength, Node("keep").Note!.Length);
+        Assert.True(allocated < 64 * 1024, $"{allocated:N0} bytes were allocated to set a variable and say so.");
+    }
+
     [Fact]
     public void A_variable_is_shown_as_an_excerpt()
     {
         Activate(Line(("say", "debug", null)).Var("long", new string('v', 2 * FlowLimits.NoteLength)).Compile());
 
         Assert.Equal(FlowLimits.NoteLength, Run().Variables["long"].Length);
+    }
+
+    // ---- what a message cannot do ----
+
+    [Fact]
+    public void A_field_that_cannot_be_read_as_text_is_not_there_and_the_run_goes_on()
+    {
+        // The drawing one message once stopped every flow with: a monitor whose If reads a field holding
+        // an escaped half of a surrogate pair, beside a simulator that publishes every second.
+        var monitor = new ChartBuilder()
+            .Node("start", "start").Node("loop", "for", new { forever = true })
+            .Node("read", "mqttIn", new { filter = "plant/+/temp" })
+            .Node("test", "if", new { field = "$.temp", test = "gt", value = "90" }).Node("end", "end")
+            .Then("start", "loop").Wire("loop", "body", "read").Then("read", "test")
+            .Wire("test", "yes", "loop", "next").Wire("test", "no", "loop", "next").Wire("loop", "done", "end");
+        var simulator = new ChartBuilder("f2")
+            .Node("start", "start").Node("loop", "for", new { forever = true })
+            .Node("pause", "wait", new { seconds = "1" }).Node("pub", "publish", new { topic = "sim/ping" }).Node("end", "end")
+            .Then("start", "loop").Wire("loop", "body", "pause").Then("pause", "pub").Wire("pub", "out", "loop", "next")
+            .Wire("loop", "done", "end");
+        _runtime.Deploy([monitor.Compile(), simulator.Compile()], ["f1", "f2"], T0);
+
+        _runtime.OnMessage(Msg("plant/k1/temp", """{"temp":"\ud800"}"""), T0);
+
+        Assert.Equal(1, Node("test").Outs["no"]);
+        Assert.Equal("no such field", Node("test").Note);
+        Assert.Equal(FlowRunState.Waiting, Run().State);
+        Assert.Equal(3, Enumerable.Range(1, 3).Sum(second => _runtime.OnTick(T0.AddSeconds(second), connected: true).Publishes.Count));
+    }
+
+    [Fact]
+    public void For_each_leaves_out_an_element_that_cannot_be_read_as_text_and_says_so()
+    {
+        var chart = Body("forEach", new { array = "var.ids" }, ("pub", "publish", new { topic = "plant/{{payload}}", payload = "{{index}}" }))
+            .Var("ids", """["k1","\udc00","k3"]""");
+
+        var outcome = Activate(chart.Compile());
+
+        Assert.Equal(["plant/k1", "plant/k3"], Topics(outcome));
+        Assert.Equal(["1", "2"], outcome.Publishes.Select(Text));
+        Assert.Equal(1, Node("loop").Errors);
+    }
+
+    // ---- an arrival, and the runs it did not wake ----
+
+    /// <summary>Start, then forever: read the next message on a/b. It wakes at every arrival there.</summary>
+    private static CompiledFlow Reader(string id) => new ChartBuilder(id)
+        .Node("start", "start").Node("loop", "for", new { forever = true }).Node("read", "mqttIn", new { filter = "a/b" })
+        .Node("end", "end")
+        .Then("start", "loop").Wire("loop", "body", "read").Wire("read", "out", "loop", "next").Wire("loop", "done", "end")
+        .Compile();
+
+    [Fact]
+    public void An_arrival_moves_only_the_runs_it_woke()
+    {
+        // A run with steps left over takes them at the next tick: were every arrival in a pump turn to
+        // move it as well, it would take another thousand steps at each.
+        _runtime.Deploy([Body("for", new { times = "1000000" }, ("say", "debug", null)).Compile(), Reader("f2")], ["f1", "f2"], T0);
+
+        var arrivals = Enumerable.Range(0, 10).SelectMany(i => _runtime.OnMessage(Msg("a/b", $"{i}"), T0).Debug).ToList();
+
+        Assert.DoesNotContain(arrivals, line => line.FlowId == "f1");
+        Assert.Equal(FlowRunState.Running, Run().State);
+        Assert.Equal(500, _runtime.OnTick(T0, connected: true).Debug.Count(line => line.FlowId == "f1"));
+    }
+
+    [Fact]
+    public void A_pattern_that_ran_out_of_time_costs_its_run_a_tick_and_not_every_arrival()
+    {
+        var hostile = new ChartBuilder().Var("text", HostilePatterns.Payload)
+            .Node("start", "start").Node("loop", "for", new { times = "100" })
+            .Node("test", "if", new { field = "var.text", test = "matches", value = HostilePatterns.Catastrophic })
+            .Node("end", "end")
+            .Then("start", "loop").Wire("loop", "body", "test")
+            .Wire("test", "yes", "loop", "next").Wire("test", "no", "loop", "next").Wire("loop", "done", "end");
+        _runtime.Deploy([hostile.Compile(), Reader("f2")], ["f1", "f2"], T0);
+
+        for (var i = 0; i < 5; i++) _runtime.OnMessage(Msg("a/b", $"{i}"), T0);
+
+        Assert.Equal(1, Node("test").Errors);
+    }
+
+    // ---- what a run lets go of when it ends ----
+
+    /// <summary>Queues a message the run will never read, and keeps no more than a weak hold on its payload.</summary>
+    // A method of its own, never inlined, so that nothing on the test's stack holds the payload once it
+    // has returned: only the run's queue can keep it alive after that, and nothing reads a queue of a run
+    // that has ended, so what it holds is seen only by whether the collector can take it.
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private WeakReference Queued(string topic)
+    {
+        var payload = new string('q', 10_000);
+        _runtime.OnMessage(Msg(topic, payload), T0);
+        return new WeakReference(payload);
+    }
+
+    private static bool Collected(WeakReference weak)
+    {
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        return !weak.IsAlive;
+    }
+
+    [Fact]
+    public void A_run_that_reaches_an_end_lets_go_of_the_messages_it_had_queued()
+    {
+        var chart = new ChartBuilder()
+            .Node("start", "start").Node("first", "mqttIn", new { filter = "a/b" })
+            .Node("test", "if", new { field = "", test = "eq", value = "stop" })
+            .Node("second", "mqttIn", new { filter = "c/d" }).Node("end", "end")
+            .Then("start", "first", "test").Wire("test", "yes", "end").Wire("test", "no", "second").Then("second", "end");
+        Activate(chart.Compile());
+        var queued = Queued("c/d");
+
+        _runtime.OnMessage(Msg("a/b", "stop"), T0);
+
+        Assert.Equal(FlowRunState.Finished, Run().State);
+        Assert.True(Collected(queued));
+    }
+
+    [Fact]
+    public void A_run_the_forever_guard_stopped_lets_go_of_the_messages_it_had_queued()
+    {
+        var chart = new ChartBuilder()
+            .Node("start", "start").Node("first", "mqttIn", new { filter = "a/b" }).Node("loop", "for", new { forever = true })
+            .Node("test", "if", new { field = "$.go", test = "exists" })
+            .Node("second", "mqttIn", new { filter = "c/d" }).Node("say", "debug").Node("end", "end")
+            .Then("start", "first", "loop").Wire("loop", "body", "test")
+            .Wire("test", "yes", "second").Wire("second", "out", "loop", "next")
+            .Wire("test", "no", "say").Wire("say", "out", "loop", "next")
+            .Wire("loop", "done", "end");
+        Activate(chart.Compile());
+        var queued = Queued("c/d");
+
+        _runtime.OnMessage(Msg("a/b", "{}"), T0);
+
+        Assert.Equal(FlowRunState.Stopped, Run().State);
+        Assert.True(Collected(queued));
+    }
+
+    // ---- a step that fails in a way no step expects ----
+
+    [Fact]
+    public void A_step_that_throws_stops_its_run_there_and_no_other()
+    {
+        // Nothing the product does is known to throw out of a step any more; a Random that throws on its
+        // draw stands in for whatever will, through {{random}} in a Set's value.
+        var runtime = new FlowRuntime(new BrokenRandom());
+        runtime.OnTick(T0, connected: true);
+        var broken = Line(("keep", "set", new { variable = "n", value = "{{random(0,1)}}" })).Var("n", "0").Compile();
+        var other = new ChartBuilder("f2").Node("start", "start").Node("pub", "publish", new { topic = "a/b" }).Node("end", "end")
+            .Then("start", "pub", "end").Compile();
+
+        var outcome = runtime.Deploy([broken, other], ["f1", "f2"], T0);
+
+        var run = runtime.Status().Runs.Single(one => one.FlowId == "f1");
+        Assert.Equal(FlowRunState.Stopped, run.State);
+        Assert.Equal("keep", run.At);
+        Assert.StartsWith("This step failed, so the run was stopped: The dice are lost", run.Fault);
+        Assert.Equal(FlowLimits.NoteLength, run.Fault!.Length);
+        Assert.Equal(1, run.Nodes.Single(node => node.Id == "keep").Errors);
+        Assert.Contains(outcome.Debug, line => line.Kind == FlowDebugEntry.Error && line.NodeId == "keep");
+        Assert.Equal("f2", Assert.Single(outcome.Publishes).Run.FlowId);
+        Assert.Null(runtime.NextDue);
+    }
+
+    /// <summary>A Random whose every draw throws, with a message longer than a note.</summary>
+    private sealed class BrokenRandom() : Random(7)
+    {
+        public override double NextDouble() =>
+            throw new InvalidOperationException("The dice are lost, " + new string('x', 2 * FlowLimits.NoteLength));
     }
 
     /// <summary>A Random that counts its draws: each {{random}} a render fills is one.</summary>
