@@ -15,6 +15,7 @@ import {
   type Edge,
   type EdgeChange,
   type EdgeProps,
+  type InternalNode,
   type Node,
   type NodeChange,
   type NodeProps,
@@ -31,12 +32,11 @@ import {
   type CSSProperties,
   type DragEvent,
   type KeyboardEvent,
-  type ReactElement,
 } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { isLive, nodeKey, shownRun, useFlowStatusStore, type FlowStatusState } from '../../stores/flowStatusStore';
 import type { FlowDto, FlowNodeDto } from '../../types/api';
-import { backPath, dropOf, goesBack, laneOver, MARGIN, riseOf } from './backWires';
+import { backPath, MARGIN, namesOf, routes, type End, type Leg, type Placed, type Route } from './backWires';
 import {
   addNode,
   canConnect,
@@ -48,13 +48,14 @@ import {
   removeNodes,
   unreached,
   unwiredOuts,
+  type Measure,
   type Problems,
   type Wire,
 } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
 import {
   isNodeType,
-  portLabel,
+  nameOf,
   portsOf,
   sideOf,
   specOf,
@@ -101,6 +102,18 @@ export const STEP_HEIGHT = 71.52;
 /** The If's box: a diamond keeps its three lines in its middle, so it is drawn larger than the rest. */
 export const DECISION_WIDTH = NODE_WIDTH + 64;
 export const DECISION_HEIGHT = 128;
+
+/**
+ * The nodes as the palette reckons them when it puts one down (see placeAfter and freeSpot): an If
+ * in its own box, every other node in a step's with some to spare under it; each as tall as it is
+ * drawn, to stand a node level with the one it follows; and 24 kept clear round the node put down.
+ */
+export const MEASURE: Measure = {
+  boxOf: (type) =>
+    specOf(type).shape === 'decision' ? { width: DECISION_WIDTH, height: DECISION_HEIGHT } : { width: NODE_WIDTH, height: NODE_HEIGHT },
+  heightOf: (type) => (specOf(type).shape === 'decision' ? DECISION_HEIGHT : STEP_HEIGHT),
+  room: 24,
+};
 
 /**
  * The sizes, where the stylesheet reads them: the If's as well, for the same reason as the width; and
@@ -351,15 +364,22 @@ export function FlowCanvas({ flow, problems }: { flow: FlowDto; problems: Proble
       let left = Infinity;
       let top = Infinity;
       let bottom = -Infinity;
-      let start: number | undefined;
+      let start: { x: number; y: number; height: number } | undefined;
       for (const node of nodeLookup.values()) {
         const { x, y } = node.internals.positionAbsolute;
         left = Math.min(left, x);
         top = Math.min(top, y);
         bottom = Math.max(bottom, y + (node.measured.height ?? 0));
-        if (node.data.node.type === 'start') start = x;
+        if (node.data.node.type === 'start') start = { x, y, height: node.measured.height ?? 0 };
       }
-      const fromStart = { x: START_INSET - (start ?? left) * LEGIBLE, y: height / 2 - ((top + bottom) / 2) * LEGIBLE, zoom: LEGIBLE };
+      // Too tall to show whole as well, the flow with the middle of its rows halfway down had its top
+      // rows above the canvas, and its Start among them. It stands with its top START_INSET down
+      // instead, as it stands with its Start START_INSET in; and when even that leaves the Start below
+      // the canvas, with its Start there.
+      const tall = (bottom - top) * LEGIBLE > height;
+      let y = tall ? START_INSET - top * LEGIBLE : height / 2 - ((top + bottom) / 2) * LEGIBLE;
+      if (start && (start.y + start.height) * LEGIBLE + y > height) y = START_INSET - start.y * LEGIBLE;
+      const fromStart = { x: START_INSET - (start?.x ?? left) * LEGIBLE, y, zoom: LEGIBLE };
 
       const picked = nodeLookup.get(useFlowDraftStore.getState().selected ?? '');
       const box = picked && { ...picked.internals.positionAbsolute, width: picked.measured.width ?? 0, height: picked.measured.height ?? 0 };
@@ -750,8 +770,7 @@ function FlowNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
 
   const portName = (port: string, out: boolean) => {
     const open = unwired.includes(port);
-    const name = named && port !== 'in' ? portLabel(port) : '';
-    const text = open ? (name ? `${name} · wire me` : 'wire me') : name;
+    const text = nameOf(port, named, open);
     return text ? (
       <span
         key={`name-${port}`}
@@ -846,13 +865,13 @@ function Countdown({ until }: { until: string }) {
  * second, so a busy wire stays lit and a quiet one blinks — which is the difference a reader is
  * looking for.
  *
- * A wire going forward is React Flow's curve; one going back goes round what stands between its
- * ends (see backWires.ts and BackWire). Its marks are the same either way.
+ * A wire going forward is React Flow's curve. One whose curve would run through what stands between
+ * its ends goes round it instead, along the route worked out for it with every other such wire (see
+ * backWires.ts and routesIn). Its marks are the same either way.
  */
 function WireView({
   id,
   source,
-  target,
   sourceHandleId,
   sourceX,
   sourceY,
@@ -867,6 +886,10 @@ function WireView({
   const count = useFlowStatusStore((state) => state.nodes[nodeKey(flowId, source)]?.outs[sourceHandleId ?? 'out'] ?? 0);
   const [flash, setFlash] = useState(false);
   const seen = useRef(count);
+  // Its route, as text, and none for the curve: compared by value, so the wire is drawn again when its
+  // own route moves, and not for a node dragged a frame at a time out of its way, nor when another
+  // wire's route moves.
+  const route = useStore(useCallback((state: ReactFlowState) => routeKey(routesIn(state).get(id)), [id]));
 
   useEffect(() => {
     const before = seen.current;
@@ -887,7 +910,18 @@ function WireView({
     return () => clearTimeout(timer);
   }, [count]);
 
-  const line = (path: string) => (
+  const [path] =
+    route === ''
+      ? getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition })
+      : [
+          backPath({
+            source: { x: sourceX, y: sourceY, side: SIDES[sourcePosition] },
+            target: { x: targetX, y: targetY, side: SIDES[targetPosition] },
+            ...routeFrom(route),
+          }),
+        ];
+
+  return (
     <BaseEdge
       id={id}
       path={path}
@@ -897,85 +931,100 @@ function WireView({
       data-problem={data?.problems ? '' : undefined}
     />
   );
-
-  if (goesBack(sourceX, targetX, targetPosition))
-    return (
-      <BackWire
-        source={source}
-        target={target}
-        sourceX={sourceX}
-        sourceY={sourceY}
-        sourcePosition={sourcePosition}
-        targetX={targetX}
-        targetY={targetY}
-        targetPosition={targetPosition}
-        draw={line}
-      />
-    );
-
-  const [path] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
-  return line(path);
 }
 
-type Ends = Pick<
-  EdgeProps<CanvasEdge>,
-  'source' | 'target' | 'sourceX' | 'sourceY' | 'sourcePosition' | 'targetX' | 'targetY' | 'targetPosition'
->;
+/** The side of its node a port stands on, by where React Flow says it is. */
+const SIDES: Record<Position, Side> = {
+  [Position.Left]: 'left',
+  [Position.Right]: 'right',
+  [Position.Top]: 'top',
+  [Position.Bottom]: 'bottom',
+};
 
-/**
- * Where React Flow has a node's right edge: where it stands, and how wide it measured it. A node it
- * has not measured has no edge yet, and `otherwise` stands in for it.
- */
-function rightOf(nodes: ReactFlowState['nodeLookup'], id: string, otherwise: number) {
-  const node = nodes.get(id);
-  return node?.measured.width === undefined ? otherwise : node.internals.positionAbsolute.x + node.measured.width;
+/** A route as text, for a wire to compare by value: empty for a wire drawn as the curve. */
+const routeKey = (route: Route | undefined) =>
+  route ? `${route.rise ?? ''} ${route.below ?? ''} ${route.lane} ${route.drop}` : '';
+
+/** A route back from its text. */
+function routeFrom(key: string): Route {
+  const [rise, below, lane, drop] = key.split(' ');
+  return { rise: rise === '' ? null : Number(rise), below: below === '' ? null : Number(below), lane: Number(lane), drop: Number(drop) };
 }
 
-/**
- * The lane a wire going back runs along between `left` and `right`: above the highest node standing
- * anywhere between them, as React Flow has measured it — the wire's own two nodes among them, since
- * the lane runs over the one and comes down onto the other.
+/*
+ * Where every wire drawn round runs. Where one runs depends on where every node stands and on where
+ * the others run — no two run on one line — so the routes are worked out for all of them at once
+ * (routes, in backWires.ts), over the nodes and their ports as React Flow has measured them, and each
+ * wire reads its own.
+ *
+ * Every wire asks whenever React Flow's store changes: a frame of a pan or of a drag, a node measured.
+ * The routes are worked out once for each state of the store — the first wire to ask works them out,
+ * the rest read what it found — and from scratch only when a node or a wire changed, which React Flow
+ * tells by handing over a new object for it. A pan moves no node, and finds them all as they were.
  */
-function laneBetween(nodes: ReactFlowState['nodeLookup'], left: number, right: number, target: string) {
-  let highest = Infinity;
-  for (const node of nodes.values()) {
-    const { x, y } = node.internals.positionAbsolute;
-    if (x < right && x + (node.measured.width ?? 0) > left) highest = Math.min(highest, y);
-  }
-  return laneOver(highest, nodes.get(target)?.internals.positionAbsolute.y ?? highest);
+type Plan = { nodes: readonly InternalNode[]; edges: readonly Edge[]; routes: ReadonlyMap<string, Route> };
+
+/** The routes each canvas last worked out, and from what, by the map its store keeps its nodes in, which lives as long as the canvas does. */
+const planned = new WeakMap<object, Plan>();
+
+/** The routes for each state of a canvas's store. */
+const asked = new WeakMap<object, ReadonlyMap<string, Route>>();
+
+function routesIn(state: ReactFlowState): ReadonlyMap<string, Route> {
+  const known = asked.get(state);
+  if (known) return known;
+
+  const nodes = [...state.nodeLookup.values()];
+  const last = planned.get(state.nodeLookup);
+  const same =
+    last !== undefined &&
+    last.edges === state.edges &&
+    last.nodes.length === nodes.length &&
+    last.nodes.every((node, at) => node === nodes[at]);
+  const found = same ? last.routes : routes(placedOf(nodes), legsOf(state));
+  if (!same) planned.set(state.nodeLookup, { nodes, edges: state.edges, routes: found });
+
+  asked.set(state, found);
+  return found;
 }
 
-/**
- * A wire going back, drawn round the nodes between its ends. Where it runs depends on every node
- * standing between them, not only on its own two, so it watches where React Flow has every node —
- * through two numbers, where it rises and the lane it runs along, so it is drawn again only when one
- * of them moves: a node dragged a frame at a time below the lane, or anywhere outside the wire's
- * reach, leaves it alone. Its own component, so a wire going forward, which needs none of this,
- * watches nothing more than it did.
- */
-function BackWire({
-  source,
-  target,
-  sourceX,
-  sourceY,
-  sourcePosition,
-  targetX,
-  targetY,
-  targetPosition,
-  draw,
-}: Ends & { draw: (path: string) => ReactElement }) {
-  const rise = useStore(
-    useCallback((state: ReactFlowState) => riseOf(rightOf(state.nodeLookup, source, sourceX)), [source, sourceX]),
-  );
-  const drop = dropOf(targetX, targetPosition);
-  const lane = useStore(
-    useCallback(
-      (state: ReactFlowState) => laneBetween(state.nodeLookup, Math.min(rise, drop), Math.max(rise, drop), target),
-      [drop, rise, target],
-    ),
-  );
+/** Each node React Flow has measured, where it stands, as big as it is drawn, and the names of its ports round it. */
+function placedOf(nodes: readonly InternalNode[]): Placed[] {
+  return nodes.flatMap((node) => {
+    const { width, height } = node.measured;
+    if (width === undefined || height === undefined) return [];
 
-  return draw(backPath({ sourceX, sourceY, sourcePosition, rise, lane, targetX, targetY, targetPosition }));
+    const { node: drawn, ports, unwired } = node.data as NodeData;
+    const box = { ...node.internals.positionAbsolute, width, height };
+    return [{ id: node.id, box, names: namesOf(box, drawn.type, ports, unwired === '' ? [] : unwired.split(',')) }];
+  });
+}
+
+/** Each wire with both its ends measured, its ends where React Flow ends it when it draws it (getHandlePosition). */
+function legsOf({ edges, nodeLookup }: ReactFlowState): Leg[] {
+  const endOf = (node: InternalNode | undefined, kind: 'source' | 'target', handle: string | null | undefined): End | null => {
+    const bounds = node?.internals.handleBounds?.[kind]?.find((one) => one.id === handle);
+    if (node === undefined || bounds === undefined) return null;
+
+    const x = node.internals.positionAbsolute.x + bounds.x;
+    const y = node.internals.positionAbsolute.y + bounds.y;
+    switch (bounds.position) {
+      case Position.Top:
+        return { x: x + bounds.width / 2, y, side: 'top' };
+      case Position.Right:
+        return { x: x + bounds.width, y: y + bounds.height / 2, side: 'right' };
+      case Position.Bottom:
+        return { x: x + bounds.width / 2, y: y + bounds.height, side: 'bottom' };
+      default:
+        return { x, y: y + bounds.height / 2, side: 'left' };
+    }
+  };
+
+  return edges.flatMap((edge) => {
+    const source = endOf(nodeLookup.get(edge.source), 'source', edge.sourceHandle);
+    const target = endOf(nodeLookup.get(edge.target), 'target', edge.targetHandle);
+    return source && target ? [{ id: edge.id, from: edge.source, to: edge.target, toPort: edge.targetHandle ?? '', source, target }] : [];
+  });
 }
 
 // Outside the component and never rebuilt: React Flow warns, and re-mounts every node, when these

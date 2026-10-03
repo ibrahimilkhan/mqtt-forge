@@ -62,6 +62,16 @@ export const sideOf = (port: string, out = true): Side => SIDES[port] ?? (out ? 
 /** What a port is called on the canvas, when its node has more than one way in or out. */
 export const portLabel = (port: string) => (port === 'up' ? 'already up' : port === 'none' ? "wasn't up" : port);
 
+/**
+ * What stands beside a port on the canvas: its name, when its node has more than one way in or out
+ * (`named`), and `wire me` when it wants a wire (`open`). A node with one way in and one way out has
+ * nothing to tell apart, and a way in called in is never named.
+ */
+export function nameOf(port: string, named: boolean, open: boolean): string {
+  const name = named && port !== 'in' ? portLabel(port) : '';
+  return open ? (name ? `${name} · wire me` : 'wire me') : name;
+}
+
 export const isLoop = (type: string) => type === 'for' || type === 'forEach';
 
 export type NodeSpec = {

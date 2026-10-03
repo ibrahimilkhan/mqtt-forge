@@ -17,12 +17,13 @@ import { newId } from './flowDocument';
  * level. A way out at the foot of a node — a loop's done, the If's no — leads down to a row of its
  * own, far enough under it that the port's name clears what stands there.
  *
- * And for the way a wire going back is drawn (backWires.ts): out past its node, up to a lane above
- * everything between its ends, and back. So nothing stands where a return rises — the watch's Clear
- * alarm stands under its Raise alarm, and the three ways back out of the two rise on one line through
- * the gap after the Raise alarm — and a loop inside another stands a row lower than the outer one,
- * so the lane of its own return runs under the outer loop's: on one row the two returns would share a
- * lane, and nothing would say which goes back to which loop.
+ * And for the way a wire going back is drawn (backWires.ts): out past its node, up to the lowest lane
+ * that clears what it runs over, and back, no two on one line. The watch's Clear alarm stands under
+ * its Raise alarm, and the three ways back out of the two rise side by side through the gap after the
+ * Raise alarm — its own already up first, then the Clear alarm's two, past the name of raised — so
+ * that gap is 32 wider than the rest. At 96 there was no room for them, and the Clear alarm's went on
+ * under the Sound and came up beside the Notify, as if they led there. The simulator's inner loop
+ * stands a row lower than the outer one, so its return runs under the outer loop's, over its own body.
  *
  * The watch's main line is nine nodes long, too long to read fitted to the canvas, so the canvas
  * opens it at a size it can be read at, from its Start or on the node picked (see FlowCanvas).
@@ -77,12 +78,12 @@ export function exampleFlows(): FlowDto[] {
         y: 120,
         config: { name: 'Boiler too hot', level: 'warn', reason: '{{topic[1]}} is at {{$.temp}} °C', value: '$.temp' },
       },
-      { id: 'beep', type: 'sound', x: 1808, y: 120, config: { level: 'warn' } },
-      { id: 'tell', type: 'notify', x: 2092, y: 120, config: { text: '{{topic[1]}} is at {{$.temp}} °C', level: 'warn' } },
+      { id: 'beep', type: 'sound', x: 1840, y: 120, config: { level: 'warn' } },
+      { id: 'tell', type: 'notify', x: 2124, y: 120, config: { text: '{{topic[1]}} is at {{$.temp}} °C', level: 'warn' } },
       {
         id: 'fan',
         type: 'publish',
-        x: 2376,
+        x: 2408,
         y: 120,
         config: { topic: 'plant/{{topic[1]}}/cmd', payload: '{"fan":"on"}', qos: 1, retain: false },
       },

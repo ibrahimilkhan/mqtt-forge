@@ -26,10 +26,10 @@ import {
   withDrafts,
   type Wire,
 } from './flowDocument';
-import { laneOver, MARGIN, riseOf } from './backWires';
 import { exampleFlows } from './examples';
 import { DECISION_HEIGHT, DECISION_WIDTH, NODE_WIDTH, STEP_HEIGHT } from './FlowCanvas';
 import { NODE_SPECS, sideOf } from './nodeTypes';
+import { routedIn, wrongWith } from './wireTestbed';
 
 /**
  * Start → Wait → Set → End, under a flow id of its own each time, as a flow made on the page has:
@@ -684,48 +684,17 @@ describe('the examples', () => {
     }
   });
 
-  // And as a wire going back is drawn (backWires.ts): out past its node — down first, from a way out
-  // at its foot — up to a lane above everything standing between its ends, and down onto its loop's
-  // next. The lane is clear of what it runs over by how it is worked out; nothing may stand where a
-  // way back runs out, rises or comes down. And their only ways back are their loops' returns: every
-  // other wire runs forward, to a way in further right, and is drawn as the curve it is.
-  it('leave every way back a clear run up past its node and down onto its loop', () => {
-    const boxOf = (node: FlowNodeDto) =>
-      node.type === 'if' ? { width: DECISION_WIDTH, height: DECISION_HEIGHT } : { width: NODE_WIDTH, height: STEP_HEIGHT };
-
+  // And for the way a wire is drawn round what stands between its ends (backWires.ts): each of the
+  // examples' wires drawn round is routed as the canvas routes it, over the nodes as Chrome draws them,
+  // and runs through no node and no port's name, and on no other wire but where two go into one port
+  // together. Their only such wires are their loops' returns: every other wire runs forward, to a way
+  // in further right, and is drawn as the curve it is.
+  it('leave every wire drawn round a clear way, and draw round only their loops’ returns', () => {
     for (const flow of exampleFlows()) {
-      const placed = flow.nodes.map((node) => ({ id: node.id, x: node.x, y: node.y, ...boxOf(node) }));
-      const at = (id: string) => placed.find((node) => node.id === id)!;
-      /** The nodes standing across an upright line at `x`, between `top` and `bottom`. */
-      const upright = (x: number, top: number, bottom: number) =>
-        placed.filter((node) => node.x < x && x < node.x + node.width && node.y < bottom && top < node.y + node.height).map((node) => node.id);
-      /** The nodes standing across a level line at `y`, between `left` and `right`. */
-      const level = (y: number, left: number, right: number) =>
-        placed.filter((node) => node.y < y && y < node.y + node.height && node.x < right && left < node.x + node.width).map((node) => node.id);
-
-      for (const edge of flow.edges) {
-        const from = at(edge.from);
-        const to = at(edge.to);
-        const down = sideOf(edge.fromPort) === 'bottom';
-        const out = down ? from.x + from.width / 2 : from.x + from.width;
-
-        if (edge.toPort !== 'next') {
-          expect(to.x, `${edge.id} runs forward`).toBeGreaterThan(out);
-          continue;
-        }
-
-        const rise = riseOf(from.x + from.width);
-        const drop = to.x + to.width / 2;
-        const lane = laneOver(
-          Math.min(...placed.filter((node) => node.x < Math.max(rise, drop) && Math.min(rise, drop) < node.x + node.width).map((node) => node.y)),
-          to.y,
-        );
-        const foot = down ? from.y + from.height + MARGIN : from.y + from.height / 2;
-
-        expect(down ? level(foot, out, rise) : [], `${edge.id} runs out under`).toEqual([]);
-        expect(upright(rise, lane, foot), `${edge.id} rises through`).toEqual([]);
-        expect(upright(drop, lane, to.y), `${edge.id} comes down through`).toEqual([]);
-      }
+      expect(wrongWith(flow), flow.name).toEqual([]);
+      expect(routedIn(flow).drawn.map(({ leg }) => leg.id).sort(), flow.name).toEqual(
+        flow.edges.filter((edge) => edge.toPort === 'next').map((edge) => edge.id).sort(),
+      );
     }
   });
 });

@@ -1,5 +1,5 @@
 import type { FlowDto, FlowEdgeDto, FlowNodeDto, FlowNodeType, FlowProblemDto } from '../../types/api';
-import { isLoop, isNodeType, NODE_SPECS, specOf } from './nodeTypes';
+import { isLoop, isNodeType, NODE_SPECS, sideOf, specOf } from './nodeTypes';
 
 /*
  * Every change the page makes to a flow, as a function from one flow to the next. Nothing here
@@ -152,6 +152,85 @@ export type Box = { width: number; height: number };
 export type BoxOf = (type: string) => Box;
 
 /**
+ * How the palette reckons the nodes it puts down, handed in by whoever draws them: the room each
+ * takes (boxOf), how tall each is drawn, to stand a node level with the one it follows, and the room
+ * it keeps clear round a node it puts down.
+ */
+export type Measure = { boxOf: BoxOf; heightOf: (type: string) => number; room: number };
+
+/**
+ * How far one node's right edge stands from the next one's left along a row, as the examples are
+ * laid out: a way out's name stands in it, past where a wire going back turns up, and the wire
+ * between the two runs level across it.
+ */
+export const GAP = 96;
+
+/**
+ * How far apart the rows of a flowchart stand, middle to middle, as the examples' are: a way out at a
+ * node's foot leads down to the next row, far enough under it that the port's name clears what
+ * stands there.
+ */
+export const ROW = 176;
+
+type Place = { x: number; y: number };
+
+/** Whether a node of box `box` at `at` stands `room` clear of `node`, each by its own box. */
+const apart = (at: Place, box: Box, node: FlowNodeDto, other: Box, room: number) =>
+  at.x + box.width + room <= node.x ||
+  node.x + other.width + room <= at.x ||
+  at.y + box.height + room <= node.y ||
+  node.y + other.height + room <= at.y;
+
+/**
+ * Where the palette puts a node of `type` after `nodeId`'s way out `port` — on that way out's wire,
+ * or wired to it when it has none — and the nodes it moves to make room there.
+ *
+ * On the row of the node it follows, GAP to its right, level with it: an If, taller than a step,
+ * stands higher by half the difference, so its ports and the wire between them are level. A way out
+ * at the node's foot leads down instead, as the examples' do: the node goes on the row under it, its
+ * way in to the right of the foot. Beside the node is where its other way out goes — a loop's body,
+ * an If's yes, a Raise alarm's raised — and a node put there for the foot's wire looked like the next
+ * step of the other, and stood across that wire's way.
+ *
+ * That place is often taken, by the node the wire went on to: a new flow's End stands where the
+ * first step goes. It used to step the node a row down, and a chain clicked together from the Start
+ * went down a row with each click, its last wire going back up to the End. It makes room instead: the
+ * node the wire led to, and everything a run gets to from it — but over a return into a loop's next,
+ * which goes back — that stands at or right of the place moves right by the new node's width and the
+ * gap, as a reader pushing the rest of the chain along would. So a chain stays on its row and the End
+ * goes along at its end. When what stands there is something else, which moving the rest of the chain
+ * would not clear, nothing moves, and the node goes in the first clear place from there (freeSpot).
+ */
+export function placeAfter(
+  flow: FlowDto,
+  nodeId: string,
+  port: string,
+  type: string,
+  measure: Measure,
+): { at: Place; moved: Record<string, Place> } {
+  const { boxOf, heightOf, room } = measure;
+  const node = flow.nodes.find((one) => one.id === nodeId)!;
+  const middle = node.y + heightOf(node.type) / 2;
+  const wanted =
+    sideOf(port) === 'bottom'
+      ? { x: node.x + boxOf(node.type).width / 2 + GAP / 2, y: middle + ROW - heightOf(type) / 2 }
+      : { x: node.x + boxOf(node.type).width + GAP, y: middle - heightOf(type) / 2 };
+  const at = { x: Math.round(wanted.x), y: Math.round(wanted.y) };
+
+  const box = boxOf(type);
+  const inTheWay = flow.nodes.filter((one) => !apart(at, box, one, boxOf(one.type), room));
+  if (inTheWay.length === 0) return { at, moved: {} };
+
+  const led = flow.edges.find((edge) => edge.from === nodeId && edge.fromPort === port)?.to;
+  const wiring = wiringOf(flow.nodes, flow.edges);
+  const onward = led === undefined ? new Set<string>() : walk(wiring.outs, [led], (edge) => !isReturn(wiring, edge));
+  const along = flow.nodes.filter((one) => onward.has(one.id) && one.x >= at.x);
+  if (!inTheWay.every((one) => along.includes(one))) return { at: freeSpot(flow, at, type, boxOf, 1, room), moved: {} };
+
+  return { at, moved: Object.fromEntries(along.map((one) => [one.id, { x: one.x + box.width + GAP, y: one.y }])) };
+}
+
+/**
  * Where the palette's adds start in the view, and how many places go to a row before the next row:
  * a node centred on the middle of the view, and as many beside it as fit, `gap` apart, before the
  * view's right edge. The middle and the edge are in the canvas's own units, so its zoom is already
@@ -190,16 +269,7 @@ export function freeSpot(
 ): { x: number; y: number } {
   const box = boxOf(type);
   const first = { x: Math.round(start.x), y: Math.round(start.y) };
-  const clear = (x: number, y: number) =>
-    flow.nodes.every((node) => {
-      const other = boxOf(node.type);
-      return (
-        x + box.width + gap <= node.x ||
-        node.x + other.width + gap <= x ||
-        y + box.height + gap <= node.y ||
-        node.y + other.height + gap <= y
-      );
-    });
+  const clear = (x: number, y: number) => flow.nodes.every((node) => apart({ x, y }, box, node, boxOf(node.type), gap));
 
   const columns = Math.max(1, Math.floor(across));
   const place = (index: number) => ({

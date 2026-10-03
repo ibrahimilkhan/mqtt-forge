@@ -1203,6 +1203,41 @@ describe('the view a flow opens in', () => {
     expect(viewport()[0]).toBeCloseTo(40);
   });
 
+  /** Start, then Debugs down a column a row apart, and the End: `rows` rows, the Start on the one `from` says. */
+  const column = (rows: number, from = 0): FlowDto => {
+    const ids = Array.from({ length: rows - 1 }, (_, at) => `d${at + 1}`);
+    return {
+      ...button,
+      id: 'tall',
+      nodes: [
+        { id: 'start', type: 'start', x: 0, y: 176 * from, config: {} },
+        ...ids.map((id, at) => ({ id, type: 'debug', x: 0, y: 176 * (at < from ? at : at + 1), config: {} })),
+        { id: 'end', type: 'end', x: 284, y: 176 * rows, config: {} },
+      ],
+      edges: ['start', ...ids].map((from, at, all) => ({ id: `e${at + 1}`, from, fromPort: 'out', to: all[at + 1] ?? 'end', toPort: 'in' })),
+    };
+  };
+
+  // Its rows' middle halfway down, a flow taller than the canvas at 0.6 opened with its top rows,
+  // and the Start among them, above the canvas: the one place every run begins was out of sight.
+  it('opens a flow too tall to read fitted at 0.6 from its top, its Start in view', async () => {
+    draw(column(10));
+
+    await waitFor(() => expect(viewport()[2]).toBe(0.6));
+    const [x, y] = viewport();
+    // The Start's left edge and the flow's top, where the Start stands, 40 in from the corner.
+    expect(x).toBeCloseTo(40);
+    expect(y).toBeCloseTo(40);
+  });
+
+  it('opens on the Start a flow too tall whose top would leave the Start out of view', async () => {
+    draw(column(10, 8));
+
+    await waitFor(() => expect(viewport()[2]).toBe(0.6));
+    // The Start's top, 176 × 8 down, 40 from the canvas's top.
+    expect(viewport()[1]).toBeCloseTo(40 - 176 * 8 * 0.6);
+  });
+
   it('fits a flow that can be read fitted, as it did', async () => {
     draw({
       ...button,
@@ -1222,14 +1257,16 @@ describe('the view a flow opens in', () => {
 });
 
 /**
- * A wire that goes back — into a loop's next, or to a way in left of the way out it leaves — is drawn
- * round the nodes between its ends rather than through them: sideways out of its port, up to a lane
- * above everything between, back along it, and down onto the next, or into the way in from its left.
+ * A wire whose way in stands left of its way out is drawn round what stands between its ends rather
+ * than through it (backWires.ts): one that has to climb goes sideways out of its port, up to the lowest
+ * lane that clears what it would cross, back along it, and down onto the next or into the way in from
+ * its left; one going down to a way in further left runs under the node it leaves; and one out of a
+ * foot into a way in to its right, no lower than the foot, goes down, along and up into it.
  *
  * jsdom lays nothing out, so every node here is a pixel square and its ports stand on its corner; the
  * nodes' places are what the routes are worked out from, and what these cases read.
  */
-describe('a wire that goes back', () => {
+describe('a wire drawn round', () => {
   /**
    * Start → For → Publish, the Publish's wire going back to the For's next, and the For's done on
    * to the End below. `between` puts a Debug, wired to nothing, between the For and the Publish.
@@ -1251,6 +1288,23 @@ describe('a wire that goes back', () => {
       { id: 'e2', from: 'round', fromPort: 'body', to: 'send', toPort: 'in' },
       { id: 'e3', from: 'send', fromPort: 'out', to: 'round', toPort: 'next' },
       { id: 'e4', from: 'round', fromPort: 'done', to: 'end', toPort: 'in' },
+    ],
+  });
+
+  /** Start → a Debug, its wire on to an End standing where `end` puts it. */
+  const ending = (end: { x: number; y: number }): FlowDto => ({
+    id: 'again',
+    name: 'Again',
+    enabled: true,
+    variables: [],
+    nodes: [
+      { id: 'start', type: 'start', x: -300, y: 200, config: {} },
+      { id: 'say', type: 'debug', x: 400, y: 200, config: {} },
+      { id: 'end', type: 'end', x: end.x, y: end.y, config: {} },
+    ],
+    edges: [
+      { id: 'e1', from: 'start', fromPort: 'out', to: 'say', toPort: 'in' },
+      { id: 'e2', from: 'say', fromPort: 'out', to: 'end', toPort: 'in' },
     ],
   });
 
@@ -1280,20 +1334,20 @@ describe('a wire that goes back', () => {
   const cornersOf = (d: string) =>
     [...d.matchAll(/Q\s*(-?[\d.e+-]+)[ ,]\s*(-?[\d.e+-]+)/g)].map(([, x, y]) => ({ x: Number(x), y: Number(y) }));
 
-  /** The height of a path's longest level run: the lane a wire going back runs along. */
+  /** The height of a path's longest level run: the lane a wire drawn round runs along. */
   const laneOf = (d: string) =>
     runsOf(d)
       .filter(({ from, to }) => from.y === to.y)
       .sort((a, b) => Math.abs(b.to.x - b.from.x) - Math.abs(a.to.x - a.from.x))[0].from.y;
 
-  it('runs a wire back to a loop over the node standing highest between its ends, and down onto the next', async () => {
-    drawPage(looping({ x: 200, y: 50 }));
+  it('runs a wire back to a loop over a node it would cross, and down onto the next', async () => {
+    drawPage(looping({ x: 200, y: 180 }));
     const d = await pathOf('e3');
 
     // Square corners rounded, not a curve: no C in it.
     expect(d).not.toContain('C');
-    // The Debug's top is at 50: the lane is 32 above it.
-    expect(laneOf(d)).toBe(50 - 32);
+    // The Debug's top is at 180, too near the lane the wire would take over the loop: it runs 32 above the Debug.
+    expect(laneOf(d)).toBe(180 - 32);
 
     const runs = runsOf(d);
     // Out of the Publish's way out to the right, level, and in the end straight down onto the next.
@@ -1303,41 +1357,46 @@ describe('a wire that goes back', () => {
     expect(runs.at(-1)!.to.y).toBeGreaterThan(runs.at(-1)!.from.y);
   });
 
-  it('runs it 32 above the loop and its body when nothing stands higher between them', async () => {
-    drawPage(looping());
+  // Over every node between its ends, the lane went up for nothing over a node standing wholly above
+  // it, and came down again through whatever stood under that node.
+  it('runs it under a node standing wholly above its lane, 32 above the loop and its body', async () => {
+    drawPage(looping({ x: 200, y: 40 }));
 
     expect(laneOf(await pathOf('e3'))).toBe(200 - 32);
   });
 
   // Into a way in, which is on the left of its node: past the node on that side, and in from there.
-  it('comes into a way in from its left when the node it goes back to stands left of the one it leaves', async () => {
-    drawPage({
-      id: 'again',
-      name: 'Again',
-      enabled: true,
-      variables: [],
-      nodes: [
-        { id: 'start', type: 'start', x: -300, y: 200, config: {} },
-        { id: 'say', type: 'debug', x: 400, y: 200, config: {} },
-        { id: 'end', type: 'end', x: 100, y: 300, config: {} },
-      ],
-      edges: [
-        { id: 'e1', from: 'start', fromPort: 'out', to: 'say', toPort: 'in' },
-        { id: 'e2', from: 'say', fromPort: 'out', to: 'end', toPort: 'in' },
-      ],
-    });
-    const runs = runsOf(await pathOf('e2'));
-    const [down, into] = runs.slice(-2);
+  it('comes into a way in from its left when the node it climbs back to stands left of the one it leaves', async () => {
+    drawPage(ending({ x: 100, y: 200 }));
+    const d = await pathOf('e2');
+    const [down, into] = runsOf(d).slice(-2);
 
-    expect(laneOf(await pathOf('e2'))).toBe(200 - 32);
+    expect(laneOf(d)).toBe(200 - 32);
     // Down 24 left of the way in, and then right, level, into it.
     expect(down.from.x).toBe(down.to.x);
+    expect(down.to.y).toBeGreaterThan(down.from.y);
     expect(into.from.y).toBe(into.to.y);
     expect(into.to.x - down.to.x).toBe(24);
   });
 
+  // Up over its own node and down again, a wire to a node under it and to its left crossed the row it
+  // left twice, for nothing.
+  it('takes a wire to a way in further left and lower under the node it leaves, not over it', async () => {
+    drawPage(ending({ x: 100, y: 300 }));
+    const d = await pathOf('e2');
+    const [out, beside, under, into] = cornersOf(d);
+
+    // Out to the margin past the Debug, down to the margin under it, left to the margin before the
+    // End's way in, down and into it: never over the Debug's way out.
+    expect(out).toEqual({ x: 401 + 24, y: 200.5 });
+    expect(beside).toEqual({ x: 401 + 24, y: 201 + 24 });
+    expect(under).toEqual({ x: 100 - 24, y: 201 + 24 });
+    expect(into).toEqual({ x: 100 - 24, y: 300.5 });
+    expect(Math.min(...cornersOf(d).map((corner) => corner.y))).toBeGreaterThanOrEqual(200.5);
+  });
+
   // A way out at the foot of a node goes down first, and round the node's right side, not up through it.
-  it('takes a way out at the foot of its node down, then past the node, before it goes back', async () => {
+  it('takes a way out at the foot of its node down, then past the node, before it climbs back', async () => {
     drawPage({
       id: 'branch',
       name: 'Branch',
@@ -1346,7 +1405,7 @@ describe('a wire that goes back', () => {
       nodes: [
         { id: 'start', type: 'start', x: -300, y: 200, config: {} },
         { id: 'test', type: 'if', x: 400, y: 200, config: { field: '$.temp', test: 'gt', value: '90', value2: '' } },
-        { id: 'say', type: 'debug', x: 0, y: 300, config: {} },
+        { id: 'say', type: 'debug', x: 0, y: 100, config: {} },
         { id: 'end', type: 'end', x: 700, y: 200, config: {} },
       ],
       edges: [
@@ -1361,11 +1420,30 @@ describe('a wire that goes back', () => {
     const [below, beside, above] = cornersOf(d);
     const right = document.querySelector<HTMLElement>('.react-flow__node[data-id="test"]')!.offsetWidth + 400;
 
-    // Straight down the margin, right to the margin past the node's right edge, and up from there.
+    // Straight down the margin, right past the node's right edge, and up from there. At least the
+    // margin past it: in jsdom the If is a pixel wide, and the names of its ways out, under it and
+    // beside it, stand in the margin, so the wire goes up past them too.
     expect(below).toEqual({ x: start.x, y: start.y + 24 });
-    expect(beside).toEqual({ x: right + 24, y: below.y });
+    expect(beside.y).toBe(below.y);
+    expect(beside.x).toBeGreaterThanOrEqual(right + 24);
     expect(above.x).toBe(beside.x);
     expect(above.y).toBeLessThan(start.y);
+  });
+
+  // The curve out of a foot turned back up while it was beside its node, and ran through the node's
+  // lower corner, or through the step that stood after it on the row.
+  it('takes a way out at the foot down, along under the row and up into a way in to its right', async () => {
+    drawPage();
+    const d = await pathOf('e3');
+
+    expect(d).not.toContain('C');
+    // The If's foot is at 300.5, 81: down the margin under the If, right to the margin before the
+    // End's way in, and up into it.
+    expect(cornersOf(d)).toEqual([
+      { x: 300.5, y: 81 + 24 },
+      { x: 600 - 24, y: 81 + 24 },
+      { x: 600 - 24, y: 80.5 },
+    ]);
   });
 
   // Out of a way out on the right, a wire going back turns up the margin past its port: a name
@@ -1383,7 +1461,7 @@ describe('a wire that goes back', () => {
   });
 
   it('draws a wire that goes forward as the curve it was', async () => {
-    drawPage(looping({ x: 200, y: 50 }));
+    drawPage(looping({ x: 200, y: 180 }));
 
     expect(await pathOf('e1')).toMatch(/^M\s*-?[\d.]+,\s*-?[\d.]+\s*C/);
     expect(await pathOf('e2')).toMatch(/^M\s*-?[\d.]+,\s*-?[\d.]+\s*C/);
@@ -1412,11 +1490,12 @@ describe('a wire that goes back', () => {
     expect(line()).toHaveAttribute('data-selected');
   });
 
-  // A flow holds up to two hundred nodes, and a drag moves one of them a frame at a time. A wire that
-  // goes back watches where every node stands, for its lane, and draws itself again only when the
-  // lane moves: not for a node moved below it, nor for a push of the numbers.
-  it('draws a wire that goes back again only when its lane moves', async () => {
-    const flow = looping({ x: 200, y: 50 });
+  // A flow holds up to two hundred nodes, and a drag moves one of them a frame at a time. Where a wire
+  // drawn round runs depends on where every node stands and every other such wire runs, so it is
+  // worked out for all of them at once; each draws itself again only when its own route moves: not
+  // for a node moved out of its way, nor for a push of the numbers.
+  it('draws a wire drawn round again only when its own route moves', async () => {
+    const flow = looping({ x: 200, y: 180 });
     const drawn = vi.spyOn(backWires, 'backPath');
     drawPage(flow);
     await pathOf('e3');
@@ -1429,11 +1508,38 @@ describe('a wire that goes back', () => {
       await waitFor(() => expect(document.querySelector('.react-flow__node[data-id="end"]')).toHaveStyle({ transform: 'translate(160px,480px)' }));
       const still = drawn.mock.calls.length;
 
-      act(() => useFlowDraftStore.getState().edit(flow, (current) => moveNodes(current, { say: { x: 200, y: 0 } })));
-      await waitFor(async () => expect(laneOf(await pathOf('e3'))).toBe(0 - 32));
+      act(() => useFlowDraftStore.getState().edit(flow, (current) => moveNodes(current, { say: { x: 200, y: 150 } })));
+      await waitFor(async () => expect(laneOf(await pathOf('e3'))).toBe(150 - 32));
 
       expect(still).toBe(0);
       expect(drawn).toHaveBeenCalled();
+    } finally {
+      drawn.mockRestore();
+    }
+  });
+
+  // The routes are worked out together, and a node moved makes a new plan of all of them; a wire
+  // whose own route the plan left as it was is not drawn again for it.
+  it('draws again only the wire whose route a moved node changed, not every wire drawn round', async () => {
+    const flow = looping({ x: 200, y: 180 });
+    // The End down and to the left of the For: its done goes under the For to it, nowhere near the Debug.
+    const both = { ...flow, nodes: flow.nodes.map((node) => (node.id === 'end' ? { ...node, x: -200, y: 400 } : node)) };
+    const drawn = vi.spyOn(backWires, 'backPath');
+    drawPage(both);
+    await pathOf('e3');
+    await pathOf('e4');
+    for (let turn = 0; turn < 5; turn++) await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(document.querySelector('.react-flow__edge[data-id="e4"] .react-flow__edge-path')!.getAttribute('d')).not.toContain('C');
+
+    try {
+      drawn.mockClear();
+      act(() => useFlowDraftStore.getState().edit(both, (current) => moveNodes(current, { say: { x: 200, y: 150 } })));
+      await waitFor(async () => expect(laneOf(await pathOf('e3'))).toBe(150 - 32));
+
+      // Each call draws the wire whose way out it starts at: the Publish's, never the For's done.
+      const from = drawn.mock.calls.map(([wire]) => wire.source.x);
+      expect(from.length).toBeGreaterThan(0);
+      expect(from.every((x) => x === 401)).toBe(true);
     } finally {
       drawn.mockRestore();
     }
