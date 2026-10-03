@@ -1,6 +1,6 @@
 import { ReactFlowProvider, useStoreApi } from '@xyflow/react';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { Profiler } from 'react';
+import { Profiler, useLayoutEffect } from 'react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nodeKey, useFlowStatusStore } from '../../stores/flowStatusStore';
 import { renderWithClient as render } from '../../test/renderWithClient';
@@ -60,6 +60,17 @@ const draw = (flow: FlowDto = button, problems: Problems = {}) =>
 function Page({ flow }: { flow: FlowDto }) {
   const draft = useFlowDraftStore((state) => state.drafts[flow.id]);
   return <FlowCanvas flow={draft ?? flow} problems={{}} />;
+}
+
+/**
+ * The canvas for a flow the page shows in place of the one on screen, which went: the page tells the
+ * store in a layout effect, once the canvas for the flow it falls back to has been drawn.
+ */
+function ShownInPlace({ flow }: { flow: FlowDto }) {
+  useLayoutEffect(() => {
+    useFlowDraftStore.getState().show(flow.id);
+  }, [flow.id]);
+  return <FlowCanvas flow={flow} problems={{}} />;
 }
 
 /** A flow on screen the way the page puts it there, so a Discard redraws the canvas. */
@@ -882,7 +893,9 @@ describe('a flowchart on the canvas', () => {
     expect(port('test', 'no').hasAttribute('data-unwired')).toBe(true);
     unmount();
 
-    // Whatever a run says of it: the copy running now may reach it, but this drawing never would.
+    // The canvas draws the draft, and the run runs the saved copy, which may still reach the node:
+    // what the run says of it stays, after `not reached`, which is this drawing's word for it. A node
+    // the run says nothing of says only that.
     useFlowStatusStore
       .getState()
       .setStatus(active([{ id: 'test', count: 5, outs: { yes: 2, no: 3 }, errors: 1, note: 'no such field', standing: [] }]));
@@ -890,11 +903,22 @@ describe('a flowchart on the canvas', () => {
     await waitFor(() => expect(document.querySelector('[data-id="test"] [data-unreached]')).not.toBeNull());
 
     // In words as well as faded, for a reader who cannot see the fade or point at the node.
-    const line = within(document.querySelector<HTMLElement>('[data-id="test"]')!).getByText('not reached');
-    expect(line).not.toHaveAttribute('data-errors');
-    expect(line).not.toHaveAttribute('title');
-    expect(screen.getAllByText('not reached')).toHaveLength(2);
-    expect(screen.queryByText(/yes 2 · no 3/)).toBeNull();
+    const line = within(document.querySelector<HTMLElement>('[data-id="test"]')!).getByText('not reached · yes 2 · no 3 · 1 error');
+    expect(line).toHaveAttribute('data-errors');
+    expect(line).toHaveAttribute('title', 'no such field');
+    expect(within(document.querySelector<HTMLElement>('[data-id="end"]')!).getByText('not reached')).toBeInTheDocument();
+    expect(screen.getAllByText('not reached')).toHaveLength(1);
+  });
+
+  // A run can be at a node the draft no longer reaches: what it waits for there is still what it
+  // waits for.
+  it('says what the run waits for at a node this drawing does not reach, after saying it does not reach it', async () => {
+    useFlowStatusStore.getState().setStatus(active([], 'test', { until: null, filter: 'plant/+/temp' }));
+    draw({ ...button, edges: button.edges.filter((edge) => edge.id !== 'e1') });
+    await waitFor(() => expect(document.querySelector('[data-id="test"] [data-unreached]')).not.toBeNull());
+
+    expect(within(document.querySelector<HTMLElement>('[data-id="test"]')!).getByText('not reached · waiting for a message')).toBeInTheDocument();
+    expect(document.querySelector('[data-id="test"] [data-here]')).not.toBeNull();
   });
 
   it('marks a loop nothing comes back to at its next', async () => {
@@ -1173,6 +1197,26 @@ describe('the wire picked, as the canvas draws it and the store names it', () =>
     drawAgain();
 
     await waitFor(() => expect(useFlowDraftStore.getState().wire).toBeNull());
+    expect(wiresPicked()).toEqual([]);
+  });
+
+  // The store can change between a render and the effect after it. The page, showing another flow in
+  // place of one that went, tells the store so as the canvas for it is first drawn; read from that
+  // render, the wire the gone flow had picked would be picked again here, in a flow that may have a
+  // wire of that id too.
+  it('follows the wire the store names when the canvas follows it, not the one it named when the canvas was drawn', async () => {
+    useFlowDraftStore.setState({ current: 'gone', wire: 'e1' });
+
+    render(
+      <ReactFlowProvider>
+        <div style={{ width: 800, height: 600 }}>
+          <ShownInPlace flow={button} />
+        </div>
+      </ReactFlowProvider>,
+    );
+
+    await screen.findByLabelText('Edge from start to test');
+    expect(useFlowDraftStore.getState().wire).toBeNull();
     expect(wiresPicked()).toEqual([]);
   });
 

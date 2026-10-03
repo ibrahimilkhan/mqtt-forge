@@ -1245,6 +1245,47 @@ describe('deleting a flow', () => {
     expect(deletes).toEqual([]);
   });
 
+  /*
+   * The flow on screen deleted on another console, and the page shows the first flow in its place.
+   * Flows share ids — the examples' wires are e1 to e7 in both, and every flow has a start and an
+   * end — so a pick kept from the flow that went would pick the same id in this one: a wire the
+   * palette would put its next node on, a node the inspector would open.
+   */
+
+  it('lets go of the wire picked in a flow deleted elsewhere, when the page shows another in its place', async () => {
+    const { kept } = keeping([watch, sim]);
+    useFlowDraftStore.getState().show('sim');
+    const { queryClient } = render(<FlowsPage />);
+    fireEvent.click(await screen.findByLabelText('Edge from tick to loop'));
+    expect(useFlowDraftStore.getState().wire).toBe('e3');
+
+    kept.splice(1, 1);
+    await act(() => queryClient.invalidateQueries({ queryKey: queryKeys.flows }));
+    await turns();
+
+    expect(screen.getByText('Boiler watch', { selector: 'h3' })).toBeInTheDocument();
+    expect(useFlowDraftStore.getState()).toMatchObject({ current: 'watch', selected: null, wire: null });
+    expect(document.querySelector('#flow-canvas .react-flow__edge-path[data-selected]')).toBeNull();
+  });
+
+  it('lets go of the node picked in a flow deleted elsewhere, when the page shows another in its place', async () => {
+    const { kept } = keeping([watch, sim]);
+    useFlowDraftStore.getState().show('sim');
+    const { queryClient } = render(<FlowsPage />);
+    const end = '#flow-canvas .react-flow__node[data-id="end"]';
+    await waitFor(() => expect(document.querySelector(end)).not.toBeNull());
+    fireEvent.click(document.querySelector<HTMLElement>(end)!);
+    expect(useFlowDraftStore.getState().selected).toBe('end');
+
+    kept.splice(1, 1);
+    await act(() => queryClient.invalidateQueries({ queryKey: queryKeys.flows }));
+    await turns();
+
+    expect(screen.getByText('Boiler watch', { selector: 'h3' })).toBeInTheDocument();
+    expect(useFlowDraftStore.getState()).toMatchObject({ current: 'watch', selected: null, wire: null });
+    expect(document.querySelector('#flow-canvas [data-selected]')).toBeNull();
+  });
+
   // Deleted on another console since this one last read the list. The server answers that it has
   // no such flow, and the flow is gone either way, which is what the reader asked for.
   it('counts a flow the server no longer has as deleted, rather than saying it was not', async () => {

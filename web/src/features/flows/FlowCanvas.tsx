@@ -338,19 +338,28 @@ export function FlowCanvas({ flow, problems }: { flow: FlowDto; problems: Proble
   //   opened in between would lose a wire picked and keep a node.
   // - Whatever else happened, the store ends up naming the wire picked here alone, or none: not a
   //   wire the flow lost while the canvas was away.
+  //
+  // The store's wire is read as it is when this runs, not as the render before it had it, since the
+  // store can change in between: the page, showing another flow in place of one that went, tells the
+  // store so in a layout effect, after this canvas has drawn and before this runs. The wire that
+  // render named was picked in the flow that went. Picked again here — flows share wire ids — it
+  // would be a wire nobody picked in this one, and the one the palette puts its next node on. The
+  // render's wire still says when to run. A node chosen needs no such care: this never tells the
+  // store which node is chosen, so one read stale is let go again once the change comes through.
   useEffect(() => {
     const present = new Set([...flow.nodes.map((node) => NODE + node.id), ...flow.edges.map((edge) => EDGE + edge.id)]);
     const now = latest.current;
+    const named = useFlowDraftStore.getState().wire;
 
     let next = [...now].filter((pick) => present.has(pick) && (selected !== null || nodeOf(pick) === null));
     if (selected !== null && present.has(NODE + selected) && !now.has(NODE + selected)) next = [NODE + selected];
 
     const alone = wireOnly(now);
-    if (alone !== null && wire === null) next = next.filter((pick) => pick !== EDGE + alone);
-    else if (wire !== null && next.length === 0 && present.has(EDGE + wire)) next = [EDGE + wire];
+    if (alone !== null && named === null) next = next.filter((pick) => pick !== EDGE + alone);
+    else if (named !== null && next.length === 0 && present.has(EDGE + named)) next = [EDGE + named];
 
     if (next.length !== now.size || next.some((pick) => !now.has(pick))) choose(new Set(next));
-    else if (wireOnly(next) !== wire) pickWire(wireOnly(next));
+    else if (wireOnly(next) !== named) pickWire(wireOnly(next));
   }, [choose, flow.edges, flow.nodes, pickWire, selected, wire]);
 
   // Worked out again whenever any of these changes, and each node handed over as the object it was
@@ -586,24 +595,27 @@ export function FlowCanvas({ flow, problems }: { flow: FlowDto; problems: Proble
  * wrong — "The broker refused this filter.", "no such field". The line only counts errors, so it
  * is what the line says when a reader points at it.
  *
- * A node nothing leads to from the Start says `not reached` instead, whatever a run says of it: the
- * copy running now may reach it, but a run of this drawing never would. The node is faded and
- * titled for it too, but neither reaches the keyboard or a screen reader; the line does.
+ * A node nothing leads to from the Start says `not reached`: a run of this drawing would never come
+ * to it. That takes the place of `not running` and of nothing else. The canvas draws the draft, and
+ * the run on show runs the copy the server has, which may still reach the node — may be at it,
+ * waiting there — so what the run says of the node stays, after `not reached · ` (`cut`). The node
+ * is faded and titled for it too, but neither reaches the keyboard or a screen reader; the line does.
  */
 function drawnOf(spec: NodeSpec, flowId: string, nodeId: string, unreached: boolean, state: FlowStatusState) {
   const run = shownRun(state.runs[flowId]);
   const status = state.nodes[nodeKey(flowId, nodeId)];
   const here = run !== undefined && isLive(run) && run.at === nodeId;
-
-  if (unreached) return { line: 'not reached', failing: false, note: null, here, until: null, message: false };
+  const until = here ? (run.waiting?.until ?? null) : null;
+  const message = here && run.waiting?.filter != null;
 
   return {
-    line: status ? spec.status(status) : 'not running',
+    line: status ? spec.status(status) : unreached ? 'not reached' : 'not running',
+    cut: unreached && (status !== undefined || until !== null || message),
     failing: (status?.errors ?? 0) > 0,
     note: status?.note ?? null,
     here,
-    until: here ? (run.waiting?.until ?? null) : null,
-    message: here && run.waiting?.filter != null,
+    until,
+    message,
   };
 }
 
@@ -616,7 +628,7 @@ function FlowNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
   // A node with one way in and one way out has nothing to tell apart. One with more names its ways
   // out, and a loop its next, where the last wire of its body comes back; a way in called in never.
   const named = ins.length + outs.length > 2;
-  const { line, failing, note, here, until, message } = useFlowStatusStore(
+  const { line, cut, failing, note, here, until, message } = useFlowStatusStore(
     useShallow((state) => drawnOf(spec, data.flowId, id, data.unreached, state)),
   );
 
@@ -700,6 +712,7 @@ function FlowNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
       {data.problems && <div className={styles.problem}>{data.problems[0]}</div>}
       <div className={styles.summary}>{spec.summary(data.node.config, data.flow)}</div>
       <div className={styles.status} data-errors={failing ? '' : undefined} title={note ?? undefined}>
+        {cut && 'not reached · '}
         {until !== null ? <Countdown key={until} until={until} /> : message ? 'waiting for a message' : line}
       </div>
 

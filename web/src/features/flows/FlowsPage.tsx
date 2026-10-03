@@ -195,6 +195,21 @@ function Page() {
 
   const shown = flows.find((flow) => flow.id === current) ?? flows[0];
 
+  // The flow on screen went — deleted here or on another console — or none was chosen yet, and the
+  // page shows the first flow in its place. The store is told, through show, so what was picked goes
+  // with the flow it was picked in: flows share ids — the examples' wires are e1 to e7 in both, and
+  // every flow has a start and an end — and a pick kept from a flow that went would pick the same id
+  // in this one: a wire the palette would put its next node on, a node the inspector would open.
+  // Asked of the store as it is now, not as this render had it: an effect before this one may just
+  // have shown a flow (the alarm's, above). And only once the server's copies have been read, since
+  // until then every flow would look gone.
+  useLayoutEffect(() => {
+    if (!data || data.unreadable || !shown) return;
+
+    const store = useFlowDraftStore.getState();
+    if (!flows.some((flow) => flow.id === store.current)) store.show(shown.id);
+  }, [data, flows, shown]);
+
   // The flow on screen went — deleted here or on another console — and took whatever the keyboard
   // was on with it: its pane's own buttons, its tab, a node. A browser hands that focus to the
   // body, and the next Tab starts again from the top of the document. The reader goes to the tab of
