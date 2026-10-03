@@ -824,6 +824,36 @@ public sealed class FlowEngineTests : IAsyncLifetime
         Assert.Empty(webhook.Posts);
     }
 
+    // The turn hands its posts on before it tells the console of the alarms it raised and the tones it
+    // chose, and a throw from the channel would end the turn there: the alarm in the book and the console
+    // never told. The channel's contract is that it never throws, which is the channel's to keep and not
+    // something the turn can lean on, so a post that could not be handed on is a failed step on its node,
+    // as a full queue's is, and the rest of the turn goes out as it was.
+    [Fact]
+    public async Task A_webhook_channel_that_throws_costs_the_turn_nothing_and_is_counted_on_the_node()
+    {
+        var webhook = new RecordingFlowWebhook { Fault = new InvalidOperationException("the queue is gone") };
+        var engine = await RunningAsync(webhook, new ChartBuilder()
+            .Node("start", "start").Node("in", "mqttIn", new { filter = "plant/+/temp" })
+            .Node("hot", "alarmRaise", new { name = "Hot", level = "warn" })
+            .Node("hook", "webhook", new { url = "https://hooks.example.com/x" })
+            .Node("beep", "sound", new { level = "warn" })
+            .Node("end", "end")
+            .Then("start", "in", "hot").Wire("hot", "raised", "hook").Wire("hot", "up", "end").Then("hook", "beep", "end")
+            .Build());
+
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "95"));
+
+        await Eventually.Until(_time, () => _console.Alarms.Count == 1 && _console.Sounds.Count == 1,
+            "the turn's alarm and tone to reach the console");
+        await Eventually.Until(_time, () => Errors(engine, "hook") == 1, "the failure to be counted on the node");
+
+        // Said as the channel's own fault, and not as a turn of the pump that failed: the turn went on.
+        Assert.Equal("Webhook failed: the queue is gone", Note(engine, "hook"));
+        Assert.Contains(_log.Lines, line => line.Level == LogLevel.Error && line.Message.StartsWith("The webhook channel threw"));
+        Assert.DoesNotContain(_log.Lines, line => line.Message.StartsWith("A turn of the flow engine failed"));
+    }
+
     /// <summary>A test that posts to <paramref name="url"/> and then waits on plant/k1/ack.</summary>
     private static Flow Hooking(string url) =>
         Once("f1", ("hook", "webhook", new { url }), ("ack", "mqttIn", new { filter = "plant/k1/ack" }));

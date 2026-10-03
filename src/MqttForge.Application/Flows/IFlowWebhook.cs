@@ -7,9 +7,12 @@ namespace MqttForge.Application.Flows;
 public interface IFlowWebhook
 {
     /// <summary>
-    /// Queues a post and answers at once: true, or false when the queue is full and the post was let
-    /// go. <paramref name="failed"/> is called, from another thread, with a sentence when the post is
-    /// given up on.
+    /// Queues a post and answers at once: true, or false when the queue is full or closed and the post
+    /// was let go. <paramref name="failed"/> is called with a sentence when the post is given up on —
+    /// from another thread once its attempts are spent, or from this one before the call returns when the
+    /// channel will not send at all. A post answered false is never also called back, since the caller
+    /// counts that refusal itself. A channel keeps to this and never throws, and the engine does not lean
+    /// on it.
     /// </summary>
     bool Post(FlowWebhookPost post, Action<string> failed);
 }

@@ -705,15 +705,8 @@ public sealed class FlowEngine
                     "Too many publishes were waiting for the broker; this one was dropped.", now).Debug);
 
         foreach (var post in outcome.Webhooks)
-        {
-            var refused = _webhook is null
-                ? "Webhooks are turned off on this host (MqttForge:AllowWebhooks), so nothing was sent."
-                : !_webhook.Post(post, reason => Post(new FlowStepFailed(post.Run, post.Serial, post.NodeId, reason)))
-                    ? "Too many webhook posts were waiting; this one was dropped."
-                    : null;
-
-            if (refused is not null) debug.AddRange(_runtime.StepFailed(post.Run, post.Serial, post.NodeId, refused, now).Debug);
-        }
+            if (Refusal(post) is { } refused)
+                debug.AddRange(_runtime.StepFailed(post.Run, post.Serial, post.NodeId, refused, now).Debug);
 
         foreach (var entry in debug)
         {
@@ -734,6 +727,33 @@ public sealed class FlowEngine
         // it while the log was still being told of the alarm, and the alarm after it.
         _pushes.Sounds(outcome.Sounds);
         _pushes.Notices(outcome.Notices);
+    }
+
+    /// <summary>Hands a Webhook node's post to the webhook channel: why it was not taken, or null when it was.</summary>
+    // The turn hands its posts on before it tells the console of the alarms it raised and the tones it
+    // chose, and a throw out of here would end it at that point: the alarms in the book with nobody told
+    // of them, and the posts and the debug lines after this one lost with them. The channel's contract is
+    // that it never throws, which is the channel's to keep and not something the turn can lean on — so a
+    // post that could not be handed on is one failed step on its node, as a full queue is, and the turn
+    // goes on.
+    private string? Refusal(FlowWebhookPost post)
+    {
+        if (_webhook is null)
+            return "Webhooks are turned off on this host (MqttForge:AllowWebhooks), so nothing was sent.";
+
+        try
+        {
+            return _webhook.Post(post, reason => Post(new FlowStepFailed(post.Run, post.Serial, post.NodeId, reason)))
+                ? null
+                : "Too many webhook posts were waiting; this one was dropped.";
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "The webhook channel threw. A post of flow {Flow}'s node {Node} was not sent.",
+                post.Run.FlowId, post.NodeId);
+
+            return $"Webhook failed: {ex.Message}";
+        }
     }
 
     // The notifier's catch lets a cancellation through only when it is the engine stopping, the rule

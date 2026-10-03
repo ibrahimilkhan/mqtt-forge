@@ -450,6 +450,9 @@ internal sealed class RecordingFlowWebhook : IFlowWebhook
     /// <summary>When true, every post is refused as if the queue were full.</summary>
     public bool Full { get; set; }
 
+    /// <summary>When set, every post throws it: a channel that broke its contract, which says it never throws.</summary>
+    public Exception? Fault { get; init; }
+
     public IReadOnlyList<FlowWebhookPost> Posts
     {
         get { lock (_gate) return [.. _posts.Select(entry => entry.Post)]; }
@@ -457,6 +460,7 @@ internal sealed class RecordingFlowWebhook : IFlowWebhook
 
     public bool Post(FlowWebhookPost post, Action<string> failed)
     {
+        if (Fault is { } fault) throw fault;
         if (Full) return false;
 
         lock (_gate) _posts.Add((post, failed));

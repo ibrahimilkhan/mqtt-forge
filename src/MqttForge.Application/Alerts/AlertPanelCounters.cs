@@ -31,7 +31,7 @@ public sealed class AlertPanelCounters
     // registered anywhere in this app.
     public AlertPanelCounters(TimeProvider? timeProvider = null) => _time = timeProvider ?? TimeProvider.System;
 
-    /// <summary>Alert deliveries the webhook queue had to discard because it was full.</summary>
+    /// <summary>Webhook deliveries, an alert's or a flow's, that the queue had to discard because it was full.</summary>
     public int WebhooksDropped => Volatile.Read(ref _webhooksDropped);
 
     /// <summary>Counted, never logged per occurrence: a full queue is a burst, not an event.</summary>

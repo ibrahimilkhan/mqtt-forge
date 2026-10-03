@@ -5,14 +5,15 @@ using System.Threading.Channels;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using MqttForge.Application.Alerts;
+using MqttForge.Application.Flows;
 using MqttForge.Domain.Abstractions;
 using MqttForge.Domain.Models;
 
 namespace MqttForge.Infrastructure.Alerts;
 
 /// <summary>
-/// The alert, POSTed to an address the user gave. One bounded queue, one pump, four deliveries in
-/// flight, and one at a time per endpoint.
+/// The alert, POSTed to an address the user gave — and a Webhook node's post, to the address its node
+/// gives. One bounded queue, one pump, four deliveries in flight, and one at a time per endpoint.
 /// </summary>
 // Shaped after SignalRMessageNotifier — a bounded channel written to from a path that may not
 // block, and a pump that owns everything slow — and it differs from it in exactly one place, on
@@ -24,7 +25,16 @@ namespace MqttForge.Infrastructure.Alerts;
 // It is an IHostedService for the sake of StopAsync alone. A container restart is the ordinary
 // way this process ends — 'restart: unless-stopped' is the documented deployment — and a queue
 // that went with it silently would eat the alarm that prompted the restart.
-public sealed class WebhookDispatcher : IAlertDispatcher, IHostedService
+//
+// Two kinds of delivery are made here, and that one class makes both is the point of it. A rule's
+// alarm and a Webhook node's post are each a POST to an address somebody typed, and what the
+// operator turns off with MqttForge:AllowWebhooks, what is never followed through a redirect and
+// what the panel counts as dropped should be one queue, one client and one set of attempts — not
+// two, which would be two places to forget a gate. They differ in where the body comes from and in
+// who hears of a failure: an alert's body is made from the alert when it is sent, and a delivery
+// given up on is a line in the log; a flow's is the body its node rendered, and its node is told
+// as well, because a post that never lands is a step that failed.
+public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedService
 {
     /// <summary>The named client the wiring builds with <see cref="CreateHandler"/>.</summary>
     // This constant and CreateHandler exist for the container's benefit alone, and they are the
@@ -44,7 +54,7 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IHostedService
     /// <summary>How many endpoints are talked to at the same time.</summary>
     public const int MaxInFlight = 4;
 
-    /// <summary>How many times one alert is offered to one endpoint.</summary>
+    /// <summary>How many times one delivery is offered to one endpoint.</summary>
     public const int MaxAttempts = 3;
 
     /// <summary>How long one attempt may take.</summary>
@@ -62,7 +72,18 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IHostedService
 
     private static readonly TimeSpan FirstBackoff = TimeSpan.FromSeconds(1);
 
-    private sealed record Delivery(Alert Alert, string Event, WebhookAction Action);
+    /// <summary>One post: where, what, how it is said in the log, and who to tell when it is given up on.</summary>
+    // An alert's body is made from the alert when it is sent, a flow's is the body its node rendered.
+    // Everything after that — the endpoint's chain, the slots, the attempts, the budget — is one path.
+    private sealed record Delivery(
+        string Url, IReadOnlyDictionary<string, string> Headers, Func<string> Body, string ContentType,
+        string Describe, Action<string>? Failed)
+    {
+        /// <summary>Set by <see cref="OnDropped"/> when the queue let this one go instead of taking it.</summary>
+        // The only way the writer can tell: see Post. Set and read by the thread that wrote the delivery,
+        // which is the thread the queue calls OnDropped on, so it is not shared with anything.
+        public bool LetGo { get; set; }
+    }
 
     private readonly HttpClient _client;
     private readonly AlertEngineOptions _options;
@@ -161,10 +182,53 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IHostedService
                 }
 
                 Interlocked.Increment(ref _pending);
-                _queue.Writer.TryWrite(new Delivery(alert, @event, webhook));
+                _queue.Writer.TryWrite(new Delivery(
+                    webhook.Url, webhook.Headers, () => AlertPayload.For(alert, @event), "application/json",
+                    $"{alert.RuleName} on {alert.Topic}", null));
             }
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>A Webhook node's post. Queued, never waited for: false when the queue is full or closed.</summary>
+    // The gate is the engine's, which is given no webhook channel at all when AllowWebhooks is false; it
+    // is checked here as well, for the reason the alert half checks it: a switch enforced in one place is
+    // one forgotten branch away from doing nothing.
+    //
+    // Called from the flow engine's pump, which may not wait for anything, so it queues and goes. Nothing
+    // in it throws: a refusal is the false, or the sentence handed to the failed callback, and never both.
+    public bool Post(FlowWebhookPost post, Action<string> failed)
+    {
+        if (!_options.AllowWebhooks)
+        {
+            // Said back at once and answered true, because it was dealt with: a false would have the engine
+            // count a full queue on the node on top of this.
+            failed("Webhooks are turned off on this host (MqttForge:AllowWebhooks), so nothing was sent.");
+            return true;
+        }
+
+        var delivery = new Delivery(post.Url, new Dictionary<string, string>(), () => post.Body, post.ContentType,
+            $"flow {post.Run.FlowId}'s node {post.NodeId}", failed);
+
+        // Counted before it is written, as Queue counts an alert: the pump may have finished it before
+        // this thread reaches its next line.
+        Interlocked.Increment(ref _pending);
+
+        // False is a queue that has been closed. The delivery never went in, so nothing else has counted
+        // it — and it is not a drop either, because a closed queue is a host that is stopping and not one
+        // that cannot keep up.
+        if (!_queue.Writer.TryWrite(delivery))
+        {
+            Interlocked.Decrement(ref _pending);
+
+            return false;
+        }
+
+        // True is not "taken", though. A full DropWrite queue lets the newest go and answers as if it had
+        // been written, which would tell the engine that a post was queued when nobody ever will send it.
+        // OnDropped has already run, on this thread, before TryWrite returned: it marked the delivery,
+        // took it off _pending and counted it as dropped, so there is nothing to undo here.
+        return !delivery.LetGo;
     }
 
     // A switch an operator turned on purpose, said once. A line per alarm would bury the alarms
@@ -178,8 +242,12 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IHostedService
             "be sent while it stays false, and this is said once.");
     }
 
+    // Called by the queue itself, on the writer's thread and before the write returns, and only for a
+    // delivery it let go: with DropWrite that is the one being written. Never for one a pump took.
     private void OnDropped(Delivery job)
     {
+        job.LetGo = true;
+
         Interlocked.Decrement(ref _pending);
         Interlocked.Increment(ref _dropped);
 
@@ -254,7 +322,7 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IHostedService
     // endpoint or a lock anywhere.
     private void Chain(Delivery job)
     {
-        var endpoint = EndpointOf(job.Action.Url);
+        var endpoint = EndpointOf(job.Url);
         var previous = _chains.TryGetValue(endpoint, out var tail) ? tail : Task.CompletedTask;
 
         // Not ExecuteSynchronously: the continuation would then start on the pump thread and hold
@@ -319,7 +387,7 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IHostedService
         // The whole life of this delivery, retries and waits included, ends at this instant.
         using var budget = new CancellationTokenSource(Budget, _time);
 
-        var body = AlertPayload.For(job.Alert, job.Event);
+        var body = job.Body();
 
         for (var attempt = 1; attempt <= MaxAttempts; attempt++)
         {
@@ -344,7 +412,7 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IHostedService
             {
                 GiveUp(job, attempt,
                     budget.IsCancellationRequested
-                        ? "the 20 second budget for this alert ran out"
+                        ? "the 20 second budget for this webhook ran out"
                         : "MQTTForge is stopping");
 
                 return;
@@ -352,11 +420,14 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IHostedService
         }
     }
 
-    private void GiveUp(Delivery job, int attempts, string reason) =>
+    private void GiveUp(Delivery job, int attempts, string reason)
+    {
         _log.LogWarning(
-            "The webhook for {RuleName} on {Topic} was not delivered to {Url} after " +
-            "{Attempts} attempt(s): {Reason}",
-            job.Alert.RuleName, job.Alert.Topic, Redacted(job.Action.Url), attempts, reason);
+            "The webhook for {Describe} was not delivered to {Url} after {Attempts} attempt(s): {Reason}",
+            job.Describe, Redacted(job.Url), attempts, reason);
+
+        job.Failed?.Invoke($"The webhook was not delivered after {attempts} attempt(s): {reason}.");
+    }
 
     private async Task<(bool Delivered, string Reason)> AttemptAsync(
         Delivery job, string body, CancellationToken budget)
@@ -366,15 +437,15 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IHostedService
         using var timeout = new CancellationTokenSource(AttemptTimeout, _time);
         using var attempt = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token, budget);
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, job.Action.Url)
+        using var request = new HttpRequestMessage(HttpMethod.Post, job.Url)
         {
-            Content = new StringContent(body, Encoding.UTF8, "application/json")
+            Content = new StringContent(body, Encoding.UTF8, job.ContentType)
         };
 
         // Without validation, because the user's header is the user's business — and a name that
         // belongs on the content rather than the request is refused here rather than throwing,
         // which is why nothing is asserted on the result.
-        foreach (var (name, value) in job.Action.Headers)
+        foreach (var (name, value) in job.Headers)
             request.Headers.TryAddWithoutValidation(name, value);
 
         try
@@ -393,7 +464,7 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IHostedService
         }
         catch (OperationCanceledException) when (budget.IsCancellationRequested)
         {
-            return (false, "the 20 second budget for this alert ran out");
+            return (false, "the 20 second budget for this webhook ran out");
         }
         catch (OperationCanceledException)
         {

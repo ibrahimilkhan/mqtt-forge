@@ -18,7 +18,7 @@ public sealed record AlertEngineOptions
     public string TopicPrefix { get; init; } = "mqttforge/alerts/";
 
 
-        /// <summary>Whether a rule's webhook action is delivered at all.</summary>
+        /// <summary>Whether a rule's webhook action, or a flow's Webhook node, is delivered at all.</summary>
         // The odd one out on this record: every other member is a number the engine reads, and this
         // is a switch an operator turns. It lives here anyway, because there are exactly two things
         // an operator can turn and the other one — TopicPrefix — is already on this record. A second

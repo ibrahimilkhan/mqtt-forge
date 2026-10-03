@@ -168,7 +168,12 @@ public static class DependencyInjection
         //
         // A flow alarm is told to the badge and the alarm list alone, and is handed to no dispatcher:
         // a flow that wants a webhook or a publish after an alarm draws the step, and a Webhook node's
-        // posts will go to the webhook channel directly, through the engine's IFlowWebhook.
+        // posts go to the webhook channel directly, through the engine's IFlowWebhook. That channel is
+        // the very instance the rules' alarms go through, so the flows' webhook posts share its queue,
+        // its client and its gate — one place that decides what leaves the machine — and it is the
+        // engine's only when MqttForge:AllowWebhooks is true. With the switch off the engine is handed
+        // none at all, which is the blunt gate the dispatcher list above uses for the same reason, and
+        // the dispatcher refuses a post of its own accord as well, in case this line is ever wrong.
         //
         // Of the alert engine's two channels it is handed the log alone, which its pump tells. The
         // console's half — the badge and the list — goes through the flow notifier instead, sent from
@@ -188,7 +193,10 @@ public static class DependencyInjection
             new DeferredSubscriber(sp),
             sp.GetRequiredService<IMqttPublisher>(),
             sp.GetRequiredService<AlertEngineOptions>(),
-            sp.GetRequiredService<ILogger<FlowEngine>>()));
+            sp.GetRequiredService<ILogger<FlowEngine>>(),
+            webhook: sp.GetRequiredService<AlertEngineOptions>().AllowWebhooks
+                ? sp.GetRequiredService<WebhookDispatcher>()
+                : null));
         services.AddSingleton<FlowService>();
 
         // The message path forks here rather than inside MqttnetSubscriber, which goes on knowing

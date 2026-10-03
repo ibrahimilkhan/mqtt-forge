@@ -1,9 +1,11 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using MqttForge.Application.Alerts;
+using MqttForge.Application.Flows;
 using MqttForge.Domain.Enums;
 using MqttForge.Domain.Models;
 using MqttForge.Infrastructure.Alerts;
@@ -110,6 +112,11 @@ public class WebhookDispatcherTests : IAsyncLifetime
             Sample: "{\"temp\":94.2}",
             Actions: actions ?? [new WebhookAction(url, headers ?? new Dictionary<string, string>())]);
 
+    /// <summary>A Webhook node's post, as the flow engine hands it over.</summary>
+    private static FlowWebhookPost Posting(
+        string url = EndpointA, string body = "hot", string contentType = "text/plain") =>
+        new(new FlowRunKey("f1", FlowRunKind.Active), 1, "hook", url, body, contentType);
+
     /// <summary>Waits, in real time only, for something the pump does without the clock moving.</summary>
     private static async Task Settle(Func<bool> until, string what)
     {
@@ -161,6 +168,10 @@ public class WebhookDispatcherTests : IAsyncLifetime
         Assert.Equal(HttpMethod.Post, sent.Method);
         Assert.Equal(EndpointA, sent.Url.ToString());
         Assert.Equal(AlertPayload.For(alert, "raised"), sent.Body);
+
+        // Said here as well because the content type is a delivery's own now, and an alert's is the one
+        // place a flow's text/plain must not have leaked into.
+        Assert.Equal("application/json", sent.ContentType);
     }
 
     // The same channel, the other half of the pair. An endpoint that is told an alarm started and
@@ -486,8 +497,144 @@ public class WebhookDispatcherTests : IAsyncLifetime
         Assert.Empty(Handler.Sent);
     }
 
+    // ---- a Webhook node's post ----
+    //
+    // The second kind of delivery. It is the same queue, client, attempts and budget as an alert's, so
+    // what these cases pin is where it has to come out the same — the switch, the redirect rule, the
+    // counts — and the one place it must not: the body and its kind of content are the node's, and an
+    // alert's are made from the alert.
+
+    [Fact]
+    public async Task A_flows_post_goes_with_its_own_body_and_content_type()
+    {
+        var sut = await Started((_, _) => Status(HttpStatusCode.OK));
+
+        Assert.True(sut.Post(Posting(body: "hot", contentType: "text/plain"), _ => { }));
+        await Settle(() => Handler.Sent.Count > 0, "the post was sent");
+
+        var sent = Assert.Single(Handler.Sent);
+        Assert.Equal(HttpMethod.Post, sent.Method);
+        Assert.Equal(EndpointA, sent.Url.ToString());
+        Assert.Equal("hot", sent.Body);
+        Assert.Equal("text/plain", sent.ContentType);
+
+        // A rule's headers are the rule's. A Webhook node has none to give, and nothing of an alert's goes
+        // with its post.
+        Assert.Empty(sent.Headers);
+    }
+
+    // Told once, and only when the ladder is spent. The engine counts what it is told as one failed step
+    // on the node, so a callback at the first refusal would count an attempt that the next one puts right,
+    // and one for every attempt would count a single post three times.
+    [Fact]
+    public async Task A_flows_post_that_never_lands_is_said_back_once_with_its_reason()
+    {
+        var sut = await Started((_, _) => Status(HttpStatusCode.InternalServerError));
+        var said = new ConcurrentQueue<string>();
+
+        Assert.True(sut.Post(Posting(), said.Enqueue));
+
+        // The second attempt is only made once the first has been judged a failure and a retry decided on.
+        await AdvanceUntil(() => Handler.Sent.Count >= 2, "the second attempt was made");
+        Assert.Empty(said);
+
+        await AdvanceUntil(() => !said.IsEmpty, "the post was given up on");
+        await Task.Delay(50);
+
+        var reason = Assert.Single(said);
+        Assert.Equal(3, Handler.Sent.Count);
+        Assert.Contains("500", reason);
+        Assert.Contains("3 attempt", reason);
+        Assert.Contains(_log.Lines, l => l.Message.Contains("not delivered") && l.Message.Contains("flow f1's node hook"));
+    }
+
+    // The queue's DropWrite lets the newest go and still answers that it was written, so the post that was
+    // one too many has to be told apart from the ones that were taken: the engine counts a refusal on the
+    // node that asked, and a post it was told was queued is a post nobody would ever account for.
+    [Fact]
+    public void A_flows_post_past_a_full_queue_is_refused()
+    {
+        // Deliberately never started, as the DropWrite test above has it: with nothing draining, the queue
+        // fills as far as its capacity and not one item further.
+        var panel = new AlertPanelCounters();
+        var sut = Build((_, _) => Status(HttpStatusCode.OK), panel: panel);
+        var said = new ConcurrentQueue<string>();
+
+        for (var i = 0; i < WebhookDispatcher.QueueCapacity; i++)
+            Assert.True(sut.Post(Posting(), said.Enqueue));
+
+        Assert.False(sut.Post(Posting(), said.Enqueue));
+
+        // Counted where the alerts that do not fit are counted, once, and no longer waiting.
+        Assert.Equal(1, sut.Dropped);
+        Assert.Equal(1, panel.WebhooksDropped);
+        Assert.Equal(WebhookDispatcher.QueueCapacity, sut.Pending);
+
+        // And not told as well. A refusal is answered by the false, and a callback on top of it would be
+        // the same post counted on its node twice.
+        Assert.Empty(said);
+    }
+
+    // After StopAsync the queue is closed, which is not a queue that overflowed: nothing was dropped, and
+    // the post that did not go in must not be left counted as waiting for a pump that has stopped.
+    [Fact]
+    public async Task A_flows_post_after_the_queue_has_closed_is_refused_and_not_left_pending()
+    {
+        var sut = await Started((_, _) => Status(HttpStatusCode.OK));
+
+        using var patience = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await sut.StopAsync(patience.Token);
+
+        Assert.False(sut.Post(Posting(), _ => { }));
+        Assert.Equal(0, sut.Pending);
+        Assert.Equal(0, sut.Dropped);
+    }
+
+    // The second lock on the door the wiring already shut: the engine is handed no webhook channel when
+    // the switch is off, so this is the branch nothing reaches today, and the one that has to hold the day
+    // something does. The refusal is said through the callback and the answer is still true, because it
+    // was handled: a false would have the engine count a full queue on the node on top of it.
+    [Fact]
+    public async Task A_flows_post_with_webhooks_turned_off_is_said_back_and_sends_nothing()
+    {
+        var sut = await Started((_, _) => Status(HttpStatusCode.OK), allowWebhooks: false);
+        var said = new ConcurrentQueue<string>();
+
+        Assert.True(sut.Post(Posting(), said.Enqueue));
+
+        Assert.Contains("AllowWebhooks", Assert.Single(said));
+
+        await Task.Delay(50);
+        Assert.Empty(Handler.Sent);
+        Assert.Equal(0, sut.Pending);
+    }
+
+    // The same rule an alert's is held to, on the path a flow's post takes too: a redirect is an endpoint
+    // that did not accept the post, and where it points is never read.
+    [Fact]
+    public async Task A_flows_post_is_not_chased_through_a_redirect()
+    {
+        var sut = await Started((_, _) =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.Found);
+            response.Headers.Location = new Uri("http://elsewhere.example/collect");
+
+            return Task.FromResult(response);
+        });
+        var said = new ConcurrentQueue<string>();
+
+        sut.Post(Posting(), said.Enqueue);
+        await AdvanceUntil(() => !said.IsEmpty, "the post was given up on");
+
+        Assert.Equal(3, Handler.Sent.Count);
+        Assert.All(Handler.Sent, sent => Assert.Equal(EndpointA, sent.Url.ToString()));
+        Assert.Contains("302", Assert.Single(said));
+    }
+
+    // The content type is the media type alone: the charset the content adds after it is the encoding's
+    // business and not what a delivery was asked to say.
     private sealed record Sent(
-        HttpMethod Method, Uri Url, IReadOnlyDictionary<string, string> Headers, string Body);
+        HttpMethod Method, Uri Url, IReadOnlyDictionary<string, string> Headers, string Body, string? ContentType);
 
     private sealed class StubHandler : HttpMessageHandler
     {
@@ -516,7 +663,8 @@ public class WebhookDispatcherTests : IAsyncLifetime
 
             // Recorded before the answer, so a request that is about to block for ever is still a
             // request this test can see.
-            lock (_gate) _sent.Add(new Sent(request.Method, request.RequestUri!, headers, body));
+            lock (_gate) _sent.Add(new Sent(request.Method, request.RequestUri!, headers, body,
+                request.Content?.Headers.ContentType?.MediaType));
 
             return await _answer(request, cancellationToken);
         }
