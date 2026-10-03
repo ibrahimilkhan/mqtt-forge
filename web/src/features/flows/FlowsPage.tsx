@@ -232,18 +232,22 @@ function Page() {
   }, [byId, data, refusedCopies]);
 
   // A flow alarm the reader asked to see, from its row on the alarm wall: the page opens on the
-  // flow it came from, with its Alarm node picked. Only once the flows are read, since until then
-  // none of them can be found; and one no flow has any more is let go.
+  // flow it came from, with its Raise alarm node picked. Only once the flows are read, since until
+  // then none of them can be found; and one no flow has any more is let go.
+  //
+  // Looked for in the copies the server has, then in the drafts: a test runs the drawing, which
+  // can be of a flow the server has never had — the examples are only drafts until they are
+  // activated — or hold a Raise alarm its saved copy does not.
   useLayoutEffect(() => {
     if (asked === null || !data) return;
 
-    const source = data.unreadable ? null : alarmSource(asked, deployed);
+    const source = data.unreadable ? null : alarmSource(asked, [...deployed, ...Object.values(drafts)]);
     if (source) {
       useFlowDraftStore.getState().show(source.flowId);
       useFlowDraftStore.getState().select(source.nodeId);
     }
     useFlowAlarmStore.getState().answered();
-  }, [asked, data, deployed]);
+  }, [asked, data, deployed, drafts]);
 
   const shown = flows.find((flow) => flow.id === current) ?? flows[0];
 
@@ -459,7 +463,6 @@ function Page() {
                 key={`inspector-${shown.id}`}
                 flow={shown}
                 deployed={byId.get(shown.id)}
-                running={running.has(shown.id)}
                 overtaken={overtaken.has(shown.id)}
                 problems={problems[shown.id] ?? NOTHING_WRONG}
                 facts={{ allowWebhooks: data.allowWebhooks }}

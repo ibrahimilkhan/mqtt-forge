@@ -1,16 +1,19 @@
-import { screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { Profiler } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useFlowStatusStore } from '../../stores/flowStatusStore';
 import { server } from '../../test/server';
 import { renderWithClient as render } from '../../test/renderWithClient';
-import type { FlowDebugDto, FlowDto, FlowNodeType } from '../../types/api';
+import type { FlowDebugDto, FlowDto, FlowNodeType, FlowRunStatusDto, FlowStatusDto } from '../../types/api';
+import { exampleFlows } from './examples';
 import { useFlowDraftStore } from './flowDraftStore';
 import { Inspector } from './Inspector';
-import { NODE_SPECS } from './nodeTypes';
+import sheet from './Inspector.module.css?raw';
+import { NODE_SPECS, TEMPLATE_HELP } from './nodeTypes';
 import { Palette } from './Palette';
-import { forgetDrafts, runOf } from './canvasTestbed';
+import { forgetDrafts, runOf, withoutComments } from './canvasTestbed';
 
 const facts = { allowWebhooks: true };
 
@@ -29,9 +32,9 @@ const watch: FlowDto = {
 // The flow on screen is always the draft when there is one, so a test reads it from the store.
 const shown = () => useFlowDraftStore.getState().drafts.watch ?? watch;
 
-function Inspecting({ running = true }: { running?: boolean }) {
+function Inspecting() {
   const flow = useFlowDraftStore((state) => state.drafts.watch) ?? watch;
-  return <Inspector flow={flow} deployed={watch} running={running} overtaken={false} problems={{}} facts={facts} />;
+  return <Inspector flow={flow} deployed={watch} overtaken={false} problems={{}} facts={facts} />;
 }
 
 /**
@@ -60,19 +63,43 @@ const kinds: FlowDto = {
   edges: [],
 };
 
-/** A flow's node panes, as the page draws them: the flow's draft once it has one. */
-function Forms({ flow, allowWebhooks }: { flow: FlowDto; allowWebhooks: boolean }) {
+/**
+ * The inspector on a flow, as the page draws it: on the flow's draft once it has one, beside
+ * `deployed`, the copy the server has — undefined for a flow it does not have.
+ */
+function Drawn({ flow, deployed, allowWebhooks = true }: { flow: FlowDto; deployed: FlowDto | undefined; allowWebhooks?: boolean }) {
   const shownFlow = useFlowDraftStore((state) => state.drafts[flow.id]) ?? flow;
   return (
-    <Inspector flow={shownFlow} deployed={flow} running={false} overtaken={false} problems={{}} facts={{ ...facts, allowWebhooks }} />
+    <Inspector flow={shownFlow} deployed={deployed} overtaken={false} problems={{}} facts={{ ...facts, allowWebhooks }} />
   );
 }
 
 /** The pane of one node, picked as a click on the canvas picks it. */
 const formOf = (nodeId: string, { flow = kinds, allowWebhooks = true }: { flow?: FlowDto; allowWebhooks?: boolean } = {}) => {
   useFlowDraftStore.getState().select(nodeId);
-  render(<Forms flow={flow} allowWebhooks={allowWebhooks} />);
+  render(<Drawn flow={flow} deployed={flow} allowWebhooks={allowWebhooks} />);
 };
+
+/**
+ * The example Boiler watch — a whole flowchart, with the variable its If reads — under the id the
+ * watch above has, so its draft and its runs are the watch's.
+ */
+const example: FlowDto = { ...exampleFlows()[1], id: 'watch' };
+
+/**
+ * The inspector on a flow, with `selected` picked if it says one. The server's copy is the flow
+ * itself unless `deployed` says another, or — given as undefined — that the server has none.
+ */
+function drawInspector(flow: FlowDto, options: { deployed?: FlowDto; selected?: string } = {}) {
+  if (options.selected !== undefined) useFlowDraftStore.getState().select(options.selected);
+  return render(<Drawn flow={flow} deployed={'deployed' in options ? options.deployed : flow} />);
+}
+
+/** The watch's draft, which the first edit in its pane makes. */
+const draft = () => useFlowDraftStore.getState().drafts.watch!;
+
+/** A status push with one run of a flow in it: active and waiting, at no node, unless `over` says otherwise. */
+const run = (flowId: string, over: Partial<FlowRunStatusDto>): FlowStatusDto => ({ runs: [runOf(flowId, over)] });
 
 /** One setting of one node of the kinds flow, as the draft now has it. */
 const setting = (nodeId: string, key: string) =>
@@ -119,15 +146,7 @@ describe('inspector', () => {
     await userEvent.type(name, 'Boiler house');
 
     expect(shown().name).toBe('Boiler house');
-    expect(screen.getByText('Running.')).toBeInTheDocument();
-  });
-
-  it('turns a flow off as part of the draft', async () => {
-    render(<Inspecting />);
-
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Run it once deployed' }));
-
-    expect(shown().enabled).toBe(false);
+    expect(screen.getByText('Active · not running')).toBeInTheDocument();
   });
 
   it('lists the alarms a Raise alarm node is holding up', () => {
@@ -154,9 +173,7 @@ describe('inspector', () => {
       nodes: [test, { ...test, id: 'hotter', x: 260, config: { ...test.config, value: '95' } }],
       edges: [{ id: 'e1', from: 'test', fromPort: 'yes', to: 'hotter', toPort: 'in' }],
     };
-    render(
-      <Inspector flow={twice} deployed={twice} running overtaken={false} problems={{ 'edge:e1': ['Not this wire.'] }} facts={facts} />,
-    );
+    render(<Inspector flow={twice} deployed={twice} overtaken={false} problems={{ 'edge:e1': ['Not this wire.'] }} facts={facts} />);
 
     expect(screen.getByText('If ($.temp > 90) → If ($.temp > 95): Not this wire.')).toBeInTheDocument();
   });
@@ -170,9 +187,7 @@ describe('inspector', () => {
       nodes: [{ id: 'tell', type: 'notify', x: 0, y: 0, config: { text, level: 'warn' } }, test],
       edges: [{ id: 'e1', from: 'tell', fromPort: 'out', to: 'test', toPort: 'in' }],
     };
-    render(
-      <Inspector flow={told} deployed={told} running overtaken={false} problems={{ 'edge:e1': ['Not this wire.'] }} facts={facts} />,
-    );
+    render(<Inspector flow={told} deployed={told} overtaken={false} problems={{ 'edge:e1': ['Not this wire.'] }} facts={facts} />);
 
     expect(screen.getByText(`Notify (${text.slice(0, 29)}…) → If ($.temp > 90): Not this wire.`)).toBeInTheDocument();
   });
@@ -403,14 +418,252 @@ describe('the node forms', () => {
     expect(screen.getByText(/Webhooks are turned off on this host/)).toBeInTheDocument();
   });
 
-  it.each([
-    ['start', 'Every run begins here. It has no settings.'],
-    ['end', 'A run that gets here is finished.'],
-    ['debug', 'Prints every message it is given in Debug, under the canvas.'],
-  ])('has nothing to set up on a %s node, and says what it does instead', (id, said) => {
+  // Every pane says what its node does over the form, so the form of a node with nothing to set
+  // says only that: a second sentence about what it does would be the first one again.
+  it.each(['start', 'end', 'debug'] as const)('has nothing to set up on a %s node, and says so under what it does', (id) => {
     formOf(id);
 
-    expect(screen.getByText(said)).toBeInTheDocument();
+    expect(screen.getByText(NODE_SPECS[id].help)).toBeInTheDocument();
+    expect(screen.getByText('It has no settings.')).toBeInTheDocument();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  });
+});
+
+describe('the flow pane', () => {
+  it('edits the variables a run starts with', async () => {
+    drawInspector({ ...example, variables: [{ name: 'limit', value: '90' }] });
+
+    fireEvent.change(screen.getByLabelText('Value of limit'), { target: { value: '95' } });
+    expect(draft().variables).toEqual([{ name: 'limit', value: '95' }]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add variable' }));
+    expect(draft().variables).toEqual([{ name: 'limit', value: '95' }, { name: 'v1', value: '' }]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove limit' }));
+    expect(draft().variables).toEqual([{ name: 'v1', value: '' }]);
+  });
+
+  // A row keyed by the name it shows would be a new row at every letter typed into that name, and
+  // the box being typed into would lose the keyboard after the first.
+  it('keeps the keyboard in a name being typed', async () => {
+    drawInspector({ ...example, variables: [{ name: 'limit', value: '90' }] });
+
+    await userEvent.type(screen.getByLabelText('Name of variable 1'), '_max');
+
+    expect(draft().variables).toEqual([{ name: 'limit_max', value: '90' }]);
+    expect(screen.getByLabelText('Name of variable 1')).toHaveFocus();
+  });
+
+  it('names a new variable v1, v2 … by the first a flow has no variable called', () => {
+    drawInspector({ ...example, variables: [{ name: 'v1', value: '' }, { name: 'v3', value: '' }] });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add variable' }));
+
+    expect(draft().variables.map((variable) => variable.name)).toEqual(['v1', 'v3', 'v2']);
+  });
+
+  // The row goes with the button that took it away, and a browser hands the keyboard of a button
+  // taken out to the body. Add variable is under where the row was.
+  it('hands the keyboard to Add variable when the last row goes', async () => {
+    drawInspector({ ...example, variables: [{ name: 'limit', value: '90' }] });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Remove limit' }));
+
+    expect(draft().variables).toEqual([]);
+    expect(screen.getByRole('button', { name: 'Add variable' })).toHaveFocus();
+  });
+
+  it('shows what a variable holds now beside its starting value while a run is going', () => {
+    useFlowStatusStore.getState().setStatus(run('watch', { kind: 'active', state: 'running', at: 'read', variables: { limit: '95' } }));
+    drawInspector({ ...example, variables: [{ name: 'limit', value: '90' }] });
+
+    expect(screen.getByText('now 95')).toBeInTheDocument();
+  });
+
+  // jsdom lays nothing out, so this reads the rules. In a browser, beside the two boxes in a pane
+  // some 270 pixels across, a list of three keys squeezed them to nothing.
+  it('puts what a variable holds now under its value, where a long one cannot squeeze the boxes', () => {
+    useFlowStatusStore.getState().setStatus(run('watch', { state: 'running', variables: { sensors: '["k1","k2","k3"]' } }));
+    drawInspector({ ...example, variables: [{ name: 'sensors', value: '["k1"]' }] });
+
+    const now = screen.getByText('now ["k1","k2","k3"]');
+    expect(now.parentElement?.lastElementChild).toBe(now);
+    expect(withoutComments(sheet)).toMatch(/\.variable\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1\.4fr\) auto;/);
+    expect(withoutComments(sheet)).toMatch(/\.now\s*\{[^}]*grid-column:\s*2 \/ -1;[^}]*overflow-wrap:\s*anywhere/);
+  });
+
+  // A finished run's variables hold what they ended with, which is not what anything holds now. And
+  // a name is any name the server takes, constructor among them, which every object answers to.
+  it('says what a variable holds now only while the run goes, and only of one the run has', () => {
+    const variables = [
+      { name: 'limit', value: '90' },
+      { name: 'constructor', value: '1' },
+    ];
+    useFlowStatusStore.getState().setStatus(run('watch', { state: 'finished', variables: { limit: '95' } }));
+    drawInspector({ ...example, variables });
+    expect(screen.queryByText(/^now /)).not.toBeInTheDocument();
+
+    act(() => useFlowStatusStore.getState().setStatus(run('watch', { state: 'running', variables: { limit: '95' } })));
+    expect(screen.getAllByText(/^now /).map((now) => now.textContent)).toEqual(['now 95']);
+  });
+
+  // Pushes come up to four times a second, each with every run as a new object, and the nodes'
+  // numbers in it move with every message. The pane draws none of those numbers.
+  it('draws nothing again for a push that moved nothing it shows', () => {
+    const push = (count: number, limit: string) =>
+      run('watch', {
+        state: 'running',
+        at: 'read',
+        variables: { limit },
+        nodes: [{ id: 'read', count, outs: { out: count }, errors: 0, note: null, standing: [] }],
+      });
+    useFlowStatusStore.getState().setStatus(push(1, '95'));
+    let drawn = 0;
+    render(
+      <Profiler id="pane" onRender={() => drawn++}>
+        <Drawn flow={example} deployed={example} />
+      </Profiler>,
+    );
+
+    drawn = 0;
+    act(() => useFlowStatusStore.getState().setStatus(push(2, '95')));
+    expect(drawn).toBe(0);
+
+    act(() => useFlowStatusStore.getState().setStatus(push(3, '96')));
+    expect(screen.getByText('now 96')).toBeInTheDocument();
+  });
+
+  it('says where the shown run is and what it waits for', () => {
+    useFlowStatusStore.getState().setStatus(
+      run('watch', { kind: 'test', state: 'waiting', at: 'read', waiting: { until: null, filter: 'plant/+/temp' } }),
+    );
+    drawInspector(example);
+
+    expect(screen.getByText('Test · waiting for a message on plant/+/temp — send one from Publish')).toBeInTheDocument();
+  });
+
+  it('says a flow the server has switched off is off', () => {
+    drawInspector({ ...example, enabled: false }, { deployed: { ...example, enabled: false } });
+
+    expect(screen.getByText('Off')).toBeInTheDocument();
+  });
+
+  it.each<[string, FlowRunStatusDto | null, FlowDto | undefined, string]>([
+    ['a flow switched on with no run', null, { ...example, enabled: true }, 'Active · not running'],
+    ['a flow the server does not have', null, undefined, 'Not saved yet'],
+    ['a test going, by the node it is at', runOf('watch', { kind: 'test', state: 'running', at: 'test' }), example, 'Test · running at If'],
+    ['a run at a node the drawing no longer has', runOf('watch', { state: 'running', at: 'gone' }), example, 'Active · running'],
+    ['a test that reached an End', runOf('watch', { kind: 'test', state: 'finished', at: 'end' }), example, 'Test · finished at End'],
+    ['a run stopped', runOf('watch', { state: 'stopped' }), example, 'Active · stopped'],
+    [
+      'the active run waiting for a message',
+      runOf('watch', { state: 'waiting', at: 'read', waiting: { until: null, filter: 'plant/+/temp' } }),
+      example,
+      'Active · waiting for a message on plant/+/temp — send one from Publish',
+    ],
+  ])('says, of %s, where it is in one line', (_, shown, deployed, line) => {
+    if (shown) useFlowStatusStore.getState().setStatus({ runs: [shown] });
+    drawInspector(example, { deployed });
+
+    expect(screen.getByText(line)).toBeInTheDocument();
+  });
+
+  it('no longer has Run it once deployed', () => {
+    drawInspector(example);
+
+    expect(screen.queryByText('Run it once deployed')).toBeNull();
+  });
+
+  // What deleting does depends on how the server has the flow, and the question says which.
+  it.each<[string, FlowDto | undefined, string]>([
+    ['switched on', { ...watch, enabled: true }, 'Delete Boiler watch? It stops running.'],
+    ['switched off', { ...watch, enabled: false }, 'Delete Boiler watch? It is saved switched off.'],
+    ['never saved', undefined, 'Drop Boiler watch? It was never saved.'],
+  ])('asks before deleting a flow %s, saying what deleting it does', async (_, deployed, question) => {
+    drawInspector(watch, { deployed });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete flow' }));
+
+    expect(screen.getByText(question)).toBeInTheDocument();
+  });
+});
+
+describe('the flow pane on a run that waits for a time', () => {
+  afterEach(() => vi.useRealTimers());
+
+  /** A test of the watch, waiting until this many milliseconds from now. */
+  const waitingFor = (ms: number) =>
+    run('watch', { kind: 'test', state: 'waiting', waiting: { until: new Date(Date.now() + ms).toISOString(), filter: null } });
+
+  // As the node counts it on the canvas: a tenth at a time, and no further than none left, which it
+  // goes on saying until a push says where the run went — ticking on would draw the same line ten
+  // times a second.
+  it('counts down the seconds it has left, and stops at none', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    useFlowStatusStore.getState().setStatus(waitingFor(2_000));
+    let drawn = 0;
+    render(
+      <Profiler id="pane" onRender={() => drawn++}>
+        <Drawn flow={example} deployed={example} />
+      </Profiler>,
+    );
+
+    expect(screen.getByText(/^Test · Wait (2\.0|1\.9) s$/)).toBeInTheDocument();
+    await act(async () => vi.advanceTimersByTime(1_000));
+    expect(screen.getByText(/^Test · Wait (1\.0|0\.9) s$/)).toBeInTheDocument();
+    await act(async () => vi.advanceTimersByTime(1_500));
+    expect(screen.getByText('Test · Wait 0.0 s')).toBeInTheDocument();
+
+    drawn = 0;
+    for (let tenth = 0; tenth < 10; tenth++) await act(async () => vi.advanceTimersByTime(100));
+
+    expect(drawn).toBe(0);
+  });
+
+  // The pane has drawn nothing for a while — nothing on it was counting — when the run comes to a
+  // Wait. The seconds are counted from then, not from when the pane last looked at the clock.
+  it('counts a wait from when it comes, however long the pane has been open', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    useFlowStatusStore.getState().setStatus(run('watch', { kind: 'test', state: 'running', at: 'read' }));
+    drawInspector(example);
+    expect(screen.getByText('Test · running at MQTT in')).toBeInTheDocument();
+
+    await act(async () => vi.advanceTimersByTime(60_000));
+    act(() => useFlowStatusStore.getState().setStatus(waitingFor(2_000)));
+
+    expect(screen.getByText(/^Test · Wait (2\.0|1\.9) s$/)).toBeInTheDocument();
+  });
+});
+
+describe("a node's pane", () => {
+  it('says what the node does, and what its texts can fill in', () => {
+    drawInspector(example, { selected: 'fan' });
+
+    expect(screen.getByText(NODE_SPECS.publish.help)).toBeInTheDocument();
+    expect(screen.getByText('{{var.limit}}')).toBeInTheDocument();
+  });
+
+  // What is typed into these can hold {{…}}: an If's values, a For's times, a Wait's seconds, a
+  // Set's value, and the texts the actions send. Nothing else a node is set up with can.
+  it('lists every placeholder beside what it gives under the forms that fill them in, and under no other', () => {
+    const listing = (Object.keys(NODE_SPECS) as FlowNodeType[]).filter((type) => {
+      useFlowDraftStore.getState().select(type);
+      const { unmount } = render(<Drawn flow={kinds} deployed={kinds} />);
+      const list = screen.queryByRole('region', { name: 'Fills in' });
+      if (list)
+        expect(within(list).getAllByRole('term').map((term) => [term.textContent, term.nextElementSibling?.textContent])).toEqual(
+          TEMPLATE_HELP.map((one) => [one.placeholder, one.gives]),
+        );
+      unmount();
+      return list !== null;
+    });
+
+    expect(listing).toEqual(['if', 'for', 'wait', 'set', 'publish', 'alarmRaise', 'notify', 'webhook']);
+  });
+
+  it('offers no Remove node for the Start', () => {
+    drawInspector(example, { selected: 'start' });
+
+    expect(screen.queryByRole('button', { name: 'Remove node' })).toBeNull();
   });
 });

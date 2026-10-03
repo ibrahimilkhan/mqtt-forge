@@ -325,7 +325,7 @@ describe('Flows page', () => {
 
     expect(await screen.findByText('412 read')).toBeInTheDocument();
     expect(screen.getByText('yes 3 · no 409')).toBeInTheDocument();
-    expect(screen.getByText('Running.')).toBeInTheDocument();
+    expect(screen.getByText('Active · waiting')).toBeInTheDocument();
   });
 
   // A reader who pressed Test is looking at the test, so the numbers under the nodes are the test's
@@ -1023,6 +1023,23 @@ describe('the debug strip', () => {
     expect(within(message).queryByText('error')).not.toBeInTheDocument();
   });
 
+  // A test runs beside the flow at work, and both print into the one strip. A test's lines say so,
+  // before the node that printed them, so the two can be told apart.
+  it('marks the lines a test printed', async () => {
+    keeping([watch]);
+    render(<FlowsPage />);
+    await screen.findByText('Boiler watch', { selector: 'h3' });
+
+    act(() => useFlowStatusStore.getState().addDebug([printed('watch', 'w1'), printed('watch', 't1', { test: true })], 0));
+
+    const fromTest = within(debugStrip()).getByText('t1').closest('li')!;
+    const atWork = within(debugStrip()).getByText('w1').closest('li')!;
+    const mark = within(fromTest).getByText('test');
+    expect(mark).toHaveAttribute('title', 'From a test run');
+    expect(mark.nextElementSibling).toHaveTextContent('MQTT in');
+    expect(within(atWork).queryByText('test')).not.toBeInTheDocument();
+  });
+
   // Clear goes with the lines it cleared, and a browser hands the keyboard of a button taken out
   // to the body. The strip's own fold stays, so the reader stays in the strip.
   it('hands the keyboard to its fold when Clear takes itself away', async () => {
@@ -1671,19 +1688,34 @@ describe('deleting a flow', () => {
     read.release();
   });
 
-  // A flow that was never deployed is only a draft, and there is nothing on the server to delete.
-  it('drops a flow that was never deployed without asking the server', async () => {
+  // A flow the server never had can still be running there, as a test of its drawing, and once it is
+  // gone from the page nothing is left to press Stop on: the delete is what stops it. The server has
+  // no such flow, and says so — and whatever it says, the reader's draft goes, since nothing of the
+  // reader's is on the server to keep.
+  it.each<[string, (() => Response) | null]>([
+    ['that it has no such flow', null],
+    ['that it could not', () => couldNot('The disk is full.')],
+  ])('asks the server to delete a flow it never had, and drops the flow when it answers %s', async (_, answer) => {
     const { deletes } = keeping();
+    if (answer)
+      server.use(
+        http.delete('/api/flows/:id', ({ params }) => {
+          deletes.push(String(params.id));
+          return answer();
+        }),
+      );
     render(<FlowsPage />);
     await userEvent.click(await screen.findByRole('button', { name: 'New flow' }));
+    const [made] = Object.keys(useFlowDraftStore.getState().drafts);
 
     await userEvent.click(screen.getByRole('button', { name: 'Delete flow' }));
-    expect(screen.getByText('Drop Flow 1? It was never deployed.')).toBeInTheDocument();
+    expect(screen.getByText('Drop Flow 1? It was never saved.')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Delete it' }));
 
     expect(await screen.findByRole('button', { name: 'Start from an example' })).toBeInTheDocument();
     expect(useFlowDraftStore.getState().drafts).toEqual({});
-    expect(deletes).toEqual([]);
+    expect(deletes).toEqual([made]);
+    expect(screen.queryByText(/was not deleted/)).not.toBeInTheDocument();
   });
 
   /*
@@ -2637,6 +2669,19 @@ describe('a flow alarm the reader asked to see', () => {
 
     expect(await screen.findByText('Boiler simulator', { selector: 'h3' })).toBeInTheDocument();
     await waitFor(() => expect(useFlowAlarmStore.getState().asked).toBeNull());
+  });
+
+  // A test runs the drawing, and the drawing can be of a flow the server has never had — the
+  // examples are only drafts until they are activated — so its alarms lead to the draft.
+  it('opens on the draft a test alarm came from, though the server has never had it', async () => {
+    keeping([sim]);
+    useFlowDraftStore.getState().put(alarmed);
+    useFlowAlarmStore.getState().ask('flowtest-watch-hot');
+    render(<FlowsPage />);
+
+    expect(await screen.findByRole('tab', { name: /^Boiler watch/, selected: true })).toBeInTheDocument();
+    expect(inspecting().getByRole('heading', { name: 'Raise alarm' })).toBeInTheDocument();
+    expect(useFlowAlarmStore.getState().asked).toBeNull();
   });
 });
 

@@ -1,29 +1,29 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useContext, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
+import { shallow } from 'zustand/shallow';
 import { deleteFlow, isFlowUnknown } from '../../api/flows';
 import { queryKeys } from '../../api/queryKeys';
 import { Field } from '../../components/Field';
-import { nodeKey, shownRun, useFlowStatusStore } from '../../stores/flowStatusStore';
+import { isLive, nodeKey, shownRun, useFlowStatusStore } from '../../stores/flowStatusStore';
 import { logFault } from '../../stores/logStore';
 import panel from '../../styles/panel.module.css';
-import type { FlowDto, FlowNodeDto } from '../../types/api';
+import type { FlowDto, FlowNodeDto, FlowRunStatusDto, FlowVariableDto } from '../../types/api';
 import { clock } from '../alerts/AlertsPanel';
 import { Failures } from './failures';
 import { focusCanvas } from './FlowCanvas';
 import { fingerprint, removeNodes, setConfig, titleOf, type Problems } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
 import { NodeSettings, type Facts } from './NodeSettings';
-import { specOf } from './nodeTypes';
+import { specOf, TEMPLATE_HELP } from './nodeTypes';
 import { focusShownTab } from './Toolbar';
 import { putInList } from './useSave';
 import styles from './Inspector.module.css';
 
 type Props = {
   flow: FlowDto;
-  /** The flow as the server has it, or undefined when it has none: never deployed, or deleted since. */
+  /** The flow as the server has it, or undefined when it has none: never saved, or deleted since. */
   deployed: FlowDto | undefined;
-  running: boolean;
   /** The flow's draft was started from a copy the server has since replaced, or deleted. */
   overtaken: boolean;
   /** What the server said last, keyed flow / node:{id} / edge:{id}. */
@@ -32,7 +32,7 @@ type Props = {
 };
 
 /** The picked node's settings, or — with nothing picked — the flow's own. */
-export function Inspector({ flow, deployed, running, overtaken, problems, facts }: Props) {
+export function Inspector({ flow, deployed, overtaken, problems, facts }: Props) {
   const selected = useFlowDraftStore((state) => state.selected);
   const node = flow.nodes.find((one) => one.id === selected);
 
@@ -41,11 +41,14 @@ export function Inspector({ flow, deployed, running, overtaken, problems, facts 
       {node ? (
         <NodePane flow={flow} node={node} problems={problems[`node:${node.id}`]} facts={facts} />
       ) : (
-        <FlowPane flow={flow} deployed={deployed} running={running} overtaken={overtaken} problems={problems} />
+        <FlowPane flow={flow} deployed={deployed} overtaken={overtaken} problems={problems} />
       )}
     </aside>
   );
 }
+
+/** The nodes whose settings can fill in {{…}}, whose panes list what each placeholder gives. */
+const TEMPLATED = new Set(['if', 'for', 'wait', 'set', 'publish', 'alarmRaise', 'notify', 'webhook']);
 
 function NodePane({ flow, node, problems, facts }: { flow: FlowDto; node: FlowNodeDto; problems?: readonly string[]; facts: Facts }) {
   const edit = useFlowDraftStore((state) => state.edit);
@@ -70,6 +73,10 @@ function NodePane({ flow, node, problems, facts }: { flow: FlowDto; node: FlowNo
         <span className={styles.kind}>{spec.blurb}</span>
       </div>
 
+      {/* What the node does and how it is wired, before anything about this one: a reader who
+          opened the pane to find out what the node is for reads that first. */}
+      <p className={panel.hint}>{spec.help}</p>
+
       {problems?.map((problem) => (
         <p key={problem} className={panel.fault}>
           {problem}
@@ -84,23 +91,42 @@ function NodePane({ flow, node, problems, facts }: { flow: FlowDto; node: FlowNo
 
       <NodeSettings flow={flow} node={node} set={set} facts={facts} />
 
+      {/* What the node holds up comes before the placeholders: it is about this node, and about
+          now, where the placeholders are one list, the same under every form that has it. */}
       {node.type === 'alarmRaise' && <Standing flowId={flow.id} nodeId={node.id} />}
 
-      <div className={panel.actions}>
-        <button
-          type="button"
-          className="ghost ends"
-          onClick={() => {
-            edit(flow, (current) => removeNodes(current, [node.id]));
-            select(null);
-            // The pane goes with the node, and this button with it. The reader was working on the
-            // canvas, and goes back to it.
-            focusCanvas();
-          }}
-        >
-          Remove node
-        </button>
-      </div>
+      {TEMPLATED.has(node.type) && (
+        <section className={styles.fills} aria-label="Fills in">
+          <h4 className={styles.subTitle}>Fills in</h4>
+          <dl className={styles.placeholders}>
+            {TEMPLATE_HELP.map((one) => (
+              <div key={one.placeholder}>
+                <dt className={styles.mono}>{one.placeholder}</dt>
+                <dd>{one.gives}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      )}
+
+      {/* Not for the Start: every run begins there, so a flow keeps the one it was made with. */}
+      {node.type !== 'start' && (
+        <div className={panel.actions}>
+          <button
+            type="button"
+            className="ghost ends"
+            onClick={() => {
+              edit(flow, (current) => removeNodes(current, [node.id]));
+              select(null);
+              // The pane goes with the node, and this button with it. The reader was working on the
+              // canvas, and goes back to it.
+              focusCanvas();
+            }}
+          >
+            Remove node
+          </button>
+        </div>
+      )}
     </>
   );
 }
@@ -140,17 +166,109 @@ function flowProblems(flow: FlowDto, problems: Problems): string[] {
   ];
 }
 
-type FlowPaneProps = { flow: FlowDto; deployed: FlowDto | undefined; running: boolean; overtaken: boolean; problems: Problems };
+/** "v1", "v2" … — the first of them none of these variables is called. */
+function nextVariable(variables: readonly FlowVariableDto[]): string {
+  const taken = new Set(variables.map((variable) => variable.name));
+  for (let n = 1; ; n++) if (!taken.has(`v${n}`)) return `v${n}`;
+}
 
-function FlowPane({ flow, deployed, running, overtaken, problems }: FlowPaneProps) {
+/**
+ * Whether the flow pane draws two runs alike. All it draws of one is where it is, what it waits
+ * for, what last stopped it and its variables — not its nodes' numbers, which move with every
+ * message.
+ */
+const drawnAlike = (one: FlowRunStatusDto | undefined, other: FlowRunStatusDto | undefined) =>
+  one === other ||
+  (one !== undefined &&
+    other !== undefined &&
+    one.kind === other.kind &&
+    one.state === other.state &&
+    one.at === other.at &&
+    one.fault === other.fault &&
+    one.waiting?.until === other.waiting?.until &&
+    one.waiting?.filter === other.waiting?.filter &&
+    shallow(one.variables, other.variables));
+
+/**
+ * The run a flow's canvas shows (see shownRun), as the flow pane draws it. Every push brings a new
+ * object for every run, up to four times a second, so the pane keeps the one it drew for as long as
+ * a new one would draw the same — as useShallow keeps what it selected — and a push that moved
+ * nothing the pane draws draws nothing.
+ */
+function useDrawnRun(flowId: string): FlowRunStatusDto | undefined {
+  const drawn = useRef<FlowRunStatusDto | undefined>(undefined);
+
+  return useFlowStatusStore((state) => {
+    const run = shownRun(state.runs[flowId]);
+    if (!drawnAlike(drawn.current, run)) drawn.current = run;
+    return drawn.current;
+  });
+}
+
+/** The shown run in a line: what it is and where, or how the flow stands with none. */
+function stateLine(flow: FlowDto, deployed: FlowDto | undefined, run: FlowRunStatusDto | undefined, now: number): string {
+  if (!run) return deployed === undefined ? 'Not saved yet' : deployed.enabled ? 'Active · not running' : 'Off';
+
+  const kind = run.kind === 'test' ? 'Test' : 'Active';
+  const at = flow.nodes.find((node) => node.id === run.at);
+
+  switch (run.state) {
+    case 'finished':
+      return `${kind} · finished at End`;
+    case 'stopped':
+      return `${kind} · stopped`;
+    case 'waiting':
+      if (run.waiting?.filter != null) return `${kind} · waiting for a message on ${run.waiting.filter} — send one from Publish`;
+      if (run.waiting?.until != null)
+        return `${kind} · Wait ${(Math.max(0, Date.parse(run.waiting.until) - now) / 1000).toFixed(1)} s`;
+      return `${kind} · waiting`;
+    default:
+      return at ? `${kind} · running at ${specOf(at.type).label}` : `${kind} · running`;
+  }
+}
+
+/**
+ * The run the canvas shows, in its one line (see stateLine). A run that waits for a time counts its
+ * seconds down here as its node does on the canvas: a tenth at a time, and no further than none
+ * left, which it goes on saying until a push says where the run went — ticking on would only draw
+ * the same line ten times a second. Nothing else in the pane ticks, and nothing ticks while the run
+ * waits for anything else.
+ *
+ * The pane keys it by when the wait ends, so a new wait is counted from the time it is then, read
+ * as the wait comes in. The clock it last read may be minutes old — nothing was counting — and a
+ * line worked out from it would say the wait had minutes left until the first tick put it right.
+ */
+function RunLine({ flow, deployed, run }: { flow: FlowDto; deployed: FlowDto | undefined; run: FlowRunStatusDto | undefined }) {
+  const until = run?.state === 'waiting' ? (run.waiting?.until ?? null) : null;
+  const [now, setNow] = useState(() => Date.now());
+  const counting = until !== null && now < Date.parse(until);
+
+  useEffect(() => {
+    if (!counting) return;
+    const timer = setInterval(() => setNow(Date.now()), 100);
+    return () => clearInterval(timer);
+  }, [counting]);
+
+  return <p className={panel.note}>{stateLine(flow, deployed, run, now)}</p>;
+}
+
+type FlowPaneProps = { flow: FlowDto; deployed: FlowDto | undefined; overtaken: boolean; problems: Problems };
+
+function FlowPane({ flow, deployed, overtaken, problems }: FlowPaneProps) {
   const edit = useFlowDraftStore((state) => state.edit);
   const rebase = useFlowDraftStore((state) => state.rebase);
   const discard = useFlowDraftStore((state) => state.discard);
-  // What last stopped the run the canvas shows: an event that ran too many nodes, say.
-  const fault = useFlowStatusStore((state) => shownRun(state.runs[flow.id])?.fault ?? null);
+  // The run the canvas shows: where it is, what it waits for, its variables as they stand, and
+  // what last stopped it — an event that ran too many nodes, say.
+  const run = useDrawnRun(flow.id);
+  // What the variables hold now, while the run goes. A run that is over holds what its variables
+  // ended with, which is not what anything holds now.
+  const holding = isLive(run) ? run?.variables : undefined;
+  const fault = run?.fault ?? null;
   const queryClient = useQueryClient();
   const failures = useContext(Failures);
   const [asking, setAsking] = useState(false);
+  const adder = useRef<HTMLButtonElement>(null);
 
   // Either answer takes the question away, and the keyboard with it. The reader goes to the tab of
   // the flow on screen: this one, or — once a discard has let a flow deleted elsewhere go — the
@@ -161,15 +279,17 @@ function FlowPane({ flow, deployed, running, overtaken, problems }: FlowPaneProp
   };
 
   const remove = useMutation({
-    // A flow that was never deployed has nothing on the server to delete. One the server says it
-    // does not have was deleted on another console since this one last read the list: it is gone
-    // either way, which is what the reader asked for.
+    // Asked of the server even for a flow it never had: a test of the drawing may be running there,
+    // and once the flow has gone from this page nothing is left to press Stop on — the delete is
+    // what stops it. The server says it has no such flow, as it says of one deleted on another
+    // console since this one last read the list: either way the flow is gone, which is what the
+    // reader asked for. And of a flow it never had, nothing it answers keeps the flow here: there is
+    // nothing of the reader's on the server to keep.
     mutationFn: async (id: string) => {
-      if (!deployed) return;
       try {
         await deleteFlow(id);
       } catch (error) {
-        if (!isFlowUnknown(error)) throw error;
+        if (deployed && !isFlowUnknown(error)) throw error;
       }
     },
     onMutate: () => failures.trying('delete'),
@@ -191,15 +311,10 @@ function FlowPane({ flow, deployed, running, overtaken, problems }: FlowPaneProp
     },
   });
 
-  const state = running
-    ? 'Running.'
-    : !deployed
-      ? overtaken
-        ? 'Not on the server.'
-        : 'Never deployed.'
-      : deployed.enabled
-        ? 'Active, not running.'
-        : 'Off.';
+  // Applied to the variables as they are in the draft at the moment of the keystroke, as a node's
+  // settings are, not as they were when this render happened.
+  const editVariables = (change: (variables: FlowVariableDto[]) => FlowVariableDto[]) =>
+    edit(flow, (current) => ({ ...current, variables: change(current.variables) }));
 
   return (
     <>
@@ -228,6 +343,8 @@ function FlowPane({ flow, deployed, running, overtaken, problems }: FlowPaneProp
         </div>
       )}
 
+      {/* The server's verdict on the variables comes here with the flow's other problems, under
+          the flow's key: nothing in the rows below is checked as it is typed. */}
       {flowProblems(flow, problems).map((problem, index) => (
         <p key={index} className={panel.fault}>
           {problem}
@@ -243,21 +360,77 @@ function FlowPane({ flow, deployed, running, overtaken, problems }: FlowPaneProp
         />
       </Field>
 
-      <label className={styles.check}>
-        <input
-          type="checkbox"
-          checked={flow.enabled}
-          onChange={(event) => edit(flow, (current) => ({ ...current, enabled: event.target.checked }))}
-        />
-        Run it once deployed
-      </label>
+      <section className={styles.variables} aria-label="Variables">
+        <h4 className={styles.subTitle}>Variables</h4>
+        {flow.variables.map((variable, index) => {
+          // A row whose name has been cleared is named by its place, as its Name box is, until it
+          // has a name again: "Value of" alone names nothing.
+          const called = variable.name || `variable ${index + 1}`;
 
-      <p className={panel.note}>{state}</p>
+          return (
+            // Keyed by place, as a condition's rows are. A variable has no id, and its name is the
+            // very thing being typed: a row keyed by its name would be a new row at every letter,
+            // and the box being typed into would lose the keyboard.
+            <div key={index} className={styles.variable}>
+              <input
+                className={styles.mono}
+                aria-label={`Name of variable ${index + 1}`}
+                value={variable.name}
+                spellCheck={false}
+                onChange={(event) =>
+                  editVariables((all) => all.map((one, at) => (at === index ? { ...one, name: event.target.value } : one)))
+                }
+              />
+              <input
+                className={styles.mono}
+                aria-label={`Value of ${called}`}
+                value={variable.value}
+                placeholder='90 or ["k1","k2"]'
+                spellCheck={false}
+                onChange={(event) =>
+                  editVariables((all) => all.map((one, at) => (at === index ? { ...one, value: event.target.value } : one)))
+                }
+              />
+              <button
+                type="button"
+                className={panel.subRemove}
+                aria-label={`Remove ${called}`}
+                onClick={() => {
+                  editVariables((all) => all.filter((_, at) => at !== index));
+                  // The last row goes with the button that took it away, and a browser hands the
+                  // keyboard of a button taken out to the body. Add variable is under where the
+                  // row was. A row above the last keeps its place, and the keyboard stays on its
+                  // button, which now takes out the variable that moved up into it.
+                  if (index === flow.variables.length - 1) adder.current?.focus();
+                }}
+              >
+                ×
+              </button>
+              {/* Under the value it started from, after the row's own line, and read in that
+                  order. Asked of the run's own names: a name is any the server takes, and
+                  constructor is one every object answers to. */}
+              {holding !== undefined && Object.hasOwn(holding, variable.name) && (
+                <span className={styles.now}>now {holding[variable.name]}</span>
+              )}
+            </div>
+          );
+        })}
+        <button
+          ref={adder}
+          type="button"
+          className="ghost"
+          onClick={() => editVariables((all) => [...all, { name: nextVariable(all), value: '' }])}
+        >
+          Add variable
+        </button>
+        <p className={panel.hint}>
+          A run starts with these values; Set changes them for that run. Read one as {'{{var.name}}'}, or as var.name in a
+          field.
+        </p>
+      </section>
+
+      <RunLine key={run?.waiting?.until ?? ''} flow={flow} deployed={deployed} run={run} />
       {fault !== null && <p className={panel.fault}>{fault}</p>}
-
-      {flow.nodes.length === 0 && (
-        <p className={panel.hint}>Add a trigger from the left, wire it to an action, and press ▶ Test.</p>
-      )}
 
       {!asking ? (
         <div className={panel.actions}>
@@ -269,10 +442,10 @@ function FlowPane({ flow, deployed, running, overtaken, problems }: FlowPaneProp
         <div className={styles.confirm}>
           <p>
             {deployed
-              ? `Delete ${flow.name}? It stops running.`
+              ? `Delete ${flow.name}? ${deployed.enabled ? 'It stops running.' : 'It is saved switched off.'}`
               : overtaken
                 ? `Drop ${flow.name}? It is no longer on the server.`
-                : `Drop ${flow.name}? It was never deployed.`}
+                : `Drop ${flow.name}? It was never saved.`}
           </p>
           <div className={panel.actions}>
             <button type="button" className="ghost" onClick={() => setAsking(false)}>

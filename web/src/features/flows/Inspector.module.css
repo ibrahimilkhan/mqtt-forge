@@ -66,6 +66,47 @@
 
 .standing { margin-top: 14px; }
 
+/* The flow's variables, under its name: a heading, a row for each, and the way to add one. */
+.variables { margin-bottom: 4px; }
+
+/* A variable's name and the value a run starts with, side by side — the value, the one more likely
+   to be long, given the wider box — and the mark that takes the row out; under the value, while a
+   run goes, what the variable holds now. */
+.variable {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  gap: 3px 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+/* What the variable holds now, under what it starts with: quieter than the boxes, being the run's
+   and not the reader's to edit. On a line of its own, because the pane has some 270 pixels across:
+   beside the boxes, a list of three keys squeezed them to nothing. A longer value breaks anywhere,
+   as the pane's other JSON does, rather than run past its edge. */
+.now {
+  grid-column: 2 / -1;
+  font-family: var(--mono);
+  font-size: var(--t-nano);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.fills { margin-top: 14px; }
+
+/* Each placeholder beside what it gives. Every placeholder and its sentence stand in a <div> of
+   their own, as a <dl> may hold them; the <div> gives way to its two, so they line up in the
+   list's two columns. */
+.placeholders {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 10px;
+  margin: 0;
+}
+.placeholders > div { display: contents; }
+.placeholders dt { margin: 0; font-size: var(--t-micro); }
+.placeholders dd { margin: 0; font-size: var(--t-micro); color: var(--muted); }
+
 .subTitle {
   margin: 0 0 6px;
   font-family: var(--mono);

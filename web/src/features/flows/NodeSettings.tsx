@@ -3,7 +3,7 @@ import { QosSelect } from '../../components/QosSelect';
 import { Segmented } from '../../components/Segmented';
 import panel from '../../styles/panel.module.css';
 import type { FlowDto, FlowNodeDto, FlowsDto } from '../../types/api';
-import { IF_TESTS, isNodeType, levelOf, SEVERITIES, specOf, textOf } from './nodeTypes';
+import { IF_TESTS, isNodeType, levelOf, SEVERITIES, textOf } from './nodeTypes';
 import styles from './Inspector.module.css';
 
 /** What the server says about this host that the forms need: whether webhooks may be sent. */
@@ -27,6 +27,9 @@ type Props = {
  * A box a choice hides or turns off — an If's value under exists, a For's times while it runs
  * forever — keeps what it held. The compiler does not read a setting the choice does not ask for,
  * so nothing is lost by keeping it, and a reader who changes their mind back finds it still there.
+ *
+ * What the node does is said over the form, by the pane (see the spec's help), so a form says only
+ * what is set here.
  */
 export function NodeSettings({ flow, node, set, facts }: Props) {
   const config = node.config;
@@ -78,10 +81,9 @@ export function NodeSettings({ flow, node, set, facts }: Props) {
 
   switch (known) {
     case 'start':
-      return <p className={panel.note}>Every run begins here. It has no settings.</p>;
-
     case 'end':
-      return <p className={panel.note}>A run that gets here is finished.</p>;
+    case 'debug':
+      return <p className={panel.note}>It has no settings.</p>;
 
     case 'mqttIn':
       return (
@@ -163,9 +165,6 @@ export function NodeSettings({ flow, node, set, facts }: Props) {
         </>
       );
 
-    case 'debug':
-      return <p className={panel.note}>Prints every message it is given in Debug, under the canvas.</p>;
-
     case 'alarmRaise':
       return (
         <>
@@ -215,8 +214,9 @@ export function NodeSettings({ flow, node, set, facts }: Props) {
     default:
       // Every type this build knows has its case above, and this line stops the build when one
       // does not: only null — a type it does not know — may reach it. Such a node's settings are
-      // kept as they came, untouched, and Remove node under this still takes it out.
+      // kept as they came, untouched, which its help over this already says, and Remove node
+      // under this still takes it out. There is nothing here to set.
       known satisfies null;
-      return <p className={panel.note}>{specOf(node.type).help}</p>;
+      return null;
   }
 }

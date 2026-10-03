@@ -22,6 +22,18 @@ describe('a flow alarm', () => {
     expect(isFlowAlarm('4f1c2a9be8d74e0f9a63c5d1b2e7f480')).toBe(false);
   });
 
+  // A test run's alarms are its own, apart from the active run's: the server names them
+  // `flowtest-{flowId}-{nodeId}`. They came from the flow all the same.
+  it('is told by a test run\'s rule id too, and by no other start', () => {
+    expect(isFlowAlarm('flowtest-f1-hot')).toBe(true);
+    expect(alarmSource('flowtest-f1-hot', [holding('f1', 'hot')])).toEqual({ flowId: 'f1', nodeId: 'hot' });
+
+    for (const ruleId of ['flows-f1-hot', 'test-f1-hot', 'flowtestf1-hot']) {
+      expect(isFlowAlarm(ruleId)).toBe(false);
+      expect(alarmSource(ruleId, [holding('f1', 'hot')])).toBeNull();
+    }
+  });
+
   // An id may itself hold a '-', so the rule id is read against the flows there are, not split.
   it('is traced to the flow and the Raise alarm node it came from, whatever their ids hold', () => {
     const flows = [holding('boiler', 'hot'), holding('boiler-2', 'hot')];

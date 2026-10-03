@@ -87,6 +87,13 @@ export function DebugStrip({ flow }: { flow: FlowDto }) {
                 <time className={styles.time} dateTime={entry.at}>
                   {clock(entry.at)}
                 </time>
+                {/* A test runs beside the flow at work, and both print here: a test's lines say so,
+                    or a reader could not tell what the test did from what the flow is doing. */}
+                {entry.test && (
+                  <span className={styles.test} title="From a test run">
+                    test
+                  </span>
+                )}
                 <span className={styles.node}>{labelOf(entry.nodeId)}</span>
                 {/* Said in a word as well as in the line's colour, which is all some readers would
                     have to tell an error from what a Debug node printed. */}
