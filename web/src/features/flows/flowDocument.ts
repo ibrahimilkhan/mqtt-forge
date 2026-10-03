@@ -152,11 +152,21 @@ export type Box = { width: number; height: number };
 export type BoxOf = (type: string) => Box;
 
 /**
- * How the palette reckons the nodes it puts down, handed in by whoever draws them: the room each
- * takes (boxOf), how tall each is drawn, to stand a node level with the one it follows, and the room
- * it keeps clear round a node it puts down.
+ * Whether two nodes, standing where `flow` has them and wired as it has them, crowd each other as
+ * they are drawn: nearer than the room the palette keeps between nodes, or a name written beside a
+ * port of the one over the other, or in front of one of its ports — where no wire could come in or go
+ * out but through the name. Handed in by whoever draws the nodes, which knows where it writes the
+ * names and stands the ports.
  */
-export type Measure = { boxOf: BoxOf; heightOf: (type: string) => number; room: number };
+export type Crowds = (flow: FlowDto, a: FlowNodeDto, b: FlowNodeDto) => boolean;
+
+/**
+ * How the palette reckons the nodes it puts down, handed in by whoever draws them: the room each
+ * takes (boxOf), how tall each is drawn, to stand a node level with the one it follows, the room it
+ * keeps clear round a node it puts down, whether two nodes crowd each other (crowds), and how far
+ * past its box anything of a node's stands that another node is kept clear of (reach).
+ */
+export type Measure = { boxOf: BoxOf; heightOf: (type: string) => number; room: number; crowds: Crowds; reach: number };
 
 /**
  * How far one node's right edge stands from the next one's left along a row, as the examples are
@@ -195,20 +205,25 @@ const apart = (at: Place, box: Box, node: FlowNodeDto, other: Box, room: number)
  * That place is often taken, by the node the wire went on to: a new flow's End stands where the
  * first step goes. It used to step the node a row down, and a chain clicked together from the Start
  * went down a row with each click, its last wire going back up to the End. It makes room instead: the
- * node the wire led to, and everything a run gets to from it — but over a return into a loop's next,
- * which goes back — that stands at or right of the place moves right by the new node's width and the
- * gap, as a reader pushing the rest of the chain along would. So a chain stays on its row and the End
- * goes along at its end. When what stands there is something else, which moving the rest of the chain
- * would not clear, nothing moves, and the node goes in the first clear place from there (freeSpot).
+ * node the wire led to, and everything a run gets to from it (see onwardFrom), that stands at or right
+ * of the place moves right by the new node's width and the gap, as a reader pushing the rest of the
+ * chain along would. So a chain stays on its row and the End goes along at its end. When what stands
+ * there is something else, which moving the rest of the chain would not clear, nothing moves, and the
+ * node goes in the first clear place from there (freeSpot).
+ *
+ * And what moves never lands on what stays. A node the reader put down on the row ahead — the chain's
+ * End pushed along onto it — or a step of another branch standing where the chain goes: whatever a
+ * moved node would crowd (see Crowds) moves along too, with what a run gets to from it standing at or
+ * right of it, until nothing moved crowds anything that stays.
  */
 export function placeAfter(
   flow: FlowDto,
   nodeId: string,
   port: string,
-  type: string,
+  type: FlowNodeType,
   measure: Measure,
 ): { at: Place; moved: Record<string, Place> } {
-  const { boxOf, heightOf, room } = measure;
+  const { boxOf, heightOf, crowds } = measure;
   const node = flow.nodes.find((one) => one.id === nodeId)!;
   const middle = node.y + heightOf(node.type) / 2;
   const wanted =
@@ -217,17 +232,89 @@ export function placeAfter(
       : { x: node.x + boxOf(node.type).width + GAP, y: middle - heightOf(type) / 2 };
   const at = { x: Math.round(wanted.x), y: Math.round(wanted.y) };
 
-  const box = boxOf(type);
-  const inTheWay = flow.nodes.filter((one) => !apart(at, box, one, boxOf(one.type), room));
+  // The flow as the click leaves it, but for what moves: the new node at the place, wired as it will
+  // be, so that every port's name says what it will say there — a way out the new node takes the wire
+  // of is no longer one that wants a wire.
+  const wire = flow.edges.find((edge) => edge.from === nodeId && edge.fromPort === port);
+  const drawn = (wire ? insertOnWire(flow, wire.id, type, at, PLACING) : insertAfter(flow, nodeId, type, at, PLACING)) ?? withNode(flow, type, at, PLACING);
+  const placed = drawn.nodes.find((one) => one.id === PLACING)!;
+  const inTheWay = flow.nodes.filter((one) => crowds(drawn, placed, one));
   if (inTheWay.length === 0) return { at, moved: {} };
 
-  const led = flow.edges.find((edge) => edge.from === nodeId && edge.fromPort === port)?.to;
+  const led = wire?.to;
   const wiring = wiringOf(flow.nodes, flow.edges);
-  const onward = led === undefined ? new Set<string>() : walk(wiring.outs, [led], (edge) => !isReturn(wiring, edge));
-  const along = flow.nodes.filter((one) => onward.has(one.id) && one.x >= at.x);
-  if (!inTheWay.every((one) => along.includes(one))) return { at: freeSpot(flow, at, type, boxOf, 1, room), moved: {} };
+  const byId = new Map(flow.nodes.map((one) => [one.id, one]));
+  const ahead = (seed: string, from: number) =>
+    [...onwardFrom(wiring, seed)].flatMap((id) => {
+      const one = byId.get(id);
+      return one !== undefined && one.x >= from ? [one] : [];
+    });
 
-  return { at, moved: Object.fromEntries(along.map((one) => [one.id, { x: one.x + box.width + GAP, y: one.y }])) };
+  // The node the wire led to moves along too when it stands in the way a little left of the place —
+  // put under the foot by hand — and far enough that it stands GAP past the new node, as the rest do.
+  // Left where it stood, the new node went past it, and the wire to the new node through it.
+  const moving = new Set(led === undefined ? [] : ahead(led, at.x));
+  for (const one of inTheWay) if (one.id === led) for (const pushed of [one, ...ahead(one.id, one.x)]) moving.add(pushed);
+
+  // Something else stands there. Beside a node, the first clear place down from there: further along
+  // the row, the wire to it would run through what stands in the way. Under a foot, the first clear
+  // place along the row under: what stands in the way stands under the foot, and a node put under it
+  // had its wire go round it.
+  if (!inTheWay.every((one) => moving.has(one)))
+    return { at: freeSpot(flow, at, type, boxOf, sideOf(port) === 'bottom' ? ALONG : 1, measure.room, measure), moved: {} };
+
+  const by = Math.max(boxOf(type).width + GAP, ...inTheWay.map((one) => at.x + boxOf(type).width + GAP - one.x));
+  const landing = [...moving];
+  while (landing.length > 0) {
+    const mover = landing.pop()!;
+    const lands = { ...mover, x: mover.x + by };
+    for (const one of flow.nodes)
+      if (!moving.has(one) && crowds(drawn, lands, one))
+        for (const pushed of [one, ...ahead(one.id, one.x)])
+          if (!moving.has(pushed)) {
+            moving.add(pushed);
+            landing.push(pushed);
+          }
+  }
+
+  return { at, moved: Object.fromEntries([...moving].map((one) => [one.id, { x: one.x + by, y: one.y }])) };
+}
+
+/** How many places along the row under a foot placeAfter looks for a clear one, before the rows under that. */
+const ALONG = 3;
+
+/** What the node being put down is called while placeAfter reckons where: no id the server takes, so none a flow has. */
+const PLACING = '#placing';
+
+/**
+ * Everything a run gets to from `seed`, `seed` with it. A return into a loop's next goes back, to a
+ * node that comes before; but the run does not end there: when the loop is done it goes on from the
+ * loop's done, to whatever follows the loop, which stands further along. Stopping at the return, a
+ * node put into a loop's body moved the rest of the body along onto the End after the loop, which
+ * stayed where it was.
+ */
+function onwardFrom(wiring: Wiring, seed: string): Set<string> {
+  const found = new Set([seed]);
+  const waiting = [seed];
+  const finished = new Set<string>();
+  const reach = (id: string) => {
+    if (found.has(id)) return;
+    found.add(id);
+    waiting.push(id);
+  };
+
+  while (waiting.length > 0)
+    for (const edge of wiring.outs.get(waiting.pop()!) ?? []) {
+      if (!isReturn(wiring, edge)) {
+        reach(edge.to);
+        continue;
+      }
+      if (finished.has(edge.to)) continue;
+      finished.add(edge.to);
+      for (const done of wiring.outs.get(edge.to) ?? []) if (done.fromPort === 'done' && done.to !== edge.to) reach(done.to);
+    }
+
+  return found;
 }
 
 /**
@@ -255,9 +342,14 @@ export function placesInView(middle: { x: number; y: number }, right: number, bo
  * (see addNode). Reckoned from up to half a pixel short of it, the node just put down reached that
  * far into the next place along, and every add passed over a place that was free.
  *
+ * With `crowding`, nothing of one may stand in the way of the other either (see Crowds): a node put
+ * free has every way out it has wanting a wire, and a wire me written past its way out stood in front
+ * of the way in of the node 56 along, where no wire could come in without running through the name.
+ *
  * A node stands in the way of only so many places — as many across as its box, the new one's and
- * the gap on either side reach, and as many down — so one of the first that many past them all is
- * free; the count stops the search at that, whatever the flow holds.
+ * the gap on either side reach, with how far their names reach past them, and as many down — so one
+ * of the first that many past them all is free; the count stops the search at that, whatever the
+ * flow holds.
  */
 export function freeSpot(
   flow: FlowDto,
@@ -266,10 +358,15 @@ export function freeSpot(
   boxOf: BoxOf,
   across: number,
   gap: number,
+  crowding?: Pick<Measure, 'crowds' | 'reach'>,
 ): { x: number; y: number } {
   const box = boxOf(type);
   const first = { x: Math.round(start.x), y: Math.round(start.y) };
-  const clear = (x: number, y: number) => flow.nodes.every((node) => apart({ x, y }, box, node, boxOf(node.type), gap));
+  const clear = (x: number, y: number) => {
+    if (!flow.nodes.every((node) => apart({ x, y }, box, node, boxOf(node.type), gap))) return false;
+    const put: FlowNodeDto = { id: PLACING, type: type as FlowNodeType, x, y, config: {} };
+    return crowding === undefined || flow.nodes.every((node) => !crowding.crowds(flow, put, node));
+  };
 
   const columns = Math.max(1, Math.floor(across));
   const place = (index: number) => ({
@@ -277,12 +374,13 @@ export function freeSpot(
     y: first.y + Math.floor(index / columns) * (box.height + gap),
   });
 
+  const room = gap + (crowding?.reach ?? 0);
   const reach = (span: number, step: number) => Math.floor(span / step) + 1;
   const tries = flow.nodes.reduce((count, node) => {
     const other = boxOf(node.type);
     return (
       count +
-      reach(other.width + box.width + 2 * gap, box.width + gap) * reach(other.height + box.height + 2 * gap, box.height + gap)
+      reach(other.width + box.width + 2 * room, box.width + gap) * reach(other.height + box.height + 2 * room, box.height + gap)
     );
   }, 0);
 

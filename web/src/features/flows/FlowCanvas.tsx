@@ -36,7 +36,7 @@ import {
 import { useShallow } from 'zustand/react/shallow';
 import { isLive, nodeKey, shownRun, useFlowStatusStore, type FlowStatusState } from '../../stores/flowStatusStore';
 import type { FlowDto, FlowNodeDto } from '../../types/api';
-import { backPath, MARGIN, namesOf, routes, type End, type Leg, type Placed, type Route } from './backWires';
+import { backPath, MARGIN, NAME_ROOM, namesOf, routes, type Box, type End, type Leg, type Placed, type Route } from './backWires';
 import {
   addNode,
   canConnect,
@@ -54,8 +54,10 @@ import {
 } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
 import {
+  isLoop,
   isNodeType,
   nameOf,
+  NODE_SPECS,
   portsOf,
   sideOf,
   specOf,
@@ -103,17 +105,104 @@ export const STEP_HEIGHT = 71.52;
 export const DECISION_WIDTH = NODE_WIDTH + 64;
 export const DECISION_HEIGHT = 128;
 
+/** The room a node of each type takes as the palette reckons it: an If in its own box, every other node in a step's with some to spare under it. */
+const boxOf = (type: string) =>
+  specOf(type).shape === 'decision' ? { width: DECISION_WIDTH, height: DECISION_HEIGHT } : { width: NODE_WIDTH, height: NODE_HEIGHT };
+
+/** How tall a node of each type is drawn. */
+const heightOf = (type: string) => (specOf(type).shape === 'decision' ? DECISION_HEIGHT : STEP_HEIGHT);
+
+/**
+ * The room the palette keeps clear round a node it puts down: a wire's way between it and the next
+ * node, as the routes run one under a node and over another (backWires.ts), past the names of the
+ * ports there. At 24, a node put free under another stood 32 under it, the name of its next a few
+ * pixels under the name of the other's foot: a wire out of that foot had no way out of the gap, and
+ * with a loop's return run along it, no way at all.
+ */
+const ROOM = 56;
+
+/**
+ * The names the canvas writes beside a node's ports, where the routes reckon them (namesOf), for the
+ * flow it is in: its ways out with no wire say so, and a loop nothing comes back to says so at its
+ * next. A node not in the flow yet is one being put down free: every way out it has wants a wire but
+ * a loop's body, which comes back to the loop's own next (see addNode).
+ */
+function namesBeside(flow: FlowDto, node: FlowNodeDto): Box[] {
+  const ports = portsOf(node, flow.edges);
+  const open = unwiredOuts(flow);
+  const unwired = flow.nodes.some((one) => one.id === node.id)
+    ? [...ports.outs.filter((port) => open.has(`${node.id}:${port}`)), ...(noReturn(flow).has(node.id) ? ['next'] : [])]
+    : ports.outs.filter((port) => !(isLoop(node.type) && port === 'body'));
+  return namesOf(drawnAt(node), node.type, ports, unwired);
+}
+
+/** Where a node stands and how big it is drawn. */
+const drawnAt = (node: FlowNodeDto): Box => ({ x: node.x, y: node.y, width: boxOf(node.type).width, height: heightOf(node.type) });
+
+/**
+ * The mouths of a node's ports: the stretch in front of each, MARGIN long and NAME_ROOM either side of
+ * the wire, that its wire runs through as it goes in or comes out, there as the stylesheet stands the
+ * port — at the middle of its side, on the parallelogram's slanted sides 5% in. A node of a type this
+ * build does not know spreads its ports along their sides, and has no palette to put it down: it has
+ * none here.
+ */
+function mouthsOf(flow: FlowDto, node: FlowNodeDto): Box[] {
+  if (!isNodeType(node.type)) return [];
+  const { x, y, width, height } = drawnAt(node);
+  const slant = specOf(node.type).shape === 'input' ? 0.05 * (width - 2) : 0;
+  const ports = portsOf(node, flow.edges);
+  const mouth = (side: Side): Box => {
+    switch (side) {
+      case 'left':
+        return { x: x + 1 + slant - 5 - MARGIN, y: y + height / 2 - NAME_ROOM, width: MARGIN, height: 2 * NAME_ROOM };
+      case 'right':
+        return { x: x + width - 1 - slant + 5, y: y + height / 2 - NAME_ROOM, width: MARGIN, height: 2 * NAME_ROOM };
+      case 'top':
+        return { x: x + width / 2 - NAME_ROOM, y: y + 1 - 5 - MARGIN, width: 2 * NAME_ROOM, height: MARGIN };
+      case 'bottom':
+        return { x: x + width / 2 - NAME_ROOM, y: y + height - 1 + 5, width: 2 * NAME_ROOM, height: MARGIN };
+    }
+  };
+  return [...ports.ins.map((port) => mouth(sideOf(port, false))), ...ports.outs.map((port) => mouth(sideOf(port, true)))];
+}
+
+/** Whether two boxes come within `room` of each other. */
+const near = (a: Box, b: Box, room: number) =>
+  a.x < b.x + b.width + room && b.x < a.x + a.width + room && a.y < b.y + b.height + room && b.y < a.y + a.height + room;
+
+/**
+ * Whether two nodes crowd each other as the canvas draws them (see Crowds): their boxes within ROOM,
+ * or a name of either over the other or in a mouth of its ports.
+ */
+function crowds(flow: FlowDto, a: FlowNodeDto, b: FlowNodeDto): boolean {
+  if (near({ x: a.x, y: a.y, ...boxOf(a.type) }, { x: b.x, y: b.y, ...boxOf(b.type) }, ROOM)) return true;
+  const over = (names: readonly Box[], other: FlowNodeDto) => {
+    const [box, mouths] = [drawnAt(other), mouthsOf(flow, other)];
+    return names.some((name) => near(name, box, NAME_ROOM) || mouths.some((mouth) => near(name, mouth, 0)));
+  };
+  return over(namesBeside(flow, a), b) || over(namesBeside(flow, b), a);
+}
+
+/** How far past its box a node's names and the mouths of its ports stand at the most: its ways out with no wire, wire me and all. */
+const REACH = Math.max(
+  MARGIN + NAME_ROOM,
+  ...Object.values(NODE_SPECS).flatMap((spec) => {
+    const node: FlowNodeDto = { id: '', type: spec.type as FlowNodeDto['type'], x: 0, y: 0, config: {} };
+    const box = drawnAt(node);
+    const alone: FlowDto = { id: '', name: '', enabled: false, variables: [], nodes: [], edges: [] };
+    return namesBeside(alone, node).map((name) =>
+      Math.max(-name.x, -name.y, name.x + name.width - box.width, name.y + name.height - box.height) + NAME_ROOM,
+    );
+  }),
+);
+
 /**
  * The nodes as the palette reckons them when it puts one down (see placeAfter and freeSpot): an If
  * in its own box, every other node in a step's with some to spare under it; each as tall as it is
- * drawn, to stand a node level with the one it follows; and 24 kept clear round the node put down.
+ * drawn, to stand a node level with the one it follows; ROOM kept clear round the node put down; and
+ * none of it crowding another node (crowds), as far as REACH past its box.
  */
-export const MEASURE: Measure = {
-  boxOf: (type) =>
-    specOf(type).shape === 'decision' ? { width: DECISION_WIDTH, height: DECISION_HEIGHT } : { width: NODE_WIDTH, height: NODE_HEIGHT },
-  heightOf: (type) => (specOf(type).shape === 'decision' ? DECISION_HEIGHT : STEP_HEIGHT),
-  room: 24,
-};
+export const MEASURE: Measure = { boxOf, heightOf, room: ROOM, crowds, reach: REACH };
 
 /**
  * The sizes, where the stylesheet reads them: the If's as well, for the same reason as the width; and

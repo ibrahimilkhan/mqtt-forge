@@ -27,7 +27,7 @@ import {
   type Wire,
 } from './flowDocument';
 import { exampleFlows } from './examples';
-import { DECISION_HEIGHT, DECISION_WIDTH, NODE_WIDTH, STEP_HEIGHT } from './FlowCanvas';
+import { DECISION_HEIGHT, DECISION_WIDTH, MEASURE, NODE_WIDTH, STEP_HEIGHT } from './FlowCanvas';
 import { NODE_SPECS, sideOf } from './nodeTypes';
 import { routedIn, wrongWith } from './wireTestbed';
 
@@ -340,6 +340,20 @@ describe('flow document', () => {
       for (const id of ['a', 'b', 'c', 'd']) flow = addNode(flow, 'debug', freeSpot(flow, start, 'debug', steps, 3, gap), id);
 
       expect(flow.nodes.map(({ x, y }) => [x, y])).toEqual([[101, 51], [313, 51], [525, 51], [101, 155]]);
+    });
+
+    // A Publish put free has its way out wanting a wire, and says so beside it: 56 left of the End,
+    // level with its way in, that wire me stood right in front of the End's way in.
+    it('keeps the names of the node it puts down out of the way of the ports round it', () => {
+      const ending = addNode(bare(), 'end', { x: 644, y: 288 }, 'end');
+      const start = { x: 375, y: 302 };
+      const spot = freeSpot(ending, start, 'publish', MEASURE.boxOf, 1, MEASURE.room, MEASURE);
+      const put: FlowNodeDto = { id: 'put', type: 'publish', x: spot.x, y: spot.y, config: {} };
+
+      expect(freeSpot(ending, start, 'publish', MEASURE.boxOf, 1, MEASURE.room)).toEqual(start);
+      expect(MEASURE.crowds(ending, { ...put, ...start }, ending.nodes[0])).toBe(true);
+      expect(spot).not.toEqual(start);
+      expect(MEASURE.crowds(ending, put, ending.nodes[0])).toBe(false);
     });
 
     // As many to a row as fit between the middle of the view and its right edge. The page in jsdom

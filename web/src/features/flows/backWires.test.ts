@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { FlowDto, FlowNodeType } from '../../types/api';
 import { MARGIN, routes, wayOf, type End } from './backWires';
 import { exampleFlows } from './examples';
-import { emptyFlow } from './flowDocument';
+import { emptyFlow, GAP } from './flowDocument';
 import { clicked, drawnAs, drawnBox, overlapsIn, routedIn, wrongWith, type Drawn } from './wireTestbed';
 
 /**
@@ -280,12 +280,15 @@ describe('a wire drawn round, in the drawings the review found wanting', () => {
 
 /**
  * The drawings a review clicking at random found going wrong, each made by the palette's own clicks:
- * a route that fell back to the curve, or to a way into its port through the node before it, and a
- * curve from a node put on a foot cutting through the row above. Each of its wires now runs clear.
+ * a node moved to make room landing on one that stayed, a route that fell back to the curve, or to a
+ * way into its port through the node before it, and a curve from a node put on a foot cutting through
+ * the row above. Each now stands clear, and its wires run clear.
  */
 describe('the drawings clicked at random that went wrong', () => {
   const fresh = () => ({ ...emptyFlow('Flow 1'), id: 'f1' });
   const wireOf = (flow: FlowDto, from: string, port: string) => flow.edges.find((edge) => edge.from === from && edge.fromPort === port)!.id;
+  const nodeOf = (flow: FlowDto, id: string) => flow.nodes.find((node) => node.id === id)!;
+  const endOf = (flow: FlowDto) => flow.nodes.find((node) => node.type === 'end')!;
 
   /** A For after the Start, a Debug on its body and a Publish after the Debug: a body of two. */
   const twoStepBody = () => {
@@ -295,6 +298,21 @@ describe('the drawings clicked at random that went wrong', () => {
   };
 
   const drawings = {
+    // The walk forward stopped at the return into the loop, so what the loop's done leads to stayed.
+    'a body of two, its loop’s body picked and MQTT in clicked': (() => {
+      const flow = twoStepBody();
+      return clicked(flow, { wire: wireOf(flow, 'loop', 'body') }, 'mqttIn', 'read');
+    })(),
+    'a For with an empty body, a For on it, and a For on the outer body: loops nested by clicking': (() => {
+      let flow = clicked(fresh(), { node: 'start' }, 'for', 'outer');
+      flow = clicked(flow, { wire: wireOf(flow, 'outer', 'body') }, 'for', 'inner');
+      return clicked(flow, { wire: wireOf(flow, 'outer', 'body') }, 'for', 'first');
+    })(),
+    'a Debug dropped on the row past the End, then an If clicked after MQTT in': (() => {
+      const flow = clicked(fresh(), { node: 'start' }, 'mqttIn', 'read');
+      const dropped = { ...flow, nodes: [...flow.nodes, { id: 'loose', type: 'debug' as const, x: endOf(flow).x + 300, y: 120, config: {} }] };
+      return clicked(dropped, { node: 'read' }, 'if', 'test');
+    })(),
     // The second loop's done had no room to come up beside the End, and fell back to the curve.
     'a For after the Start, its done picked and a For clicked: a loop after a loop': (() => {
       const flow = clicked(fresh(), { node: 'start' }, 'for', 'one');
@@ -327,11 +345,38 @@ describe('the drawings clicked at random that went wrong', () => {
     expect([...overlapsIn(flow), ...wrongWith(flow)]).toEqual([]);
   });
 
+  it('moves what follows a loop along with its body when a node goes into the body', () => {
+    const before = twoStepBody();
+    const after = drawings['a body of two, its loop’s body picked and MQTT in clicked'];
+
+    // The body's last step moved along by a step and a gap, and the End after the loop with it.
+    expect(nodeOf(after, 'send').x).toBe(nodeOf(before, 'send').x + drawnBox('publish').width + GAP);
+    expect(endOf(after).x).toBe(endOf(before).x + drawnBox('mqttIn').width + GAP);
+  });
+
+  it('moves a node standing where what moves would land along too, on its row', () => {
+    const flow = drawings['a Debug dropped on the row past the End, then an If clicked after MQTT in'];
+
+    expect(nodeOf(flow, 'loose').y).toBe(120);
+    expect(nodeOf(flow, 'loose').x).toBeGreaterThan(endOf(flow).x + drawnBox('end').width);
+  });
+
   it('draws round the wire out of a loop after a loop, and the curve from a node on a foot that would cut the row above', () => {
     const loops = drawings['a For after the Start, its done picked and a For clicked: a loop after a loop'];
     const after = drawings['a body of two, its loop’s done picked and Debug clicked'];
 
     expect(routeOf(loops, wireOf(loops, 'two', 'done'))).toBeDefined();
     expect(routeOf(after, wireOf(after, 'after', 'out'))).toBeDefined();
+  });
+
+  it('puts a node on a foot along the row under it when what stands under the foot is in the way', () => {
+    const watch = exampleFlows()[1];
+    const flow = drawings['the watch, its Raise alarm’s already up picked, Debug clicked'];
+    const note = nodeOf(flow, 'note');
+    const cool = nodeOf(watch, 'cool');
+
+    // On the Clear alarm's row, past it: the wire goes down, along and in, not round the Clear alarm.
+    expect(note.y).toBe(cool.y);
+    expect(note.x).toBeGreaterThan(cool.x + drawnBox('alarmClear').width);
   });
 });

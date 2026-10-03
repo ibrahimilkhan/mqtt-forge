@@ -358,7 +358,7 @@ function Page() {
     const middle = screenToFlowPosition({ x: box ? box.left + box.width / 2 : 0, y: box ? box.top + box.height / 2 : 0 });
     const right = screenToFlowPosition({ x: box ? box.right : 0, y: 0 }).x;
     const { start, across } = placesInView(middle, right, MEASURE.boxOf(type), MEASURE.room);
-    const at = freeSpot(shown, start, type, MEASURE.boxOf, across, MEASURE.room);
+    const at = freeSpot(shown, start, type, MEASURE.boxOf, across, MEASURE.room, MEASURE);
     return [at, (flow) => addNode(flow, type, at, id)];
   };
 
