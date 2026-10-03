@@ -199,6 +199,14 @@
 
 /* ---- ports ---- */
 
+/* A port stands in the middle of its side, unless --along puts it somewhere else on it: a node of a
+   type this build does not know can have any number of ports on one side, and spreads them out
+   (FlowCanvas.tsx). Its name goes with it. */
+.handle[data-side='left'],
+.handle[data-side='right'] { top: var(--along, 50%); }
+.handle[data-side='top'],
+.handle[data-side='bottom'] { left: var(--along, 50%); }
+
 /* The slanted sides of the input's parallelogram are half-way in at mid-height. */
 .node[data-shape='input'] .handle[data-side='left'] { left: 5%; }
 .node[data-shape='input'] .handle[data-side='right'] { right: 5%; left: auto; }
@@ -215,10 +223,10 @@
   white-space: nowrap;
   pointer-events: none;
 }
-.port[data-side='right'] { left: calc(100% + 6px); bottom: calc(50% + 6px); }
-.port[data-side='bottom'] { left: calc(50% + 9px); top: calc(100% + 3px); }
-.port[data-side='top'] { left: calc(50% + 9px); bottom: calc(100% + 3px); }
-.port[data-side='left'] { right: calc(100% + 6px); bottom: calc(50% + 6px); }
+.port[data-side='right'] { left: calc(100% + 6px); bottom: calc(100% - var(--along, 50%) + 6px); }
+.port[data-side='bottom'] { left: calc(var(--along, 50%) + 9px); top: calc(100% + 3px); }
+.port[data-side='top'] { left: calc(var(--along, 50%) + 9px); bottom: calc(100% + 3px); }
+.port[data-side='left'] { right: calc(100% + 6px); bottom: calc(100% - var(--along, 50%) + 6px); }
 .port[data-unwired] { color: var(--fault); }
 
 /* ---- a wire ---- */

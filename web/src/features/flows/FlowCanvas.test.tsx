@@ -1,5 +1,6 @@
 import { ReactFlowProvider, useStoreApi } from '@xyflow/react';
-import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { Profiler } from 'react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nodeKey, useFlowStatusStore } from '../../stores/flowStatusStore';
 import { renderWithClient as render } from '../../test/renderWithClient';
@@ -7,7 +8,7 @@ import type { FlowDto, FlowNodeStatusDto, FlowStatusDto, FlowWaitingDto } from '
 import { forgetDrafts, runOf, standInForTheBrowser, withoutComments } from './canvasTestbed';
 import { DRAG_TYPE, FlowCanvas } from './FlowCanvas';
 import sheet from './FlowCanvas.module.css?raw';
-import { connect, removeEdges, setConfig, type Problems } from './flowDocument';
+import { connect, moveNodes, removeEdges, setConfig, type Problems } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
 import { NODE_SPECS } from './nodeTypes';
 
@@ -140,6 +141,90 @@ describe('flow canvas', () => {
     expect(port('fn', 'in')).not.toBeNull();
     expect(document.querySelectorAll('.react-flow__handle[data-nodeid="fn"]')).toHaveLength(1);
     expect(screen.getByLabelText('Edge from test to fn')).toBeInTheDocument();
+  });
+
+  // A node of a type this build does not know takes its ports from its wires, so it can have any
+  // number on one side — here two ways in on the left and two ways out on the right. Each stands at
+  // a place of its own along its side, its name beside it, so no two are drawn as one; a type this
+  // build knows has one port to a side, in the middle of it.
+  it('spreads along their side the ports of a node of a type it does not know', async () => {
+    draw({
+      ...button,
+      nodes: [...button.nodes, { id: 'fn', type: 'switch', x: 450, y: -80, config: {} }],
+      edges: [
+        button.edges[0],
+        { id: 'e2', from: 'test', fromPort: 'yes', to: 'fn', toPort: 'in' },
+        { id: 'e3', from: 'test', fromPort: 'no', to: 'fn', toPort: 'reset' },
+        { id: 'e4', from: 'fn', fromPort: 'hot', to: 'end', toPort: 'in' },
+        { id: 'e5', from: 'fn', fromPort: 'cold', to: 'end', toPort: 'in' },
+      ],
+    });
+    await screen.findByText('switch');
+    const along = (element: HTMLElement) => element.style.getPropertyValue('--along');
+
+    expect(along(port('fn', 'in'))).not.toBe(along(port('fn', 'reset')));
+    expect(along(port('fn', 'hot'))).not.toBe(along(port('fn', 'cold')));
+    expect(along(screen.getByText('hot'))).toBe(along(port('fn', 'hot')));
+    expect(along(screen.getByText('cold'))).toBe(along(port('fn', 'cold')));
+    expect(along(port('test', 'yes'))).toBe('');
+
+    // What the stylesheet reads it by: every port, and every port's name, stands there along its
+    // side, and in the middle when nothing says.
+    const rules = withoutComments(sheet);
+    for (const side of ['left', 'right', 'top', 'bottom'])
+      for (const part of ['handle', 'port'])
+        expect(rules).toMatch(new RegExp(String.raw`\.${part}\[data-side='${side}'\][^{]*\{[^}]*var\(--along, 50%\)`));
+  });
+
+  // React Flow measures where a node's ports stand when it first draws the node, and draws its wires
+  // to those places after. A spread port moves when a wire of its node goes, and the wire it still
+  // has must meet it where it now stands.
+  it('measures again where the spread ports stand when a wire of their node goes', async () => {
+    // jsdom lays nothing out: a port is put as far down as its place along the side says.
+    const box = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const top = this.classList.contains('react-flow__handle')
+        ? Number.parseFloat((this as HTMLElement).style.getPropertyValue('--along')) || 50
+        : 0;
+      return { x: 0, y: top, top, left: 0, right: 0, bottom: top, width: 0, height: 0, toJSON: () => ({}) };
+    });
+    let drawing: ReturnType<typeof useStoreApi> | undefined;
+    function Peek() {
+      drawing = useStoreApi();
+      return null;
+    }
+    // Where React Flow has the switch's ways out, as a share of its side.
+    const measured = () => {
+      const zoom = drawing!.getState().transform[2];
+      return drawing!.getState().nodeLookup.get('fn')?.internals.handleBounds?.source?.map((one) => `${one.id} ${Math.round(one.y * zoom)}%`);
+    };
+    const odd: FlowDto = {
+      ...button,
+      nodes: [...button.nodes, { id: 'fn', type: 'switch', x: 450, y: -80, config: {} }],
+      edges: [
+        ...button.edges.map((edge) => (edge.id === 'e2' ? { ...edge, to: 'fn' } : edge)),
+        { id: 'e4', from: 'fn', fromPort: 'hot', to: 'end', toPort: 'in' },
+        { id: 'e5', from: 'fn', fromPort: 'cold', to: 'end', toPort: 'in' },
+      ],
+    };
+
+    try {
+      useFlowDraftStore.getState().show('button');
+      render(
+        <ReactFlowProvider>
+          <div style={{ width: 800, height: 600 }}>
+            <Page flow={odd} />
+          </div>
+          <Peek />
+        </ReactFlowProvider>,
+      );
+      await waitFor(() => expect(measured()).toEqual(['hot 33%', 'cold 67%']));
+
+      act(() => useFlowDraftStore.getState().edit(odd, (flow) => removeEdges(flow, ['e5'])));
+
+      await waitFor(() => expect(measured()).toEqual(['hot 50%']));
+    } finally {
+      box.mockRestore();
+    }
   });
 
   // The server's last word on a node — the value it read, or what went wrong — is the only place it
@@ -791,13 +876,25 @@ describe('a flowchart on the canvas', () => {
   });
 
   it('marks a way out with no wire, and a node nothing leads to', async () => {
-    draw({ ...button, edges: button.edges.filter((edge) => edge.id !== 'e3') });
+    const { unmount } = draw({ ...button, edges: button.edges.filter((edge) => edge.id !== 'e3') });
 
     await waitFor(() => expect(screen.getByText('no · wire me')).toBeInTheDocument());
     expect(port('test', 'no').hasAttribute('data-unwired')).toBe(true);
+    unmount();
 
+    // Whatever a run says of it: the copy running now may reach it, but this drawing never would.
+    useFlowStatusStore
+      .getState()
+      .setStatus(active([{ id: 'test', count: 5, outs: { yes: 2, no: 3 }, errors: 1, note: 'no such field', standing: [] }]));
     draw({ ...button, edges: button.edges.filter((edge) => edge.id !== 'e1') });
     await waitFor(() => expect(document.querySelector('[data-id="test"] [data-unreached]')).not.toBeNull());
+
+    // In words as well as faded, for a reader who cannot see the fade or point at the node.
+    const line = within(document.querySelector<HTMLElement>('[data-id="test"]')!).getByText('not reached');
+    expect(line).not.toHaveAttribute('data-errors');
+    expect(line).not.toHaveAttribute('title');
+    expect(screen.getAllByText('not reached')).toHaveLength(2);
+    expect(screen.queryByText(/yes 2 · no 3/)).toBeNull();
   });
 
   it('marks a loop nothing comes back to at its next', async () => {
@@ -864,6 +961,42 @@ describe('a flowchart on the canvas', () => {
     await act(async () => vi.advanceTimersByTime(1_000));
     expect(screen.getByText(/^1\.0 s left$|^0\.9 s left$/)).toBeInTheDocument();
     vi.useRealTimers();
+  });
+
+  // At nothing left there is nothing more to count until a push says where the run went, and a
+  // countdown that went on ticking drew the same 0.0 ten times a second until then.
+  it('stops counting when no time is left, and counts the next wait from when it comes', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const until = new Date(Date.now() + 500).toISOString();
+    useFlowStatusStore.getState().setStatus(active([], 'test', { until, filter: null }));
+    let drawn = 0;
+    render(
+      <Profiler id="canvas" onRender={() => drawn++}>
+        <ReactFlowProvider>
+          <div style={{ width: 800, height: 600 }}>
+            <FlowCanvas flow={button} problems={{}} />
+          </div>
+        </ReactFlowProvider>
+      </Profiler>,
+    );
+
+    await act(async () => vi.advanceTimersByTime(1_000));
+    expect(screen.getByText('0.0 s left')).toBeInTheDocument();
+
+    // A second more, a tenth at a time, as a countdown that ticks on would draw it.
+    drawn = 0;
+    for (let tenth = 0; tenth < 10; tenth++) await act(async () => vi.advanceTimersByTime(100));
+
+    expect(drawn).toBe(0);
+    expect(screen.getByText('0.0 s left')).toBeInTheDocument();
+
+    // The run goes round and waits there again, a while later: counted from then, not from where
+    // the last wait stopped.
+    await act(async () => vi.advanceTimersByTime(3_000));
+    const again = new Date(Date.now() + 2_000).toISOString();
+    act(() => useFlowStatusStore.getState().setStatus(active([], 'test', { until: again, filter: null })));
+
+    expect(screen.getByText(/^2\.0 s left$|^1\.9 s left$/)).toBeInTheDocument();
   });
 
   it('says not running under a node no run reports', async () => {
@@ -966,6 +1099,93 @@ describe('a flowchart on the canvas', () => {
     expect(useFlowDraftStore.getState().wire).toBe('e2');
 
     fireEvent.click(document.querySelector('[data-id="test"]')!);
+    expect(useFlowDraftStore.getState().wire).toBeNull();
+  });
+});
+
+/**
+ * The wire picked alone is where the palette puts the node it adds, so the wire the store names and
+ * the wire drawn picked are one: a node put on a wire nobody sees picked, or put free while a wire
+ * is plainly picked, is a click that does something other than what the canvas showed.
+ */
+describe('the wire picked, as the canvas draws it and the store names it', () => {
+  /** The wires drawn picked, by id. */
+  const wiresPicked = () =>
+    [...document.querySelectorAll('.react-flow__edge')].flatMap((edge) =>
+      edge.querySelector('.react-flow__edge-path[data-selected]') ? [edge.getAttribute('data-id')] : [],
+    );
+
+  /** The canvas drawn again with the flow the store already shows, as the panel draws it when it is opened again. */
+  const drawAgain = () =>
+    render(
+      <ReactFlowProvider>
+        <div style={{ width: 800, height: 600 }}>
+          <Page flow={button} />
+        </div>
+      </ReactFlowProvider>,
+    );
+
+  it('lets go of the wire picked alone when Discard puts back a flow that has it too', async () => {
+    drawPage();
+    // A change made a while ago, which Discard takes back: the End moved over.
+    act(() => useFlowDraftStore.getState().edit(button, (flow) => moveNodes(flow, { end: { x: 640, y: 80 } })));
+    fireEvent.click(await screen.findByLabelText('Edge from start to test'));
+    expect(useFlowDraftStore.getState().wire).toBe('e1');
+
+    act(() => useFlowDraftStore.getState().discard('button'));
+
+    expect(useFlowDraftStore.getState().wire).toBeNull();
+    expect(wiresPicked()).toEqual([]);
+  });
+
+  // A click on the tab of the flow on screen shows it again, with nothing picked.
+  it('lets go of the wire picked alone when the flow on screen is shown again', async () => {
+    drawPage();
+    fireEvent.click(await screen.findByLabelText('Edge from start to test'));
+    expect(useFlowDraftStore.getState().wire).toBe('e1');
+
+    act(() => useFlowDraftStore.getState().show('button'));
+
+    expect(useFlowDraftStore.getState().wire).toBeNull();
+    expect(wiresPicked()).toEqual([]);
+  });
+
+  // Another panel opened takes the canvas away, and the store, which outlives it, still names the
+  // wire — as it still names a node chosen, which comes back picked.
+  it('picks the wire the store names when the canvas is drawn again', async () => {
+    const { unmount } = drawPage();
+    fireEvent.click(await screen.findByLabelText('Edge from start to test'));
+    unmount();
+
+    drawAgain();
+
+    await waitFor(() => expect(wiresPicked()).toEqual(['e1']));
+    expect(useFlowDraftStore.getState().wire).toBe('e1');
+  });
+
+  it('names no wire when the canvas is drawn again for a flow that lost it in the meantime', async () => {
+    const { unmount } = drawPage();
+    fireEvent.click(await screen.findByLabelText('Edge from start to test'));
+    unmount();
+    // Taken out while the canvas was away: in another tab, whose draft this one takes in.
+    act(() => useFlowDraftStore.getState().edit(button, (flow) => removeEdges(flow, ['e1'])));
+
+    drawAgain();
+
+    await waitFor(() => expect(useFlowDraftStore.getState().wire).toBeNull());
+    expect(wiresPicked()).toEqual([]);
+  });
+
+  it('names no wire while two are picked', async () => {
+    drawPage();
+    const more = navigator.userAgent.includes('Mac') ? 'Meta' : 'Control';
+
+    fireEvent.click(await screen.findByLabelText('Edge from start to test'));
+    fireEvent.keyDown(window, { key: more });
+    fireEvent.click(document.querySelector('.react-flow__edge[data-id="e2"]')!);
+    fireEvent.keyUp(window, { key: more });
+
+    expect(wiresPicked()).toEqual(['e1', 'e2']);
     expect(useFlowDraftStore.getState().wire).toBeNull();
   });
 });

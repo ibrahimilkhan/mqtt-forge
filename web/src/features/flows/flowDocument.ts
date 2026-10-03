@@ -430,8 +430,10 @@ export const setConfig = (flow: FlowDto, nodeId: string, config: Record<string, 
 });
 
 /*
- * What a flow lacks to be a whole program, kept against the flow object as the answers below are,
- * for the same reason: the canvas asks on every frame of a drag, and an edit makes a new flow.
+ * What a flow lacks to be a whole program, kept against the flow object as the answers below are:
+ * the canvas asks again of the same flow whenever a pick, a size it measured or a refusal changes,
+ * and an edit makes a new flow, so a kept answer never goes stale. A drag is an edit on every
+ * frame, so each frame of one is worked out afresh.
  */
 const unwiredOf = new WeakMap<FlowDto, ReadonlySet<string>>();
 const unreachedOf = new WeakMap<FlowDto, ReadonlySet<string>>();
