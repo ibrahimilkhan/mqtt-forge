@@ -1256,6 +1256,49 @@ public class FlowRuntimeTests
         Assert.Equal(1, Node("loop").Errors);
     }
 
+    /// <summary>A string element that cannot be read as text, as it is written in the JSON of an array.</summary>
+    private const string Unreadable = "\"\\ud800\"";
+
+    private static IEnumerable<string> Errors(FlowOutcome outcome) =>
+        outcome.Debug.Where(line => line.Kind == FlowDebugEntry.Error).Select(line => line.Text);
+
+    [Fact]
+    public void For_each_counts_the_elements_it_cannot_read_toward_its_thousand()
+    {
+        // An array of strings that cannot be read as text is stopped at the limit as one of readable ones
+        // is: scanned to its end instead, it would cost a thrown and caught exception for each of them,
+        // on the pump that every flow shares.
+        var array = "[" + string.Join(',', Enumerable.Repeat(Unreadable, FlowLimits.ForEachElements + 1)) + "]";
+
+        var outcome = Activate(Body("forEach", new { array = "var.big" }, ("say", "debug", null)).Var("big", array).Compile());
+
+        Assert.Equal(
+        [
+            $"Only the first {FlowLimits.ForEachElements:N0} elements are walked.",
+            $"{FlowLimits.ForEachElements} elements could not be read as text, so they were left out.",
+        ], Errors(outcome));
+        Assert.Equal(2, Node("loop").Errors);
+        Assert.DoesNotContain(outcome.Debug, line => line.Kind == FlowDebugEntry.Message);
+        Assert.Equal(FlowRunState.Finished, Run().State);
+    }
+
+    [Fact]
+    public void For_each_counts_the_elements_it_can_read_and_those_it_cannot_toward_one_thousand()
+    {
+        // The limit is on the elements looked at, so the one readable element that is the thousandth is
+        // walked and the one after it is not.
+        var array = "[" + string.Join(',', Enumerable.Repeat(Unreadable, FlowLimits.ForEachElements - 1)) + ",\"last\",\"beyond\"]";
+
+        var outcome = Activate(Body("forEach", new { array = "var.mixed" }, ("say", "debug", null)).Var("mixed", array).Compile());
+
+        Assert.Equal(["last"], outcome.Debug.Where(line => line.Kind == FlowDebugEntry.Message).Select(line => line.Text));
+        Assert.Equal(
+        [
+            $"Only the first {FlowLimits.ForEachElements:N0} elements are walked.",
+            $"{FlowLimits.ForEachElements - 1} elements could not be read as text, so they were left out.",
+        ], Errors(outcome));
+    }
+
     // ---- an arrival, and the runs it did not wake ----
 
     /// <summary>Start, then forever: read the next message on a/b. It wakes at every arrival there.</summary>
@@ -1372,10 +1415,14 @@ public class FlowRuntimeTests
         var run = runtime.Status().Runs.Single(one => one.FlowId == "f1");
         Assert.Equal(FlowRunState.Stopped, run.State);
         Assert.Equal("keep", run.At);
-        Assert.StartsWith("This step failed, so the run was stopped: The dice are lost", run.Fault);
+
+        // The exception's type as well as its message, as the alert engine records a rule's fault. A note
+        // has room for no more than the start of the message; the debug line keeps all of this one.
+        Assert.StartsWith("This step failed, so the run was stopped: InvalidOperationException: The dice", run.Fault);
         Assert.Equal(FlowLimits.NoteLength, run.Fault!.Length);
         Assert.Equal(1, run.Nodes.Single(node => node.Id == "keep").Errors);
-        Assert.Contains(outcome.Debug, line => line.Kind == FlowDebugEntry.Error && line.NodeId == "keep");
+        Assert.Contains(outcome.Debug, line => line.Kind == FlowDebugEntry.Error && line.NodeId == "keep" &&
+            line.Text.StartsWith("This step failed, so the run was stopped: InvalidOperationException: The dice are lost, ", StringComparison.Ordinal));
         Assert.Equal("f2", Assert.Single(outcome.Publishes).Run.FlowId);
         Assert.Null(runtime.NextDue);
     }
@@ -1385,6 +1432,50 @@ public class FlowRuntimeTests
     {
         public override double NextDouble() =>
             throw new InvalidOperationException("The dice are lost, " + new string('x', 2 * FlowLimits.NoteLength));
+    }
+
+    /// <summary>A node of a type the compiler never makes: what a node added to the language and not yet to the runtime would be.</summary>
+    private sealed class UnknownNode(string id) : CompiledNode(id);
+
+    /// <summary>Start, then an <see cref="UnknownNode"/> called "odd", with nothing after it.</summary>
+    private static CompiledFlow FlowWithUnknownNode()
+    {
+        var drawn = Line().Compile();
+        var unknown = new UnknownNode("odd");
+
+        // A way out is attached by the compiler alone, which no node it does not make can ask for, so the
+        // one from Start is pointed at the odd node by hand.
+        typeof(CompiledNode).GetMethod("Attach", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(drawn.Start, new object[] { "out", new FlowTarget(unknown, "in") });
+
+        return new CompiledFlow
+        {
+            Id = drawn.Id,
+            Name = drawn.Name,
+            Enabled = true,
+            Fingerprint = drawn.Fingerprint,
+            Nodes = new Dictionary<string, CompiledNode>(drawn.Nodes) { ["odd"] = unknown },
+            Start = drawn.Start,
+            Inputs = [],
+            Variables = [],
+        };
+    }
+
+    [Fact]
+    public void A_node_the_runtime_has_no_step_for_stops_its_run_there_and_does_not_leave_it_going()
+    {
+        // Nothing is thrown for the safety net to catch when a switch has no arm for a node, so without
+        // one of its own the run would stay at the node and spin a thousand empty steps at every tick.
+        var outcome = Activate(FlowWithUnknownNode());
+
+        var run = Run();
+        Assert.Equal(FlowRunState.Stopped, run.State);
+        Assert.Equal("odd", run.At);
+        Assert.StartsWith("This step failed, so the run was stopped: ", run.Fault);
+        Assert.Contains(nameof(UnknownNode), Assert.Single(Errors(outcome)));
+        Assert.Equal(1, Node("odd").Count);
+        Assert.Equal(1, Node("odd").Errors);
+        Assert.Null(_runtime.NextDue);
     }
 
     /// <summary>A Random that counts its draws: each {{random}} a render fills is one.</summary>

@@ -11,11 +11,15 @@ namespace MqttForge.Application.Flows.Next;
 // Pure, single-threaded, no lock, no I/O and no clock of its own: the engine's pump is the only caller
 // and every call carries the time, so what a flow does is tested here as a sequence of calls.
 //
-// Each call moves every run that can move until it waits — for a time, or for a message — reaches an
-// End, or has taken its share of steps for this turn, when it stops where it is and a later turn takes
-// it on. Nothing a message can contain stops a run: a step that cannot do its job counts an error and
-// the run goes on its way out. A run stops only at an End, by Stop or Deactivate, by an Update, or when
-// a forever loop goes round without waiting.
+// A run moves until it waits — for a time, or for a message — reaches an End, or has taken its share of
+// steps for this turn, when it stops where it is and a later turn takes it on. Which runs a call moves
+// depends on the call: Deploy and StartTest move the runs they start, OnMessage the runs it woke, and
+// OnTick every run whose Wait has ended and every run with steps left over from an earlier turn.
+//
+// Nothing a message can contain stops a run: a step that cannot do its job counts an error and the run
+// goes on its way out. A run stops only at an End, by Stop or Deactivate, by an Update, when a forever
+// loop goes round without waiting, or when this class is itself at fault — a step that throws, which
+// Drive stops where it was, or a loop's next reached outside a turn of it.
 public sealed class FlowRuntime
 {
     private readonly Random _random;
@@ -338,7 +342,9 @@ public sealed class FlowRuntime
                 // that throws leaves the run where it was, so every call after this one would take the
                 // same step and throw again, NextDue would say "at once", and the pump would do nothing
                 // else for any flow. No step is known to throw; this is for the one nobody has thought of.
-                Stop(run, at.Id, $"This step failed, so the run was stopped: {ex.Message}", now, into);
+                // The fault gives the exception's type with its message, as EvaluateGuarded's does: of an
+                // exception nobody expected, the message alone seldom says what kind it was.
+                Stop(run, at.Id, $"This step failed, so the run was stopped: {ex.GetType().Name}: {ex.Message}", now, into);
             }
         }
 
@@ -410,6 +416,12 @@ public sealed class FlowRuntime
                 Webhook(run, webhook, now, into);
                 Go(run, webhook, "out");
                 break;
+            default:
+                // A node type the compiler can make and no arm here handles would leave the run going at
+                // that node for ever: nothing here moves it on, and nothing is thrown for the net in Drive
+                // to catch, so every tick would spin a thousand empty steps. Throwing is what lets the net
+                // stop the run on the node, with the type said.
+                throw new InvalidOperationException($"The runtime has no step for the node type {node.GetType().Name}.");
         }
     }
 
@@ -810,13 +822,19 @@ public sealed class FlowRuntime
             if (document.RootElement.ValueKind != JsonValueKind.Array) return null;
 
             var items = new List<string>();
+            var looked = 0;
             foreach (var element in document.RootElement.EnumerateArray())
             {
-                if (items.Count == FlowLimits.ForEachElements)
+                // Every element looked at counts toward the limit, whether it can be read or not: counting
+                // only the ones kept, an array of a million strings that cannot be read would be scanned to
+                // its end, with an exception thrown and caught for each, on the pump every flow shares.
+                if (looked == FlowLimits.ForEachElements)
                 {
                     more = true;
                     break;
                 }
+
+                looked++;
 
                 // A string element is its text, not its JSON: ["k1","k2"] gives k1 and k2, which is what
                 // a topic template wants to put between two slashes. Read the way every field is read,
