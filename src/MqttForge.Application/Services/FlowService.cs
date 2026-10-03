@@ -6,7 +6,7 @@ using MqttForge.Domain.Models;
 
 namespace MqttForge.Application.Services;
 
-/// <summary>What the flows page can ask for: the flows, a save, a delete.</summary>
+/// <summary>What the flows page can ask for: the flows, a save, a delete, a test and its stop.</summary>
 // A deploy is three things that must not interleave with another deploy — write the file, compile
 // what the file now holds, hand that to the engine — so they share one gate. Without it, two
 // consoles deploying two flows at once could each compile the file as it stood before the other's
@@ -93,6 +93,9 @@ public sealed class FlowService
             if (!await _store.RemoveAsync(id, ct)) return false;
 
             running = _engine.DeployAsync(await DeploymentAsync(), ct);
+
+            // A flow that is gone has no draft left to test.
+            _engine.Post(new FlowTestStop(id));
         }
         finally
         {
@@ -100,6 +103,33 @@ public sealed class FlowService
         }
 
         await running;
+        return true;
+    }
+
+    /// <summary>
+    /// Runs a flow's draft once, beside its active run, without keeping it — or says why it will not.
+    /// Answered as soon as the engine has it to run.
+    /// </summary>
+    // Not under the deploy gate: a test writes nothing and reads nothing of the file, so it has nothing
+    // to interleave with. It asks for the link as a save does, and for the same reason: a test reads
+    // and publishes, and somebody pressed it to see that happen.
+    public async Task<FlowSaveResult> TestAsync(Flow flow, CancellationToken ct)
+    {
+        var compiled = FlowCompiler.Compile(flow, _options.TopicPrefix);
+        if (compiled.Flow is null) return new FlowSaveResult(null, compiled.Problems);
+
+        _engine.Post(new FlowTestStart(compiled.Flow));
+        await _link.WantedAsync(CancellationToken.None);
+
+        return new FlowSaveResult(flow, []);
+    }
+
+    /// <summary>Stops a flow's test run. False when it has none going.</summary>
+    public bool StopTest(string flowId)
+    {
+        if (!_engine.IsTesting(flowId)) return false;
+
+        _engine.Post(new FlowTestStop(flowId));
         return true;
     }
 

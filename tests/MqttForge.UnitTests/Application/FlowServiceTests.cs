@@ -272,4 +272,61 @@ public sealed class FlowServiceTests : IAsyncLifetime
 
         await Until(() => !_engine.IsActive("f1"), "the deleted flow to stop");
     }
+
+    // ---- a test of the drawing ----
+
+    [Fact]
+    public async Task A_test_is_run_and_not_kept()
+    {
+        Run();
+
+        var result = await _sut.TestAsync(Listening(), CancellationToken.None);
+
+        Assert.NotNull(result.Flow);
+        await Until(() => _engine.IsTesting("f1"), "the test to be running");
+        Assert.Empty(_store.Flows);
+    }
+
+    [Fact]
+    public async Task A_test_that_does_not_compile_is_refused_with_its_problems()
+    {
+        var result = await _sut.TestAsync(new ChartBuilder().Node("start", "start").Build(), CancellationToken.None);
+
+        Assert.Null(result.Flow);
+        Assert.Contains(result.Problems, problem => problem.Key == "node:start");
+    }
+
+    [Fact]
+    public async Task Stopping_says_whether_there_was_a_test_to_stop()
+    {
+        Run();
+        Assert.False(_sut.StopTest("f1"));
+
+        await _sut.TestAsync(Listening(), CancellationToken.None);
+        await Until(() => _engine.IsTesting("f1"), "the test to be running");
+
+        Assert.True(_sut.StopTest("f1"));
+        await Until(() => !_engine.IsTesting("f1"), "the test to stop");
+    }
+
+    [Fact]
+    public async Task Deleting_a_flow_stops_its_test()
+    {
+        Run();
+        await _sut.SaveAsync(Listening(), CancellationToken.None);
+        await _sut.TestAsync(Listening(), CancellationToken.None);
+        await Until(() => _engine.IsTesting("f1"), "the test to be running");
+
+        await _sut.DeleteAsync("f1", CancellationToken.None);
+
+        await Until(() => !_engine.IsTesting("f1"), "the deleted flow's test to stop");
+    }
+
+    [Fact]
+    public async Task A_test_asks_for_the_link()
+    {
+        await _sut.TestAsync(Listening(), CancellationToken.None);
+
+        await _link.Received(1).WantedAsync(Arg.Any<CancellationToken>());
+    }
 }

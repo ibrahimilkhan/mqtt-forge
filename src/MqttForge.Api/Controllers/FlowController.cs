@@ -58,13 +58,15 @@ public sealed class FlowController : ControllerBase
     [RequestSizeLimit(DeployBodyBytes)]
     public async Task<IActionResult> Deploy(string id, FlowDto dto, CancellationToken ct)
     {
+        const string title = "The flow was not deployed";
+
         var flow = dto.ToFlow();
         if (flow.Id != id)
-            return Refused([new FlowProblem(null, null, "The flow's id in the address and in the body differ.")]);
+            return Refused(title, [new FlowProblem(null, null, "The flow's id in the address and in the body differ.")]);
 
         var result = await _flows.SaveAsync(flow, ct);
 
-        return result.Flow is null ? Refused(result.Problems) : Ok(new FlowSavedDto(FlowDto.Of(result.Flow)));
+        return result.Flow is null ? Refused(title, result.Problems) : Ok(new FlowSavedDto(FlowDto.Of(result.Flow)));
     }
 
     [HttpDelete("{id}")]
@@ -73,9 +75,35 @@ public sealed class FlowController : ControllerBase
             ? NoContent()
             : NotFoundProblem("No such flow", $"There is no flow '{id}' to delete.", "flowUnknown");
 
+    /// <summary>A test: the draft runs once beside the flow's active run, and nothing is kept.</summary>
+    [HttpPost("{id}/test")]
+    [RequestSizeLimit(DeployBodyBytes)]
+    public async Task<IActionResult> Test(string id, FlowDto dto, CancellationToken ct)
+    {
+        const string title = "The flow was not tested";
+
+        var flow = dto.ToFlow();
+        if (flow.Id != id)
+            return Refused(title, [new FlowProblem(null, null, "The flow's id in the address and in the body differ.")]);
+
+        var result = await _flows.TestAsync(flow, ct);
+
+        return result.Flow is null ? Refused(title, result.Problems) : Accepted();
+    }
+
+    /// <summary>Stops a flow's test run.</summary>
+    [HttpDelete("{id}/test")]
+    public IActionResult StopTest(string id) =>
+        _flows.StopTest(id)
+            ? NoContent()
+            : NotFoundProblem("No test", $"Flow '{id}' has no test going.", "testUnknown");
+
     // A 400 in ValidationProblemDetails' shape, so the console's ApiError already carries the
     // errors map — keyed flow, node:{id} and edge:{id} — and the reason word it branches on.
-    private static ObjectResult Refused(IReadOnlyList<FlowProblem> problems)
+    //
+    // A test is refused in the same shape and with the same reason, so the console marks a refused
+    // test exactly as it marks a refused save. Only the title says which of the two it was.
+    private static ObjectResult Refused(string title, IReadOnlyList<FlowProblem> problems)
     {
         var errors = problems
             .GroupBy(problem => problem.Key)
@@ -84,7 +112,7 @@ public sealed class FlowController : ControllerBase
         var problem = new ValidationProblemDetails(errors)
         {
             Status = StatusCodes.Status400BadRequest,
-            Title = "The flow was not deployed",
+            Title = title,
             Detail = problems.Count == 1
                 ? problems[0].Message
                 : $"{problems.Count} things stopped it. The first: {problems[0].Message}",

@@ -356,4 +356,73 @@ public sealed class FlowEndpointTests : IClassFixture<MqttForgeApiFactory>
         Assert.Equal("flowsUnreadable", (await Json(response)).GetProperty("reason").GetString());
         Assert.Equal("not json", await File.ReadAllTextAsync(damaged.FlowsPath));
     }
+
+    // ---- a test of the drawing ----
+
+    /// <summary>Start → MQTT in on plant/+/temp → End: a run that waits for its message, with no broker to send one.</summary>
+    private static object Waiting(string id) => new
+    {
+        id,
+        name = "Waits",
+        enabled = true,
+        nodes = new object[]
+        {
+            new { id = "start", type = "start", x = 0, y = 0, config = new { } },
+            new { id = "in", type = "mqttIn", x = 200, y = 0, config = new { filter = "plant/+/temp" } },
+            new { id = "end", type = "end", x = 400, y = 0, config = new { } },
+        },
+        edges = new object[]
+        {
+            new { id = "e1", from = "start", fromPort = "out", to = "in", toPort = "in" },
+            new { id = "e2", from = "in", fromPort = "out", to = "end", toPort = "in" },
+        },
+    };
+
+    [Fact]
+    public async Task A_test_is_202_and_runs_beside_nothing_saved()
+    {
+        Assert.Equal(HttpStatusCode.Accepted, (await _client.PostAsJsonAsync("/api/flows/probe/test", Waiting("probe"))).StatusCode);
+
+        await Until(async () =>
+        {
+            var status = await Json(await _client.GetAsync("/api/flows/status"));
+            return status.GetProperty("runs").EnumerateArray().Any(run =>
+                run.GetProperty("flowId").GetString() == "probe" &&
+                run.GetProperty("kind").GetString() == "test" &&
+                run.GetProperty("state").GetString() == "waiting");
+        }, "the test run to wait for its message");
+
+        var flows = await Json(await _client.GetAsync("/api/flows"));
+        Assert.DoesNotContain(flows.GetProperty("flows").EnumerateArray(), flow => flow.GetProperty("id").GetString() == "probe");
+
+        Assert.Equal(HttpStatusCode.NoContent, (await _client.DeleteAsync("/api/flows/probe/test")).StatusCode);
+    }
+
+    // Refused in a save's shape and with a save's reason, so the console marks the nodes of a refused test
+    // as it marks a refused save's; the title alone says which it was.
+    [Fact]
+    public async Task A_test_that_does_not_compile_is_a_400_naming_the_node()
+    {
+        var response = await _client.PostAsJsonAsync("/api/flows/broken/test", new
+        {
+            id = "broken", name = "Broken", enabled = true,
+            nodes = new object[] { new { id = "start", type = "start", x = 0, y = 0, config = new { } } },
+            edges = Array.Empty<object>(),
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await Json(response);
+        Assert.Equal("flowInvalid", problem.GetProperty("reason").GetString());
+        Assert.Equal("The flow was not tested", problem.GetProperty("title").GetString());
+        Assert.True(problem.GetProperty("errors").TryGetProperty("node:start", out _));
+    }
+
+    [Fact]
+    public async Task Stopping_a_test_that_is_not_going_is_404()
+    {
+        var response = await _client.DeleteAsync("/api/flows/nobody/test");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal("testUnknown", (await Json(response)).GetProperty("reason").GetString());
+    }
 }

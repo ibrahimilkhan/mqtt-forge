@@ -15,9 +15,9 @@ using Xunit;
 
 namespace MqttForge.IntegrationTests.Api;
 
-// The flows PUT reads no more than a flow at every limit needs, written with ordinary text. Only
-// Kestrel holds a request to a size: TestServer, which MqttForgeApiFactory runs on, has no such feature
-// and lets any body through, so this host is a real one, on a port of its own.
+// The flows PUT, and a test's POST, read no more than a flow at every limit needs, written with
+// ordinary text. Only Kestrel holds a request to a size: TestServer, which MqttForgeApiFactory runs
+// on, has no such feature and lets any body through, so this host is a real one, on a port of its own.
 public sealed class FlowDeployLimitTests : IAsyncLifetime
 {
     // How the console writes a body: JSON.stringify leaves every character but a quote, a backslash
@@ -75,7 +75,9 @@ public sealed class FlowDeployLimitTests : IAsyncLifetime
             if (File.Exists(file)) File.Delete(file);
     }
 
-    private static HttpRequestMessage Put(string id, byte[] body) => new(HttpMethod.Put, $"/api/flows/{id}")
+    private static HttpRequestMessage Put(string id, byte[] body) => Send(HttpMethod.Put, $"/api/flows/{id}", body);
+
+    private static HttpRequestMessage Send(HttpMethod method, string path, byte[] body) => new(method, path)
     {
         Content = new ByteArrayContent(body) { Headers = { { "Content-Type", "application/json" } } },
         // Asked before the body is sent, so the refusal comes back as an answer rather than as a
@@ -83,8 +85,13 @@ public sealed class FlowDeployLimitTests : IAsyncLifetime
         Headers = { ExpectContinue = true },
     };
 
-    [Fact]
-    public async Task A_body_past_the_limit_is_refused_before_it_is_read()
+    // A save, and a test, which sends the same flow as drawn and is held to the same limit for the same
+    // reason. This body is past the limit and within Kestrel's own 30 MB, so an action without the limit
+    // would read it whole.
+    [Theory]
+    [InlineData("PUT", "/api/flows/huge")]
+    [InlineData("POST", "/api/flows/huge/test")]
+    public async Task A_body_past_the_limit_is_refused_before_it_is_read(string method, string path)
     {
         var text = new string('x', (int)FlowController.DeployBodyBytes);
         var body = JsonSerializer.SerializeToUtf8Bytes(new
@@ -96,7 +103,7 @@ public sealed class FlowDeployLimitTests : IAsyncLifetime
             edges = Array.Empty<object>(),
         }, AsTheConsoleWrites);
 
-        using var response = await _client!.SendAsync(Put("huge", body));
+        using var response = await _client!.SendAsync(Send(new HttpMethod(method), path, body));
 
         Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
     }
