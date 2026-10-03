@@ -217,10 +217,13 @@ public sealed partial class FlowTemplate
     /// <summary>The furthest level {{topic[N]}} can name: the pattern below takes two digits.</summary>
     private const int FurthestLevel = 99;
 
-    [GeneratedRegex(@"^topic\[(\d{1,2})\]$", RegexOptions.CultureInvariant)]
+    // Both patterns write a digit as [0-9] and not \d. In .NET \d matches every Unicode decimal digit,
+    // full-width ones among them, and the invariant-culture parse after the match takes ASCII only, so
+    // with \d a full-width digit would throw out of Parse where Parse promises a problem.
+    [GeneratedRegex(@"^topic\[([0-9]{1,2})\]$", RegexOptions.CultureInvariant)]
     private static partial Regex TopicLevelPattern();
 
-    [GeneratedRegex(@"^random\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^random\(\s*(-?[0-9]+(?:\.[0-9]+)?)\s*,\s*(-?[0-9]+(?:\.[0-9]+)?)\s*\)$", RegexOptions.CultureInvariant)]
     private static partial Regex RandomPattern();
 
     private enum PartKind { Text, Topic, TopicLevel, Payload, Field, Index, Now, Random, Variable }

@@ -1,5 +1,6 @@
 using MqttForge.Application.Alerts.Conditions;
 using MqttForge.Application.Flows.Next;
+using FlowLimits = MqttForge.Application.Flows.FlowLimits;
 
 namespace MqttForge.UnitTests.Application.Flows.Next;
 
@@ -15,6 +16,15 @@ public class IfTestTests
     [InlineData("lte", "91", "90", false)]
     public void Compare_reads_both_sides_as_numbers(string op, string text, string value, bool yes) =>
         Assert.Equal(yes, new CompareTest(op).Judge(text, value, ""));
+
+    // The compiler builds a compare for those four ops and for no other, so any other is a mistake in
+    // the code that built it, and a mistake is not answered as if it were lte.
+    [Theory]
+    [InlineData("eq")]
+    [InlineData("GT")]
+    [InlineData("")]
+    public void An_op_that_is_not_a_comparison_is_a_mistake_and_not_an_answer(string op) =>
+        Assert.Throws<ArgumentOutOfRangeException>(() => new CompareTest(op).Judge("94", "90", ""));
 
     // A run always decides. A missing field, or a reading that is not a number, is "no".
     [Fact]
@@ -52,6 +62,19 @@ public class IfTestTests
 
         Assert.Contains(new string('x', 40) + "'", failure.Message);
         Assert.DoesNotContain(new string('x', 41), failure.Message);
+    }
+
+    // So may a pattern, and the parser's own message for one that does not compile quotes it whole.
+    [Fact]
+    public void A_long_pattern_that_does_not_compile_is_quoted_cut_short_in_the_failure()
+    {
+        var pattern = "(" + new string('x', FlowLimits.VariableBytes);
+
+        var failure = Assert.Throws<FlowStepException>(() => new MatchesTest(null).Judge("x", pattern, ""));
+
+        Assert.Contains("'(" + new string('x', 39) + "'", failure.Message);
+        Assert.DoesNotContain(new string('x', 40), failure.Message);
+        Assert.True(failure.Message.Length < 200, $"The failure is {failure.Message.Length:N0} characters long.");
     }
 
     [Fact]

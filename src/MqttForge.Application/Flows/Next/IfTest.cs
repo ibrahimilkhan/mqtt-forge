@@ -22,9 +22,13 @@ public abstract class IfTest
     /// <param name="value2">The second value, rendered: between reads it, and nothing else does.</param>
     public abstract bool Judge(string? text, string value, string value2);
 
+    // A value may be a variable's sixty-four kilobytes, and what a failure quotes of it goes into a
+    // sentence on the node and in the debug strip, where forty characters tell which value it was.
+    protected static string Quoted(string value) => FlowTemplate.Clip(value, 40);
+
     protected static double Number(string value, string what) =>
         PayloadValue.AsReading(value) ??
-        throw new FlowStepException($"{what} is not a number: '{FlowTemplate.Clip(value, 40)}'.");
+        throw new FlowStepException($"{what} is not a number: '{Quoted(value)}'.");
 }
 
 /// <summary>gt, gte, lt, lte.</summary>
@@ -35,12 +39,16 @@ public sealed class CompareTest(string op) : IfTest
         var limit = Number(value, "The value to compare with");
         if (PayloadValue.AsReading(text) is not { } reading) return false;
 
+        // The compiler builds a CompareTest for these four ops and for no other. Any other is a mistake
+        // in the code that built it, so it is thrown and not answered: an op that read as lte would
+        // decide every message wrongly, and nothing would say so.
         return op switch
         {
             "gt" => reading > limit,
             "gte" => reading >= limit,
             "lt" => reading < limit,
-            _ => reading <= limit,
+            "lte" => reading <= limit,
+            _ => throw new ArgumentOutOfRangeException(nameof(op), op, "A comparison this test never makes."),
         };
     }
 }
@@ -82,8 +90,10 @@ public sealed class BetweenTest : IfTest
 // counts it on the node and ends the run's turn, since the next text like it costs another 50 ms.
 public sealed class MatchesTest(Regex? compiled) : IfTest
 {
-    private string? _lastPattern;
-    private Regex? _last;
+    // The last pattern and the regex compiled from it are one value in one field, so a reader sees the
+    // pair as it was written and never the new regex under the old text. Nothing more is needed: the
+    // cache serves one node, on the flow pump's one thread.
+    private Entry? _last;
 
     public override bool Judge(string? text, string value, string value2)
     {
@@ -93,19 +103,25 @@ public sealed class MatchesTest(Regex? compiled) : IfTest
 
     private Regex Compile(string pattern)
     {
-        if (_last is not null && string.Equals(pattern, _lastPattern, StringComparison.Ordinal)) return _last;
+        if (_last is { } last && string.Equals(pattern, last.Pattern, StringComparison.Ordinal)) return last.Regex;
 
         try
         {
-            _last = CompiledPatterns.Compile(pattern);
-            _lastPattern = pattern;
-            return _last;
+            var regex = CompiledPatterns.Compile(pattern);
+            _last = new Entry(pattern, regex);
+            return regex;
         }
         catch (ArgumentException ex)
         {
-            throw new FlowStepException($"The pattern does not compile: {ex.Message}");
+            // The parser's message quotes the pattern whole, and a variable may hold sixty-four kilobytes
+            // of one: the sentence keeps what the parser says of where it went wrong, and quotes only the
+            // start of the pattern.
+            throw new FlowStepException(
+                $"The pattern does not compile: {ex.Message.Replace(pattern, Quoted(pattern), StringComparison.Ordinal)}");
         }
     }
+
+    private sealed record Entry(string Pattern, Regex Regex);
 }
 
 /// <summary>One of a comma-separated list of texts.</summary>

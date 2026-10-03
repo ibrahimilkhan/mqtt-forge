@@ -95,11 +95,20 @@ public class FlowTemplateTests
         }
     }
 
+    // \uFF11 and \uFF12 are the full-width digits one and two: a decimal digit to a pattern's \d, and no
+    // digit at all to the parse that reads what it matched, which would throw where a problem is the answer.
+    // Every run of digits a placeholder reads has a row of its own, so none can go back to \d unseen.
     [Theory]
     [InlineData("{{colour}}")]
     [InlineData("{{topic[x]}}")]
+    [InlineData("{{topic[\uFF11]}}")]
     [InlineData("{{random(95,80)}}")]
     [InlineData("{{random(a,b)}}")]
+    [InlineData("{{random(\uFF11,\uFF12)}}")]
+    [InlineData("{{random(\uFF11,2)}}")]
+    [InlineData("{{random(1,\uFF12)}}")]
+    [InlineData("{{random(1.\uFF11,2)}}")]
+    [InlineData("{{random(1,2.\uFF12)}}")]
     [InlineData("{{topic")]
     [InlineData("{{var.2x}}")]
     [InlineData("{{var.}}")]
