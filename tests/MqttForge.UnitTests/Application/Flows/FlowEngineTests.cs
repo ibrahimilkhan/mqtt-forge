@@ -1071,6 +1071,27 @@ public sealed class FlowEngineTests : IAsyncLifetime
         Assert.True(engine.IsTesting("t1"));
     }
 
+    // What FlowService counts against the most tests there can be: the tests going, and the starts the pump has
+    // not been to. A stop handed over after a start is that start never made, and a stop alone is no test —
+    // a delete of a draft nobody saved posts one, and fifty of those must not leave no room for a test.
+    [Fact]
+    public async Task A_start_the_pump_has_not_reached_is_counted_with_the_tests_going_and_a_stop_is_not()
+    {
+        var engine = await StartedAsync(_alerts, []);
+
+        engine.Post(Press(Once("a", ("in", "mqttIn", new { filter = "plant/k1/a" }))));
+        engine.Post(Press(Once("b", ("in", "mqttIn", new { filter = "plant/k1/b" }))));
+        engine.Post(new FlowTestStop("b"));
+        engine.Post(new FlowTestStop("c"));
+
+        Assert.Equal("a", Assert.Single(engine.TestsGoingOrWaiting()));
+
+        // Once the pump has been to it, the test going is the one counted, and still the one.
+        Run(engine);
+        await Eventually.Until(_time, () => engine.IsTesting("a"), "the test to be going");
+        Assert.Equal("a", Assert.Single(engine.TestsGoingOrWaiting()));
+    }
+
     // A test starts where it was handed over in the order of everything posted, as a deploy does: what
     // arrived before it is not its to read, and what arrived after it is.
     [Fact]

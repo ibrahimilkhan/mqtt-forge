@@ -1194,7 +1194,8 @@ public class FlowRuntimeTests
     }
 
     // With every one of them going, a fifty-first is not started. FlowService refuses it before it gets
-    // here, on what the pump last said was going; this is the one handed over faster than the pump said so.
+    // here, on the tests going and the starts waiting for the pump; this is the one that got past it, in a
+    // race for the last place.
     [Fact]
     public void A_test_of_another_flow_is_not_started_while_fifty_are_going_and_says_so()
     {

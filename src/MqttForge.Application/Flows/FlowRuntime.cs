@@ -136,8 +136,9 @@ public sealed class FlowRuntime
     // draft nobody ever saved, so without a limit they would pile up for the life of the process — each with
     // its compiled flow, its variables and its counters, and every one of them in every status push. So no
     // more tests are kept than the file can keep flows, and a test of a flow with none kept makes room by
-    // letting the oldest that has ended go. FlowService refuses one while that many are going; only a test
-    // handed over faster than the pump could say so is turned away here.
+    // letting the oldest that has ended go. FlowService refuses one while that many are going or waiting for
+    // the pump; only a test that gets past it — by racing another for the last place, or by coming while the
+    // pump holds a start it has taken from its slot and not yet counted — is turned away here.
     public FlowOutcome StartTest(CompiledFlow flow, DateTimeOffset now)
     {
         var into = new Collector();

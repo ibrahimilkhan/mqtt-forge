@@ -114,8 +114,8 @@ public sealed class FlowService
 
     /// <summary>
     /// Runs a flow's draft once, beside its active run, without keeping it — or says why it will not.
-    /// Answered once the link has been asked for and the engine has the test to run: on a host that dials
-    /// at start-up, with the link down, that is after the dial.
+    /// Answered once the engine has been handed the test and the link has been asked for: on a host that
+    /// dials at start-up, with the link down, that is after the dial — which the test itself does not wait for.
     /// </summary>
     // Not under the deploy gate: a test writes nothing and reads nothing of the file, so it has nothing
     // to interleave with. It asks for the link as a save does, and for the same reason: a test reads
@@ -125,23 +125,33 @@ public sealed class FlowService
         var compiled = FlowCompiler.Compile(flow, _options.TopicPrefix);
         if (compiled.Flow is null) return new FlowSaveResult(null, compiled.Problems);
 
-        // One test for each flow the file can keep. Refused here on what the pump last said was going, so the
-        // console can mark it as it marks a save past its limit; FlowRuntime.StartTest holds the line for a
-        // test handed over faster than the pump could say so. A test of a flow with one going takes its
-        // place, and is not one more.
-        var testing = _engine.Testing;
+        // One test for each flow the file can keep. Refused here, so the console can mark it as it marks a save
+        // past its limit. What is counted is the tests going as the pump last left them and the starts waiting
+        // for it: a pump held up leaves its last look as it was while any number of Tests are handed over, and
+        // each of them parks its compiled flow in a slot. A test of a flow with one going or waiting takes its
+        // place, and is not one more. The look and the hand-over are two steps, so Tests that race for the
+        // last place can each be let in, and so can one that comes while the pump holds a start it has taken
+        // from its slot and not yet counted; FlowRuntime.StartTest holds the line for those.
+        var testing = _engine.TestsGoingOrWaiting();
         if (!testing.Contains(flow.Id) && testing.Count >= FlowLimits.Flows)
             return new FlowSaveResult(null, [new FlowProblem(null, null, $"At most {FlowLimits.Flows} tests can run at once. Stop one first.")]);
 
-        // The link before the test, where a save asks for it after its deploy. A test runs up to its first
-        // wait the moment the pump starts it, and the runtime refuses every publish until the pump has seen
-        // the link up: handed over first, on a host that dials because of it, the test could be started
-        // before the dial was through, and every publish it made before its first wait refused with "No
-        // broker link" a moment before the link came up. Asked with no token, as a save asks: the test runs
-        // whether or not its client stayed for the answer, and a test that runs needs the link. Only a host
-        // that dials at start-up will dial here — see ILinkForRules.
-        await _link.WantedAsync(CancellationToken.None);
+        // Handed over before the link is asked for, in the order a save hands over its deploy. A dial can
+        // take as long as the connect timeout, which is longer than the console waits for an answer, and the
+        // console is pressed again meanwhile: a Stop, the flow's delete, another Test of the same flow. The
+        // engine takes what it is handed in the order it was handed over, so a start that waited for the dial
+        // came after every one of them: after the Stop that was meant to end it, which found no test and was
+        // answered that none was going; after the delete that took its flow away, which left a test of a flow
+        // that is gone with nothing to end it; and in place of a newer draft of its own flow.
+        //
+        // What that costs is a test that runs up to its first wait before the link is up, on a host that
+        // dials because of it: a Publish it reaches in that time is refused "No broker link" on its node,
+        // which is true and shows there, and Test can be pressed again once the link is up. Ordering is
+        // worth that. Asked with no token, as a save asks: the test runs whether or not its client stayed
+        // for the answer, and a test that runs needs the link. Only a host that dials at start-up will dial
+        // here — see ILinkForRules.
         _engine.Post(new FlowTestStart(compiled.Flow));
+        await _link.WantedAsync(CancellationToken.None);
 
         return new FlowSaveResult(flow, []);
     }
@@ -149,9 +159,10 @@ public sealed class FlowService
     /// <summary>Stops a flow's test run, going or ended. False when it had none going.</summary>
     // Handed over whatever the answer. A test the pump has not started yet is not going as far as anything
     // here can tell, and the stop reaches the pump after its start, or in its place; answered "none going"
-    // and left there, it would start a moment later and run on. And a test that has ended stays to be read
-    // until something takes it away, which this is. Asked before the stop is handed over, so the answer is
-    // about the test there was and not about one the pump has already stopped.
+    // and left there, it would start a moment later and run on. That includes a test whose Test is still
+    // waiting for the link's dial, which is handed over before the dial. And a test that has ended stays to
+    // be read until something takes it away, which this is. Asked before the stop is handed over, so the
+    // answer is about the test there was and not about one the pump has already stopped.
     public bool StopTest(string flowId)
     {
         var going = _engine.IsTesting(flowId);

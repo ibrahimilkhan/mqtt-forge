@@ -4,7 +4,6 @@ using MqttForge.Application.Alerts;
 using MqttForge.Application.Flows;
 using MqttForge.Application.Services;
 using MqttForge.Domain.Abstractions;
-using MqttForge.Domain.Enums;
 using MqttForge.Domain.Exceptions;
 using MqttForge.Domain.Models;
 using MqttForge.UnitTests.Application.Alerts;
@@ -24,8 +23,6 @@ public sealed class FlowServiceTests : IAsyncLifetime
     private readonly FakeFlowStore _store = new();
     private readonly ILinkForRules _link = Substitute.For<ILinkForRules>();
     private readonly IAlertNotifier _alarms = Substitute.For<IAlertNotifier>();
-    private readonly FakeConnection _connection = new();
-    private readonly RecordingPublisher _publisher = new();
     private readonly CancellationTokenSource _stop = new();
     private readonly FlowEngine _engine;
     private readonly FlowService _sut;
@@ -34,7 +31,7 @@ public sealed class FlowServiceTests : IAsyncLifetime
     public FlowServiceTests()
     {
         _engine = new FlowEngine(new FlowRuntime(), _store, _alarms,
-            Substitute.For<IFlowNotifier>(), _connection, new RecordingSubscriber(), _publisher,
+            Substitute.For<IFlowNotifier>(), new FakeConnection(), new RecordingSubscriber(), new RecordingPublisher(),
             new AlertEngineOptions(), NullLogger<FlowEngine>.Instance, _time);
         _sut = new FlowService(_store, _engine, _link, new AlertEngineOptions());
     }
@@ -74,8 +71,8 @@ public sealed class FlowServiceTests : IAsyncLifetime
         new ChartBuilder(id).Node("start", "start").Node("n1", "publish").Node("end", "end").Then("start", "n1", "end").Build();
 
     /// <summary>A flow that waits on an MQTT in, so it stays running and whether the engine runs it is one question away.</summary>
-    private static Flow Listening(string id = "f1") => new ChartBuilder(id)
-        .Node("start", "start").Node("in", "mqttIn", new { filter = "plant/k1/button" }).Node("end", "end")
+    private static Flow Listening(string id = "f1", string filter = "plant/k1/button") => new ChartBuilder(id)
+        .Node("start", "start").Node("in", "mqttIn", new { filter }).Node("end", "end")
         .Then("start", "in", "end")
         .Build();
 
@@ -333,33 +330,99 @@ public sealed class FlowServiceTests : IAsyncLifetime
         await _link.Received(1).WantedAsync(Arg.Any<CancellationToken>());
     }
 
-    /// <summary>A flow that publishes the moment it starts and then waits on an MQTT in: a publish before its first wait.</summary>
-    private static Flow Announcing(string id = "f1") => new ChartBuilder(id)
-        .Node("start", "start").Node("hello", "publish", new { topic = "plant/k1/cmd", payload = "on" })
-        .Node("in", "mqttIn", new { filter = "plant/k1/button" }).Node("end", "end")
-        .Then("start", "hello", "in", "end")
-        .Build();
+    // ---- a test, and the dial it asks for ----
 
-    // A test runs up to its first wait the moment the pump starts it, and the runtime refuses every publish
-    // until the pump has seen the link up. Handed over before the link was asked for, on a host that dials
-    // for it, a test's publish before its first wait was refused with "No broker link", and the link was up
-    // a moment later.
+    /// <summary>Makes the first ask for the link a dial that goes on until the returned source is set, and every ask after it answer at once.</summary>
+    // A host that dials at start-up, with the link down, dials for up to its connect timeout, which is longer
+    // than the console waits for an answer. A link that is being dialled is asked for again and answers at
+    // once, as BrokerLinkSupervisor.WantedAsync does, so only the first is held.
+    private TaskCompletionSource HoldTheFirstDial()
+    {
+        var dial = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var asked = 0;
+
+        _link.WantedAsync(Arg.Any<CancellationToken>()).Returns(_ => asked++ == 0 ? dial.Task : Task.CompletedTask);
+
+        return dial;
+    }
+
+    // The test is handed over before the link is asked for, as a save's deploy is, so the pump starts it
+    // while the dial is still going. Asked for first, it waited for the dial to be over, and everything
+    // pressed in the meantime was handed over before it: see the three tests below.
     [Fact]
-    public async Task A_test_has_the_link_asked_for_before_it_is_handed_over()
+    public async Task A_test_is_handed_over_before_the_link_is_asked_for_and_does_not_wait_for_the_dial()
     {
         Run();
+        var dial = HoldTheFirstDial();
 
-        // The dial. Once it is over, the engine has run everything it was handed before it — a deploy is
-        // answered once the engine runs it — and the link is up.
-        _link.WantedAsync(Arg.Any<CancellationToken>()).Returns(async _ =>
-        {
-            await _engine.DeployAsync(new FlowDeploy([], []), CancellationToken.None);
-            _connection.State = ConnectionState.Connected;
-        });
+        var testing = _sut.TestAsync(Listening(), CancellationToken.None);
 
-        await _sut.TestAsync(Announcing(), CancellationToken.None);
+        await Until(() => _engine.IsTesting("f1"), "the test to be going while the dial is held");
+        Assert.False(testing.IsCompleted);
 
-        await Until(() => _publisher.Sent.Count == 1, "the test's publish to go out");
+        dial.SetResult();
+        Assert.NotNull((await testing.WaitAsync(TimeSpan.FromSeconds(10))).Flow);
+    }
+
+    // The engine takes what it is handed in the order it was handed over. Held back for the dial, a start
+    // came after the Stop that was meant to end it: the Stop found nothing, was answered "none going", and the
+    // test started a moment later and ran on.
+    [Fact]
+    public async Task A_stop_pressed_while_a_tests_dial_is_held_leaves_no_test_once_the_pump_has_run()
+    {
+        var dial = HoldTheFirstDial();
+        var testing = _sut.TestAsync(Listening(), CancellationToken.None);
+        Assert.False(testing.IsCompleted);
+
+        _sut.StopTest("f1");
+        dial.SetResult();
+        await testing.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Run();
+
+        // Answered once the engine runs it, so by then the engine has run everything handed over before it.
+        await _sut.SaveAsync(Good("later", enabled: false), CancellationToken.None);
+        Assert.False(_engine.IsTesting("f1"));
+    }
+
+    // The same for a delete, whose Stop is the only thing that takes the test of a deleted flow away: that
+    // test waits at an MQTT in, so nothing else ever ends it.
+    [Fact]
+    public async Task A_delete_pressed_while_a_tests_dial_is_held_leaves_no_test()
+    {
+        Run();
+        _store.Flows = [Listening()];
+        var dial = HoldTheFirstDial();
+        var testing = _sut.TestAsync(Listening(), CancellationToken.None);
+        Assert.False(testing.IsCompleted);
+
+        Assert.True(await _sut.DeleteAsync("f1", CancellationToken.None));
+        dial.SetResult();
+        await testing.WaitAsync(TimeSpan.FromSeconds(10));
+
+        await _sut.SaveAsync(Good("later", enabled: false), CancellationToken.None);
+        Assert.False(_engine.IsTesting("f1"));
+    }
+
+    // Of two drafts of one flow the one pressed last is the test. The second Test finds the link being dialled
+    // and is through at once; handed over after the first's dial, it was the first's draft that replaced it.
+    [Fact]
+    public async Task A_second_test_pressed_while_the_first_ones_dial_is_held_leaves_the_second_draft_as_the_test()
+    {
+        var dial = HoldTheFirstDial();
+        var first = _sut.TestAsync(Listening(filter: "plant/k1/first"), CancellationToken.None);
+        Assert.False(first.IsCompleted);
+
+        await _sut.TestAsync(Listening(filter: "plant/k1/second"), CancellationToken.None);
+        dial.SetResult();
+        await first.WaitAsync(TimeSpan.FromSeconds(10));
+
+        // Run with both handed over, so the first draft is never started and then replaced: what the test
+        // is made of is all that is left to read.
+        Run();
+        await Eventually.Until(_time, () => TestRun("f1")?.Waiting is not null, "the test to be waiting");
+
+        Assert.Equal("plant/k1/second", TestRun("f1")!.Waiting!.Filter);
     }
 
     // ---- what takes a test away, and how many there can be ----
@@ -427,5 +490,56 @@ public sealed class FlowServiceTests : IAsyncLifetime
 
         // A test of one of the fifty takes its own one's place, and is not one more.
         Assert.NotNull((await _sut.TestAsync(Listening("t3"), CancellationToken.None)).Flow);
+    }
+
+    // What the pump last said was going is where it was until it has been to the starts it was handed, and a
+    // pump held up — by an alarm channel slow to answer, or a broker slow with a SUBSCRIBE — does not go. Every
+    // Test for a new id used to pass that check and park its compiled flow in a slot of its own, with nothing
+    // to stop them at fifty.
+    [Fact]
+    public async Task A_fifty_first_test_is_refused_while_the_pump_is_held_up_and_fifty_wait_for_it()
+    {
+        for (var i = 0; i < FlowLimits.Flows; i++)
+            Assert.NotNull((await _sut.TestAsync(Listening($"t{i}"), CancellationToken.None)).Flow);
+
+        var refused = await _sut.TestAsync(Listening("one-too-many"), CancellationToken.None);
+
+        Assert.Null(refused.Flow);
+        Assert.Equal("At most 50 tests can run at once. Stop one first.", Assert.Single(refused.Problems).Message);
+
+        // A test of one of the fifty takes the place of the start that waits, and is not one more.
+        Assert.NotNull((await _sut.TestAsync(Listening("t3"), CancellationToken.None)).Flow);
+
+        // Fifty are what the pump finds when it is free, and the one that was refused is not among them.
+        Run();
+        await Until(() => Enumerable.Range(0, FlowLimits.Flows).All(i => _engine.IsTesting($"t{i}")), "fifty tests to be going");
+        Assert.False(_engine.IsTesting("one-too-many"));
+    }
+
+    // A flow with a test going and a start waiting to take its place is one test, not two: counted twice, the
+    // second press of one of forty-nine would have left no place for a fiftieth flow that had one.
+    [Fact]
+    public async Task A_test_pressed_again_while_the_pump_is_held_up_is_counted_once()
+    {
+        Run();
+        for (var i = 0; i < FlowLimits.Flows - 1; i++) await _sut.TestAsync(Listening($"t{i}"), CancellationToken.None);
+        await Until(() => Enumerable.Range(0, FlowLimits.Flows - 1).All(i => _engine.IsTesting($"t{i}")), "forty-nine tests to be going");
+
+        // The pump held up in the middle of a turn, by a log slow to take the alarm a flow raises as it starts.
+        var told = new TaskCompletionSource();
+        _alarms.RaisedAsync(Arg.Any<IReadOnlyList<Alert>>()).Returns(told.Task);
+        await _sut.SaveAsync(Ringing("alarm"), CancellationToken.None);
+        await Until(() => _alarms.ReceivedCalls().Any(), "the pump to be held up telling the alarm");
+
+        try
+        {
+            Assert.NotNull((await _sut.TestAsync(Listening("t3"), CancellationToken.None)).Flow);
+            Assert.NotNull((await _sut.TestAsync(Listening("the-fiftieth"), CancellationToken.None)).Flow);
+            Assert.Null((await _sut.TestAsync(Listening("one-too-many"), CancellationToken.None)).Flow);
+        }
+        finally
+        {
+            told.SetResult();
+        }
     }
 }

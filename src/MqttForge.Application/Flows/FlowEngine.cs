@@ -112,8 +112,8 @@ public sealed class FlowEngine
     private FlowAlarms _alarms = FlowAlarms.Empty;
 
     // Which flows are switched on and which are being tested, as the pump last left them: what the
-    // service reads to answer a test's Stop and to count the tests going, and what a caller reads once
-    // its save is answered.
+    // service reads to answer a test's Stop and, with the starts still waiting in the slots (see
+    // TestsGoingOrWaiting), to count the tests there are; and what a caller reads once its save is answered.
     private IReadOnlySet<string> _active = new HashSet<string>();
     private IReadOnlySet<string> _testing = new HashSet<string>();
 
@@ -152,8 +152,32 @@ public sealed class FlowEngine
     /// <summary>Whether a flow has a test run that has not ended, as the pump last left it.</summary>
     public bool IsTesting(string flowId) => Volatile.Read(ref _testing).Contains(flowId);
 
-    /// <summary>The flows with a test run that has not ended, as the pump last left them.</summary>
-    public IReadOnlySet<string> Testing => Volatile.Read(ref _testing);
+    /// <summary>The flows with a test run that has not ended, as the pump last left them, and the flows with a test start waiting for the pump to reach.</summary>
+    // What FlowService counts against the most tests there can be. The snapshot says nothing of a start the
+    // pump has not been to, and a pump held up — by an alarm channel slow to answer, say — does not go: counted
+    // on the snapshot alone, every Test for a new id was let in and parked its compiled flow in a slot of its
+    // own, with nothing to stop them at the limit. A flow with a test going and a start waiting to take its
+    // place is one test, so it is in the set once. A stop waiting in a slot is not a start, and the flow it
+    // is for is counted for the test it has going until the pump has ended it.
+    //
+    // Read under the lock the slots are handed over under: the dictionary is not safe to walk while a
+    // hand-over changes it. A start the pump has taken from its slot and has not yet put in the snapshot is in
+    // neither for as long as that takes, and FlowRuntime.StartTest holds the line for it — as it does for
+    // two Tests that raced for the last place, which no count read beforehand can tell apart.
+    public IReadOnlySet<string> TestsGoingOrWaiting()
+    {
+        lock (_slots)
+        {
+            var tests = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var (flowId, pending) in _tests)
+                if (pending.Command is FlowTestStart)
+                    tests.Add(flowId);
+
+            tests.UnionWith(Volatile.Read(ref _testing));
+            return tests;
+        }
+    }
 
     private void Snapshot()
     {
