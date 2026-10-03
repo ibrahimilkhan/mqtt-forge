@@ -64,4 +64,33 @@ public static class FlowLimits
 
     /// <summary>The fastest the console is told what the flows are doing.</summary>
     public static readonly TimeSpan StatusEvery = TimeSpan.FromMilliseconds(250);
+
+    // ---- the flowchart's (2026-10-03). The ones above that only the old node set uses go with it. ----
+
+    /// <summary>How many steps one run takes in one turn of the pump before the next run gets its turn.</summary>
+    // A loop of a thousand turns with no Wait in it is a thousand turns of work; taken in one go it
+    // would hold up every other run, the link and the console for as long as that is.
+    public const int StepsPerTurn = 1_000;
+
+    public const long ForTimes = 1_000_000;
+    public static readonly TimeSpan MinWait = TimeSpan.FromMilliseconds(100);
+    public static readonly TimeSpan MaxWait = TimeSpan.FromHours(24);
+
+    /// <summary>How many messages an MQTT in node holds for a run that has not read them yet.</summary>
+    public const int QueuedMessages = 1_000;
+
+    public const int Variables = 50;
+    public const int VariableBytes = 64 * 1024;
+
+    /// <summary>How often one Sound, Notify or Webhook node may do its job.</summary>
+    // Once a second: wired to a message rather than to an alarm's "raised", any of them would
+    // otherwise play, pop up or post at the rate of the plant's messages.
+    public static readonly TimeSpan ChannelEvery = TimeSpan.FromSeconds(1);
+
+    public const int NoticeLength = 200;
+
+    /// <summary>The longest text a Notify or an If's value may be written as, placeholders and all.</summary>
+    public const int TextTemplateLength = 1_024;
+
+    public const int UrlLength = 2_048;
 }
