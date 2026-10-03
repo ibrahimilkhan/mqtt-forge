@@ -78,7 +78,15 @@ const FIT = { padding: 0.2, maxZoom: 1 };
 /** Where a dragged node comes to rest: every 8 pixels, on a dot of the background or halfway between two. */
 const SNAP: [number, number] = [8, 8];
 
-type NodeData = { flowId: string; node: FlowNodeDto; ports: Ports; running: boolean; problems?: readonly string[] };
+type NodeData = {
+  flowId: string;
+  /** The flow the node is in, for the line under its name: a Clear alarm's names the Raise alarm it closes. */
+  flow: FlowDto;
+  node: FlowNodeDto;
+  ports: Ports;
+  running: boolean;
+  problems?: readonly string[];
+};
 type CanvasNode = Node<NodeData, 'flow'>;
 type CanvasEdge = Edge<{ flowId: string; problems?: readonly string[] }, 'wire'>;
 
@@ -101,9 +109,15 @@ const sameNames = (a: readonly string[], b: readonly string[]) =>
 
 const samePorts = (a: Ports, b: Ports) => a === b || (sameNames(a.ins, b.ins) && sameNames(a.outs, b.outs));
 
-/** A node as React Flow is handed it: the object it had last time, when nothing it draws has changed. */
+/**
+ * A node as React Flow is handed it: the object it had last time, when nothing it draws has changed.
+ *
+ * Only a Clear alarm's line reads the flow — the name of the Raise alarm it closes — so only a Clear
+ * alarm is handed over again when the flow's nodes change. Every other node keeps the flow it was
+ * made with, which it never reads, and is not drawn again for a change it does not show.
+ */
 function canvasNode(
-  flowId: string,
+  flow: FlowDto,
   node: FlowNodeDto,
   ports: Ports,
   running: boolean,
@@ -114,7 +128,8 @@ function canvasNode(
   const last = handed.get(node);
   if (
     last !== undefined &&
-    last.data.flowId === flowId &&
+    last.data.flowId === flow.id &&
+    (node.type !== 'alarmClear' || last.data.flow.nodes === flow.nodes) &&
     last.data.running === running &&
     last.data.problems === problems &&
     last.selected === selected &&
@@ -127,7 +142,7 @@ function canvasNode(
     id: node.id,
     type: 'flow',
     position: { x: node.x, y: node.y },
-    data: { flowId, node, ports, running, problems },
+    data: { flowId: flow.id, flow, node, ports, running, problems },
     selected,
     measured,
   };
@@ -236,7 +251,7 @@ export function FlowCanvas({ flow, running, problems }: { flow: FlowDto; running
     () =>
       flow.nodes.map((node) =>
         canvasNode(
-          flow.id,
+          flow,
           node,
           portsOf(node, flow.edges),
           running,
@@ -245,7 +260,7 @@ export function FlowCanvas({ flow, running, problems }: { flow: FlowDto; running
           sizes[node.id],
         ),
       ),
-    [flow.edges, flow.id, flow.nodes, picked, problems, running, sizes],
+    [flow, picked, problems, running, sizes],
   );
 
   const edges = useMemo<CanvasEdge[]>(
@@ -508,7 +523,7 @@ function FlowNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
         <span className={styles.name}>{spec.label}</span>
         {data.node.type === 'inject' && <InjectButton flowId={data.flowId} nodeId={id} ready={data.running && reported} />}
       </div>
-      <div className={styles.summary}>{spec.summary(data.node.config)}</div>
+      <div className={styles.summary}>{spec.summary(data.node.config, data.flow)}</div>
       <div className={styles.status} data-errors={failing ? '' : undefined} title={note ?? undefined}>
         {line}
       </div>

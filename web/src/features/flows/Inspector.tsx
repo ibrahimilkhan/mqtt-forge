@@ -82,9 +82,9 @@ function NodePane({ flow, node, problems, facts }: { flow: FlowDto; node: FlowNo
         </p>
       )}
 
-      <NodeSettings flowId={flow.id} node={node} set={set} facts={facts} />
+      <NodeSettings flow={flow} node={node} set={set} facts={facts} />
 
-      {node.type === 'alarm' && <Standing flowId={flow.id} nodeId={node.id} />}
+      {node.type === 'alarmRaise' && <Standing flowId={flow.id} nodeId={node.id} />}
 
       <div className={panel.actions}>
         <button
@@ -111,11 +111,12 @@ const QUOTED = 30;
 /**
  * A node as the canvas draws it: its type, and the line under that which says its settings. The
  * type alone reads "If → If" for two nodes of one type; the line is what tells them apart there.
- * A line longer than the node is cut, as the node cuts it.
+ * A line longer than the node is cut, as the node cuts it. The flow is the one the node is in,
+ * since a line can name another of its nodes: a Clear alarm's names the Raise alarm it closes.
  */
-function drawnAs(node: FlowNodeDto): string {
+function drawnAs(node: FlowNodeDto, flow: FlowDto): string {
   const spec = specOf(node.type);
-  const line = Array.from(spec.summary(node.config));
+  const line = Array.from(spec.summary(node.config, flow));
   return `${spec.label} (${line.length > QUOTED ? `${line.slice(0, QUOTED - 1).join('')}…` : line.join('')})`;
 }
 
@@ -128,7 +129,7 @@ function drawnAs(node: FlowNodeDto): string {
 function flowProblems(flow: FlowDto, problems: Problems): string[] {
   const nameOf = (nodeId: string) => {
     const node = flow.nodes.find((one) => one.id === nodeId);
-    return node ? drawnAs(node) : nodeId;
+    return node ? drawnAs(node, flow) : nodeId;
   };
 
   return [

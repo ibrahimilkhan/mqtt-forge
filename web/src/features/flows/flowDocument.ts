@@ -1,5 +1,5 @@
 import type { FlowDto, FlowNodeType, FlowProblemDto } from '../../types/api';
-import { NODE_SPECS, specOf } from './nodeTypes';
+import { isLoop, isNodeType, NODE_SPECS, specOf } from './nodeTypes';
 
 /*
  * Every change the page makes to a flow, as a function from one flow to the next. Nothing here
@@ -26,7 +26,25 @@ export function newId(prefix = ''): string {
 /** What a flow is called wherever it is named: its name, or Untitled when it has none. */
 export const titleOf = (flow: FlowDto) => flow.name.trim() || 'Untitled';
 
-export const emptyFlow = (name: string): FlowDto => ({ id: newId('f'), name, enabled: true, nodes: [], edges: [], variables: [] });
+/**
+ * A new flow: a Start wired to an End — the smallest whole program, and the wire a first step is
+ * put on. Switched off: a flow runs when somebody Activates it, not when it is drawn.
+ */
+export const emptyFlow = (name: string): FlowDto => {
+  const end = newId('n');
+
+  return {
+    id: newId('f'),
+    name,
+    enabled: false,
+    variables: [],
+    nodes: [
+      { id: 'start', type: 'start', x: 40, y: 120, config: {} },
+      { id: end, type: 'end', x: 360, y: 120, config: {} },
+    ],
+    edges: [{ id: newId('e'), from: 'start', fromPort: 'out', to: end, toPort: 'in' }],
+  };
+};
 
 /** "Flow 1", "Flow 2" … — the first number no flow is already called. */
 export function nextName(flows: readonly FlowDto[]): string {
@@ -38,6 +56,56 @@ export const addNode = (flow: FlowDto, type: FlowNodeType, at: { x: number; y: n
   ...flow,
   nodes: [...flow.nodes, { id, type, x: Math.round(at.x), y: Math.round(at.y), config: NODE_SPECS[type].defaults() }],
 });
+
+/**
+ * A node put on a wire: the wire now runs into it, and every way out it has goes where the wire went —
+ * a decision's yes and no alike. A loop put on a wire gets an empty body, wired to its own next, and
+ * its done goes where the wire went. Nothing is left unwired, so the program stays whole.
+ */
+export function insertOnWire(
+  flow: FlowDto,
+  edgeId: string,
+  type: FlowNodeType,
+  at: { x: number; y: number },
+  id: string,
+): FlowDto {
+  const wire = flow.edges.find((edge) => edge.id === edgeId);
+  if (!wire) return flow;
+
+  const added = addNode(flow, type, at, id);
+  const edges = added.edges.filter((edge) => edge.id !== edgeId);
+
+  edges.push({ id: newId('e'), from: wire.from, fromPort: wire.fromPort, to: id, toPort: 'in' });
+  for (const port of NODE_SPECS[type].outs) {
+    if (isLoop(type) && port === 'body') edges.push({ id: newId('e'), from: id, fromPort: 'body', to: id, toPort: 'next' });
+    else edges.push({ id: newId('e'), from: id, fromPort: port, to: wire.to, toPort: wire.toPort });
+  }
+
+  return { ...added, edges };
+}
+
+/**
+ * A node put after one with a single way out: on that way out's wire when it has one, and wired
+ * straight from it when it has none. Null for a node with no way out, or with two — which of them
+ * the reader meant is theirs to say, by picking the wire.
+ */
+export function insertAfter(
+  flow: FlowDto,
+  nodeId: string,
+  type: FlowNodeType,
+  at: { x: number; y: number },
+  id: string,
+): FlowDto | null {
+  const node = flow.nodes.find((one) => one.id === nodeId);
+  const outs = node ? specOf(node.type).outs : [];
+  if (outs.length !== 1) return null;
+
+  const wire = flow.edges.find((edge) => edge.from === nodeId && edge.fromPort === outs[0]);
+  if (wire) return insertOnWire(flow, wire.id, type, at, id);
+
+  const added = addNode(flow, type, at, id);
+  return { ...added, edges: [...added.edges, { id: newId('e'), from: nodeId, fromPort: outs[0], to: id, toPort: 'in' }] };
+}
 
 /** How much room a node takes on the canvas, as the one putting a node down reckons it. */
 export type Box = { width: number; height: number };
@@ -105,14 +173,31 @@ export const moveNodes = (flow: FlowDto, moved: Record<string, { x: number; y: n
   ),
 });
 
-/** Takes nodes away, and every wire that touched one of them. */
+/**
+ * Takes nodes away, and every wire that touched one. A node whose one way out was wired leaves the
+ * wires that came into it joined to where that way out went, so taking a step out of a chain leaves
+ * the chain whole. The Start is never taken away: every run begins there.
+ */
 export function removeNodes(flow: FlowDto, ids: readonly string[]): FlowDto {
-  const gone = new Set(ids);
-  return {
-    ...flow,
-    nodes: flow.nodes.filter((node) => !gone.has(node.id)),
-    edges: flow.edges.filter((edge) => !gone.has(edge.from) && !gone.has(edge.to)),
-  };
+  let next = flow;
+
+  for (const id of ids) {
+    const node = next.nodes.find((one) => one.id === id);
+    if (!node || node.type === 'start') continue;
+
+    const outs = specOf(node.type).outs;
+    const onward = outs.length === 1 ? next.edges.find((edge) => edge.from === id && edge.fromPort === outs[0]) : undefined;
+
+    const edges = next.edges.flatMap((edge) => {
+      if (edge.from === id) return [];
+      if (edge.to !== id) return [edge];
+      return onward && onward.to !== id ? [{ ...edge, to: onward.to, toPort: onward.toPort }] : [];
+    });
+
+    next = { ...next, nodes: next.nodes.filter((one) => one.id !== id), edges };
+  }
+
+  return next;
 }
 
 export function removeEdges(flow: FlowDto, ids: readonly string[]): FlowDto {
@@ -121,31 +206,35 @@ export function removeEdges(flow: FlowDto, ids: readonly string[]): FlowDto {
 }
 
 /**
- * Whether a wire may be drawn: both ends on nodes, ports that exist, not back to its own node,
- * not a second wire between the same two ports, and not closing a circle. The server refuses the
- * same five things; saying no while the wire is still being dragged is kinder than saying it at
- * deploy. A node of a type this build does not know has no ports here, as it has none on the
- * server, so no wire goes to or from it.
+ * Whether a wire may be drawn: both ends on nodes, ports that exist, and not closing a circle —
+ * except the one wire that may go back, a loop body's return into that loop's next. Two ways out of
+ * one node may go to the same place (an If whose yes and no both end the run). The server refuses
+ * the same things; saying no while the wire is still being dragged is kinder than saying it when
+ * the flow is tested. A node of a type this build does not know has no ports here, as it has none
+ * on the server, so no wire goes to or from it.
+ *
+ * Asked as if the wire the way out already has were gone, since drawing a new one replaces it.
  */
 export function canConnect(flow: FlowDto, wire: Wire): boolean {
   const from = flow.nodes.find((node) => node.id === wire.from);
   const to = flow.nodes.find((node) => node.id === wire.to);
-  if (!from || !to || from.id === to.id) return false;
+  if (!from || !to) return false;
 
   if (!specOf(from.type).outs.includes(wire.fromPort)) return false;
   if (!specOf(to.type).ins.includes(wire.toPort)) return false;
 
-  const twice = flow.edges.some(
-    (edge) =>
-      edge.from === wire.from && edge.fromPort === wire.fromPort && edge.to === wire.to && edge.toPort === wire.toPort,
-  );
-  if (twice) return false;
+  const back = wire.toPort === 'next' && isLoop(to.type);
+  if (from.id === to.id) return back && wire.fromPort === 'body';
 
-  return !reaches(flow, wire.to, wire.from);
+  const others = { ...flow, edges: flow.edges.filter((edge) => !(edge.from === wire.from && edge.fromPort === wire.fromPort)) };
+
+  if (back) return bodyOf(others, to.id).has(from.id);
+  return !reachesForward(others, wire.to, wire.from);
 }
 
-/** Whether following wires forward from `start` ever arrives at `goal`. */
-function reaches(flow: FlowDto, start: string, goal: string): boolean {
+/** Whether following wires forward from `start` arrives at `goal`, a loop's return counting as no way forward. */
+function reachesForward(flow: FlowDto, start: string, goal: string): boolean {
+  const loops = new Set(flow.nodes.filter((node) => isLoop(node.type)).map((node) => node.id));
   const seen = new Set<string>();
   const waiting = [start];
 
@@ -155,20 +244,91 @@ function reaches(flow: FlowDto, start: string, goal: string): boolean {
     if (seen.has(at)) continue;
     seen.add(at);
 
-    for (const edge of flow.edges) if (edge.from === at) waiting.push(edge.to);
+    for (const edge of flow.edges)
+      if (edge.from === at && !(edge.toPort === 'next' && loops.has(edge.to))) waiting.push(edge.to);
   }
 
   return false;
 }
 
-/** The flow with the wire added, or the same flow when the wire may not be drawn. */
-export const connect = (flow: FlowDto, wire: Wire, id: string = newId('e')): FlowDto =>
-  canConnect(flow, wire) ? { ...flow, edges: [...flow.edges, { id, ...wire }] } : flow;
+/** The nodes of a loop's body: everything its body's wire leads to, without passing through the loop again. */
+export function bodyOf(flow: FlowDto, loopId: string): ReadonlySet<string> {
+  const body = new Set<string>();
+  const waiting = flow.edges.filter((edge) => edge.from === loopId && edge.fromPort === 'body').map((edge) => edge.to);
+
+  while (waiting.length > 0) {
+    const at = waiting.pop()!;
+    if (at === loopId || body.has(at)) continue;
+    body.add(at);
+    for (const edge of flow.edges) if (edge.from === at) waiting.push(edge.to);
+  }
+
+  return body;
+}
+
+/**
+ * The flow with the wire added — in place of the wire its way out had, since a way out has one — or
+ * the same flow when the wire may not be drawn.
+ */
+export function connect(flow: FlowDto, wire: Wire, id: string = newId('e')): FlowDto {
+  if (!canConnect(flow, wire)) return flow;
+
+  const edges = flow.edges.filter((edge) => !(edge.from === wire.from && edge.fromPort === wire.fromPort));
+  return { ...flow, edges: [...edges, { id, ...wire }] };
+}
 
 export const setConfig = (flow: FlowDto, nodeId: string, config: Record<string, unknown>): FlowDto => ({
   ...flow,
   nodes: flow.nodes.map((node) => (node.id === nodeId ? { ...node, config } : node)),
 });
+
+/*
+ * What a flow lacks to be a whole program, kept against the flow object as the answers below are,
+ * for the same reason: the canvas asks on every frame of a drag, and an edit makes a new flow.
+ */
+const unwiredOf = new WeakMap<FlowDto, ReadonlySet<string>>();
+const unreachedOf = new WeakMap<FlowDto, ReadonlySet<string>>();
+
+/**
+ * Every way out of a known node that has no wire, as `nodeId:port`. The canvas draws them red: a run
+ * that got there would have nowhere to go, and the server refuses the flow until each is wired.
+ */
+export function unwiredOuts(flow: FlowDto): ReadonlySet<string> {
+  let found = unwiredOf.get(flow);
+  if (found === undefined) {
+    const wired = new Set(flow.edges.map((edge) => `${edge.from}:${edge.fromPort}`));
+    found = new Set(
+      flow.nodes.flatMap((node) =>
+        isNodeType(node.type) ? NODE_SPECS[node.type].outs.map((port) => `${node.id}:${port}`).filter((key) => !wired.has(key)) : [],
+      ),
+    );
+    unwiredOf.set(flow, found);
+  }
+  return found;
+}
+
+/** Every node no wire leads to from the Start. The canvas draws them faded; the server refuses them. */
+export function unreached(flow: FlowDto): ReadonlySet<string> {
+  let found = unreachedOf.get(flow);
+  if (found === undefined) {
+    const start = flow.nodes.find((node) => node.type === 'start');
+    const reached = new Set<string>(start ? [start.id] : []);
+    const waiting = start ? [start.id] : [];
+
+    while (waiting.length > 0) {
+      const at = waiting.pop()!;
+      for (const edge of flow.edges)
+        if (edge.from === at && !reached.has(edge.to)) {
+          reached.add(edge.to);
+          waiting.push(edge.to);
+        }
+    }
+
+    found = new Set(flow.nodes.filter((node) => !reached.has(node.id) && node.type !== 'start').map((node) => node.id));
+    unreachedOf.set(flow, found);
+  }
+  return found;
+}
 
 /*
  * What is worked out about a flow is kept against the flow object, because no flow is ever

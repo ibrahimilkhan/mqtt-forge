@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { FlowDto } from '../../types/api';
+import type { FlowDto, FlowNodeType } from '../../types/api';
 import {
   addNode,
+  bodyOf,
   canConnect,
   connect,
   emptyFlow,
   fingerprint,
   freeSpot,
+  insertAfter,
+  insertOnWire,
   moveNodes,
   newId,
   nextName,
@@ -17,19 +20,52 @@ import {
   sameFlow,
   setConfig,
   standingOf,
+  unreached,
+  unwiredOuts,
   withDrafts,
 } from './flowDocument';
 import { exampleFlows } from './examples';
 import { NODE_SPECS } from './nodeTypes';
 
-const chain = (): FlowDto => {
-  let flow = emptyFlow('Chain');
-  flow = addNode(flow, 'inject', { x: 0, y: 0 }, 'a');
-  flow = addNode(flow, 'forEach', { x: 200, y: 0 }, 'b');
-  flow = addNode(flow, 'repeat', { x: 400, y: 0 }, 'c');
-  flow = connect(flow, { from: 'a', fromPort: 'out', to: 'b', toPort: 'in' }, 'e1');
-  return connect(flow, { from: 'b', fromPort: 'out', to: 'c', toPort: 'in' }, 'e2');
-};
+/**
+ * Start → Wait → Set → End, under a flow id of its own each time, as a flow made on the page has:
+ * the flow the cases about anything but its wiring change.
+ */
+const chain = (): FlowDto => ({
+  id: newId('f'),
+  name: 'Chain',
+  enabled: true,
+  variables: [{ name: 'limit', value: '90' }],
+  nodes: [
+    { id: 'a', type: 'start', x: 0, y: 0, config: {} },
+    { id: 'b', type: 'wait', x: 200, y: 0, config: { seconds: '1' } },
+    { id: 'c', type: 'set', x: 400, y: 0, config: { variable: 'limit', value: '95' } },
+    { id: 'd', type: 'end', x: 600, y: 0, config: {} },
+  ],
+  edges: [
+    { id: 'e1', from: 'a', fromPort: 'out', to: 'b', toPort: 'in' },
+    { id: 'e2', from: 'b', fromPort: 'out', to: 'c', toPort: 'in' },
+    { id: 'e3', from: 'c', fromPort: 'out', to: 'd', toPort: 'in' },
+  ],
+});
+
+const at = { x: 0, y: 0 };
+
+/** Start → a → End, where a is any node with one way in and one way out. */
+const line = (type: FlowNodeType = 'debug'): FlowDto => ({
+  id: 'f', name: 'F', enabled: false, variables: [],
+  nodes: [
+    { id: 'start', type: 'start', x: 0, y: 0, config: {} },
+    { id: 'a', type, x: 200, y: 0, config: {} },
+    { id: 'end', type: 'end', x: 400, y: 0, config: {} },
+  ],
+  edges: [
+    { id: 'e1', from: 'start', fromPort: 'out', to: 'a', toPort: 'in' },
+    { id: 'e2', from: 'a', fromPort: 'out', to: 'end', toPort: 'in' },
+  ],
+});
+
+const wires = (flow: FlowDto) => flow.edges.map((edge) => `${edge.from}.${edge.fromPort}>${edge.to}.${edge.toPort}`).sort();
 
 describe('flow document', () => {
   it('makes ids the server accepts', () => {
@@ -41,10 +77,14 @@ describe('flow document', () => {
     expect(nextName([emptyFlow('Flow 1'), emptyFlow('Boiler watch')])).toBe('Flow 2');
   });
 
-  it('adds a node with its type\'s defaults, where it was dropped', () => {
-    const flow = addNode(emptyFlow('A'), 'publish', { x: 120, y: 80 }, 'p1');
+  // Where a node is dropped, or where the palette puts one free of the wires; the canvas marks its
+  // way out until it is wired.
+  it("adds a node with its type's defaults, where it was dropped, and wires it to nothing", () => {
+    const before = emptyFlow('A');
+    const flow = addNode(before, 'publish', { x: 120, y: 80 }, 'p1');
 
-    expect(flow.nodes).toEqual([{ id: 'p1', type: 'publish', x: 120, y: 80, config: NODE_SPECS.publish.defaults() }]);
+    expect(flow.nodes.at(-1)).toEqual({ id: 'p1', type: 'publish', x: 120, y: 80, config: NODE_SPECS.publish.defaults() });
+    expect(flow.edges).toBe(before.edges);
   });
 
   it('moves nodes and rounds where they land', () => {
@@ -53,27 +93,21 @@ describe('flow document', () => {
     expect(flow.nodes[0]).toMatchObject({ x: 10, y: 21 });
   });
 
-  it('takes a removed node\'s wires with it', () => {
-    const flow = removeNodes(chain(), ['b']);
-
-    expect(flow.nodes.map((node) => node.id)).toEqual(['a', 'c']);
-    expect(flow.edges).toEqual([]);
-  });
-
   it('removes wires by id', () => {
-    expect(removeEdges(chain(), ['e1']).edges.map((edge) => edge.id)).toEqual(['e2']);
+    expect(removeEdges(chain(), ['e1']).edges.map((edge) => edge.id)).toEqual(['e2', 'e3']);
   });
 
-  it('refuses a wire that would go round in a circle, back to its own node, twice, or to a port that is not there', () => {
-    const flow = chain();
+  it('refuses a wire that would go round in a circle, back into its own node, or from or to a port that is not there', () => {
+    const flow = line();
 
-    expect(canConnect(flow, { from: 'c', fromPort: 'out', to: 'b', toPort: 'in' })).toBe(false);
-    expect(canConnect(flow, { from: 'b', fromPort: 'out', to: 'b', toPort: 'in' })).toBe(false);
-    expect(canConnect(flow, { from: 'a', fromPort: 'out', to: 'b', toPort: 'in' })).toBe(false);
-    expect(canConnect(flow, { from: 'a', fromPort: 'yes', to: 'c', toPort: 'in' })).toBe(false);
-    expect(canConnect(flow, { from: 'a', fromPort: 'out', to: 'c', toPort: 'in' })).toBe(true);
+    expect(canConnect(flow, { from: 'a', fromPort: 'out', to: 'a', toPort: 'in' })).toBe(false);
+    expect(canConnect(flow, { from: 'end', fromPort: 'out', to: 'a', toPort: 'in' })).toBe(false);
+    expect(canConnect(flow, { from: 'a', fromPort: 'yes', to: 'end', toPort: 'in' })).toBe(false);
+    // Nothing goes into the Start: every run begins there.
+    expect(canConnect(flow, { from: 'a', fromPort: 'out', to: 'start', toPort: 'in' })).toBe(false);
+    expect(canConnect(flow, { from: 'a', fromPort: 'out', to: 'end', toPort: 'in' })).toBe(true);
 
-    expect(connect(flow, { from: 'c', fromPort: 'out', to: 'b', toPort: 'in' })).toBe(flow);
+    expect(connect(flow, { from: 'a', fromPort: 'out', to: 'a', toPort: 'in' })).toBe(flow);
   });
 
   // The server refuses every wire to or from a node it does not know, so the canvas does too; and
@@ -87,9 +121,9 @@ describe('flow document', () => {
 
   it('replaces a node\'s settings and nothing else', () => {
     const before = chain();
-    const flow = setConfig(before, 'c', { count: 5, seconds: 0 });
+    const flow = setConfig(before, 'c', { variable: 'limit', value: '80' });
 
-    expect(flow.nodes[2].config).toEqual({ count: 5, seconds: 0 });
+    expect(flow.nodes[2].config).toEqual({ variable: 'limit', value: '80' });
     expect(flow.nodes[0]).toBe(before.nodes[0]);
   });
 
@@ -97,8 +131,8 @@ describe('flow document', () => {
     // One chain, not two: two independent chain() calls would also differ in the flow's own
     // random id, which is not the order-of-keys difference this test is about.
     const base = chain();
-    const a = setConfig(base, 'c', { count: 5, seconds: 0 });
-    const b = setConfig(base, 'c', { seconds: 0, count: 5 });
+    const a = setConfig(base, 'c', { variable: 'limit', value: '80' });
+    const b = setConfig(base, 'c', { value: '80', variable: 'limit' });
 
     expect(sameFlow(a, b)).toBe(true);
     expect(sameFlow(a, moveNodes(a, { a: { x: 1, y: 1 } }))).toBe(false);
@@ -136,8 +170,8 @@ describe('flow document', () => {
   // fingerprint of that copy.
   it('fingerprints a flow by what it says, not by how its keys were ordered or which object it is', () => {
     const base = chain();
-    const same = setConfig(base, 'c', { seconds: 1, count: 3 });
-    const reordered = setConfig(base, 'c', { count: 3, seconds: 1 });
+    const same = setConfig(base, 'c', { value: '80', variable: 'limit' });
+    const reordered = setConfig(base, 'c', { variable: 'limit', value: '80' });
 
     expect(fingerprint(same)).toBe(fingerprint(reordered));
     expect(fingerprint(same)).toBe(fingerprint(JSON.parse(JSON.stringify(same)) as FlowDto));
@@ -189,6 +223,8 @@ describe('flow document', () => {
     });
   });
 
+  // A loop's body wires back into its own next, the one wire that may go back: drawn again one wire
+  // at a time, as a reader would draw it, every one of them is one the canvas lets land.
   it('builds two example flows whose every wire the canvas would allow', () => {
     const [simulator, watch] = exampleFlows();
 
@@ -210,10 +246,12 @@ describe('flow document', () => {
   describe('where a node the palette adds goes', () => {
     const box = { width: 188, height: 80 };
     const gap = 24;
-    const at = (x: number, y: number): FlowDto => addNode(emptyFlow('Placed'), 'debug', { x, y }, 'there');
+    /** A flow with no nodes at all, not even the Start and the End a new flow has: an empty canvas. */
+    const bare = (): FlowDto => ({ ...emptyFlow('Placed'), nodes: [], edges: [] });
+    const at = (x: number, y: number): FlowDto => addNode(bare(), 'debug', { x, y }, 'there');
 
     it('goes where it was asked to when nothing is there', () => {
-      expect(freeSpot(emptyFlow('Empty'), { x: 100, y: 50 }, box, 3, gap)).toEqual({ x: 100, y: 50 });
+      expect(freeSpot(bare(), { x: 100, y: 50 }, box, 3, gap)).toEqual({ x: 100, y: 50 });
     });
 
     it('steps across past a node in the way, and a gap beyond it', () => {
@@ -237,7 +275,7 @@ describe('flow document', () => {
     // and every add passed over a place that was free.
     it('reckons its places from where a node put at the start is kept', () => {
       const start = { x: 100.6, y: 50.6 };
-      let flow = emptyFlow('Placed');
+      let flow = bare();
       for (const id of ['a', 'b', 'c', 'd']) flow = addNode(flow, 'debug', freeSpot(flow, start, box, 3, gap), id);
 
       expect(flow.nodes.map(({ x, y }) => [x, y])).toEqual([[101, 51], [313, 51], [525, 51], [101, 155]]);
@@ -256,5 +294,88 @@ describe('flow document', () => {
       expect(view(1035).across).toBe(2);
       expect(view(1036).across).toBe(3);
     });
+  });
+});
+
+describe('a flowchart stays whole while it is built', () => {
+  it('starts as a Start wired to an End, switched off, with no variables', () => {
+    const flow = emptyFlow('Flow 1');
+
+    expect(flow.nodes.map((node) => node.type)).toEqual(['start', 'end']);
+    expect(flow.enabled).toBe(false);
+    expect(flow.variables).toEqual([]);
+    expect(wires(flow)).toEqual([`start.out>${flow.nodes[1].id}.in`]);
+    expect(unwiredOuts(flow).size).toBe(0);
+    expect(unreached(flow).size).toBe(0);
+  });
+
+  it('puts a node on a wire, and sends its way out where the wire went', () => {
+    const flow = insertOnWire(line(), 'e2', 'publish', at, 'p');
+
+    expect(wires(flow)).toEqual(['a.out>p.in', 'p.out>end.in', 'start.out>a.in']);
+  });
+
+  it("sends both of a decision's ways out where the wire went", () => {
+    expect(wires(insertOnWire(line(), 'e2', 'if', at, 'q'))).toEqual(['a.out>q.in', 'q.no>end.in', 'q.yes>end.in', 'start.out>a.in']);
+  });
+
+  it('gives a loop put on a wire an empty body and sends its done where the wire went', () => {
+    expect(wires(insertOnWire(line(), 'e2', 'for', at, 'l'))).toEqual(['a.out>l.in', 'l.body>l.next', 'l.done>end.in', 'start.out>a.in']);
+  });
+
+  it('puts a node after one with a single way out, on the wire that way out has', () => {
+    expect(wires(insertAfter(line(), 'a', 'wait', at, 'w')!)).toEqual(['a.out>w.in', 'start.out>a.in', 'w.out>end.in']);
+  });
+
+  it('cannot put a node after one with two ways out', () => {
+    const decision = insertOnWire(line(), 'e2', 'if', at, 'q');
+    expect(insertAfter(decision, 'q', 'debug', at, 'd')).toBeNull();
+  });
+
+  it('joins what came before a step to what came after when the step is taken out', () => {
+    const flow = removeNodes(line(), ['a']);
+
+    expect(flow.nodes.map((node) => node.id)).toEqual(['start', 'end']);
+    expect(wires(flow)).toEqual(['start.out>end.in']);
+  });
+
+  it('never takes the Start out', () => {
+    expect(removeNodes(line(), ['start']).nodes.map((node) => node.id)).toEqual(['start', 'a', 'end']);
+  });
+
+  it("replaces a way out's wire with a new one, since a way out has one", () => {
+    const flow = { ...line(), nodes: [...line().nodes, { id: 'b', type: 'end', x: 0, y: 200, config: {} }] };
+
+    expect(wires(connect(flow, { from: 'a', fromPort: 'out', to: 'b', toPort: 'in' }, 'e3'))).toEqual(['a.out>b.in', 'start.out>a.in']);
+  });
+
+  it("lets a body come back to its own loop's next, and nothing else go back", () => {
+    const loop = insertOnWire(line(), 'e2', 'for', at, 'l');
+    const filled = insertOnWire(loop, loop.edges.find((edge) => edge.fromPort === 'body')!.id, 'publish', at, 'p');
+
+    expect(canConnect(filled, { from: 'p', fromPort: 'out', to: 'l', toPort: 'next' })).toBe(true);
+    expect(canConnect(filled, { from: 'a', fromPort: 'out', to: 'l', toPort: 'next' })).toBe(false);
+    expect(canConnect(filled, { from: 'p', fromPort: 'out', to: 'a', toPort: 'in' })).toBe(false);
+    expect(bodyOf(filled, 'l')).toEqual(new Set(['p']));
+  });
+
+  it('names every way out that has no wire, and every node Start does not lead to', () => {
+    const flow: FlowDto = {
+      ...line(),
+      nodes: [...line().nodes, { id: 'lonely', type: 'debug', x: 0, y: 300, config: {} }],
+    };
+
+    expect(unwiredOuts(flow)).toEqual(new Set(['lonely:out']));
+    expect(unreached(flow)).toEqual(new Set(['lonely']));
+  });
+});
+
+describe('the examples', () => {
+  it('are whole flowcharts: every way out wired, every node reached from Start', () => {
+    for (const flow of exampleFlows()) {
+      expect(unwiredOuts(flow)).toEqual(new Set());
+      expect(unreached(flow)).toEqual(new Set());
+      expect(flow.nodes.filter((node) => node.type === 'start')).toHaveLength(1);
+    }
   });
 });

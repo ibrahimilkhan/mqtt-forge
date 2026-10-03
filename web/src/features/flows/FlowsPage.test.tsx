@@ -11,7 +11,7 @@ import panelStyles from '../../styles/panel.module.css';
 import { server } from '../../test/server';
 import { renderWithClient as render } from '../../test/renderWithClient';
 import type { FlowDebugDto, FlowDto, FlowNodeDto, FlowRunStatusDto, FlowsDto, FlowStatusDto } from '../../types/api';
-import { forgetDrafts, standInForTheBrowser, withoutComments } from './canvasTestbed';
+import { forgetDrafts, runOf, standInForTheBrowser, withoutComments } from './canvasTestbed';
 import { DebugStrip } from './DebugStrip';
 import strip from './DebugStrip.module.css';
 import stripSheet from './DebugStrip.module.css?raw';
@@ -34,46 +34,56 @@ beforeEach(() => {
   useFlowAlarmStore.setState({ asked: null });
 });
 
+/**
+ * The flows the server has, each a whole flowchart, as the page deploys one: every way out wired,
+ * every node reached from the Start. The watch reads a message and asks whether it runs hot, and
+ * either way the run ends there.
+ */
 const watch: FlowDto = {
   id: 'watch',
   name: 'Boiler watch',
   enabled: true,
   nodes: [
-    { id: 'in', type: 'mqttIn', x: 40, y: 120, config: { filter: 'plant/+/temp', replay: false } },
-    { id: 'test', type: 'if', x: 300, y: 120, config: { field: '$.temp', test: 'gt', value: '90', value2: '' } },
+    { id: 'start', type: 'start', x: 40, y: 120, config: {} },
+    { id: 'in', type: 'mqttIn', x: 260, y: 120, config: { filter: 'plant/+/temp', replay: false } },
+    { id: 'test', type: 'if', x: 500, y: 120, config: { field: '$.temp', test: 'gt', value: '90', value2: '' } },
+    { id: 'end', type: 'end', x: 800, y: 120, config: {} },
   ],
-  edges: [{ id: 'e1', from: 'in', fromPort: 'out', to: 'test', toPort: 'in' }],
+  edges: [
+    { id: 'e0', from: 'start', fromPort: 'out', to: 'in', toPort: 'in' },
+    { id: 'e1', from: 'in', fromPort: 'out', to: 'test', toPort: 'in' },
+    { id: 'e2', from: 'test', fromPort: 'yes', to: 'end', toPort: 'in' },
+    { id: 'e3', from: 'test', fromPort: 'no', to: 'end', toPort: 'in' },
+  ],
   variables: [],
 };
 
+/** The simulator goes round for ever, two seconds a turn. */
 const sim: FlowDto = {
   id: 'sim',
   name: 'Boiler simulator',
   enabled: true,
-  nodes: [{ id: 'tick', type: 'every', x: 40, y: 100, config: { seconds: 2, topic: '', payload: '["k1","k2","k3"]' } }],
-  edges: [],
+  nodes: [
+    { id: 'start', type: 'start', x: 40, y: 100, config: {} },
+    { id: 'loop', type: 'for', x: 240, y: 100, config: { times: '', forever: true } },
+    { id: 'tick', type: 'wait', x: 480, y: 100, config: { seconds: '2' } },
+    { id: 'end', type: 'end', x: 240, y: 280, config: {} },
+  ],
+  edges: [
+    { id: 'e1', from: 'start', fromPort: 'out', to: 'loop', toPort: 'in' },
+    { id: 'e2', from: 'loop', fromPort: 'body', to: 'tick', toPort: 'in' },
+    { id: 'e3', from: 'tick', fromPort: 'out', to: 'loop', toPort: 'next' },
+    { id: 'e4', from: 'loop', fromPort: 'done', to: 'end', toPort: 'in' },
+  ],
   variables: [],
 };
 
-/** What the server says the watch has done, with this many messages in. */
-const watchHasSeen = (count: number): FlowStatusDto => ({
-  runs: [{
-    flowId: 'watch', kind: 'active', state: 'waiting', at: null, waiting: null, fault: null, variables: {},
-    nodes: [{ id: 'in', count, outs: { out: count }, errors: 0, note: null, standing: [] }],
-  }],
-});
-
 /** One run of the watch, as the server reports it: the flow at work, waiting, unless the test says otherwise. */
-const watchRun = (over: Partial<FlowRunStatusDto> = {}): FlowRunStatusDto => ({
-  flowId: 'watch',
-  kind: 'active',
-  state: 'waiting',
-  at: null,
-  waiting: null,
-  fault: null,
-  variables: {},
-  nodes: [],
-  ...over,
+const watchRun = (over: Partial<FlowRunStatusDto> = {}): FlowRunStatusDto => runOf('watch', over);
+
+/** What the server says the watch has done, with this many messages read. */
+const watchHasSeen = (count: number): FlowStatusDto => ({
+  runs: [watchRun({ nodes: [{ id: 'in', count, outs: { out: count }, errors: 0, note: null, standing: [] }] })],
 });
 
 /** What a stylesheet declares for one selector, its comments left out. */
@@ -167,7 +177,7 @@ describe('Flows page', () => {
       expect.stringContaining('Boiler watch'),
     ]);
     expect(screen.getByText('2 changes')).toBeInTheDocument();
-    expect(await screen.findByText('every 2 s')).toBeInTheDocument();
+    expect(await screen.findByText('2 s')).toBeInTheDocument();
   });
 
   it('deploys every changed flow, one request each, and then has nothing left to deploy', async () => {
@@ -228,12 +238,12 @@ describe('Flows page', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'New flow' }));
     const palette = within(screen.getByRole('group', { name: 'Nodes' }));
 
-    for (const name of [/^Inject/, /^Debug/, /^Publish/]) await userEvent.click(palette.getByRole('button', { name }));
+    for (const name of [/^MQTT in/, /^Debug/, /^Publish/]) await userEvent.click(palette.getByRole('button', { name }));
 
     const [flow] = Object.values(useFlowDraftStore.getState().drafts);
     const apart = (a: FlowNodeDto, b: FlowNodeDto) =>
       a.x + NODE_WIDTH <= b.x || b.x + NODE_WIDTH <= a.x || a.y + NODE_HEIGHT <= b.y || b.y + NODE_HEIGHT <= a.y;
-    expect(flow.nodes.map((node) => node.type)).toEqual(['inject', 'debug', 'publish']);
+    expect(flow.nodes.map((node) => node.type)).toEqual(['start', 'end', 'mqttIn', 'debug', 'publish']);
     for (const [i, a] of flow.nodes.entries())
       for (const b of flow.nodes.slice(i + 1)) expect(apart(a, b), `${a.type} and ${b.type} overlap`).toBe(true);
   });
@@ -243,19 +253,18 @@ describe('Flows page', () => {
     server.use(
       http.get('/api/flows/status', () =>
         HttpResponse.json({
-          runs: [{
-            flowId: 'watch', kind: 'active', state: 'waiting', at: null, waiting: null, fault: null, variables: {},
+          runs: [watchRun({
             nodes: [
               { id: 'in', count: 412, outs: { out: 412 }, errors: 0, note: null, standing: [] },
               { id: 'test', count: 412, outs: { yes: 3, no: 409 }, errors: 0, note: null, standing: [] },
             ],
-          }],
+          })],
         }),
       ),
     );
     render(<FlowsPage />);
 
-    expect(await screen.findByText('412 in')).toBeInTheDocument();
+    expect(await screen.findByText('412 read')).toBeInTheDocument();
     expect(screen.getByText('yes 3 · no 409')).toBeInTheDocument();
     expect(screen.getByText('Running.')).toBeInTheDocument();
   });
@@ -272,13 +281,13 @@ describe('Flows page', () => {
 
     act(() => useFlowStatusStore.getState().setStatus({ runs: [atWork, test] }));
 
-    expect(await screen.findByText('3 in')).toBeInTheDocument();
-    expect(screen.queryByText('500 in')).not.toBeInTheDocument();
+    expect(await screen.findByText('3 read')).toBeInTheDocument();
+    expect(screen.queryByText('500 read')).not.toBeInTheDocument();
 
     act(() => useFlowStatusStore.getState().setStatus({ runs: [atWork, { ...test, state: 'finished' }] }));
 
-    expect(screen.getByText('500 in')).toBeInTheDocument();
-    expect(screen.queryByText('3 in')).not.toBeInTheDocument();
+    expect(screen.getByText('500 read')).toBeInTheDocument();
+    expect(screen.queryByText('3 read')).not.toBeInTheDocument();
   });
 
   it('says a flows file the server cannot read, and draws nothing over it', async () => {
@@ -559,7 +568,7 @@ describe('where the keyboard goes', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Remove node' }));
 
-    expect(useFlowDraftStore.getState().drafts.watch.nodes.map((node) => node.id)).toEqual(['in']);
+    expect(useFlowDraftStore.getState().drafts.watch.nodes.map((node) => node.id)).toEqual(['start', 'in', 'end']);
     expect(document.activeElement).toBe(document.getElementById('flow-canvas'));
   });
 
@@ -611,7 +620,7 @@ describe('the delete keys', () => {
     act(() => node.focus());
     await userEvent.keyboard('{Backspace}');
 
-    await waitFor(() => expect(useFlowDraftStore.getState().drafts.watch?.nodes.map((one) => one.id)).toEqual(['in']));
+    await waitFor(() => expect(useFlowDraftStore.getState().drafts.watch?.nodes.map((one) => one.id)).toEqual(['start', 'in', 'end']));
   });
 
   it('leave the picked node alone while the keyboard is on a tab, or on a button above the canvas', async () => {
@@ -629,7 +638,7 @@ describe('the delete keys', () => {
       await turns();
     }
 
-    expect(useFlowDraftStore.getState().drafts.watch.nodes.map((one) => one.id)).toEqual(['in', 'test']);
+    expect(useFlowDraftStore.getState().drafts.watch.nodes.map((one) => one.id)).toEqual(['start', 'in', 'test', 'end']);
     expect(useFlowDraftStore.getState().selected).toBe('test');
   });
 });
@@ -946,14 +955,14 @@ describe('the numbers the page reads when it opens', () => {
     await screen.findByRole('tab', { name: /Boiler watch/ });
 
     act(() => useFlowStatusStore.getState().setStatus(watchHasSeen(500)));
-    expect(await screen.findByText('500 in')).toBeInTheDocument();
+    expect(await screen.findByText('500 read')).toBeInTheDocument();
 
     answer.release();
     await waitFor(() => expect(answered).toBe(true));
     await turns();
 
-    expect(screen.getByText('500 in')).toBeInTheDocument();
-    expect(screen.queryByText('412 in')).not.toBeInTheDocument();
+    expect(screen.getByText('500 read')).toBeInTheDocument();
+    expect(screen.queryByText('412 read')).not.toBeInTheDocument();
   });
 
   it('lets the read go when the page is shut before it comes back', async () => {
@@ -1097,13 +1106,12 @@ describe('deploying', () => {
  */
 describe('at the limits', () => {
   const both = (count: number): FlowStatusDto => ({
-    runs: [{
-      flowId: 'watch', kind: 'active', state: 'waiting', at: null, waiting: null, fault: null, variables: {},
+    runs: [watchRun({
       nodes: [
         { id: 'in', count, outs: { out: count }, errors: 0, note: null, standing: [] },
         { id: 'test', count, outs: { yes: 3, no: count - 3 }, errors: 0, note: null, standing: [] },
       ],
-    }],
+    })],
   });
 
   it('draws nothing again for a push that moved nothing', async () => {
@@ -1115,7 +1123,7 @@ describe('at the limits', () => {
         <FlowsPage />
       </Profiler>,
     );
-    await screen.findByText('412 in');
+    await screen.findByText('412 read');
     await turns();
     commits.mockClear();
 
@@ -1126,7 +1134,7 @@ describe('at the limits', () => {
     act(() => useFlowStatusStore.getState().setStatus(both(413)));
 
     expect(again).toBe(0);
-    expect(screen.getByText('413 in')).toBeInTheDocument();
+    expect(screen.getByText('413 read')).toBeInTheDocument();
   });
 
   it('checks only the flow that changed for whether it still differs from what is running', async () => {
@@ -1330,7 +1338,7 @@ describe('a node this build does not know', () => {
 
     const pane = screen.getByRole('complementary', { name: 'Inspector' });
     expect(within(pane).getByRole('heading', { name: 'function' })).toBeInTheDocument();
-    expect(within(pane).getByText(/^This build does not know a node called “function”/)).toBeInTheDocument();
+    expect(within(pane).getByText(/^This build does not know this kind of node\./)).toBeInTheDocument();
 
     await userEvent.click(within(pane).getByRole('button', { name: 'Remove node' }));
 
@@ -1357,7 +1365,10 @@ describe('a node this build does not know', () => {
  */
 describe('a draft and the server\'s copy', () => {
   /** The watch as another console deployed it: the If now asks for more than 95. */
-  const v2: FlowDto = { ...watch, nodes: [watch.nodes[0], { ...watch.nodes[1], config: { ...watch.nodes[1].config, value: '95' } }] };
+  const v2: FlowDto = {
+    ...watch,
+    nodes: watch.nodes.map((node) => (node.id === 'test' ? { ...node, config: { ...node.config, value: '95' } } : node)),
+  };
 
   /**
    * Another console deploys or deletes, and this one reads the list again. The query tells the page
@@ -1402,9 +1413,9 @@ describe('a draft and the server\'s copy', () => {
     expect(useFlowDraftStore.getState().drafts.watch).toBeUndefined();
 
     act(() => useFlowDraftStore.getState().select('test'));
-    act(() => useFlowDraftStore.getState().edit(watch, (flow) => moveNodes(flow, { test: { x: 348, y: 120 } })));
+    act(() => useFlowDraftStore.getState().edit(watch, (flow) => moveNodes(flow, { test: { x: 548, y: 120 } })));
     expect(screen.getByText('1 change')).toBeInTheDocument();
-    act(() => useFlowDraftStore.getState().edit(watch, (flow) => moveNodes(flow, { test: { x: 300, y: 120 } })));
+    act(() => useFlowDraftStore.getState().edit(watch, (flow) => moveNodes(flow, { test: { x: 500, y: 120 } })));
 
     expect(useFlowDraftStore.getState().drafts.watch).toBeUndefined();
     expect(screen.getByText('All deployed')).toBeInTheDocument();
@@ -1627,7 +1638,10 @@ const outcome = (text: string | RegExp) => screen.getByText(text).closest('[aria
  * region, so a reader who cannot see the marks it leaves is told as well.
  */
 describe('what did not go through', () => {
-  /** A flow with an Inject node, running, so its ▶ can be pressed. */
+  /**
+   * A flow with an Inject node, running, so its ▶ can be pressed. This build no longer knows Inject,
+   * but the canvas draws its ▶ until the request it makes goes too.
+   */
   const press: FlowDto = {
     id: 'press',
     name: 'Fan test',
@@ -1637,10 +1651,7 @@ describe('what did not go through', () => {
     variables: [],
   };
   const pressRuns: FlowStatusDto = {
-    runs: [{
-      flowId: 'press', kind: 'active', state: 'waiting', at: null, waiting: null, fault: null, variables: {},
-      nodes: [{ id: 'go', count: 0, outs: {}, errors: 0, note: null, standing: [] }],
-    }],
+    runs: [runOf('press', { nodes: [{ id: 'go', count: 0, outs: {}, errors: 0, note: null, standing: [] }] })],
   };
 
   it('says a deploy that failed in a live region of its own, not over the whole page', async () => {
@@ -1811,30 +1822,33 @@ describe('what did not go through', () => {
 
 /**
  * A flow alarm's row on the alarm wall opens this page, on the flow the alarm came from with its
- * Alarm node picked. The node's pane lists the alarms it holds up; the Alerts panel, a list of
+ * Raise alarm node picked. The node's pane lists the alarms it holds up; the Alerts panel, a list of
  * rules, has nothing to say about one.
  */
 describe('a flow alarm the reader asked to see', () => {
+  /** The watch with a Raise alarm on its yes, and the run ending after it whether the alarm is new or up. */
   const alarmed: FlowDto = {
     ...watch,
     nodes: [
       ...watch.nodes,
-      {
-        id: 'hot', type: 'alarm', x: 580, y: 40,
-        config: { name: 'Boiler too hot', severity: 'warn', reason: '{{topic}}', value: '', sound: false, webhook: '', publish: false, publishTopic: '', qos: 1, retain: false },
-      },
+      { id: 'hot', type: 'alarmRaise', x: 800, y: 0, config: { name: 'Boiler too hot', level: 'warn', reason: '{{topic}}', value: '' } },
     ],
-    edges: [...watch.edges, { id: 'e2', from: 'test', fromPort: 'yes', to: 'hot', toPort: 'raise' }],
+    edges: [
+      ...watch.edges.filter((edge) => edge.id !== 'e2'),
+      { id: 'e4', from: 'test', fromPort: 'yes', to: 'hot', toPort: 'in' },
+      { id: 'e5', from: 'hot', fromPort: 'raised', to: 'end', toPort: 'in' },
+      { id: 'e6', from: 'hot', fromPort: 'up', to: 'end', toPort: 'in' },
+    ],
   };
   const inspecting = () => within(screen.getByRole('complementary', { name: 'Inspector' }));
 
-  it('opens on the flow it came from, with its Alarm node picked', async () => {
+  it('opens on the flow it came from, with its Raise alarm node picked', async () => {
     keeping([sim, alarmed]);
     useFlowAlarmStore.getState().ask('flow-watch-hot');
     render(<FlowsPage />);
 
     expect(await screen.findByRole('tab', { name: /^Boiler watch/, selected: true })).toBeInTheDocument();
-    expect(inspecting().getByRole('heading', { name: 'Alarm' })).toBeInTheDocument();
+    expect(inspecting().getByRole('heading', { name: 'Raise alarm' })).toBeInTheDocument();
     expect(useFlowAlarmStore.getState().asked).toBeNull();
   });
 
@@ -1846,7 +1860,7 @@ describe('a flow alarm the reader asked to see', () => {
     act(() => useFlowAlarmStore.getState().ask('flow-watch-hot'));
 
     expect(screen.getByRole('tab', { name: /^Boiler watch/, selected: true })).toBeInTheDocument();
-    expect(inspecting().getByRole('heading', { name: 'Alarm' })).toBeInTheDocument();
+    expect(inspecting().getByRole('heading', { name: 'Raise alarm' })).toBeInTheDocument();
   });
 
   it('lets the question go when the flow is not there any more', async () => {
@@ -1866,13 +1880,13 @@ describe('a flow alarm the reader asked to see', () => {
  */
 describe('what a running flow says', () => {
   const refusedFilter = (fault: string | null = null): FlowStatusDto => ({
-    runs: [{
-      flowId: 'watch', kind: 'active', state: 'waiting', at: null, waiting: null, fault, variables: {},
+    runs: [watchRun({
+      fault,
       nodes: [
         { id: 'in', count: 0, outs: {}, errors: 1, note: 'The broker refused this filter.', standing: [] },
         { id: 'test', count: 0, outs: {}, errors: 0, note: null, standing: [] },
       ],
-    }],
+    })],
   });
 
   it('says why a node counts an error, on its status line and in its pane', async () => {
@@ -1880,7 +1894,7 @@ describe('what a running flow says', () => {
     server.use(http.get('/api/flows/status', () => HttpResponse.json(refusedFilter())));
     render(<FlowsPage />);
 
-    const line = await screen.findByText('0 in · 1 error');
+    const line = await screen.findByText('0 read · 1 error');
     expect(line).toHaveAttribute('title', 'The broker refused this filter.');
 
     fireEvent.click(line.closest<HTMLElement>('.react-flow__node')!);
@@ -1922,15 +1936,12 @@ describe('what a running flow says', () => {
 
   /** The watch's MQTT in, having read one message, with its last word on it. */
   const lastRead = (note: string): FlowStatusDto => ({
-    runs: [{
-      flowId: 'watch', kind: 'active', state: 'waiting', at: null, waiting: null, fault: null, variables: {},
-      nodes: [{ id: 'in', count: 1, outs: { out: 1 }, errors: 0, note, standing: [] }],
-    }],
+    runs: [watchRun({ nodes: [{ id: 'in', count: 1, outs: { out: 1 }, errors: 0, note, standing: [] }] })],
   });
 
   /** The pane of the watch's MQTT in, once the reader has picked it. */
   const inPane = async () => {
-    fireEvent.click((await screen.findByText('1 in')).closest<HTMLElement>('.react-flow__node')!);
+    fireEvent.click((await screen.findByText('1 read')).closest<HTMLElement>('.react-flow__node')!);
     return within(screen.getByRole('complementary', { name: 'Inspector' }));
   };
 

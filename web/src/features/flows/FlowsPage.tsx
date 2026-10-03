@@ -325,7 +325,7 @@ function Page() {
               running={running.has(shown.id)}
               overtaken={overtaken.has(shown.id)}
               problems={problems[shown.id] ?? NOTHING_WRONG}
-              facts={{ allowWebhooks: data.allowWebhooks, alertTopicPrefix: data.alertTopicPrefix }}
+              facts={{ allowWebhooks: data.allowWebhooks }}
             />
           </div>
 

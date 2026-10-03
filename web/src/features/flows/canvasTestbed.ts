@@ -1,4 +1,5 @@
 import { vi } from 'vitest';
+import type { FlowRunStatusDto } from '../../types/api';
 import { useFlowDraftStore } from './flowDraftStore';
 
 /**
@@ -84,6 +85,23 @@ export function standInForTheBrowser() {
 export function forgetDrafts(current: string | null = null) {
   useFlowDraftStore.setState({ drafts: {}, bases: {}, current, selected: null, refusals: {}, unkept: false });
 }
+
+/**
+ * One run of a flow as a status push reports it: the flow at work, waiting, with nothing yet to say
+ * about where or why, unless `over` says otherwise. Every test that pushes numbers builds its runs
+ * here, so a field the server adds to a run is added once.
+ */
+export const runOf = (flowId: string, over: Partial<FlowRunStatusDto> = {}): FlowRunStatusDto => ({
+  flowId,
+  kind: 'active',
+  state: 'waiting',
+  at: null,
+  waiting: null,
+  fault: null,
+  variables: {},
+  nodes: [],
+  ...over,
+});
 
 /** A stylesheet with its comments left out, so a test reads only what it declares. */
 export const withoutComments = (sheet: string) => sheet.replace(/\/\*[\s\S]*?\*\//g, '');

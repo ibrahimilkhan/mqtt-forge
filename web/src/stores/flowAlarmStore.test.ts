@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { FlowDto } from '../types/api';
 import { alarmSource, isFlowAlarm, useFlowAlarmStore } from './flowAlarmStore';
 
-/** A flow holding an Alarm node, and nothing else it needs here. */
+/** A flow holding a Raise alarm node, and nothing else it needs here. */
 const holding = (id: string, alarm: string): FlowDto => ({
   id,
   name: id,
   enabled: true,
-  nodes: [{ id: alarm, type: 'alarm', x: 0, y: 0, config: {} }],
+  nodes: [{ id: alarm, type: 'alarmRaise', x: 0, y: 0, config: {} }],
   edges: [],
   variables: [],
 });
@@ -23,7 +23,7 @@ describe('a flow alarm', () => {
   });
 
   // An id may itself hold a '-', so the rule id is read against the flows there are, not split.
-  it('is traced to the flow and the Alarm node it came from, whatever their ids hold', () => {
+  it('is traced to the flow and the Raise alarm node it came from, whatever their ids hold', () => {
     const flows = [holding('boiler', 'hot'), holding('boiler-2', 'hot')];
 
     expect(alarmSource('flow-boiler-2-hot', flows)).toEqual({ flowId: 'boiler-2', nodeId: 'hot' });

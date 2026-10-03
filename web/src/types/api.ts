@@ -454,15 +454,21 @@ export type AlertRulesSavedDto = { rules: AlertRuleDto[]; warnings: SaveWarningD
  * says what each one is to a reader.
  */
 export type FlowNodeType =
+  | 'start'
+  | 'end'
   | 'mqttIn'
-  | 'every'
-  | 'inject'
   | 'if'
+  | 'for'
   | 'forEach'
-  | 'repeat'
-  | 'alarm'
+  | 'wait'
+  | 'set'
   | 'publish'
-  | 'debug';
+  | 'debug'
+  | 'alarmRaise'
+  | 'alarmClear'
+  | 'sound'
+  | 'notify'
+  | 'webhook';
 
 /**
  * A node as flows.json keeps it. Its settings are a plain object the server's compiler reads,
