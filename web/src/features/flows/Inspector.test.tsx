@@ -8,11 +8,13 @@ import { server } from '../../test/server';
 import { renderWithClient as render } from '../../test/renderWithClient';
 import type { FlowDebugDto, FlowDto, FlowNodeType, FlowRunStatusDto, FlowStatusDto } from '../../types/api';
 import { exampleFlows } from './examples';
+import canvasSheet from './FlowCanvas.module.css?raw';
 import { useFlowDraftStore } from './flowDraftStore';
 import { Inspector } from './Inspector';
 import sheet from './Inspector.module.css?raw';
-import { NODE_SPECS, TEMPLATE_HELP } from './nodeTypes';
+import { GROUPS, NODE_SPECS, TEMPLATE_HELP } from './nodeTypes';
 import { Palette } from './Palette';
+import paletteSheet from './Palette.module.css?raw';
 import { forgetDrafts, runOf, withoutComments } from './canvasTestbed';
 
 const facts = { allowWebhooks: true };
@@ -137,6 +139,34 @@ describe('palette', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /Publish/ }));
     expect(added).toEqual(['publish']);
+  });
+
+  // A reader who points at an item before putting it down reads what the node does, in the words its
+  // pane opens with once it is down.
+  it('says what each node does on its item, in the words of its pane', () => {
+    render(<Palette onAdd={() => {}} />);
+
+    expect(screen.getAllByRole('button').map((item) => item.getAttribute('title'))).toEqual(
+      GROUPS.flatMap((group) =>
+        Object.values(NODE_SPECS)
+          .filter((spec) => spec.group === group && spec.placeable)
+          .map((spec) => spec.help),
+      ),
+    );
+  });
+
+  // A node wears its group's colour on the canvas, and its item the same one here: the colour is how
+  // a reader finds on the canvas what they put down from the palette.
+  it('colours each group as the canvas colours its nodes', () => {
+    const colourOf = (stylesheet: string, element: string, group: string) =>
+      new RegExp(String.raw`\.${element}\[data-group='${group}'\] \.icon \{ color: ([^;]+); \}`).exec(
+        withoutComments(stylesheet),
+      )?.[1];
+
+    for (const group of GROUPS) {
+      expect(colourOf(paletteSheet, 'item', group), group).toBeDefined();
+      expect(colourOf(paletteSheet, 'item', group), group).toBe(colourOf(canvasSheet, 'node', group));
+    }
   });
 
   // Every item in it adds a node; none of them goes anywhere. A navigation landmark would be listed

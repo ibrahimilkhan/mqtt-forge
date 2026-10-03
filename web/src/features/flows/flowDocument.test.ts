@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { FlowDto, FlowNodeType } from '../../types/api';
+import type { FlowDto, FlowNodeDto, FlowNodeType } from '../../types/api';
 import {
   addNode,
   bodyOf,
@@ -27,7 +27,8 @@ import {
   type Wire,
 } from './flowDocument';
 import { exampleFlows } from './examples';
-import { NODE_SPECS } from './nodeTypes';
+import { DECISION_HEIGHT, DECISION_WIDTH, NODE_WIDTH } from './FlowCanvas';
+import { NODE_SPECS, sideOf } from './nodeTypes';
 
 /**
  * Start → Wait → Set → End, under a flow id of its own each time, as a flow made on the page has:
@@ -636,6 +637,32 @@ describe('the examples', () => {
       expect(unwiredOuts(flow)).toEqual(new Set());
       expect(unreached(flow)).toEqual(new Set());
       expect(flow.nodes.filter((node) => node.type === 'start')).toHaveLength(1);
+    }
+  });
+
+  // As the canvas draws them: a node's ports stand at half its height, the If is DECISION_WIDTH by
+  // DECISION_HEIGHT, and every other node NODE_WIDTH across and as tall as a step, which Chrome draws
+  // 71.52 high at the default type size. Two nodes whose heights overlap stand on one row, with room
+  // between them for a way out's name; and a wire from a way out on the right to the next node's way
+  // in on the left, along a row, runs level.
+  it('are laid out for the shapes the canvas draws', () => {
+    const boxOf = (node: FlowNodeDto) =>
+      node.type === 'if' ? { width: DECISION_WIDTH, height: DECISION_HEIGHT } : { width: NODE_WIDTH, height: 71.52 };
+    const onOneRow = (a: FlowNodeDto, b: FlowNodeDto) => a.y < b.y + boxOf(b).height && b.y < a.y + boxOf(a).height;
+
+    for (const flow of exampleFlows()) {
+      for (const a of flow.nodes)
+        for (const b of flow.nodes)
+          if (a !== b && onOneRow(a, b) && a.x <= b.x)
+            expect(b.x - (a.x + boxOf(a).width), `${a.id} to ${b.id}`).toBeGreaterThanOrEqual(96);
+
+      for (const edge of flow.edges) {
+        const from = flow.nodes.find((node) => node.id === edge.from)!;
+        const to = flow.nodes.find((node) => node.id === edge.to)!;
+        if (sideOf(edge.fromPort) !== 'right' || sideOf(edge.toPort, false) !== 'left' || !onOneRow(from, to)) continue;
+
+        expect(Math.abs(from.y + boxOf(from).height / 2 - (to.y + boxOf(to).height / 2)), edge.id).toBeLessThan(0.5);
+      }
     }
   });
 });

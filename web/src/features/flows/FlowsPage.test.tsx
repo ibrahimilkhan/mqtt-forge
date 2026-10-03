@@ -17,7 +17,7 @@ import { DebugStrip } from './DebugStrip';
 import strip from './DebugStrip.module.css';
 import stripSheet from './DebugStrip.module.css?raw';
 import { NODE_HEIGHT, NODE_WIDTH } from './FlowCanvas';
-import { moveNodes } from './flowDocument';
+import { emptyFlow, moveNodes } from './flowDocument';
 import { DRAFT_PREFIX, useFlowDraftStore } from './flowDraftStore';
 import FlowsPage from './FlowsPage';
 import inspector from './Inspector.module.css';
@@ -533,6 +533,57 @@ describe('Flows page', () => {
     writes.mockRestore();
 
     expect(folds).toEqual([['mqttforge.flows.debugOpen', '0']]);
+  });
+});
+
+/**
+ * A click in the palette puts the node where the program needs it: on the wire picked, or after the
+ * node picked when it has one way out, and the node it puts down is picked in turn — so a chain is
+ * built by clicking one node after another, each wired in as it lands.
+ */
+describe('the palette builds a chain', () => {
+  // The palette's own items: the debug strip's fold under the canvas is a button named Debug too.
+  const palette = () => within(screen.getByRole('group', { name: 'Nodes' }));
+
+  it('puts a node on the picked wire', async () => {
+    const flow = { ...emptyFlow('Flow 1'), id: 'f1' };
+    renderPage([flow]);
+    await screen.findByRole('button', { name: '▶ Test' });
+
+    act(() => useFlowDraftStore.getState().pickWire(flow.edges[0].id));
+    fireEvent.click(palette().getByRole('button', { name: /^Publish/ }));
+
+    const draft = useFlowDraftStore.getState().drafts.f1;
+    const publish = draft.nodes.find((node) => node.type === 'publish')!;
+    expect(draft.edges.map((edge) => `${edge.from}>${edge.to}`).sort()).toEqual(
+      [`start>${publish.id}`, `${publish.id}>${flow.nodes[1].id}`].sort(),
+    );
+  });
+
+  it('puts a node after the picked one, and picks it, so the next goes after that', async () => {
+    const flow = { ...emptyFlow('Flow 1'), id: 'f1' };
+    renderPage([flow]);
+    await screen.findByRole('button', { name: '▶ Test' });
+
+    act(() => useFlowDraftStore.getState().select('start'));
+    fireEvent.click(palette().getByRole('button', { name: /^MQTT in/ }));
+    fireEvent.click(palette().getByRole('button', { name: /^Debug/ }));
+
+    const draft = useFlowDraftStore.getState().drafts.f1;
+    const types = (id: string) => draft.nodes.find((node) => node.id === id)!.type;
+    const chain: string[] = [];
+    for (let at: string | undefined = 'start'; at; at = draft.edges.find((edge) => edge.from === at)?.to) chain.push(types(at));
+    expect(chain).toEqual(['start', 'mqttIn', 'debug', 'end']);
+  });
+
+  it('leaves the Start out of the palette', async () => {
+    renderPage([{ ...emptyFlow('Flow 1'), id: 'f1' }]);
+    await screen.findByRole('button', { name: '▶ Test' });
+
+    expect(screen.queryByRole('button', { name: /^Start/ })).toBeNull();
+    expect(screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual(
+      expect.arrayContaining(['Input', 'Control', 'Actions', 'Alarm']),
+    );
   });
 });
 

@@ -9,6 +9,14 @@ import { newId } from './flowDocument';
  * as the flowchart a reader would draw by hand.
  *
  * Real-world on purpose: a plant, boilers, a fan command. `foo/bar` teaches nothing.
+ *
+ * Laid out for the shapes the canvas draws. Along a row, one node's right edge stands 96 from the
+ * next one's left, room for a way out's name beside its port — steps NODE_WIDTH + 96 = 284 apart, and
+ * the If, DECISION_WIDTH across, 64 more. A node's ports stand at half its height, so the If,
+ * DECISION_HEIGHT tall, stands 28 higher than the steps beside it, and every wire along a row runs
+ * level. A way out at the foot of a node — a loop's done, the If's no — leads down to a row of its
+ * own, far enough under it that the port's name clears what stands there; the watch's yes leads up to
+ * the alarm's row, which starts out past the If's right-hand point, so the wire never bends back.
  */
 export function exampleFlows(): FlowDto[] {
   const simulator: FlowDto = {
@@ -17,18 +25,18 @@ export function exampleFlows(): FlowDto[] {
     enabled: false,
     variables: [{ name: 'sensors', value: '["k1","k2","k3"]' }],
     nodes: [
-      { id: 'start', type: 'start', x: 40, y: 160, config: {} },
-      { id: 'loop', type: 'for', x: 240, y: 160, config: { times: '', forever: true } },
-      { id: 'each', type: 'forEach', x: 480, y: 160, config: { array: 'var.sensors' } },
+      { id: 'start', type: 'start', x: 40, y: 120, config: {} },
+      { id: 'loop', type: 'for', x: 324, y: 120, config: { times: '', forever: true } },
+      { id: 'each', type: 'forEach', x: 608, y: 120, config: { array: 'var.sensors' } },
       {
         id: 'send',
         type: 'publish',
-        x: 720,
-        y: 160,
+        x: 892,
+        y: 120,
         config: { topic: 'plant/{{payload}}/temp', payload: '{"temp": {{random(80,95)}}}', qos: 0, retain: false },
       },
-      { id: 'tick', type: 'wait', x: 480, y: 340, config: { seconds: '2' } },
-      { id: 'end', type: 'end', x: 240, y: 340, config: {} },
+      { id: 'tick', type: 'wait', x: 764, y: 296, config: { seconds: '2' } },
+      { id: 'end', type: 'end', x: 480, y: 296, config: {} },
     ],
     edges: [
       { id: 'e1', from: 'start', fromPort: 'out', to: 'loop', toPort: 'in' },
@@ -47,29 +55,29 @@ export function exampleFlows(): FlowDto[] {
     enabled: false,
     variables: [{ name: 'limit', value: '90' }],
     nodes: [
-      { id: 'start', type: 'start', x: 40, y: 220, config: {} },
-      { id: 'loop', type: 'for', x: 220, y: 220, config: { times: '', forever: true } },
-      { id: 'read', type: 'mqttIn', x: 440, y: 220, config: { filter: 'plant/+/temp', replay: false } },
-      { id: 'say', type: 'debug', x: 660, y: 220, config: {} },
-      { id: 'test', type: 'if', x: 880, y: 220, config: { field: '$.temp', test: 'gt', value: '{{var.limit}}', value2: '' } },
+      { id: 'start', type: 'start', x: 40, y: 280, config: {} },
+      { id: 'loop', type: 'for', x: 324, y: 280, config: { times: '', forever: true } },
+      { id: 'read', type: 'mqttIn', x: 608, y: 280, config: { filter: 'plant/+/temp', replay: false } },
+      { id: 'say', type: 'debug', x: 892, y: 280, config: {} },
+      { id: 'test', type: 'if', x: 1176, y: 252, config: { field: '$.temp', test: 'gt', value: '{{var.limit}}', value2: '' } },
       {
         id: 'hot',
         type: 'alarmRaise',
-        x: 1100,
-        y: 100,
+        x: 1568,
+        y: 40,
         config: { name: 'Boiler too hot', level: 'warn', reason: '{{topic[1]}} is at {{$.temp}} °C', value: '$.temp' },
       },
-      { id: 'beep', type: 'sound', x: 1320, y: 40, config: { level: 'warn' } },
-      { id: 'tell', type: 'notify', x: 1540, y: 40, config: { text: '{{topic[1]}} is at {{$.temp}} °C', level: 'warn' } },
+      { id: 'beep', type: 'sound', x: 1852, y: 40, config: { level: 'warn' } },
+      { id: 'tell', type: 'notify', x: 2136, y: 40, config: { text: '{{topic[1]}} is at {{$.temp}} °C', level: 'warn' } },
       {
         id: 'fan',
         type: 'publish',
-        x: 1760,
+        x: 2420,
         y: 40,
         config: { topic: 'plant/{{topic[1]}}/cmd', payload: '{"fan":"on"}', qos: 1, retain: false },
       },
-      { id: 'cool', type: 'alarmClear', x: 1100, y: 380, config: { alarm: 'hot' } },
-      { id: 'end', type: 'end', x: 220, y: 440, config: {} },
+      { id: 'cool', type: 'alarmClear', x: 1364, y: 456, config: { alarm: 'hot' } },
+      { id: 'end', type: 'end', x: 480, y: 456, config: {} },
     ],
     edges: [
       { id: 'e1', from: 'start', fromPort: 'out', to: 'loop', toPort: 'in' },

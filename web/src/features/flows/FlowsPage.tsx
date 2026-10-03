@@ -19,6 +19,8 @@ import {
   emptyFlow,
   fingerprint,
   freeSpot,
+  insertAfter,
+  insertOnWire,
   newId,
   nextName,
   placesInView,
@@ -332,19 +334,33 @@ function Page() {
   // subscription to them would only re-render the page for nothing.
   const store = useFlowDraftStore.getState();
 
-  // A click in the palette puts the node in the middle of what is on screen, or, when something is
-  // already there, in the first clear place across from it and then down a row — as many across as
-  // fit between the middle and the right edge of the view — so three clicks are three nodes that
-  // can each be read and grabbed, and not one stack.
-  const add = (flow: FlowDto, type: FlowNodeType) => {
-    const box = document.getElementById(CANVAS)?.getBoundingClientRect();
-    const middle = screenToFlowPosition({ x: box ? box.left + box.width / 2 : 0, y: box ? box.top + box.height / 2 : 0 });
-    const right = screenToFlowPosition({ x: box ? box.right : 0, y: 0 }).x;
-    const { start, across } = placesInView(middle, right, NODE_BOX, ROOM);
-    const at = freeSpot(flow, start, NODE_BOX, across, ROOM);
+  // A click in the palette puts the node where the program needs it: on the wire picked, or after
+  // the node picked when it has one way out, so a chain is built by clicking one node after
+  // another. With neither, it goes in the middle of what is on screen, or in the first clear place
+  // across from it, unwired until the reader wires it — the canvas marks it until then.
+  const add = (type: FlowNodeType) => {
     const id = newId('n');
+    const { wire, selected } = useFlowDraftStore.getState();
+    const onWire = wire === null ? undefined : shown.edges.find((edge) => edge.id === wire);
+    const after = selected === null ? undefined : shown.nodes.find((node) => node.id === selected);
 
-    store.edit(flow, (drawing) => addNode(drawing, type, at, id));
+    if (onWire) {
+      const from = shown.nodes.find((node) => node.id === onWire.from)!;
+      const to = shown.nodes.find((node) => node.id === onWire.to)!;
+      const at = freeSpot(shown, { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 }, NODE_BOX, 1, ROOM);
+      store.edit(shown, (flow) => insertOnWire(flow, onWire.id, type, at, id));
+    } else if (after && insertAfter(shown, after.id, type, after, id) !== null) {
+      const at = freeSpot(shown, { x: after.x + NODE_WIDTH + 2 * ROOM, y: after.y }, NODE_BOX, 1, ROOM);
+      store.edit(shown, (flow) => insertAfter(flow, after.id, type, at, id) ?? flow);
+    } else {
+      const box = document.getElementById(CANVAS)?.getBoundingClientRect();
+      const middle = screenToFlowPosition({ x: box ? box.left + box.width / 2 : 0, y: box ? box.top + box.height / 2 : 0 });
+      const right = screenToFlowPosition({ x: box ? box.right : 0, y: 0 }).x;
+      const { start, across } = placesInView(middle, right, NODE_BOX, ROOM);
+      const at = freeSpot(shown, start, NODE_BOX, across, ROOM);
+      store.edit(shown, (flow) => addNode(flow, type, at, id));
+    }
+
     store.select(id);
   };
 
@@ -453,7 +469,7 @@ function Page() {
           // included, since what it adds goes into that flow.
           <div id={FLOW_PANEL} role="tabpanel" aria-labelledby={tabIdOf(shown.id)} className={styles.flow}>
             <div className={styles.body}>
-              <Palette onAdd={(type) => add(shown, type)} />
+              <Palette onAdd={add} />
               {/* Keyed apart as well as by flow: siblings that share a key cannot be told apart, and
                   each tab shown would leave its canvas behind in the page. */}
               <FlowCanvas key={`canvas-${shown.id}`} flow={shown} problems={problems[shown.id] ?? NOTHING_WRONG} />
