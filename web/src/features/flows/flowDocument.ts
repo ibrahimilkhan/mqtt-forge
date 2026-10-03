@@ -222,10 +222,11 @@ const apart = (at: Place, box: Box, node: FlowNodeDto, other: Box, room: number)
  * wider room a node put down free keeps: the rows the palette lays out stand far further apart than
  * either, and at the wider room an If put on an If's no, 48 under it, counted the If it follows as in
  * its way and went three places along, and a row a reader laid 40 under a chain was pushed along
- * with it, or had a node clicked into the chain go two rows down. A port still keeps the wider room in
- * front of it (see Crowds): the wires out of it and into what it faces need the gap between. The node
- * it is put after is never in its way: the place is worked out from it, and the wire between the two
- * is what the place is for.
+ * with it, or had a node clicked into the chain go two rows down. A port still keeps room in front of
+ * it (see Crowds), two margins, which is what the wires out of it and into what it faces need between
+ * them: at the wider room a For clicked into the chain went a row down past a row laid 40 under it,
+ * whose ways in face the chain. The node it is put after is never in its way: the place is worked out
+ * from it, and the wire between the two is what the place is for.
  */
 export function placeAfter(
   flow: FlowDto,

@@ -119,9 +119,21 @@ const heightOf = (type: string) => (specOf(type).shape === 'decision' ? DECISION
  * pixels under the name of the other's foot: a wire out of that foot had no way out of the gap, and
  * with a loop's return run along it, no way at all. A node put after another keeps a wire's margin
  * (MARGIN) instead, from what stands round the place it is put (see placeAfter), but for what one of
- * its ports faces, or what faces one of them, which keeps this room (see crowds).
+ * its ports faces, or what faces one of them, which keeps FACING (see crowds).
  */
 const ROOM = 56;
+
+/**
+ * The room a port keeps in front of it, clear of the node it faces, when a node is put after another:
+ * two margins, a stub out of the one port and a stub into the other, end to end. It is what the six
+ * drawings that went wrong with a margin alone wanted (see paletteSessions.test.ts): in each, the two
+ * ports stood 26 to 36 apart and the wire between them had no way to turn. At 36 two of them still go
+ * wrong; from 37 on every one has its way, and 48 has some to spare. ROOM, wider, is more than any of
+ * them needed, and brought the step down back: a row a reader laid 48.5 under a chain, with ports facing
+ * up or down, was in the way of a For clicked into the chain, which went to a row of its own under the
+ * row, and a Debug clicked after the Start pushed that row along with the chain.
+ */
+const FACING = 48;
 
 /**
  * What a flow tells about each of its nodes' names: its ways out with no wire, its loops nothing comes
@@ -212,17 +224,17 @@ function aroundOf(flow: FlowDto, node: FlowNodeDto): Around {
 /**
  * Whether two nodes crowd each other as the canvas draws them (see Crowds): their boxes within `room`;
  * a name of either over the other or in a mouth of its ports; or a port of either facing straight at
- * the other nearer than ROOM.
+ * the other nearer than FACING.
  *
  * A wire out of a port, or into one, runs a margin straight out of it before it turns, and with another
  * node standing in front of the port it turns along that node, past which the routes run a lane only so
  * near — or comes in so, and the wires into the other node, and out of it, come through the same gap.
- * So a port wants the room a node put down free keeps, ROOM, in front of it, even where two nodes may
- * otherwise stand a wire's margin apart: put after a node within that, an If's no came down onto a For
- * each 36 under it where the loop's returns come down onto its next, a Clear alarm's foot stood 32 over
- * a For each whose next its returns came into along the gap from both sides, a Webhook's way out faced
- * the End's way in 30 off, and a Publish stood 26 in front of a way in two more wires came into. Rows a
- * reader lays out under a chain, of nodes with no port facing up or down, stand a margin apart as before.
+ * So a port wants room of its own in front of it, FACING, even where two nodes may otherwise stand a
+ * wire's margin apart: put after a node within that, an If's no came down onto a For each 36 under it
+ * where the loop's returns come down onto its next, a Clear alarm's foot stood 32 over a For each whose
+ * next its returns came into along the gap from both sides, a Webhook's way out faced the End's way in
+ * 30 off, and a Publish stood 26 in front of a way in two more wires came into. Rows a reader lays out
+ * under a chain, of nodes with no port facing up or down, stand a margin apart as before.
  *
  * A name and a port stand within REACH of their node's box, so two nodes further apart than twice that
  * crowd each other by none of it, and what stands round them is not worked out at all: most of a flow,
@@ -238,7 +250,7 @@ function crowds(flow: FlowDto, a: FlowNodeDto, b: FlowNodeDto, room: number): bo
   return over(one.names, other) || over(other.names, one) || facing(one, other) || facing(other, one);
 }
 
-/** Whether a port of `one`'s faces straight at `other`'s box — its wire's line across it — nearer than ROOM. */
+/** Whether a port of `one`'s faces straight at `other`'s box — its wire's line across it — nearer than FACING. */
 function facing(one: Around, other: Around): boolean {
   const [mine, theirs] = [one.box, other.box];
   return one.mouths.some(({ side, line }) => {
@@ -250,7 +262,7 @@ function facing(one: Around, other: Around): boolean {
       bottom: theirs.y - (mine.y + mine.height),
       top: mine.y - (theirs.y + theirs.height),
     }[side];
-    return gap >= 0 && gap < ROOM;
+    return gap >= 0 && gap < FACING;
   });
 }
 
@@ -259,7 +271,7 @@ function facing(one: Around, other: Around): boolean {
  * no wire, wire me and all; and half the room a port wants in front of it (see facing), at the least.
  */
 const REACH = Math.max(
-  ROOM / 2,
+  FACING / 2,
   ...Object.values(NODE_SPECS).flatMap((spec) => {
     const node: FlowNodeDto = { id: '', type: spec.type as FlowNodeDto['type'], x: 0, y: 0, config: {} };
     const box = drawnAt(node);

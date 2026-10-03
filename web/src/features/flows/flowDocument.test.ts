@@ -680,8 +680,13 @@ describe('where a palette click after a node puts it', () => {
   const nodeOf = (flow: FlowDto, id: string) => flow.nodes.find((node) => node.id === id)!;
   const click = (flow: FlowDto, pick: { node: string } | { wire: string }, type: FlowNodeType, id: string) => named(clicked(flow, pick, type, id));
 
-  /** A chain from the Start to the End by hand, steps 284 apart, and a row of two Publishes laid 40 under it, wired one to the other. */
-  const rows = (): FlowDto => ({
+  /**
+   * A chain from the Start to the End by hand, steps 284 apart, and a row of two nodes laid under it,
+   * `below` down from its top: Publishes wired one to the other, 40 under the steps' boxes at 120; or a
+   * For each and a For with nothing wired, whose ways in at their tops face the chain and whose feet
+   * face the way down.
+   */
+  const rows = (below = 120, lower: 'publishes' | 'loops' = 'publishes'): FlowDto => ({
     id: 'rows', name: 'Rows', enabled: false, variables: [],
     nodes: [
       { id: 'start', type: 'start', x: 0, y: 0, config: {} },
@@ -689,15 +694,15 @@ describe('where a palette click after a node puts it', () => {
       { id: 'b', type: 'debug', x: 568, y: 0, config: {} },
       { id: 'c', type: 'debug', x: 852, y: 0, config: {} },
       { id: 'end', type: 'end', x: 1136, y: 0, config: {} },
-      { id: 'x', type: 'publish', x: 600, y: 120, config: {} },
-      { id: 'y', type: 'publish', x: 900, y: 120, config: {} },
+      { id: 'x', type: lower === 'loops' ? 'forEach' : 'publish', x: 600, y: below, config: {} },
+      { id: 'y', type: lower === 'loops' ? 'for' : 'publish', x: 900, y: below, config: {} },
     ],
     edges: [
       { id: 'e1', from: 'start', fromPort: 'out', to: 'a', toPort: 'in' },
       { id: 'e2', from: 'a', fromPort: 'out', to: 'b', toPort: 'in' },
       { id: 'e3', from: 'b', fromPort: 'out', to: 'c', toPort: 'in' },
       { id: 'e4', from: 'c', fromPort: 'out', to: 'end', toPort: 'in' },
-      { id: 'e5', from: 'x', fromPort: 'out', to: 'y', toPort: 'in' },
+      ...(lower === 'publishes' ? [{ id: 'e5', from: 'x', fromPort: 'out', to: 'y', toPort: 'in' }] : []),
     ],
   });
 
@@ -734,19 +739,50 @@ describe('where a palette click after a node puts it', () => {
     expect([...overlapsIn(flow), ...wrongWith(flow)]).toEqual([]);
   });
 
+  // A row laid by hand 48.5 clear under the chain's steps, with ports that face up or down: a For's
+  // foot, the loops' ways in. A port keeps the room it needs in front of it and no more: held to the 56
+  // a node put down free keeps, a For clicked after `a` went to a row of its own at y 272, and so did a
+  // Debug clicked after `a` over a row of loops — each a step down out of a chain the reader was
+  // clicking along one row.
+  it('puts a For clicked into a chain on the chain’s row, past a row of Publishes laid 40 under it, which stays', () => {
+    const flow = click(rows(), { node: 'a' }, 'for', 'loop');
+
+    expect(nodeOf(flow, 'loop')).toMatchObject({ x: 568, y: 0 });
+    expect(['b', 'c', 'end'].map((id) => nodeOf(flow, id).x)).toEqual([852, 1136, 1420]);
+    expect(['x', 'y'].map((id) => nodeOf(flow, id))).toMatchObject([{ x: 600, y: 120 }, { x: 900, y: 120 }]);
+    expect([...overlapsIn(flow), ...wrongWith(flow)]).toEqual([]);
+  });
+
+  it('puts a node clicked into a chain on the chain’s row, past a row of loops laid 40 under it, which stays', () => {
+    const flow = click(rows(120, 'loops'), { node: 'a' }, 'debug', 'say');
+
+    expect(nodeOf(flow, 'say')).toMatchObject({ x: 568, y: 0 });
+    expect(['b', 'c', 'end'].map((id) => nodeOf(flow, id).x)).toEqual([852, 1136, 1420]);
+    expect(['x', 'y'].map((id) => nodeOf(flow, id))).toMatchObject([{ x: 600, y: 120 }, { x: 900, y: 120 }]);
+    expect([...overlapsIn(flow), ...wrongWith(flow)]).toEqual([]);
+  });
+
   // Two nodes may stand a wire's margin apart, but not with a port of either facing the other: its
   // wire turns along the other node, and the wires to that node come through the same gap. An If's no
-  // came down 36 over a For each, where the loop's returns come down onto its next.
-  it('counts a node a port faces nearer than the room a node put down free keeps as crowding it', () => {
+  // came down 36 over a For each, where the loop's returns come down onto its next. Two margins, the
+  // wire's stub out of the one port and the stubs of the wires into the other end to end, is the room
+  // it keeps: the ports of the six drawings that went wrong stood 26 to 36 apart, and a row 48.5 under
+  // a chain is clear of it.
+  it('counts a node a port faces nearer than two margins as crowding it, and a node two margins off as clear', () => {
     const flow = {
       ...rows(),
       nodes: [...rows().nodes, { id: 'test', type: 'if' as const, x: 1324, y: 92, config: {} }, { id: 'each', type: 'forEach' as const, x: 1351, y: 256, config: {} }],
     };
     const [a, x, test, each] = ['a', 'x', 'test', 'each'].map((id) => nodeOf(flow, id));
+    const over = (gap: number) => ({ ...test, y: each.y - DECISION_HEIGHT - gap });
 
     expect(each.y - (test.y + DECISION_HEIGHT)).toBe(36);
     expect(MEASURE.crowds(flow, test, each, MEASURE.margin)).toBe(true);
-    expect(MEASURE.crowds(flow, { ...test, y: each.y - DECISION_HEIGHT - 56 }, each, MEASURE.margin)).toBe(false);
+    expect(MEASURE.crowds(flow, over(47), each, MEASURE.margin)).toBe(true);
+    expect(MEASURE.crowds(flow, over(48), each, MEASURE.margin)).toBe(false);
+    // A node put down free keeps the wider room, with or without a port facing.
+    expect(MEASURE.crowds(flow, over(48), each, MEASURE.room)).toBe(true);
+    expect(MEASURE.crowds(flow, over(MEASURE.room), each, MEASURE.room)).toBe(false);
     // A step 40 under a chain's step, with no port facing up or down: a margin apart is room enough.
     expect(MEASURE.crowds(flow, a, { ...x, x: a.x }, MEASURE.margin)).toBe(false);
   });
@@ -784,6 +820,28 @@ describe('where a palette click after a node puts it', () => {
 
     expect(['say', 'a', 'b', 'c', 'end'].map((id) => nodeOf(flow, id).x)).toEqual([284, 568, 852, 1136, 1420]);
     expect(['x', 'y'].map((id) => nodeOf(flow, id))).toMatchObject([{ x: 600, y: 120 }, { x: 900, y: 120 }]);
+    expect([...overlapsIn(flow), ...wrongWith(flow)]).toEqual([]);
+  });
+
+  // The chain moved along lands over the row, 48.5 above it, with the loops' ways in facing it. Kept
+  // 56 clear of the chain, the loops were pushed along with it; kept two margins clear, they stay.
+  it('moves the chain along over a row of loops laid 40 under it, and not the row', () => {
+    const flow = click(rows(120, 'loops'), { node: 'start' }, 'debug', 'say');
+
+    expect(['say', 'a', 'b', 'c', 'end'].map((id) => nodeOf(flow, id).x)).toEqual([284, 568, 852, 1136, 1420]);
+    expect(['x', 'y'].map((id) => nodeOf(flow, id))).toMatchObject([{ x: 600, y: 120 }, { x: 900, y: 120 }]);
+    expect([...overlapsIn(flow), ...wrongWith(flow)]).toEqual([]);
+  });
+
+  // An If stands higher than the step it follows, level with it, and its no faces down: a row 150 from
+  // the chain's top is 50 under the If's foot. Kept clear by 56 as a node put down free is, that row
+  // sent the If to y 340, on a row of its own under the row laid by hand.
+  it('puts an If clicked into a chain level with it, past a row of Publishes 50 under the If’s foot, which stays', () => {
+    const flow = click(rows(150), { node: 'a' }, 'if', 'test');
+
+    expect(nodeOf(flow, 'test')).toMatchObject({ x: 568, y: -28 });
+    expect(['b', 'c', 'end'].map((id) => nodeOf(flow, id).x)).toEqual([916, 1200, 1484]);
+    expect(['x', 'y'].map((id) => nodeOf(flow, id))).toMatchObject([{ x: 600, y: 150 }, { x: 900, y: 150 }]);
     expect([...overlapsIn(flow), ...wrongWith(flow)]).toEqual([]);
   });
 });

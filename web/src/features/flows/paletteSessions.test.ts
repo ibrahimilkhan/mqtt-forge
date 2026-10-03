@@ -28,7 +28,7 @@ const FIRST_SEED = 20261003;
  * names beside the ports left out of what crowds a node (20262043, 20262114); and the routes worked out
  * once, with no second plan for the wires that found no way (20262313). Runs of twenty thousand, once a
  * node put after another kept a wire's margin from what stands round its place: a port of one facing the
- * other nearer than that room let be (the rest). Replayed on every run.
+ * other nearer than two margins let be (the rest; their ports stood 26 to 36 apart). Replayed on every run.
  */
 const PINNED = [
   20261846, 20261989, 20262043, 20262114, 20262313, 20264279, 20266008, 20268909, 20273485, 20276218, 20278127,
