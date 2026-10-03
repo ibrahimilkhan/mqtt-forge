@@ -98,8 +98,9 @@ public sealed class FlowService
 
             // A flow that is gone has no draft left to test, and neither has one that was never saved: the
             // console deletes that draft here too, and its test may be all of it the engine holds. Answered
-            // "no such flow" and left alone, that test would run on with no page left to stop it.
-            _engine.Post(new FlowTestStop(id));
+            // "no such flow" and left alone, that test would run on with no page left to stop it. Taken away,
+            // and not kept stopped as a Stop keeps it, since there is no page left to read it on either.
+            _engine.Post(new FlowTestStop(id, Remove: true));
         }
         finally
         {
@@ -156,17 +157,21 @@ public sealed class FlowService
         return new FlowSaveResult(flow, []);
     }
 
-    /// <summary>Stops a flow's test run, going or ended. False when it had none going.</summary>
+    /// <summary>
+    /// Stops a flow's test run where it is and keeps it to be read, or takes it away when it has ended. False
+    /// when it had none going.
+    /// </summary>
     // Handed over whatever the answer. A test the pump has not started yet is not going as far as anything
     // here can tell, and the stop reaches the pump after its start, or in its place; answered "none going"
     // and left there, it would start a moment later and run on. That includes a test whose Test is still
-    // waiting for the link's dial, which is handed over before the dial. And a test that has ended stays to
-    // be read until something takes it away, which this is. Asked before the stop is handed over, so the
-    // answer is about the test there was and not about one the pump has already stopped.
+    // waiting for the link's dial, which is handed over before the dial. And a test that has ended — at an
+    // End, or stopped by an earlier press of this — stays to be read until something takes it away, which
+    // this is. Asked before the stop is handed over, so the answer is about the test there was and not
+    // about one the pump has already stopped.
     public bool StopTest(string flowId)
     {
         var going = _engine.IsTesting(flowId);
-        _engine.Post(new FlowTestStop(flowId));
+        _engine.Post(new FlowTestStop(flowId, Remove: false));
 
         return going;
     }

@@ -96,7 +96,7 @@ public sealed class FlowController : ControllerBase
         return result.Flow is null ? Refused(title, result.Problems) : Accepted();
     }
 
-    /// <summary>Stops a flow's test run.</summary>
+    /// <summary>Stops a flow's test run and keeps it to be read, stopped; a test that has ended is taken away.</summary>
     [HttpDelete("{id}/test")]
     public IActionResult StopTest(string id) =>
         _flows.StopTest(id)

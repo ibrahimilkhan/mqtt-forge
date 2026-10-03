@@ -272,15 +272,21 @@ public sealed class FlowEngine
     // and a stop it let go a test running on — of a flow that is gone, when its delete posted it.
     //
     // Of a flow's start and stop the pump has not reached, only the newer is worth doing. A start puts its
-    // test in place of whatever test there was, and a stop takes it away, so the newer alone leaves what
-    // the two would have left; all the older would have added is what it did before the newer ended it —
-    // a stop after a start is that start never made. The newer takes the older one's place in the order,
-    // as a deploy does, and the queue's entry is the wake-up a deploy's is.
+    // test in place of whatever test there was, so after a stop it leaves what the two would have left. A
+    // stop after a start is that start never made: what it stops is the test the start would have replaced,
+    // the one on the screen when Stop was pressed, which it keeps to be read when it was going and takes away
+    // when it had ended. The newer takes the older one's place in the order, as a deploy does, and the
+    // queue's entry is the wake-up a deploy's is.
+    //
+    // With one thing kept from the older: a stop that removes stays one. A Stop pressed after the flow's
+    // delete, and folded into the delete's stop, would otherwise turn it into one that keeps the test, and a
+    // test of a flow that is gone would stand in every status push until something else took it away.
     private void Hand(string flowId, FlowCommand test)
     {
         lock (_slots)
         {
-            if (_tests.TryGetValue(flowId, out var pending)) pending.Command = test;
+            if (_tests.TryGetValue(flowId, out var pending))
+                pending.Command = pending.Command is FlowTestStop { Remove: true } && test is FlowTestStop ? pending.Command : test;
             else
             {
                 _tests.Add(flowId, new PendingTest(flowId, Interlocked.Increment(ref _stamp), test));
@@ -670,7 +676,7 @@ public sealed class FlowEngine
 
             case FlowTestStop stop:
             {
-                var outcome = _runtime.StopTest(stop.FlowId, now);
+                var outcome = _runtime.StopTest(stop.FlowId, stop.Remove, now);
                 Snapshot();
                 _resubscribe = true;
                 return outcome;

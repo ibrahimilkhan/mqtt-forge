@@ -26,8 +26,11 @@ public sealed record FlowDeploy(IReadOnlyList<CompiledFlow> Flows, IReadOnlyColl
 /// <summary>Somebody pressed Test: run this draft once, beside the flow's active run.</summary>
 public sealed record FlowTestStart(CompiledFlow Flow) : FlowCommand;
 
-/// <summary>Somebody pressed Stop on a test, or deleted the flow it was a test of.</summary>
-public sealed record FlowTestStop(string FlowId) : FlowCommand;
+/// <summary>
+/// Somebody pressed Stop on a test, which keeps it to be read, or deleted the flow it was a test of, which
+/// takes it away: <paramref name="Remove"/> says which.
+/// </summary>
+public sealed record FlowTestStop(string FlowId, bool Remove) : FlowCommand;
 
 /// <summary>The engine could not carry out a step a run asked for: a publish, a webhook post.</summary>
 public sealed record FlowStepFailed(FlowRunKey Run, long Serial, string NodeId, string Reason) : FlowCommand;

@@ -4,8 +4,9 @@ namespace MqttForge.Application.Flows;
 
 /// <summary>Every run there is, as the console draws it.</summary>
 // A run that finished or stopped stays here until it is replaced, so the page can still show where a
-// test ended and what each node did on the way. A test that has ended can also be taken away: by Stop,
-// by its flow's delete, or to make room for another — see FlowRuntime.StartTest.
+// test ended and what each node did on the way — a test that Stop ended among them. A test that has ended
+// can also be taken away: by Stop pressed again, by its flow's delete, which takes one away going or not,
+// or to make room for another — see FlowRuntime.StartTest and StopTest.
 public sealed record FlowStatus(IReadOnlyList<FlowRunStatus> Runs)
 {
     public static FlowStatus Empty { get; } = new([]);

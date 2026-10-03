@@ -455,6 +455,38 @@ public sealed class FlowEndpointTests : IClassFixture<MqttForgeApiFactory>
         await Until(async () => !await TestShown(_client, "draft"), "the test to leave the status");
     }
 
+    // Stop is how a forever test ends, and what it read on the way is what Test was pressed to see: the run is
+    // kept, stopped, where it stood and with its counters. A second Stop finds no test going, and takes the
+    // stopped one away.
+    [Fact]
+    public async Task Stopping_a_waiting_test_is_204_and_keeps_it_stopped_with_its_counters_and_stopping_it_again_is_404_and_takes_it_away()
+    {
+        Assert.Equal(HttpStatusCode.Accepted, (await _client.PostAsJsonAsync("/api/flows/held/test", Waiting("held"))).StatusCode);
+        await Until(() => TestShown(_client, "held", "waiting"), "the test to wait for its message");
+
+        Assert.Equal(HttpStatusCode.NoContent, (await _client.DeleteAsync("/api/flows/held/test")).StatusCode);
+        await Until(() => TestShown(_client, "held", "stopped"), "the test to be shown stopped");
+
+        var status = await Json(await _client.GetAsync("/api/flows/status"));
+        var held = status.GetProperty("runs").EnumerateArray()
+            .Single(run => run.GetProperty("flowId").GetString() == "held" && run.GetProperty("kind").GetString() == "test");
+        Assert.Equal("in", held.GetProperty("at").GetString());
+        Assert.Equal(JsonValueKind.Null, held.GetProperty("waiting").ValueKind);
+        Assert.Equal(JsonValueKind.Null, held.GetProperty("fault").ValueKind);
+
+        var start = held.GetProperty("nodes").EnumerateArray().Single(node => node.GetProperty("id").GetString() == "start");
+        Assert.Equal(1, start.GetProperty("count").GetInt64());
+        Assert.Equal(1, start.GetProperty("outs").GetProperty("out").GetInt64());
+        var read = held.GetProperty("nodes").EnumerateArray().Single(node => node.GetProperty("id").GetString() == "in");
+        Assert.Equal(1, read.GetProperty("count").GetInt64());
+
+        var again = await _client.DeleteAsync("/api/flows/held/test");
+
+        Assert.Equal(HttpStatusCode.NotFound, again.StatusCode);
+        Assert.Equal("testUnknown", (await Json(again)).GetProperty("reason").GetString());
+        await Until(async () => !await TestShown(_client, "held"), "the stopped test to leave the status");
+    }
+
     // A test that has ended stays to be read until something takes it away. A stop does, and still answers
     // that no test was going.
     [Fact]

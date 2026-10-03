@@ -138,14 +138,15 @@ public sealed class FlowRuntime
     /// Runs a flow's draft once, beside its active run, in place of any test of it there was — or, when as
     /// many tests are going as can be kept, says in the debug strip that it was not started.
     /// </summary>
-    // A test that has ended stays to be read until something takes it away: another Test of its flow, a
-    // Stop, the flow's delete. A console that went away first takes nothing away, and a test can be of a
-    // draft nobody ever saved, so without a limit they would pile up for the life of the process — each with
-    // its compiled flow, its variables and its counters, and every one of them in every status push. So no
-    // more tests are kept than the file can keep flows, and a test of a flow with none kept makes room by
-    // letting the oldest that has ended go. FlowService refuses one while that many are going or waiting for
-    // the pump; only a test that gets past it — by racing another for the last place, or by coming while the
-    // pump holds a start it has taken from its slot and not yet counted — is turned away here.
+    // A test that has ended — at an End, or stopped by a Stop — stays to be read until something takes it
+    // away: another Test of its flow, a Stop, the flow's delete. A console that went away first takes nothing
+    // away, and a test can be of a draft nobody ever saved, so without a limit they would pile up for the
+    // life of the process — each with its compiled flow, its variables and its counters, and every one of
+    // them in every status push. So no more tests are kept than the file can keep flows, and a test of a flow
+    // with none kept makes room by letting the oldest that has ended go. FlowService refuses one while that
+    // many are going or waiting for the pump; only a test that gets past it — by racing another for the last
+    // place, or by coming while the pump holds a start it has taken from its slot and not yet counted — is
+    // turned away here.
     public FlowOutcome StartTest(CompiledFlow flow, DateTimeOffset now)
     {
         var into = new Collector();
@@ -167,14 +168,33 @@ public sealed class FlowRuntime
         return into.Outcome();
     }
 
-    /// <summary>Takes a flow's test run away, going or finished. Nothing when it has none.</summary>
-    public FlowOutcome StopTest(string flowId, DateTimeOffset now)
+    /// <summary>
+    /// Stops a flow's test run where it is and keeps it to be read — or takes it away, when it has ended
+    /// already or <paramref name="remove"/> says to. Nothing when it has none.
+    /// </summary>
+    // Kept, because Stop is how a forever test ends, and what it read and did on the way is what Test was
+    // pressed to see: taken away at once, a test of a monitor left the canvas the moment it was stopped. It
+    // keeps where it was and every node's counters, and gives back all a live run holds — the wait it would
+    // have woken from, the messages queued for it, its filters at the broker (Filters reads live runs alone)
+    // and its alarms, which end "test ended" as at an End. It is a run that has stopped and is not at fault:
+    // nothing went wrong, so no fault is said and no error counted. A test that has ended already, at an End
+    // or by an earlier Stop, is taken away instead, so that pressing Stop again clears it; and so is any test
+    // of a flow that is being deleted, which leaves no page to read it on.
+    public FlowOutcome StopTest(string flowId, bool remove, DateTimeOffset now)
     {
         var key = new FlowRunKey(flowId, FlowRunKind.Test);
-        if (!_runs.Remove(key)) return FlowOutcome.Empty;
+        if (!_runs.TryGetValue(key, out var run)) return FlowOutcome.Empty;
 
         var into = new Collector();
         into.Resolved(_alarms.ResolveRun(key, FlowAlarmBook.TestEnded, now));
+
+        if (remove || !run.Live) _runs.Remove(key);
+        else
+        {
+            run.State = FlowRunState.Stopped;
+            run.WakeAt = null;
+            run.ForgetQueued();
+        }
 
         Touch();
         return into.Outcome();

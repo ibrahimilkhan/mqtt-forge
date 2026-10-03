@@ -669,13 +669,85 @@ public class FlowRuntimeTests
         _runtime.StartTest(Watch().Compile(), T0);
         _runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":94}"), T0);
 
-        var stopped = _runtime.StopTest("f1", T0);
+        var stopped = _runtime.StopTest("f1", remove: false, T0);
 
         Assert.Equal("test ended", Assert.Single(stopped.Alarms).Alert.ResolvedBy);
         Assert.Equal("flow-f1-hot", Assert.Single(_runtime.Alarms().Active).RuleId);
         Assert.Empty(_runtime.Testing());
-        Assert.DoesNotContain(_runtime.Status().Runs, run => run.Kind == FlowRunKind.Test);
-        Assert.True(_runtime.StopTest("f1", T0).IsEmpty);
+        Assert.Equal(FlowRunState.Stopped, Run(FlowRunKind.Test).State);
+        Assert.True(_runtime.StopTest("f1", remove: false, T0).IsEmpty);
+    }
+
+    /// <summary>A test that reads a/b, then waits five seconds, for ever: one that only Stop ends.</summary>
+    private static CompiledFlow Paced() =>
+        Body("for", new { forever = true }, ("read", "mqttIn", new { filter = "a/b" }), ("pause", "wait", new { seconds = "5" })).Compile();
+
+    // Stop is how a forever test ends, and what it read and did on the way is what Test was pressed to see. So
+    // the run is kept where it was, with every node's counters, as a run that has stopped: with no fault, since
+    // nothing went wrong, and nothing left of what a live run holds — no wait to wake from, no filter at the
+    // broker, nothing queued for it, and no message it would read.
+    [Fact]
+    public void A_stopped_test_keeps_where_it_was_and_what_it_counted_and_gives_back_what_it_held()
+    {
+        _runtime.StartTest(Paced(), T0);
+        _runtime.OnMessage(Msg("a/b", "1"), T0);
+        Assert.Equal(["a/b"], _runtime.Filters());
+        Assert.Equal(T0.AddSeconds(5), _runtime.NextDue);
+
+        var outcome = _runtime.StopTest("f1", remove: false, T0.AddSeconds(1));
+
+        var run = Run(FlowRunKind.Test);
+        Assert.Equal(FlowRunState.Stopped, run.State);
+        Assert.Equal("pause", run.At);
+        Assert.Null(run.Waiting);
+        Assert.Null(run.Fault);
+        Assert.Equal(1, Node("read", FlowRunKind.Test).Outs["out"]);
+        Assert.Equal(1, Node("pause", FlowRunKind.Test).Count);
+        Assert.All(run.Nodes, node => Assert.Equal(0, node.Errors));
+        Assert.Empty(outcome.Debug);
+
+        Assert.Empty(_runtime.Testing());
+        Assert.Empty(_runtime.Filters());
+        Assert.Null(_runtime.NextDue);
+
+        // A message to the filter it had finds nobody, and the clock past its wait moves nothing.
+        var version = _runtime.Version;
+        Assert.True(_runtime.OnMessage(Msg("a/b", "2"), T0.AddSeconds(2)).IsEmpty);
+        Assert.True(_runtime.OnTick(T0.AddSeconds(10), connected: true).IsEmpty);
+        Assert.Equal(version, _runtime.Version);
+        Assert.Equal(1, Node("read", FlowRunKind.Test).Outs["out"]);
+        Assert.False(Node("pause", FlowRunKind.Test).Outs.ContainsKey("out"));
+    }
+
+    // A stop that removes — what deleting the flow posts — takes the test away whether it is going or not.
+    [Fact]
+    public void A_stop_that_removes_takes_a_test_that_is_going_away_with_its_alarms()
+    {
+        _runtime.StartTest(Watch().Compile(), T0);
+        _runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":94}"), T0);
+
+        var removed = _runtime.StopTest("f1", remove: true, T0);
+
+        Assert.Equal("test ended", Assert.Single(removed.Alarms).Alert.ResolvedBy);
+        Assert.Empty(_runtime.Alarms().Active);
+        Assert.Empty(_runtime.Testing());
+        Assert.Empty(_runtime.Filters());
+        Assert.DoesNotContain(_runtime.Status().Runs, one => one.Kind == FlowRunKind.Test);
+    }
+
+    // The active run's alarms and its test's are kept apart both ways: the test's clear closes none of the
+    // active run's (above), and the active run's clear closes none of the test's.
+    [Fact]
+    public void The_active_runs_clear_does_not_clear_a_tests_alarm()
+    {
+        Activate(Watch(limit: "95").Compile());
+        _runtime.StartTest(Watch(limit: "90").Compile(), T0);
+
+        var reading = _runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":94}"), T0);
+
+        Assert.Equal("flowtest-f1-hot", Assert.Single(reading.Alarms).Alert.RuleId);
+        Assert.Equal(1, Node("cool").Outs["none"]);
+        Assert.Equal("flowtest-f1-hot", Assert.Single(_runtime.Alarms().Active).RuleId);
     }
 
     [Fact]
@@ -1189,8 +1261,22 @@ public class FlowRuntimeTests
         _runtime.StartTest(Ends("t1"), T0);
         Assert.Equal(["t1"], Tests());
 
-        _runtime.StopTest("t1", T0);
+        _runtime.StopTest("t1", remove: false, T0);
 
+        Assert.Empty(Tests());
+    }
+
+    // A test kept stopped has ended, and a second Stop takes it away as it does any that has: the canvas is
+    // cleared by pressing it again.
+    [Fact]
+    public void A_second_stop_takes_a_stopped_test_away()
+    {
+        _runtime.StartTest(Reader("t1"), T0);
+
+        _runtime.StopTest("t1", remove: false, T0);
+        Assert.Equal(["t1"], Tests());
+
+        _runtime.StopTest("t1", remove: false, T0);
         Assert.Empty(Tests());
     }
 
@@ -1574,6 +1660,24 @@ public class FlowRuntimeTests
         _runtime.OnMessage(Msg("a/b", "stop"), T0);
 
         Assert.Equal(FlowRunState.Finished, Run().State);
+        Assert.True(Collected(queued));
+    }
+
+    // A test kept after Stop stays to be read until something takes it away, which can be a while: what was
+    // queued for it is let go of when it stops, and not when it goes.
+    [Fact]
+    public void A_test_kept_after_its_stop_lets_go_of_the_messages_it_had_queued()
+    {
+        var chart = new ChartBuilder()
+            .Node("start", "start").Node("first", "mqttIn", new { filter = "a/b" })
+            .Node("second", "mqttIn", new { filter = "c/d" }).Node("end", "end")
+            .Then("start", "first", "second", "end");
+        _runtime.StartTest(chart.Compile(), T0);
+        var queued = Queued("c/d");
+
+        _runtime.StopTest("f1", remove: false, T0);
+
+        Assert.Equal(FlowRunState.Stopped, Run(FlowRunKind.Test).State);
         Assert.True(Collected(queued));
     }
 

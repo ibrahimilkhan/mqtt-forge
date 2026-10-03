@@ -300,7 +300,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
         Assert.True(engine.IsTesting("f1"));
         Assert.False(engine.IsActive("f1"));
 
-        engine.Post(new FlowTestStop("f1"));
+        engine.Post(new FlowTestStop("f1", Remove: false));
 
         await Eventually.Until(_time, () => !engine.IsTesting("f1"), "the stop to end the test");
     }
@@ -317,7 +317,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
         Assert.Equal("plant/k1/ack", filter.Filter);
         Assert.Equal(SubscriptionOwner.Flows, filter.Owners);
 
-        engine.Post(new FlowTestStop("f1"));
+        engine.Post(new FlowTestStop("f1", Remove: false));
 
         await Eventually.Until(_time, () => _subscriber.Filters.Count == 0, "the stopped test's filter to come down");
         Assert.Equal(["plant/k1/ack"], _subscriber.Unsubscribed);
@@ -1050,13 +1050,37 @@ public sealed class FlowEngineTests : IAsyncLifetime
         await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
         await ClockStill(() => log.Holding, "the pump to be held up telling the alarm");
 
-        engine.Post(new FlowTestStop("f1"));
+        engine.Post(new FlowTestStop("f1", Remove: false));
         for (var i = 0; i < FlowEngine.QueueCapacity; i++)
             await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":50}"));
         log.Go();
 
         await Eventually.Until(_time, () => !engine.IsTesting("f1"), "the stop to end the test");
         Assert.Equal(0, engine.Dropped);
+    }
+
+    // A Stop keeps its test to be read and a delete's stop takes it away, and of the two handed over before the
+    // pump reached either, the delete's must still take it away whichever came last: kept, the test of a flow
+    // that is gone would stand in every status push until something else took it away.
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task A_stop_the_pump_has_not_reached_beside_a_deletes_stop_still_takes_the_test_away(bool first, bool second)
+    {
+        var log = new HeldLog();
+        var engine = await RunningAsync(log);
+
+        engine.Post(Press(Watch()));
+        await Eventually.Until(_time, () => engine.IsTesting("f1"), "the test to be going");
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
+        await ClockStill(() => log.Holding, "the pump to be held up telling the alarm");
+
+        engine.Post(new FlowTestStop("f1", Remove: first));
+        engine.Post(new FlowTestStop("f1", Remove: second));
+        log.Go();
+
+        await Eventually.Until(_time, () => !engine.IsTesting("f1") && engine.Status.Runs.All(run => run.Kind != FlowRunKind.Test),
+            "the test to be taken away");
     }
 
     /// <summary>A log that takes nothing until it is let go: a pump held up in the middle of a turn.</summary>
@@ -1096,7 +1120,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
         var engine = await StartedAsync(_alerts, [Watch()]);
 
         engine.Post(Press(Announcing()));
-        engine.Post(new FlowTestStop("t1"));
+        engine.Post(new FlowTestStop("t1", Remove: false));
         await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
         Run(engine);
 
@@ -1110,7 +1134,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
     {
         var engine = await StartedAsync(_alerts, []);
 
-        engine.Post(new FlowTestStop("t1"));
+        engine.Post(new FlowTestStop("t1", Remove: false));
         engine.Post(Press(Announcing()));
         Run(engine);
 
@@ -1128,8 +1152,8 @@ public sealed class FlowEngineTests : IAsyncLifetime
 
         engine.Post(Press(Once("a", ("in", "mqttIn", new { filter = "plant/k1/a" }))));
         engine.Post(Press(Once("b", ("in", "mqttIn", new { filter = "plant/k1/b" }))));
-        engine.Post(new FlowTestStop("b"));
-        engine.Post(new FlowTestStop("c"));
+        engine.Post(new FlowTestStop("b", Remove: false));
+        engine.Post(new FlowTestStop("c", Remove: true));
 
         Assert.Equal("a", Assert.Single(engine.TestsGoingOrWaiting()));
 
