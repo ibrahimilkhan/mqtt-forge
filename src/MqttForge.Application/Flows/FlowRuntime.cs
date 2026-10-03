@@ -23,11 +23,19 @@ namespace MqttForge.Application.Flows;
 // Drive stops where it was, or a loop's next reached outside a turn of it.
 public sealed class FlowRuntime
 {
-    /// <summary>What a Webhook node counts a post as once it has asked for it: posted.</summary>
+    /// <summary>What a Publish node counts a publish as once it has asked for it: sent.</summary>
     // Counted when the step asks, because the runtime never sees the hand-over: the engine hands the
-    // post on at the end of the turn. A post the channel would not take — there is none, it was full, it
-    // threw — was never posted, so the engine names this with the failure it reports and the count is
-    // taken back. One the channel took and gave up on later was posted, and counts its error beside it.
+    // publish to its outbox at the end of the turn. One the outbox would not take, being full, was never
+    // sent, so the engine names this with the failure it reports and the count is taken back. One the
+    // outbox took and the broker then refused, or did not answer in time, was sent, and counts its error
+    // beside it.
+    internal const string Sent = "sent";
+
+    /// <summary>What a Webhook node counts a post as once it has asked for it: posted.</summary>
+    // Counted when the step asks, for Sent's reason: the engine hands the post on at the end of the turn.
+    // A post the channel would not take — there is none, it was full, it threw — was never posted, so the
+    // engine names this with the failure it reports and the count is taken back. One the channel took and
+    // gave up on later was posted, and counts its error beside it.
     internal const string Posted = "posted";
 
     private readonly Random _random;
@@ -312,7 +320,8 @@ public sealed class FlowRuntime
     /// <summary>The engine could not carry out a step this runtime asked for: a publish, a webhook post.</summary>
     /// <param name="takeBack">
     /// What the step counted as done when it asked, for a step the engine never carried out at all: see
-    /// <see cref="Posted"/>. Null for one that was carried out and failed afterwards, which keeps its count.
+    /// <see cref="Sent"/> and <see cref="Posted"/>. Null for one that was carried out and failed afterwards,
+    /// which keeps its count.
     /// </param>
     // Counted on the run that asked for the step, and on no other. A failure comes back after the step
     // that asked — at the end of its turn, from the publish loop, or from the webhook's channel once it
@@ -804,7 +813,7 @@ public sealed class FlowRuntime
         into.Publishes.Add(new FlowPublish(run.Key, run.Serial, node.Id, new PublishRequest(topic, bytes, node.Qos, node.Retain)));
 
         var counter = run.Counter(node.Id);
-        counter.Out("sent");
+        counter.Out(Sent);
         counter.Note = Excerpt(topic);
     }
 

@@ -494,14 +494,10 @@ public sealed class FlowEngineTests : IAsyncLifetime
         Assert.Equal(0, Errors(engine, "send"));
     }
 
-    [Fact]
-    public async Task A_full_outbox_refuses_the_newest_publishes_and_counts_each_on_its_node()
-    {
-        // One arrival that twenty-one flows answer with fifty publishes each — fifty is what the rate
-        // limit lets one run send at once — so the whole burst lands in a single turn of the pump,
-        // behind one publish the broker is sitting on.
-        const int flows = 21;
-        var burst = Enumerable.Range(1, flows).Select(i => new ChartBuilder($"b{i}", $"Burst {i}")
+    /// <summary>Flows b1 to b<paramref name="flows"/>, each answering every message on sim/burst with fifty publishes: what one run may send at once.</summary>
+    private static Flow[] Bursts(int flows) =>
+    [
+        .. Enumerable.Range(1, flows).Select(i => new ChartBuilder($"b{i}", $"Burst {i}")
             .Node("start", "start").Node("loop", "for", new { forever = true })
             .Node("in", "mqttIn", new { filter = "sim/burst" })
             .Node("again", "for", new { times = FlowLimits.PublishesPerSecond })
@@ -510,10 +506,17 @@ public sealed class FlowEngineTests : IAsyncLifetime
             .Then("start", "loop").Wire("loop", "body", "in").Then("in", "again")
             .Wire("again", "body", "send").Wire("send", "out", "again", "next").Wire("again", "done", "loop", "next")
             .Wire("loop", "done", "end")
-            .Build());
+            .Build()),
+    ];
 
+    /// <summary>Starts the engine on <paramref name="flows"/> with one publish held by the broker, and a burst on sim/burst sent in a turn that pushes.</summary>
+    // One arrival that the burst flows answer with fifty publishes each, so the whole burst lands in a single
+    // turn of the pump, behind a publish the broker is sitting on: the outbox fills, and what does not fit is
+    // refused.
+    private async Task<FlowEngine> BurstingAsync(params Flow[] flows)
+    {
         _publisher.Stall = true;
-        var engine = await RunningAsync([.. burst]);
+        var engine = await RunningAsync(flows);
 
         engine.Post(Press(Once("first", ("send", "publish", new { topic = "sim/first", payload = "x" }))));
         await ClockStill(() => _publisher.Held == 1, "the first publish to be sitting with the broker");
@@ -526,6 +529,15 @@ public sealed class FlowEngineTests : IAsyncLifetime
         _time.Advance(FlowLimits.StatusEvery);
 
         await engine.NotifyMessageReceivedAsync(Msg("sim/burst", "go"));
+        return engine;
+    }
+
+    [Fact]
+    public async Task A_full_outbox_refuses_the_newest_publishes_and_counts_each_on_its_node()
+    {
+        // Twenty-one flows of fifty: more than the outbox holds.
+        const int flows = 21;
+        var engine = await BurstingAsync(Bursts(flows));
 
         const string full = "Too many publishes were waiting for the broker; this one was dropped.";
         var refused = flows * FlowLimits.PublishesPerSecond - FlowEngine.OutboxCapacity;
@@ -534,6 +546,29 @@ public sealed class FlowEngineTests : IAsyncLifetime
         Assert.All(_console.Debug, entry => Assert.Equal("send", entry.NodeId));
         Assert.Equal(refused, engine.Status.Runs.Where(run => run.FlowId != "first")
             .Sum(run => run.Nodes.Single(node => node.Id == "send").Errors));
+    }
+
+    // A publish the outbox refused was never sent, so the count its node made when it asked is taken back with
+    // the error, as a webhook post the channel would not take is: a node whose one publish was refused reads as
+    // one that sent nothing and failed once. The flow is last by its id, so it asks after the whole burst.
+    [Fact]
+    public async Task A_publish_a_full_outbox_refused_is_not_counted_as_sent()
+    {
+        var last = new ChartBuilder("z", "Last")
+            .Node("start", "start").Node("loop", "for", new { forever = true })
+            .Node("in", "mqttIn", new { filter = "sim/burst" }).Node("ping", "publish", new { topic = "sim/z", payload = "x" })
+            .Node("end", "end")
+            .Then("start", "loop").Wire("loop", "body", "in").Then("in", "ping").Wire("ping", "out", "loop", "next")
+            .Wire("loop", "done", "end")
+            .Build();
+
+        var engine = await BurstingAsync([.. Bursts(21), last]);
+
+        FlowNodeStatus? Ping() =>
+            engine.Status.Runs.FirstOrDefault(run => run.FlowId == "z")?.Nodes.Single(node => node.Id == "ping");
+
+        await ClockStill(() => Ping()?.Errors == 1, "the last flow's publish to be refused");
+        Assert.False(Ping()!.Outs.ContainsKey("sent"), "A publish the outbox refused is counted as sent.");
     }
 
     // ---- subscriptions ----

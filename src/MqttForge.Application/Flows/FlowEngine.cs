@@ -705,13 +705,16 @@ public sealed class FlowEngine
 
         var debug = new List<FlowDebugEntry>(outcome.Debug);
 
+        // A publish the outbox would not take was never sent, so it is taken back off the node's count with the
+        // failure. One it took and the broker refuses later stays sent: that failure comes back as a command.
         foreach (var publish in outcome.Publishes)
             if (!_outbox.Writer.TryWrite(publish))
                 debug.AddRange(_runtime.StepFailed(publish.Run, publish.Serial, publish.NodeId,
-                    "Too many publishes were waiting for the broker; this one was dropped.", now).Debug);
+                    "Too many publishes were waiting for the broker; this one was dropped.", now,
+                    takeBack: FlowRuntime.Sent).Debug);
 
-        // A post the channel would not take was never posted, so it is taken back off the node's count with
-        // the failure. One it took and gives up on later stays posted: that failure comes back as a command.
+        // The same for a post the channel would not take: it was never posted. One it took and gives up on
+        // later stays posted.
         foreach (var post in outcome.Webhooks)
             if (Refusal(post) is { } refused)
                 debug.AddRange(_runtime.StepFailed(post.Run, post.Serial, post.NodeId, refused, now,
