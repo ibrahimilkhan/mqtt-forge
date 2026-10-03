@@ -75,7 +75,20 @@ public static partial class FlowCompiler
 
             order.Add(node.Id);
 
-            var compiled = Node(node, new Settings(node.Config), alertTopicPrefix, declared, out var problem);
+            // The whole of a node's settings is judged, and before one of them is read. Text that cannot be
+            // read is not always in a setting this kind of node reads — it can be in a box the pane hides, in
+            // a name, or in a node that reads nothing — and it is written out again all the same: by the
+            // fingerprint below, and by the file the flow is kept in, where it is an exception and not a
+            // sentence. Said here it is said on the node, like any setting that cannot be used, and the
+            // node's wires and the rest of the drawing are still judged with it.
+            CompiledNode? compiled = null;
+            string? problem = null;
+
+            if (Settings.TryRead(node.Config, out var settings))
+                compiled = Node(node, settings, alertTopicPrefix, declared, out problem);
+            else
+                problem = "This setting holds text that cannot be read.";
+
             if (problem is not null) problems.Add(new(node.Id, null, problem));
             else if (compiled is not null) nodes.Add(node.Id, compiled);
         }
@@ -767,10 +780,29 @@ public static partial class FlowCompiler
     /// <summary>A node's settings, read leniently: a wrong type is the same as a missing value.</summary>
     // Lenient because the editor writes numbers from text boxes, and a number that arrives as "0.5" is
     // the number 0.5 to anyone who typed it.
-    private readonly struct Settings(JsonElement config)
+    //
+    // Made only by TryRead, and so only of settings in which every name and every string can be read as
+    // text. That is why a string is read below with GetString and a name looked up with TryGetProperty,
+    // with nothing between them and the answer: both throw on an escaped half of a surrogate pair, which
+    // is valid JSON and no text, and a PUT body or a flows.json somebody edited can hold one. A node that
+    // does is refused by the caller, on itself, and never gets as far as being read.
+    private readonly struct Settings
     {
+        private readonly JsonElement _config;
+
+        private Settings(JsonElement config) => _config = config;
+
+        /// <summary>The settings in <paramref name="config"/>, or false when they hold text that cannot be read.</summary>
+        public static bool TryRead(JsonElement config, out Settings settings)
+        {
+            var reads = PayloadValue.ReadsAsText(config);
+
+            settings = new Settings(reads ? config : default);
+            return reads;
+        }
+
         private JsonElement? Get(string name) =>
-            config.ValueKind == JsonValueKind.Object && config.TryGetProperty(name, out var value) ? value : null;
+            _config.ValueKind == JsonValueKind.Object && _config.TryGetProperty(name, out var value) ? value : null;
 
         public string Text(string name) => Get(name) switch
         {

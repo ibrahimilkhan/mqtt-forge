@@ -1,3 +1,4 @@
+using System.Text.Json;
 using MqttForge.Application.Alerts;
 
 namespace MqttForge.UnitTests.Application.Alerts;
@@ -158,6 +159,43 @@ public class PayloadValueTests
         Assert.Null(PayloadValue.Open("{\"temp\":\"\ud800\"}"));
         Assert.False(PayloadValue.TryExtract("{\"temp\":\"\ud800\"}", "temp", out _));
     }
+
+    // TryText's question asked of a whole document, for a caller that is going to write it out again or hash
+    // it and has no use for the answer one string at a time. A name is as good a place for half of a pair
+    // as a value is, so the names are asked as well as the strings, at every depth.
+    [Theory]
+    [InlineData("""{"topic":"plant/k1","qos":1,"retain":true,"note":null,"tags":["a","é"],"deep":{"a":[{"b":"c"}]}}""")]
+    [InlineData("""["\ud83d\ude00"]""")]
+    [InlineData("""{"\ud83d\ude00":"a pair, both halves"}""")]
+    [InlineData("{}")]
+    [InlineData("[]")]
+    [InlineData("42")]
+    [InlineData("\"plain\"")]
+    public void A_document_whose_strings_and_names_can_all_be_read_reads_as_text(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+
+        Assert.True(PayloadValue.ReadsAsText(document.RootElement));
+    }
+
+    [Theory]
+    [InlineData("\"\\ud800\"")]
+    [InlineData("""{"topic":"\ud800"}""")]
+    [InlineData("""{"topic":"x","\ud800":1}""")]
+    [InlineData("""{"\ud800":1,"topic":"x"}""")]
+    [InlineData("""{"ids":["k1","\udc00"]}""")]
+    [InlineData("""{"a":{"b":[1,{"c":"\ud800"}]}}""")]
+    public void A_document_with_a_string_or_a_name_that_cannot_be_read_does_not_read_as_text(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+
+        Assert.False(PayloadValue.ReadsAsText(document.RootElement));
+    }
+
+    // A node written without settings has an undefined element, and it has nothing in it to read.
+    [Fact]
+    public void An_undefined_element_has_nothing_that_cannot_be_read() =>
+        Assert.True(PayloadValue.ReadsAsText(default));
 
     [Fact]
     public void Six_levels_are_walked_and_a_seventh_is_not()

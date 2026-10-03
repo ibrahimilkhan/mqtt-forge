@@ -526,6 +526,91 @@ public partial class FlowCompilerTests
         Assert.Contains("Say how many seconds", Assert.Single(FlowCompiler.Compile(odd, ChartBuilder.Prefix).Problems).Message);
     }
 
+    // ---- text that cannot be read ----
+
+    /// <summary>Start → x → End, as <see cref="Step"/>, for settings written as the JSON text they arrive in.</summary>
+    private static ChartBuilder RawStep(string type, string settings) =>
+        new ChartBuilder().Node("start", "start").RawNode("x", type, settings).Node("end", "end").Then("start", "x", "end");
+
+    // An escaped half of a surrogate pair is valid JSON and no .NET string, and a PUT body or a flows.json
+    // somebody edited can hold one in a setting as easily as any other text. GetString throws on it, and the
+    // engine compiles every flow at start without a catch, so one such flow would stop all of them. It is a
+    // setting that cannot be used, and a node that holds one is refused on itself like any other.
+    [Theory]
+    [InlineData("""{"topic":"plant/\ud800","payload":"on"}""")]
+    [InlineData("""{"topic":"plant/k1","payload":"\udc00 on"}""")]
+    public void A_setting_that_cannot_be_read_as_text_is_a_problem_on_its_node(string settings)
+    {
+        var problem = Only(RawStep("publish", settings));
+
+        Assert.Equal("node:x", problem.Key);
+        Assert.Equal("This setting holds text that cannot be read.", problem.Message);
+    }
+
+    // A number is read out of text as well, since the editor writes what a text box holds, and text that
+    // cannot be read is not a number. What is said is that it cannot be read, and not a QoS nobody chose.
+    [Fact]
+    public void A_number_written_as_text_that_cannot_be_read_is_a_problem_on_its_node_and_not_a_crash()
+    {
+        var problem = Only(RawStep("publish", """{"topic":"plant/k1","payload":"on","qos":"\ud800"}"""));
+
+        Assert.Equal("node:x", problem.Key);
+        Assert.Equal("This setting holds text that cannot be read.", problem.Message);
+    }
+
+    // The whole of a node's settings is judged, and not only what its kind reads. A name is text too, and
+    // looking one setting up reads the names on the way to it: last to first, and past every one of them
+    // for a setting that is not there. Text in a setting nobody reads — a box the pane hides, one a newer
+    // build wrote, anything on a Debug, which reads none — is still written out for the fingerprint and
+    // into flows.json, and neither can write text that cannot be read. So it is refused where it is, and
+    // not found out when the flow is compared or saved.
+    [Theory]
+    [InlineData("publish", """{"topic":"plant/k1","payload":"on","\ud800":1}""")]
+    [InlineData("publish", """{"\ud800":1,"topic":"plant/k1","payload":"on"}""")]
+    [InlineData("publish", """{"topic":"plant/k1","payload":"on","note":{"seen":["\ud800"]}}""")]
+    [InlineData("debug", """{"note":"\ud800"}""")]
+    public void Text_that_cannot_be_read_is_refused_wherever_in_a_nodes_settings_it_is(string type, string settings)
+    {
+        var problem = Only(RawStep(type, settings));
+
+        Assert.Equal("node:x", problem.Key);
+        Assert.Equal("This setting holds text that cannot be read.", problem.Message);
+    }
+
+    // The console marks every refused node at once, so a node refused for its text is still a node of the
+    // drawing: its wires are wires, and what is wrong elsewhere is said beside it.
+    [Fact]
+    public void A_node_refused_for_text_that_cannot_be_read_still_takes_part_in_the_checks_of_the_drawing()
+    {
+        var problems = Problems(new ChartBuilder()
+            .Node("start", "start").RawNode("x", "publish", """{"topic":"plant/\ud800","payload":"on"}""")
+            .Node("end", "end").Node("say", "debug")
+            .Then("start", "x", "end"));
+
+        Assert.Contains(problems, problem => problem.Key == "node:x" && problem.Message.Contains("cannot be read"));
+        Assert.Contains(problems, problem => problem.Key == "node:say" && problem.Message.Contains("goes nowhere"));
+        Assert.DoesNotContain(problems, problem => problem.EdgeId is not null);
+    }
+
+    // The flows of a file are compiled one after another and the loop has no catch, so a flow that threw
+    // would be every flow after it that never compiled — and, at start, none of them running.
+    [Fact]
+    public void Compile_all_still_compiles_the_flows_beside_one_that_holds_text_that_cannot_be_read()
+    {
+        var bad = new ChartBuilder("bad")
+            .Node("start", "start").RawNode("x", "publish", """{"topic":"plant/\ud800","payload":"on"}""").Node("end", "end")
+            .Then("start", "x", "end").Build();
+
+        var set = FlowCompiler.CompileAll([bad, Whole("good").Build()], ChartBuilder.Prefix);
+
+        Assert.Equal(["good"], set.Compiled.Select(flow => flow.Id));
+        Assert.Equal(["bad", "good"], set.Kept);
+
+        var problem = Assert.Single(set.Problems);
+        Assert.Equal("bad", problem.FlowId);
+        Assert.Equal("node:x", problem.Problem.Key);
+    }
+
     // Kept is how the runtime tells a flow that was switched off from one that was taken away, and the
     // two end their alarms differently. A flow that is off is in the file, so it is in Kept, and it
     // compiles like any other: it is the runtime that leaves it idle.

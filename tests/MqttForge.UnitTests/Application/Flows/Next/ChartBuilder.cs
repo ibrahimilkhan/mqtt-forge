@@ -29,6 +29,17 @@ internal sealed class ChartBuilder
         return this;
     }
 
+    /// <summary>A node whose settings are this JSON text as it is written: what a PUT body or a flows.json holds.</summary>
+    // For what an object cannot say. Node writes its object out and reads the text back, and what is
+    // written out of a string that cannot be read as text is not that string — "\ud800" comes out as
+    // "\uFFFD" — so only the JSON itself can hand the compiler an escaped half of a surrogate pair.
+    public ChartBuilder RawNode(string id, string type, string settings)
+    {
+        using var document = JsonDocument.Parse(settings);
+        _nodes.Add(new FlowNode(id, type, 0, 0, document.RootElement.Clone()));
+        return this;
+    }
+
     public ChartBuilder Wire(string from, string fromPort, string to, string toPort = "in")
     {
         _edges.Add(new FlowEdge($"e{_edges.Count + 1}", from, fromPort, to, toPort));

@@ -325,4 +325,51 @@ public static class PayloadValue
             return false;
         }
     }
+
+    /// <summary>Whether every string in the element, and every property name in it, can be read as text.</summary>
+    // TryText's question asked of a whole document, for a caller that is going to write it out again and
+    // has no use for the answer one string at a time: a document cannot be written with a string in it
+    // that cannot be read, and the first one found is answer enough. A name is as good a place for half of
+    // a surrogate pair as a value is, and Name throws on it as GetString does, so the names are asked as
+    // well as the strings, at every depth. The walk goes as deep as the document does, which JsonDocument
+    // holds to 64 levels unless it is asked for more.
+    public static bool ReadsAsText(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.String:
+                return TryText(element, out _);
+
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                    if (!ReadsAsText(item)) return false;
+
+                return true;
+
+            case JsonValueKind.Object:
+                foreach (var property in element.EnumerateObject())
+                    if (!NameReadsAsText(property) || !ReadsAsText(property.Value)) return false;
+
+                return true;
+
+            // A number, a boolean, a null, or no element at all, which is what a node written without
+            // settings holds: none of them has a string in it.
+            default:
+                return true;
+        }
+    }
+
+    private static bool NameReadsAsText(JsonProperty property)
+    {
+        try
+        {
+            // Read for what it throws on, which is the whole of the answer, and not for the name.
+            _ = property.Name;
+            return true;
+        }
+        catch (InvalidOperationException ex) when (ex is not ObjectDisposedException)
+        {
+            return false;
+        }
+    }
 }
