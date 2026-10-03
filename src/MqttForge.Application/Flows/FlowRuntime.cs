@@ -551,11 +551,23 @@ public sealed class FlowRuntime
 
     private void Decide(FlowRun run, IfNode decision, DateTimeOffset now, Collector into)
     {
+        // Rendered as far as a variable can hold, since a variable is what a value most often fills in: a list
+        // of ids for one of, a pattern for matches. Rendered only as far as a box can hold, a list was judged on
+        // its first thousand characters, and an id past them went no with nothing to say why. A value that comes
+        // out longer still is cut, and a cut value is not the value: that is the step failing, said on the node,
+        // and the message goes no, as it does for a number test given text that is no number.
         var text = decision.Field.Read(run.Message, run.Variables);
-        var value = decision.Value.Render(run.Message, run.Variables, now, _random, FlowLimits.TextTemplateLength, out _);
-        var value2 = decision.Value2.Render(run.Message, run.Variables, now, _random, FlowLimits.TextTemplateLength, out _);
+        var value = decision.Value.Render(run.Message, run.Variables, now, _random, FlowLimits.VariableBytes, out var valueCut);
+        var value2 = decision.Value2.Render(run.Message, run.Variables, now, _random, FlowLimits.VariableBytes, out var value2Cut);
 
         run.Counter(decision.Id).Note = text is null ? "no such field" : Excerpt(text);
+
+        if (valueCut || value2Cut)
+        {
+            Fail(run, decision.Id, "A value came out larger than 64 KB, so this message went no.", now, into, run.Message.Topic);
+            Go(run, decision, "no");
+            return;
+        }
 
         bool yes;
         try

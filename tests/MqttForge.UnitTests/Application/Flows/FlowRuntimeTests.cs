@@ -449,6 +449,43 @@ public class FlowRuntimeTests
         Assert.Equal(1, Node("test").Outs["no"]);
     }
 
+    /// <summary>Start → read a/b → an If on the payload with this test and value → End either way.</summary>
+    private static ChartBuilder Deciding(string test, string value) => new ChartBuilder()
+        .Node("start", "start").Node("read", "mqttIn", new { filter = "a/b" })
+        .Node("test", "if", new { field = "", test, value }).Node("end", "end")
+        .Then("start", "read", "test").Wire("test", "yes", "end").Wire("test", "no", "end");
+
+    // A value is most often a variable — a list of ids for one of, a pattern — and a variable holds up to
+    // 64 KB. Cut at what can be written in the box, a list was judged on its first thousand characters, and
+    // an id further on went no with nothing to say why.
+    [Fact]
+    public void One_of_a_list_longer_than_a_box_can_hold_finds_an_id_at_its_end()
+    {
+        var list = string.Join(",", Enumerable.Range(0, 400).Select(i => $"x{i:000}")) + ",k9";
+        Assert.True(list.Length > 2_000);
+
+        Activate(Deciding("oneOf", "{{var.list}}").Var("list", list).Compile());
+        _runtime.OnMessage(Msg("a/b", "k9"), T0);
+
+        Assert.Equal(1, Node("test").Outs["yes"]);
+        Assert.Equal(0, Node("test").Errors);
+    }
+
+    // Past what a variable can hold, a value is cut, and a cut value is not the value: it is the step that
+    // failed, said on the node, and the message goes no, as it does when a number test is given text.
+    [Fact]
+    public void A_value_that_comes_out_larger_than_64_KB_counts_an_error_and_goes_no()
+    {
+        var big = new string('x', FlowLimits.VariableBytes);
+
+        Activate(Deciding("eq", "{{var.big}}!").Var("big", big).Compile());
+        var outcome = _runtime.OnMessage(Msg("a/b", big + "!"), T0);
+
+        Assert.Equal(1, Node("test").Outs["no"]);
+        Assert.Equal(1, Node("test").Errors);
+        Assert.Equal("A value came out larger than 64 KB, so this message went no.", Assert.Single(outcome.Debug).Text);
+    }
+
     [Fact]
     public void A_pattern_that_runs_out_of_time_goes_no_and_ends_the_runs_turn()
     {
