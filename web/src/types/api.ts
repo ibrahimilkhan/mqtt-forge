@@ -483,12 +483,16 @@ export type FlowNodeDto = {
 /** A wire from one node's output port to another node's input port. */
 export type FlowEdgeDto = { id: string; from: string; fromPort: string; to: string; toPort: string };
 
+/** A variable a flow declares, and the text every run of it starts from. */
+export type FlowVariableDto = { name: string; value: string };
+
 export type FlowDto = {
   id: string;
   name: string;
   enabled: boolean;
   nodes: FlowNodeDto[];
   edges: FlowEdgeDto[];
+  variables: FlowVariableDto[];
 };
 
 /** Something wrong with a flow in the file, under the key the page marks: flow, node:{id} or edge:{id}. */
@@ -509,8 +513,9 @@ export type FlowSavedDto = { flow: FlowDto };
 export type FlowStandingDto = { topic: string; firedAt: string; reason: string; count: number };
 
 /**
- * One node's numbers. `outs` is keyed by output port, plus four counters that are not ports:
- * `skipped` (If, For each), `echo` (MQTT in), `sent` (Publish), `raised` and `cleared` (Alarm).
+ * One node's numbers. `outs` holds every way out by its name, plus a counter for what some nodes do
+ * that is not a way out: `sent` (Publish), `echo` and `dropped` (MQTT in), `played` (Sound), `shown`
+ * (Notify) and `posted` (Webhook) — and `dropped` again on those three, for what came past their rate.
  */
 export type FlowNodeStatusDto = {
   id: string;
@@ -521,12 +526,34 @@ export type FlowNodeStatusDto = {
   standing: FlowStandingDto[];
 };
 
-export type FlowRunStatusDto = { id: string; fault: string | null; nodes: FlowNodeStatusDto[] };
+/** Which of a flow's two runs: the flow at work, or a test of its draft. */
+export type FlowRunKind = 'active' | 'test';
 
-/** Every running flow. A flow that is not in it is not running. */
-export type FlowStatusDto = { flows: FlowRunStatusDto[] };
+/** Where a run is: going, waiting for a time or a message, finished at an End, or stopped. */
+export type FlowRunState = 'running' | 'waiting' | 'finished' | 'stopped';
 
-/** A line for the debug strip: what a Debug node printed, or what went wrong. */
+/** What a waiting run waits for: the time a Wait ends, or a message on an MQTT in's filter. */
+export type FlowWaitingDto = { until: string | null; filter: string | null };
+
+/**
+ * One run: its state, the node it is at, what it waits for, its variables as they stand, and every
+ * node's numbers. A run that finished or stopped stays until it is replaced.
+ */
+export type FlowRunStatusDto = {
+  flowId: string;
+  kind: FlowRunKind;
+  state: FlowRunState;
+  at: string | null;
+  waiting: FlowWaitingDto | null;
+  fault: string | null;
+  variables: Record<string, string>;
+  nodes: FlowNodeStatusDto[];
+};
+
+/** Every run there is. A flow with no run in it is neither switched on nor being tested. */
+export type FlowStatusDto = { runs: FlowRunStatusDto[] };
+
+/** A line for the debug strip: what a Debug node printed, or what went wrong — and whether a test did. */
 export type FlowDebugDto = {
   flowId: string;
   nodeId: string;
@@ -534,4 +561,19 @@ export type FlowDebugDto = {
   kind: 'message' | 'error';
   topic: string;
   text: string;
+  test: boolean;
+};
+
+/** A tone a Sound node asked for. */
+export type FlowSoundDto = { flowId: string; nodeId: string; level: AlertSeverity; test: boolean };
+
+/** A notice a Notify node asked for. */
+export type FlowNoticeDto = {
+  flowId: string;
+  flowName: string;
+  nodeId: string;
+  text: string;
+  level: AlertSeverity;
+  at: string;
+  test: boolean;
 };

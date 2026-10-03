@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyFlow, fingerprint } from './flowDocument';
+import { exampleFlows } from './examples';
 import { createFlowDraftStore, DRAFT_PREFIX, useFlowDraftStore } from './flowDraftStore';
 import { forgetDrafts } from './canvasTestbed';
 
@@ -51,6 +52,18 @@ describe('flow drafts', () => {
 
     expect(reloaded.getState().drafts).toEqual({ [flow.id]: flow });
     expect(reloaded.getState().current).toBe(flow.id);
+  });
+
+  // Every flow the page makes itself is a draft like any other, and is read back by the same check of
+  // whether it is whole: one made without something that check asks for would be on the page until the
+  // first reload, and gone after it.
+  it('keeps the flows the page makes itself, a new flow and the examples, whole through a reload', async () => {
+    const made = [emptyFlow('New'), ...exampleFlows()];
+    for (const flow of made) useFlowDraftStore.getState().put(flow);
+
+    const reloaded = await reopened();
+
+    expect(reloaded.getState().drafts).toEqual(Object.fromEntries(made.map((flow) => [flow.id, flow])));
   });
 
   it('forgets a draft, its refusal and its selection on discard', () => {
@@ -221,6 +234,36 @@ describe('what storage keeps', () => {
     expect(localStorage.getItem(`${DRAFT_PREFIX}bare`)).toBeNull();
     expect(localStorage.getItem(DRAFT_PREFIX + startless.id)).toBeNull();
     expect(localStorage.getItem(DRAFT_PREFIX + newer.id)).not.toBeNull();
+  });
+
+  // A flow carries variables now, and a draft kept without them was made in a build that was never
+  // released: nothing makes it whole, so it goes like any other draft that is not. So does one with a
+  // variable short of its name or its value, which the page would read as text and find `undefined`.
+  it('keeps a draft with its variables, and lets go of one without them or with one that is not whole', async () => {
+    const set = { ...emptyFlow('Set'), variables: [{ name: 'limit', value: '90' }] };
+    const keptKey = DRAFT_PREFIX + set.id;
+    localStorage.setItem(keptKey, JSON.stringify({ version: 1, flow: set, base: null }));
+
+    const broken = [
+      ['before variables', undefined],
+      ['not a list', { limit: '90' }],
+      ['an entry that is not an object', ['limit']],
+      ['a variable with no name', [{ value: '90' }]],
+      ['a variable with no value', [{ name: 'limit' }]],
+      ['a value that is not text', [{ name: 'limit', value: 90 }]],
+    ] as const;
+    const goneKeys = broken.map(([name, variables]) => {
+      const flow = { ...emptyFlow(name), variables };
+      localStorage.setItem(DRAFT_PREFIX + flow.id, JSON.stringify({ version: 1, flow, base: null }));
+      return DRAFT_PREFIX + flow.id;
+    });
+
+    const opened = await reopened();
+
+    expect(Object.keys(opened.getState().drafts)).toEqual([set.id]);
+    expect(opened.getState().drafts[set.id].variables).toEqual([{ name: 'limit', value: '90' }]);
+    expect(localStorage.getItem(keptKey)).not.toBeNull();
+    for (const key of goneKeys) expect(localStorage.getItem(key)).toBeNull();
   });
 });
 

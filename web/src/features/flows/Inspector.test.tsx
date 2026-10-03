@@ -25,6 +25,7 @@ const watch: FlowDto = {
     },
   ],
   edges: [],
+  variables: [],
 };
 
 // The flow on screen is always the draft when there is one, so a test reads it from the store.
@@ -109,8 +110,8 @@ describe('inspector', () => {
   it('lists the alarms an Alarm node is holding up', () => {
     useFlowDraftStore.getState().select('hot');
     useFlowStatusStore.getState().setStatus({
-      flows: [{
-        id: 'watch', fault: null,
+      runs: [{
+        flowId: 'watch', kind: 'active', state: 'waiting', at: null, waiting: null, fault: null, variables: {},
         nodes: [{ id: 'hot', count: 3, outs: { raised: 1 }, errors: 0, note: null,
           standing: [{ topic: 'plant/k1/temp', firedAt: '2026-09-26T09:14:00Z', reason: 'k1 is at 94.2 °C', count: 3 }] }],
       }],
@@ -213,7 +214,7 @@ describe('inspector', () => {
   it('lets go of what a deleted flow printed, and of no other flow\'s', async () => {
     server.use(http.delete('/api/flows/watch', () => new HttpResponse(null, { status: 204 })));
     const line = (flowId: string): FlowDebugDto => ({
-      flowId, nodeId: 'test', at: '2026-09-26T09:14:22Z', kind: 'message', topic: 'plant/k1/temp', text: '94.2',
+      flowId, nodeId: 'test', at: '2026-09-26T09:14:22Z', kind: 'message', topic: 'plant/k1/temp', text: '94.2', test: false,
     });
     const status = useFlowStatusStore.getState();
     status.addDebug([line('watch'), line('fan')], 1);

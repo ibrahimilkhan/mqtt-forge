@@ -1,19 +1,23 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { FlowDebugDto, FlowStatusDto } from '../types/api';
-import { DEBUG_KEPT, leftOut, nodeKey, useFlowStatusStore } from './flowStatusStore';
+import type { FlowDebugDto, FlowRunStatusDto, FlowStatusDto } from '../types/api';
+import { DEBUG_KEPT, isLive, leftOut, nodeKey, shownRun, useFlowStatusStore } from './flowStatusStore';
 
-const status: FlowStatusDto = {
-  flows: [
-    {
-      id: 'watch',
-      fault: null,
-      nodes: [
-        { id: 'in', count: 412, outs: { out: 412 }, errors: 0, note: '{"temp":94.2}', standing: [] },
-        { id: 'test', count: 412, outs: { yes: 3, no: 409 }, errors: 0, note: '94.2', standing: [] },
-      ],
-    },
+const run = (over: Partial<FlowRunStatusDto> = {}): FlowRunStatusDto => ({
+  flowId: 'watch',
+  kind: 'active',
+  state: 'waiting',
+  at: 'in',
+  waiting: { until: null, filter: 'plant/+/temp' },
+  fault: null,
+  variables: { limit: '90' },
+  nodes: [
+    { id: 'in', count: 412, outs: { out: 412 }, errors: 0, note: '{"temp":94.2}', standing: [] },
+    { id: 'test', count: 412, outs: { yes: 3, no: 409 }, errors: 0, note: '94.2', standing: [] },
   ],
-};
+  ...over,
+});
+
+const status: FlowStatusDto = { runs: [run()] };
 
 const line = (text: string, flowId = 'watch'): FlowDebugDto => ({
   flowId,
@@ -22,6 +26,7 @@ const line = (text: string, flowId = 'watch'): FlowDebugDto => ({
   kind: 'message',
   topic: 'plant/k1/temp',
   text,
+  test: false,
 });
 
 const state = () => useFlowStatusStore.getState();
@@ -30,19 +35,58 @@ const texts = (flowId: string) => (state().debug[flowId] ?? []).map((entry) => e
 describe('flow status store', () => {
   beforeEach(() => useFlowStatusStore.setState(useFlowStatusStore.getInitialState()));
 
-  it('keeps each running flow and each node under its own key', () => {
+  it('keeps each flow\'s runs, and the nodes of the run its canvas shows under their own keys', () => {
     state().setStatus(status);
 
-    expect(Object.keys(state().flows)).toEqual(['watch']);
+    expect(Object.keys(state().runs)).toEqual(['watch']);
+    expect(state().runs.watch.active?.variables).toEqual({ limit: '90' });
     expect(state().nodes[nodeKey('watch', 'test')].outs).toEqual({ yes: 3, no: 409 });
   });
 
-  it('replaces the whole picture, so a flow that stopped is gone', () => {
-    state().setStatus(status);
-    state().setStatus({ flows: [] });
+  it('files each run under its flow and its kind, so one flow\'s runs never stand for another\'s', () => {
+    state().setStatus({ runs: [run(), run({ flowId: 'sim', kind: 'test' })] });
 
-    expect(state().flows).toEqual({});
+    expect(Object.keys(state().runs).sort()).toEqual(['sim', 'watch']);
+    expect(state().runs.watch.test).toBeUndefined();
+    expect(state().runs.sim.active).toBeUndefined();
+    expect(state().runs.sim.test?.flowId).toBe('sim');
+    expect(Object.keys(state().nodes).sort()).toEqual(['sim/in', 'sim/test', 'watch/in', 'watch/test']);
+  });
+
+  it('replaces the whole picture, so a run that went is gone', () => {
+    state().setStatus(status);
+    state().setStatus({ runs: [] });
+
+    expect(state().runs).toEqual({});
     expect(state().nodes).toEqual({});
+  });
+
+  // A reader who pressed Test is looking at the test; one who did not is looking at the flow at work.
+  it('shows a test that is going, else the active run, else a test that has ended', () => {
+    const test = run({ kind: 'test', nodes: [{ id: 'in', count: 1, outs: {}, errors: 0, note: null, standing: [] }] });
+
+    state().setStatus({ runs: [run(), test] });
+    expect(shownRun(state().runs.watch)).toBe(state().runs.watch.test);
+    expect(state().nodes[nodeKey('watch', 'in')].count).toBe(1);
+
+    state().setStatus({ runs: [run(), { ...test, state: 'finished' }] });
+    expect(shownRun(state().runs.watch)?.kind).toBe('active');
+
+    state().setStatus({ runs: [{ ...test, state: 'finished' }] });
+    expect(shownRun(state().runs.watch)?.kind).toBe('test');
+  });
+
+  it('shows nothing of a flow that has no run', () => {
+    expect(shownRun(undefined)).toBeUndefined();
+    expect(shownRun({})).toBeUndefined();
+  });
+
+  it('calls a run live while it is going or waiting', () => {
+    expect(isLive(run({ state: 'running' }))).toBe(true);
+    expect(isLive(run({ state: 'waiting' }))).toBe(true);
+    expect(isLive(run({ state: 'finished' }))).toBe(false);
+    expect(isLive(run({ state: 'stopped' }))).toBe(false);
+    expect(isLive(undefined)).toBe(false);
   });
 
   it('keeps debug lines newest first, and no more than it keeps', () => {

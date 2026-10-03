@@ -10,7 +10,7 @@ import { useFlowStatusStore } from '../../stores/flowStatusStore';
 import panelStyles from '../../styles/panel.module.css';
 import { server } from '../../test/server';
 import { renderWithClient as render } from '../../test/renderWithClient';
-import type { FlowDebugDto, FlowDto, FlowNodeDto, FlowsDto, FlowStatusDto } from '../../types/api';
+import type { FlowDebugDto, FlowDto, FlowNodeDto, FlowRunStatusDto, FlowsDto, FlowStatusDto } from '../../types/api';
 import { forgetDrafts, standInForTheBrowser, withoutComments } from './canvasTestbed';
 import { DebugStrip } from './DebugStrip';
 import strip from './DebugStrip.module.css';
@@ -43,6 +43,7 @@ const watch: FlowDto = {
     { id: 'test', type: 'if', x: 300, y: 120, config: { field: '$.temp', test: 'gt', value: '90', value2: '' } },
   ],
   edges: [{ id: 'e1', from: 'in', fromPort: 'out', to: 'test', toPort: 'in' }],
+  variables: [],
 };
 
 const sim: FlowDto = {
@@ -51,14 +52,28 @@ const sim: FlowDto = {
   enabled: true,
   nodes: [{ id: 'tick', type: 'every', x: 40, y: 100, config: { seconds: 2, topic: '', payload: '["k1","k2","k3"]' } }],
   edges: [],
+  variables: [],
 };
 
 /** What the server says the watch has done, with this many messages in. */
 const watchHasSeen = (count: number): FlowStatusDto => ({
-  flows: [{
-    id: 'watch', fault: null,
+  runs: [{
+    flowId: 'watch', kind: 'active', state: 'waiting', at: null, waiting: null, fault: null, variables: {},
     nodes: [{ id: 'in', count, outs: { out: count }, errors: 0, note: null, standing: [] }],
   }],
+});
+
+/** One run of the watch, as the server reports it: the flow at work, waiting, unless the test says otherwise. */
+const watchRun = (over: Partial<FlowRunStatusDto> = {}): FlowRunStatusDto => ({
+  flowId: 'watch',
+  kind: 'active',
+  state: 'waiting',
+  at: null,
+  waiting: null,
+  fault: null,
+  variables: {},
+  nodes: [],
+  ...over,
 });
 
 /** What a stylesheet declares for one selector, its comments left out. */
@@ -228,8 +243,8 @@ describe('Flows page', () => {
     server.use(
       http.get('/api/flows/status', () =>
         HttpResponse.json({
-          flows: [{
-            id: 'watch', fault: null,
+          runs: [{
+            flowId: 'watch', kind: 'active', state: 'waiting', at: null, waiting: null, fault: null, variables: {},
             nodes: [
               { id: 'in', count: 412, outs: { out: 412 }, errors: 0, note: null, standing: [] },
               { id: 'test', count: 412, outs: { yes: 3, no: 409 }, errors: 0, note: null, standing: [] },
@@ -243,6 +258,27 @@ describe('Flows page', () => {
     expect(await screen.findByText('412 in')).toBeInTheDocument();
     expect(screen.getByText('yes 3 · no 409')).toBeInTheDocument();
     expect(screen.getByText('Running.')).toBeInTheDocument();
+  });
+
+  // A reader who pressed Test is looking at the test, so the numbers under the nodes are the test's
+  // while it goes, and the flow at work has the canvas back once the test is over.
+  it('shows the numbers of a test while it goes, and of the flow at work once it has ended', async () => {
+    keeping([watch]);
+    render(<FlowsPage />);
+    await screen.findByRole('tab', { name: /Boiler watch/ });
+    const reading = (count: number) => [{ id: 'in', count, outs: { out: count }, errors: 0, note: null, standing: [] }];
+    const atWork = watchRun({ nodes: reading(500) });
+    const test = watchRun({ kind: 'test', state: 'running', nodes: reading(3) });
+
+    act(() => useFlowStatusStore.getState().setStatus({ runs: [atWork, test] }));
+
+    expect(await screen.findByText('3 in')).toBeInTheDocument();
+    expect(screen.queryByText('500 in')).not.toBeInTheDocument();
+
+    act(() => useFlowStatusStore.getState().setStatus({ runs: [atWork, { ...test, state: 'finished' }] }));
+
+    expect(screen.getByText('500 in')).toBeInTheDocument();
+    expect(screen.queryByText('3 in')).not.toBeInTheDocument();
   });
 
   it('says a flows file the server cannot read, and draws nothing over it', async () => {
@@ -383,7 +419,7 @@ describe('Flows page', () => {
     await screen.findByText('Boiler watch', { selector: 'h3' });
     act(() =>
       useFlowStatusStore.getState().addDebug(
-        [{ flowId: 'watch', nodeId: 'in', at: '2026-09-26T09:14:22Z', kind: 'message', topic: 'plant/k1/temp', text: '{"temp":94.2}' }],
+        [{ flowId: 'watch', nodeId: 'in', at: '2026-09-26T09:14:22Z', kind: 'message', topic: 'plant/k1/temp', text: '{"temp":94.2}', test: false }],
         0,
       ),
     );
@@ -615,6 +651,35 @@ describe('the tabs', () => {
     expect(screen.getByRole('tab', { name: 'Flow 1, not deployed' })).toBeInTheDocument();
   });
 
+  // A run that finished at its End, or was stopped, stays in what the server reports until something
+  // replaces it, so a flow being in the picture no longer says the flow is going. A test that is going is
+  // the run the canvas shows, and it is drawn as going.
+  it('say a flow is running only while the run on show is going or waiting', async () => {
+    keeping([watch]);
+    render(<FlowsPage />);
+    const tab = (state: string) => screen.getByRole('tab', { name: `Boiler watch, ${state}` });
+    const report = (...runs: FlowRunStatusDto[]) => act(() => useFlowStatusStore.getState().setStatus({ runs }));
+    await screen.findByRole('tab', { name: 'Boiler watch, not running' });
+
+    report(watchRun({ state: 'running' }));
+    expect(tab('running')).toBeInTheDocument();
+
+    report(watchRun({ state: 'waiting' }));
+    expect(tab('running')).toBeInTheDocument();
+
+    report(watchRun({ state: 'finished' }));
+    expect(tab('not running')).toBeInTheDocument();
+
+    report(watchRun({ state: 'stopped' }));
+    expect(tab('not running')).toBeInTheDocument();
+
+    report(watchRun({ state: 'finished' }), watchRun({ kind: 'test', state: 'running' }));
+    expect(tab('running')).toBeInTheDocument();
+
+    report(watchRun({ state: 'finished' }), watchRun({ kind: 'test', state: 'finished' }));
+    expect(tab('not running')).toBeInTheDocument();
+  });
+
   it('say when a flow is not running, and when the server refused its changes', async () => {
     keeping([watch]);
     server.use(http.put('/api/flows/watch', () => refusal({ 'node:test': ['Pick a test.'] })));
@@ -690,7 +755,7 @@ describe('the tabs', () => {
   // One stop on the Tab key for the whole list, and the arrows to go along it — the way every tab
   // list is used. Showing a flow is instant, so the flow goes on screen as its tab takes the focus.
   it('go along with the arrow keys, Home and End, and show the flow they land on', async () => {
-    const fan: FlowDto = { id: 'fan', name: 'Fan', enabled: true, nodes: [], edges: [] };
+    const fan: FlowDto = { id: 'fan', name: 'Fan', enabled: true, nodes: [], edges: [], variables: [] };
     keeping([watch, sim, fan]);
     render(<FlowsPage />);
     await screen.findByText('Boiler watch', { selector: 'h3' });
@@ -740,7 +805,7 @@ describe('the tabs', () => {
 
 /** A line a Debug node printed, in a flow. */
 const printed = (flowId: string, text: string, over: Partial<FlowDebugDto> = {}): FlowDebugDto => ({
-  flowId, nodeId: 'in', at: '2026-09-26T09:14:22Z', kind: 'message', topic: 'plant/k1/temp', text, ...over,
+  flowId, nodeId: 'in', at: '2026-09-26T09:14:22Z', kind: 'message', topic: 'plant/k1/temp', text, test: false, ...over,
 });
 
 const debugStrip = () => screen.getByRole('region', { name: 'Debug' });
@@ -910,7 +975,7 @@ describe('the numbers the page reads when it opens', () => {
     await waitFor(() => expect(answered).toBe(true));
     await turns();
 
-    expect(useFlowStatusStore.getState().flows).toEqual({});
+    expect(useFlowStatusStore.getState().runs).toEqual({});
   });
 });
 
@@ -1032,8 +1097,8 @@ describe('deploying', () => {
  */
 describe('at the limits', () => {
   const both = (count: number): FlowStatusDto => ({
-    flows: [{
-      id: 'watch', fault: null,
+    runs: [{
+      flowId: 'watch', kind: 'active', state: 'waiting', at: null, waiting: null, fault: null, variables: {},
       nodes: [
         { id: 'in', count, outs: { out: count }, errors: 0, note: null, standing: [] },
         { id: 'test', count, outs: { yes: 3, no: count - 3 }, errors: 0, note: null, standing: [] },
@@ -1212,6 +1277,7 @@ describe('a node this build does not know', () => {
       { id: 'e1', from: 'in', fromPort: 'out', to: 'fn', toPort: 'in' },
       { id: 'e2', from: 'fn', fromPort: 'out', to: 'print', toPort: 'in' },
     ],
+    variables: [],
   };
 
   const refused: Partial<FlowsDto> = {
@@ -1277,7 +1343,7 @@ describe('a node this build does not know', () => {
     render(<FlowsPage />);
     await drawn('function');
 
-    act(() => useFlowStatusStore.getState().addDebug([{ flowId: 'odd', nodeId: 'fn', at: '2026-09-26T09:14:22Z', kind: 'error', topic: '', text: 'It stopped.' }], 0));
+    act(() => useFlowStatusStore.getState().addDebug([{ flowId: 'odd', nodeId: 'fn', at: '2026-09-26T09:14:22Z', kind: 'error', topic: '', text: 'It stopped.', test: false }], 0));
 
     const line = within(screen.getByRole('region', { name: 'Debug' })).getByText('It stopped.').closest('li')!;
     expect(within(line).getByText('function')).toBeInTheDocument();
@@ -1568,9 +1634,13 @@ describe('what did not go through', () => {
     enabled: true,
     nodes: [{ id: 'go', type: 'inject', x: 40, y: 80, config: { topic: 'plant/k1/cmd', payload: '{"fan":"on"}' } }],
     edges: [],
+    variables: [],
   };
   const pressRuns: FlowStatusDto = {
-    flows: [{ id: 'press', fault: null, nodes: [{ id: 'go', count: 0, outs: {}, errors: 0, note: null, standing: [] }] }],
+    runs: [{
+      flowId: 'press', kind: 'active', state: 'waiting', at: null, waiting: null, fault: null, variables: {},
+      nodes: [{ id: 'go', count: 0, outs: {}, errors: 0, note: null, standing: [] }],
+    }],
   };
 
   it('says a deploy that failed in a live region of its own, not over the whole page', async () => {
@@ -1623,7 +1693,7 @@ describe('what did not go through', () => {
     watcher.observe(region, { subtree: true, childList: true, characterData: true, attributes: true });
     act(() => useFlowStatusStore.getState().setStatus(watchHasSeen(1)));
     act(() => useFlowStatusStore.getState().setStatus(watchHasSeen(2)));
-    act(() => useFlowStatusStore.getState().setStatus({ flows: [] }));
+    act(() => useFlowStatusStore.getState().setStatus({ runs: [] }));
     await turns();
     watcher.disconnect();
 
@@ -1796,8 +1866,8 @@ describe('a flow alarm the reader asked to see', () => {
  */
 describe('what a running flow says', () => {
   const refusedFilter = (fault: string | null = null): FlowStatusDto => ({
-    flows: [{
-      id: 'watch', fault,
+    runs: [{
+      flowId: 'watch', kind: 'active', state: 'waiting', at: null, waiting: null, fault, variables: {},
       nodes: [
         { id: 'in', count: 0, outs: {}, errors: 1, note: 'The broker refused this filter.', standing: [] },
         { id: 'test', count: 0, outs: {}, errors: 0, note: null, standing: [] },
@@ -1830,9 +1900,32 @@ describe('what a running flow says', () => {
     expect(await within(pane).findByText('An event ran more than 10000 nodes and was stopped.')).toHaveClass(panelStyles.fault);
   });
 
+  // The pane says what stopped the run the canvas is showing: a test's fault is the test's, not the
+  // flow's, and the flow's own comes back with the canvas once the test is over.
+  it('says what stopped the run on show: the test while one goes, else the flow at work', async () => {
+    keeping([watch]);
+    render(<FlowsPage />);
+    const pane = within(await screen.findByRole('complementary', { name: 'Inspector' }));
+    const atWork = watchRun({ fault: 'The flow at work stopped.' });
+    const test = watchRun({ kind: 'test', state: 'running', fault: 'The test stopped.' });
+
+    act(() => useFlowStatusStore.getState().setStatus({ runs: [atWork, test] }));
+
+    expect(pane.getByText('The test stopped.')).toHaveClass(panelStyles.fault);
+    expect(pane.queryByText('The flow at work stopped.')).not.toBeInTheDocument();
+
+    act(() => useFlowStatusStore.getState().setStatus({ runs: [atWork, { ...test, state: 'finished' }] }));
+
+    expect(pane.getByText('The flow at work stopped.')).toHaveClass(panelStyles.fault);
+    expect(pane.queryByText('The test stopped.')).not.toBeInTheDocument();
+  });
+
   /** The watch's MQTT in, having read one message, with its last word on it. */
   const lastRead = (note: string): FlowStatusDto => ({
-    flows: [{ id: 'watch', fault: null, nodes: [{ id: 'in', count: 1, outs: { out: 1 }, errors: 0, note, standing: [] }] }],
+    runs: [{
+      flowId: 'watch', kind: 'active', state: 'waiting', at: null, waiting: null, fault: null, variables: {},
+      nodes: [{ id: 'in', count: 1, outs: { out: 1 }, errors: 0, note, standing: [] }],
+    }],
   });
 
   /** The pane of the watch's MQTT in, once the reader has picked it. */

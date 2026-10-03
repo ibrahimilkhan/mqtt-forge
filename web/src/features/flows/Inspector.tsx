@@ -4,7 +4,7 @@ import { flushSync } from 'react-dom';
 import { deleteFlow, isFlowUnknown } from '../../api/flows';
 import { queryKeys } from '../../api/queryKeys';
 import { Field } from '../../components/Field';
-import { nodeKey, useFlowStatusStore } from '../../stores/flowStatusStore';
+import { nodeKey, shownRun, useFlowStatusStore } from '../../stores/flowStatusStore';
 import { logFault } from '../../stores/logStore';
 import panel from '../../styles/panel.module.css';
 import type { FlowDto, FlowNodeDto } from '../../types/api';
@@ -145,8 +145,8 @@ function FlowPane({ flow, deployed, running, overtaken, problems }: FlowPaneProp
   const edit = useFlowDraftStore((state) => state.edit);
   const rebase = useFlowDraftStore((state) => state.rebase);
   const discard = useFlowDraftStore((state) => state.discard);
-  // What last stopped the running flow: an event that ran too many nodes, say.
-  const fault = useFlowStatusStore((state) => state.flows[flow.id]?.fault ?? null);
+  // What last stopped the run the canvas shows: an event that ran too many nodes, say.
+  const fault = useFlowStatusStore((state) => shownRun(state.runs[flow.id])?.fault ?? null);
   const queryClient = useQueryClient();
   const failures = useContext(Failures);
   const [asking, setAsking] = useState(false);

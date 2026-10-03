@@ -174,9 +174,9 @@ const STANDING = [
  * boilers' temperatures, and the watch hearing each one, a third of them over 90.
  */
 const RUNNING = {
-  flows: [
+  runs: [
     {
-      id: 'simulator', fault: null,
+      flowId: 'simulator', kind: 'active', state: 'waiting', at: null, waiting: null, fault: null, variables: {},
       nodes: [
         { id: 'tick', count: 300, outs: { out: 300 }, errors: 0, note: '["k1","k2","k3"]', standing: [] },
         { id: 'each', count: 300, outs: { out: 900 }, errors: 0, note: 'k3', standing: [] },
@@ -184,7 +184,7 @@ const RUNNING = {
       ],
     },
     {
-      id: 'watch', fault: null,
+      flowId: 'watch', kind: 'active', state: 'waiting', at: null, waiting: null, fault: null, variables: {},
       nodes: [
         { id: 'in', count: 900, outs: { out: 900 }, errors: 0, note: '{"temp": 91.8}', standing: [] },
         { id: 'test', count: 900, outs: { yes: 312, no: 588 }, errors: 0, note: '91.8', standing: [] },
@@ -202,7 +202,7 @@ const PRINTED = [
   ['plant/k1/temp', 93.4], ['plant/k2/temp', 86.7], ['plant/k3/temp', 90.4],
   ['plant/k1/temp', 92.2], ['plant/k2/temp', 81.3], ['plant/k3/temp', 91.8],
 ].map(([topic, temp], at, all) => ({
-  flowId: 'watch', nodeId: 'say', at: ago((all.length - at) * 0.7), kind: 'message', topic, text: `{"temp": ${temp}}`,
+  flowId: 'watch', nodeId: 'say', at: ago((all.length - at) * 0.7), kind: 'message', topic, text: `{"temp": ${temp}}`, test: false,
 }));
 
 /** The same two alarms as the rest of the console hears of them: warnings, from the flow's Alarm node. */

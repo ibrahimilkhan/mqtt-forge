@@ -7,7 +7,7 @@ import { getFlows } from '../../api/flows';
 import { queryKeys } from '../../api/queryKeys';
 import { describeError } from '../../lib/problemDetails';
 import { alarmSource, useFlowAlarmStore } from '../../stores/flowAlarmStore';
-import { catchUp, useFlowStatusStore } from '../../stores/flowStatusStore';
+import { catchUp, isLive, shownRun, useFlowStatusStore } from '../../stores/flowStatusStore';
 import panel from '../../styles/panel.module.css';
 import type { FlowDto, FlowNodeType, FlowsDto } from '../../types/api';
 import { DebugStrip } from './DebugStrip';
@@ -91,9 +91,11 @@ function Page() {
   const refusals = useFlowDraftStore((state) => state.refusals);
   const unkept = useFlowDraftStore((state) => state.unkept);
   const asked = useFlowAlarmStore((state) => state.asked);
-  // Which flows run, and nothing else of the numbers: that is all the page draws of them, and every
-  // push brings a new picture. Taken whole, each push drew the whole page again, four times a second.
-  const runningIds = useFlowStatusStore(useShallow((state) => Object.keys(state.flows)));
+  // Which flows have a run going, and nothing else of the numbers: that is all the page draws of them,
+  // and every push brings a new picture. Taken whole, each push drew the whole page again.
+  const runningIds = useFlowStatusStore(
+    useShallow((state) => Object.keys(state.runs).filter((id) => isLive(shownRun(state.runs[id])))),
+  );
   const running = useMemo(() => new Set(runningIds), [runningIds]);
   const deploy = useDeploy();
   const { screenToFlowPosition } = useReactFlow();

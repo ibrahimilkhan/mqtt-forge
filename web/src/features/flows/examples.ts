@@ -30,6 +30,7 @@ export function exampleFlows(): FlowDto[] {
       { id: 'e1', from: 'tick', fromPort: 'out', to: 'each', toPort: 'in' },
       { id: 'e2', from: 'each', fromPort: 'out', to: 'send', toPort: 'in' },
     ],
+    variables: [],
   };
 
   const watch: FlowDto = {
@@ -73,6 +74,7 @@ export function exampleFlows(): FlowDto[] {
       { id: 'e4', from: 'test', fromPort: 'no', to: 'hot', toPort: 'clear' },
       { id: 'e5', from: 'in', fromPort: 'out', to: 'say', toPort: 'in' },
     ],
+    variables: [],
   };
 
   return [simulator, watch];

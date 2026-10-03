@@ -9,6 +9,7 @@ const holding = (id: string, alarm: string): FlowDto => ({
   enabled: true,
   nodes: [{ id: alarm, type: 'alarm', x: 0, y: 0, config: {} }],
   edges: [],
+  variables: [],
 });
 
 beforeEach(() => useFlowAlarmStore.setState({ asked: null }));

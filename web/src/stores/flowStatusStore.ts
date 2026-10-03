@@ -11,10 +11,27 @@ export const nodeKey = (flowId: string, nodeId: string) => `${flowId}/${nodeId}`
 /** A debug line as the console keeps it: the server's line, and where it came in the order they arrived. */
 export type DebugLine = FlowDebugDto & { seq: number };
 
+/** A flow's two runs: the flow at work, and a test of its draft. Either may be missing. */
+export type FlowRuns = { active?: FlowRunStatusDto; test?: FlowRunStatusDto };
+
+/** Going or waiting: not finished at an End and not stopped. */
+export const isLive = (run: FlowRunStatusDto | undefined) => run?.state === 'running' || run?.state === 'waiting';
+
+/**
+ * The run a flow's canvas shows: a test that is going, else the active run, else a test that has
+ * ended. A reader who pressed Test is looking at the test; one who did not is looking at the flow at
+ * work; and a test that has finished is still worth reading until something replaces it.
+ */
+export function shownRun(runs: FlowRuns | undefined): FlowRunStatusDto | undefined {
+  if (!runs) return undefined;
+  if (isLive(runs.test)) return runs.test;
+  return runs.active ?? runs.test;
+}
+
 type FlowStatusState = {
-  /** Running flows by id. A flow missing here is not running. */
-  flows: Record<string, FlowRunStatusDto>;
-  /** Every running node, by nodeKey, so one node on the canvas subscribes to one entry. */
+  /** Every flow's runs, by flow id. A flow missing here is neither switched on nor being tested. */
+  runs: Record<string, FlowRuns>;
+  /** The nodes of the run each flow's canvas shows (see shownRun), by nodeKey, so a node subscribes to one entry. */
   nodes: Record<string, FlowNodeStatusDto>;
   /** Each flow's debug lines, newest first, DEBUG_KEPT at most for each. */
   debug: Record<string, DebugLine[]>;
@@ -57,15 +74,15 @@ const without = <T>(record: Record<string, T>, key: string): Record<string, T> =
   Object.fromEntries(Object.entries(record).filter(([id]) => id !== key));
 
 /**
- * What the running flows have done, as the server last said.
+ * What the runs have done, as the server last said.
  *
  * In the main chunk rather than with the page, because the hub bridge feeds it from the moment
  * the console opens: a page opened a minute later shows numbers straight away rather than zeroes
- * until the next push. Each push replaces the whole picture — the server sends every running flow
- * every time — so a flow that stopped simply disappears from it.
+ * until the next push. Each push replaces the whole picture — the server sends every run there is
+ * every time — so a run that went simply disappears from it.
  */
 export const useFlowStatusStore = create<FlowStatusState>()((set) => ({
-  flows: {},
+  runs: {},
   nodes: {},
   debug: {},
   debugDropped: 0,
@@ -73,15 +90,14 @@ export const useFlowStatusStore = create<FlowStatusState>()((set) => ({
   deleted: {},
 
   setStatus: (status) => {
-    const flows: Record<string, FlowRunStatusDto> = {};
+    const runs: Record<string, FlowRuns> = {};
+    for (const run of status.runs) (runs[run.flowId] ??= {})[run.kind] = run;
+
     const nodes: Record<string, FlowNodeStatusDto> = {};
+    for (const [flowId, both] of Object.entries(runs))
+      for (const node of shownRun(both)?.nodes ?? []) nodes[nodeKey(flowId, node.id)] = node;
 
-    for (const flow of status.flows) {
-      flows[flow.id] = flow;
-      for (const node of flow.nodes) nodes[nodeKey(flow.id, node.id)] = node;
-    }
-
-    set({ flows, nodes });
+    set({ runs, nodes });
   },
 
   // A batch arrives oldest first; the strip reads newest first. Each flow keeps its own last
@@ -125,11 +141,11 @@ export const useFlowStatusStore = create<FlowStatusState>()((set) => ({
  */
 export function catchUp(): () => void {
   let wanted = true;
-  const asked = useFlowStatusStore.getState().flows;
+  const asked = useFlowStatusStore.getState().runs;
 
   getFlowStatus().then(
     (status) => {
-      if (wanted && useFlowStatusStore.getState().flows === asked) useFlowStatusStore.getState().setStatus(status);
+      if (wanted && useFlowStatusStore.getState().runs === asked) useFlowStatusStore.getState().setStatus(status);
     },
     () => {},
   );

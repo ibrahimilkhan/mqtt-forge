@@ -6,9 +6,16 @@ let closeCallback: (() => void) | undefined;
 
 let startCount = 0;
 
+/** What the connection was told to listen for, by the name the server sends it under. */
+let listening = new Map<string, unknown>();
+
 class FakeConnection {
-  on() {}
-  off() {}
+  on(event: string, handler: unknown) {
+    listening.set(event, handler);
+  }
+  off(event: string, handler: unknown) {
+    if (listening.get(event) === handler) listening.delete(event);
+  }
   onreconnecting() {}
   onreconnected() {}
   onclose(callback: () => void) {
@@ -39,6 +46,7 @@ const { createSignalRHub } = await import('./hub');
 beforeEach(() => {
   closeCallback = undefined;
   startCount = 0;
+  listening = new Map();
   vi.useFakeTimers();
 });
 
@@ -114,5 +122,23 @@ describe('createSignalRHub', () => {
     const settled = startCount;
     await vi.advanceTimersByTimeAsync(60_000);
     expect(startCount).toBe(settled);
+  });
+
+  // SignalR hands a message to the handler registered under the name the server sent it by, so a
+  // name a letter off is a handler that never runs, with nothing anywhere to say so. These are the
+  // two a flow's Sound and Notify nodes send.
+  it('listens for the tones and the notices a flow asks for, and stops with the rest', () => {
+    const sut = createSignalRHub();
+    const flowSound = () => {};
+    const flowNotice = () => {};
+
+    const stop = sut.subscribe({ flowSound, flowNotice });
+
+    expect(listening.get('flowSound')).toBe(flowSound);
+    expect(listening.get('flowNotice')).toBe(flowNotice);
+
+    stop();
+
+    expect([...listening.keys()]).toEqual([]);
   });
 });

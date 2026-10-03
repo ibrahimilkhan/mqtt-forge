@@ -119,11 +119,16 @@ const isWholeNode = (node: unknown) =>
 const isWholeEdge = (edge: unknown) =>
   isRecord(edge) && [edge.id, edge.from, edge.fromPort, edge.to, edge.toPort].every(isText);
 
+const isWholeVariable = (variable: unknown) => isRecord(variable) && isText(variable.name) && isText(variable.value);
+
 /**
  * Whether what storage handed back is a whole flow: everything the page reads of one, each of the
  * kind the page reads it as. The page wrote it, but storage outlives the build that wrote it, and a
  * hand in the devtools can write anything there. One draft short of a name took the whole page
  * down, on every open, since the flow on screen is kept too.
+ *
+ * Variables are part of a whole flow. A draft kept before flows had them came from a build that was
+ * never released, so nothing makes it whole: it goes like any other draft that is not.
  */
 function isWholeFlow(value: unknown): value is FlowDto {
   return (
@@ -135,7 +140,9 @@ function isWholeFlow(value: unknown): value is FlowDto {
     Array.isArray(value.nodes) &&
     value.nodes.every(isWholeNode) &&
     Array.isArray(value.edges) &&
-    value.edges.every(isWholeEdge)
+    value.edges.every(isWholeEdge) &&
+    Array.isArray(value.variables) &&
+    value.variables.every(isWholeVariable)
   );
 }
 

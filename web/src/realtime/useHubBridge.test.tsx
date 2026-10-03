@@ -535,21 +535,28 @@ describe('flow events', () => {
 
     act(() => {
       hub.emit('flowStatus', {
-        flows: [{ id: 'watch', fault: null, nodes: [] }],
+        runs: [{
+          flowId: 'watch', kind: 'active', state: 'waiting', at: null, waiting: null, fault: null, variables: {},
+          nodes: [],
+        }],
       });
       hub.emit('flowDebug', [
-        { flowId: 'watch', nodeId: 'say', at: '2026-09-26T09:00:00Z', kind: 'message', topic: 'a', text: 'hello' },
+        { flowId: 'watch', nodeId: 'say', at: '2026-09-26T09:00:00Z', kind: 'message', topic: 'a', text: 'hello', test: false },
       ], 0);
     });
 
-    expect(Object.keys(useFlowStatusStore.getState().flows)).toEqual(['watch']);
+    expect(Object.keys(useFlowStatusStore.getState().runs)).toEqual(['watch']);
     expect(useFlowStatusStore.getState().debug.watch[0].text).toBe('hello');
   });
 
   describe('after a reconnect', () => {
     beforeEach(() => useFlowStatusStore.setState(useFlowStatusStore.getInitialState()));
 
-    const running = (...ids: string[]): FlowStatusDto => ({ flows: ids.map((id) => ({ id, fault: null, nodes: [] })) });
+    const running = (...ids: string[]): FlowStatusDto => ({
+      runs: ids.map((id) => ({
+        flowId: id, kind: 'active', state: 'waiting', at: null, waiting: null, fault: null, variables: {}, nodes: [],
+      })),
+    });
 
     // A push sent while the hub was down never arrives: a flow that stopped then would go on
     // standing as running until something else moved. The alarms are read again for the same reason.
@@ -561,7 +568,7 @@ describe('flow events', () => {
 
       act(() => hub.emit('reconnected'));
 
-      await waitFor(() => expect(Object.keys(useFlowStatusStore.getState().flows)).toEqual(['watch']));
+      await waitFor(() => expect(Object.keys(useFlowStatusStore.getState().runs)).toEqual(['watch']));
     });
 
     // Pushes carry nothing to put them in order by. One that lands while the read is out is newer
@@ -586,7 +593,7 @@ describe('flow events', () => {
       await waitFor(() => expect(answered).toBe(true));
       for (let turn = 0; turn < 5; turn++) await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
 
-      expect(Object.keys(useFlowStatusStore.getState().flows)).toEqual(['sim']);
+      expect(Object.keys(useFlowStatusStore.getState().runs)).toEqual(['sim']);
     });
   });
 });

@@ -26,7 +26,7 @@ export function newId(prefix = ''): string {
 /** What a flow is called wherever it is named: its name, or Untitled when it has none. */
 export const titleOf = (flow: FlowDto) => flow.name.trim() || 'Untitled';
 
-export const emptyFlow = (name: string): FlowDto => ({ id: newId('f'), name, enabled: true, nodes: [], edges: [] });
+export const emptyFlow = (name: string): FlowDto => ({ id: newId('f'), name, enabled: true, nodes: [], edges: [], variables: [] });
 
 /** "Flow 1", "Flow 2" … — the first number no flow is already called. */
 export function nextName(flows: readonly FlowDto[]): string {
