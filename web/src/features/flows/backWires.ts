@@ -230,25 +230,31 @@ const PLANS = 3;
  * milliseconds' work, where a wire traced on most frames takes a few thousand. A wire that comes a long
  * way to the node dragged — a loop's return from the far end of a flow of two hundred nodes, round
  * everything between — can need twenty times the count, and every frame of the drag traced it again;
- * past the count it is drawn the way it was tried first, and not traced again until the node is let go
- * (see Drag), when it is traced in full.
+ * past the count it is drawn the way it was tried first, and looked for again on what the other wires
+ * leave of a later frame's count (see Drag), and in full once the node is let go.
  */
 export const DRAG_STATES = 10_000;
 
 /**
  * Nodes being dragged, by their ids, and where every wire drawn round ran before the drag began, by
- * its id (see routes); and the wires that ran a frame's traces out of states earlier in the drag (see
- * DRAG_STATES), which routes adds to and traces no more while the drag lasts. What a long way round
- * costs on one frame it costs on the next, and traced on each it took every frame's count, and the
- * other wires' with it.
+ * its id (see routes); and the wires given up, those that ran a frame's traces out of states earlier in
+ * the drag (see DRAG_STATES), which routes adds to. What a long way round costs on one frame it costs
+ * on the next, and traced in its turn on each, it took every frame's count and the other wires' with
+ * it. So a wire given up is traced after all the others, on what they leave of the count, and not at
+ * all on a frame they leave none: one that needs most of the count, and ran out on a frame that
+ * needed a little more, finds its way on the next; one that needs twenty times the count takes what is
+ * left, gives up again, and has cost the others nothing. A wire found is given up no more. One given
+ * up again goes to the back of the line, which is the order they are traced in, so that one with no
+ * hope of finding its way does not keep another's turn from it.
  */
 export type Drag = { moving: ReadonlySet<string>; held: ReadonlyMap<string, Route>; spent?: Set<string> };
 
 /**
- * What working the routes out took: how many wires were worked out, and how many states their traces
- * looked past. Counted for whoever asks, since the time it took says as much about the machine.
+ * What working the routes out took: how many wires were worked out, how many states their traces looked
+ * past, and — when `traced` is there to be filled — which wires were traced, in the order they were. Counted
+ * for whoever asks, since the time it took says as much about the machine.
  */
-export type Work = { wires: number; states: number };
+export type Work = { wires: number; states: number; traced?: string[] };
 
 /**
  * What routes is handed besides the drawing: the traces it worked out before (see Traces), the drag
@@ -317,7 +323,7 @@ type Plan = { found: Map<string, Route>; stuck: string[] };
 
 /**
  * Where a trace looks up what it worked out before, where it counts what it does, how many states the
- * traces have left to look past, when they are on a count, and the wires not to trace (see Drag).
+ * traces have left to look past, when they are on a count, and the wires given up (see Drag).
  */
 type Look = { traces: Traces; work?: Work; left?: { states: number }; spent?: Set<string> };
 
@@ -559,13 +565,20 @@ function plan(
     { leg: leg.id, into: `${leg.to}:${leg.toPort}`, rect: throatOf(leg.target, arriving[leg.target.side] ^ 1) },
   ]);
   const traced = (leg: Leg, blocks: readonly Rect[]) => {
-    if (look.spent?.has(leg.id)) return null;
+    // A wire given up is traced again, but only on what the others left of this frame's count.
+    if (look.spent?.has(leg.id) && (look.left?.states ?? 0) <= 0) return null;
+    look.work?.traced?.push(leg.id);
     const into = `${leg.to}:${leg.toPort}`;
     const mouths = throats.flatMap((throat) => (throat.leg === leg.id || throat.into === into ? [] : [throat.rect]));
     const had = look.left?.states ?? 0;
     const points = trace(leg, blocks, mouths, nodes, names, levels.filter(others), uprights.filter(others), look);
-    // The wire that ran the count out, not one that came to it already run out.
-    if (points === null && had > 0 && look.left !== undefined && look.left.states <= 0) look.spent?.add(leg.id);
+    if (look.spent !== undefined && look.left !== undefined) {
+      // The wire that ran the count out, not one that came to it already run out, to the back of the line.
+      if (points === null && had > 0 && look.left.states <= 0) {
+        look.spent.delete(leg.id);
+        look.spent.add(leg.id);
+      } else if (points !== null) look.spent.delete(leg.id);
+    }
     return points;
   };
 
@@ -603,7 +616,12 @@ function plan(
   const ahead = first.flatMap((id) => going.filter((one) => one.leg.id === id));
   const stuck: string[] = [];
 
-  for (const { leg, way, from, to } of [...ahead, ...going.filter((one) => !first.includes(one.leg.id))]) {
+  // The wires given up earlier in a drag go last, the one that waited longest first (see Drag): they
+  // are traced on what the count has left once the others are done, and never take it from them.
+  const given = [...(look.spent ?? [])].flatMap((id) => going.filter((one) => one.leg.id === id));
+  const rest = [...ahead, ...going.filter((one) => !first.includes(one.leg.id))].filter((one) => !look.spent?.has(one.leg.id));
+
+  for (const { leg, way, from, to } of [...rest, ...given]) {
     owner = leg.id;
     const blocks = blocksOf(leg);
     if (way === 'forward') {

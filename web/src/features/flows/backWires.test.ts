@@ -452,38 +452,98 @@ describe('the drawings clicked at random that went wrong', () => {
  * traces look past, not in time, which says as much about the machine as about the work.
  */
 describe('a frame of a drag in a flow of two hundred nodes', () => {
-  // Its own timeout, and a generous one: the flow is clicked together three hundred clicks long, and
-  // worked out whole once before the drags, which on a busy machine takes longer than five seconds. What
-  // is counted here is states, not time.
-  it('works out the dragged node’s wires alone, and its traces never look past the count a frame has', { timeout: 60_000 }, () => {
+  /** What one frame of a drag did: which node was dragged, what the frame cost, and the wires given up before it and after it, in line. */
+  type Frame = { node: string; frame: number; own: number; work: Work; given: string[]; after: string[] };
+
+  /**
+   * The three busiest nodes of the flow, each dragged for 40 frames, as the canvas drags them: the
+   * routes held from before the drag, the traces kept from one frame to the next, and the wires given
+   * up kept for the whole drag. Worked out once for the cases below, the first to ask. Its own
+   * timeout, and a generous one: the flow is clicked together three hundred clicks long, and worked
+   * out whole once before the drags, which on a busy machine takes longer than five seconds. What is
+   * counted here is states, not time.
+   */
+  let drags: Frame[] | undefined;
+  const dragged = (): Frame[] => {
+    if (drags !== undefined) return drags;
     const flow = randomSession(4242, 300).find(({ flow }) => flow.nodes.length >= 200)!.flow;
     const wiresOf = (id: string) => flow.edges.filter((edge) => edge.from === id || edge.to === id).length;
     const busiest = [...flow.nodes].sort((a, b) => wiresOf(b.id) - wiresOf(a.id) || (a.id < b.id ? -1 : 1)).slice(0, 3);
     const traces = new Traces();
     const opened = drawnAs(flow);
     const held = routes(opened.nodes, opened.legs, { traces });
-    let ranOut = 0;
+    drags = [];
 
     for (const node of busiest) {
       const drag = { moving: new Set([node.id]), held, spent: new Set<string>() };
-      let frames = 0;
       for (let frame = 0; frame < 40; frame++) {
         const moved = moveNodes(flow, { [node.id]: { x: node.x + 8 * frame, y: node.y + Math.round(90 * Math.sin(frame / 5)) } });
         const { nodes, legs } = drawnAs(moved);
-        const work: Work = { wires: 0, states: 0 };
+        const work: Work = { wires: 0, states: 0, traced: [] };
+        const given = [...drag.spent];
         routes(nodes, legs, { traces, drag, work });
-
-        expect(work.wires, `${node.id}, frame ${frame}`).toBe(wiresOf(node.id));
-        expect(work.states, `${node.id}, frame ${frame}`).toBeLessThanOrEqual(DRAG_STATES);
-        if (work.states === DRAG_STATES) frames++;
+        drags.push({ node: node.id, frame, own: wiresOf(node.id), work, given, after: [...drag.spent] });
       }
-      // A wire that ran a frame's count out is not traced again in the drag: it would run out again.
-      expect(frames, node.id).toBeLessThanOrEqual(wiresOf(node.id));
-      ranOut += frames;
+    }
+    return drags;
+  };
+
+  it('works out the dragged node’s wires alone, and its traces never look past the count a frame has', { timeout: 60_000 }, () => {
+    for (const { node, frame, own, work } of dragged()) {
+      expect(work.wires, `${node}, frame ${frame}`).toBe(own);
+      expect(work.states, `${node}, frame ${frame}`).toBeLessThanOrEqual(DRAG_STATES);
     }
 
     // A drag that needs the count: some wire of it costs more to trace than a frame has.
-    expect(ranOut).toBeGreaterThan(0);
+    expect(dragged().filter(({ work }) => work.states === DRAG_STATES).length).toBeGreaterThan(0);
+  });
+
+  // A wire that ran a frame's count out was left as it was drawn for the rest of the drag. What a wire
+  // costs to trace changes with where the node stands: one that came to a little more than the count
+  // on a frame comes to less on a later one, and finds its way then.
+  it('looks again for a wire given up when a later frame has states left for it, and finds it', { timeout: 60_000 }, () => {
+    const ranOut = dragged().filter(({ given, after }) => after.some((id) => !given.includes(id)));
+    const looked = dragged().filter(({ given, work }) => given.some((id) => work.traced!.includes(id)));
+    const found = dragged().filter(({ given, after }) => given.some((id) => !after.includes(id)));
+
+    expect(ranOut.length).toBeGreaterThan(0);
+    expect(looked.length).toBeGreaterThan(0);
+    expect(found.length).toBeGreaterThan(0);
+  });
+
+  // A wire that needs twenty times the count runs out again on every frame it is looked for. It is
+  // looked for after all the others, or it took every frame's count from the wires after it.
+  it('traces the wires given up after all the others, on what they leave', { timeout: 60_000 }, () => {
+    let mixed = 0;
+
+    for (const { node, frame, given, work } of dragged()) {
+      const order = work.traced!.map((id) => given.includes(id));
+      const first = order.indexOf(true);
+      if (first < 0) continue;
+
+      expect(order.slice(first), `${node}, frame ${frame}: ${work.traced!.join(' ')}`).not.toContain(false);
+      if (first > 0) mixed++;
+    }
+
+    // Drags that have both: wires given up, and wires not given up that are traced before them.
+    expect(mixed).toBeGreaterThan(0);
+  });
+
+  // The wire that waited longest goes first, and one that runs out again goes to the back: of two with
+  // no hope of finding their way, each has its turn on the count the others leave, and a wire that has
+  // some is not kept from it for good by the one ahead of it.
+  it('puts a wire given up that runs out again at the back of the line', { timeout: 60_000 }, () => {
+    let turns = 0;
+
+    for (const { node, frame, given, work, after } of dragged()) {
+      // The first in line was the last traced, and the count ran out: it ran out on it.
+      if (given.length < 2 || work.traced![work.traced!.length - 1] !== given[0] || work.states !== DRAG_STATES) continue;
+
+      expect(after[after.length - 1], `${node}, frame ${frame}`).toBe(given[0]);
+      turns++;
+    }
+
+    expect(turns).toBeGreaterThan(0);
   });
 });
 
