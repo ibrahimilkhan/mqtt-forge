@@ -2,7 +2,7 @@ import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { server } from '../test/server';
 import type { FlowDto } from '../types/api';
-import { deleteFlow, injectNode, isFlowInvalid, isTestUnknown, putFlow, stopTest, testFlow } from './flows';
+import { deleteFlow, isFlowInvalid, isTestUnknown, putFlow, stopTest, testFlow } from './flows';
 
 const flow: FlowDto = { id: 'watch', name: 'Boiler watch', enabled: true, nodes: [], edges: [], variables: [] };
 
@@ -41,14 +41,10 @@ describe('flows client', () => {
     expect(isFlowInvalid(error) && error.errors).toEqual({ 'node:n2': ['Pick a test.'] });
   });
 
-  it('deletes and injects with nothing to read back', async () => {
-    server.use(
-      http.delete('/api/flows/watch', () => new HttpResponse(null, { status: 204 })),
-      http.post('/api/flows/watch/nodes/go/inject', () => new HttpResponse(null, { status: 202 })),
-    );
+  it('deletes with nothing to read back', async () => {
+    server.use(http.delete('/api/flows/watch', () => new HttpResponse(null, { status: 204 })));
 
     await expect(deleteFlow('watch')).resolves.toBeUndefined();
-    await expect(injectNode('watch', 'go')).resolves.toBeUndefined();
   });
 
   it('sends a test as the flow, to its own address, and takes the 202', async () => {

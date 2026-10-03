@@ -81,6 +81,18 @@ describe('flow drafts', () => {
     expect(useFlowDraftStore.getState().selected).toBeNull();
   });
 
+  it('forgets the wire picked when the flow on screen is discarded', () => {
+    const flow = emptyFlow('Doomed');
+    const store = useFlowDraftStore.getState();
+    store.put(flow);
+    store.show(flow.id);
+    store.pickWire(flow.edges[0].id);
+
+    useFlowDraftStore.getState().discard(flow.id);
+
+    expect(useFlowDraftStore.getState().wire).toBeNull();
+  });
+
   it('keeps the selection when the flow discarded is not the one on screen', () => {
     const shown = emptyFlow('On screen');
     const other = emptyFlow('Elsewhere');
@@ -94,6 +106,20 @@ describe('flow drafts', () => {
 
     expect(useFlowDraftStore.getState().drafts[other.id]).toBeUndefined();
     expect(useFlowDraftStore.getState().selected).toBe('n1');
+  });
+
+  it('keeps the wire picked when the flow discarded is not the one on screen', () => {
+    const shown = emptyFlow('On screen');
+    const other = emptyFlow('Elsewhere');
+    const store = useFlowDraftStore.getState();
+    store.put(shown);
+    store.put(other);
+    store.show(shown.id);
+    store.pickWire(shown.edges[0].id);
+
+    useFlowDraftStore.getState().discard(other.id);
+
+    expect(useFlowDraftStore.getState().wire).toBe(shown.edges[0].id);
   });
 
   it('drops the draft and the refusal once the flow is deployed, and keeps what is on screen', () => {
@@ -129,6 +155,20 @@ describe('flow drafts', () => {
     useFlowDraftStore.getState().show('f2');
 
     expect(useFlowDraftStore.getState().selected).toBeNull();
+  });
+
+  it('keeps the one wire picked until a node is picked or another flow is shown', () => {
+    const store = useFlowDraftStore.getState();
+
+    store.pickWire('e1');
+    expect(useFlowDraftStore.getState().wire).toBe('e1');
+
+    store.select('n1');
+    expect(useFlowDraftStore.getState().wire).toBeNull();
+
+    store.pickWire('e1');
+    store.show('other');
+    expect(useFlowDraftStore.getState().wire).toBeNull();
   });
 
   // The server sends no version of a flow, so a draft remembers a fingerprint of the copy it was

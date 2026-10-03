@@ -1,11 +1,9 @@
-import { ReactFlowProvider, useReactFlow, useStoreApi } from '@xyflow/react';
+import { ReactFlowProvider, useStoreApi } from '@xyflow/react';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nodeKey, useFlowStatusStore } from '../../stores/flowStatusStore';
-import { server } from '../../test/server';
 import { renderWithClient as render } from '../../test/renderWithClient';
-import type { FlowDto, FlowStatusDto } from '../../types/api';
+import type { FlowDto, FlowNodeStatusDto, FlowStatusDto, FlowWaitingDto } from '../../types/api';
 import { forgetDrafts, runOf, standInForTheBrowser, withoutComments } from './canvasTestbed';
 import { DRAG_TYPE, FlowCanvas } from './FlowCanvas';
 import sheet from './FlowCanvas.module.css?raw';
@@ -22,33 +20,37 @@ beforeEach(() => {
   useFlowStatusStore.setState(useFlowStatusStore.getInitialState());
 });
 
+// The countdown's case runs on a fake clock. Should it fail before it puts the real one back, the
+// cases after it must not inherit the fake.
+afterEach(() => vi.useRealTimers());
+
 const button: FlowDto = {
   id: 'button',
   name: 'Button',
   enabled: true,
-  nodes: [
-    { id: 'start', type: 'start', x: 40, y: 80, config: {} },
-    { id: 'test', type: 'if', x: 300, y: 80, config: { field: '$.temp', test: 'gt', value: '90', value2: '' } },
-  ],
-  edges: [{ id: 'e1', from: 'start', fromPort: 'out', to: 'test', toPort: 'in' }],
   variables: [],
+  nodes: [
+    { id: 'start', type: 'start', x: 0, y: 80, config: {} },
+    { id: 'test', type: 'if', x: 300, y: 80, config: { field: '$.temp', test: 'gt', value: '90', value2: '' } },
+    { id: 'end', type: 'end', x: 600, y: 80, config: {} },
+  ],
+  edges: [
+    { id: 'e1', from: 'start', fromPort: 'out', to: 'test', toPort: 'in' },
+    { id: 'e2', from: 'test', fromPort: 'yes', to: 'end', toPort: 'in' },
+    { id: 'e3', from: 'test', fromPort: 'no', to: 'end', toPort: 'in' },
+  ],
 };
 
-/**
- * The button flow begun by an Inject node instead, as a flow drawn before the Start was. This build
- * no longer knows Inject, but the canvas still draws its ▶ until the request the ▶ makes goes too.
- */
-const pressable: FlowDto = {
-  ...button,
-  nodes: [{ id: 'go', type: 'inject', x: 40, y: 80, config: { topic: 'plant/k1/button', payload: '1' } }, button.nodes[1]],
-  edges: [{ id: 'e1', from: 'go', fromPort: 'out', to: 'test', toPort: 'in' }],
-};
+/** A status push with one active run of the button flow, at `at`, waiting as `waiting` says. */
+const active = (nodes: FlowNodeStatusDto[], at: string | null = null, waiting: FlowWaitingDto | null = null): FlowStatusDto => ({
+  runs: [runOf('button', { state: waiting ? 'waiting' : 'running', at, waiting, nodes })],
+});
 
-const draw = (flow: FlowDto = button, running = true, problems: Problems = {}) =>
+const draw = (flow: FlowDto = button, problems: Problems = {}) =>
   render(
     <ReactFlowProvider>
       <div style={{ width: 800, height: 600 }}>
-        <FlowCanvas flow={flow} running={running} problems={problems} />
+        <FlowCanvas flow={flow} problems={problems} />
       </div>
     </ReactFlowProvider>,
   );
@@ -56,30 +58,20 @@ const draw = (flow: FlowDto = button, running = true, problems: Problems = {}) =
 /** The canvas as the page draws it: the flow's draft once it has one, the deployed flow until then. */
 function Page({ flow }: { flow: FlowDto }) {
   const draft = useFlowDraftStore((state) => state.drafts[flow.id]);
-  return <FlowCanvas flow={draft ?? flow} running problems={{}} />;
+  return <FlowCanvas flow={draft ?? flow} problems={{}} />;
 }
 
-/** The button flow on screen the way the page puts it there, so a Discard redraws the canvas. */
-const drawPage = () => {
-  useFlowDraftStore.getState().show('button');
+/** A flow on screen the way the page puts it there, so a Discard redraws the canvas. */
+const drawPage = (flow: FlowDto = button) => {
+  useFlowDraftStore.getState().show(flow.id);
   return render(
     <ReactFlowProvider>
       <div style={{ width: 800, height: 600 }}>
-        <Page flow={button} />
+        <Page flow={flow} />
       </div>
     </ReactFlowProvider>,
   );
 };
-
-/** Deletes one node through React Flow, the way something beside the canvas could. */
-function DeleteNode({ id }: { id: string }) {
-  const { deleteElements } = useReactFlow();
-  return (
-    <button type="button" onClick={() => void deleteElements({ nodes: [{ id }] })}>
-      Delete {id}
-    </button>
-  );
-}
 
 /** A port on the canvas, by its node and its name. */
 const port = (nodeId: string, name: string) =>
@@ -92,11 +84,12 @@ function viewport(): [number, number, number] {
   return [Number(x), Number(y), Number(zoom)];
 }
 
+/** The ids of the draft's wires, in the order it has them. */
+const wireIds = () => useFlowDraftStore.getState().drafts.button?.edges.map((edge) => edge.id);
+
 describe('flow canvas', () => {
   it('draws each node with its name, its settings and what it has done', async () => {
-    useFlowStatusStore.getState().setStatus({
-      runs: [runOf('button', { nodes: [{ id: 'test', count: 5, outs: { yes: 2, no: 3 }, errors: 0, note: null, standing: [] }] })],
-    });
+    useFlowStatusStore.getState().setStatus(active([{ id: 'test', count: 5, outs: { yes: 2, no: 3 }, errors: 0, note: null, standing: [] }]));
 
     draw();
 
@@ -111,32 +104,24 @@ describe('flow canvas', () => {
   // A Clear alarm's line names the Raise alarm it closes: a setting of another node. Renamed, the
   // line follows, though nothing of the Clear alarm's own has changed.
   it('names the Raise alarm a Clear alarm closes, and follows it when it is renamed', async () => {
+    const raise = { id: 'hot', type: 'alarmRaise', x: 600, y: -80, config: { name: 'Boiler too hot', level: 'warn', reason: '{{topic}}', value: '' } };
     const alarmed: FlowDto = {
       ...button,
-      nodes: [
-        ...button.nodes,
-        { id: 'hot', type: 'alarmRaise', x: 560, y: 0, config: { name: 'Boiler too hot', level: 'warn', reason: '{{topic}}', value: '' } },
-        { id: 'cool', type: 'alarmClear', x: 560, y: 160, config: { alarm: 'hot' } },
-      ],
+      nodes: [...button.nodes, raise, { id: 'cool', type: 'alarmClear', x: 600, y: 240, config: { alarm: 'hot' } }],
       edges: [
-        ...button.edges,
+        button.edges[0],
         { id: 'e2', from: 'test', fromPort: 'yes', to: 'hot', toPort: 'in' },
         { id: 'e3', from: 'test', fromPort: 'no', to: 'cool', toPort: 'in' },
+        { id: 'e4', from: 'hot', fromPort: 'raised', to: 'end', toPort: 'in' },
+        { id: 'e5', from: 'hot', fromPort: 'up', to: 'end', toPort: 'in' },
+        { id: 'e6', from: 'cool', fromPort: 'cleared', to: 'end', toPort: 'in' },
+        { id: 'e7', from: 'cool', fromPort: 'none', to: 'end', toPort: 'in' },
       ],
     };
-    useFlowDraftStore.getState().show('button');
-    render(
-      <ReactFlowProvider>
-        <div style={{ width: 800, height: 600 }}>
-          <Page flow={alarmed} />
-        </div>
-      </ReactFlowProvider>,
-    );
+    drawPage(alarmed);
     expect(await screen.findByText('closes Boiler too hot')).toBeInTheDocument();
 
-    act(() =>
-      useFlowDraftStore.getState().edit(alarmed, (flow) => setConfig(flow, 'hot', { ...alarmed.nodes[2].config, name: 'Kiln too hot' })),
-    );
+    act(() => useFlowDraftStore.getState().edit(alarmed, (flow) => setConfig(flow, 'hot', { ...raise.config, name: 'Kiln too hot' })));
 
     expect(await screen.findByText('closes Kiln too hot')).toBeInTheDocument();
   });
@@ -146,8 +131,8 @@ describe('flow canvas', () => {
   it('draws a node of a type it does not know by that type, meeting the wires it has', async () => {
     draw({
       ...button,
-      nodes: [...button.nodes, { id: 'fn', type: 'function', x: 560, y: 80, config: { code: 'return msg;' } }],
-      edges: [...button.edges, { id: 'e2', from: 'test', fromPort: 'yes', to: 'fn', toPort: 'in' }],
+      nodes: [...button.nodes, { id: 'fn', type: 'function', x: 600, y: -80, config: { code: 'return msg;' } }],
+      edges: button.edges.map((edge) => (edge.id === 'e2' ? { ...edge, to: 'fn' } : edge)),
     });
 
     expect(await screen.findByText('function')).toBeInTheDocument();
@@ -160,70 +145,45 @@ describe('flow canvas', () => {
   // The server's last word on a node — the value it read, or what went wrong — is the only place it
   // says why a count of errors went up.
   it('gives each node\'s status line the server\'s last word on it', async () => {
-    useFlowStatusStore.getState().setStatus({
-      runs: [runOf('button', {
-        nodes: [
-          { id: 'test', count: 5, outs: { yes: 2, no: 3 }, errors: 0, note: 'no such field', standing: [] },
-          { id: 'fan', count: 1, outs: {}, errors: 1, note: 'More than 50 publishes a second; this one was dropped.', standing: [] },
-        ],
-      })],
-    });
+    useFlowStatusStore.getState().setStatus(
+      active([
+        { id: 'test', count: 5, outs: { yes: 2, no: 3 }, errors: 0, note: 'no such field', standing: [] },
+        { id: 'fan', count: 1, outs: {}, errors: 1, note: 'More than 50 publishes a second; this one was dropped.', standing: [] },
+      ]),
+    );
 
     draw({
       ...button,
-      nodes: [...button.nodes, { id: 'fan', type: 'publish', x: 560, y: 80, config: { topic: 'plant/k1/cmd', payload: '{"fan":"on"}', qos: 1, retain: false } }],
-      edges: [...button.edges, { id: 'e2', from: 'test', fromPort: 'yes', to: 'fan', toPort: 'in' }],
+      nodes: [...button.nodes, { id: 'fan', type: 'publish', x: 450, y: -80, config: { topic: 'plant/k1/cmd', payload: '{"fan":"on"}', qos: 1, retain: false } }],
+      edges: [
+        ...button.edges.map((edge) => (edge.id === 'e2' ? { ...edge, to: 'fan' } : edge)),
+        { id: 'e4', from: 'fan', fromPort: 'out', to: 'end', toPort: 'in' },
+      ],
     });
 
     expect(await screen.findByText('0 sent · 1 error')).toHaveAttribute('title', 'More than 50 publishes a second; this one was dropped.');
     expect(screen.getByText('yes 2 · no 3')).toHaveAttribute('title', 'no such field');
   });
 
-  it('says a node is not deployed when the flow is not running', async () => {
-    draw(button, false);
-
-    expect(await screen.findAllByText('not deployed')).toHaveLength(2);
-  });
-
-  // A running flow reports every node of the version it runs, so a node it does not report is one
+  // The run on show reports every node of the flow it runs, so a node it does not report is one
   // that is only in the draft. "Waiting" would say it is running and has had nothing yet.
-  it('says a node the running flow does not report is not deployed', async () => {
-    useFlowStatusStore.getState().setStatus({
-      runs: [runOf('button', { nodes: [{ id: 'start', count: 3, outs: { out: 3 }, errors: 0, note: null, standing: [] }] })],
-    });
+  it('says not running under a node the run on show does not report', async () => {
+    useFlowStatusStore.getState().setStatus(active([{ id: 'start', count: 3, outs: { out: 3 }, errors: 0, note: null, standing: [] }]));
 
     draw();
 
     expect(await screen.findByText('3 runs')).toBeInTheDocument();
-    expect(screen.getByText('not deployed')).toBeInTheDocument();
+    expect(screen.getAllByText('not running')).toHaveLength(2);
     expect(screen.queryByText('waiting')).toBeNull();
   });
 
   it('marks a node and a wire the server said are wrong, the node with its reason', async () => {
-    draw(button, true, { 'node:test': ['Pick a test.'], 'edge:e1': ['Not this wire.'] });
+    draw(button, { 'node:test': ['Pick a test.'], 'edge:e1': ['Not this wire.'] });
 
     const refused = await screen.findByTitle('Pick a test.');
     expect(refused).toHaveAttribute('data-problem');
     expect(screen.getByLabelText('Edge from start to test').querySelector('.react-flow__edge-path')).toHaveAttribute('data-problem');
     expect(screen.getByText('Start').closest('[data-group]')).not.toHaveAttribute('data-problem');
-  });
-
-  it('presses a running Inject node on the server', async () => {
-    let pressed = '';
-    server.use(
-      http.post('/api/flows/:flow/nodes/:node/inject', ({ params }) => {
-        pressed = `${params.flow}/${params.node}`;
-        return new HttpResponse(null, { status: 202 });
-      }),
-    );
-    useFlowStatusStore.getState().setStatus({
-      runs: [runOf('button', { nodes: [{ id: 'go', count: 0, outs: {}, errors: 0, note: null, standing: [] }] })],
-    });
-
-    draw(pressable);
-    fireEvent.click(await screen.findByRole('button', { name: 'Inject' }));
-
-    await vi.waitFor(() => expect(pressed).toBe('button/go'));
   });
 
   it('adds a node where a palette item is dropped, and picks it', async () => {
@@ -244,14 +204,12 @@ describe('flow canvas', () => {
     });
 
     const draft = useFlowDraftStore.getState().drafts.button;
-    expect(draft.nodes.map((node) => node.type)).toEqual(['start', 'if', 'debug']);
-    expect(useFlowDraftStore.getState().selected).toBe(draft.nodes[2].id);
+    expect(draft.nodes.map((node) => node.type)).toEqual(['start', 'if', 'end', 'debug']);
+    expect(useFlowDraftStore.getState().selected).toBe(draft.nodes[3].id);
   });
 
   it('lights a wire when the node it leaves sends something down it', async () => {
-    const status = (sent: number): FlowStatusDto => ({
-      runs: [runOf('button', { nodes: [{ id: 'start', count: sent, outs: { out: sent }, errors: 0, note: null, standing: [] }] })],
-    });
+    const status = (sent: number) => active([{ id: 'start', count: sent, outs: { out: sent }, errors: 0, note: null, standing: [] }]);
     useFlowStatusStore.getState().setStatus(status(1));
     draw();
     await screen.findByText('If');
@@ -265,14 +223,11 @@ describe('flow canvas', () => {
   // Pushes come four times a second, each with a new object for every node, and a flow can hold
   // two hundred nodes. A node draws again only when what it shows of its numbers has moved.
   it('draws a node again only when what it shows of its numbers moved', async () => {
-    const status = (runs: number): FlowStatusDto => ({
-      runs: [runOf('button', {
-        nodes: [
-          { id: 'start', count: runs, outs: { out: runs }, errors: 0, note: null, standing: [] },
-          { id: 'test', count: 5, outs: { yes: 2, no: 3 }, errors: 0, note: null, standing: [] },
-        ],
-      })],
-    });
+    const status = (runs: number) =>
+      active([
+        { id: 'start', count: runs, outs: { out: runs }, errors: 0, note: null, standing: [] },
+        { id: 'test', count: 5, outs: { yes: 2, no: 3 }, errors: 0, note: null, standing: [] },
+      ]);
     useFlowStatusStore.getState().setStatus(status(3));
     const start = vi.spyOn(NODE_SPECS.start, 'summary');
     const branch = vi.spyOn(NODE_SPECS.if, 'summary');
@@ -294,9 +249,10 @@ describe('flow canvas', () => {
     expect(moved).toEqual({ start: 1, branch: 0 });
   });
 
-  // A wire drawn or taken away changes nothing a node draws, but the ports of a node of a type this
-  // build does not know, which takes its ports from its wires. A flow holds up to two hundred
-  // nodes, and each connect and each delete drew every one of them again.
+  // A wire drawn or taken away changes what a node draws only where it changes one of its marks — a
+  // way out left with no wire, a node no longer reached from the Start — or the ports of a node of a
+  // type this build does not know, which takes its ports from its wires. A flow holds up to two
+  // hundred nodes, and each connect and each delete drew every one of them again.
   describe('a wire drawn or taken away', () => {
     const start = () => vi.spyOn(NODE_SPECS.start, 'summary');
     const branch = () => vi.spyOn(NODE_SPECS.if, 'summary');
@@ -307,43 +263,51 @@ describe('flow canvas', () => {
     };
 
     it('draws no node again but the one that takes its ports from its wires', async () => {
+      // The If's yes goes on to a node of a type this build does not know, and that node on to the End.
       const odd: FlowDto = {
         ...button,
-        nodes: [...button.nodes, { id: 'fn', type: 'function', x: 560, y: 80, config: {} }],
-        edges: [...button.edges, { id: 'e2', from: 'test', fromPort: 'yes', to: 'fn', toPort: 'in' }],
+        nodes: [...button.nodes, { id: 'fn', type: 'function', x: 450, y: -80, config: {} }],
+        edges: [
+          ...button.edges.map((edge) => (edge.id === 'e2' ? { ...edge, to: 'fn' } : edge)),
+          { id: 'e4', from: 'fn', fromPort: 'out', to: 'end', toPort: 'in' },
+        ],
       };
       const [begin, test] = [start(), branch()];
-      render(
-        <ReactFlowProvider>
-          <div style={{ width: 800, height: 600 }}>
-            <Page flow={odd} />
-          </div>
-        </ReactFlowProvider>,
-      );
+      drawPage(odd);
       await screen.findByLabelText('Edge from test to fn');
       await settled();
       begin.mockClear();
       test.mockClear();
 
       const edit = (change: (flow: FlowDto) => FlowDto) => act(() => useFlowDraftStore.getState().edit(odd, change));
-      edit((flow) => removeEdges(flow, ['e1']));
-      edit((flow) => connect(flow, { from: 'start', fromPort: 'out', to: 'test', toPort: 'in' }));
-      edit((flow) => removeEdges(flow, ['e2']));
+      edit((flow) => removeEdges(flow, ['e4']));
+      // In place of the wire the yes had: the If's way out is wired all along.
+      edit((flow) => connect(flow, { from: 'test', fromPort: 'yes', to: 'end', toPort: 'in' }));
       await settled();
       const drawn = { start: begin.mock.calls.length, branch: test.mock.calls.length };
       begin.mockRestore();
       test.mockRestore();
 
       expect(drawn).toEqual({ start: 0, branch: 0 });
-      expect(screen.getByLabelText('Edge from start to test')).toBeInTheDocument();
-      // The node that takes its ports from its wires lost the one its wire met.
+      // The yes and the no, both to the End now.
+      expect(screen.getAllByLabelText('Edge from test to end')).toHaveLength(2);
+      // The node that takes its ports from its wires lost both the ones its wires met.
       expect(document.querySelectorAll('.react-flow__handle[data-nodeid="fn"]')).toHaveLength(0);
     });
 
     it('draws no node again when a picked wire is taken away with the Delete key', async () => {
+      // A Debug on the If's yes: taking its wire to the End away leaves the Start and the If as they were.
+      const said: FlowDto = {
+        ...button,
+        nodes: [...button.nodes, { id: 'say', type: 'debug', x: 450, y: -80, config: {} }],
+        edges: [
+          ...button.edges.map((edge) => (edge.id === 'e2' ? { ...edge, to: 'say' } : edge)),
+          { id: 'e4', from: 'say', fromPort: 'out', to: 'end', toPort: 'in' },
+        ],
+      };
       const [begin, test] = [start(), branch()];
-      drawPage();
-      const wire = await screen.findByLabelText('Edge from start to test');
+      drawPage(said);
+      const wire = await screen.findByLabelText('Edge from say to end');
       await settled();
       fireEvent.click(wire);
       act(() => wire.focus());
@@ -359,14 +323,12 @@ describe('flow canvas', () => {
       test.mockRestore();
 
       expect(drawn).toEqual({ start: 0, branch: 0 });
-      expect(useFlowDraftStore.getState().drafts.button?.edges).toEqual([]);
+      expect(wireIds()).toEqual(['e1', 'e2', 'e3']);
     });
   });
 
   it('does not light a wire when its count starts again from nothing', async () => {
-    const status = (sent: number): FlowStatusDto => ({
-      runs: [runOf('button', { nodes: [{ id: 'start', count: sent, outs: { out: sent }, errors: 0, note: null, standing: [] }] })],
-    });
+    const status = (sent: number) => active([{ id: 'start', count: sent, outs: { out: sent }, errors: 0, note: null, standing: [] }]);
     useFlowStatusStore.getState().setStatus(status(5));
     draw();
     await screen.findByText('If');
@@ -386,18 +348,19 @@ describe('flow canvas', () => {
       ...button,
       nodes: [
         ...button.nodes,
-        { id: 'hot', type: 'debug', x: 560, y: 40, config: {} },
-        { id: 'cold', type: 'debug', x: 560, y: 160, config: {} },
+        { id: 'hot', type: 'debug', x: 450, y: -40, config: {} },
+        { id: 'cold', type: 'debug', x: 450, y: 200, config: {} },
       ],
       edges: [
-        ...button.edges,
+        button.edges[0],
         { id: 'e2', from: 'test', fromPort: 'yes', to: 'hot', toPort: 'in' },
         { id: 'e3', from: 'test', fromPort: 'no', to: 'cold', toPort: 'in' },
+        { id: 'e4', from: 'hot', fromPort: 'out', to: 'end', toPort: 'in' },
+        { id: 'e5', from: 'cold', fromPort: 'out', to: 'end', toPort: 'in' },
       ],
     };
-    const status = (yes: number, no: number, count = yes + no): FlowStatusDto => ({
-      runs: [runOf('button', { nodes: [{ id: 'test', count, outs: { yes, no }, errors: 0, note: null, standing: [] }] })],
-    });
+    const status = (yes: number, no: number, count = yes + no) =>
+      active([{ id: 'test', count, outs: { yes, no }, errors: 0, note: null, standing: [] }]);
     const lit = (to: string) => screen.getByLabelText(`Edge from test to ${to}`).querySelector('[data-flash]') !== null;
     useFlowStatusStore.getState().setStatus(status(1, 1));
     draw(branches);
@@ -500,10 +463,12 @@ describe('flow canvas', () => {
     fireEvent.keyDown(wire, { key: 'Delete' });
     fireEvent.keyUp(wire, { key: 'Delete' });
 
-    await waitFor(() => expect(useFlowDraftStore.getState().drafts.button?.edges).toEqual([]));
-    expect(useFlowDraftStore.getState().drafts.button.nodes.map((node) => node.id)).toEqual(['start', 'test']);
+    await waitFor(() => expect(wireIds()).toEqual(['e2', 'e3']));
+    expect(useFlowDraftStore.getState().drafts.button.nodes.map((node) => node.id)).toEqual(['start', 'test', 'end']);
   });
 
+  // The If has two ways out, so which one the run should have gone on by is the reader's to say:
+  // nothing is joined over it, and its wires go with it.
   it('takes a picked node out of the draft with its wires, and the inspector lets it go', async () => {
     draw();
     const picked = await screen.findByText('If');
@@ -513,7 +478,7 @@ describe('flow canvas', () => {
     fireEvent.keyDown(picked, { key: 'Backspace' });
     fireEvent.keyUp(picked, { key: 'Backspace' });
 
-    await waitFor(() => expect(useFlowDraftStore.getState().drafts.button?.nodes.map((node) => node.id)).toEqual(['start']));
+    await waitFor(() => expect(useFlowDraftStore.getState().drafts.button?.nodes.map((node) => node.id)).toEqual(['start', 'end']));
     expect(useFlowDraftStore.getState().drafts.button.edges).toEqual([]);
     expect(useFlowDraftStore.getState().selected).toBeNull();
   });
@@ -527,7 +492,7 @@ describe('flow canvas', () => {
     fireEvent.click(picked);
     fireEvent.keyDown(picked, { key: 'Backspace' });
     fireEvent.keyUp(picked, { key: 'Backspace' });
-    await waitFor(() => expect(useFlowDraftStore.getState().drafts.button?.nodes.map((node) => node.id)).toEqual(['start']));
+    await waitFor(() => expect(useFlowDraftStore.getState().drafts.button?.nodes.map((node) => node.id)).toEqual(['start', 'end']));
 
     act(() => useFlowDraftStore.getState().discard('button'));
     expect((await screen.findByText('If')).closest('[data-group]')).not.toHaveAttribute('data-selected');
@@ -536,7 +501,7 @@ describe('flow canvas', () => {
     const canvas = document.getElementById('flow-canvas')!;
     fireEvent.keyDown(canvas, { key: 'Backspace' });
     fireEvent.keyUp(canvas, { key: 'Backspace' });
-    // React Flow deletes a turn later, so give it the turn before saying it took nothing.
+    // Give anything the key set going a turn before saying it took nothing.
     await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
     expect(useFlowDraftStore.getState().drafts.button).toBeUndefined();
   });
@@ -555,21 +520,14 @@ describe('flow canvas', () => {
 
     expect(useFlowDraftStore.getState().selected).toBeNull();
     expect(screen.getByText('Start').closest('[data-group]')).not.toHaveAttribute('data-selected');
-    expect(start.style.transform).toBe('translate(40px,80px)');
+    expect(start.style.transform).toBe('translate(0px,80px)');
   });
 
-  // Something besides the Delete key can take one of several picked nodes away through React Flow:
-  // the inspector deleting the node it shows, say. It then shows a node still picked, and the
-  // canvas keeps that one framed.
-  it('shows another picked node when the one on show is deleted', async () => {
-    render(
-      <ReactFlowProvider>
-        <div style={{ width: 800, height: 600 }}>
-          <Page flow={button} />
-        </div>
-        <DeleteNode id="test" />
-      </ReactFlowProvider>,
-    );
+  // Taken out from among several picked nodes, the node the inspector shows gives way to another
+  // still picked, and the canvas keeps that one framed. The Start is never taken out, so picked
+  // with the If, it is what is left.
+  it('shows another picked node when the one on show is taken out', async () => {
+    drawPage();
     // React Flow picks more than one with Meta on a Mac and with Control anywhere else.
     const more = navigator.userAgent.includes('Mac') ? 'Meta' : 'Control';
 
@@ -579,9 +537,10 @@ describe('flow canvas', () => {
     fireEvent.keyUp(window, { key: more });
     expect(useFlowDraftStore.getState().selected).toBe('test');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete test' }));
+    fireEvent.keyDown(document.getElementById('flow-canvas')!, { key: 'Delete' });
 
     await waitFor(() => expect(useFlowDraftStore.getState().selected).toBe('start'));
+    expect(useFlowDraftStore.getState().drafts.button.nodes.map((node) => node.id)).toEqual(['start', 'end']);
     expect(screen.getByText('Start').closest('[data-group]')).toHaveAttribute('data-selected');
   });
 
@@ -590,7 +549,7 @@ describe('flow canvas', () => {
     await screen.findByText('If');
 
     fireEvent.click(screen.getByLabelText('Edge from start to test'));
-    // Not through React Flow: the flow simply stops having the wire, and then has it again.
+    // Not through the canvas: the flow simply stops having the wire, and then has it again.
     act(() => useFlowDraftStore.getState().edit(button, (flow) => removeEdges(flow, ['e1'])));
     act(() => useFlowDraftStore.getState().discard('button'));
 
@@ -599,9 +558,10 @@ describe('flow canvas', () => {
   });
 
   // Clicking one port and then another is React Flow's other way of drawing a wire, and it asks
-  // the same question a dragged wire does before it lands.
-  it('draws a wire from one port to another, and refuses one the server would refuse', async () => {
-    draw({ ...button, nodes: [...button.nodes, { id: 'print', type: 'debug', x: 560, y: 80, config: {} }] });
+  // the same question a dragged wire does before it lands. A way out has one wire, so the new one
+  // takes the place of the wire it had.
+  it('draws a wire from one port to another in place of the one its way out had, and refuses one the server would refuse', async () => {
+    draw({ ...button, nodes: [...button.nodes, { id: 'print', type: 'debug', x: 450, y: -80, config: {} }] });
     await screen.findByText('Debug');
 
     // Out of the If and straight back into it is a circle, which the server refuses.
@@ -613,6 +573,7 @@ describe('flow canvas', () => {
     fireEvent.click(port('print', 'in'));
     expect(useFlowDraftStore.getState().drafts.button.edges).toEqual([
       button.edges[0],
+      button.edges[2],
       { id: expect.any(String), from: 'test', fromPort: 'yes', to: 'print', toPort: 'in' },
     ]);
   });
@@ -627,8 +588,8 @@ describe('flow canvas', () => {
     fireEvent.click(node);
     fireEvent.keyDown(node, { key: 'ArrowRight' });
 
-    expect(useFlowDraftStore.getState().drafts.button.nodes[0]).toMatchObject({ id: 'start', x: 48, y: 80 });
-    expect(node.style.transform).toBe('translate(48px,80px)');
+    expect(useFlowDraftStore.getState().drafts.button.nodes[0]).toMatchObject({ id: 'start', x: 8, y: 80 });
+    expect(node.style.transform).toBe('translate(8px,80px)');
   });
 
   it('puts a dropped node where the pointer let it go', async () => {
@@ -640,33 +601,28 @@ describe('flow canvas', () => {
 
     // Where the new node's corner is drawn: its place on the canvas, through the canvas's pan and
     // zoom. That is the drop point, to the nearest step of the 8-pixel grid.
-    const { x, y } = useFlowDraftStore.getState().drafts.button.nodes[2];
+    const { x, y } = useFlowDraftStore.getState().drafts.button.nodes[3];
     const [panX, panY, zoom] = viewport();
     expect(Math.abs(panX + x * zoom - 200)).toBeLessThanOrEqual(4 * zoom);
     expect(Math.abs(panY + y * zoom - 120)).toBeLessThanOrEqual(4 * zoom);
   });
 
-  // The Inject button's own click stops there and never picks the node it sits in, so a Backspace
-  // pressed on it is not about that node. Left to the canvas, it would instead take away whatever
-  // else is picked, quite possibly a node panned out of sight a while ago.
-  it('leaves a node picked elsewhere alone when Backspace is pressed on the Inject button', async () => {
-    useFlowStatusStore.getState().setStatus({
-      runs: [runOf('button', { nodes: [{ id: 'go', count: 0, outs: {}, errors: 0, note: null, standing: [] }] })],
-    });
-    draw(pressable);
+  // A key on a control of the canvas's own — a button of the zoom panel in its corner — is that
+  // control's, and not about what is picked: left to the canvas, a Backspace there would take away
+  // whatever is picked, quite possibly a node panned out of sight a while ago.
+  it('leaves what is picked alone when Backspace is pressed on a button of the canvas', async () => {
+    draw();
     const picked = await screen.findByText('If');
 
     fireEvent.click(picked);
     expect(useFlowDraftStore.getState().selected).toBe('test');
 
-    const inject = screen.getByRole('button', { name: 'Inject' });
-    act(() => inject.focus());
-    fireEvent.keyDown(inject, { key: 'Backspace' });
-    fireEvent.keyUp(inject, { key: 'Backspace' });
+    const fit = screen.getByRole('button', { name: 'Fit View' });
+    act(() => fit.focus());
+    fireEvent.keyDown(fit, { key: 'Backspace' });
+    fireEvent.keyUp(fit, { key: 'Backspace' });
     await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
 
-    // Nothing was touched at all: the button never picks its own node, so a draft that dropped
-    // "test" and kept "go" would be just as wrong as one that lost both.
     expect(useFlowDraftStore.getState().drafts.button).toBeUndefined();
   });
 
@@ -753,7 +709,7 @@ describe('where the keyboard goes when a key takes something away', () => {
     fireEvent.keyDown(node, { key: 'Backspace' });
 
     await waitFor(() => expect(node.isConnected).toBe(false));
-    expect(ids()).toEqual(['start']);
+    expect(ids()).toEqual(['start', 'end']);
     expect(document.activeElement).toBe(canvas());
   });
 
@@ -767,7 +723,7 @@ describe('where the keyboard goes when a key takes something away', () => {
     fireEvent.keyDown(wire, { key: 'Delete' });
 
     await waitFor(() => expect(wire.isConnected).toBe(false));
-    expect(useFlowDraftStore.getState().drafts.button?.edges).toEqual([]);
+    expect(wireIds()).toEqual(['e2', 'e3']);
     expect(document.activeElement).toBe(canvas());
   });
 
@@ -793,7 +749,7 @@ describe('where the keyboard goes when a key takes something away', () => {
 
     await waitFor(() => expect(box.isConnected).toBe(false));
     // The Start stays, picked or not: every run begins there.
-    expect(ids()).toEqual(['start']);
+    expect(ids()).toEqual(['start', 'end']);
     expect(document.activeElement).toBe(canvas());
   });
 
@@ -808,7 +764,208 @@ describe('where the keyboard goes when a key takes something away', () => {
     fireEvent.keyDown(start, { key: 'Backspace' });
 
     await waitFor(() => expect(branch.isConnected).toBe(false));
-    expect(ids()).toEqual(['start']);
+    expect(ids()).toEqual(['start', 'end']);
     expect(document.activeElement).toBe(start);
+  });
+});
+
+describe('a flowchart on the canvas', () => {
+  it('draws each node in its shape, the decision as a diamond', async () => {
+    draw();
+
+    await waitFor(() => expect(document.querySelector('[data-id="test"] [data-shape]')).not.toBeNull());
+    expect(document.querySelector('[data-id="start"] [data-shape]')!.getAttribute('data-shape')).toBe('terminal');
+    expect(document.querySelector('[data-id="test"] [data-shape]')!.getAttribute('data-shape')).toBe('decision');
+    expect(document.querySelector('[data-id="test"] polygon')!.getAttribute('points')).toBe('50,0 100,50 50,100 0,50');
+  });
+
+  it('puts each port on its side, and names the ways out of a node with two', async () => {
+    draw();
+
+    await waitFor(() => expect(port('test', 'no')).not.toBeNull());
+    expect(port('test', 'in').getAttribute('data-side')).toBe('left');
+    expect(port('test', 'yes').getAttribute('data-side')).toBe('right');
+    expect(port('test', 'no').getAttribute('data-side')).toBe('bottom');
+    expect(screen.getByText('yes')).toBeInTheDocument();
+    expect(screen.getByText('no')).toBeInTheDocument();
+  });
+
+  it('marks a way out with no wire, and a node nothing leads to', async () => {
+    draw({ ...button, edges: button.edges.filter((edge) => edge.id !== 'e3') });
+
+    await waitFor(() => expect(screen.getByText('no · wire me')).toBeInTheDocument());
+    expect(port('test', 'no').hasAttribute('data-unwired')).toBe(true);
+
+    draw({ ...button, edges: button.edges.filter((edge) => edge.id !== 'e1') });
+    await waitFor(() => expect(document.querySelector('[data-id="test"] [data-unreached]')).not.toBeNull());
+  });
+
+  it('marks a loop nothing comes back to at its next', async () => {
+    const loop: FlowDto = {
+      ...button,
+      nodes: [button.nodes[0], { id: 'round', type: 'for', x: 300, y: 80, config: { times: '3', forever: false } }, button.nodes[2]],
+      edges: [
+        { id: 'e1', from: 'start', fromPort: 'out', to: 'round', toPort: 'in' },
+        { id: 'e2', from: 'round', fromPort: 'body', to: 'end', toPort: 'in' },
+        { id: 'e3', from: 'round', fromPort: 'done', to: 'end', toPort: 'in' },
+      ],
+    };
+    draw(loop);
+
+    await waitFor(() => expect(screen.getByText('next · wire me')).toBeInTheDocument());
+    expect(port('round', 'next').hasAttribute('data-unwired')).toBe(true);
+  });
+
+  it("writes the first of a node's problems under its name", async () => {
+    draw(button, { 'node:test': ['Pick a test.', 'Give it a value.'] });
+
+    await waitFor(() => expect(screen.getByText('Pick a test.')).toBeInTheDocument());
+    expect(screen.queryByText('Give it a value.')).toBeNull();
+  });
+
+  it('rings the node the run is at, and says it waits for a message there', async () => {
+    useFlowStatusStore.getState().setStatus(active([], 'test', { until: null, filter: 'plant/+/temp' }));
+    draw();
+
+    await waitFor(() => expect(document.querySelector('[data-id="test"] [data-here]')).not.toBeNull());
+    expect(screen.getByText('waiting for a message')).toBeInTheDocument();
+  });
+
+  // A run that finished at an End, or was stopped, stays in what the server reports until something
+  // replaces it; it is not anywhere any more.
+  it('rings no node for a run that has ended', async () => {
+    useFlowStatusStore.getState().setStatus({ runs: [runOf('button', { state: 'finished', at: 'end' })] });
+    draw();
+
+    await screen.findByText('End');
+    expect(document.querySelector('[data-here]')).toBeNull();
+  });
+
+  // The marks follow the flow as it is drawn, so a node is handed over again when one of its own
+  // changes, though nothing else about it has.
+  it('marks a way out once its wire is taken away, and a node once nothing leads to it', async () => {
+    drawPage();
+    await screen.findByText('If');
+
+    act(() => useFlowDraftStore.getState().edit(button, (flow) => removeEdges(flow, ['e3'])));
+    expect(await screen.findByText('no · wire me')).toBeInTheDocument();
+
+    act(() => useFlowDraftStore.getState().edit(button, (flow) => removeEdges(flow, ['e1'])));
+    await waitFor(() => expect(document.querySelector('[data-id="test"] [data-unreached]')).not.toBeNull());
+  });
+
+  it('counts down the seconds a run waits at a node', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const until = new Date(Date.now() + 2_000).toISOString();
+    useFlowStatusStore.getState().setStatus(active([], 'test', { until, filter: null }));
+    draw();
+
+    await waitFor(() => expect(screen.getByText(/^2\.0 s left$|^1\.9 s left$/)).toBeInTheDocument());
+    await act(async () => vi.advanceTimersByTime(1_000));
+    expect(screen.getByText(/^1\.0 s left$|^0\.9 s left$/)).toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it('says not running under a node no run reports', async () => {
+    draw();
+
+    await waitFor(() => expect(screen.getAllByText('not running')).toHaveLength(3));
+  });
+
+  it('joins what came before a node to what came after when Delete takes it out', async () => {
+    const line: FlowDto = {
+      ...button,
+      nodes: [button.nodes[0], { id: 'say', type: 'debug', x: 300, y: 80, config: {} }, button.nodes[2]],
+      edges: [
+        { id: 'e1', from: 'start', fromPort: 'out', to: 'say', toPort: 'in' },
+        { id: 'e2', from: 'say', fromPort: 'out', to: 'end', toPort: 'in' },
+      ],
+    };
+    useFlowDraftStore.getState().show('button');
+    render(
+      <ReactFlowProvider>
+        <div style={{ width: 800, height: 600 }}>
+          <Page flow={line} />
+        </div>
+      </ReactFlowProvider>,
+    );
+
+    await waitFor(() => expect(document.querySelector('[data-id="say"]')).not.toBeNull());
+    fireEvent.click(document.querySelector('[data-id="say"]')!);
+    fireEvent.keyDown(document.getElementById('flow-canvas')!, { key: 'Delete' });
+
+    const draft = useFlowDraftStore.getState().drafts.button;
+    expect(draft.nodes.map((node) => node.id)).toEqual(['start', 'end']);
+    expect(draft.edges.map((edge) => `${edge.from}>${edge.to}`)).toEqual(['start>end']);
+  });
+
+  // Wires first: the way on of a step that goes, picked with it, is meant gone, so the wire into the
+  // step is not carried over it to where that way on went.
+  it('takes a picked wire out before the step it leaves, and joins nothing over the step', async () => {
+    const line: FlowDto = {
+      ...button,
+      nodes: [button.nodes[0], { id: 'say', type: 'debug', x: 300, y: 80, config: {} }, button.nodes[2]],
+      edges: [
+        { id: 'e1', from: 'start', fromPort: 'out', to: 'say', toPort: 'in' },
+        { id: 'e2', from: 'say', fromPort: 'out', to: 'end', toPort: 'in' },
+      ],
+    };
+    drawPage(line);
+    const more = navigator.userAgent.includes('Mac') ? 'Meta' : 'Control';
+
+    fireEvent.click(await screen.findByText('Debug'));
+    fireEvent.keyDown(window, { key: more });
+    fireEvent.click(screen.getByLabelText('Edge from say to end'));
+    fireEvent.keyUp(window, { key: more });
+    fireEvent.keyDown(document.getElementById('flow-canvas')!, { key: 'Delete' });
+
+    const draft = useFlowDraftStore.getState().drafts.button;
+    expect(draft.nodes.map((node) => node.id)).toEqual(['start', 'end']);
+    expect(draft.edges).toEqual([]);
+  });
+
+  // A new flow is a Start wired straight to an End, and its first step goes on that one wire.
+  it('says how the first step goes in while the flow is a Start wired straight to an End', async () => {
+    const said = 'Pick the wire, then click a node on the left to put it there.';
+    const { unmount } = draw();
+    await screen.findByText('If');
+    expect(screen.queryByText(said)).toBeNull();
+    unmount();
+
+    draw({ ...button, nodes: [button.nodes[0], button.nodes[2]], edges: [{ ...button.edges[0], to: 'end' }] });
+
+    expect(await screen.findByText(said)).toBeInTheDocument();
+  });
+
+  // A lone way out has no name for the mark to follow. A node nothing leads to says so when it is
+  // pointed at, unless the server said what is wrong with it, which matters more.
+  it('marks a lone way out with no wire, and says why a node is faded', async () => {
+    draw({ ...button, edges: button.edges.filter((edge) => edge.id !== 'e1') }, { 'node:end': ['Nothing comes here.'] });
+
+    await waitFor(() => expect(screen.getByText('wire me')).toBeInTheDocument());
+    expect(port('start', 'out').hasAttribute('data-unwired')).toBe(true);
+    expect(screen.getByText('If').closest('[data-group]')).toHaveAttribute('title', 'Nothing leads here from Start.');
+    expect(screen.getByText('End').closest('[data-group]')).toHaveAttribute('title', 'Nothing comes here.');
+  });
+
+  it('never takes the Start out', async () => {
+    drawPage();
+
+    await waitFor(() => expect(document.querySelector('[data-id="start"]')).not.toBeNull());
+    fireEvent.click(document.querySelector('[data-id="start"]')!);
+    fireEvent.keyDown(document.getElementById('flow-canvas')!, { key: 'Backspace' });
+
+    expect(useFlowDraftStore.getState().drafts.button).toBeUndefined();
+  });
+
+  it('tells the store which wire is picked, and lets it go when a node is picked', async () => {
+    drawPage();
+
+    await waitFor(() => expect(document.querySelector('[data-id="e2"]')).not.toBeNull());
+    fireEvent.click(document.querySelector('[data-id="e2"] path')!);
+    expect(useFlowDraftStore.getState().wire).toBe('e2');
+
+    fireEvent.click(document.querySelector('[data-id="test"]')!);
+    expect(useFlowDraftStore.getState().wire).toBeNull();
   });
 });

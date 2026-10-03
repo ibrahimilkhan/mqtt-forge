@@ -28,7 +28,7 @@ export function shownRun(runs: FlowRuns | undefined): FlowRunStatusDto | undefin
   return runs.active ?? runs.test;
 }
 
-type FlowStatusState = {
+export type FlowStatusState = {
   /** Every flow's runs, by flow id. A flow missing here is neither switched on nor being tested. */
   runs: Record<string, FlowRuns>;
   /** The nodes of the run each flow's canvas shows (see shownRun), by nodeKey, so a node subscribes to one entry. */

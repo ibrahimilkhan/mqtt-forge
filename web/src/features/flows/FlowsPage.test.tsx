@@ -634,7 +634,7 @@ describe('the delete keys', () => {
     for (const control of [shownTab(), screen.getByRole('button', { name: 'Discard' }), screen.getByRole('button', { name: 'Deploy' })]) {
       act(() => control.focus());
       await userEvent.keyboard('{Backspace}{Delete}');
-      // React Flow deletes a turn after the key, so give it the turns before saying it took nothing.
+      // Give anything the keys set going its turns before saying they took nothing.
       await turns();
     }
 
@@ -1638,22 +1638,6 @@ const outcome = (text: string | RegExp) => screen.getByText(text).closest('[aria
  * region, so a reader who cannot see the marks it leaves is told as well.
  */
 describe('what did not go through', () => {
-  /**
-   * A flow with an Inject node, running, so its ▶ can be pressed. This build no longer knows Inject,
-   * but the canvas draws its ▶ until the request it makes goes too.
-   */
-  const press: FlowDto = {
-    id: 'press',
-    name: 'Fan test',
-    enabled: true,
-    nodes: [{ id: 'go', type: 'inject', x: 40, y: 80, config: { topic: 'plant/k1/cmd', payload: '{"fan":"on"}' } }],
-    edges: [],
-    variables: [],
-  };
-  const pressRuns: FlowStatusDto = {
-    runs: [runOf('press', { nodes: [{ id: 'go', count: 0, outs: {}, errors: 0, note: null, standing: [] }] })],
-  };
-
   it('says a deploy that failed in a live region of its own, not over the whole page', async () => {
     keeping([watch]);
     server.use(http.put('/api/flows/watch', () => couldNot('The disk is full.')));
@@ -1794,29 +1778,6 @@ describe('what did not go through', () => {
 
     expect(screen.getAllByText(said)).toEqual([note]);
     expect(screen.getByRole('tab', { name: /^Boiler watch 23/ })).toBeInTheDocument();
-  });
-
-  it('says a message that was not injected, until the next press', async () => {
-    keeping([press]);
-    server.use(
-      http.get('/api/flows/status', () => HttpResponse.json(pressRuns)),
-      http.post('/api/flows/:flow/nodes/:node/inject', () =>
-        couldNot("No running flow 'press' has an Inject node 'go'. Deploy the flow first.", 404),
-      ),
-    );
-    render(<FlowsPage />);
-    const inject = await screen.findByRole('button', { name: 'Inject' });
-    await waitFor(() => expect(inject).toBeEnabled());
-
-    fireEvent.click(inject);
-
-    const said = "Nothing was injected into Fan test. No running flow 'press' has an Inject node 'go'. Deploy the flow first.";
-    expect(await screen.findByText(said)).toBeInTheDocument();
-    expect(outcome(said)).not.toBeNull();
-
-    server.use(http.post('/api/flows/:flow/nodes/:node/inject', () => new HttpResponse(null, { status: 202 })));
-    fireEvent.click(inject);
-    await waitFor(() => expect(screen.queryByText(said)).not.toBeInTheDocument());
   });
 });
 

@@ -365,6 +365,15 @@ describe('a flowchart stays whole while it is built', () => {
     expect(noReturn(loop)).toEqual(new Set());
   });
 
+  // Dropped on the canvas, or put by the palette away from the wires, a loop has its empty body all
+  // the same: one put down with nothing coming back to it would be refused.
+  it('gives a loop put down away from the wires its empty body', () => {
+    const flow = addNode(emptyFlow('A'), 'for', at, 'l');
+
+    expect(wires(flow)).toContain('l.body>l.next');
+    expect(noReturn(flow)).toEqual(new Set());
+  });
+
   it('cannot put a node after one with two ways out', () => {
     const decision = insertOnWire(line(), 'e2', 'if', at, 'q');
     expect(insertAfter(decision, 'q', 'debug', at, 'd')).toBeNull();

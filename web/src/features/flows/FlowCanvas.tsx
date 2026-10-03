@@ -21,7 +21,6 @@ import '@xyflow/react/dist/base.css';
 import {
   memo,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -31,14 +30,34 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { injectNode } from '../../api/flows';
-import { nodeKey, useFlowStatusStore } from '../../stores/flowStatusStore';
-import { logFault } from '../../stores/logStore';
-import type { FlowDto, FlowNodeDto, FlowNodeStatusDto } from '../../types/api';
-import { Failures } from './failures';
-import { addNode, canConnect, connect, moveNodes, newId, removeEdges, removeNodes, type Problems, type Wire } from './flowDocument';
+import { isLive, nodeKey, shownRun, useFlowStatusStore, type FlowStatusState } from '../../stores/flowStatusStore';
+import type { FlowDto, FlowNodeDto } from '../../types/api';
+import {
+  addNode,
+  canConnect,
+  connect,
+  moveNodes,
+  newId,
+  noReturn,
+  removeEdges,
+  removeNodes,
+  unreached,
+  unwiredOuts,
+  type Problems,
+  type Wire,
+} from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
-import { isNodeType, portsOf, specOf, type NodeSpec, type Ports } from './nodeTypes';
+import {
+  isNodeType,
+  portLabel,
+  portsOf,
+  sideOf,
+  specOf,
+  type NodeShape,
+  type NodeSpec,
+  type Ports,
+  type Side,
+} from './nodeTypes';
 import styles from './FlowCanvas.module.css';
 
 /** What a palette item carries when it is dragged onto the canvas. */
@@ -63,8 +82,30 @@ export const NODE_WIDTH = 188;
  */
 export const NODE_HEIGHT = 80;
 
-/** The width, where the stylesheet reads it. */
-const NODE_SIZE = { '--node-width': `${NODE_WIDTH}px` } as CSSProperties;
+/** The If's box: a diamond keeps its three lines in its middle, so it is drawn larger than the rest. */
+export const DECISION_WIDTH = NODE_WIDTH + 64;
+export const DECISION_HEIGHT = 128;
+
+/** The sizes, where the stylesheet reads them: the If's as well, for the same reason as the width. */
+const NODE_SIZE = {
+  '--node-width': `${NODE_WIDTH}px`,
+  '--decision-width': `${DECISION_WIDTH}px`,
+  '--decision-height': `${DECISION_HEIGHT}px`,
+} as CSSProperties;
+
+/** Each outline drawn as a polygon, in a 100 by 100 box stretched over the node. */
+const OUTLINES: Partial<Record<NodeShape, string>> = {
+  input: '10,0 100,0 90,100 0,100',
+  loop: '8,0 92,0 100,50 92,100 8,100 0,50',
+  decision: '50,0 100,50 50,100 0,50',
+};
+
+const POSITIONS: Record<Side, Position> = {
+  left: Position.Left,
+  right: Position.Right,
+  top: Position.Top,
+  bottom: Position.Bottom,
+};
 
 /*
  * React Flow's options, made once. It copies each one it is handed into its own store when the
@@ -84,7 +125,13 @@ type NodeData = {
   flow: FlowDto;
   node: FlowNodeDto;
   ports: Ports;
-  running: boolean;
+  /**
+   * The node's ports that want a wire, joined by a comma: its ways out with none, and a loop's next
+   * when nothing comes back to it. Text and not a list, so canvasNode compares it by value.
+   */
+  unwired: string;
+  /** No wire leads here from the Start, so no run would ever come to it. */
+  unreached: boolean;
   problems?: readonly string[];
 };
 type CanvasNode = Node<NodeData, 'flow'>;
@@ -98,9 +145,9 @@ type Size = { width: number; height: number };
  * goes stale. React Flow draws a node again only when it is handed a new object for it, and the
  * canvas works its nodes out again whenever the wires change — at two hundred nodes to a flow, one
  * wire drawn or taken away drew two hundred nodes again. So a node whose drawing has not changed is
- * handed over as the object it was. A node of a type this build knows takes its ports from its type
- * and never from the wires; only one it does not know takes them from its wires (see portsOf), and
- * it is new when a change to them changed its own ports.
+ * handed over as the object it was. A wire changes the drawing of the nodes whose marks it changes —
+ * a way out left with no wire, a node no longer reached — and of a node of a type this build does
+ * not know, which takes its ports from its wires (see portsOf); every other node is left alone.
  */
 const handed = new WeakMap<FlowNodeDto, CanvasNode>();
 
@@ -120,7 +167,8 @@ function canvasNode(
   flow: FlowDto,
   node: FlowNodeDto,
   ports: Ports,
-  running: boolean,
+  unwired: string,
+  cutOff: boolean,
   problems: readonly string[] | undefined,
   selected: boolean,
   measured: Size | undefined,
@@ -130,7 +178,8 @@ function canvasNode(
     last !== undefined &&
     last.data.flowId === flow.id &&
     (node.type !== 'alarmClear' || last.data.flow.nodes === flow.nodes) &&
-    last.data.running === running &&
+    last.data.unwired === unwired &&
+    last.data.unreached === cutOff &&
     last.data.problems === problems &&
     last.selected === selected &&
     last.measured === measured &&
@@ -142,9 +191,11 @@ function canvasNode(
     id: node.id,
     type: 'flow',
     position: { x: node.x, y: node.y },
-    data: { flowId: flow.id, flow, node, ports, running, problems },
+    data: { flowId: flow.id, flow, node, ports, unwired, unreached: cutOff, problems },
     selected,
     measured,
+    // Every run begins at the Start, so nothing takes it away: not the key here, and not React Flow.
+    deletable: node.type !== 'start',
   };
   handed.set(node, made);
   return made;
@@ -196,26 +247,39 @@ const onAControl = (target: EventTarget) => target instanceof Element && target.
  *
  * What it marks as wrong is handed in, not looked up: the page decides what the server has said
  * about the flow — a refusal of this page's deploy, or a problem in the server's own file — and the
- * canvas, the tab and the inspector all mark that one answer.
+ * canvas, the tab and the inspector all mark that one answer. What the flow lacks to be a whole
+ * program — a way out with no wire, a node nothing leads to, a loop nothing comes back to — it works
+ * out for itself, from the flow, as the reader draws.
  */
-export function FlowCanvas({ flow, running, problems }: { flow: FlowDto; running: boolean; problems: Problems }) {
+export function FlowCanvas({ flow, problems }: { flow: FlowDto; problems: Problems }) {
   const edit = useFlowDraftStore((state) => state.edit);
   const select = useFlowDraftStore((state) => state.select);
+  const pickWire = useFlowDraftStore((state) => state.pickWire);
   const selected = useFlowDraftStore((state) => state.selected);
   const [sizes, setSizes] = useState<Record<string, Size>>({});
   const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set());
-  const { screenToFlowPosition, deleteElements } = useReactFlow();
+  const { screenToFlowPosition } = useReactFlow();
   const drawing = useStoreApi<CanvasNode, CanvasEdge>();
 
   // React Flow reports one click as two batches of changes, the nodes' and then the wires' (or the
   // other way round), and both arrive before the canvas renders again. Each batch has to start from
   // the picks the one before it left, not from the last render's, or clicking a wire while a node
   // is picked would pick the wire and then drop it again. So the latest picks are kept here too.
+  //
+  // The store hears of every change to them as well, for the one wire picked: the palette puts what
+  // it adds on that wire. Told of the changes a key or an edit makes as much as of a click's, it
+  // never names a wire that has gone, or one the canvas has let go of.
   const latest = useRef(picked);
-  const choose = useCallback((next: ReadonlySet<string>) => {
-    latest.current = next;
-    setPicked(next);
-  }, []);
+  const choose = useCallback(
+    (next: ReadonlySet<string>) => {
+      latest.current = next;
+      setPicked(next);
+
+      const only = next.size === 1 ? [...next][0] : null;
+      pickWire(only?.startsWith(EDGE) ? only.slice(EDGE.length) : null);
+    },
+    [pickWire],
+  );
 
   /** Lets go of some picks, and says what is left picked. */
   const drop = useCallback(
@@ -246,22 +310,30 @@ export function FlowCanvas({ flow, running, problems }: { flow: FlowDto; running
   }, [choose, flow.edges, flow.nodes, selected]);
 
   // Worked out again whenever any of these changes, and each node handed over as the object it was
-  // unless what it draws changed with it — see canvasNode.
-  const nodes = useMemo<CanvasNode[]>(
-    () =>
-      flow.nodes.map((node) =>
-        canvasNode(
-          flow,
-          node,
-          portsOf(node, flow.edges),
-          running,
-          problems[NODE + node.id],
-          picked.has(NODE + node.id),
-          sizes[node.id],
-        ),
-      ),
-    [flow, picked, problems, running, sizes],
-  );
+  // unless what it draws changed with it — see canvasNode. What the flow lacks is asked of the flow
+  // object, which keeps the answer: a drag asks on every frame.
+  const nodes = useMemo<CanvasNode[]>(() => {
+    const open = unwiredOuts(flow);
+    const lost = unreached(flow);
+    const back = noReturn(flow);
+
+    return flow.nodes.map((node) => {
+      const ports = portsOf(node, flow.edges);
+      // A loop nothing comes back to wants a wire into its next as much as a way out wants one out.
+      const unwired = [...ports.outs.filter((port) => open.has(`${node.id}:${port}`)), ...(back.has(node.id) ? ['next'] : [])];
+
+      return canvasNode(
+        flow,
+        node,
+        ports,
+        unwired.join(','),
+        lost.has(node.id),
+        problems[NODE + node.id],
+        picked.has(NODE + node.id),
+        sizes[node.id],
+      );
+    });
+  }, [flow, picked, problems, sizes]);
 
   const edges = useMemo<CanvasEdge[]>(
     () =>
@@ -299,50 +371,39 @@ export function FlowCanvas({ flow, running, problems }: { flow: FlowDto; running
     [choose, select],
   );
 
+  // React Flow reports moves, sizes and picks here. Never a node taken away: it has no key of its
+  // own (see onKeyDown), and nothing else on the page asks it to take one.
   const onNodesChange = useCallback(
     (changes: NodeChange<CanvasNode>[]) => {
       const moved: Record<string, { x: number; y: number }> = {};
       const measured: Record<string, Size> = {};
-      const removed: string[] = [];
       const picks: Array<{ pick: string; selected: boolean }> = [];
 
       for (const change of changes) {
         if (change.type === 'position' && change.position) moved[change.id] = change.position;
         else if (change.type === 'dimensions' && change.dimensions) measured[change.id] = change.dimensions;
-        else if (change.type === 'remove') removed.push(change.id);
         else if (change.type === 'select') picks.push({ pick: NODE + change.id, selected: change.selected });
       }
 
       if (Object.keys(moved).length > 0) edit(flow, (current) => moveNodes(current, moved));
       if (Object.keys(measured).length > 0) setSizes((known) => ({ ...known, ...measured }));
-      if (removed.length > 0) {
-        edit(flow, (current) => removeNodes(current, removed));
-        // What was deleted is not picked any more. An inspector that was showing it shows another
-        // node still picked, or the flow, and never a node that has gone.
-        const left = drop(removed.map((id) => NODE + id));
-        if (selected && removed.includes(selected)) select(firstNode(left));
-      }
       if (picks.length > 0) pick(picks);
     },
-    [drop, edit, flow, pick, select, selected],
+    [edit, flow, pick],
   );
 
   const onEdgesChange = useCallback(
     (changes: EdgeChange<CanvasEdge>[]) => {
-      const removed = changes.filter((change) => change.type === 'remove').map((change) => change.id);
       const picks = changes.flatMap((change) =>
         change.type === 'select' ? [{ pick: EDGE + change.id, selected: change.selected }] : [],
       );
 
-      if (removed.length > 0) {
-        edit(flow, (current) => removeEdges(current, removed));
-        drop(removed.map((id) => EDGE + id));
-      }
       if (picks.length > 0) pick(picks);
     },
-    [drop, edit, flow, pick],
+    [pick],
   );
 
+  // A way out has one wire, so a wire drawn from one that has a wire already takes its place.
   const onConnect = useCallback(
     (connection: Connection) => edit(flow, (current) => connect(current, wireOf(connection))),
     [edit, flow],
@@ -376,12 +437,12 @@ export function FlowCanvas({ flow, running, problems }: { flow: FlowDto; running
   // Backspace and Delete take away what is picked, and only while the keyboard is in the canvas.
   // React Flow listens for them on the whole document, where a node picked a while ago went when
   // the reader pressed Backspace on a tab, on Deploy or in the palette, out of their sight. So it
-  // has no key of its own, and the canvas asks it for the deletion its key made: the picked nodes
-  // and wires, which come back as the same changes as any other and reach the draft the same way.
-  // A key held with another is somebody's shortcut, and a key in a box takes away a letter. And a
-  // key on a button or a link is that control's own: the Inject node's ▶ stops its click from
-  // reaching the canvas, so it never picks the node it sits in, and a Backspace on it would only
-  // take away whatever else is picked instead — maybe a node panned out of sight a while ago.
+  // has no key of its own, and the canvas edits the draft itself — through flowDocument, which
+  // keeps the program whole: a step taken out of a chain leaves the chain joined over it, and the
+  // Start, where every run begins, is never taken out. A key held with another is somebody's
+  // shortcut, and a key in a box takes away a letter. And a key on a button or a link is that
+  // control's own — the zoom panel's, in the corner — and not about what is picked: a Backspace
+  // there would take away whatever is, maybe a node panned out of sight a while ago.
   //
   // What goes may be what the keyboard is on: the node, a wire of it, the box round nodes picked
   // together. A browser hands the focus of an element taken out to the body, and the next key
@@ -392,21 +453,32 @@ export function FlowCanvas({ flow, running, problems }: { flow: FlowDto; running
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || typedInto(event.target) || onAControl(event.target)) return;
 
     event.preventDefault();
-    const { nodes, edges } = drawing.getState();
-    const nodesGoing = nodes.filter((node) => node.selected);
-    const cut = new Set(nodesGoing.map((node) => node.id));
-    // A node takes its wires with it.
-    const wiresGoing = new Set(
-      edges.filter((edge) => edge.selected || cut.has(edge.source) || cut.has(edge.target)).map((edge) => edge.id),
-    );
+    const picks = [...latest.current];
+    const wires = picks.flatMap((one) => (one.startsWith(EDGE) ? [one.slice(EDGE.length)] : []));
+    const starts = new Set(flow.nodes.filter((node) => node.type === 'start').map((node) => node.id));
+    const cut = picks.flatMap((one) => {
+      const node = nodeOf(one);
+      return node !== null && !starts.has(node) ? [node] : [];
+    });
+    if (cut.length === 0 && wires.length === 0) return;
 
+    // Where the keyboard was, worked out as before — the node, a wire of it, or the box. A wire into
+    // a node that goes may be joined over it and stay, but is counted as going: the canvas takes
+    // the keyboard either way.
     const on = event.target instanceof Element ? event.target : null;
     const node = on?.closest('.react-flow__node')?.getAttribute('data-id');
     const wire = on?.closest('.react-flow__edge')?.getAttribute('data-id');
-    const stays = node ? !cut.has(node) : wire ? !wiresGoing.has(wire) : false;
-    if (!stays && (cut.size > 0 || wiresGoing.size > 0)) event.currentTarget.focus();
+    const touching = new Set(flow.edges.filter((edge) => cut.includes(edge.from) || cut.includes(edge.to)).map((edge) => edge.id));
+    const stays = node ? !cut.includes(node) : wire ? !(wires.includes(wire) || touching.has(wire)) : false;
+    if (!stays) event.currentTarget.focus();
 
-    void deleteElements({ nodes: nodesGoing, edges: edges.filter((edge) => edge.selected) });
+    // Wires first: a node's way on, picked with it, is meant gone, so what came into the node is not
+    // joined over it to where that wire went.
+    edit(flow, (current) => removeNodes(removeEdges(current, wires), cut));
+    // What went is not picked any more. An inspector that was showing it shows another node still
+    // picked, or the flow, and never a node that has gone.
+    const left = drop([...cut.map((id) => NODE + id), ...wires.map((id) => EDGE + id)]);
+    if (selected && cut.includes(selected)) select(firstNode(left));
     // As React Flow's own key does: the box drawn round nodes picked together goes with them.
     drawing.setState({ nodesSelectionActive: false });
   };
@@ -445,132 +517,132 @@ export function FlowCanvas({ flow, running, problems }: { flow: FlowDto; running
         <Controls showInteractive={false} />
       </ReactFlow>
 
-      {flow.nodes.length === 0 && (
-        <p className={styles.hint}>Drag a trigger here from the left, or click one to add it.</p>
+      {/* A new flow is a Start wired straight to an End, never an empty canvas: what the reader
+          needs to know is where its first step goes. */}
+      {flow.nodes.length === 2 && flow.edges.length === 1 && (
+        <p className={styles.hint}>Pick the wire, then click a node on the left to put it there.</p>
       )}
     </div>
   );
 }
 
-/** Where a port stands on its side of the node: spread evenly, top to bottom. */
-const portTop = (index: number, count: number) => `${((index + 1) * 100) / (count + 1)}%`;
-
 /**
- * How many letters the longest port name on a side has, when that side's ports are named at all —
- * one port needs no name — for the stylesheet to keep a column that wide for the names inside the
- * node's edge.
- */
-const named = (ports: readonly string[]) => (ports.length > 1 ? Math.max(...ports.map((port) => port.length)) : 0);
-
-/**
- * What a node draws of its numbers, and nothing more. Every push brings a new object for every
- * node, so a node that took its whole entry drew itself again four times a second whether anything
- * on it had moved or not; this is compared field by field, and a node whose line reads the same is
- * left alone.
+ * What a node draws of its run, and nothing more: its line, whether the run is at it, and what the
+ * run waits for there. Every push brings a new object for every node, so a node that took its whole
+ * entry drew itself again four times a second whether anything on it had moved or not; this is
+ * compared field by field, and a node whose line reads the same is left alone.
  *
- * A running flow reports every node of the version it runs, so a node with no numbers is not
- * deployed: the flow is not running, or the node is only in the draft. "0 in" or "waiting" under it
- * would be a claim about something that is not running.
+ * The run on show reports every node of the flow it runs, so a node with no numbers is not in it:
+ * no run is going, or the node is only in the draft. "0 in" or "waiting" under it would be a claim
+ * about a run that is not there.
  *
  * `note` is the server's last word on the node: the value it last read or sent, or what last went
  * wrong — "The broker refused this filter.", "no such field". The line only counts errors, so it
  * is what the line says when a reader points at it.
  */
-function drawnOf(spec: NodeSpec, status: FlowNodeStatusDto | undefined) {
-  return status
-    ? { reported: true, line: spec.status(status), failing: status.errors > 0, note: status.note }
-    : { reported: false, line: 'not deployed', failing: false, note: null };
+function drawnOf(spec: NodeSpec, flowId: string, nodeId: string, state: FlowStatusState) {
+  const run = shownRun(state.runs[flowId]);
+  const status = state.nodes[nodeKey(flowId, nodeId)];
+  const here = run !== undefined && isLive(run) && run.at === nodeId;
+
+  return {
+    line: status ? spec.status(status) : 'not running',
+    failing: (status?.errors ?? 0) > 0,
+    note: status?.note ?? null,
+    here,
+    until: here ? (run.waiting?.until ?? null) : null,
+    message: here && run.waiting?.filter != null,
+  };
 }
 
 function FlowNodeView({ id, data, selected }: NodeProps<CanvasNode>) {
   const spec = specOf(data.node.type);
   const { ins, outs } = data.ports;
   const Icon = spec.icon;
-  const { reported, line, failing, note } = useFlowStatusStore(
-    useShallow((state) => drawnOf(spec, state.nodes[nodeKey(data.flowId, id)])),
+  const outline = OUTLINES[spec.shape];
+  const unwired = data.unwired === '' ? [] : data.unwired.split(',');
+  // A node with one way in and one way out has nothing to tell apart. One with more names its ways
+  // out, and a loop its next, where the last wire of its body comes back; a way in called in never.
+  const named = ins.length + outs.length > 2;
+  const { line, failing, note, here, until, message } = useFlowStatusStore(
+    useShallow((state) => drawnOf(spec, data.flowId, id, state)),
+  );
+
+  const portName = (port: string, out: boolean) => {
+    const open = unwired.includes(port);
+    const name = named && port !== 'in' ? portLabel(port) : '';
+    const text = open ? (name ? `${name} · wire me` : 'wire me') : name;
+    return text ? (
+      <span key={`name-${port}`} className={styles.port} data-side={sideOf(port, out)} data-unwired={open ? '' : undefined}>
+        {text}
+      </span>
+    ) : null;
+  };
+
+  const handle = (port: string, out: boolean) => (
+    <Handle
+      key={port}
+      type={out ? 'source' : 'target'}
+      position={POSITIONS[sideOf(port, out)]}
+      id={port}
+      className={styles.handle}
+      data-side={sideOf(port, out)}
+      data-unwired={unwired.includes(port) ? '' : undefined}
+    />
   );
 
   return (
     <div
       className={styles.node}
-      style={{ '--in-names': named(ins), '--out-names': named(outs) } as CSSProperties}
+      data-shape={spec.shape}
       data-group={spec.group ?? undefined}
       data-selected={selected ? '' : undefined}
       data-problem={data.problems ? '' : undefined}
-      title={data.problems?.join(' ')}
+      data-unreached={data.unreached ? '' : undefined}
+      data-here={here ? '' : undefined}
+      title={data.problems?.join(' ') ?? (data.unreached ? 'Nothing leads here from Start.' : undefined)}
     >
-      {ins.map((port, index) => (
-        <Handle
-          key={port}
-          type="target"
-          position={Position.Left}
-          id={port}
-          className={styles.handle}
-          style={{ top: portTop(index, ins.length) }}
-        />
-      ))}
-      {ins.length > 1 &&
-        ins.map((port, index) => (
-          <span key={port} className={styles.portIn} style={{ top: portTop(index, ins.length) }}>
-            {port}
-          </span>
-        ))}
+      {outline && (
+        <svg className={styles.outline} viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          <polygon points={outline} vectorEffect="non-scaling-stroke" />
+        </svg>
+      )}
+
+      {ins.map((port) => handle(port, false))}
+      {ins.map((port) => portName(port, false))}
 
       <div className={styles.head}>
         <span className={styles.icon}>
           <Icon />
         </span>
         <span className={styles.name}>{spec.label}</span>
-        {data.node.type === 'inject' && <InjectButton flowId={data.flowId} nodeId={id} ready={data.running && reported} />}
       </div>
+      {data.problems && <div className={styles.problem}>{data.problems[0]}</div>}
       <div className={styles.summary}>{spec.summary(data.node.config, data.flow)}</div>
       <div className={styles.status} data-errors={failing ? '' : undefined} title={note ?? undefined}>
-        {line}
+        {until !== null ? <Countdown until={until} /> : message ? 'waiting for a message' : line}
       </div>
 
-      {outs.length > 1 &&
-        outs.map((port, index) => (
-          <span key={port} className={styles.portOut} style={{ top: portTop(index, outs.length) }}>
-            {port}
-          </span>
-        ))}
-      {outs.map((port, index) => (
-        <Handle
-          key={port}
-          type="source"
-          position={Position.Right}
-          id={port}
-          className={styles.handle}
-          style={{ top: portTop(index, outs.length) }}
-        />
-      ))}
+      {outs.map((port) => portName(port, true))}
+      {outs.map((port) => handle(port, true))}
     </div>
   );
 }
 
-function InjectButton({ flowId, nodeId, ready }: { flowId: string; nodeId: string; ready: boolean }) {
-  const failures = useContext(Failures);
+/**
+ * The seconds left until `until`, to a tenth, counted down while it is on screen. Only the node a
+ * run waits at draws one, so nothing else on the canvas ticks.
+ */
+function Countdown({ until }: { until: string }) {
+  const end = useMemo(() => Date.parse(until), [until]);
+  const [now, setNow] = useState(() => Date.now());
 
-  return (
-    <button
-      type="button"
-      className={`nodrag ${styles.inject}`}
-      disabled={!ready}
-      aria-label="Inject"
-      title={ready ? 'Send its message now' : 'Deploy the flow first'}
-      onClick={(event) => {
-        event.stopPropagation();
-        failures.trying('inject');
-        injectNode(flowId, nodeId).catch((error: unknown) => {
-          logFault('Inject failed', error);
-          // The page covers the log, so the page says it too.
-          failures.failed('inject', flowId, error);
-        });
-      }}
-    >
-      ▶
-    </button>
-  );
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 100);
+    return () => clearInterval(timer);
+  }, []);
+
+  return <>{`${(Math.max(0, end - now) / 1000).toFixed(1)} s left`}</>;
 }
 
 /**

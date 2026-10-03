@@ -29,6 +29,11 @@ type DraftState = {
   current: string | null;
   /** The node the inspector is showing. Null shows the flow's own settings. */
   selected: string | null;
+  /**
+   * The one wire picked, when a wire and nothing else is: where the palette puts the node it adds.
+   * Not kept: like `selected`, it is about what is on screen now.
+   */
+  wire: string | null;
   /** What the server said about each flow's last refused deploy: flow id, then flow / node:{id} / edge:{id}. */
   refusals: Record<string, Record<string, string[]>>;
   /**
@@ -56,11 +61,17 @@ type DraftState = {
   rebase: (flowId: string, base: string | null) => void;
   /**
    * Throws a flow's draft away: its edits, or the whole flow once it has been deleted. Clears the
-   * selection too, but only if this is the flow on screen.
+   * selection and the wire picked too, but only if this is the flow on screen.
    */
   discard: (id: string) => void;
   show: (id: string | null) => void;
+  /**
+   * Shows a node in the inspector, or with null the flow's own settings. A node chosen is picked on
+   * the canvas, so no wire is picked alone any more.
+   */
   select: (nodeId: string | null) => void;
+  /** The canvas says which wire is picked: its id when exactly one wire and no node is, or null. */
+  pickWire: (edgeId: string | null) => void;
   refuse: (flowId: string, errors: Record<string, string[]>) => void;
   /**
    * These flows have no draft any more. A refusal is the server's answer about one draft, not
@@ -223,6 +234,7 @@ export function createFlowDraftStore() {
     bases: stored.bases,
     current: read(session, CURRENT_KEY),
     selected: null,
+    wire: null,
     refusals: {},
     unkept: false,
 
@@ -256,11 +268,14 @@ export function createFlowDraftStore() {
         // A selection belongs to whatever canvas is open; discarding some other flow's draft
         // must not blank out what the reader is looking at right now.
         selected: state.current === id ? null : state.selected,
+        wire: state.current === id ? null : state.wire,
       })),
 
-    show: (id) => set({ current: id, selected: null }),
+    show: (id) => set({ current: id, selected: null, wire: null }),
 
-    select: (nodeId) => set({ selected: nodeId }),
+    select: (nodeId) => set(nodeId === null ? { selected: null } : { selected: nodeId, wire: null }),
+
+    pickWire: (wire) => set({ wire }),
 
     refuse: (flowId, errors) => set((state) => ({ refusals: { ...state.refusals, [flowId]: errors } })),
 

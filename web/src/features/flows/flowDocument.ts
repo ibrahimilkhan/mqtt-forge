@@ -52,10 +52,25 @@ export function nextName(flows: readonly FlowDto[]): string {
   for (let n = 1; ; n++) if (!taken.has(`Flow ${n}`)) return `Flow ${n}`;
 }
 
-export const addNode = (flow: FlowDto, type: FlowNodeType, at: { x: number; y: number }, id: string): FlowDto => ({
+/** The flow with a new node of the type in it, its settings the type's defaults, and no wire to it yet. */
+const withNode = (flow: FlowDto, type: FlowNodeType, at: { x: number; y: number }, id: string): FlowDto => ({
   ...flow,
   nodes: [...flow.nodes, { id, type, x: Math.round(at.x), y: Math.round(at.y), config: NODE_SPECS[type].defaults() }],
 });
+
+/**
+ * A node put down away from the wires: where it was dropped on the canvas, or where the palette found
+ * room for it. Its ways out are left unwired for the canvas to mark, but for a loop's body, which goes
+ * back to the loop's own next as it does wherever a loop is put (see waysOut).
+ */
+export const addNode = (flow: FlowDto, type: FlowNodeType, at: { x: number; y: number }, id: string): FlowDto => {
+  const added = withNode(flow, type, at, id);
+  const ways = waysOut(id, type);
+
+  // A node with no wire to make leaves the flow the very list of wires it had: handed a new one, the
+  // canvas draws every wire again.
+  return ways.length === 0 ? added : { ...added, edges: [...added.edges, ...ways] };
+};
 
 /**
  * A node put on a wire: the wire now runs into it, and every way out it has goes where the wire went —
@@ -76,7 +91,7 @@ export function insertOnWire(
   const wire = flow.edges.find((edge) => edge.id === edgeId);
   if (!wire) return flow;
 
-  const added = addNode(flow, type, at, id);
+  const added = withNode(flow, type, at, id);
   return {
     ...added,
     edges: [
@@ -120,7 +135,7 @@ export function insertAfter(
   const wire = flow.edges.find((edge) => edge.from === nodeId && edge.fromPort === outs[0]);
   if (wire) return insertOnWire(flow, wire.id, type, at, id);
 
-  const added = addNode(flow, type, at, id);
+  const added = withNode(flow, type, at, id);
   return {
     ...added,
     edges: [...added.edges, { id: newId('e'), from: nodeId, fromPort: outs[0], to: id, toPort: 'in' }, ...waysOut(id, type)],

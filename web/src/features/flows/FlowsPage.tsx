@@ -58,7 +58,7 @@ function refusedIn(names: readonly string[]): string {
   return `The server refused ${listed}, so they were not deployed. What it refused is marked on each.`;
 }
 
-/** A delete or an Inject that did not go through: the flow it was about, and why. */
+/** A delete that did not go through: the flow it was about, and why. */
 type Failed = { name: string; reason: string };
 
 /** The flows whose drafts stand as `wanted`. */
@@ -101,11 +101,11 @@ function Page() {
   const { screenToFlowPosition } = useReactFlow();
 
   // What did not go through besides a deploy, by what was tried — see failures.ts. The inspector
-  // and the nodes are handed the way to say it; the page says it, under the tabs, where it stays
-  // whichever flow is on screen. So it names the flow it is about, as the flow was named when it
-  // failed: in a live region, a name that followed a rename would be read out with every letter.
+  // is handed the way to say it; the page says it, under the tabs, where it stays whichever flow is
+  // on screen. So it names the flow it is about, as the flow was named when it failed: in a live
+  // region, a name that followed a rename would be read out with every letter.
   const queryClient = useQueryClient();
-  const [failed, setFailed] = useState<Record<Attempt, Failed | null>>({ delete: null, inject: null });
+  const [failed, setFailed] = useState<Record<Attempt, Failed | null>>({ delete: null });
   const failures = useMemo<Failures>(
     () => ({
       trying: (attempt) => setFailed((was) => (was[attempt] === null ? was : { ...was, [attempt]: null })),
@@ -275,21 +275,16 @@ function Page() {
 
           {/* The page covers the log, so what did not go through is said here: a deploy that
               failed, or that the server refused — which marks the nodes it is about, but a flow
-              refused on another tab has only its lamp to show it — a flow not deleted, a message
-              not injected — and drafts this browser would not keep. One polite live region, so a
-              reader who cannot see the marks is told as well, and nothing in it is drawn from the
-              numbers, so a push of them says nothing. */}
+              refused on another tab has only its lamp to show it — a flow not deleted, and drafts
+              this browser would not keep. One polite live region, so a reader who cannot see the
+              marks is told as well, and nothing in it is drawn from the numbers, so a push of them
+              says nothing. */}
           <div aria-live="polite">
             {deploy.isError && <p className={panel.fault}>Not deployed. {describeError(deploy.error)}</p>}
             {stillRefused.length > 0 && <p className={panel.fault}>{refusedIn(stillRefused.map((one) => one.name))}</p>}
             {failed.delete !== null && (
               <p className={panel.fault}>
                 {failed.delete.name} was not deleted. {failed.delete.reason}
-              </p>
-            )}
-            {failed.inject !== null && (
-              <p className={panel.fault}>
-                Nothing was injected into {failed.inject.name}. {failed.inject.reason}
               </p>
             )}
             {/* Said once, by the first draft the browser refused: its storage is full, or blocked,
@@ -310,12 +305,7 @@ function Page() {
             <Palette onAdd={add} />
             {/* Keyed apart as well as by flow: siblings that share a key cannot be told apart, and
                 each tab shown would leave its canvas behind in the page. */}
-            <FlowCanvas
-              key={`canvas-${shown.id}`}
-              flow={shown}
-              running={running.has(shown.id)}
-              problems={problems[shown.id] ?? NOTHING_WRONG}
-            />
+            <FlowCanvas key={`canvas-${shown.id}`} flow={shown} problems={problems[shown.id] ?? NOTHING_WRONG} />
             {/* One inspector per flow, like the canvas: what it holds — a delete it is asking about —
                 is about the flow it was opened on, and must not stand over the next one. */}
             <Inspector

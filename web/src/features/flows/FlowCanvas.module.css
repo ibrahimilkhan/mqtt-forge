@@ -48,11 +48,13 @@
 
 .canvas :global(.react-flow__attribution a) { color: var(--muted); }
 
+/* At the foot of the canvas, under the Start and the End a new flow is drawn with, and out of the
+   way of the pointer: the wire between them stays where it is to be picked. */
 .hint {
   position: absolute;
-  inset: 0;
+  inset: auto 0 16px 0;
   display: grid;
-  place-items: center;
+  place-items: end center;
   margin: 0;
   color: var(--muted);
   pointer-events: none;
@@ -61,16 +63,9 @@
 /* ---- a node ---- */
 
 /* The width is FlowCanvas.tsx's NODE_WIDTH, which the canvas sets as --node-width: the page reckons
-   where a new node goes from the same number.
-
-   A side whose ports are named keeps a column for the names inside the node's edge, so a wire
-   meets its port beside the name rather than running through it, and the node's own text stops
-   where the column starts rather than running under a name. The node says how many letters its
-   longest name on each side has (0 when that side names none); a name is --t-nano mono, 0.6em a
-   letter, set 9px in with 6px after it. With no names the column is the node's usual 9px. */
+   where a new node goes from the same number. A port's name stands outside the node (see .port),
+   so the text inside runs edge to edge. */
 .node {
-  --in-column: calc(9px + min(var(--in-names), 1) * 6px + var(--in-names) * 0.6 * var(--t-nano));
-  --out-column: calc(9px + min(var(--out-names), 1) * 6px + var(--out-names) * 0.6 * var(--t-nano));
   position: relative;
   width: var(--node-width);
   background: var(--surface);
@@ -90,7 +85,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 7px var(--out-column) 1px var(--in-column);
+  padding: 7px 9px 1px;
   font-weight: 600;
 }
 
@@ -98,16 +93,18 @@
    with the rest of the type when the reader changes the base in the appearance panel. */
 .icon { display: inline-flex; font-size: var(--t-body); }
 
-/* What starts a flow is the console's blue, what decides is grey, what acts is green: the three
-   groups of the palette, and the only colour a node wears. */
-.node[data-group='Triggers'] .icon { color: var(--signal); }
-.node[data-group='Logic'] .icon { color: var(--muted); }
+/* What the flow takes in is the console's blue, how it goes is grey, what it does is green, and the
+   alarm with what is told of it is the warning's amber: the palette's four groups, and the only
+   colour a node wears. */
+.node[data-group='Input'] .icon { color: var(--signal); }
+.node[data-group='Control'] .icon { color: var(--muted); }
 .node[data-group='Actions'] .icon { color: var(--live); }
+.node[data-group='Alarm'] .icon { color: var(--warn); }
 
 .name { flex: 1 1 auto; min-width: 0; }
 
 .summary {
-  padding: 0 var(--out-column) 0 var(--in-column);
+  padding: 0 9px;
   font-family: var(--mono);
   font-size: var(--t-micro);
   color: var(--muted);
@@ -117,7 +114,7 @@
 }
 
 .status {
-  padding: 3px var(--out-column) 7px var(--in-column);
+  padding: 3px 9px 7px;
   font-family: var(--mono);
   font-size: var(--t-nano);
   color: var(--muted);
@@ -132,12 +129,85 @@
   border: 1.5px solid var(--muted);
 }
 
-/* A port's name, in the column its side keeps: beside its handle, which stands on the edge and
-   reaches 5px in, and level with it. Inputs read from the left edge, outputs up to the right one. */
-.portIn,
-.portOut {
+/* ---- shapes ---- */
+
+/* A flowchart's own shapes: a pill where a run begins and ends, a diamond where it asks, a
+   parallelogram where it reads, a hexagon where it goes round. The three drawn as an outline have
+   no box of their own: the polygon behind the text is the node's edge, and the marks that are the
+   box's edge on a rectangle are the polygon's here. */
+.node[data-shape='terminal'] { border-radius: 999px; text-align: center; }
+.node[data-shape='terminal'] .head { justify-content: center; }
+
+/* A centred head is centred whole, its glyph beside the name: a name taking the rest of the row
+   left the glyph at the far edge, where an End's square read as one more port. */
+.node[data-shape='terminal'] .name,
+.node[data-shape='decision'] .name { flex: 0 1 auto; }
+
+.node[data-shape='input'],
+.node[data-shape='loop'],
+.node[data-shape='decision'] {
+  background: transparent;
+  border-color: transparent;
+}
+.node[data-shape='input'] > :not(svg, .handle, .port),
+.node[data-shape='loop'] > :not(svg, .handle, .port) {
+  padding-inline: 10%;
+}
+
+/* The If's box is DECISION_WIDTH by DECISION_HEIGHT, which the canvas sets as these two, as it sets
+   the width: the page reckons where an If goes from the same numbers. */
+.node[data-shape='decision'] {
+  width: var(--decision-width);
+  min-height: var(--decision-height);
+  display: grid;
+  align-content: center;
+  text-align: center;
+}
+.node[data-shape='decision'] .head { justify-content: center; }
+.node[data-shape='decision'] > :not(svg, .handle, .port) { padding-inline: 22%; }
+
+.outline {
   position: absolute;
-  transform: translateY(-50%);
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  overflow: visible;
+}
+.outline polygon { fill: var(--surface); stroke: var(--rule); stroke-width: 1; }
+
+.node[data-problem] .outline polygon { stroke: var(--fault); stroke-width: 2; }
+.node[data-shape='input'][data-problem],
+.node[data-shape='loop'][data-problem],
+.node[data-shape='decision'][data-problem] { border-color: transparent; box-shadow: none; }
+
+/* Not reached from Start: it would never run, so it is drawn as not quite there. */
+.node[data-unreached] { opacity: 0.55; }
+
+/* Where the run is now. A shadow of the drawing itself, so it follows any of the outlines. */
+.node[data-here] { filter: drop-shadow(0 0 3px var(--signal)) drop-shadow(0 0 1px var(--signal)); }
+
+.problem {
+  padding: 0 9px;
+  font-size: var(--t-micro);
+  color: var(--fault);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---- ports ---- */
+
+/* The slanted sides of the input's parallelogram are half-way in at mid-height. */
+.node[data-shape='input'] .handle[data-side='left'] { left: 5%; }
+.node[data-shape='input'] .handle[data-side='right'] { right: 5%; left: auto; }
+
+.handle[data-unwired] { border-color: var(--fault); background: color-mix(in srgb, var(--fault) 18%, var(--surface)); }
+
+/* A port's name stands outside the outline beside its handle, where a flowchart writes yes and no. */
+.port {
+  position: absolute;
   font-family: var(--mono);
   font-size: var(--t-nano);
   line-height: 1;
@@ -145,14 +215,11 @@
   white-space: nowrap;
   pointer-events: none;
 }
-.portIn { left: 9px; }
-.portOut { right: 9px; text-align: right; }
-
-.inject {
-  padding: 1px 7px;
-  font-size: var(--t-nano);
-  line-height: 1.4;
-}
+.port[data-side='right'] { left: calc(100% + 6px); bottom: calc(50% + 6px); }
+.port[data-side='bottom'] { left: calc(50% + 9px); top: calc(100% + 3px); }
+.port[data-side='top'] { left: calc(50% + 9px); bottom: calc(100% + 3px); }
+.port[data-side='left'] { right: calc(100% + 6px); bottom: calc(50% + 6px); }
+.port[data-unwired] { color: var(--fault); }
 
 /* ---- a wire ---- */
 

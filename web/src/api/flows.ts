@@ -33,13 +33,6 @@ export const stopTest = (id: string) =>
 export const deleteFlow = (id: string) =>
   request<void>(`/api/flows/${encodeURIComponent(id)}`, { method: 'DELETE' });
 
-/** Presses a running Inject node's button. */
-export const injectNode = (flowId: string, nodeId: string) =>
-  request<void>(
-    `/api/flows/${encodeURIComponent(flowId)}/nodes/${encodeURIComponent(nodeId)}/inject`,
-    { method: 'POST' },
-  );
-
 /**
  * Whether a save, or a test, was refused for what is in it — as opposed to a server that could not
  * be reached, or a file it will not write over. Its `errors` are keyed flow, node:{id} and edge:{id}.
