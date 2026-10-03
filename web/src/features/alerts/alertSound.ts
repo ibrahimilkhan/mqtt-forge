@@ -216,12 +216,29 @@ const quiet = (alert: AlertDto) =>
   alert.mutedUntil !== null && Date.parse(alert.mutedUntil) > Date.now();
 
 /**
- * One tone for one batch of raised alerts, at the worst severity in it.
+ * One tone for one batch of levels, at the loudest in it.
  *
- * `alertsRaised` carries an array, and a rule with a wide filter can fill it — ten oscillators
- * over each other is a noise rather than an alarm, and the reader learns nothing from it that the
- * loudest one alone would not have told them. `screen` and `sound` are separate actions, so an
- * alert that never asked to be heard is not heard.
+ * Two things make a noise in batches. `alertsRaised` carries an array, and a rule with a wide
+ * filter can fill it; `flowSound` carries one as well, of the tones Sound nodes asked for. Ten
+ * oscillators over each other are a noise rather than an alarm — a room cannot tell three tones
+ * played over each other apart — and the reader learns nothing from them that the loudest one
+ * alone would not have told them. Both come here, so which one is heard is decided in one place
+ * and cannot come out differently for a flow than for a rule.
+ */
+export function soundLevels(levels: readonly AlertSeverity[]): boolean {
+  if (levels.length === 0) return false;
+
+  const worst = levels.reduce((found, level) => (RANK[level] > RANK[found] ? level : found));
+  return soundAlert(worst);
+}
+
+/**
+ * One tone for one batch of raised alerts, at the worst severity among those that asked for one.
+ *
+ * `screen` and `sound` are separate actions, so an alert that never asked to be heard is not
+ * heard — and is not counted either, or a critical that asked only for the screen would make the
+ * warning that did ask for a tone sound like a critical. What is left goes to `soundLevels`, which
+ * says how a batch is made into one tone.
  *
  * `actions` is free text on the wire, because a failed delivery is written into it as
  * 'webhook: 404'. The match here is the whole word and not a prefix, so no failure can ever be
@@ -229,24 +246,8 @@ const quiet = (alert: AlertDto) =>
  */
 export function soundFor(alerts: ReadonlyArray<AlertDto>): boolean {
   const wanting = alerts.filter((alert) => alert.actions.includes('sound') && !quiet(alert));
-  if (wanting.length === 0) return false;
 
-  const worst = wanting.reduce((found, alert) =>
-    RANK[alert.severity] > RANK[found.severity] ? alert : found,
-  );
-
-  return soundAlert(worst.severity);
-}
-
-/**
- * A Sound node's tones, as a batch the hub sent together: one tone, at the loudest level among them,
- * for soundFor's reason — a room cannot tell three tones played over each other apart.
- */
-export function soundLevels(levels: readonly AlertSeverity[]): boolean {
-  if (levels.length === 0) return false;
-
-  const worst = levels.reduce((found, level) => (RANK[level] > RANK[found] ? level : found));
-  return soundAlert(worst);
+  return soundLevels(wanting.map((alert) => alert.severity));
 }
 
 /**

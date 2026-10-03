@@ -30,10 +30,21 @@
    and the same shadow, so the two read as one family of things the console says on its own account.
 
    The level is the edge the text starts from, in the colour an alarm of that level is drawn in
-   everywhere else — see the alert wall's rows and the rules table. The hairline's colour is what
-   a level the console does not know is drawn in, so the edge is never missing. */
+   everywhere else — see the alert wall's rows and the rules table — and the head says it in a word
+   as well, for the reader the colour does not reach. The hairline's colour is what a level the
+   console does not know is drawn in, so the edge is never missing.
+
+   Two lines of a grid: the head and the way out together on the first, and what the notice says,
+   the whole width, on the second. The way out is last in the markup, so it is placed by name; left
+   to the grid's own order it would land on a third line, under the text. */
 .notice {
   pointer-events: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'head close'
+    'text text';
+  column-gap: 8px;
   padding: 8px 10px 9px;
   background: var(--surface);
   border: 1px solid var(--rule);
@@ -46,12 +57,33 @@
 .notice[data-level='warn'] { border-inline-start-color: var(--warn); }
 .notice[data-level='info'] { border-inline-start-color: var(--signal); }
 
-/* Whose it is, whether a test said it, and the way out, on one line. */
+/* How bad, whose it is and whether a test said it, on one line. On their baselines, as the alerts
+   panel sets a level beside the words about it: the level is a smaller face than the name, and
+   centring the two would leave the capitals riding above the line the name sits on. Centred in the
+   row, as the × is, so that the two stay level whether the name takes one line or two. */
 .head {
+  grid-area: head;
+  align-self: center;
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
 }
+
+/* The level, as a word. The alerts panel's own recipe for it, so a level reads the same here as it
+   does in the rules table: mono, the smallest size, wide-spaced capitals. The colour is the second
+   signal and the word is the first — forced colours takes the edge's colour away and the word is
+   still there. Coloured off the card's level, as the edge is. */
+.level {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--t-nano);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.notice[data-level='critical'] .level { color: var(--fault); }
+.notice[data-level='warn'] .level { color: var(--warn); }
+.notice[data-level='info'] .level { color: var(--signal); }
 
 .flow {
   min-width: 0;
@@ -74,13 +106,15 @@
   border-radius: var(--r-control);
 }
 
-/* The ×, at the end of the line. Twenty-four pixels square, which is the least a target is asked to
-   be, and pulled out of the line's height by the amount it overhangs it: the head is as tall as the
-   flow's name and nothing more, so a notice is not four pixels deeper for having a way to close it.
-   The border is the ghost's, kept and made invisible, so the console's own hover still draws it. */
+/* The ×. Last in the markup, so a screen reader says what the notice says before it offers the way
+   to be rid of it, and stood at the end of the first line by the grid above, where an eye looks for
+   it. Twenty-four pixels square, which is the least a target is asked to be, and pulled out of the
+   line's height by the amount it overhangs it: the first line is as tall as the flow's name and
+   nothing more, so a notice is not four pixels deeper for having a way to close it. The border is
+   the ghost's, kept and made invisible, so the console's own hover still draws it. */
 .close {
-  flex: none;
-  margin-inline-start: auto;
+  grid-area: close;
+  align-self: center;
   margin-block: -2px;
   margin-inline-end: -4px;
   display: flex;
@@ -97,6 +131,7 @@
 /* Set apart from the head by a hair, and wrapped wherever it has to be: a template can put a long
    topic or an unbroken payload in it, and one of those must not push the notice out of the corner. */
 .text {
+  grid-area: text;
   margin: 2px 0 0;
   overflow-wrap: anywhere;
 }

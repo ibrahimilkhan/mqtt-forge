@@ -18,8 +18,9 @@ type NoticeState = {
 };
 
 /**
- * The id the next notice gets. Never reset, so no two notices in one console share one: it is the
- * key a card is drawn under, and what the card's timer and its Close dismiss it by.
+ * The last id given out; the next notice gets one more than this. Never reset, so no two notices
+ * in one console share one: it is the key a card is drawn under, and what the card's timer and its
+ * Close dismiss it by.
  */
 let made = 0;
 
