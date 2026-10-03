@@ -4,7 +4,7 @@
  *
  * The Flows page cannot be driven to the states worth a picture without a server running flows
  * and a broker under them: counts under every node, alarms standing on the Alarm node and on the
- * rail's badge, lines in the debug strip, a deploy the server refused. Here they are built out of
+ * rail's badge, lines in the debug strip, an Activate the server refused. Here they are built out of
  * store state and the server's answers, rendered through the real console with the page open, and
  * written out as static pages — the whole console, as the gallery's console pages are, at the
  * README's window.
@@ -218,7 +218,7 @@ const REFUSED = { 'node:fan': ['A topic to publish to cannot hold + or #.'] };
 
 /**
  * The server, answering as one running both examples would: the flows, their numbers, the alarms
- * and — for the refused page — a deploy of the watch it will not take. Each is also primed or seeded
+ * and — for the refused page — an Activate of the watch it will not take. Each is also primed or seeded
  * where the console keeps it, and answered here too, because this page is not one synchronous pass:
  * the Flows page is a chunk of its own that has to arrive, and by then the console has asked.
  */
@@ -246,7 +246,7 @@ function answering() {
 /**
  * The whole console with the Flows page open on one flow, one node picked, as one static page.
  * `down` is the height its canvas has at 1440 by 900, and `changing` an edit made to the flow before
- * the page opens, which is then deployed.
+ * the page opens, which is then activated: the examples are made switched off.
  */
 async function console_(title, { flow, picked, down, changing = null }) {
   canvasDown = down;
@@ -298,7 +298,7 @@ async function console_(title, { flow, picked, down, changing = null }) {
   });
 
   if (changing) {
-    act(() => fireEvent.click(view.getByRole('button', { name: 'Deploy' })));
+    act(() => fireEvent.click(view.getByRole('button', { name: 'Activate' })));
     await view.findByText(/^The server refused/);
   }
 
@@ -331,7 +331,7 @@ it.skipIf(!existsSync(OUT))('writes the flows pages', async () => {
   writeFileSync(`${OUT}/flows-simulator.html`, await console_('a simulator', { flow: SIMULATOR, picked: 'send', down: 699 }));
   writeFileSync(
     `${OUT}/flows-refused.html`,
-    await console_('a refused deploy', {
+    await console_('a refused Activate', {
       flow: WATCH,
       picked: 'fan',
       // The line under the tabs that says what the server refused takes its height from the canvas.

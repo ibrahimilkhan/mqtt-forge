@@ -32,7 +32,8 @@ import { useFlowDraftStore } from './flowDraftStore';
 import { Inspector } from './Inspector';
 import { Palette } from './Palette';
 import { FLOW_PANEL, focusTab, tabIdOf, Toolbar } from './Toolbar';
-import { useDeploy } from './useDeploy';
+import { useSave } from './useSave';
+import { useTest } from './useTest';
 import styles from './FlowsPage.module.css';
 
 /**
@@ -49,14 +50,6 @@ const NODE_BOX = { width: NODE_WIDTH, height: NODE_HEIGHT };
 
 /** The empty page's first way to start, where the keyboard goes once the last flow has gone. */
 const START = 'flows-start';
-
-/** What the page says of the flows a deploy had refused, by their names: "A", "A and B", "A, B and C". */
-function refusedIn(names: readonly string[]): string {
-  if (names.length === 1) return `The server refused ${names[0]}, so it was not deployed. What it refused is marked on it.`;
-
-  const listed = `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-  return `The server refused ${listed}, so they were not deployed. What it refused is marked on each.`;
-}
 
 /** A delete that did not go through: the flow it was about, and why. */
 type Failed = { name: string; reason: string };
@@ -97,13 +90,20 @@ function Page() {
     useShallow((state) => Object.keys(state.runs).filter((id) => isLive(shownRun(state.runs[id])))),
   );
   const running = useMemo(() => new Set(runningIds), [runningIds]);
-  const deploy = useDeploy();
+  // Which of those runs are tests, which the toolbar offers to stop: the same care, for the same
+  // reason.
+  const testingIds = useFlowStatusStore(
+    useShallow((state) => Object.keys(state.runs).filter((id) => isLive(state.runs[id].test))),
+  );
+  const testing = useMemo(() => new Set(testingIds), [testingIds]);
+  const save = useSave();
+  const test = useTest();
   const { screenToFlowPosition } = useReactFlow();
 
-  // What did not go through besides a deploy, by what was tried — see failures.ts. The inspector
-  // is handed the way to say it; the page says it, under the tabs, where it stays whichever flow is
-  // on screen. So it names the flow it is about, as the flow was named when it failed: in a live
-  // region, a name that followed a rename would be read out with every letter.
+  // What did not go through besides a save or a test, by what was tried — see failures.ts. The
+  // inspector is handed the way to say it; the page says it, under the tabs, where it stays whichever
+  // flow is on screen. So it names the flow it is about, as the flow was named when it failed: in a
+  // live region, a name that followed a rename would be read out with every letter.
   const queryClient = useQueryClient();
   const [failed, setFailed] = useState<Record<Attempt, Failed | null>>({ delete: null });
   const failures = useMemo<Failures>(
@@ -128,6 +128,8 @@ function Page() {
   const deployed = useMemo(() => data?.flows ?? [], [data]);
   const byId = useMemo(() => new Map(deployed.map((flow) => [flow.id, flow])), [deployed]);
   const deployedIds = useMemo(() => new Set(byId.keys()), [byId]);
+  // The flows the server has switched on, whatever their drafts say: a draft never switches one.
+  const activeIds = useMemo(() => new Set(deployed.filter((flow) => flow.enabled).map((flow) => flow.id)), [deployed]);
   const flows = useMemo(() => withDrafts(deployed, drafts), [deployed, drafts]);
 
   // How each draft stands against the server's copy of its flow — see standingOf. Worked out on
@@ -137,47 +139,35 @@ function Page() {
     () => Object.entries(drafts).map(([id, draft]) => [id, standingOf(draft, bases[id] ?? null, byId.get(id))] as const),
     [bases, byId, drafts],
   );
-  // What Deploy sends, and what it holds back until the reader keeps it or lets it go.
+  // What Activate and Update send, and what they hold back until the reader keeps it or lets it go.
   const changed = useMemo(() => standingAs(standings, 'changed'), [standings]);
   const overtaken = useMemo(() => standingAs(standings, 'overtaken'), [standings]);
   const serverProblems = useMemo(() => problemsOf(data?.problems ?? []), [data]);
 
-  // What the server has said is wrong with each flow: its answer to this page's last deploy of it,
-  // or else what it found reading its own file. The tabs, the canvas and the inspector all mark
-  // this one answer, so no pane can call a flow clean that another marks as wrong.
+  // What the server has said is wrong with each flow: its answer to this page's last save or test
+  // of it, or else what it found reading its own file. The tabs, the canvas and the inspector all
+  // mark this one answer, so no pane can call a flow clean that another marks as wrong. An answer
+  // goes with the draft it was about, however the draft goes: the store sees to that.
   const problems = useMemo(() => ({ ...serverProblems, ...refusals }), [serverProblems, refusals]);
   const refused = useMemo(() => new Set(Object.keys(problems)), [problems]);
 
-  // The flows the last deploy had refused, while their refusals stand. Named as they were sent:
-  // said in a live region, a name read from the draft would be said again with every letter of a
-  // rename.
-  const stillRefused = deploy.isSuccess ? deploy.data.filter((one) => one.id in refusals) : [];
-
   // A draft that holds nothing of the reader's goes: kept, it would hide a newer copy another
-  // console deploys, and go back out over it with the next Deploy of anything. Only the page holds
+  // console saves, and go back out over it with the next Activate or Update. Only the page holds
   // both halves of that comparison, so it is the one that tells the store; before the paint, so no
   // frame shows a change that is not one; and only once the server's copies have been read, since
   // until then every flow would look deleted.
   //
-  // A flow on its way to the server keeps its draft until the answer comes. What was typed in the
-  // meantime is an edit of the copy that was sent (see useDeploy), and taken back to the copy the
-  // server had, it says to undo the change, not that there is nothing to keep.
-  const sending = deploy.isPending ? deploy.variables : undefined;
+  // A drawing on its way to the server keeps its draft until the answer comes. What was typed in
+  // the meantime is an edit of the copy that was sent (see useSave), and taken back to the copy the
+  // server had, it says to undo the change, not that there is nothing to keep. Deactivate sends the
+  // server's copy, not the drawing, so the drawing is not on its way.
+  const sending = save.isPending && save.variables.enabled ? save.variables.flow.id : null;
   useLayoutEffect(() => {
     if (!data || data.unreadable) return;
 
-    const spent = standings.flatMap(([id, standing]) =>
-      standing === 'nothing' && !sending?.some((flow) => flow.id === id) ? [id] : [],
-    );
+    const spent = standings.flatMap(([id, standing]) => (standing === 'nothing' && id !== sending ? [id] : []));
     if (spent.length > 0) useFlowDraftStore.getState().settle(spent);
   }, [data, sending, standings]);
-
-  // A refusal is the server's answer about a draft. One whose draft has gone — taken back, or let go
-  // in another tab — has nothing left to be about.
-  useLayoutEffect(() => {
-    const lapsed = Object.keys(refusals).filter((id) => !(id in drafts));
-    if (lapsed.length > 0) useFlowDraftStore.getState().lapse(lapsed);
-  }, [drafts, refusals]);
 
   // A flow alarm the reader asked to see, from its row on the alarm wall: the page opens on the
   // flow it came from, with its Alarm node picked. Only once the flows are read, since until then
@@ -229,7 +219,7 @@ function Page() {
   if (isPending) return <p className={styles.missing}>Reading the flows…</p>;
 
   // Only when there has never been an answer. A read that fails once the flows are on screen
-  // keeps them there: the drafts are all still here, and a deploy says for itself when the
+  // keeps them there: the drafts are all still here, and a save says for itself when the
   // server cannot be reached.
   if (!data)
     return <p className={panel.fault}>The flows could not be read from the server. Nothing here has changed.</p>;
@@ -273,9 +263,11 @@ function Page() {
             overtaken={overtaken}
             deployed={deployedIds}
             current={shown.id}
+            active={activeIds}
             running={running}
+            testing={testing}
             refused={refused}
-            deploying={deploy.isPending}
+            busy={save.isPending || test.start.isPending}
             onNew={() => {
               const flow = emptyFlow(nextName(flows));
               store.put(flow);
@@ -285,18 +277,39 @@ function Page() {
             // the sentence — where the reader is looking when they choose, and the one place both
             // answers are — so a second Discard up here would only ask the same question twice.
             onDiscard={changed.has(shown.id) && byId.has(shown.id) ? () => store.discard(shown.id) : undefined}
-            onDeploy={() => deploy.mutate(flows.filter((flow) => changed.has(flow.id)))}
+            onTest={() => test.start.mutate(shown)}
+            onStop={() => test.stop.mutate(shown.id)}
+            onActivate={() => save.mutate({ flow: shown, enabled: true })}
+            // Offered for a draft held back too, off, where it says why: a flow that is on with
+            // changes the reader cannot send yet is not one with nothing to send.
+            onUpdate={
+              changed.has(shown.id) || overtaken.has(shown.id) ? () => save.mutate({ flow: shown, enabled: true }) : undefined
+            }
+            // The server's copy, never the drawing: a drawing the server would refuse cannot keep a flow
+            // from being stopped. (useSave sends the copy it reads just before, which may be newer.)
+            onDeactivate={activeIds.has(shown.id) ? () => save.mutate({ flow: byId.get(shown.id)!, enabled: false }) : undefined}
           />
 
-          {/* The page covers the log, so what did not go through is said here: a deploy that
+          {/* The page covers the log, so what did not go through is said here: a save or a test that
               failed, or that the server refused — which marks the nodes it is about, but a flow
-              refused on another tab has only its lamp to show it — a flow not deleted, and drafts
-              this browser would not keep. One polite live region, so a reader who cannot see the
-              marks is told as well, and nothing in it is drawn from the numbers, so a push of them
-              says nothing. */}
+              refused on another tab has only its lamp to show it — a test that did not stop, a flow
+              not deleted, and drafts this browser would not keep. One polite live region, so a
+              reader who cannot see the marks is told as well, and nothing in it is drawn from the
+              numbers, so a push of them says nothing. A refusal is said while it stands, and named
+              as the flow was sent: a name read from the draft would be said again with every letter
+              of a rename. */}
           <div aria-live="polite">
-            {deploy.isError && <p className={panel.fault}>Not deployed. {describeError(deploy.error)}</p>}
-            {stillRefused.length > 0 && <p className={panel.fault}>{refusedIn(stillRefused.map((one) => one.name))}</p>}
+            {save.isError && <p className={panel.fault}>Not saved. {describeError(save.error)}</p>}
+            {save.data && save.data.id in refusals && (
+              <p className={panel.fault}>The server refused {save.data.name}, so it was not saved. What it refused is marked on it.</p>
+            )}
+            {test.start.isError && <p className={panel.fault}>The test did not start. {describeError(test.start.error)}</p>}
+            {test.start.data === 'refused' && test.start.variables.id in refusals && (
+              <p className={panel.fault}>
+                The server refused {titleOf(test.start.variables)}, so the test did not start. What it refused is marked on it.
+              </p>
+            )}
+            {test.stop.isError && <p className={panel.fault}>The test did not stop. {describeError(test.stop.error)}</p>}
             {failed.delete !== null && (
               <p className={panel.fault}>
                 {failed.delete.name} was not deleted. {failed.delete.reason}
@@ -306,8 +319,8 @@ function Page() {
                 and a reload would bring back what it kept before then without a word. */}
             {unkept && (
               <p className={panel.fault}>
-                This browser would not keep the drafts, so a reload may bring back older ones, or none. Deploy what you
-                want to keep.
+                This browser would not keep the drafts, so a reload may bring back older ones, or none. Activate or Update
+                what you want to keep.
               </p>
             )}
           </div>
@@ -359,8 +372,8 @@ function Start() {
   return (
     <div className={styles.start}>
       <p>
-        Draw what should happen to a message — raise an <b>alarm</b>, <b>publish</b> an answer — and deploy it. Deployed
-        flows run on the server, with this page open or not.
+        Draw what should happen, step by step, from Start to End — read a message, decide, raise an alarm, publish an
+        answer. Test runs the drawing once; Activate keeps it running on the server, with this page open or not.
       </p>
       <div className={panel.actions}>
         <button id={START} type="button" onClick={() => begin(exampleFlows())}>

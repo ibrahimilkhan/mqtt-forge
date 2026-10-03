@@ -267,15 +267,15 @@ const onAControl = (target: EventTarget) => target instanceof Element && target.
  * Derived, not held. React Flow's nodes and edges are computed from `flow` on every render — the
  * draft if there is one, the deployed flow if not — and every change React Flow reports is turned
  * into a flowDocument function and written to the draft store. So there is one answer to "what is
- * this flow", it is the one Deploy sends, and a canvas can never drift from it. What is kept here
- * is only what React Flow measures (each node's size, which it needs handed back or it hides the
- * node) and what the reader has picked.
+ * this flow", it is the one Test runs and Activate saves, and a canvas can never drift from it.
+ * What is kept here is only what React Flow measures (each node's size, which it needs handed back
+ * or it hides the node) and what the reader has picked.
  *
  * What it marks as wrong is handed in, not looked up: the page decides what the server has said
- * about the flow — a refusal of this page's deploy, or a problem in the server's own file — and the
- * canvas, the tab and the inspector all mark that one answer. What the flow lacks to be a whole
- * program — a way out with no wire, a node nothing leads to, a loop nothing comes back to — it works
- * out for itself, from the flow, as the reader draws.
+ * about the flow — a refusal of this page's save or test, or a problem in the server's own file —
+ * and the canvas, the tab and the inspector all mark that one answer. What the flow lacks to be a
+ * whole program — a way out with no wire, a node nothing leads to, a loop nothing comes back to —
+ * it works out for itself, from the flow, as the reader draws.
  */
 export function FlowCanvas({ flow, problems }: { flow: FlowDto; problems: Problems }) {
   const edit = useFlowDraftStore((state) => state.edit);
@@ -491,12 +491,12 @@ export function FlowCanvas({ flow, problems }: { flow: FlowDto; problems: Proble
 
   // Backspace and Delete take away what is picked, and only while the keyboard is in the canvas.
   // React Flow listens for them on the whole document, where a node picked a while ago went when
-  // the reader pressed Backspace on a tab, on Deploy or in the palette, out of their sight. So it
-  // has no key of its own, and the canvas edits the draft itself — through flowDocument, which
-  // keeps the program whole: a step taken out of a chain leaves the chain joined over it, and the
-  // Start, where every run begins, is never taken out. A key held with another is somebody's
-  // shortcut, and a key in a box takes away a letter. And a key on a button or a link is that
-  // control's own — the zoom panel's, in the corner — and not about what is picked: a Backspace
+  // the reader pressed Backspace on a tab, on a button beside the tabs or in the palette, out of
+  // their sight. So it has no key of its own, and the canvas edits the draft itself — through
+  // flowDocument, which keeps the program whole: a step taken out of a chain leaves the chain joined
+  // over it, and the Start, where every run begins, is never taken out. A key held with another is
+  // somebody's shortcut, and a key in a box takes away a letter. And a key on a button or a link is
+  // that control's own — the zoom panel's, in the corner — and not about what is picked: a Backspace
   // there would take away whatever is, maybe a node panned out of sight a while ago.
   //
   // What goes may be what the keyboard is on: the node, a wire of it, the box round nodes picked
@@ -775,7 +775,7 @@ function WireView({
 
     seen.current = count;
 
-    // A count that went down is the flow starting again after a deploy, or stopping: nothing went
+    // A count that went down is the flow starting again after an Update, or stopping: nothing went
     // down the wire, so nothing lights, and a light still on from before goes out with it.
     if (count < before) {
       setFlash(false);

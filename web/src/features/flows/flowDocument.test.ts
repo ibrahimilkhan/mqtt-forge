@@ -179,6 +179,15 @@ describe('flow document', () => {
     expect(madeAgain).toBe(0);
   });
 
+  // Activate and Deactivate switch a flow on and off; nothing on the canvas does. So a flow switched
+  // on or off — here or on another console — leaves every draft of it standing as it stood.
+  it('takes a flow switched on or off for the same flow, since a draft never changes that', () => {
+    const flow = emptyFlow('Flow 1');
+
+    expect(sameFlow(flow, { ...flow, enabled: true })).toBe(true);
+    expect(fingerprint(flow)).toBe(fingerprint({ ...flow, enabled: true }));
+  });
+
   it('lays drafts over the deployed flows, deployed order first and new drafts after', () => {
     const deployed = [emptyFlow('One'), emptyFlow('Two')];
     const renamed = { ...deployed[1], name: 'Two, renamed' };
@@ -210,14 +219,23 @@ describe('flow document', () => {
   describe('how a draft stands', () => {
     const v1 = chain();
     const v2 = { ...v1, name: 'Chain, from another console' };
-    const edited = { ...v1, enabled: false };
+    const edited = { ...v1, name: 'Chain, edited here' };
 
     it('holds nothing of the reader\'s when it says what the server has', () => {
       expect(standingOf({ ...v1 }, fingerprint(v1), v1)).toBe('nothing');
       expect(standingOf({ ...v2 }, fingerprint(v1), v2)).toBe('nothing');
     });
 
-    it('is a change to deploy when it is an edit of the copy the server has, or of a flow the server never had', () => {
+    // Switched off on another console since, the copy is still the one the draft was started from.
+    it('holds nothing of the reader\'s when it differs from the server\'s copy only in being switched on or off', () => {
+      expect(standingOf({ ...v1, enabled: false }, fingerprint(v1), v1)).toBe('nothing');
+    });
+
+    it('is still an edit of the server\'s copy once another console has switched that copy off', () => {
+      expect(standingOf(edited, fingerprint(v1), { ...v1, enabled: false })).toBe('changed');
+    });
+
+    it('is a change to save when it is an edit of the copy the server has, or of a flow the server never had', () => {
       expect(standingOf(edited, fingerprint(v1), v1)).toBe('changed');
       expect(standingOf(edited, null, undefined)).toBe('changed');
     });

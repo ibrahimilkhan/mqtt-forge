@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, type FocusEvent, type KeyboardEvent } from 'react';
+import { useCallback, useLayoutEffect, useRef, type FocusEvent, type KeyboardEvent } from 'react';
 import type { FlowDto } from '../../types/api';
 import { Warning } from '../brand/icons';
 import { titleOf } from './flowDocument';
@@ -23,61 +23,77 @@ export function focusShownTab() {
   if (tab) document.getElementById(tab)?.focus();
 }
 
+/** Why Activate and Update are off for a draft held back, on the buttons themselves. */
+const HELD = 'Changed on the server since you started — keep yours or discard it in the flow’s pane first.';
+
+/** The same, for a draft of a flow another console has deleted, which the tab says in those words. */
+const GONE = 'Deleted on the server since you started — keep yours or discard it in the flow’s pane first.';
+
 type Props = {
   flows: FlowDto[];
-  /** Flows with a draft Deploy sends: an edit of what the server has, or a flow it never had. */
+  /**
+   * Flows with a draft Activate and Update send: an edit of what the server has, or a flow it never
+   * had.
+   */
   changed: ReadonlySet<string>;
   /**
-   * Flows whose draft was started from a copy the server has since replaced, or deleted. Deploy
-   * holds them back until the reader keeps or discards them, in the flow's own pane.
+   * Flows whose draft was started from a copy the server has since replaced, or deleted. Activate
+   * and Update hold them back until the reader keeps or discards them, in the flow's own pane.
    */
   overtaken: ReadonlySet<string>;
   /** Flows the server has, whatever their drafts say. */
   deployed: ReadonlySet<string>;
   current: string;
-  /** Flows running now. */
+  /** Flows the server has switched on: each runs for the application's life. */
+  active: ReadonlySet<string>;
+  /** Flows with a run going: their own, or a test. */
   running: ReadonlySet<string>;
-  /** Flows the server has said something is wrong with: a refused deploy, or a problem in its file. */
+  /** Flows with a test going. */
+  testing: ReadonlySet<string>;
+  /**
+   * Flows the server has said something is wrong with: a refused save or test, or a problem in its
+   * file.
+   */
   refused: ReadonlySet<string>;
-  deploying: boolean;
+  /** A save or a test start is out. */
+  busy: boolean;
   onNew: () => void;
   /**
-   * Puts the flow on screen back to what is running. Left out when there is nothing to go back to,
-   * and for a draft held back, whose pane has the choice.
+   * Puts the flow on screen back to the copy the server has. Left out when there is nothing to go
+   * back to, and for a draft held back, whose pane has the choice.
    */
   onDiscard?: () => void;
-  onDeploy: () => void;
+  onTest: () => void;
+  onStop: () => void;
+  onActivate: () => void;
+  /** Saves the change to a flow that is on. Left out while there is none. */
+  onUpdate?: () => void;
+  /** Switches off a flow that is on. Left out for one that is not. */
+  onDeactivate?: () => void;
 };
 
 /**
- * What a tab's lamp and dot say, in words, for a reader who cannot see them. A flow never deployed
- * is not deployed; one that was, and has been edited since, is still running what was deployed, so
- * it is its changes that are not. A draft the server moved on from under says that instead.
+ * What a tab's lamp and dot say, in words, for a reader who cannot see them. Whether the flow runs
+ * is said of every flow, since one the server does not have runs too while it is tested. A flow the
+ * server does not have is not saved; one it has, and that has been edited since, goes on running
+ * the copy that was saved, so it is its changes that are not. A draft the server moved on from
+ * under says that instead.
  *
  * The lamp shows a refusal over whether the flow runs, and the words say both: a flow whose new
  * version was refused goes on running the one it had.
  */
 function stateOf(flowId: string, { changed, overtaken, deployed, running, refused }: Props): string {
-  const runs = running.has(flowId) ? 'running' : deployed.has(flowId) ? 'not running' : null;
+  const runs = running.has(flowId) ? 'running' : 'not running';
   const verdict = refused.has(flowId) ? 'refused' : null;
   const draft = overtaken.has(flowId)
     ? `${deployed.has(flowId) ? 'changed' : 'deleted'} on the server since you started`
     : !deployed.has(flowId)
-      ? 'not deployed'
+      ? 'not saved'
       : changed.has(flowId)
-        ? 'changes not deployed'
+        ? 'changes not saved'
         : null;
 
   return [runs, verdict, draft].flatMap((words) => (words ? [`, ${words}`] : [])).join('');
-}
-
-/** What the count beside Deploy says: the changes it sends, and the ones it holds back. */
-function tally(count: number, held: number): string {
-  const said = [
-    ...(count > 0 ? [`${count} ${count === 1 ? 'change' : 'changes'}`] : []),
-    ...(held > 0 ? [`${held} held back`] : []),
-  ];
-  return said.length > 0 ? said.join(' · ') : 'All deployed';
 }
 
 /**
@@ -108,33 +124,73 @@ function step(key: string, at: number, count: number): number | null {
 }
 
 /**
- * The flows as tabs, and the one action that changes what runs.
+ * The flows as tabs, and what can be done with the one on screen.
  *
- * Deploy sends every changed flow, not the one on screen: a reader who edited two flows and
- * pressed Deploy meant both, and a button that quietly left one behind would leave a draft
- * nobody remembers making. The one kind it does leave behind says so, beside it and on its tab: a
- * draft of a copy another console has since replaced or deleted, which would undo that console's
- * work. Discard is only about the flow on screen, and only offered when that flow has a deployed
- * version to go back to. For a flow never deployed, going back would throw the whole flow away,
- * and that is Delete flow's job, which asks first. A draft held back has its Discard in its own
- * pane, beside Keep mine, under the sentence that says why.
+ * ▶ Test runs the drawing on screen once, as it stands, and saves nothing: the way to find out what
+ * a drawing does before anything depends on it. While that test runs, the button is ■ Stop.
+ * Activate saves the flow and runs it for the application's life, with this page open or not. A
+ * flow that is on has Deactivate instead, which switches it off and keeps it — the server's copy,
+ * so a drawing the server would refuse can never keep a flow from being stopped — and, once it has
+ * changes, Update beside it, which saves them and starts its run again from Start. Each is about the
+ * flow on screen and no other: a reader who pressed one meant the flow they were looking at, and a
+ * button that also sent a draft on another tab would send one nobody remembers making.
+ *
+ * Activate and Update hold back a draft another console has overtaken — replaced or deleted the
+ * copy it was started from — which sent as it stands would undo that console's work. They say so,
+ * as the tab does, and the flow's own pane has Keep mine and Discard under the sentence that says
+ * why. Discard here is about the drawing: it puts the flow on screen back to the server's copy, and
+ * is only offered when there is one to go back to. For a flow never saved, going back would throw
+ * the whole flow away, and that is Delete flow's job, which asks first.
  *
  * The tabs are one stop on the Tab key, and the arrows, Home and End go along them. Selection
  * follows the focus: showing a flow is instant, and a reader going along the tabs is looking for
  * one. The + stands outside the list, which may own tabs and nothing else.
  */
 export function Toolbar(props: Props) {
-  const { flows, changed, overtaken, current, running, refused, deploying, onNew, onDiscard, onDeploy } = props;
+  const {
+    flows,
+    changed,
+    overtaken,
+    deployed,
+    current,
+    active,
+    running,
+    testing,
+    refused,
+    busy,
+    onNew,
+    onDiscard,
+    onTest,
+    onStop,
+    onActivate,
+    onUpdate,
+    onDeactivate,
+  } = props;
   const show = useFlowDraftStore((state) => state.show);
-  const deployButton = useRef<HTMLButtonElement>(null);
-  const nothing = changed.size === 0;
+  const held = overtaken.has(current);
+  const heldWhy = deployed.has(current) ? HELD : GONE;
 
-  // A run that leaves nothing to deploy turns Deploy off in the hand that pressed it, and a browser
-  // drops the focus of a button that cannot be pressed. The reader goes to the tab of the flow they
-  // were on rather than to the top of the document. Before the paint, while the button still has it.
+  // A button that takes itself away — Activate turning into Deactivate once the flow is on, Test
+  // into Stop once its test runs, Update going once its change is saved — takes the keyboard with
+  // it, and a browser hands that to the body: the next Tab starts again from the top of the
+  // document. The reader goes to the tab of the flow on screen instead, as they did when Deploy
+  // turned off. A button says as it goes whether it had the keyboard, the last moment it can; the
+  // tab takes it once the change is drawn, before the paint — unless something else has taken it.
+  // Test and Stop are told apart by their keys, so Stop is a button of its own and not Test with
+  // another word on it, where a second press of the key that started a test would stop it.
+  const fell = useRef(false);
+  const going = useCallback((button: HTMLButtonElement | null) => {
+    if (button === null) return;
+    return () => {
+      if (document.activeElement === button) fell.current = true;
+    };
+  }, []);
+
   useLayoutEffect(() => {
-    if (nothing && document.activeElement === deployButton.current) focusTab(current);
-  }, [current, nothing]);
+    if (!fell.current) return;
+    fell.current = false;
+    if (document.activeElement === null || document.activeElement === document.body) focusTab(current);
+  });
 
   const onKeyDown = (event: KeyboardEvent) => {
     // A modified arrow is the browser's — Alt and Left is Back — not the list's.
@@ -192,12 +248,9 @@ export function Toolbar(props: Props) {
         </button>
       </div>
 
-      <span className={styles.count} aria-live="polite">
-        {tally(changed.size, overtaken.size)}
-      </span>
-
       {onDiscard && (
         <button
+          ref={going}
           type="button"
           className="ghost ends"
           onClick={() => {
@@ -210,21 +263,76 @@ export function Toolbar(props: Props) {
         </button>
       )}
 
-      {/* Off while a run is out, but said rather than set: a button switched off in the hand that
-          pressed it loses the focus in some browsers, and a run that ends in a refusal leaves it
-          on again with the reader still on it. */}
-      <button
-        ref={deployButton}
-        type="button"
-        className={styles.deploy}
-        disabled={nothing}
-        aria-disabled={deploying || undefined}
-        onClick={() => {
-          if (!deploying) onDeploy();
-        }}
-      >
-        {deploying ? 'Deploying…' : 'Deploy'}
-      </button>
+      {/* Off while a save or a test start is out, but said rather than set: a button switched off
+          in the hand that pressed it loses the focus in some browsers, and a save that ends in a
+          refusal leaves it on again with the reader still on it. Activate and Update are off the
+          same way for a draft held back, and say why where the pointer and a screen reader find it. */}
+      {testing.has(current) ? (
+        <button
+          key="stop"
+          ref={going}
+          type="button"
+          className="ghost"
+          aria-disabled={busy || undefined}
+          onClick={() => !busy && onStop()}
+        >
+          ■ Stop
+        </button>
+      ) : (
+        <button
+          key="test"
+          ref={going}
+          type="button"
+          className="ghost"
+          aria-disabled={busy || undefined}
+          onClick={() => !busy && onTest()}
+        >
+          ▶ Test
+        </button>
+      )}
+      {!active.has(current) ? (
+        <button
+          key="activate"
+          ref={going}
+          type="button"
+          className={styles.activate}
+          aria-disabled={busy || held || undefined}
+          data-held={held ? '' : undefined}
+          title={held ? heldWhy : undefined}
+          onClick={() => !busy && !held && onActivate()}
+        >
+          Activate
+        </button>
+      ) : (
+        <>
+          {onUpdate && (
+            <button
+              key="update"
+              ref={going}
+              type="button"
+              className={styles.activate}
+              aria-disabled={busy || held || undefined}
+              data-held={held ? '' : undefined}
+              title={held ? heldWhy : undefined}
+              onClick={() => !busy && !held && onUpdate()}
+            >
+              Update
+            </button>
+          )}
+          {onDeactivate && (
+            <button
+              key="deactivate"
+              ref={going}
+              type="button"
+              className="ghost ends"
+              aria-disabled={busy || undefined}
+              onClick={() => !busy && onDeactivate()}
+            >
+              Deactivate
+            </button>
+          )}
+        </>
+      )}
     </div>
   );
 }

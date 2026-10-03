@@ -16,7 +16,7 @@ import { useFlowDraftStore } from './flowDraftStore';
 import { NodeSettings, type Facts } from './NodeSettings';
 import { specOf } from './nodeTypes';
 import { focusShownTab } from './Toolbar';
-import { putInList } from './useDeploy';
+import { putInList } from './useSave';
 import styles from './Inspector.module.css';
 
 type Props = {
@@ -198,7 +198,7 @@ function FlowPane({ flow, deployed, running, overtaken, problems }: FlowPaneProp
         ? 'Not on the server.'
         : 'Never deployed.'
       : deployed.enabled
-        ? 'Not running. Deploy it to start it.'
+        ? 'Active, not running.'
         : 'Off.';
 
   return (
@@ -207,14 +207,15 @@ function FlowPane({ flow, deployed, running, overtaken, problems }: FlowPaneProp
         <h3 className={styles.title}>{titleOf(flow)}</h3>
       </div>
 
-      {/* Sent as it stands, this draft would undo what another console deployed, or bring back a
-          flow somebody deleted. So Deploy leaves it out until the reader says which it is to be. */}
+      {/* Sent as it stands, this draft would undo what another console saved, or bring back a flow
+          somebody deleted. So Activate and Update hold it back until the reader says which it is
+          to be. */}
       {overtaken && (
         <div className={styles.overtaken}>
           <p className={panel.fault}>
             {deployed
-              ? 'Changed on the server since you started, so Deploy holds your changes back. Keep yours to deploy them over it, or discard them for what the server has now.'
-              : 'Deleted on the server since you started, so Deploy holds your changes back. Keep yours to deploy the flow again, or discard them.'}
+              ? 'Changed on the server since you started, so Activate and Update hold your changes back. Keep yours to save them over it, or discard them for what the server has now.'
+              : 'Deleted on the server since you started, so Activate holds your changes back. Keep yours to save the flow again, or discard them.'}
           </p>
           <div className={panel.actions}>
             <button type="button" className="ghost" onClick={() => choose(() => rebase(flow.id, deployed ? fingerprint(deployed) : null))}>
@@ -255,7 +256,7 @@ function FlowPane({ flow, deployed, running, overtaken, problems }: FlowPaneProp
       {fault !== null && <p className={panel.fault}>{fault}</p>}
 
       {flow.nodes.length === 0 && (
-        <p className={panel.hint}>Add a trigger from the left, wire it to an action, and press Deploy.</p>
+        <p className={panel.hint}>Add a trigger from the left, wire it to an action, and press ▶ Test.</p>
       )}
 
       {!asking ? (
@@ -277,7 +278,7 @@ function FlowPane({ flow, deployed, running, overtaken, problems }: FlowPaneProp
             <button type="button" className="ghost" onClick={() => setAsking(false)}>
               Keep it
             </button>
-            {/* Off while the delete is out, but said rather than set, as Deploy is: a button switched
+            {/* Off while the delete is out, but said rather than set, as Activate is: a button switched
                 off in the hand that pressed it loses the focus in some browsers, and a delete that
                 fails leaves the reader on it to try again. */}
             <button

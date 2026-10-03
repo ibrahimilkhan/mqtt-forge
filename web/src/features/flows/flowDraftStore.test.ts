@@ -389,4 +389,25 @@ describe('two tabs', () => {
     expect(other.getState().drafts[theirs.id]).toBeUndefined();
     expect(other.getState().drafts[mine.id]?.name).toBe('Mine');
   });
+
+  // A refusal is the server's answer about what it was sent: a draft, or the server's own copy of a
+  // flow with none, which a Test sends. One about a draft the other tab let go has nothing left to
+  // be about; one about the server's copy had no draft to go with.
+  it('let a refusal go with the draft the other let go, and keep a refusal of the server\'s copy', () => {
+    const other = createFlowDraftStore();
+    const drafted = emptyFlow('Drafted');
+    const copy = emptyFlow('Only on the server');
+    let before = held();
+    useFlowDraftStore.getState().put(drafted);
+    announce(before);
+    other.getState().refuse(drafted.id, { flow: ['Name the flow.'] });
+    other.getState().refuse(copy.id, { flow: ['Name the flow.'] });
+
+    before = held();
+    useFlowDraftStore.getState().discard(drafted.id);
+    announce(before);
+
+    expect(other.getState().drafts[drafted.id]).toBeUndefined();
+    expect(Object.keys(other.getState().refusals)).toEqual([copy.id]);
+  });
 });

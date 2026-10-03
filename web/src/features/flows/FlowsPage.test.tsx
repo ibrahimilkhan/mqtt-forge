@@ -35,7 +35,7 @@ beforeEach(() => {
 });
 
 /**
- * The flows the server has, each a whole flowchart, as the page deploys one: every way out wired,
+ * The flows the server has, each a whole flowchart, as the page saves one: every way out wired,
  * every node reached from the Start. The watch reads a message and asks whether it runs hot, and
  * either way the run ends there.
  */
@@ -105,7 +105,7 @@ async function turns(count = 5) {
   for (let turn = 0; turn < count; turn++) await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
 }
 
-/** The answer the server gives a deploy it refuses. */
+/** The answer the server gives a save or a test it refuses. */
 const refusal = (errors: Record<string, string[]>) =>
   HttpResponse.json(
     { title: 'The flow was not deployed', detail: Object.values(errors)[0][0], reason: 'flowInvalid', errors },
@@ -156,6 +156,42 @@ function keeping(initial: FlowDto[] = [], over: Partial<FlowsDto> = {}) {
   return { kept, puts, deletes, reads: () => lists };
 }
 
+/** The list as the server sends it, with these flows and nothing wrong with any of them. */
+const listOf = (flows: FlowDto[]): FlowsDto => ({
+  flows,
+  problems: [],
+  unreadable: false,
+  allowWebhooks: true,
+  alertTopicPrefix: 'mqttforge/alerts/',
+});
+
+/** The flows the server of the case drawn last has, as renderPage serves them. */
+let served: FlowDto[] = [];
+
+/**
+ * The page over a server that has these flows and answers nothing else of its own: a case that
+ * presses a button answers what it sends with handlers of its own, which catch what was sent.
+ */
+function renderPage(flows: FlowDto[]) {
+  served = flows;
+  server.use(http.get('/api/flows', () => HttpResponse.json(listOf(served))));
+  return render(<FlowsPage />);
+}
+
+/**
+ * A reader's edit of a flow renderPage served, once the page has drawn it: to its draft, or to the
+ * server's copy when it has none yet, which the draft is then of.
+ */
+async function edit(id: string, change: (flow: FlowDto) => FlowDto) {
+  await screen.findByRole('tabpanel');
+  act(() => useFlowDraftStore.getState().edit(served.find((flow) => flow.id === id)!, change));
+}
+
+/** A status push with one run of a flow, a test in this state. */
+const testRun = (flowId: string, state: FlowRunStatusDto['state']): FlowStatusDto => ({
+  runs: [runOf(flowId, { kind: 'test', state })],
+});
+
 describe('Flows page', () => {
   it('offers an example and an empty flow when there are no flows', async () => {
     keeping();
@@ -165,7 +201,18 @@ describe('Flows page', () => {
     expect(screen.getByRole('button', { name: 'New flow' })).toBeInTheDocument();
   });
 
-  it('makes the two example flows as drafts, ready to deploy', async () => {
+  it('says on the empty page how a flow is drawn, tested and kept running', async () => {
+    keeping();
+    render(<FlowsPage />);
+
+    expect(
+      await screen.findByText(
+        'Draw what should happen, step by step, from Start to End — read a message, decide, raise an alarm, publish an answer. Test runs the drawing once; Activate keeps it running on the server, with this page open or not.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('makes the two example flows as drafts, ready to test or activate', async () => {
     keeping();
     render(<FlowsPage />);
 
@@ -176,34 +223,25 @@ describe('Flows page', () => {
       expect.stringContaining('Boiler simulator'),
       expect.stringContaining('Boiler watch'),
     ]);
-    expect(screen.getByText('2 changes')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Boiler simulator, not running, not saved' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Boiler watch, not running, not saved' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '▶ Test' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Activate' })).toBeInTheDocument();
     expect(await screen.findByText('2 s')).toBeInTheDocument();
   });
 
-  it('deploys every changed flow, one request each, and then has nothing left to deploy', async () => {
-    const server = keeping();
-    render(<FlowsPage />);
-
-    await userEvent.click(await screen.findByRole('button', { name: 'Start from an example' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
-
-    await waitFor(() => expect(server.puts.map((flow) => flow.name)).toEqual(['Boiler simulator', 'Boiler watch']));
-    expect(await screen.findByText('All deployed')).toBeInTheDocument();
-    expect(screen.getAllByRole('tab')).toHaveLength(2);
-  });
-
-  it('marks what the server refused and keeps the draft', async () => {
-    keeping([watch]);
+  it('marks what the server refused of an Activate, and keeps the draft', async () => {
+    keeping([{ ...watch, enabled: false }]);
     server.use(
       http.put('/api/flows/watch', () => refusal({ 'node:test': ['Pick a test.'] })),
     );
     render(<FlowsPage />);
 
-    await userEvent.click(await screen.findByRole('checkbox', { name: 'Run it once deployed' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+    await userEvent.type(await screen.findByLabelText('Name'), ' 2');
+    await userEvent.click(screen.getByRole('button', { name: 'Activate' }));
 
     expect(await screen.findByTitle('Pick a test.')).toHaveAttribute('data-problem');
-    expect(screen.getByText('1 change')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Boiler watch 2, not running, refused, changes not saved' })).toBeInTheDocument();
   });
 
   it('puts a flow back to what is running on Discard', async () => {
@@ -216,8 +254,8 @@ describe('Flows page', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
 
-    expect(screen.getByRole('tab', { name: /^Boiler watch/ })).toBeInTheDocument();
-    expect(screen.getByText('All deployed')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Boiler watch, not running' })).toBeInTheDocument();
+    expect(useFlowDraftStore.getState().drafts.watch).toBeUndefined();
   });
 
   it('adds a node from the palette, picked and ready to set up', async () => {
@@ -227,7 +265,7 @@ describe('Flows page', () => {
     await userEvent.click(within(await screen.findByRole('group', { name: 'Nodes' })).getByRole('button', { name: /Publish/ }));
 
     expect(screen.getByRole('heading', { name: 'Publish' })).toBeInTheDocument();
-    expect(screen.getByText('1 change')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Boiler watch, not running, changes not saved' })).toBeInTheDocument();
   });
 
   // Three clicks are three nodes that can each be read and grabbed. Stepped a few pixels from the
@@ -295,7 +333,8 @@ describe('Flows page', () => {
     render(<FlowsPage />);
 
     expect(await screen.findByText(/could not be read/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Deploy' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '▶ Test' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Activate' })).not.toBeInTheDocument();
   });
 
   // The canvas and the inspector are both made again for each flow, and siblings that share a key
@@ -322,56 +361,25 @@ describe('Flows page', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'New flow' }));
 
-    expect(screen.getByRole('tab', { name: /Flow 1/, selected: true })).toBeInTheDocument();
-    expect(screen.getByText('1 change')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Flow 1, not running, not saved', selected: true })).toBeInTheDocument();
     // A tab list owns tabs and nothing else, so the button that adds one stands beside it.
     expect(within(screen.getByRole('tablist')).queryAllByRole('button')).toEqual([]);
   });
 
   // Back to what is running means nothing for a flow that has never run. Throwing the whole flow
   // away is what Delete flow does, and that asks first.
-  it('offers no Discard for a flow that was never deployed', async () => {
+  it('offers no Discard for a flow that was never saved', async () => {
     keeping();
     render(<FlowsPage />);
 
     await userEvent.click(await screen.findByRole('button', { name: 'Start from an example' }));
 
-    expect(screen.getByText('2 changes')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Boiler simulator, not running, not saved' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Discard' })).not.toBeInTheDocument();
   });
 
-  // What was typed while the request was out is newer than what went, and was never deployed.
-  it('keeps what was typed while a deploy was on its way', async () => {
-    const { kept } = keeping([watch]);
-    let answer = () => {};
-    const held = new Promise<void>((resolve) => (answer = resolve));
-    server.use(
-      http.put('/api/flows/:id', async ({ request }) => {
-        const flow = (await request.json()) as FlowDto;
-        await held;
-        kept[0] = flow;
-        return HttpResponse.json({ flow });
-      }),
-    );
-    render(<FlowsPage />);
-
-    const name = await screen.findByLabelText('Name');
-    await userEvent.type(name, ' 2');
-    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
-    await screen.findByRole('button', { name: 'Deploying…' });
-
-    await userEvent.type(name, 'b');
-    answer();
-
-    await screen.findByRole('button', { name: 'Deploy' });
-    expect(kept[0].name).toBe('Boiler watch 2');
-    expect(screen.getByRole('tab', { name: /Boiler watch 2b/ })).toBeInTheDocument();
-    expect(screen.getByText('1 change')).toBeInTheDocument();
-  });
-
-  // Taken back to the copy the server had while the change was on its way, the draft is not
-  // nothing: the server is about to have the change, and what was typed says to undo it.
-  it('keeps an edit taken back while the deploy of it was on its way', async () => {
+  // What was typed while the request was out is newer than what went, and was never saved.
+  it('keeps what was typed while a save was on its way', async () => {
     const { kept } = keeping([watch]);
     const answer = held();
     server.use(
@@ -383,18 +391,47 @@ describe('Flows page', () => {
       }),
     );
     render(<FlowsPage />);
+    const update = () => screen.getByRole('button', { name: 'Update' });
 
     const name = await screen.findByLabelText('Name');
     await userEvent.type(name, ' 2');
-    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
-    await screen.findByRole('button', { name: 'Deploying…' });
+    await userEvent.click(update());
+    await waitFor(() => expect(update()).toHaveAttribute('aria-disabled', 'true'));
+
+    await userEvent.type(name, 'b');
+    answer.release();
+
+    await waitFor(() => expect(update()).not.toHaveAttribute('aria-disabled'));
+    expect(kept[0].name).toBe('Boiler watch 2');
+    expect(screen.getByRole('tab', { name: 'Boiler watch 2b, not running, changes not saved' })).toBeInTheDocument();
+  });
+
+  // Taken back to the copy the server had while the change was on its way, the draft is not
+  // nothing: the server is about to have the change, and what was typed says to undo it.
+  it('keeps an edit taken back while the save of it was on its way', async () => {
+    const { kept } = keeping([watch]);
+    const answer = held();
+    server.use(
+      http.put('/api/flows/:id', async ({ request }) => {
+        const flow = (await request.json()) as FlowDto;
+        await answer.until;
+        kept[0] = flow;
+        return HttpResponse.json({ flow });
+      }),
+    );
+    render(<FlowsPage />);
+    const update = () => screen.getByRole('button', { name: 'Update' });
+
+    const name = await screen.findByLabelText('Name');
+    await userEvent.type(name, ' 2');
+    await userEvent.click(update());
+    await waitFor(() => expect(update()).toHaveAttribute('aria-disabled', 'true'));
     await userEvent.type(name, '{Backspace}{Backspace}');
     answer.release();
 
-    await screen.findByRole('button', { name: 'Deploy' });
+    await waitFor(() => expect(update()).not.toHaveAttribute('aria-disabled'));
     expect(kept[0].name).toBe('Boiler watch 2');
-    expect(screen.getByRole('tab', { name: 'Boiler watch, not running, changes not deployed' })).toBeInTheDocument();
-    expect(screen.getByText('1 change')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Boiler watch, not running, changes not saved' })).toBeInTheDocument();
   });
 
   it('says when the flows cannot be read at all', async () => {
@@ -406,7 +443,7 @@ describe('Flows page', () => {
   });
 
   // A read that fails once the flows are on screen takes nothing away: the drafts are all still
-  // here, and a deploy says for itself when the server is not there.
+  // here, and a save says for itself when the server is not there.
   it('keeps the flows on screen when a later read fails', async () => {
     keeping([watch]);
     const { queryClient } = render(<FlowsPage />);
@@ -499,22 +536,61 @@ describe('where the keyboard goes', () => {
     expect(document.activeElement).toBe(shownTab());
   });
 
-  it('goes to the tab when a deploy leaves nothing to deploy', async () => {
+  it('goes to the tab when Activate becomes Deactivate', async () => {
+    keeping([{ ...watch, enabled: false }]);
+    render(<FlowsPage />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Activate' }));
+
+    expect(await screen.findByRole('button', { name: 'Deactivate' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Activate' })).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(shownTab());
+  });
+
+  it('goes to the tab when Deactivate becomes Activate', async () => {
+    keeping([watch]);
+    render(<FlowsPage />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Deactivate' }));
+
+    expect(await screen.findByRole('button', { name: 'Activate' })).toBeInTheDocument();
+    expect(document.activeElement).toBe(shownTab());
+  });
+
+  it('goes to the tab when Update has saved the change, and goes with it', async () => {
     keeping([watch]);
     render(<FlowsPage />);
     await userEvent.type(await screen.findByLabelText('Name'), ' 2');
 
-    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Update' }));
 
-    expect(await screen.findByText('All deployed')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Update' })).not.toBeInTheDocument());
     expect(document.activeElement).toBe(shownTab());
   });
 
-  // A button that is switched off while it has the focus loses it in some browsers, so while the
-  // run is out Deploy only says it is off, and answers no press. A refusal leaves it on again, with
-  // the reader still on it.
-  it('stays on Deploy while the run is out, and after a refusal', async () => {
-    const { puts } = keeping([watch]);
+  // Stop is not Test with another word on it: a second press of the key that started the test would
+  // stop it again.
+  it('goes to the tab when Test becomes Stop', async () => {
+    keeping([watch]);
+    server.use(http.post('/api/flows/:id/test', () => new HttpResponse(null, { status: 202 })));
+    render(<FlowsPage />);
+    const test = () => screen.getByRole('button', { name: '▶ Test' });
+
+    await userEvent.click(await screen.findByRole('button', { name: '▶ Test' }));
+    await waitFor(() => expect(test()).not.toHaveAttribute('aria-disabled'));
+    expect(document.activeElement).toBe(test());
+
+    act(() => useFlowStatusStore.getState().setStatus(testRun('watch', 'running')));
+
+    expect(screen.getByRole('button', { name: '■ Stop' })).toBeInTheDocument();
+    expect(document.activeElement).toBe(shownTab());
+  });
+
+  // A button that is switched off while it has the focus loses it in some browsers, so while a save
+  // is out Activate only says it is off, and answers no press — and so does every button beside it.
+  // A refusal leaves them on again, with the reader still on Activate.
+  it('stays on Activate while the save is out, and after a refusal', async () => {
+    const { puts } = keeping([{ ...watch, enabled: false }]);
     const answer = held();
     server.use(
       http.put('/api/flows/watch', async ({ request }) => {
@@ -525,17 +601,19 @@ describe('where the keyboard goes', () => {
     );
     render(<FlowsPage />);
     await userEvent.type(await screen.findByLabelText('Name'), ' 2');
+    const activate = screen.getByRole('button', { name: 'Activate' });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
-    const running = await screen.findByRole('button', { name: 'Deploying…' });
-    expect(running).toBeEnabled();
-    expect(running).toHaveAttribute('aria-disabled', 'true');
-    expect(document.activeElement).toBe(running);
-    await userEvent.click(running);
+    await userEvent.click(activate);
+    await waitFor(() => expect(activate).toHaveAttribute('aria-disabled', 'true'));
+    expect(activate).toBeEnabled();
+    expect(screen.getByRole('button', { name: '▶ Test' })).toHaveAttribute('aria-disabled', 'true');
+    expect(document.activeElement).toBe(activate);
+    await userEvent.click(activate);
 
     answer.release();
     expect(await screen.findByTitle('Pick a test.')).toBeInTheDocument();
-    expect(document.activeElement).toBe(await screen.findByRole('button', { name: 'Deploy' }));
+    await waitFor(() => expect(activate).not.toHaveAttribute('aria-disabled'));
+    expect(document.activeElement).toBe(activate);
     expect(puts).toHaveLength(1);
   });
 
@@ -600,8 +678,9 @@ describe('where the keyboard goes', () => {
 
 /**
  * Backspace and Delete take away what is picked on the canvas, and only from the canvas. A node
- * stays picked while the reader goes on to a tab, to Deploy or to the palette, and a Backspace
- * pressed there is about that control: taking the node away would lose it out of sight.
+ * stays picked while the reader goes on to a tab, to the buttons beside the tabs or to the palette,
+ * and a Backspace pressed there is about that control: taking the node away would lose it out of
+ * sight.
  */
 describe('the delete keys', () => {
   /** A node on the canvas, by the name its type is drawn with. The palette has one of each too. */
@@ -626,12 +705,13 @@ describe('the delete keys', () => {
   it('leave the picked node alone while the keyboard is on a tab, or on a button above the canvas', async () => {
     keeping([watch]);
     render(<FlowsPage />);
-    // A change, so there is a Discard and a Deploy to be on.
+    // A change, so there is a Discard and an Update to be on.
     await userEvent.type(await screen.findByLabelText('Name'), ' 2');
     fireEvent.click(await drawn('If'));
     expect(useFlowDraftStore.getState().selected).toBe('test');
 
-    for (const control of [shownTab(), screen.getByRole('button', { name: 'Discard' }), screen.getByRole('button', { name: 'Deploy' })]) {
+    const buttons = ['Discard', '▶ Test', 'Update', 'Deactivate'].map((name) => screen.getByRole('button', { name }));
+    for (const control of [shownTab(), ...buttons]) {
       act(() => control.focus());
       await userEvent.keyboard('{Backspace}{Delete}');
       // Give anything the keys set going its turns before saying they took nothing.
@@ -645,8 +725,9 @@ describe('the delete keys', () => {
 
 describe('the tabs', () => {
   // The lamp and the dot are drawn, and hidden from a screen reader, so the tab says in words what
-  // they say. A flow that is running an older version of itself is not "not deployed": its edits are.
-  it('say in their names whether each flow runs, and what of it is not deployed', async () => {
+  // they say. A flow that is running an older version of itself is not "not saved": its edits are.
+  // A flow the server does not have can run too, in a test, so whether it runs is said of it as well.
+  it('say in their names whether each flow runs, and what of it is not saved', async () => {
     keeping([watch]);
     server.use(http.get('/api/flows/status', () => HttpResponse.json(watchHasSeen(0))));
     render(<FlowsPage />);
@@ -654,10 +735,10 @@ describe('the tabs', () => {
     expect(await screen.findByRole('tab', { name: 'Boiler watch, running' })).toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText('Name'), ' 2');
-    expect(screen.getByRole('tab', { name: 'Boiler watch 2, running, changes not deployed' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Boiler watch 2, running, changes not saved' })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'New flow' }));
-    expect(screen.getByRole('tab', { name: 'Flow 1, not deployed' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Flow 1, not running, not saved' })).toBeInTheDocument();
   });
 
   // A run that finished at its End, or was stopped, stays in what the server reports until something
@@ -697,14 +778,14 @@ describe('the tabs', () => {
     expect(await screen.findByRole('tab', { name: 'Boiler watch, not running' })).toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText('Name'), ' 2');
-    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Update' }));
 
     expect(
-      await screen.findByRole('tab', { name: 'Boiler watch 2, not running, refused, changes not deployed' }),
+      await screen.findByRole('tab', { name: 'Boiler watch 2, not running, refused, changes not saved' }),
     ).toBeInTheDocument();
   });
 
-  // A refused deploy leaves the flow running what it ran before, and the tab says both.
+  // A refused Update leaves the flow running what it ran before, and the tab says both.
   it('go on saying a flow runs when the server refuses its changes', async () => {
     keeping([watch]);
     server.use(
@@ -715,10 +796,10 @@ describe('the tabs', () => {
     await screen.findByRole('tab', { name: 'Boiler watch, running' });
 
     await userEvent.type(screen.getByLabelText('Name'), ' 2');
-    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Update' }));
 
     expect(
-      await screen.findByRole('tab', { name: 'Boiler watch 2, running, refused, changes not deployed' }),
+      await screen.findByRole('tab', { name: 'Boiler watch 2, running, refused, changes not saved' }),
     ).toBeInTheDocument();
   });
 
@@ -741,7 +822,7 @@ describe('the tabs', () => {
     expect(ruleOf(toolbarSheet, ".tab[data-state='running'] .lamp")).toMatch(/background:/);
 
     await userEvent.type(screen.getByLabelText('Name'), ' 2');
-    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Update' }));
     await screen.findByTitle('Pick a test.');
 
     expect(lamp(/^Boiler watch 2/).querySelector('svg')).not.toBeNull();
@@ -988,69 +1069,44 @@ describe('the numbers the page reads when it opens', () => {
   });
 });
 
-describe('deploying', () => {
-  it('sends the next flow when one is refused, and lets that one go', async () => {
-    const { puts } = keeping([watch, sim]);
-    server.use(
-      http.put('/api/flows/watch', async ({ request }) => {
-        puts.push((await request.json()) as FlowDto);
-        return refusal({ 'node:test': ['Pick a test.'] });
-      }),
-    );
-    useFlowDraftStore.getState().edit(watch, (flow) => ({ ...flow, name: 'Boiler watch 2' }));
-    useFlowDraftStore.getState().edit(sim, (flow) => ({ ...flow, name: 'Boiler simulator 2' }));
-    render(<FlowsPage />);
-
-    await userEvent.click(await screen.findByRole('button', { name: 'Deploy' }));
-
-    await waitFor(() => expect(puts.map((flow) => flow.name)).toEqual(['Boiler watch 2', 'Boiler simulator 2']));
-    expect(await screen.findByText('1 change')).toBeInTheDocument();
-    expect(useFlowDraftStore.getState().drafts.sim).toBeUndefined();
-    expect(useFlowDraftStore.getState().drafts.watch.name).toBe('Boiler watch 2');
-    expect(useFlowDraftStore.getState().refusals.watch).toEqual({ 'node:test': ['Pick a test.'] });
-  });
-
-  // A draft that says what is already running is no change, however it came to be there.
-  it('sends only the flows that differ from what is running', async () => {
-    const { puts } = keeping([watch, sim]);
+describe('saving', () => {
+  // A draft that says what the server already has is no change, however it came to be there.
+  it('offers nothing to save for a draft that says what the server has', async () => {
+    keeping([watch]);
     useFlowDraftStore.getState().edit(watch, (flow) => ({ ...flow }));
-    useFlowDraftStore.getState().edit(sim, (flow) => ({ ...flow, name: 'Boiler simulator 2' }));
     render(<FlowsPage />);
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Deploy' }));
-
-    expect(await screen.findByText('All deployed')).toBeInTheDocument();
-    expect(puts.map((flow) => flow.id)).toEqual(['sim']);
+    expect(await screen.findByRole('button', { name: 'Deactivate' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Update' })).not.toBeInTheDocument();
+    expect(useFlowDraftStore.getState().drafts.watch).toBeUndefined();
   });
 
-  // A server that cannot write the file will not write the next one either, and a run that went
-  // on would only say so once for every flow.
-  it('stops at a failure that is not a refusal, and says why', async () => {
-    const { puts } = keeping([watch, sim]);
+  // A server that cannot write its file has said nothing about the flow: the draft is as good as it
+  // was, and stays to be sent again.
+  it('says why a save failed for a reason that is not about the flow, and keeps the draft', async () => {
+    const { puts } = keeping([watch]);
     server.use(
       http.put('/api/flows/watch', async ({ request }) => {
         puts.push((await request.json()) as FlowDto);
         return couldNot('The disk is full.');
       }),
     );
-    useFlowDraftStore.getState().edit(watch, (flow) => ({ ...flow, name: 'Boiler watch 2' }));
-    useFlowDraftStore.getState().edit(sim, (flow) => ({ ...flow, name: 'Boiler simulator 2' }));
     render(<FlowsPage />);
+    await userEvent.type(await screen.findByLabelText('Name'), ' 2');
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Deploy' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Update' }));
 
-    expect(await screen.findByText('Not deployed. The disk is full.')).toBeInTheDocument();
-    expect(puts.map((flow) => flow.id)).toEqual(['watch']);
-    expect(screen.getByText('2 changes')).toBeInTheDocument();
+    expect(await screen.findByText('Not saved. The disk is full.')).toBeInTheDocument();
+    expect(puts.map((flow) => flow.name)).toEqual(['Boiler watch 2']);
+    expect(screen.getByRole('tab', { name: 'Boiler watch 2, not running, changes not saved' })).toBeInTheDocument();
   });
 
-  // A read of the list that set off before a flow was deployed answers with the flow as it was.
-  // Let in after the deploy has written the new one, it would put the old flow back under a tab
-  // whose draft has already gone.
-  it('does not let a read that was already out put back the flow a deploy replaced', async () => {
-    const kept = [watch, sim];
-    const watchPut = held();
-    const simPut = held();
+  // A read of the list that set off before a flow was saved answers with the flow as it was. Let in
+  // after the save has written the new one, it would put the old flow back under a tab whose draft
+  // has already gone.
+  it('does not let a read that was already out put back the flow a save replaced', async () => {
+    const kept = [watch];
+    const answer = held();
     const out: string[] = [];
     let reading: ReturnType<typeof held> | null = null;
     let asked = false;
@@ -1060,42 +1116,357 @@ describe('deploying', () => {
         const hold = reading;
         asked = hold !== null;
         if (hold) await hold.until;
-        return HttpResponse.json({ flows, problems: [], unreadable: false, allowWebhooks: true, alertTopicPrefix: 'mqttforge/alerts/' });
+        return HttpResponse.json(listOf(flows));
       }),
       http.put('/api/flows/:id', async ({ params, request }) => {
         const flow = (await request.json()) as FlowDto;
         out.push(String(params.id));
-        await (params.id === 'watch' ? watchPut : simPut).until;
-        kept[kept.findIndex((one) => one.id === flow.id)] = flow;
+        await answer.until;
+        kept[0] = flow;
         return HttpResponse.json({ flow });
       }),
     );
     useFlowDraftStore.getState().edit(watch, (flow) => ({ ...flow, name: 'Boiler watch 2' }));
-    useFlowDraftStore.getState().edit(sim, (flow) => ({ ...flow, name: 'Boiler simulator 2' }));
-    useFlowDraftStore.getState().show('watch');
     const { queryClient } = render(<FlowsPage />);
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Deploy' }));
-    // The window comes back into focus while the first flow is on its way, and the list is read.
-    // On its way, so after the read Deploy makes of its own before it sends.
+    await userEvent.click(await screen.findByRole('button', { name: 'Update' }));
+    // The window comes back into focus while the flow is on its way, and the list is read. On its
+    // way, so after the read the save makes of its own before it sends.
     await waitFor(() => expect(out).toEqual(['watch']));
     const read = held();
     reading = read;
     act(() => void queryClient.invalidateQueries({ queryKey: queryKeys.flows }));
     await waitFor(() => expect(asked).toBe(true));
 
-    watchPut.release();
+    answer.release();
     await waitFor(() => expect(useFlowDraftStore.getState().drafts.watch).toBeUndefined());
     read.release();
     await waitFor(() => expect(queryClient.getQueryState(queryKeys.flows)?.fetchStatus).toBe('idle'));
     await turns();
 
     expect(queryClient.getQueryData<FlowsDto>(queryKeys.flows)?.flows[0].name).toBe('Boiler watch 2');
-    expect(screen.getByRole('tab', { name: /Boiler watch 2/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Boiler watch 2, not running' })).toBeInTheDocument();
+  });
+});
 
-    reading = null;
-    simPut.release();
-    expect(await screen.findByText('All deployed')).toBeInTheDocument();
+describe('test and activate', () => {
+  it('tests the flow as drawn, without saving it, and becomes Stop while the test runs', async () => {
+    let tested: FlowDto | null = null;
+    let saved = false;
+    server.use(
+      http.post('/api/flows/:id/test', async ({ request }) => {
+        tested = (await request.json()) as FlowDto;
+        return new HttpResponse(null, { status: 202 });
+      }),
+      http.put('/api/flows/:id', () => {
+        saved = true;
+        return HttpResponse.json({});
+      }),
+    );
+    renderPage([watch]);
+    await edit('watch', (flow) => ({ ...flow, name: 'Boiler watch 2' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: '▶ Test' }));
+    await waitFor(() => expect(tested?.name).toBe('Boiler watch 2'));
+    expect(saved).toBe(false);
+
+    act(() => useFlowStatusStore.getState().setStatus(testRun('watch', 'running')));
+    expect(await screen.findByRole('button', { name: '■ Stop' })).toBeInTheDocument();
+  });
+
+  it('stops the test run', async () => {
+    let stopped = false;
+    server.use(
+      http.delete('/api/flows/:id/test', () => {
+        stopped = true;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    renderPage([watch]);
+    act(() => useFlowStatusStore.getState().setStatus(testRun('watch', 'running')));
+
+    fireEvent.click(await screen.findByRole('button', { name: '■ Stop' }));
+    await waitFor(() => expect(stopped).toBe(true));
+  });
+
+  // A test the server no longer has ended, or was stopped on another console, since the last push:
+  // it is over, which is what Stop asked for.
+  it('takes a test the server no longer has as stopped, not as a failure', async () => {
+    let asked = false;
+    server.use(
+      http.delete('/api/flows/:id/test', () => {
+        asked = true;
+        return HttpResponse.json(
+          { title: 'No such test', detail: 'There is no test of that flow running.', reason: 'testUnknown' },
+          { status: 404, headers: { 'Content-Type': 'application/problem+json' } },
+        );
+      }),
+    );
+    renderPage([watch]);
+    act(() => useFlowStatusStore.getState().setStatus(testRun('watch', 'running')));
+
+    fireEvent.click(await screen.findByRole('button', { name: '■ Stop' }));
+    await waitFor(() => expect(asked).toBe(true));
+    await turns();
+
+    expect(screen.queryByText(/did not stop/)).not.toBeInTheDocument();
+  });
+
+  it('says a test that did not stop, and why', async () => {
+    server.use(http.delete('/api/flows/:id/test', () => couldNot('The server is starting.', 503)));
+    renderPage([watch]);
+    act(() => useFlowStatusStore.getState().setStatus(testRun('watch', 'running')));
+
+    fireEvent.click(await screen.findByRole('button', { name: '■ Stop' }));
+
+    const said = 'The test did not stop. The server is starting.';
+    expect(await screen.findByText(said)).toBeInTheDocument();
+    expect(outcome(said)).not.toBeNull();
+  });
+
+  it('marks what the server refused in a test, and says the test did not start', async () => {
+    server.use(
+      http.post('/api/flows/:id/test', () =>
+        HttpResponse.json({ title: 'Invalid flow', reason: 'flowInvalid', errors: { 'node:read': ['Give it a filter.'] } }, { status: 400 }),
+      ),
+    );
+    renderPage([watch]);
+
+    fireEvent.click(await screen.findByRole('button', { name: '▶ Test' }));
+    expect(await screen.findByText(/so the test did not start/)).toBeInTheDocument();
+    expect(useFlowDraftStore.getState().refusals.watch).toEqual({ 'node:read': ['Give it a filter.'] });
+  });
+
+  // Named as it was sent, as every line in the region is, and marked where it is wrong.
+  it('says which flow a refused test was of, and marks it on the drawing', async () => {
+    server.use(http.post('/api/flows/:id/test', () => refusal({ 'node:test': ['Pick a test.'] })));
+    renderPage([watch]);
+    await edit('watch', (flow) => ({ ...flow, name: 'Boiler watch 2' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: '▶ Test' }));
+
+    const said = 'The server refused Boiler watch 2, so the test did not start. What it refused is marked on it.';
+    expect(await screen.findByText(said)).toBeInTheDocument();
+    expect(outcome(said)).not.toBeNull();
+    expect(screen.getByTitle('Pick a test.')).toHaveAttribute('data-problem');
+  });
+
+  // What the server refused was a drawing that is not the one running now.
+  it('lets what was refused go once a test starts', async () => {
+    let refuse = true;
+    server.use(
+      http.post('/api/flows/:id/test', () => (refuse ? refusal({ 'node:test': ['Pick a test.'] }) : new HttpResponse(null, { status: 202 }))),
+    );
+    renderPage([watch]);
+    await edit('watch', (flow) => ({ ...flow, name: 'Boiler watch 2' }));
+    fireEvent.click(await screen.findByRole('button', { name: '▶ Test' }));
+    await screen.findByText(/so the test did not start/);
+
+    refuse = false;
+    fireEvent.click(screen.getByRole('button', { name: '▶ Test' }));
+
+    await waitFor(() => expect(useFlowDraftStore.getState().refusals.watch).toBeUndefined());
+    expect(screen.queryByText(/so the test did not start/)).not.toBeInTheDocument();
+    expect(document.querySelector('[data-problem]')).toBeNull();
+  });
+
+  it('says a test that did not start for a reason that is not about the flow', async () => {
+    server.use(http.post('/api/flows/:id/test', () => couldNot('The server is starting.', 503)));
+    renderPage([watch]);
+
+    fireEvent.click(await screen.findByRole('button', { name: '▶ Test' }));
+
+    expect(await screen.findByText('The test did not start. The server is starting.')).toBeInTheDocument();
+  });
+
+  // Every button beside the tabs answers no press while a test start is out, as while a save is.
+  it('holds every button off while a test start is out', async () => {
+    const answer = held();
+    server.use(
+      http.post('/api/flows/:id/test', async () => {
+        await answer.until;
+        return new HttpResponse(null, { status: 202 });
+      }),
+    );
+    renderPage([{ ...watch, enabled: false }]);
+
+    fireEvent.click(await screen.findByRole('button', { name: '▶ Test' }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Activate' })).toHaveAttribute('aria-disabled', 'true'));
+    expect(screen.getByRole('button', { name: '▶ Test' })).toHaveAttribute('aria-disabled', 'true');
+    answer.release();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Activate' })).not.toHaveAttribute('aria-disabled'));
+  });
+
+  it('activates a flow that is off, saving it switched on', async () => {
+    const sent: FlowDto[] = [];
+    server.use(
+      http.put('/api/flows/:id', async ({ request }) => {
+        const flow = (await request.json()) as FlowDto;
+        sent.push(flow);
+        return HttpResponse.json({ flow });
+      }),
+    );
+    renderPage([{ ...watch, enabled: false }]);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Activate' }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0].enabled).toBe(true);
+  });
+
+  it('offers Update and Deactivate for a flow that is on, Update only once it is changed', async () => {
+    renderPage([{ ...watch, enabled: true }]);
+
+    expect(await screen.findByRole('button', { name: 'Deactivate' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Update' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Activate' })).toBeNull();
+
+    await edit('watch', (flow) => ({ ...flow, name: 'Boiler watch 2' }));
+    expect(await screen.findByRole('button', { name: 'Update' })).toBeInTheDocument();
+  });
+
+  it('updates a flow that is on with the change, still switched on', async () => {
+    const sent: FlowDto[] = [];
+    server.use(
+      http.put('/api/flows/:id', async ({ request }) => {
+        const flow = (await request.json()) as FlowDto;
+        sent.push(flow);
+        return HttpResponse.json({ flow });
+      }),
+    );
+    renderPage([watch]);
+    await edit('watch', (flow) => ({ ...flow, name: 'Boiler watch 2' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Update' }));
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toEqual({ ...watch, name: 'Boiler watch 2', enabled: true });
+    await waitFor(() => expect(useFlowDraftStore.getState().drafts.watch).toBeUndefined());
+  });
+
+  it("deactivates the server's copy, and leaves the draft a draft", async () => {
+    const sent: FlowDto[] = [];
+    server.use(
+      http.put('/api/flows/:id', async ({ request }) => {
+        const flow = (await request.json()) as FlowDto;
+        sent.push(flow);
+        return HttpResponse.json({ flow });
+      }),
+    );
+    renderPage([{ ...watch, enabled: true }]);
+    await edit('watch', (flow) => ({ ...flow, name: 'Boiler watch 2' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Deactivate' }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toEqual({ ...watch, enabled: false });
+    expect(useFlowDraftStore.getState().drafts.watch.name).toBe('Boiler watch 2');
+  });
+
+  // Another console saved the flow since this page last read it. What goes back switched off is
+  // what the server has now, read just before: the copy this page read last would put that
+  // console's work back the way it was.
+  it('deactivates the copy the server has now, not the one this page read before', async () => {
+    const v2: FlowDto = { ...watch, name: 'Boiler watch, from another console' };
+    const sent: FlowDto[] = [];
+    server.use(
+      http.put('/api/flows/:id', async ({ request }) => {
+        const flow = (await request.json()) as FlowDto;
+        sent.push(flow);
+        return HttpResponse.json({ flow });
+      }),
+    );
+    renderPage([watch]);
+    await screen.findByRole('button', { name: 'Deactivate' });
+
+    // Another console saves the watch, and this page is not told.
+    served = [v2];
+    fireEvent.click(screen.getByRole('button', { name: 'Deactivate' }));
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toEqual({ ...v2, enabled: false });
+  });
+
+  // Deactivate sends the server's copy, not the drawing, so what the server refuses of it is not
+  // about the drawing either: it is not marked there.
+  it('says a Deactivate the server refused, without marking the drawing', async () => {
+    server.use(http.put('/api/flows/:id', () => refusal({ 'node:test': ['Pick a test.'] })));
+    renderPage([watch]);
+    await edit('watch', (flow) => ({ ...flow, name: 'Boiler watch 2' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Deactivate' }));
+
+    expect(await screen.findByText('Not saved. Pick a test.')).toBeInTheDocument();
+    expect(useFlowDraftStore.getState().refusals.watch).toBeUndefined();
+    expect(document.querySelector('[data-problem]')).toBeNull();
+  });
+
+  /*
+   * A refusal is about the draft that was sent. One discarded while the request was out has nothing
+   * left for the answer to mark: marked on the server's copy, which the page shows in its place, it
+   * would say the server refused a flow nobody sent.
+   */
+
+  it('marks nothing when the draft an Update sent is discarded before the refusal comes', async () => {
+    const answer = held();
+    let reached = false;
+    server.use(
+      http.put('/api/flows/:id', async () => {
+        reached = true;
+        await answer.until;
+        return refusal({ 'node:test': ['Pick a test.'] });
+      }),
+    );
+    renderPage([watch]);
+    await edit('watch', (flow) => ({ ...flow, name: 'Boiler watch 2' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Update' }));
+    await waitFor(() => expect(reached).toBe(true));
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    answer.release();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Deactivate' })).not.toHaveAttribute('aria-disabled'));
+    expect(useFlowDraftStore.getState().refusals.watch).toBeUndefined();
+    expect(screen.queryByText(/^The server refused/)).not.toBeInTheDocument();
+    expect(document.querySelector('[data-problem]')).toBeNull();
+  });
+
+  it('marks nothing when the draft a test sent is discarded before the refusal comes', async () => {
+    const answer = held();
+    let reached = false;
+    server.use(
+      http.post('/api/flows/:id/test', async () => {
+        reached = true;
+        await answer.until;
+        return refusal({ 'node:test': ['Pick a test.'] });
+      }),
+    );
+    renderPage([watch]);
+    await edit('watch', (flow) => ({ ...flow, name: 'Boiler watch 2' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: '▶ Test' }));
+    await waitFor(() => expect(reached).toBe(true));
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    answer.release();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: '▶ Test' })).not.toHaveAttribute('aria-disabled'));
+    expect(useFlowDraftStore.getState().refusals.watch).toBeUndefined();
+    expect(screen.queryByText(/^The server refused/)).not.toBeInTheDocument();
+    expect(document.querySelector('[data-problem]')).toBeNull();
+  });
+
+  // jsdom lays nothing out, so this reads the rule: in a browser, a toolbar short of room shrank
+  // ▶ Test — the one label with a space in it — onto two lines, half again as tall as the buttons
+  // beside it. The tab row is what gives way, and it scrolls.
+  it('keeps each button beside the tabs on one line, at its own size', () => {
+    expect(ruleOf(toolbarSheet, '.toolbar > button')).toMatch(/flex: none/);
+    expect(ruleOf(toolbarSheet, '.toolbar > button')).toMatch(/white-space: nowrap/);
+  });
+
+  it('has no Deploy button any more', async () => {
+    renderPage([watch]);
+
+    await screen.findByRole('button', { name: '▶ Test' });
+    expect(screen.queryByRole('button', { name: /Deploy/ })).toBeNull();
   });
 });
 
@@ -1142,7 +1513,8 @@ describe('at the limits', () => {
     keeping(flows);
     for (const flow of flows) useFlowDraftStore.getState().edit(flow, (one) => ({ ...one, name: `${one.name} 2` }));
     render(<FlowsPage />);
-    await screen.findByText('3 changes');
+    const changed = () => screen.getAllByRole('tab', { name: /, changes not saved$/ });
+    await waitFor(() => expect(changed()).toHaveLength(3));
     const stringify = vi.spyOn(JSON, 'stringify');
 
     act(() => useFlowDraftStore.getState().edit(flows[0], (one) => moveNodes(one, { in: { x: 48, y: 120 } })));
@@ -1153,7 +1525,7 @@ describe('at the limits', () => {
     stringify.mockRestore();
 
     expect(new Set(checked)).toEqual(new Set(['a']));
-    expect(screen.getByText('3 changes')).toBeInTheDocument();
+    expect(changed()).toHaveLength(3);
   });
 });
 
@@ -1402,17 +1774,17 @@ describe('a node this build does not know', () => {
 /**
  * Two consoles editing two different flows must not undo each other's work. A draft that holds
  * nothing of the reader's goes; one started from a copy the server has since replaced or deleted
- * is not deployed over the newer copy unless the reader says so.
+ * is not saved over the newer copy unless the reader says so.
  */
 describe('a draft and the server\'s copy', () => {
-  /** The watch as another console deployed it: the If now asks for more than 95. */
+  /** The watch as another console saved it: the If now asks for more than 95. */
   const v2: FlowDto = {
     ...watch,
     nodes: watch.nodes.map((node) => (node.id === 'test' ? { ...node, config: { ...node.config, value: '95' } } : node)),
   };
 
   /**
-   * Another console deploys or deletes, and this one reads the list again. The query tells the page
+   * Another console saves or deletes, and this one reads the list again. The query tells the page
    * a turn of the clock after the read comes back, so the turns are waited for too.
    */
   const elsewhere = async (queryClient: QueryClient, change: () => void) => {
@@ -1422,23 +1794,23 @@ describe('a draft and the server\'s copy', () => {
   };
 
   // The reviewer's sequence: a letter typed and taken back left a draft of v1 behind, which hid
-  // another console's v2, and went out with the next Deploy of an unrelated flow.
-  it('keeps no draft of an edit taken back, so another console\'s deploy is neither hidden nor undone', async () => {
+  // another console's v2, and went out with the next save of an unrelated flow.
+  it('keeps no draft of an edit taken back, so another console\'s save is neither hidden nor undone', async () => {
     const { kept, puts } = keeping([watch]);
     const { queryClient } = render(<FlowsPage />);
     const name = await screen.findByLabelText('Name');
 
     await userEvent.type(name, 'x');
     await userEvent.type(name, '{Backspace}');
-    expect(screen.getByText('All deployed')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Boiler watch, not running' })).toBeInTheDocument();
     expect(localStorage.getItem(DRAFT_PREFIX + 'watch')).toBeNull();
 
     await elsewhere(queryClient, () => (kept[0] = v2));
     expect(await screen.findByText('$.temp > 95')).toBeInTheDocument();
-    expect(screen.getByText('All deployed')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Boiler watch, not running' })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'New flow' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Activate' }));
 
     await waitFor(() => expect(puts.map((flow) => flow.name)).toEqual(['Flow 1']));
     expect(kept.find((flow) => flow.id === 'watch')).toEqual(v2);
@@ -1447,21 +1819,36 @@ describe('a draft and the server\'s copy', () => {
   it('drops a draft that is back to what is running however it got there, and leaves the pick alone', async () => {
     keeping([watch]);
     render(<FlowsPage />);
-    const run = await screen.findByRole('checkbox', { name: 'Run it once deployed' });
+    const name = await screen.findByLabelText('Name');
 
-    await userEvent.click(run);
-    await userEvent.click(run);
+    await userEvent.type(name, 'x');
+    await userEvent.type(name, '{Backspace}');
     expect(useFlowDraftStore.getState().drafts.watch).toBeUndefined();
 
     act(() => useFlowDraftStore.getState().select('test'));
     act(() => useFlowDraftStore.getState().edit(watch, (flow) => moveNodes(flow, { test: { x: 548, y: 120 } })));
-    expect(screen.getByText('1 change')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Boiler watch, not running, changes not saved' })).toBeInTheDocument();
     act(() => useFlowDraftStore.getState().edit(watch, (flow) => moveNodes(flow, { test: { x: 500, y: 120 } })));
 
     expect(useFlowDraftStore.getState().drafts.watch).toBeUndefined();
-    expect(screen.getByText('All deployed')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Boiler watch, not running' })).toBeInTheDocument();
     expect(useFlowDraftStore.getState().selected).toBe('test');
     expect(screen.getByRole('heading', { name: 'If' })).toBeInTheDocument();
+  });
+
+  // Switched off on another console, the copy is still the one the draft was started from: nothing
+  // on it is what the draft changes, so the draft stands as it stood, and Activate is what is offered.
+  it('leaves a draft standing as it stood when another console switches the flow off', async () => {
+    const { kept, puts } = keeping([watch]);
+    const { queryClient } = render(<FlowsPage />);
+    await userEvent.type(await screen.findByLabelText('Name'), ' 2');
+
+    await elsewhere(queryClient, () => (kept[0] = { ...watch, enabled: false }));
+
+    expect(screen.getByRole('tab', { name: 'Boiler watch 2, not running, changes not saved' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Activate' }));
+
+    await waitFor(() => expect(puts).toEqual([{ ...watch, name: 'Boiler watch 2', enabled: true }]));
   });
 
   it('holds back an edit of a copy another console has since replaced, until the reader keeps it', async () => {
@@ -1475,25 +1862,21 @@ describe('a draft and the server\'s copy', () => {
       await screen.findByRole('tab', { name: 'Boiler watch 2, not running, changed on the server since you started' }),
     ).toBeInTheDocument();
     expect(screen.getByText(/^Changed on the server since you started/)).toBeInTheDocument();
-    expect(screen.getByText('1 held back')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Deploy' })).toBeDisabled();
+    const update = () => screen.getByRole('button', { name: 'Update' });
+    expect(update()).toHaveAttribute('aria-disabled', 'true');
+    expect(update()).toHaveAttribute('title', expect.stringMatching(/^Changed on the server since you started/));
+    await userEvent.click(update());
+    await turns();
+    expect(puts).toEqual([]);
 
-    // Deploy sends the rest and leaves this one out.
-    await userEvent.click(screen.getByRole('button', { name: 'New flow' }));
-    expect(screen.getByText('1 change · 1 held back')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
-    await waitFor(() => expect(puts.map((flow) => flow.name)).toEqual(['Flow 1']));
-    expect(await screen.findByText('1 held back')).toBeInTheDocument();
-    expect(kept.find((flow) => flow.id === 'watch')).toEqual(v2);
-
-    // Kept, it is an ordinary change, and goes with the next Deploy.
-    await userEvent.click(screen.getByRole('tab', { name: /^Boiler watch 2/ }));
+    // Kept, it is an ordinary change, and Update saves it.
     await userEvent.click(screen.getByRole('button', { name: 'Keep mine' }));
-    expect(screen.getByRole('tab', { name: 'Boiler watch 2, not running, changes not deployed' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Boiler watch 2, not running, changes not saved' })).toBeInTheDocument();
     expect(document.activeElement).toBe(screen.getByRole('tab', { selected: true }));
-    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+    expect(update()).not.toHaveAttribute('aria-disabled');
+    await userEvent.click(update());
 
-    await waitFor(() => expect(puts.map((flow) => flow.name)).toEqual(['Flow 1', 'Boiler watch 2']));
+    await waitFor(() => expect(puts.map((flow) => flow.name)).toEqual(['Boiler watch 2']));
   });
 
   // One question and one pair of answers: the pane says why the draft is held back, and Keep mine
@@ -1522,7 +1905,7 @@ describe('a draft and the server\'s copy', () => {
 
     expect(screen.getByText('$.temp > 95')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Boiler watch, not running' })).toBeInTheDocument();
-    expect(screen.getByText('All deployed')).toBeInTheDocument();
+    expect(useFlowDraftStore.getState().drafts.watch).toBeUndefined();
     expect(document.activeElement).toBe(screen.getByRole('tab', { selected: true }));
   });
 
@@ -1538,11 +1921,11 @@ describe('a draft and the server\'s copy', () => {
 
     expect(useFlowDraftStore.getState().drafts.watch).toBeUndefined();
     expect(screen.getByText('$.temp > 95')).toBeInTheDocument();
-    expect(screen.getByText('All deployed')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Boiler watch, not running' })).toBeInTheDocument();
   });
 
-  // A flow deleted on another console must not come back as a new one with the next Deploy.
-  it('holds back an edit of a flow another console has since deleted, and deploys it again only when kept', async () => {
+  // A flow deleted on another console must not come back as a new one with the next Activate.
+  it('holds back an edit of a flow another console has since deleted, and saves it again only when kept', async () => {
     const { kept, puts } = keeping([watch, sim]);
     // On the watch's tab, as a reader who picked it is. With no flow picked the page shows the
     // first, and a flow the server no longer has goes to the end of the row.
@@ -1552,13 +1935,17 @@ describe('a draft and the server\'s copy', () => {
 
     await elsewhere(queryClient, () => kept.splice(0, 1));
 
-    expect(await screen.findByRole('tab', { name: 'Boiler watch 2, deleted on the server since you started' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('tab', { name: 'Boiler watch 2, not running, deleted on the server since you started' }),
+    ).toBeInTheDocument();
     expect(screen.getByText(/^Deleted on the server since you started/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Deploy' })).toBeDisabled();
+    const activate = () => screen.getByRole('button', { name: 'Activate' });
+    expect(activate()).toHaveAttribute('aria-disabled', 'true');
+    expect(activate()).toHaveAttribute('title', expect.stringMatching(/^Deleted on the server since you started/));
 
     await userEvent.click(screen.getByRole('button', { name: 'Keep mine' }));
-    expect(screen.getByRole('tab', { name: 'Boiler watch 2, not deployed' })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+    expect(screen.getByRole('tab', { name: 'Boiler watch 2, not running, not saved' })).toBeInTheDocument();
+    await userEvent.click(activate());
 
     await waitFor(() => expect(puts.map((flow) => flow.name)).toEqual(['Boiler watch 2']));
   });
@@ -1595,8 +1982,8 @@ describe('a draft and the server\'s copy', () => {
 
   /*
    * Two consoles side by side on two screens: neither is ever brought back into focus, and neither
-   * hears the other deploy, so the list the page read last is all it knows. Deploy reads the list
-   * itself before it sends anything.
+   * hears the other save, so the list the page read last is all it knows. Activate and Update read
+   * the list themselves before they send anything.
    */
 
   it('reads the list before it sends, and holds back a draft another console has overtaken since', async () => {
@@ -1605,34 +1992,18 @@ describe('a draft and the server\'s copy', () => {
     await userEvent.type(await screen.findByLabelText('Name'), ' 2');
     const before = reads();
 
-    // Another console deploys the watch, and this one is not told.
+    // Another console saves the watch, and this one is not told.
     kept[0] = v2;
-    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Update' }));
 
     await waitFor(() => expect(reads()).toBeGreaterThan(before));
     expect(puts).toEqual([]);
     expect(
       await screen.findByRole('tab', { name: 'Boiler watch 2, not running, changed on the server since you started' }),
     ).toBeInTheDocument();
-    expect(screen.getByText('1 held back')).toBeInTheDocument();
     expect(screen.getByText(/^Changed on the server since you started/)).toBeInTheDocument();
     expect(puts).toEqual([]);
     expect(kept[0]).toEqual(v2);
-  });
-
-  it('sends the drafts that still stand on the server\'s copy, and holds back only the one overtaken', async () => {
-    const { kept, puts } = keeping([watch, sim]);
-    useFlowDraftStore.getState().edit(watch, (flow) => ({ ...flow, name: 'Boiler watch 2' }));
-    useFlowDraftStore.getState().edit(sim, (flow) => ({ ...flow, name: 'Boiler simulator 2' }));
-    render(<FlowsPage />);
-    await screen.findByText('2 changes');
-
-    kept[0] = v2;
-    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
-
-    await waitFor(() => expect(puts.map((flow) => flow.name)).toEqual(['Boiler simulator 2']));
-    expect(await screen.findByText('1 held back')).toBeInTheDocument();
-    expect(kept.find((flow) => flow.id === 'watch')).toEqual(v2);
   });
 
   it('brings back no flow another console has deleted since, however the page last saw it', async () => {
@@ -1643,29 +2014,31 @@ describe('a draft and the server\'s copy', () => {
     const before = reads();
 
     kept.splice(0, 1);
-    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Update' }));
 
     await waitFor(() => expect(reads()).toBeGreaterThan(before));
     expect(puts).toEqual([]);
-    expect(await screen.findByRole('tab', { name: 'Boiler watch 2, deleted on the server since you started' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('tab', { name: 'Boiler watch 2, not running, deleted on the server since you started' }),
+    ).toBeInTheDocument();
     expect(kept.map((flow) => flow.id)).toEqual(['sim']);
   });
 
-  // Without the list there is no telling which drafts another console has overtaken, so nothing
-  // goes, and the page says why rather than leaving the reader with a Deploy that did nothing.
+  // Without the list there is no telling whether another console has overtaken the draft, so
+  // nothing goes, and the page says why rather than leaving the reader with a press that did nothing.
   it('sends nothing when the list cannot be read first, and says so', async () => {
     const { puts } = keeping([watch]);
     render(<FlowsPage />);
     await userEvent.type(await screen.findByLabelText('Name'), ' 2');
     server.use(http.get('/api/flows', () => couldNot('The server is starting.', 503)));
 
-    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Update' }));
 
-    const said = 'Not deployed. The flows could not be read from the server first, so nothing was sent. The server is starting.';
+    const said = 'Not saved. The flows could not be read from the server first, so nothing was sent. The server is starting.';
     expect(await screen.findByText(said)).toBeInTheDocument();
     expect(outcome(said)).not.toBeNull();
     expect(puts).toEqual([]);
-    expect(screen.getByText('1 change')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Boiler watch 2, not running, changes not saved' })).toBeInTheDocument();
   });
 });
 
@@ -1675,20 +2048,20 @@ const outcome = (text: string | RegExp) => screen.getByText(text).closest('[aria
 
 /**
  * What the reader asked of the server that did not go through. The page covers the log, so each is
- * said under the tabs, where a deploy that did not go through is said — and in one polite live
- * region, so a reader who cannot see the marks it leaves is told as well.
+ * said under the tabs, where a save or a test that did not go through is said — and in one polite
+ * live region, so a reader who cannot see the marks it leaves is told as well.
  */
 describe('what did not go through', () => {
-  it('says a deploy that failed in a live region of its own, not over the whole page', async () => {
+  it('says a save that failed in a live region of its own, not over the whole page', async () => {
     keeping([watch]);
     server.use(http.put('/api/flows/watch', () => couldNot('The disk is full.')));
     render(<FlowsPage />);
 
-    await userEvent.click(await screen.findByRole('checkbox', { name: 'Run it once deployed' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+    await userEvent.type(await screen.findByLabelText('Name'), ' 2');
+    await userEvent.click(screen.getByRole('button', { name: 'Update' }));
 
-    await screen.findByText('Not deployed. The disk is full.');
-    const region = outcome('Not deployed. The disk is full.');
+    await screen.findByText('Not saved. The disk is full.');
+    const region = outcome('Not saved. The disk is full.');
     expect(region).not.toBeNull();
     expect(region).not.toContainElement(screen.getByRole('tablist'));
     expect(region).not.toContainElement(screen.getByRole('tabpanel'));
@@ -1696,16 +2069,16 @@ describe('what did not go through', () => {
 
   // A refusal marks the nodes it is about, and a flow refused on another tab has only its tab's
   // lamp to show it. A screen reader was told nothing at all.
-  it('says which flows the server refused, and stops once their refusals lapse', async () => {
+  it('says which flow the server refused, and stops once its refusal lapses', async () => {
     keeping([watch]);
     server.use(http.put('/api/flows/watch', () => refusal({ 'node:test': ['Pick a test.'] })));
     render(<FlowsPage />);
     const name = await screen.findByLabelText('Name');
 
     await userEvent.type(name, ' 2');
-    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Update' }));
 
-    const said = /^The server refused Boiler watch 2, so it was not deployed\./;
+    const said = 'The server refused Boiler watch 2, so it was not saved. What it refused is marked on it.';
     expect(await screen.findByText(said)).toBeInTheDocument();
     expect(outcome(said)).not.toBeNull();
 
@@ -1721,7 +2094,7 @@ describe('what did not go through', () => {
     server.use(http.put('/api/flows/watch', () => refusal({ 'node:test': ['Pick a test.'] })));
     render(<FlowsPage />);
     await userEvent.type(await screen.findByLabelText('Name'), ' 2');
-    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Update' }));
     const region = (await screen.findByText(/^The server refused/)).closest('[aria-live="polite"]')!;
 
     const changes: MutationRecord[] = [];
@@ -1752,7 +2125,7 @@ describe('what did not go through', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Delete flow' }));
     await userEvent.click(screen.getByRole('button', { name: 'Delete it' }));
-    // Off while the delete is out, but said rather than set, as Deploy is: a button switched off
+    // Off while the delete is out, but said rather than set, as Activate is: a button switched off
     // in the hand that pressed it loses the focus in some browsers.
     const deleting = screen.getByRole('button', { name: 'Delete it' });
     expect(deleting).toBeEnabled();
@@ -2012,29 +2385,29 @@ describe('what the server says is wrong with a flow in its file', () => {
 
 describe('a refusal', () => {
   // A refusal is about a draft. Edited back to what is running, the flow has no draft for it to be
-  // about: nothing may go on saying the server refused it beside "All deployed", and the next edit
-  // must not bring it back.
+  // about: nothing may go on saying the server refused it of a flow with no changes, and the next
+  // edit must not bring it back.
   it('lapses once the flow is back to what is running', async () => {
     keeping([watch]);
     server.use(http.put('/api/flows/watch', () => refusal({ flow: ['The flow is not right.'], 'node:test': ['Pick a test.'], 'edge:e1': ['Not this wire.'] })));
     render(<FlowsPage />);
-    const run = await screen.findByRole('checkbox', { name: 'Run it once deployed' });
+    const name = await screen.findByLabelText('Name');
 
-    await userEvent.click(run);
-    await userEvent.click(screen.getByRole('button', { name: 'Deploy' }));
+    await userEvent.type(name, ' 2');
+    await userEvent.click(screen.getByRole('button', { name: 'Update' }));
     expect(await screen.findByTitle('Pick a test.')).toHaveAttribute('data-problem');
     expect(screen.getByText('The flow is not right.')).toBeInTheDocument();
 
-    await userEvent.click(run);
+    await userEvent.type(name, '{Backspace}{Backspace}');
 
-    expect(screen.getByText('All deployed')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Boiler watch, not running' })).toBeInTheDocument();
     expect(document.querySelector('[data-problem]')).toBeNull();
     expect(screen.queryByText('The flow is not right.')).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /Boiler watch/ })).not.toHaveAttribute('data-state', 'refused');
 
-    await userEvent.click(run);
+    await userEvent.type(name, ' 2');
 
-    expect(screen.getByText('1 change')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Boiler watch 2, not running, changes not saved' })).toBeInTheDocument();
     expect(document.querySelector('[data-problem]')).toBeNull();
     expect(screen.queryByText('The flow is not right.')).not.toBeInTheDocument();
   });

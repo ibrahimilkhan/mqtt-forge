@@ -203,7 +203,7 @@ describe('inspector', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Delete it' }));
     await vi.waitFor(() => expect(deleted).toHaveBeenCalledOnce());
-    // Its draft goes with it: kept, it would bring the flow back with the next Deploy.
+    // Its draft goes with it: kept, it would bring the flow back with the next Activate.
     await vi.waitFor(() => expect(useFlowDraftStore.getState().drafts).toEqual({}));
   });
 

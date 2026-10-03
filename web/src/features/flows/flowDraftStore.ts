@@ -16,7 +16,7 @@ const CURRENT_KEY = 'mqttforge.flows.current';
 const VERSION = 1;
 
 type DraftState = {
-  /** Flows edited here and not yet deployed, by id — flows never deployed included. */
+  /** Flows edited here and not yet saved, by id — flows never saved included. */
   drafts: Record<string, FlowDto>;
   /**
    * The copy on the server each draft was started from, as flowDocument's fingerprint of it; null
@@ -34,7 +34,11 @@ type DraftState = {
    * Not kept: like `selected`, it is about what is on screen now.
    */
   wire: string | null;
-  /** What the server said about each flow's last refused deploy: flow id, then flow / node:{id} / edge:{id}. */
+  /**
+   * What the server said, the last time it refused a flow, of what it was sent: flow id, then flow /
+   * node:{id} / edge:{id}. What it was sent is the flow's draft, or — for a Test of a flow with none —
+   * the server's own copy. A refusal of a draft goes with that draft, however the draft goes.
+   */
   refusals: Record<string, Record<string, string[]>>;
   /**
    * This browser would not keep a draft — its storage is full, or site data is blocked — so a
@@ -74,8 +78,8 @@ type DraftState = {
   pickWire: (edgeId: string | null) => void;
   refuse: (flowId: string, errors: Record<string, string[]>) => void;
   /**
-   * These flows have no draft any more. A refusal is the server's answer about one draft, not
-   * about a flow, and that draft is no longer there to be refused, so the refusals go.
+   * What the server refused of these flows is no longer what is there: a test of each has started
+   * since, so the drawing it refused is not the one running now. The drafts stay.
    */
   lapse: (flowIds: readonly string[]) => void;
 };
@@ -83,7 +87,7 @@ type DraftState = {
 /*
  * localStorage and sessionStorage when they can be had, and nothing when they cannot — a private
  * window, a browser set to block site data. Every access is caught: a page that cannot keep drafts
- * still edits and deploys, and its drafts live until the page is closed.
+ * still edits, tests and saves, and its drafts live until the page is closed.
  */
 
 type Area = () => Storage;
@@ -210,11 +214,11 @@ const without = <T>(record: Record<string, T>, ...keys: readonly string[]): Reco
   Object.fromEntries(Object.entries(record).filter(([id]) => !keys.includes(id)));
 
 /**
- * What the page has changed and not deployed.
+ * What the page has changed and not saved.
  *
- * The deployed flows are the server's, read through react-query; this holds only the difference.
- * A flow's draft is kept whole rather than as a list of changes, because Deploy sends a whole
- * flow and "Discard" means "back to what is running" — both are one assignment with whole flows.
+ * The saved flows are the server's, read through react-query; this holds only the difference.
+ * A flow's draft is kept whole rather than as a list of changes, because Test and Activate send a
+ * whole flow and "Discard" means "back to what is saved" — each is one assignment with whole flows.
  *
  * Each draft is kept under a key of its own, written the moment it changes — a reload or a closed
  * tab inside a pause would lose the edit that "a reload loses nothing" promises to keep — and only
@@ -314,7 +318,7 @@ export function createFlowDraftStore() {
     }
     if (!ours || (event.key !== null && !event.key.startsWith(DRAFT_PREFIX))) return;
 
-    const { drafts, bases } = store.getState();
+    const { drafts, bases, refusals } = store.getState();
     let next: Pick<DraftState, 'drafts' | 'bases'>;
 
     if (event.key === null) {
@@ -337,9 +341,13 @@ export function createFlowDraftStore() {
       }
     }
 
+    // A refusal of a draft the other tab let go has nothing left to be about, and goes with it, as it
+    // goes with a draft let go here. One of the server's copy of a flow with no draft had none to go.
+    const gone = Object.keys(drafts).filter((id) => !(id in next.drafts) && id in refusals);
+
     hearing = true;
     try {
-      store.setState(next);
+      store.setState(gone.length > 0 ? { ...next, refusals: without(refusals, ...gone) } : next);
     } finally {
       hearing = false;
     }

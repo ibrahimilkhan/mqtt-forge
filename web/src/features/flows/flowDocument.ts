@@ -414,7 +414,7 @@ export function bodyOf(flow: FlowDto, loopId: string): ReadonlySet<string> {
  * The flow with the wire added — in place of the wire its way out had, since a way out has one — or
  * the same flow when the wire may not be drawn. The same flow, too, when the way out already has
  * that wire: dropped again on the port it goes to, it is no change, and a new id would make it
- * read as one — a draft the page offers to deploy, of a flow nobody changed.
+ * read as one — a draft the page offers to save, of a flow nobody changed.
  */
 export function connect(flow: FlowDto, wire: Wire, id: string = newId('e')): FlowDto {
   const had = flow.edges.filter((edge) => edge.from === wire.from && edge.fromPort === wire.fromPort);
@@ -511,18 +511,25 @@ const texts = new WeakMap<FlowDto, string>();
 /** The last answer about each flow, and the flow it was compared with. */
 const verdicts = new WeakMap<FlowDto, { other: FlowDto; same: boolean }>();
 
-/** A flow as text, its keys in order: two flows that are the same flow read the same. */
+/**
+ * A flow as text, its keys in order: two flows that are the same flow read the same.
+ *
+ * `enabled` is left out. A flow is switched on and off by Activate and Deactivate, not drawn on or
+ * off, so it is never part of what a draft has changed: a flow switched on or off — here or on
+ * another console — leaves every draft of it standing as it stood, and a draft never differs from
+ * the server's copy by that alone.
+ */
 function canonical(flow: FlowDto): string {
   let text = texts.get(flow);
   if (text === undefined) {
-    text = JSON.stringify(sorted(flow));
+    text = JSON.stringify(sorted({ ...flow, enabled: undefined }));
     texts.set(flow, text);
   }
   return text;
 }
 
 /**
- * Whether two flows are the same flow, setting for setting.
+ * Whether two flows are the same flow, setting for setting, switched on or not (see canonical).
  *
  * Keys are put in order first, because the server hands back settings in the order they were
  * sent and an editor that rebuilt an object in another order has not changed anything.
@@ -543,14 +550,15 @@ export function sameFlow(a: FlowDto | undefined, b: FlowDto | undefined): boolea
 const prints = new WeakMap<FlowDto, string>();
 
 /**
- * A short stand-in for everything a flow says: what a draft keeps to remember which copy on the
- * server it was started from. The server sends no version of a flow, so the page makes one from the
- * flow itself. Two copies that are the same flow have the same fingerprint however their keys were
- * ordered, and a copy that anybody has changed since has another.
+ * A short stand-in for everything a flow says but whether it is switched on (see canonical): what a
+ * draft keeps to remember which copy on the server it was started from. The server sends no version
+ * of a flow, so the page makes one from the flow itself. Two copies that are the same flow have the
+ * same fingerprint however their keys were ordered, and a copy that anybody has changed since has
+ * another.
  *
  * A hash, not the text, because it is kept beside every draft, and a flow's text is tens of
  * kilobytes. 53 bits of cyrb53, which is quick and which anybody could forge: nothing here guards
- * against anybody, it only tells apart the copies of one flow that consoles deploy.
+ * against anybody, it only tells apart the copies of one flow that consoles save.
  */
 export function fingerprint(flow: FlowDto): string {
   let print = prints.get(flow);
@@ -584,11 +592,12 @@ function hashOf(text: string): string {
  *
  * - `nothing`: nothing of the reader's is in it. It says what the server has, or it says what the
  *   server had when it was started and the server has since moved on from, or let go of. It goes:
- *   kept, it would hide the server's newer copy, and go back out with the next Deploy.
- * - `changed`: an edit of the copy the server has, or a flow the server never had. Deploy sends it.
- * - `overtaken`: an edit of a copy the server has since replaced, or deleted. Deploy holds it back
- *   until the reader keeps it over the server's copy or discards it: sent as it stands, it would
- *   undo another console's work, or bring back a flow somebody deleted.
+ *   kept, it would hide the server's newer copy, and go back out with the next Activate or Update.
+ * - `changed`: an edit of the copy the server has, or a flow the server never had. Activate and
+ *   Update send it.
+ * - `overtaken`: an edit of a copy the server has since replaced, or deleted. Activate and Update
+ *   hold it back until the reader keeps it over the server's copy or discards it: sent as it
+ *   stands, it would undo another console's work, or bring back a flow somebody deleted.
  *
  * `base` is the fingerprint of the copy the draft was started from: null for a flow started here.
  */
