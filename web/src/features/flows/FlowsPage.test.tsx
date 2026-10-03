@@ -1695,12 +1695,22 @@ describe('deleting a flow', () => {
   // no such flow, and says so — and whatever it says, the reader's draft goes, since nothing of the
   // reader's is on the server to keep. That answer is the one the delete expects, and the log says
   // nothing of it. Any other leaves the test, if there is one, running with no console left to stop
-  // it, and the log is where that is said.
-  const notStopped = 'Flow deleted here, but its test may still be running on the server';
+  // it, and the log is where that is said: under a label, as every command's verb is, with the
+  // sentence in the entry's body ahead of what the server answered.
+  const notStopped = 'Flow test may still run';
+  const deletedHere = 'Flow 1 was deleted here, but the server did not take the delete, so a test of it may still be running there.';
   it.each<[string, (() => Response) | null, object[]]>([
     ['that it has no such flow', null, []],
-    ['that it could not', () => couldNot('The disk is full.'), [{ kind: 'fault', verb: notStopped, body: 'The disk is full.' }]],
-    ['nothing at all', () => HttpResponse.error(), [{ kind: 'fault', verb: notStopped, body: expect.any(String) }]],
+    [
+      'that it could not',
+      () => couldNot('The disk is full.'),
+      [{ kind: 'fault', verb: notStopped, body: `${deletedHere} The disk is full.` }],
+    ],
+    [
+      'nothing at all',
+      () => HttpResponse.error(),
+      [{ kind: 'fault', verb: notStopped, body: expect.stringContaining(`${deletedHere} `) }],
+    ],
   ])('asks the server to delete a flow it never had, and drops the flow when it answers %s', async (_, answer, logged) => {
     const { deletes } = keeping();
     if (answer)

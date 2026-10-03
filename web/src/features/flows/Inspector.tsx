@@ -5,8 +5,9 @@ import { shallow } from 'zustand/shallow';
 import { deleteFlow, isFlowUnknown } from '../../api/flows';
 import { queryKeys } from '../../api/queryKeys';
 import { Field } from '../../components/Field';
+import { describeError } from '../../lib/problemDetails';
 import { isLive, nodeKey, shownRun, useFlowStatusStore } from '../../stores/flowStatusStore';
-import { logFault } from '../../stores/logStore';
+import { logFault, useLogStore } from '../../stores/logStore';
 import panel from '../../styles/panel.module.css';
 import type { FlowDto, FlowNodeDto, FlowRunStatusDto, FlowVariableDto } from '../../types/api';
 import { clock } from '../alerts/AlertsPanel';
@@ -320,7 +321,8 @@ function FlowPane({ flow, deployed, overtaken, problems }: FlowPaneProps) {
     // or could not be reached — leaves the test it may have running, with the flow gone from the
     // page and the only Stop there was. The page does not say so under the tabs, as it does of a
     // flow that stays: that line is about a flow, and this one has gone. So the log does, where the
-    // console keeps what a command did not do.
+    // console keeps what a command did not do — under a label, as every verb there is, with what
+    // happened said in the entry's body, ahead of what the server answered.
     mutationFn: async (id: string) => {
       try {
         await deleteFlow(id);
@@ -328,7 +330,11 @@ function FlowPane({ flow, deployed, overtaken, problems }: FlowPaneProps) {
         if (isFlowUnknown(error)) return;
         if (deployed) throw error;
 
-        logFault('Flow deleted here, but its test may still be running on the server', error);
+        useLogStore.getState().push({
+          kind: 'fault',
+          verb: 'Flow test may still run',
+          body: `${titleOf(flow)} was deleted here, but the server did not take the delete, so a test of it may still be running there. ${describeError(error)}`,
+        });
       }
     },
     onMutate: () => failures.trying('delete'),
