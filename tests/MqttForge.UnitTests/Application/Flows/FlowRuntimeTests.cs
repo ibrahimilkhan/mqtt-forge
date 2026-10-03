@@ -566,7 +566,7 @@ public class FlowRuntimeTests
     {
         var post = Assert.Single(Activate(Line(("hook", "webhook", new { url = "https://hooks.example.com/x" })).Compile()).Webhooks);
 
-        _runtime.StepFailed(post.Run, post.Serial, post.NodeId, "The webhook was not delivered after 3 attempt(s): 500.", T0);
+        _runtime.StepFailed(post.Run, post.Serial, post.NodeId, "The webhook was not delivered after 3 attempts: the receiver answered 500.", T0);
 
         Assert.Equal(1, Node("hook").Outs["posted"]);
         Assert.Equal(1, Node("hook").Errors);

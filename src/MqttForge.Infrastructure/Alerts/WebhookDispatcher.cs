@@ -69,10 +69,11 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
     // for their twenty seconds each, and then the next four, and an alarm to a host that would have answered
     // at once would wait for all of them.
     //
-    // Two receivers that are failing can still hold both of the flows' slots between them, through their
-    // backoff waits as well as their attempts, so that the flows' posts to every other host get one turn
-    // each time one of the two is let go. That is the bargain the rules' alarms already have with the four,
-    // and the flows' two keep it on purpose.
+    // A delivery holds its slots only while it makes an attempt, and gives them back for each wait between
+    // two (see PostAsync), so two receivers that answer with errors hold the flows' two for the moments their
+    // answers take, and the posts to every other host go out in between. Two that never answer still hold
+    // both through each attempt they are given, ten seconds apiece, and the posts to other hosts then go out
+    // in the second between their attempts and as each of their posts is given up on.
     public const int FlowsInFlight = 2;
 
     /// <summary>
@@ -399,6 +400,11 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
     // process.
     //
     // Pending goes last, so that whoever reads it at nought finds every place it stood for given back.
+    //
+    // The endpoint's count is looked up rather than indexed, so that a slip in this bookkeeping costs a
+    // number and never an exception. Thrown here, it would come out of the queue's callback and through
+    // Post, which the engine is promised never throws, or out of DeliverAsync's finally with Pending left
+    // where it was.
     private void Ended(Delivery job)
     {
         if (job is FlowDelivery)
@@ -407,9 +413,11 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
             {
                 _flowPosts--;
 
-                var left = _flowPostsAt[job.Endpoint] - 1;
-                if (left == 0) _flowPostsAt.Remove(job.Endpoint);
-                else _flowPostsAt[job.Endpoint] = left;
+                if (_flowPostsAt.TryGetValue(job.Endpoint, out var count))
+                {
+                    if (count > 1) _flowPostsAt[job.Endpoint] = count - 1;
+                    else _flowPostsAt.Remove(job.Endpoint);
+                }
             }
         }
 
@@ -530,18 +538,14 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
 
     private async Task DeliverAsync(Delivery job)
     {
-        // A flow's post takes one of the flows' own slots first, and only then one of the four, so
-        // the flows can never hold more than FlowsInFlight of them. The other way round, a post
-        // waiting for the flows' share would sit on one of the four while it waited, and the flows
-        // could hold every one of them after all.
-        var share = job is FlowDelivery ? _flowSlots : null;
-        if (share is not null) await share.WaitAsync();
-
-        await _slots.WaitAsync();
+        var slots = new Slots(_slots, job is FlowDelivery ? _flowSlots : null);
 
         try
         {
-            await PostAsync(job);
+            // Taken with no token the first time: a delivery that has waited its turn in its line is given
+            // its attempt, and at shutdown that is the one attempt StopAsync promises it.
+            await slots.TakeAsync(CancellationToken.None);
+            await PostAsync(job, slots);
         }
         catch (Exception ex)
         {
@@ -551,13 +555,15 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
         }
         finally
         {
+            // The slots before the count, so that nothing the bookkeeping does can keep a slot from coming
+            // back: a slot lost is one of four for the life of the process. Ended goes last for its own
+            // reason, which is Pending's.
+            slots.Release();
             Ended(job);
-            _slots.Release();
-            share?.Release();
         }
     }
 
-    private async Task PostAsync(Delivery job)
+    private async Task PostAsync(Delivery job, Slots slots)
     {
         // The whole life of this delivery, retries and waits included, ends at this instant.
         using var budget = new CancellationTokenSource(Budget, _time);
@@ -579,9 +585,16 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
             using var wait = CancellationTokenSource.CreateLinkedTokenSource(
                 budget.Token, _stopping.Token);
 
+            // The slots are given back for the wait and taken again after it, under the same two deadlines.
+            // A slot is for talking to an endpoint, and a delivery waiting to try again is talking to nobody:
+            // held through its waits, two receivers answering errors kept their slots for most of every
+            // delivery's life, and a post or an alarm to a host that answers waited behind them.
+            slots.Release();
+
             try
             {
                 await Task.Delay(BackoffFor(attempt), _time, wait.Token);
+                await slots.TakeAsync(wait.Token);
             }
             catch (OperationCanceledException)
             {
@@ -592,6 +605,45 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
 
                 return;
             }
+        }
+    }
+
+    /// <summary>The slots one delivery holds while it makes an attempt: one of the four, and a flow's post one of the flows' two as well.</summary>
+    // Its own, and touched by its delivery alone, one step after another, so it needs no lock. It knows
+    // whether it holds them, so a release where there is nothing held — the finally after a wait that was
+    // called off before they were taken again — gives back nothing it did not take.
+    private sealed class Slots(SemaphoreSlim all, SemaphoreSlim? share)
+    {
+        private bool _held;
+
+        // A flow's post takes one of the flows' own slots first, and only then one of the four, so the
+        // flows can never hold more than FlowsInFlight of them. The other way round, a post waiting for
+        // the flows' share would sit on one of the four while it waited, and the flows could hold every
+        // one of them after all.
+        public async Task TakeAsync(CancellationToken ct)
+        {
+            if (share is not null) await share.WaitAsync(ct);
+
+            try
+            {
+                await all.WaitAsync(ct);
+            }
+            catch (OperationCanceledException)
+            {
+                share?.Release();
+                throw;
+            }
+
+            _held = true;
+        }
+
+        public void Release()
+        {
+            if (!_held) return;
+
+            _held = false;
+            all.Release();
+            share?.Release();
         }
     }
 
@@ -615,7 +667,9 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
                     "{Attempts} attempt(s): {Reason}",
                     flow.Post.Run.FlowId, flow.Post.NodeId, Redacted(job.Url), attempts, reason);
 
-                flow.Failed($"The webhook was not delivered after {attempts} attempt(s): {reason}.");
+                // The node's sentence is read by a person and not filtered on, so it says one attempt or
+                // three as a person would, where the log's template has to say both at once.
+                flow.Failed($"The webhook was not delivered after {attempts} {(attempts == 1 ? "attempt" : "attempts")}: {reason}.");
                 break;
         }
     }
@@ -650,8 +704,10 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
             if (response.IsSuccessStatusCode) return (true, string.Empty);
 
             // A 3xx lands here with everything else, and that is the point: the handler does not
-            // follow redirects, so a redirect is an endpoint that did not accept the alert.
-            return (false, ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture));
+            // follow redirects, so a redirect is an endpoint that did not accept the alert. Said in
+            // words, since a reason is read on a Webhook node as well as in the log, and a number
+            // standing alone there is not a sentence anyone can act on.
+            return (false, string.Create(CultureInfo.InvariantCulture, $"the receiver answered {(int)response.StatusCode}"));
         }
         catch (OperationCanceledException) when (budget.IsCancellationRequested)
         {

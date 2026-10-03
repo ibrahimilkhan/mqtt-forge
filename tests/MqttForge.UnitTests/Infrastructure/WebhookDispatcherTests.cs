@@ -257,7 +257,8 @@ public class WebhookDispatcherTests : IAsyncLifetime
 
         var line = Assert.Single(_log.Lines, l => l.Message.Contains("not delivered"));
         Assert.Equal(
-            $"The webhook for Boiler temperature on plant/boiler/temp was not delivered to {EndpointA} after 3 attempt(s): 500",
+            $"The webhook for Boiler temperature on plant/boiler/temp was not delivered to {EndpointA} after 3 attempt(s): " +
+            "the receiver answered 500",
             line.Message);
         Assert.Equal("Boiler temperature", line.Values["RuleName"]);
         Assert.Equal("plant/boiler/temp", line.Values["Topic"]);
@@ -601,17 +602,66 @@ public class WebhookDispatcherTests : IAsyncLifetime
         await AdvanceUntil(() => !said.IsEmpty, "the post was given up on");
         await Task.Delay(50);
 
-        var reason = Assert.Single(said);
         Assert.Equal(3, Handler.Sent.Count);
-        Assert.Contains("500", reason);
-        Assert.Contains("3 attempt", reason);
+        Assert.Equal("The webhook was not delivered after 3 attempts: the receiver answered 500.", Assert.Single(said));
 
         // Named in the log as a flow's node, with the flow and the node as values of their own, as a rule's
         // alarm is named by its rule and its topic.
         var line = Assert.Single(_log.Lines, l => l.Message.Contains("not delivered"));
-        Assert.Equal($"The webhook for flow f1's node hook was not delivered to {EndpointA} after 3 attempt(s): 500", line.Message);
+        Assert.Equal(
+            $"The webhook for flow f1's node hook was not delivered to {EndpointA} after 3 attempt(s): the receiver answered 500",
+            line.Message);
         Assert.Equal("f1", line.Values["Flow"]);
         Assert.Equal("hook", line.Values["Node"]);
+    }
+
+    // The sentence stands on the node, so one attempt is said as one: given up on at its first wait, because
+    // the host is stopping.
+    [Fact]
+    public async Task A_flows_post_given_up_on_after_one_attempt_says_one_attempt()
+    {
+        var sut = await Started((_, _) => Status(HttpStatusCode.InternalServerError));
+        var said = new ConcurrentQueue<string>();
+
+        Assert.True(sut.Post(Posting(), said.Enqueue));
+        await Settle(() => Handler.Sent.Count == 1, "the first attempt to be made");
+
+        using var patience = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await sut.StopAsync(patience.Token);
+
+        Assert.Equal("The webhook was not delivered after 1 attempt: MQTTForge is stopping.", Assert.Single(said));
+    }
+
+    // A delivery gives its slots back while it waits between two attempts, and takes them again after. Held
+    // through the waits, two receivers answering errors kept their slots for most of each delivery's life, and
+    // whatever was going to a host that answers waited behind them: measured, most of a healthy host's posts
+    // were refused while two receivers failed. The clock is held still once the four first attempts are made,
+    // so none of those waits ends and nothing is given up on: the delivery to the healthy host can only go out
+    // in a slot one of them gave back.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task While_two_receivers_answer_errors_a_delivery_to_another_host_goes_out_between_their_attempts(bool flows)
+    {
+        var sut = await Started((request, _) =>
+            Status(request.RequestUri!.Host == "healthy.example" ? HttpStatusCode.OK : HttpStatusCode.InternalServerError));
+
+        // Each failing receiver is sent a rule's alarm and a flow's post, which wait in lines of their own: four
+        // deliveries, which between them hold all four slots, and the flows' two, while they make their attempts.
+        foreach (var host in new[] { "h1", "h2" })
+        {
+            await sut.RaisedAsync([Fired($"http://{host}.example/hook", id: host)]);
+            Assert.True(sut.Post(Posting($"http://{host}.example/hook"), _ => { }));
+        }
+
+        await Settle(() => Handler.Sent.Count == 4, "each failing delivery to have made its first attempt");
+
+        if (flows) Assert.True(sut.Post(Posting("http://healthy.example/hook"), _ => { }));
+        else await sut.RaisedAsync([Fired("http://healthy.example/hook", id: "healthy")]);
+
+        await Settle(() => Handler.Sent.Any(sent => sent.Url.Host == "healthy.example"),
+            "the delivery to the healthy host to go out while the failing ones wait to try again");
+        Assert.Equal(5, Handler.Sent.Count);
     }
 
     // The queue does not hold the flows' posts back while the pump runs: it moves each one on into its
@@ -801,18 +851,23 @@ public class WebhookDispatcherTests : IAsyncLifetime
     }
 
     // After StopAsync the queue is closed, which is not a queue that overflowed: nothing was dropped, and
-    // the post that did not go in must not be left counted as waiting for a pump that has stopped.
+    // the post that did not go in must not be left counted as waiting for a pump that has stopped. Seventeen to
+    // one endpoint, one more than may wait there: each refused post gives its place back, so the last is refused
+    // for the closed queue as the first was, and not dropped for a cap that places nobody gave back had filled.
     [Fact]
-    public async Task A_flows_post_after_the_queue_has_closed_is_refused_and_not_left_pending()
+    public async Task Flows_posts_after_the_queue_has_closed_are_refused_and_each_gives_its_place_back()
     {
         var sut = await Started((_, _) => Status(HttpStatusCode.OK));
 
         using var patience = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await sut.StopAsync(patience.Token);
 
-        Assert.False(sut.Post(Posting(), _ => { }));
+        for (var i = 0; i <= WebhookDispatcher.FlowPostsPerEndpoint; i++)
+            Assert.False(sut.Post(Posting(), _ => { }));
+
         Assert.Equal(0, sut.Pending);
         Assert.Equal(0, sut.Dropped);
+        Assert.Empty(FlowPostsAt(sut));
     }
 
     // The second lock on the door the wiring already shut: the engine is handed no webhook channel when
