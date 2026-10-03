@@ -8,6 +8,7 @@ import {
   Position,
   ReactFlow,
   useReactFlow,
+  useStore,
   useStoreApi,
   useUpdateNodeInternals,
   type Connection,
@@ -17,6 +18,7 @@ import {
   type Node,
   type NodeChange,
   type NodeProps,
+  type ReactFlowState,
 } from '@xyflow/react';
 import '@xyflow/react/dist/base.css';
 import {
@@ -29,10 +31,12 @@ import {
   type CSSProperties,
   type DragEvent,
   type KeyboardEvent,
+  type ReactElement,
 } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { isLive, nodeKey, shownRun, useFlowStatusStore, type FlowStatusState } from '../../stores/flowStatusStore';
 import type { FlowDto, FlowNodeDto } from '../../types/api';
+import { backPath, dropOf, goesBack, laneOver, MARGIN, riseOf } from './backWires';
 import {
   addNode,
   canConnect,
@@ -87,11 +91,15 @@ export const NODE_HEIGHT = 80;
 export const DECISION_WIDTH = NODE_WIDTH + 64;
 export const DECISION_HEIGHT = 128;
 
-/** The sizes, where the stylesheet reads them: the If's as well, for the same reason as the width. */
+/**
+ * The sizes, where the stylesheet reads them: the If's as well, for the same reason as the width; and
+ * how far a wire going back runs out of its port before it turns, which a port's name stands past.
+ */
 const NODE_SIZE = {
   '--node-width': `${NODE_WIDTH}px`,
   '--decision-width': `${DECISION_WIDTH}px`,
   '--decision-height': `${DECISION_HEIGHT}px`,
+  '--wire-margin': `${MARGIN}px`,
 } as CSSProperties;
 
 /** Each outline drawn as a polygon, in a 100 by 100 box stretched over the node. */
@@ -750,10 +758,14 @@ function Countdown({ until }: { until: string }) {
  * this way" and not "something happened somewhere in the flow". Pushes come at most four times a
  * second, so a busy wire stays lit and a quiet one blinks — which is the difference a reader is
  * looking for.
+ *
+ * A wire going forward is React Flow's curve; one going back goes round what stands between its
+ * ends (see backWires.ts and BackWire). Its marks are the same either way.
  */
 function WireView({
   id,
   source,
+  target,
   sourceHandleId,
   sourceX,
   sourceY,
@@ -788,9 +800,7 @@ function WireView({
     return () => clearTimeout(timer);
   }, [count]);
 
-  const [path] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
-
-  return (
+  const line = (path: string) => (
     <BaseEdge
       id={id}
       path={path}
@@ -800,6 +810,85 @@ function WireView({
       data-problem={data?.problems ? '' : undefined}
     />
   );
+
+  if (goesBack(sourceX, targetX, targetPosition))
+    return (
+      <BackWire
+        source={source}
+        target={target}
+        sourceX={sourceX}
+        sourceY={sourceY}
+        sourcePosition={sourcePosition}
+        targetX={targetX}
+        targetY={targetY}
+        targetPosition={targetPosition}
+        draw={line}
+      />
+    );
+
+  const [path] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
+  return line(path);
+}
+
+type Ends = Pick<
+  EdgeProps<CanvasEdge>,
+  'source' | 'target' | 'sourceX' | 'sourceY' | 'sourcePosition' | 'targetX' | 'targetY' | 'targetPosition'
+>;
+
+/** Where React Flow has a node's right edge: where it stands, and how wide it measured it. */
+function rightOf(nodes: ReactFlowState['nodeLookup'], id: string, otherwise: number) {
+  const node = nodes.get(id);
+  return node ? node.internals.positionAbsolute.x + (node.measured.width ?? 0) : otherwise;
+}
+
+/**
+ * The lane a wire going back runs along between `left` and `right`: above the highest node standing
+ * anywhere between them, as React Flow has measured it — the wire's own two nodes among them, since
+ * the lane runs over the one and comes down onto the other.
+ */
+function laneBetween(nodes: ReactFlowState['nodeLookup'], left: number, right: number, target: string) {
+  let highest = Infinity;
+  for (const node of nodes.values()) {
+    const { x, y } = node.internals.positionAbsolute;
+    if (x < right && x + (node.measured.width ?? 0) > left) highest = Math.min(highest, y);
+  }
+  return laneOver(highest, nodes.get(target)?.internals.positionAbsolute.y ?? highest);
+}
+
+/**
+ * A wire going back, drawn round the nodes between its ends. Where it runs depends on every node
+ * standing between them, not only on its own two, so it watches where React Flow has every node —
+ * through two numbers, where it rises and the lane it runs along, so it is drawn again only when one
+ * of them moves: a node dragged a frame at a time below the lane, or anywhere outside the wire's
+ * reach, leaves it alone. Its own component, so a wire going forward, which needs none of this,
+ * watches nothing more than it did.
+ */
+function BackWire({
+  source,
+  target,
+  sourceX,
+  sourceY,
+  sourcePosition,
+  targetX,
+  targetY,
+  targetPosition,
+  draw,
+}: Ends & { draw: (path: string) => ReactElement }) {
+  const rise = useStore(
+    useCallback(
+      (state: ReactFlowState) => riseOf(sourceX, sourcePosition, rightOf(state.nodeLookup, source, sourceX)),
+      [source, sourcePosition, sourceX],
+    ),
+  );
+  const drop = dropOf(targetX, targetPosition);
+  const lane = useStore(
+    useCallback(
+      (state: ReactFlowState) => laneBetween(state.nodeLookup, Math.min(rise, drop), Math.max(rise, drop), target),
+      [drop, rise, target],
+    ),
+  );
+
+  return draw(backPath({ sourceX, sourceY, sourcePosition, rise, lane, targetX, targetY, targetPosition }));
 }
 
 // Outside the component and never rebuilt: React Flow warns, and re-mounts every node, when these
