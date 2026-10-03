@@ -19,19 +19,20 @@ namespace MqttForge.Application.Flows;
 //
 // One difference, and it is the reason there are more loops than one. A Publish node is the only
 // thing in the product that sends to the broker because of a message the broker sent, at up to
-// fifty a second per flow, and MQTTnet's publish waits for the broker's answer at QoS 1. Awaiting
+// fifty a second per run, and MQTTnet's publish waits for the broker's answer at QoS 1. Awaiting
 // that on the pump would make every flow — and every alarm they raise — as slow as the slowest
 // round trip. So publishes are handed to a channel of their own, sent in order by a loop that waits
-// for nothing else, and a failure comes back to the pump as a command, where the counters live. The
-// console's pushes go the same way, for the same reason, and so does its half of every alarm: see
-// FlowConsoleSender. The notifier this class is handed is told on the pump, so it has to be one that
-// waits on nothing — in production the log; the console is told through IFlowNotifier, from that loop.
+// for nothing else, and a failure comes back to the pump as a command, where the counters live. A
+// Webhook node's post goes the same way, to IFlowWebhook's queue. The console's pushes go the same
+// way, for the same reason, and so does its half of every alarm: see FlowConsoleSender. The notifier
+// this class is handed is told on the pump, so it has to be one that waits on nothing — in production
+// the log; the console is told through IFlowNotifier, from that loop.
 public sealed class FlowEngine
 {
     public FlowEngine(FlowRuntime runtime, IFlowStore store, IAlertNotifier notifier, IFlowNotifier console,
                       IMqttConnectionManager connection, IMqttSubscriber subscriber, IMqttPublisher publisher,
                       AlertEngineOptions options, ILogger<FlowEngine> log,
-                      TimeProvider? timeProvider = null, IAlertDispatcher? dispatcher = null)
+                      TimeProvider? timeProvider = null, IFlowWebhook? webhook = null)
     {
         _runtime = runtime;
         _store = store;
@@ -42,7 +43,7 @@ public sealed class FlowEngine
         _prefix = options.TopicPrefix;
         _log = log;
         _time = timeProvider ?? TimeProvider.System;
-        _dispatcher = dispatcher;
+        _webhook = webhook;
         _filters = new FilterSync(subscriber, SubscriptionOwner.Flows, FlowQos, _time, log, "flow");
 
         _queue = Channel.CreateBounded<Queued>(
@@ -72,7 +73,7 @@ public sealed class FlowEngine
 
     /// <summary>How many commands one turn takes before it looks at the clock. AlertEngine's figure.</summary>
     // For its reason: a firehose would otherwise keep one turn draining for ever, and nothing that
-    // is due — an Every, a push, the look at the link — would ever run.
+    // is due — a Wait that has ended, a push, the look at the link — would ever run.
     public const int MaxPerTurn = 4_096;
 
     /// <summary>The QoS the flows' subscriptions ask for — AlertEngine's RuleQos, for its reason.</summary>
@@ -87,7 +88,7 @@ public sealed class FlowEngine
     private readonly string _prefix;
     private readonly ILogger<FlowEngine> _log;
     private readonly TimeProvider _time;
-    private readonly IAlertDispatcher? _dispatcher;
+    private readonly IFlowWebhook? _webhook;
     private readonly Channel<Queued> _queue;
     private readonly Channel<FlowPublish> _outbox;
 
@@ -103,7 +104,16 @@ public sealed class FlowEngine
 
     private FlowStatus _status = FlowStatus.Empty;
     private FlowAlarms _alarms = FlowAlarms.Empty;
-    private IReadOnlySet<(string FlowId, string NodeId)> _injectable = new HashSet<(string, string)>();
+
+    // Which flows are switched on and which are being tested, as the pump last left them: what the
+    // service reads before posting a test's Stop, and what a caller reads once its save is answered.
+    private IReadOnlySet<string> _active = new HashSet<string>();
+    private IReadOnlySet<string> _testing = new HashSet<string>();
+
+    // What the runs wanted at the last look. A run that ends gives its filters back and one that starts
+    // may want new ones, and either is a change only a deploy used to make.
+    private IReadOnlySet<string> _wanted = new HashSet<string>();
+
     private int _dropped;
     private int _debugDropped;
     private long _pushed = -1;
@@ -120,7 +130,7 @@ public sealed class FlowEngine
     /// <summary>When the link the pump last looked at came up: AlertEngine's, for a redial no turn saw.</summary>
     private DateTimeOffset? _linkedAt;
 
-    /// <summary>What the flows have done, as last pushed. What GET /api/flows/status answers.</summary>
+    /// <summary>Every run there is, as last pushed. What GET /api/flows/status answers.</summary>
     public FlowStatus Status => Volatile.Read(ref _status);
 
     /// <summary>The flow alarms, as GET /api/alerts merges them in.</summary>
@@ -129,8 +139,17 @@ public sealed class FlowEngine
     /// <summary>Commands the queue had to discard because the engine could not keep up.</summary>
     public int Dropped => Volatile.Read(ref _dropped);
 
-    /// <summary>Whether a running flow has this Inject node — the inject endpoint's 404 question.</summary>
-    public bool CanInject(string flowId, string nodeId) => Volatile.Read(ref _injectable).Contains((flowId, nodeId));
+    /// <summary>Whether a flow is switched on — has an active run, going or finished — as the pump last left it.</summary>
+    public bool IsActive(string flowId) => Volatile.Read(ref _active).Contains(flowId);
+
+    /// <summary>Whether a flow has a test run that has not ended, as the pump last left it.</summary>
+    public bool IsTesting(string flowId) => Volatile.Read(ref _testing).Contains(flowId);
+
+    private void Snapshot()
+    {
+        Volatile.Write(ref _active, _runtime.Active());
+        Volatile.Write(ref _testing, _runtime.Testing());
+    }
 
     /// <summary>Hands a command to the pump. Never blocks and never throws.</summary>
     public void Post(FlowCommand command)
@@ -147,7 +166,7 @@ public sealed class FlowEngine
     /// <summary>How long a deploy's answer waits for the pump to be running it.</summary>
     // Long enough for a pump held up for a moment — a turn telling its alarms to a slow channel, a
     // broker slow to answer a SUBSCRIBE — and short enough that a pump stuck on one does not leave
-    // the console's Deploy waiting with it. PublishTimeout's figure.
+    // the console's Activate or Update waiting with it. PublishTimeout's figure.
     public static readonly TimeSpan DeployPatience = TimeSpan.FromSeconds(5);
 
     /// <summary>
@@ -236,10 +255,14 @@ public sealed class FlowEngine
         _linkedTo = _linkWasUp ? EndpointOf(_connection.Link) : null;
         _linkedAt = _linkWasUp ? _connection.Link?.ConnectedAt : null;
 
-        var outcome = FlowOutcome.Merge([_runtime.Deploy(set.Compiled, set.Kept, now), _runtime.OnTick(now, _linkWasUp)]);
-        Volatile.Write(ref _injectable, _runtime.Injectable());
+        // The link first. A deploy runs each flow up to its first wait, and the runtime takes the link to
+        // be down until a tick says otherwise: told second, every publish a flow makes before its first
+        // Wait or MQTT in would be refused with "No broker link" with the link up.
+        var outcome = FlowOutcome.Merge([_runtime.OnTick(now, _linkWasUp), _runtime.Deploy(set.Compiled, set.Kept, now)]);
+        Snapshot();
 
         _resubscribe = true;
+        _wanted = _runtime.Filters();
         await CarryOutAsync(outcome, now, ct);
         await SyncSubscriptionsAsync(ct);
         Push(now, force: true);
@@ -276,8 +299,8 @@ public sealed class FlowEngine
                 // pump alive.
                 if (wait > TickInterval) wait = TickInterval;
 
-                // The delay is what makes time an event: an Every due in 100 ms and a status push due
-                // in 250 ms both have to happen with no message arriving to prompt them.
+                // The delay is what makes time an event: a Wait that ends in 100 ms and a status push
+                // due in 250 ms both have to happen with no message arriving to prompt them.
                 var woken = await Task.WhenAny(ready, Task.Delay(wait, _time));
 
                 if (woken == ready)
@@ -331,13 +354,13 @@ public sealed class FlowEngine
     }
 
     /// <summary>Whether a command falls after the move to <paramref name="link"/>, so the move is told before it.</summary>
-    // A publish's failure falls on neither side. Its node counts it whichever link is up, and the
-    // publish may well have been in flight on the old link when that went — so it must not be what
-    // puts the old broker's messages queued behind it on the new broker's side.
+    // A step's failure falls on neither side. Its node counts it whichever link is up, and a publish
+    // may well have been in flight on the old link when that went — so it must not be what puts the
+    // old broker's messages queued behind it on the new broker's side.
     private static bool FallsAfter(FlowCommand command, BrokerLink link) => command switch
     {
         FlowArrival { Message: { } message } => message.ReceivedAt >= link.ConnectedAt,
-        FlowPublishFailed => false,
+        FlowStepFailed => false,
         _ => true,
     };
 
@@ -360,13 +383,13 @@ public sealed class FlowEngine
             var outcomes = new List<FlowOutcome>();
 
             // Read every turn rather than only on the tick: it is a property read, and a flow that
-            // publishes on an Every should find out the link went the turn it went.
+            // publishes after a Wait should find out the link went the turn it went.
             //
             // Read before the queue, and told to the runtime lopsidedly: up before the commands are
             // applied, down only after them. Up first because the runtime refuses every publish until
             // it has been told the link is up, and a redial puts the console's own filters back before
-            // the flows' — so an arrival a flow listens for can be in this very turn's queue, or an
-            // Inject, and either would be refused with a "No broker link" that was no longer true.
+            // the flows' — so an arrival a flow listens for can be in this very turn's queue, or a
+            // Test, and either would be refused with a "No broker link" that was no longer true.
             // Down last because whatever is queued arrived while the link was there, and is judged
             // as such before "connection ended" takes its alarms away.
             var connected = _connection.State == ConnectionState.Connected;
@@ -405,9 +428,9 @@ public sealed class FlowEngine
             // the old link's last message before the manager may dial again, and a clean session is
             // sent nothing before it has subscribed, a round trip after it came up. What can still
             // misplace an arrival is a broker that kept the session and sends its backlog before the
-            // link is stamped, or a clock set back in the middle of a move. A publish that failed
-            // decides nothing (FallsAfter says why); the other commands carry no time and act on
-            // the link that is up now, so the move goes before the first of them.
+            // link is stamped, or a clock set back in the middle of a move. A step that failed decides
+            // nothing (FallsAfter says why); the other commands carry no time and act on the link
+            // that is up now, so the move goes before the first of them.
             var moving = endpoint is not null && _linkedTo is not null && endpoint != _linkedTo ? link : null;
             if (moving is null && endpoint is not null) _linkedTo = endpoint;
 
@@ -473,6 +496,7 @@ public sealed class FlowEngine
             if (tick || _nextTick - now > TickInterval) _nextTick = now + TickInterval;
 
             outcomes.Add(_runtime.OnTick(now, connected));
+            Snapshot();
             _linkWasUp = connected;
 
             // What the turn decided goes out before the filters are looked at. That look reads the
@@ -486,6 +510,13 @@ public sealed class FlowEngine
             // back between two turns, a move whose new endpoint was not known yet. Once a tick, what
             // the flows want is held against what the subscriber is holding for them.
             if (tick && connected && !_resubscribe && FiltersMissing()) _resubscribe = true;
+
+            var wanted = _runtime.Filters();
+            if (!wanted.SetEquals(_wanted))
+            {
+                _wanted = wanted;
+                _resubscribe = true;
+            }
 
             if (_resubscribe && !_filters.Pausing(now))
             {
@@ -523,26 +554,44 @@ public sealed class FlowEngine
                 return _runtime.OnMessage(arrival.Message, now);
 
             case FlowDeploy deploy:
+            {
                 var outcome = _runtime.Deploy(deploy.Flows, deploy.Kept, now);
-                Volatile.Write(ref _injectable, _runtime.Injectable());
+                Snapshot();
 
-                // New flows, new filters, and whoever deployed them is waiting to see them run: see
+                // New flows, new filters, and whoever saved them is waiting to see them run: see
                 // FilterSync.Changed.
                 _resubscribe = true;
                 _filters.Changed();
                 return outcome;
+            }
 
-            case FlowInject inject:
-                return _runtime.Inject(inject.FlowId, inject.NodeId, now);
+            case FlowTestStart test:
+            {
+                var outcome = _runtime.StartTest(test.Flow, now);
+                Snapshot();
 
-            case FlowPublishFailed failed:
-                return _runtime.PublishFailed(failed.FlowId, failed.NodeId, failed.Reason, now);
+                // A deploy's reason, for the one flow: whoever pressed Test is waiting to see it read.
+                _resubscribe = true;
+                _filters.Changed();
+                return outcome;
+            }
+
+            case FlowTestStop stop:
+            {
+                var outcome = _runtime.StopTest(stop.FlowId, now);
+                Snapshot();
+                _resubscribe = true;
+                return outcome;
+            }
+
+            case FlowStepFailed failed:
+                return _runtime.StepFailed(failed.Run, failed.NodeId, failed.Reason, now);
 
             case FlowClearHistory:
                 _runtime.ClearHistory();
 
-                // At once rather than at the next push: GET /api/alerts reads this, and a console
-                // that cleared the list and read it back would otherwise find it all still there.
+                // At once rather than at the next push: GET /api/alerts reads this, and a console that
+                // cleared the list and read it back would otherwise find it all still there.
                 Volatile.Write(ref _alarms, _runtime.Alarms());
                 return FlowOutcome.Empty;
 
@@ -560,8 +609,19 @@ public sealed class FlowEngine
 
         foreach (var publish in outcome.Publishes)
             if (!_outbox.Writer.TryWrite(publish))
-                debug.AddRange(_runtime.PublishFailed(publish.FlowId, publish.NodeId,
+                debug.AddRange(_runtime.StepFailed(publish.Run, publish.NodeId,
                     "Too many publishes were waiting for the broker; this one was dropped.", now).Debug);
+
+        foreach (var post in outcome.Webhooks)
+        {
+            var refused = _webhook is null
+                ? "Webhooks are turned off on this host (MqttForge:AllowWebhooks), so nothing was sent."
+                : !_webhook.Post(post, reason => Post(new FlowStepFailed(post.Run, post.NodeId, reason)))
+                    ? "Too many webhook posts were waiting; this one was dropped."
+                    : null;
+
+            if (refused is not null) debug.AddRange(_runtime.StepFailed(post.Run, post.NodeId, refused, now).Debug);
+        }
 
         foreach (var entry in debug)
         {
@@ -569,18 +629,28 @@ public sealed class FlowEngine
             else _debugDropped++;
         }
 
-        if (outcome.Alarms.Count == 0) return;
+        if (outcome.Alarms.Count > 0)
+        {
+            // Before the telling, AlertEngine's order: a console that reacts to alertsRaised by reading
+            // GET /api/alerts has to find the alarm already there, or the badge flickers back to nothing.
+            Volatile.Write(ref _alarms, _runtime.Alarms());
+            await DeliverAsync(outcome.Alarms, ct);
+        }
 
-        // Before the telling, AlertEngine's order: a console that reacts to alertsRaised by reading
-        // GET /api/alerts has to find the alarm already there, or the badge flickers back to nothing.
-        Volatile.Write(ref _alarms, _runtime.Alarms());
-        await DeliverAsync(outcome.Alarms, ct);
+        // Moments, handed to the console's loop like every push and never waited for here — and after the
+        // alarms they may be about. That loop runs beside the pump, and handed a tone first it would send
+        // it while the log was still being told of the alarm, and the alarm after it.
+        _pushes.Sounds(outcome.Sounds);
+        _pushes.Notices(outcome.Notices);
     }
 
-    // Every channel's catch lets a cancellation through only when it is the engine stopping, the rule
-    // SyncSubscriptionsAsync keeps and for its reason. None of these channels is handed the engine's
-    // token, so a cancellation from one of them is that channel giving up — a hub send, a queue
-    // closing — and not a reason to skip the channel after it or the rest of the turn.
+    // The notifier's catch lets a cancellation through only when it is the engine stopping, the rule
+    // SyncSubscriptionsAsync keeps and for its reason. The notifier is not handed the engine's token, so
+    // a cancellation from it is that channel giving up and not a reason to skip the console's half or
+    // the rest of the turn.
+    //
+    // Those two halves are all a flow alarm is told to. Its actions are the screen alone, so nothing of
+    // it is for a dispatcher: a flow that wants a webhook or a publish after an alarm draws the step.
     private async Task DeliverAsync(IReadOnlyList<AlertEvent> alarms, CancellationToken ct)
     {
         try
@@ -596,26 +666,7 @@ public sealed class FlowEngine
         // The console's half, handed to the loop that sends the pushes and never waited for here: an
         // alarm frame to a console that has stopped reading waits as long as a push to it does.
         _pushes.Alarms(alarms);
-
-        if (_dispatcher is null) return;
-
-        var leaving = Outgoing(alarms);
-        if (leaving.Count == 0) return;
-
-        try
-        {
-            foreach (var (raised, alerts) in AlertEvent.Runs(leaving))
-                await (raised ? _dispatcher.RaisedAsync(alerts) : _dispatcher.ResolvedAsync(alerts));
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
-        {
-            _log.LogError(ex, "An alert dispatcher threw. The flow alarms it was given were not delivered.");
-        }
     }
-
-    /// <summary>The alarms whose node asked for a channel outside this process — AlertEngine's filter.</summary>
-    private static IReadOnlyList<AlertEvent> Outgoing(IReadOnlyList<AlertEvent> alarms) =>
-        [.. alarms.Where(alarm => alarm.Alert.Actions.Any(action => action is WebhookAction or PublishAction))];
 
     /// <summary>Hands the console what moved, at most four times a second. Never waits on it: see FlowConsoleSender.</summary>
     private void Push(DateTimeOffset now, bool force)
@@ -673,7 +724,7 @@ public sealed class FlowEngine
                 }
                 catch (Exception ex)
                 {
-                    Post(new FlowPublishFailed(publish.FlowId, publish.NodeId, Why(ex, deadline.IsCancellationRequested)));
+                    Post(new FlowStepFailed(publish.Run, publish.NodeId, Why(ex, deadline.IsCancellationRequested)));
                 }
             }
         }

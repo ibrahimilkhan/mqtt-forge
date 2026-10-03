@@ -4,8 +4,8 @@ namespace MqttForge.Application.Flows;
 
 /// <summary>Everything that can reach the flow engine's pump, as one closed union.</summary>
 // One order for all of them, for AlertCommand's reason. A deploy posted after an arrival has to be
-// applied after it, and a publish failure has to be counted against the flow that was running when
-// it was asked for. The runtime is single-threaded, so this is also the whole list of ways any other
+// applied after it, and a step that failed has to be counted against the run that was going when it
+// was asked for. The runtime is single-threaded, so this is also the whole list of ways any other
 // thread is allowed to reach it.
 //
 // One queue for all but a deploy, which waits in a slot of its own because the queue drops its
@@ -16,14 +16,17 @@ public abstract record FlowCommand;
 /// <summary>A message off the broker.</summary>
 public sealed record FlowArrival(MqttMessage Message) : FlowCommand;
 
-/// <summary>What should be running now, and every id still in the file.</summary>
+/// <summary>What should be switched on now, and every id still in the file.</summary>
 public sealed record FlowDeploy(IReadOnlyList<CompiledFlow> Flows, IReadOnlyCollection<string> Kept) : FlowCommand;
 
-/// <summary>Somebody pressed an Inject node's button.</summary>
-public sealed record FlowInject(string FlowId, string NodeId) : FlowCommand;
+/// <summary>Somebody pressed Test: run this draft once, beside the flow's active run.</summary>
+public sealed record FlowTestStart(CompiledFlow Flow) : FlowCommand;
 
-/// <summary>The publish loop could not send what a Publish node asked for.</summary>
-public sealed record FlowPublishFailed(string FlowId, string NodeId, string Reason) : FlowCommand;
+/// <summary>Somebody pressed Stop on a test, or deleted the flow it was a test of.</summary>
+public sealed record FlowTestStop(string FlowId) : FlowCommand;
+
+/// <summary>The engine could not carry out a step a run asked for: a publish, a webhook post.</summary>
+public sealed record FlowStepFailed(FlowRunKey Run, string NodeId, string Reason) : FlowCommand;
 
 /// <summary>Somebody cleared the alert history, which lists the flows' alarms that ended as well as the rules'.</summary>
 public sealed record FlowClearHistory : FlowCommand;

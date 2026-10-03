@@ -12,7 +12,7 @@ namespace MqttForge.UnitTests.Api;
 /// </summary>
 public class OriginGuardTests
 {
-    private const string Inject = "/api/flows/boiler/nodes/press/inject";
+    private const string Redial = "/api/connection/reconnect";
 
     private static readonly Func<string, bool> Nobody = _ => false;
 
@@ -37,7 +37,7 @@ public class OriginGuardTests
     // Everything that changes something, and the hub whatever the method: the WebSocket upgrade
     // that hands out every broadcast is a GET.
     [Theory]
-    [InlineData("POST", Inject)]
+    [InlineData("POST", Redial)]
     [InlineData("PUT", "/api/flows/boiler")]
     [InlineData("PATCH", "/api/flows/boiler")]
     [InlineData("DELETE", "/api/connection")]
@@ -68,7 +68,7 @@ public class OriginGuardTests
     [InlineData("http://127.0.0.1:5169.evil.example")]
     [InlineData("http://evil.example@127.0.0.1:5169")]
     public void Refuses_an_origin_that_is_not_the_address_asked(string origin) =>
-        Assert.False(OriginGuard.IsAllowed(Request("POST", Inject, origin), Nobody));
+        Assert.False(OriginGuard.IsAllowed(Request("POST", Redial, origin), Nobody));
 
     // A browser sends one Origin, so two are nobody's page, and the first being this app's own
     // vouches for nothing. Python's websocket-client sends exactly this when handed an Origin as a
@@ -90,7 +90,7 @@ public class OriginGuardTests
     [InlineData("same-site", "http://127.0.0.1:3000")]
     [InlineData("cross-site", "http://127.0.0.1:5169")]
     public void Refuses_a_browser_that_says_another_page_sent_it(string site, string? origin) =>
-        Assert.False(OriginGuard.IsAllowed(Request("POST", Inject, origin, site), Nobody));
+        Assert.False(OriginGuard.IsAllowed(Request("POST", Redial, origin, site), Nobody));
 
     // Every route to the app a browser takes: the console on loopback, the desktop window on its LAN
     // address, the container published on localhost, IPv6, a Bonjour name — and port 80, which
@@ -104,7 +104,7 @@ public class OriginGuardTests
     [InlineData("localhost", "http://localhost")]
     public void Takes_a_page_whose_origin_is_the_address_asked(string host, string origin)
     {
-        Assert.True(OriginGuard.IsAllowed(Request("POST", Inject, origin, host: host), Nobody));
+        Assert.True(OriginGuard.IsAllowed(Request("POST", Redial, origin, host: host), Nobody));
         Assert.True(OriginGuard.IsAllowed(Request("GET", "/hubs/mqtt", origin, host: host), Nobody));
     }
 
@@ -112,7 +112,7 @@ public class OriginGuardTests
     [Fact]
     public void Takes_a_page_on_https_where_the_request_is() =>
         Assert.True(OriginGuard.IsAllowed(
-            Request("POST", Inject, "https://mqtt.example.com", host: "mqtt.example.com", scheme: "https"), Nobody));
+            Request("POST", Redial, "https://mqtt.example.com", host: "mqtt.example.com", scheme: "https"), Nobody));
 
     // The browser's own word. Here Origin names the dev server and Host the API, because a proxy
     // in front rewrote Host — Vite's does, for /api. 'none' is the reader's own doing.
@@ -121,12 +121,12 @@ public class OriginGuardTests
     [InlineData("none")]
     public void Takes_the_browsers_word_that_the_page_is_the_addresses_own(string site) =>
         Assert.True(OriginGuard.IsAllowed(
-            Request("POST", Inject, "http://localhost:5173", site, host: "localhost:5169"), Nobody));
+            Request("POST", Redial, "http://localhost:5173", site, host: "localhost:5169"), Nobody));
 
     // curl, a script, the .NET client: not a browser, so not a page anyone else put in front of the
     // reader. A browser too old to send either header looks the same.
     [Theory]
-    [InlineData("POST", Inject)]
+    [InlineData("POST", Redial)]
     [InlineData("GET", "/hubs/mqtt")]
     public void Takes_a_request_that_names_no_origin(string method, string path) =>
         Assert.True(OriginGuard.IsAllowed(Request(method, path), Nobody));
@@ -139,9 +139,9 @@ public class OriginGuardTests
     public void Takes_an_origin_the_CORS_policy_names(string? site)
     {
         Assert.True(OriginGuard.IsAllowed(
-            Request("POST", Inject, "http://localhost:5173", site, host: "localhost:5169"), DevServer));
+            Request("POST", Redial, "http://localhost:5173", site, host: "localhost:5169"), DevServer));
         Assert.False(OriginGuard.IsAllowed(
-            Request("POST", Inject, "http://localhost:5173", site, host: "localhost:5169"), Nobody));
+            Request("POST", Redial, "http://localhost:5173", site, host: "localhost:5169"), Nobody));
     }
 
     // ---- the dev server ----
@@ -213,7 +213,7 @@ public class OriginGuardTests
 
         guard.Refused(Request("GET", "/hubs/mqtt", "https://mqtt.example.com", host: "mqtt.example.com"));
         guard.Refused(Request("GET", "/hubs/mqtt", "https://mqtt.example.com", host: "mqtt.example.com"));
-        guard.Refused(Request("POST", Inject, "http://evil.example"));
+        guard.Refused(Request("POST", Redial, "http://evil.example"));
 
         var said = Assert.Single(log.Entries);
         Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Warning, said.Level);

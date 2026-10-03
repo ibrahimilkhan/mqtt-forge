@@ -6,7 +6,7 @@ using MqttForge.Domain.Models;
 
 namespace MqttForge.Application.Services;
 
-/// <summary>What the flows page can ask for: the flows, a deploy, a delete, an inject.</summary>
+/// <summary>What the flows page can ask for: the flows, a save, a delete.</summary>
 // A deploy is three things that must not interleave with another deploy — write the file, compile
 // what the file now holds, hand that to the engine — so they share one gate. Without it, two
 // consoles deploying two flows at once could each compile the file as it stood before the other's
@@ -65,8 +65,8 @@ public sealed class FlowService
         }
 
         // Waited for after the gate: the pump may be held up for a moment, and no other deploy has to
-        // wait with it. What the answer means: the flows page presses a new Inject node's button the
-        // moment Deploy comes back, and before the engine had the flow that was a 404.
+        // wait with it. What the answer means: by the time Activate or Update comes back, the engine runs
+        // what was saved — FlowEngine.IsActive says so, and the next push shows it.
         try
         {
             await running;
@@ -100,15 +100,6 @@ public sealed class FlowService
         }
 
         await running;
-        return true;
-    }
-
-    /// <summary>Presses a running flow's Inject node. False when no running flow has one by that id.</summary>
-    public bool Inject(string flowId, string nodeId)
-    {
-        if (!_engine.CanInject(flowId, nodeId)) return false;
-
-        _engine.Post(new FlowInject(flowId, nodeId));
         return true;
     }
 

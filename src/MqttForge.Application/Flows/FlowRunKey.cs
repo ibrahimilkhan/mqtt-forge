@@ -1,4 +1,4 @@
-namespace MqttForge.Application.Flows.Next;
+namespace MqttForge.Application.Flows;
 
 /// <summary>Which of a flow's two runs: the flow at work, or a test of its draft.</summary>
 public enum FlowRunKind { Active, Test }

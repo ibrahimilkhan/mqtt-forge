@@ -65,27 +65,49 @@ public sealed class FlowsEndToEndTests : IClassFixture<MosquittoFixture>, IAsync
 
     private static JsonElement Config(object config) => JsonSerializer.SerializeToElement(config, FlowJson.Options);
 
+    /// <summary>Forever: read plant/+/temp; over 90, raise Hot and send the fan on; under, clear Hot.</summary>
     private static Flow Watch() => new("watch", "Boiler watch", true,
         [
+            new FlowNode("start", "start", 0, 0, Config(new { })),
+            new FlowNode("loop", "for", 0, 0, Config(new { forever = true })),
             new FlowNode("in", "mqttIn", 0, 0, Config(new { filter = "plant/+/temp" })),
             new FlowNode("test", "if", 0, 0, Config(new { field = "$.temp", test = "gt", value = "90" })),
-            new FlowNode("hot", "alarm", 0, 0, Config(new { name = "Hot", severity = "critical", reason = "{{topic[1]}} at {{$.temp}}" })),
+            new FlowNode("hot", "alarmRaise", 0, 0, Config(new { name = "Hot", level = "critical", reason = "{{topic[1]}} at {{$.temp}}" })),
+            new FlowNode("cool", "alarmClear", 0, 0, Config(new { alarm = "hot" })),
             new FlowNode("fan", "publish", 0, 0, Config(new { topic = "plant/{{topic[1]}}/cmd", payload = "{\"fan\":\"on\"}", qos = 1 })),
+            new FlowNode("end", "end", 0, 0, Config(new { })),
         ],
         [
-            new FlowEdge("e1", "in", "out", "test", "in"),
-            new FlowEdge("e2", "test", "yes", "hot", "raise"),
-            new FlowEdge("e3", "test", "yes", "fan", "in"),
-            new FlowEdge("e4", "test", "no", "hot", "clear"),
+            new FlowEdge("e1", "start", "out", "loop", "in"),
+            new FlowEdge("e2", "loop", "body", "in", "in"),
+            new FlowEdge("e3", "in", "out", "test", "in"),
+            new FlowEdge("e4", "test", "yes", "hot", "in"),
+            new FlowEdge("e5", "hot", "raised", "fan", "in"),
+            new FlowEdge("e6", "hot", "up", "fan", "in"),
+            new FlowEdge("e7", "fan", "out", "loop", "next"),
+            new FlowEdge("e8", "test", "no", "cool", "in"),
+            new FlowEdge("e9", "cool", "cleared", "loop", "next"),
+            new FlowEdge("e10", "cool", "none", "loop", "next"),
+            new FlowEdge("e11", "loop", "done", "end", "in"),
         ]);
 
-    // Subscribes to what it publishes. Without the echo guard this would publish for ever.
+    // Forever: read loop/x and publish what it read to loop/x — it subscribes to what it publishes.
+    // Without the echo guard this would publish for ever.
     private static Flow Loop() => new("loop", "Self loop", true,
         [
+            new FlowNode("start", "start", 0, 0, Config(new { })),
+            new FlowNode("loop", "for", 0, 0, Config(new { forever = true })),
             new FlowNode("in", "mqttIn", 0, 0, Config(new { filter = "loop/x" })),
             new FlowNode("send", "publish", 0, 0, Config(new { topic = "loop/x", payload = "{{payload}}" })),
+            new FlowNode("end", "end", 0, 0, Config(new { })),
         ],
-        [new FlowEdge("e1", "in", "out", "send", "in")]);
+        [
+            new FlowEdge("e1", "start", "out", "loop", "in"),
+            new FlowEdge("e2", "loop", "body", "in", "in"),
+            new FlowEdge("e3", "in", "out", "send", "in"),
+            new FlowEdge("e4", "send", "out", "loop", "next"),
+            new FlowEdge("e5", "loop", "done", "end", "in"),
+        ]);
 
     private async Task<WebApplicationFactory<Program>> StartedAsync(params Flow[] flows)
     {

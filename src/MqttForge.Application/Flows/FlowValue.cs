@@ -1,6 +1,6 @@
 using MqttForge.Application.Alerts;
 
-namespace MqttForge.Application.Flows.Next;
+namespace MqttForge.Application.Flows;
 
 /// <summary>Where a setting reads a value from: the whole payload, a field of it, or a variable.</summary>
 // One way to write it everywhere a field is asked for — If's field, For each's array, Raise alarm's

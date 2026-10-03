@@ -1,8 +1,6 @@
-using MqttForge.Application.Flows.Next;
-using FlowLimits = MqttForge.Application.Flows.FlowLimits;
-using FlowMessage = MqttForge.Application.Flows.FlowMessage;
+using MqttForge.Application.Flows;
 
-namespace MqttForge.UnitTests.Application.Flows.Next;
+namespace MqttForge.UnitTests.Application.Flows;
 
 public class FlowLanguageTests
 {

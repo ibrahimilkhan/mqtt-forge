@@ -5,13 +5,15 @@ using System.Text.Json;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using MqttForge.Api.Realtime;
+using MqttForge.Application.Flows;
 using MqttForge.IntegrationTests.Support;
 using Xunit;
 
 namespace MqttForge.IntegrationTests.Api;
 
-// No broker: everything here is reachable without one, including a flow alarm — an Inject node
-// wired to an Alarm raises it, which is the one route to GET /api/alerts that needs no traffic.
+// No broker: everything here is reachable without one, including a flow alarm — a Raise alarm right
+// after Start goes up the moment its flow is switched on, which is the one route to GET /api/alerts
+// that needs no traffic.
 public sealed class FlowEndpointTests : IClassFixture<MqttForgeApiFactory>
 {
     private readonly MqttForgeApiFactory _factory;
@@ -23,17 +25,30 @@ public sealed class FlowEndpointTests : IClassFixture<MqttForgeApiFactory>
         _client = factory.CreateClient();
     }
 
-    private static object Flow(string id, string alarmName = "Pressed", string injectId = "go") => new
+    private static object Node(string id, string type, object? config = null) =>
+        new { id, type, x = 0, y = 0, config = config ?? new { } };
+
+    private static object Wire(string id, string from, string fromPort, string to) =>
+        new { id, from, fromPort, to, toPort = "in" };
+
+    /// <summary>Start → Raise alarm ring → End: the alarm goes up the moment the flow is switched on.</summary>
+    private static object Flow(string id, string alarmName = "Pressed") => new
     {
         id,
         name = "Button",
         enabled = true,
-        nodes = new object[]
+        nodes = new[]
         {
-            new { id = injectId, type = "inject", x = 40, y = 80, config = new { topic = "plant/k1/button", payload = "1" } },
-            new { id = "ring", type = "alarm", x = 260, y = 80, config = new { name = alarmName, severity = "warn", reason = "{{topic}} pressed" } },
+            Node("start", "start"),
+            Node("ring", "alarmRaise", new { name = alarmName, level = "warn", reason = "pressed" }),
+            Node("end", "end"),
         },
-        edges = new object[] { new { id = "e1", from = injectId, fromPort = "out", to = "ring", toPort = "raise" } },
+        edges = new[]
+        {
+            Wire("e1", "start", "out", "ring"),
+            Wire("e2", "ring", "raised", "end"),
+            Wire("e3", "ring", "up", "end"),
+        },
     };
 
     private static async Task<JsonElement> Json(HttpResponseMessage response) =>
@@ -124,29 +139,37 @@ public sealed class FlowEndpointTests : IClassFixture<MqttForgeApiFactory>
         Assert.Equal(HttpStatusCode.NotFound, (await _client.DeleteAsync("/api/flows/doomed")).StatusCode);
     }
 
-    // A deploy is answered once the engine is running the flow, so its button works the moment the
-    // answer comes back — with no waiting and no second try.
+    // A save is answered once the engine is running the flow, so it is switched on the moment the answer
+    // comes back, with no waiting and no second try. The status is what the engine last pushed, a quarter
+    // second at most behind, and shows the run in the words the console reads.
     [Fact]
-    public async Task A_flow_can_be_injected_the_moment_its_deploy_is_answered()
+    public async Task An_activated_flow_is_switched_on_once_its_save_is_answered_and_shows_in_the_status()
     {
         Assert.Equal(HttpStatusCode.OK, (await _client.PutAsJsonAsync("/api/flows/ready", Flow("ready"))).StatusCode);
 
-        Assert.Equal(HttpStatusCode.Accepted, (await _client.PostAsync("/api/flows/ready/nodes/go/inject", null)).StatusCode);
+        Assert.True(_factory.Services.GetRequiredService<FlowEngine>().IsActive("ready"));
+
+        var runs = new List<JsonElement>();
+        await Until(async () =>
+        {
+            var status = await Json(await _client.GetAsync("/api/flows/status"));
+            runs = [.. status.GetProperty("runs").EnumerateArray().Where(run => run.GetProperty("flowId").GetString() == "ready")];
+            return runs.Count > 0;
+        }, "the status to show the flow's run");
+
+        var ready = Assert.Single(runs);
+        Assert.Equal("active", ready.GetProperty("kind").GetString());
+        Assert.Equal("finished", ready.GetProperty("state").GetString());
+        Assert.Equal("end", ready.GetProperty("at").GetString());
+        Assert.Equal(JsonValueKind.Null, ready.GetProperty("waiting").ValueKind);
+        Assert.Equal(JsonValueKind.Object, ready.GetProperty("variables").ValueKind);
     }
 
     [Fact]
-    public async Task Injecting_a_node_no_running_flow_has_is_404() =>
-        Assert.Equal(HttpStatusCode.NotFound,
-            (await _client.PostAsync("/api/flows/nobody/nodes/nothing/inject", null)).StatusCode);
-
-    [Fact]
-    public async Task An_injected_alarm_is_in_the_flow_status_and_in_GET_alerts()
+    public async Task An_activated_flows_alarm_is_in_the_flow_status_and_in_GET_alerts()
     {
-        await _client.PutAsJsonAsync("/api/flows/button", Flow("button", alarmName: "Button pressed"));
-
-        await Until(async () =>
-            (await _client.PostAsync("/api/flows/button/nodes/go/inject", null)).StatusCode == HttpStatusCode.Accepted,
-            "the deployed flow to accept an inject");
+        Assert.Equal(HttpStatusCode.OK,
+            (await _client.PutAsJsonAsync("/api/flows/button", Flow("button", alarmName: "Button pressed"))).StatusCode);
 
         await Until(async () =>
         {
@@ -154,15 +177,15 @@ public sealed class FlowEndpointTests : IClassFixture<MqttForgeApiFactory>
             return alerts.GetProperty("active").EnumerateArray().Any(alert =>
                 alert.GetProperty("ruleId").GetString() == "flow-button-ring" &&
                 alert.GetProperty("ruleName").GetString() == "Button · Button pressed" &&
-                alert.GetProperty("reason").GetString() == "plant/k1/button pressed");
+                alert.GetProperty("reason").GetString() == "pressed");
         }, "the flow alarm to be in GET /api/alerts");
 
         await Until(async () =>
         {
             var status = await Json(await _client.GetAsync("/api/flows/status"));
-            return status.GetProperty("flows").EnumerateArray().Any(flow =>
-                flow.GetProperty("id").GetString() == "button" &&
-                flow.GetProperty("nodes").EnumerateArray().Any(node =>
+            return status.GetProperty("runs").EnumerateArray().Any(run =>
+                run.GetProperty("flowId").GetString() == "button" &&
+                run.GetProperty("nodes").EnumerateArray().Any(node =>
                     node.GetProperty("id").GetString() == "ring" && node.GetProperty("standing").GetArrayLength() == 1));
         }, "the status to show the standing alarm");
     }
@@ -170,6 +193,9 @@ public sealed class FlowEndpointTests : IClassFixture<MqttForgeApiFactory>
     // The other half of the merge AlertController.WithFlows does: GET /api/alerts replaces its
     // whole active/history state on every read, so a flow alarm that cleared has to leave active
     // and land in history in the very same answer, the way an alert-rule alarm does.
+    //
+    // The flow raises and clears on its own, half a second apart, so what is read is the end of it:
+    // a window of half a second to see the alarm up as well would fail on a machine busy enough.
     [Fact]
     public async Task A_cleared_flow_alarm_leaves_active_and_lands_in_history_as_cleared()
     {
@@ -178,35 +204,26 @@ public sealed class FlowEndpointTests : IClassFixture<MqttForgeApiFactory>
             id = "toggle",
             name = "Toggle",
             enabled = true,
-            nodes = new object[]
+            nodes = new[]
             {
-                new { id = "raiseGo", type = "inject", x = 40, y = 40, config = new { topic = "plant/k1/button", payload = "1" } },
-                new { id = "clearGo", type = "inject", x = 40, y = 160, config = new { topic = "plant/k1/button", payload = "0" } },
-                new { id = "ring", type = "alarm", x = 260, y = 100, config = new { name = "Pressed", severity = "warn", reason = "{{topic}} pressed" } },
+                Node("start", "start"),
+                Node("ring", "alarmRaise", new { name = "Pressed", level = "warn", reason = "pressed" }),
+                Node("pause", "wait", new { seconds = "0.5" }),
+                Node("clear", "alarmClear", new { alarm = "ring" }),
+                Node("end", "end"),
             },
-            edges = new object[]
+            edges = new[]
             {
-                new { id = "e1", from = "raiseGo", fromPort = "out", to = "ring", toPort = "raise" },
-                new { id = "e2", from = "clearGo", fromPort = "out", to = "ring", toPort = "clear" },
+                Wire("e1", "start", "out", "ring"),
+                Wire("e2", "ring", "raised", "pause"),
+                Wire("e3", "ring", "up", "pause"),
+                Wire("e4", "pause", "out", "clear"),
+                Wire("e5", "clear", "cleared", "end"),
+                Wire("e6", "clear", "none", "end"),
             },
         };
 
-        await _client.PutAsJsonAsync("/api/flows/toggle", flow);
-
-        await Until(async () =>
-            (await _client.PostAsync("/api/flows/toggle/nodes/raiseGo/inject", null)).StatusCode == HttpStatusCode.Accepted,
-            "the deployed flow to accept the raise inject");
-
-        await Until(async () =>
-        {
-            var alerts = await Json(await _client.GetAsync("/api/alerts"));
-            return alerts.GetProperty("active").EnumerateArray()
-                .Any(alert => alert.GetProperty("ruleId").GetString() == "flow-toggle-ring");
-        }, "the raised alarm to reach GET /api/alerts");
-
-        await Until(async () =>
-            (await _client.PostAsync("/api/flows/toggle/nodes/clearGo/inject", null)).StatusCode == HttpStatusCode.Accepted,
-            "the deployed flow to accept the clear inject");
+        Assert.Equal(HttpStatusCode.OK, (await _client.PutAsJsonAsync("/api/flows/toggle", flow)).StatusCode);
 
         await Until(async () =>
         {
@@ -230,32 +247,33 @@ public sealed class FlowEndpointTests : IClassFixture<MqttForgeApiFactory>
         using var fresh = new MqttForgeApiFactory();
         var client = fresh.CreateClient();
 
+        // One alarm raised and cleared, and another raised and left standing.
         await client.PutAsJsonAsync("/api/flows/pair", new
         {
             id = "pair",
             name = "Pair",
             enabled = true,
-            nodes = new object[]
+            nodes = new[]
             {
-                new { id = "raiseGo", type = "inject", x = 40, y = 40, config = new { topic = "plant/k1/button", payload = "1" } },
-                new { id = "clearGo", type = "inject", x = 40, y = 160, config = new { topic = "plant/k1/button", payload = "0" } },
-                new { id = "otherGo", type = "inject", x = 40, y = 280, config = new { topic = "plant/k2/button", payload = "1" } },
-                new { id = "ring", type = "alarm", x = 260, y = 100, config = new { name = "Pressed", severity = "warn" } },
+                Node("start", "start"),
+                Node("ring", "alarmRaise", new { name = "Pressed", level = "warn" }),
+                Node("clear", "alarmClear", new { alarm = "ring" }),
+                Node("other", "alarmRaise", new { name = "Other", level = "warn" }),
+                Node("end", "end"),
             },
-            edges = new object[]
+            edges = new[]
             {
-                new { id = "e1", from = "raiseGo", fromPort = "out", to = "ring", toPort = "raise" },
-                new { id = "e2", from = "clearGo", fromPort = "out", to = "ring", toPort = "clear" },
-                new { id = "e3", from = "otherGo", fromPort = "out", to = "ring", toPort = "raise" },
+                Wire("e1", "start", "out", "ring"),
+                Wire("e2", "ring", "raised", "clear"),
+                Wire("e3", "ring", "up", "clear"),
+                Wire("e4", "clear", "cleared", "other"),
+                Wire("e5", "clear", "none", "other"),
+                Wire("e6", "other", "raised", "end"),
+                Wire("e7", "other", "up", "end"),
             },
         });
 
-        foreach (var node in new[] { "raiseGo", "clearGo", "otherGo" })
-            await Until(async () =>
-                (await client.PostAsync($"/api/flows/pair/nodes/{node}/inject", null)).StatusCode == HttpStatusCode.Accepted,
-                $"the flow to accept {node}");
-
-        static bool Ours(JsonElement alert) => alert.GetProperty("ruleId").GetString() == "flow-pair-ring";
+        static bool Ours(JsonElement alert) => alert.GetProperty("ruleId").GetString()!.StartsWith("flow-pair-", StringComparison.Ordinal);
 
         await Until(async () =>
         {
@@ -271,12 +289,12 @@ public sealed class FlowEndpointTests : IClassFixture<MqttForgeApiFactory>
             "the flow alarm that ended to leave the history");
 
         var standing = (await Json(await client.GetAsync("/api/alerts"))).GetProperty("active").EnumerateArray().Where(Ours).ToList();
-        Assert.Equal("plant/k2/button", Assert.Single(standing).GetProperty("topic").GetString());
+        Assert.Equal("flow-pair-other", Assert.Single(standing).GetProperty("ruleId").GetString());
     }
 
     // The consoles stop reading as the first alarm is sent to them, so its frame sits until it is
-    // called off. The flows do not wait with it: the second button's alarm is raised with the first
-    // one's frame still stuck, and stopping the host is what lets that frame go.
+    // called off. The flows do not wait with it: the second alarm is raised half a second later with
+    // the first one's frame still stuck, and stopping the host is what lets that frame go.
     [Fact]
     public async Task A_console_that_stops_reading_holds_up_no_flow_alarm_and_is_let_go_when_the_host_stops()
     {
@@ -289,32 +307,36 @@ public sealed class FlowEndpointTests : IClassFixture<MqttForgeApiFactory>
         }));
         var client = host.CreateClient();
 
-        await client.PutAsJsonAsync("/api/flows/bells", new
+        var saved = await client.PutAsJsonAsync("/api/flows/bells", new
         {
             id = "bells",
             name = "Bells",
             enabled = true,
-            nodes = new object[]
+            nodes = new[]
             {
-                new { id = "one", type = "inject", x = 40, y = 40, config = new { topic = "plant/k1/button", payload = "1" } },
-                new { id = "two", type = "inject", x = 40, y = 160, config = new { topic = "plant/k2/button", payload = "1" } },
-                new { id = "ring", type = "alarm", x = 260, y = 100, config = new { name = "Pressed", severity = "warn" } },
+                Node("start", "start"),
+                Node("one", "alarmRaise", new { name = "First", level = "warn" }),
+                Node("pause", "wait", new { seconds = "0.5" }),
+                Node("two", "alarmRaise", new { name = "Second", level = "warn" }),
+                Node("end", "end"),
             },
-            edges = new object[]
+            edges = new[]
             {
-                new { id = "e1", from = "one", fromPort = "out", to = "ring", toPort = "raise" },
-                new { id = "e2", from = "two", fromPort = "out", to = "ring", toPort = "raise" },
+                Wire("e1", "start", "out", "one"),
+                Wire("e2", "one", "raised", "pause"),
+                Wire("e3", "one", "up", "pause"),
+                Wire("e4", "pause", "out", "two"),
+                Wire("e5", "two", "raised", "end"),
+                Wire("e6", "two", "up", "end"),
             },
         });
+        Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
 
         async Task<int> Standing() =>
             (await Json(await client.GetAsync("/api/alerts"))).GetProperty("active").EnumerateArray()
-                .Count(alert => alert.GetProperty("ruleId").GetString() == "flow-bells-ring");
+                .Count(alert => alert.GetProperty("ruleId").GetString()!.StartsWith("flow-bells-", StringComparison.Ordinal));
 
-        Assert.Equal(HttpStatusCode.Accepted, (await client.PostAsync("/api/flows/bells/nodes/one/inject", null)).StatusCode);
         await Until(() => Task.FromResult(hub.Held == 1), "the first alarm's frame to be stuck with the console");
-
-        Assert.Equal(HttpStatusCode.Accepted, (await client.PostAsync("/api/flows/bells/nodes/two/inject", null)).StatusCode);
         await Until(async () => await Standing() == 2, "the second alarm to be raised, with the first one's frame still stuck");
 
         await host.DisposeAsync();

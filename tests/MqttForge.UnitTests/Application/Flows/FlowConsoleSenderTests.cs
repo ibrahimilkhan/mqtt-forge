@@ -46,9 +46,10 @@ public sealed class FlowConsoleSenderTests : IAsyncLifetime
         Assert.Fail($"Timed out waiting until {what}.");
     }
 
-    private static FlowDebugEntry Line(int n) => new("f1", "say", T0, FlowDebugEntry.Message, "a/b", $"line {n}");
+    private static FlowDebugEntry Line(int n) => new("f1", "say", T0, FlowDebugEntry.Message, "a/b", $"line {n}", Test: false);
 
-    private static FlowStatus Picture(int n) => new([new FlowRunStatus($"f{n}", null, [])]);
+    private static FlowStatus Picture(int n) =>
+        new([new FlowRunStatus($"f{n}", FlowRunKind.Active, FlowRunState.Waiting, null, null, null, new Dictionary<string, string>(), [])]);
 
     private static Alert Alarm(string id) => new(id, "flow-f1-hot", "Watch · Hot", $"plant/{id}/temp", AlertSeverity.Critical,
         FiredAt: T0, LastSeenAt: T0, ResolvedAt: null, ResolvedBy: null, MutedUntil: null, Count: 1,
@@ -77,7 +78,7 @@ public sealed class FlowConsoleSenderTests : IAsyncLifetime
 
         await Until(() => _console.Told.Count == 5, "the alarms and the picture to be taken");
         Assert.Equal(["raised a", "raised b", "resolved b", "raised c", "status 0"], _console.Told);
-        Assert.Equal("f1", Assert.Single(_console.Statuses).Flows.Single().Id);
+        Assert.Equal("f1", Assert.Single(_console.Statuses).Runs.Single().FlowId);
     }
 
     [Fact]
@@ -182,7 +183,34 @@ public sealed class FlowConsoleSenderTests : IAsyncLifetime
         _console.Stall = false;
 
         await Until(() => _console.Statuses.Count == 2, "the stuck picture and the newest to be taken");
-        Assert.Equal(["f1", "f3"], _console.Statuses.Select(status => status.Flows.Single().Id));
+        Assert.Equal(["f1", "f3"], _console.Statuses.Select(status => status.Runs.Single().FlowId));
+    }
+
+    // ---- tones and notices ----
+
+    private static FlowSound Tone(int n) => new($"f{n}", "beep", AlertSeverity.Warn, Test: false);
+
+    private static FlowNotice Notice(int n) => new($"f{n}", "Watch", "tell", $"notice {n}", AlertSeverity.Warn, T0, Test: false);
+
+    // Moments, and kept as such: a console that was slow to take them is sent the newest of each, and
+    // after every alarm handed over before them, since a tone or a notice is so often about one. Here the
+    // alarm comes while the loop is in the middle of sending another, which is where it could fall behind.
+    [Fact]
+    public async Task Tones_and_notices_handed_over_while_the_console_is_held_go_out_the_newest_of_each_after_the_alarms_before_them()
+    {
+        _console.Stall = true;
+        _sender.Alarms([Up("w")]);
+        await Until(() => _console.Held == 1, "the first alarm to be stuck with the console");
+
+        _sender.Alarms([Up("x")]);
+        _sender.Sounds([.. Enumerable.Range(0, FlowConsoleSender.Moments + 4).Select(Tone)]);
+        _sender.Notices([.. Enumerable.Range(0, FlowConsoleSender.Moments + 4).Select(Notice)]);
+        _console.Stall = false;
+
+        await Until(() => _console.Told.Count == 4, "the alarms, the tones and the notices to be taken");
+        Assert.Equal(["raised a", "raised b", "sounds", "notices"], _console.Told);
+        Assert.Equal(Enumerable.Range(4, FlowConsoleSender.Moments).Select(n => $"f{n}"), _console.Sounds.Select(sound => sound.FlowId));
+        Assert.Equal(Enumerable.Range(4, FlowConsoleSender.Moments).Select(n => $"notice {n}"), _console.Notices.Select(notice => notice.Text));
     }
 
     [Fact]

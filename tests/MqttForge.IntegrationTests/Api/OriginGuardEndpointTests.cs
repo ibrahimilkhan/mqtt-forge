@@ -25,7 +25,8 @@ namespace MqttForge.IntegrationTests.Api;
 /// app's are among them. The browser keeps the answer from the page, but a form or a no-cors fetch
 /// sends a POST without asking first, and a WebSocket is not CORS's business at all. Both were
 /// measured from <c>http://evil.example</c>: the hub handed that page every broadcast, the reader's
-/// broker traffic among them, and a body-less POST pressed a flow's Inject.
+/// broker traffic among them, and a body-less POST pressed a flow's Inject — a node since gone,
+/// whose place here a flow's delete takes, the flows' one action that needs no body.
 /// </summary>
 public sealed class OriginGuardEndpointTests : IClassFixture<MqttForgeApiFactory>
 {
@@ -78,33 +79,31 @@ public sealed class OriginGuardEndpointTests : IClassFixture<MqttForgeApiFactory
         Assert.Equal("{}\u001e", await Handshake(hub));
     }
 
-    // The request the probe sent: text/plain and nothing in it, which a form can send with no
-    // preflight, to an action that needs no body to act.
+    // The probe's request was a form's: nothing in it, to an action that needs no body to act. A flow's
+    // delete needs none either, and is refused before it acts — the flow is still there — while the
+    // page's own delete goes through.
     [Fact]
-    public async Task A_cross_site_form_post_does_not_press_an_Inject()
+    public async Task A_cross_site_request_does_not_delete_a_flow()
     {
         await Deploy(_client, "buttons");
 
-        var theirs = await Send(_client, HttpMethod.Post, "/api/flows/buttons/nodes/theirs/inject", OtherSite, plainText: true);
+        var theirs = await Send(_client, HttpMethod.Delete, "/api/flows/buttons", OtherSite);
         Assert.Equal(HttpStatusCode.Forbidden, theirs.StatusCode);
+        Assert.True(await Listed(_client, "buttons"));
 
-        // Pressed after it, on the same engine queue: by the time this one is counted, the refused
-        // one would have been counted too.
-        var ours = await Send(_client, HttpMethod.Post, "/api/flows/buttons/nodes/ours/inject", OwnPage, plainText: true);
-        Assert.Equal(HttpStatusCode.Accepted, ours.StatusCode);
-
-        await Until(async () => await Count(_client, "buttons", "ours") == 1, "the page's own press to be counted");
-        Assert.Equal(0, await Count(_client, "buttons", "theirs"));
+        var ours = await Send(_client, HttpMethod.Delete, "/api/flows/buttons", OwnPage);
+        Assert.Equal(HttpStatusCode.NoContent, ours.StatusCode);
+        Assert.False(await Listed(_client, "buttons"));
     }
 
     [Fact]
-    public async Task A_script_that_names_no_origin_still_presses_an_Inject()
+    public async Task A_script_that_names_no_origin_still_deletes_a_flow()
     {
         await Deploy(_client, "scripted");
 
-        var response = await Send(_client, HttpMethod.Post, "/api/flows/scripted/nodes/ours/inject", origin: null, plainText: true);
+        var response = await Send(_client, HttpMethod.Delete, "/api/flows/scripted", origin: null);
 
-        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
 
     // Covered by method rather than one endpoint at a time, so one added later is covered before
@@ -119,7 +118,6 @@ public sealed class OriginGuardEndpointTests : IClassFixture<MqttForgeApiFactory
         var client = fresh.CreateClient();
         var routes = UnsafeRoutes(fresh.Services);
 
-        Assert.Contains(("POST", "/api/flows/x/nodes/x/inject"), routes);
         Assert.Contains(("POST", "/api/export/folder"), routes);
         Assert.Contains(("POST", "/api/connection/reconnect"), routes);
         Assert.Contains(("POST", "/hubs/mqtt/negotiate"), routes);
@@ -144,8 +142,8 @@ public sealed class OriginGuardEndpointTests : IClassFixture<MqttForgeApiFactory
     {
         await Deploy(_client, "window");
 
-        var inject = await Send(_client, HttpMethod.Post, "/api/flows/window/nodes/ours/inject", $"http://{address}", host: address);
-        Assert.Equal(HttpStatusCode.Accepted, inject.StatusCode);
+        var delete = await Send(_client, HttpMethod.Delete, "/api/flows/window", $"http://{address}", host: address);
+        Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
 
         using var hub = await OpenHub(_factory, $"http://{address}", host: address);
         Assert.Equal("{}\u001e", await Handshake(hub));
@@ -154,15 +152,15 @@ public sealed class OriginGuardEndpointTests : IClassFixture<MqttForgeApiFactory
     // In development the console is the Vite dev server's page, which proxies /api with the Host
     // rewritten to the API's and /hubs with its own kept. The CORS policy there already names it.
     [Fact]
-    public async Task Development_lets_the_dev_servers_page_press_an_Inject_and_open_the_hub()
+    public async Task Development_lets_the_dev_servers_page_delete_a_flow_and_open_the_hub()
     {
         using var factory = new MqttForgeApiFactory();
         using var dev = factory.WithWebHostBuilder(b => b.UseEnvironment("Development"));
         var client = dev.CreateClient();
         await Deploy(client, "dev");
 
-        var inject = await Send(client, HttpMethod.Post, "/api/flows/dev/nodes/ours/inject", DevServer, host: "localhost:5169");
-        Assert.Equal(HttpStatusCode.Accepted, inject.StatusCode);
+        var delete = await Send(client, HttpMethod.Delete, "/api/flows/dev", DevServer, host: "localhost:5169");
+        Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
 
         var negotiate = await Send(client, HttpMethod.Post, "/hubs/mqtt/negotiate?negotiateVersion=1", DevServer, host: "localhost:5173");
         Assert.Equal(HttpStatusCode.OK, negotiate.StatusCode);
@@ -187,8 +185,8 @@ public sealed class OriginGuardEndpointTests : IClassFixture<MqttForgeApiFactory
         var client = dev.CreateClient();
         await Deploy(client, "lan");
 
-        var inject = await Send(client, HttpMethod.Post, "/api/flows/lan/nodes/ours/inject", page, host: "localhost:5169");
-        Assert.Equal(HttpStatusCode.Accepted, inject.StatusCode);
+        var delete = await Send(client, HttpMethod.Delete, "/api/flows/lan", page, host: "localhost:5169");
+        Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
 
         using var hub = await OpenHub(dev, page, host: new Uri(page).Authority);
         Assert.Equal("{}\u001e", await Handshake(hub));
@@ -206,8 +204,8 @@ public sealed class OriginGuardEndpointTests : IClassFixture<MqttForgeApiFactory
         var client = dev.CreateClient();
         await Deploy(client, "lan");
 
-        var inject = await Send(client, HttpMethod.Post, "/api/flows/lan/nodes/ours/inject", page, host: "localhost:5169");
-        Assert.Equal(HttpStatusCode.Forbidden, inject.StatusCode);
+        var delete = await Send(client, HttpMethod.Delete, "/api/flows/lan", page, host: "localhost:5169");
+        Assert.Equal(HttpStatusCode.Forbidden, delete.StatusCode);
 
         var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => OpenHub(dev, page, host: "localhost:5169"));
         Assert.Contains("status code: 403", refused.Message);
@@ -223,8 +221,8 @@ public sealed class OriginGuardEndpointTests : IClassFixture<MqttForgeApiFactory
         var client = production.CreateClient();
         await Deploy(client, "shipped");
 
-        var inject = await Send(client, HttpMethod.Post, "/api/flows/shipped/nodes/ours/inject", page, host: "localhost:5169");
-        Assert.Equal(HttpStatusCode.Forbidden, inject.StatusCode);
+        var delete = await Send(client, HttpMethod.Delete, "/api/flows/shipped", page, host: "localhost:5169");
+        Assert.Equal(HttpStatusCode.Forbidden, delete.StatusCode);
 
         var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => OpenHub(production, page, host: "localhost:5169"));
         Assert.Contains("status code: 403", refused.Message);
@@ -239,7 +237,7 @@ public sealed class OriginGuardEndpointTests : IClassFixture<MqttForgeApiFactory
         var client = production.CreateClient();
         await Deploy(client, "shipped");
 
-        var response = await Send(client, HttpMethod.Post, "/api/flows/shipped/nodes/ours/inject", DevServer, host: "localhost:5169");
+        var response = await Send(client, HttpMethod.Delete, "/api/flows/shipped", DevServer, host: "localhost:5169");
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
@@ -255,10 +253,10 @@ public sealed class OriginGuardEndpointTests : IClassFixture<MqttForgeApiFactory
         var client = production.CreateClient();
         await Deploy(client, "proxied");
 
-        var response = await Send(client, HttpMethod.Post, "/api/flows/proxied/nodes/ours/inject", DevServer,
+        var response = await Send(client, HttpMethod.Delete, "/api/flows/proxied", DevServer,
             host: "localhost:5169", site: "same-origin");
 
-        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
 
     // Naming the hosts hands the Host question to ASP.NET. It does not hand over this one: a page on
@@ -370,7 +368,7 @@ public sealed class OriginGuardEndpointTests : IClassFixture<MqttForgeApiFactory
         return Encoding.UTF8.GetString(buffer, 0, received.Count);
     }
 
-    /// <summary>Two Inject nodes into one Debug: one for a page on another site to try, one for ours.</summary>
+    /// <summary>Start → Debug → End, saved by a client that names no origin: a flow for a page to delete.</summary>
     private static async Task Deploy(HttpClient client, string id)
     {
         var flow = new
@@ -380,43 +378,26 @@ public sealed class OriginGuardEndpointTests : IClassFixture<MqttForgeApiFactory
             enabled = true,
             nodes = new object[]
             {
-                new { id = "theirs", type = "inject", x = 40, y = 40, config = new { topic = "plant/k1/button", payload = "1" } },
-                new { id = "ours", type = "inject", x = 40, y = 160, config = new { topic = "plant/k1/button", payload = "1" } },
+                new { id = "start", type = "start", x = 40, y = 100, config = new { } },
                 new { id = "look", type = "debug", x = 260, y = 100, config = new { } },
+                new { id = "end", type = "end", x = 480, y = 100, config = new { } },
             },
             edges = new object[]
             {
-                new { id = "e1", from = "theirs", fromPort = "out", to = "look", toPort = "in" },
-                new { id = "e2", from = "ours", fromPort = "out", to = "look", toPort = "in" },
+                new { id = "e1", from = "start", fromPort = "out", to = "look", toPort = "in" },
+                new { id = "e2", from = "look", fromPort = "out", to = "end", toPort = "in" },
             },
         };
 
         Assert.Equal(HttpStatusCode.OK, (await client.PutAsJsonAsync($"/api/flows/{id}", flow)).StatusCode);
     }
 
-    /// <summary>How many times a node has run, as GET /api/flows/status last had it.</summary>
-    private static async Task<long> Count(HttpClient client, string flowId, string nodeId)
+    /// <summary>Whether GET /api/flows still lists the flow.</summary>
+    private static async Task<bool> Listed(HttpClient client, string id)
     {
-        using var status = JsonDocument.Parse(await client.GetStringAsync("/api/flows/status"));
+        using var flows = JsonDocument.Parse(await client.GetStringAsync("/api/flows"));
 
-        return status.RootElement.GetProperty("flows").EnumerateArray()
-            .Where(flow => flow.GetProperty("id").GetString() == flowId)
-            .SelectMany(flow => flow.GetProperty("nodes").EnumerateArray())
-            .Where(node => node.GetProperty("id").GetString() == nodeId)
-            .Select(node => node.GetProperty("count").GetInt64())
-            .SingleOrDefault();
-    }
-
-    private static async Task Until(Func<Task<bool>> settled, string what)
-    {
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
-        while (DateTime.UtcNow < deadline)
-        {
-            if (await settled()) return;
-            await Task.Delay(50);
-        }
-
-        Assert.Fail($"Timed out waiting for {what}.");
+        return flows.RootElement.GetProperty("flows").EnumerateArray().Any(flow => flow.GetProperty("id").GetString() == id);
     }
 
     /// <summary>Every mapped method that is not GET, HEAD, OPTIONS or TRACE, on a path with its parameters filled.</summary>

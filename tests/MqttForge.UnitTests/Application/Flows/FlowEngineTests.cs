@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
@@ -30,7 +31,6 @@ public sealed class FlowEngineTests : IAsyncLifetime
     private readonly FakeTimeProvider _time = new(T0);
     private readonly FakeFlowStore _store = new();
     private readonly RecordingAlertNotifier _alerts = new();
-    private readonly RecordingAlertDispatcher _dispatcher = new();
     private readonly RecordingFlowNotifier _console = new();
     private readonly FakeConnection _connection = new() { State = ConnectionState.Connected };
     private readonly RecordingSubscriber _subscriber = new();
@@ -43,20 +43,23 @@ public sealed class FlowEngineTests : IAsyncLifetime
     private TimeProvider? _clock;
 
     private async Task<FlowEngine> RunningAsync(params Flow[] flows) =>
-        Run(await StartedAsync(_alerts, _dispatcher, flows));
+        Run(await StartedAsync(_alerts, flows));
 
-    private async Task<FlowEngine> RunningAsync(IAlertNotifier alerts, IAlertDispatcher dispatcher, params Flow[] flows) =>
-        Run(await StartedAsync(alerts, dispatcher, flows));
+    private async Task<FlowEngine> RunningAsync(IAlertNotifier alerts, params Flow[] flows) =>
+        Run(await StartedAsync(alerts, flows));
+
+    private async Task<FlowEngine> RunningAsync(IFlowWebhook webhook, params Flow[] flows) =>
+        Run(await StartedAsync(_alerts, flows, webhook: webhook));
 
     /// <summary>Built and started with no pump yet, so whatever is posted now waits in the queue.</summary>
     private async Task<FlowEngine> StartedAsync(
-        IAlertNotifier alerts, IAlertDispatcher dispatcher, Flow[] flows, IMqttSubscriber? subscriber = null)
+        IAlertNotifier alerts, Flow[] flows, IMqttSubscriber? subscriber = null, IFlowWebhook? webhook = null)
     {
         _store.Flows = flows;
 
         var engine = new FlowEngine(
             new FlowRuntime(new Random(7)), _store, alerts, _console, _connection, subscriber ?? _subscriber,
-            _publisher, new AlertEngineOptions(), _log, _clock ?? _time, dispatcher);
+            _publisher, new AlertEngineOptions(), _log, _clock ?? _time, webhook);
 
         await engine.StartAsync(CancellationToken.None);
         return engine;
@@ -103,16 +106,53 @@ public sealed class FlowEngineTests : IAsyncLifetime
         _stop.Dispose();
     }
 
-    private static Flow Watch(string webhook = "") => new FlowBuilder()
+    /// <summary>
+    /// The monitor most tests here watch with: forever, read plant/+/temp; over 90, raise Hot and send the
+    /// fan on (every hot reading, as the old Watch did); under, clear Hot.
+    /// </summary>
+    private static Flow Watch() => new ChartBuilder()
+        .Node("start", "start").Node("loop", "for", new { forever = true })
         .Node("in", "mqttIn", new { filter = "plant/+/temp" })
         .Node("test", "if", new { field = "$.temp", test = "gt", value = "90" })
-        .Node("hot", "alarm", new { name = "Hot", severity = "critical", webhook })
+        .Node("hot", "alarmRaise", new { name = "Hot", level = "critical" })
+        .Node("cool", "alarmClear", new { alarm = "hot" })
         .Node("fan", "publish", new { topic = "plant/{{topic[1]}}/cmd", payload = "on", qos = 1 })
-        .Wire("in", "out", "test", "in")
-        .Wire("test", "yes", "hot", "raise")
-        .Wire("test", "yes", "fan", "in")
-        .Wire("test", "no", "hot", "clear")
+        .Node("end", "end")
+        .Then("start", "loop").Wire("loop", "body", "in").Then("in", "test")
+        .Wire("test", "yes", "hot").Wire("hot", "raised", "fan").Wire("hot", "up", "fan").Wire("fan", "out", "loop", "next")
+        .Wire("test", "no", "cool").Wire("cool", "cleared", "loop", "next").Wire("cool", "none", "loop", "next")
+        .Wire("loop", "done", "end")
         .Build();
+
+    /// <summary>Start → the steps given → End: a flow that runs once when it is switched on, as an Inject pressed once did.</summary>
+    private static Flow Once(string id, params (string Id, string Type, object? Config)[] steps)
+    {
+        var chart = new ChartBuilder(id, id).Node("start", "start").Node("end", "end");
+        foreach (var (stepId, type, config) in steps) chart.Node(stepId, type, config);
+        return chart.Then(["start", .. steps.Select(step => step.Id), "end"]).Build();
+    }
+
+    /// <summary>Forever: wait <paramref name="seconds"/>, then the steps given — what an Every was.</summary>
+    private static Flow Every(string id, double seconds, params (string Id, string Type, object? Config)[] steps)
+    {
+        var chart = new ChartBuilder(id, id).Node("start", "start").Node("loop", "for", new { forever = true })
+            .Node("tick", "wait", new { seconds = seconds.ToString(CultureInfo.InvariantCulture) })
+            .Node("end", "end")
+            .Then("start", "loop").Wire("loop", "body", "tick").Wire("loop", "done", "end");
+
+        var previous = "tick";
+        foreach (var (stepId, type, config) in steps)
+        {
+            chart.Node(stepId, type, config).Wire(previous, "out", stepId);
+            previous = stepId;
+        }
+
+        return chart.Wire(previous, "out", "loop", "next").Build();
+    }
+
+    /// <summary>A test run of <paramref name="flow"/>, started through the pump — what pressing an Inject was.</summary>
+    private static FlowTestStart Press(Flow flow) =>
+        new(FlowCompiler.Compile(flow, ChartBuilder.Prefix).Flow ?? throw new InvalidOperationException("The flow did not compile."));
 
     private static MqttMessage Msg(string topic, string payload, DateTimeOffset? receivedAt = null) =>
         new(topic, payload, "text", 0, false, receivedAt ?? T0);
@@ -122,10 +162,15 @@ public sealed class FlowEngineTests : IAsyncLifetime
         new(host, 1883, "test", null, false, connectedAt, false, null, null);
 
     private static long Errors(FlowEngine engine, string node) =>
-        engine.Status.Flows.SelectMany(flow => flow.Nodes).FirstOrDefault(one => one.Id == node)?.Errors ?? 0;
+        engine.Status.Runs.SelectMany(run => run.Nodes).FirstOrDefault(one => one.Id == node)?.Errors ?? 0;
 
-    private static long Count(FlowEngine engine, string node) =>
-        engine.Status.Flows.SelectMany(flow => flow.Nodes).FirstOrDefault(one => one.Id == node)?.Count ?? 0;
+    /// <summary>How many messages an MQTT in node has read, as the engine last pushed it.</summary>
+    // What left by its way out, and not its count: a run that read a message comes round to wait at the
+    // node again, and has then entered it once more than it has read.
+    private static long Read(FlowEngine engine, string node) => Read(engine.Status, node);
+
+    private static long Read(FlowStatus status, string node) =>
+        status.Runs.SelectMany(run => run.Nodes).FirstOrDefault(one => one.Id == node)?.Outs.GetValueOrDefault("out") ?? 0;
 
     [Fact]
     public async Task Start_subscribes_the_running_filters_as_the_flows_owner()
@@ -144,7 +189,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
 
         var engine = await RunningAsync();
 
-        Assert.Empty(engine.Status.Flows);
+        Assert.Empty(engine.Status.Runs);
         Assert.Empty(_subscriber.Batches);
     }
 
@@ -160,27 +205,37 @@ public sealed class FlowEngineTests : IAsyncLifetime
         Assert.Equal(1, _publisher.Sent[0].Qos);
     }
 
+    // A deploy runs a flow up to its first wait, so a flow that publishes on its way there publishes while
+    // the engine starts — and the runtime takes the link to be down until it is told otherwise. Told of
+    // the link after the deploy, it refused that publish with a "No broker link" that was not true.
     [Fact]
-    public async Task A_flow_alarm_is_told_like_any_alarm_and_dispatched_when_it_asks_to_leave()
+    public async Task A_flow_switched_on_when_the_engine_starts_publishes_before_its_first_wait_with_the_link_up()
     {
-        var engine = await RunningAsync(Watch(webhook: "https://hooks.example.com/boiler"));
+        var engine = await RunningAsync(Once("f1", ("send", "publish", new { topic = "plant/k1/cmd", payload = "on" })));
 
-        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
-
-        await Eventually.Until(_time, () => _alerts.Raised.Count == 1 && _dispatcher.Raised.Count == 1,
-            "the alarm to be told and dispatched");
-        Assert.Equal("flow-f1-hot", Assert.Single(engine.Alarms.Active).RuleId);
+        await Eventually.Until(_time, () => _publisher.Sent.Count == 1, "the flow's publish to go out");
+        Assert.Equal("plant/k1/cmd", Assert.Single(_publisher.Sent).Topic);
+        Assert.Equal(0, Errors(engine, "send"));
     }
 
+    // Told as a rule's is — to the log and to the console — and to nothing else. A flow alarm's actions
+    // are the screen alone, so no channel that leaves the process has anything to do with it: a flow that
+    // wants a webhook after an alarm draws a Webhook node after its raised.
     [Fact]
-    public async Task An_alarm_that_only_asks_for_the_screen_is_not_dispatched()
+    public async Task A_flow_alarm_is_told_like_any_alarm_and_never_dispatched()
     {
-        var engine = await RunningAsync(Watch());
+        var log = new AlarmCallLog();
+        var engine = await RunningAsync(log, Watch());
 
         await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
 
-        await Eventually.Until(_time, () => _alerts.Raised.Count == 1, "the alarm to be told");
-        Assert.Empty(_dispatcher.Raised);
+        await Eventually.Until(_time, () => log.Calls.Count == 1 && _console.Alarms.Count == 1, "the alarm to be told");
+        Assert.Equal(["told raised"], log.Calls);
+        Assert.Equal(["raised a"], _console.Alarms);
+
+        var alarm = Assert.Single(engine.Alarms.Active);
+        Assert.Equal("flow-f1-hot", alarm.RuleId);
+        Assert.IsType<ScreenAction>(Assert.Single(alarm.Actions));
     }
 
     [Fact]
@@ -208,35 +263,39 @@ public sealed class FlowEngineTests : IAsyncLifetime
 
         _time.Advance(FlowLimits.StatusEvery);
         await Eventually.Until(_time, () => _console.Statuses.Count == 2, "the next push");
-        Assert.Equal(200, engine.Status.Flows.Single().Nodes.Single(node => node.Id == "in").Count);
+        Assert.Equal(200, Read(engine, "in"));
     }
 
     [Fact]
-    public async Task A_deploy_swaps_what_runs_and_what_can_be_injected()
+    public async Task A_deploy_swaps_what_is_switched_on()
     {
         var engine = await RunningAsync(Watch());
-        Assert.False(engine.CanInject("f2", "go"));
+        Assert.True(engine.IsActive("f1"));
+        Assert.False(engine.IsActive("f2"));
 
-        var set = FlowCompiler.CompileAll(
-            [Watch(), new FlowBuilder("f2", "Simulator").Node("go", "inject").Build()], FlowBuilder.Prefix);
-        engine.Post(new FlowDeploy(set.Compiled, set.Kept));
+        engine.Post(Deployment(Once("f2")));
 
-        await Eventually.Until(_time, () => engine.CanInject("f2", "go"), "the deploy to land");
+        await Eventually.Until(_time, () => engine.IsActive("f2"), "the deploy to land");
+        Assert.False(engine.IsActive("f1"));
     }
 
     [Fact]
-    public async Task An_inject_runs_through_the_pump()
+    public async Task A_test_started_through_the_pump_runs_and_a_stop_ends_it()
     {
-        var engine = await RunningAsync(new FlowBuilder()
-            .Node("go", "inject", new { topic = "plant/k1/cmd", payload = "on" })
-            .Node("send", "publish", new { topic = "{{topic}}", payload = "{{payload}}" })
-            .Wire("go", "out", "send", "in")
-            .Build());
+        var engine = await RunningAsync();
 
-        Assert.True(engine.CanInject("f1", "go"));
-        engine.Post(new FlowInject("f1", "go"));
+        engine.Post(Press(Once("f1",
+            ("send", "publish", new { topic = "plant/k1/cmd", payload = "on" }),
+            ("ack", "mqttIn", new { filter = "plant/k1/ack" }))));
 
-        await Eventually.Until(_time, () => _publisher.Sent.Count == 1, "the injected message to be published");
+        // Going, and waiting on its MQTT in once it has published: a test, and nothing switched on.
+        await Eventually.Until(_time, () => _publisher.Sent.Count == 1, "the test's publish to go out");
+        Assert.True(engine.IsTesting("f1"));
+        Assert.False(engine.IsActive("f1"));
+
+        engine.Post(new FlowTestStop("f1"));
+
+        await Eventually.Until(_time, () => !engine.IsTesting("f1"), "the stop to end the test");
     }
 
     [Fact]
@@ -271,11 +330,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
     [Fact]
     public async Task Debug_lines_reach_the_console()
     {
-        var engine = await RunningAsync(new FlowBuilder()
-            .Node("in", "mqttIn", new { filter = "a/#" })
-            .Node("say", "debug")
-            .Wire("in", "out", "say", "in")
-            .Build());
+        var engine = await RunningAsync(Once("f1", ("in", "mqttIn", new { filter = "a/#" }), ("say", "debug", null)));
 
         await engine.NotifyMessageReceivedAsync(Msg("a/b", "hello"));
 
@@ -322,22 +377,18 @@ public sealed class FlowEngineTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task An_every_runs_when_it_is_due_with_nothing_else_to_wake_the_pump()
+    public async Task A_wait_that_ends_wakes_the_pump_with_nothing_else_to_wake_it()
     {
-        await RunningAsync(new FlowBuilder()
-            .Node("tick", "every", new { seconds = 0.3, topic = "plant/sim/ping", payload = "on" })
-            .Node("send", "publish", new { topic = "{{topic}}", payload = "{{payload}}" })
-            .Wire("tick", "out", "send", "in")
-            .Build());
+        await RunningAsync(Every("f1", 0.3, ("send", "publish", new { topic = "plant/sim/ping", payload = "on" })));
 
-        // Two emissions, neither on a tick. The pump's first turn may catch the first one whenever
-        // that turn happens to run, but by the second the pump is known to be waiting, and only the
-        // schedule can wake it at 0.6 s.
+        // Two ends of the wait, neither on a tick. The pump's first turn may catch the first one
+        // whenever that turn happens to run, but by the second the pump is known to be waiting, and
+        // only the schedule can wake it at 0.6 s.
         _time.Advance(TimeSpan.FromMilliseconds(300));
-        await ClockStill(() => _publisher.Sent.Count == 1, "the first emission");
+        await ClockStill(() => _publisher.Sent.Count == 1, "the first wait to end");
 
         _time.Advance(TimeSpan.FromMilliseconds(300));
-        await ClockStill(() => _publisher.Sent.Count == 2, "the second emission");
+        await ClockStill(() => _publisher.Sent.Count == 2, "the second wait to end");
     }
 
     // ---- the publish loop ----
@@ -345,12 +396,15 @@ public sealed class FlowEngineTests : IAsyncLifetime
     [Fact]
     public async Task Publishes_leave_one_at_a_time_in_the_order_they_were_asked_for()
     {
-        var engine = await RunningAsync(new FlowBuilder()
+        var engine = await RunningAsync(new ChartBuilder()
+            .Node("start", "start").Node("loop", "for", new { forever = true })
             .Node("in", "mqttIn", new { filter = "plant/+/list" })
-            .Node("each", "forEach", new { field = "$.ids" })
+            .Node("each", "forEach", new { array = "$.ids" })
             .Node("send", "publish", new { topic = "plant/{{payload}}/cmd", payload = "on" })
-            .Wire("in", "out", "each", "in")
-            .Wire("each", "out", "send", "in")
+            .Node("end", "end")
+            .Then("start", "loop").Wire("loop", "body", "in").Then("in", "each")
+            .Wire("each", "body", "send").Wire("send", "out", "each", "next").Wire("each", "done", "loop", "next")
+            .Wire("loop", "done", "end")
             .Build());
 
         await engine.NotifyMessageReceivedAsync(Msg("plant/a/list", "{\"ids\":[\"k1\",\"k2\",\"k3\"]}"));
@@ -388,26 +442,24 @@ public sealed class FlowEngineTests : IAsyncLifetime
     public async Task A_full_outbox_refuses_the_newest_publishes_and_counts_each_on_its_node()
     {
         // One arrival that twenty-one flows answer with fifty publishes each — fifty is what the rate
-        // limit lets one flow send at once — so the whole burst lands in a single turn of the pump,
+        // limit lets one run send at once — so the whole burst lands in a single turn of the pump,
         // behind one publish the broker is sitting on.
         const int flows = 21;
-        var burst = Enumerable.Range(1, flows).Select(i => new FlowBuilder($"b{i}", $"Burst {i}")
+        var burst = Enumerable.Range(1, flows).Select(i => new ChartBuilder($"b{i}", $"Burst {i}")
+            .Node("start", "start").Node("loop", "for", new { forever = true })
             .Node("in", "mqttIn", new { filter = "sim/burst" })
-            .Node("again", "repeat", new { count = FlowLimits.PublishesPerSecond, seconds = 0 })
+            .Node("again", "for", new { times = FlowLimits.PublishesPerSecond })
             .Node("send", "publish", new { topic = $"sim/{i}/{{{{index}}}}", payload = "x" })
-            .Wire("in", "out", "again", "in")
-            .Wire("again", "out", "send", "in")
+            .Node("end", "end")
+            .Then("start", "loop").Wire("loop", "body", "in").Then("in", "again")
+            .Wire("again", "body", "send").Wire("send", "out", "again", "next").Wire("again", "done", "loop", "next")
+            .Wire("loop", "done", "end")
             .Build());
-        var first = new FlowBuilder("first", "First")
-            .Node("go", "inject", new { topic = "sim/first", payload = "x" })
-            .Node("send", "publish", new { topic = "{{topic}}", payload = "{{payload}}" })
-            .Wire("go", "out", "send", "in")
-            .Build();
 
         _publisher.Stall = true;
-        var engine = await RunningAsync([first, .. burst]);
+        var engine = await RunningAsync([.. burst]);
 
-        engine.Post(new FlowInject("first", "go"));
+        engine.Post(Press(Once("first", ("send", "publish", new { topic = "sim/first", payload = "x" }))));
         await ClockStill(() => _publisher.Held == 1, "the first publish to be sitting with the broker");
 
         // The push for that, and a quarter second more, so the pump owes the console nothing and
@@ -424,8 +476,8 @@ public sealed class FlowEngineTests : IAsyncLifetime
 
         await ClockStill(() => _console.Debug.Count(entry => entry.Text == full) == refused, "every refusal to be said");
         Assert.All(_console.Debug, entry => Assert.Equal("send", entry.NodeId));
-        Assert.Equal(refused, engine.Status.Flows.Where(flow => flow.Id != "first")
-            .Sum(flow => flow.Nodes.Single(node => node.Id == "send").Errors));
+        Assert.Equal(refused, engine.Status.Runs.Where(run => run.FlowId != "first")
+            .Sum(run => run.Nodes.Single(node => node.Id == "send").Errors));
     }
 
     // ---- subscriptions ----
@@ -433,12 +485,10 @@ public sealed class FlowEngineTests : IAsyncLifetime
     [Fact]
     public async Task A_deploy_subscribes_what_arrived_and_unsubscribes_what_went()
     {
-        var humidity = new FlowBuilder("f2", "Humidity").Node("in", "mqttIn", new { filter = "plant/+/hum" }).Build();
+        var humidity = Once("f2", ("in", "mqttIn", new { filter = "plant/+/hum" }));
         var engine = await RunningAsync(Watch(), humidity);
 
-        var doors = new FlowBuilder("f3", "Doors").Node("in", "mqttIn", new { filter = "plant/+/door" }).Build();
-        var set = FlowCompiler.CompileAll([humidity, doors], FlowBuilder.Prefix);
-        engine.Post(new FlowDeploy(set.Compiled, set.Kept));
+        engine.Post(Deployment(humidity, Doors()));
 
         // Both halves, AlertEngineTests' warning: the SUBSCRIBE and the UNSUBSCRIBE go in one turn,
         // one after the other, so a wait that ended at the first could return before the second.
@@ -456,14 +506,10 @@ public sealed class FlowEngineTests : IAsyncLifetime
     [Fact]
     public async Task A_filter_refused_after_its_turn_has_pushed_reaches_the_console_a_quarter_second_later()
     {
-        await RunningAsync(Watch(), new FlowBuilder("f2", "Simulator")
-            .Node("tick", "every", new { seconds = 1, topic = "plant/sim/ping", payload = "on" })
-            .Node("say", "debug")
-            .Wire("tick", "out", "say", "in")
-            .Build());
+        await RunningAsync(Watch(), Every("f2", 1, ("say", "debug", null)));
 
         // The flows' filter went with nothing to show for it, and the broker now refuses it. The
-        // tick that looks for it runs the Every too, and the push for that goes out before the look
+        // tick that looks for it ends the Wait too, and the push for that goes out before the look
         // — so what the look finds has to be pushed on its own. Woken by the clock and not by the
         // queue, the pump turns no more until something else is due.
         _subscriber.LinkDropped();
@@ -471,7 +517,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
         _time.Advance(FlowEngine.TickInterval);
 
         await ClockStill(() => _console.Statuses.Count == 2 && _subscriber.Batches.Count == 2,
-            "the tick to push the Every and have the filter refused");
+            "the tick to push the Wait's end and have the filter refused");
         Assert.Equal(0, InErrors(_console.Statuses[1]));
 
         // The throttle's quarter second and no more: the next tick is a second away.
@@ -481,7 +527,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
         Assert.Equal(1, InErrors(_console.Statuses[2]));
 
         static long InErrors(FlowStatus status) =>
-            status.Flows.Single(flow => flow.Id == "f1").Nodes.Single(node => node.Id == "in").Errors;
+            status.Runs.Single(run => run.FlowId == "f1").Nodes.Single(node => node.Id == "in").Errors;
     }
 
     [Fact]
@@ -508,82 +554,79 @@ public sealed class FlowEngineTests : IAsyncLifetime
         var engine = await RunningAsync(Watch());
 
         _subscriber.Refuse = null;
-        var set = FlowCompiler.CompileAll([Watch()], FlowBuilder.Prefix);
-        engine.Post(new FlowDeploy(set.Compiled, set.Kept));
+        engine.Post(Deployment(Watch()));
 
         await Eventually.Until(_time, () => _subscriber.Filters.Count == 1, "the filter to be asked for again");
     }
 
     // ---- alarms ----
 
+    /// <summary>
+    /// A For each over <paramref name="readings"/>, a variable's JSON array: over 90 raises Hot, anything
+    /// else clears it.
+    /// </summary>
+    // One run's single turn can still raise and clear: a For each walks every element before anything
+    // waits, so every raise and clear of the walk is one call into the runtime, and one outcome to tell.
+    private static Flow Readings(string readings) => new ChartBuilder()
+        .Var("readings", readings)
+        .Node("start", "start").Node("each", "forEach", new { array = "var.readings" })
+        .Node("test", "if", new { field = "", test = "gt", value = "90" })
+        .Node("hot", "alarmRaise", new { name = "Hot", level = "critical" })
+        .Node("cool", "alarmClear", new { alarm = "hot" })
+        .Node("end", "end")
+        .Then("start", "each").Wire("each", "body", "test")
+        .Wire("test", "yes", "hot").Wire("hot", "raised", "each", "next").Wire("hot", "up", "each", "next")
+        .Wire("test", "no", "cool").Wire("cool", "cleared", "each", "next").Wire("cool", "none", "each", "next")
+        .Wire("each", "done", "end")
+        .Build();
+
     [Fact]
-    public async Task One_event_that_raises_and_clears_an_alarm_is_told_and_sent_raised_first()
+    public async Task One_turn_that_raises_and_clears_an_alarm_is_told_raised_first()
     {
         var log = new AlarmCallLog();
-        var engine = await RunningAsync(log, log, new FlowBuilder()
-            .Node("go", "inject", new { topic = "plant/k1/temp", payload = "[95, 50]" })
-            .Node("each", "forEach", new { field = "" })
-            .Node("test", "if", new { field = "", test = "gt", value = "90" })
-            .Node("hot", "alarm", new { name = "Hot", severity = "critical", webhook = "https://hooks.example.com/boiler" })
-            .Wire("go", "out", "each", "in")
-            .Wire("each", "out", "test", "in")
-            .Wire("test", "yes", "hot", "raise")
-            .Wire("test", "no", "hot", "clear")
-            .Build());
+        var engine = await RunningAsync(log);
 
-        engine.Post(new FlowInject("f1", "go"));
+        engine.Post(Deployment(Readings("[95, 50]")));
 
-        // Raised first, in both channels: a console told of the clear first would drop nothing,
-        // then add the raise, and show an alarm that was already over.
-        await Eventually.Until(_time, () => log.Calls.Count == 4, "both ends to be told and sent");
-        Assert.Equal(["told raised", "told resolved", "sent raised", "sent resolved"], log.Calls);
+        // Raised first, to the log and to the console: a console told of the clear first would drop
+        // nothing, then add the raise, and show an alarm that was already over.
+        await Eventually.Until(_time, () => log.Calls.Count == 2 && _console.Alarms.Count == 2, "both ends to be told");
+        Assert.Equal(["told raised", "told resolved"], log.Calls);
+        Assert.Equal(["raised a", "resolved a"], _console.Alarms);
     }
 
-    // What every channel outside the process knows an alarm by is its rule and its topic: a publish
-    // goes to a topic named by the two, and a webhook's body carries no alarm id. So two alarms that
-    // share them are one alarm out there, and the order they were told in is the only thing that
-    // says which of them stands — told a raise and then the end before it, a channel hears the new
-    // alarm end with the old one while the book and the console say it is up.
+    // The log knows an alarm by its rule and its topic, as every channel outside the process did: a log
+    // line names the two and no alarm id. So two alarms that share them are one alarm there, and the
+    // order they were told in is the only thing that says which of them stands — told a raise and then
+    // the end before it, the log says the new alarm ended with the old one while the book and the
+    // console say it is up.
 
     [Fact]
-    public async Task One_event_that_clears_an_alarm_and_raises_it_again_is_told_and_sent_in_that_order()
+    public async Task One_turn_that_clears_an_alarm_and_raises_it_again_is_told_in_that_order()
     {
         var log = new AlarmCallLog();
-        var engine = await RunningAsync(log, log, new FlowBuilder()
-            .Node("go", "inject", new { topic = "plant/k1/temp", payload = "[95, 50, 95]" })
-            .Node("each", "forEach", new { field = "" })
-            .Node("test", "if", new { field = "", test = "gt", value = "90" })
-            .Node("hot", "alarm", new { name = "Hot", severity = "critical", webhook = "https://hooks.example.com/boiler" })
-            .Wire("go", "out", "each", "in")
-            .Wire("each", "out", "test", "in")
-            .Wire("test", "yes", "hot", "raise")
-            .Wire("test", "no", "hot", "clear")
-            .Build());
+        var engine = await RunningAsync(log);
 
-        engine.Post(new FlowInject("f1", "go"));
+        engine.Post(Deployment(Readings("[95, 50, 95]")));
 
-        await Eventually.Until(_time, () => log.Alarms.Count == 6, "every end of both alarms to be told and sent");
-        Assert.Equal(
-            ["told raised a", "told resolved a", "told raised b", "sent raised a", "sent resolved a", "sent raised b"],
-            log.Alarms);
+        await Eventually.Until(_time, () => log.Alarms.Count == 3, "every end of both alarms to be told");
+        Assert.Equal(["told raised a", "told resolved a", "told raised b"], log.Alarms);
     }
 
     [Fact]
-    public async Task A_clear_and_a_raise_again_of_one_topic_in_one_turn_are_told_and_sent_in_that_order()
+    public async Task A_clear_and_a_raise_again_of_one_topic_in_one_turn_are_told_in_that_order()
     {
         var log = new AlarmCallLog();
-        var engine = await StartedAsync(log, log, [Watch(webhook: "https://hooks.example.com/boiler")]);
+        var engine = await StartedAsync(log, [Watch()]);
 
-        // Hot, cool and hot again, all waiting for the same turn: three events, each its own outcome.
+        // Hot, cool and hot again, all waiting for the same turn: three arrivals, each its own outcome.
         await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
         await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":50}"));
         await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
         Run(engine);
 
-        await ClockStill(() => log.Alarms.Count == 6, "every end of both alarms to be told and sent");
-        Assert.Equal(
-            ["told raised a", "told resolved a", "told raised b", "sent raised a", "sent resolved a", "sent raised b"],
-            log.Alarms);
+        await ClockStill(() => log.Alarms.Count == 3, "every end of both alarms to be told");
+        Assert.Equal(["told raised a", "told resolved a", "told raised b"], log.Alarms);
     }
 
     [Fact]
@@ -591,7 +634,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
     {
         var log = new AlarmCallLog();
         _connection.At("broker-a.plant.local", 1883);
-        var engine = await StartedAsync(log, log, [Watch(webhook: "https://hooks.example.com/boiler")]);
+        var engine = await StartedAsync(log, [Watch()]);
 
         // Broker B carries the plant A did — a cluster, a bridge, a failover pair — so its first
         // message raises an alarm on the rule and topic of the one the move ends. A pump held up for
@@ -602,10 +645,8 @@ public sealed class FlowEngineTests : IAsyncLifetime
         await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}", receivedAt: T0.AddSeconds(2)));
         Run(engine);
 
-        await ClockStill(() => log.Alarms.Count == 6, "every end of both alarms to be told and sent");
-        Assert.Equal(
-            ["told raised a", "told resolved a", "told raised b", "sent raised a", "sent resolved a", "sent raised b"],
-            log.Alarms);
+        await ClockStill(() => log.Alarms.Count == 3, "every end of both alarms to be told");
+        Assert.Equal(["told raised a", "told resolved a", "told raised b"], log.Alarms);
         Assert.Equal(FlowAlarmBook.ConnectionEnded, Assert.Single(engine.Alarms.History).ResolvedBy);
         Assert.Single(engine.Alarms.Active);
     }
@@ -627,23 +668,119 @@ public sealed class FlowEngineTests : IAsyncLifetime
     // The console knows an alarm by its id, so for it the order within one alarm is what counts: an
     // end told before its raise would leave the raise standing on the badge for good.
     [Fact]
-    public async Task One_event_that_clears_an_alarm_and_raises_it_again_is_told_to_the_console_in_that_order()
+    public async Task One_turn_that_clears_an_alarm_and_raises_it_again_is_told_to_the_console_in_that_order()
     {
-        var engine = await RunningAsync(new FlowBuilder()
-            .Node("go", "inject", new { topic = "plant/k1/temp", payload = "[95, 50, 95]" })
-            .Node("each", "forEach", new { field = "" })
-            .Node("test", "if", new { field = "", test = "gt", value = "90" })
-            .Node("hot", "alarm", new { name = "Hot", severity = "critical" })
-            .Wire("go", "out", "each", "in")
-            .Wire("each", "out", "test", "in")
-            .Wire("test", "yes", "hot", "raise")
-            .Wire("test", "no", "hot", "clear")
-            .Build());
+        var engine = await RunningAsync();
 
-        engine.Post(new FlowInject("f1", "go"));
+        engine.Post(Deployment(Readings("[95, 50, 95]")));
 
         await Eventually.Until(_time, () => _console.Alarms.Count == 3, "both alarms to be told to the console");
         Assert.Equal(["raised a", "resolved a", "raised b"], _console.Alarms);
+    }
+
+    // ---- tones, notices and webhooks ----
+
+    [Fact]
+    public async Task Tones_and_notices_reach_the_console_after_the_alarm_they_follow()
+    {
+        var flow = new ChartBuilder()
+            .Node("start", "start").Node("hot", "alarmRaise", new { name = "Hot", level = "warn" })
+            .Node("beep", "sound", new { level = "warn" }).Node("tell", "notify", new { text = "Hot!", level = "warn" })
+            .Node("end", "end")
+            .Then("start", "hot").Wire("hot", "raised", "beep").Wire("hot", "up", "end").Then("beep", "tell", "end")
+            .Build();
+
+        await RunningAsync(flow);
+
+        await Eventually.Until(_time, () => _console.Notices.Count == 1, "the notice to reach the console");
+        Assert.Equal(AlertSeverity.Warn, Assert.Single(_console.Sounds).Level);
+        Assert.Equal("Hot!", _console.Notices[0].Text);
+        Assert.Equal(["raised a", "sounds", "notices"], _console.Told.Where(kind => !kind.StartsWith("status")).Take(3));
+    }
+
+    // The log is told of an alarm on the pump, before the alarm is handed to the console's loop, and that
+    // loop runs beside the pump. A tone handed to it first would be sent while the log was still being
+    // told, and the alarm it follows after it.
+    [Fact]
+    public async Task A_tone_is_handed_to_the_console_only_after_the_alarm_it_follows()
+    {
+        var engine = await RunningAsync(new SlowLog(() => _console.Sounds.Count > 0), new ChartBuilder()
+            .Node("start", "start").Node("loop", "for", new { forever = true })
+            .Node("in", "mqttIn", new { filter = "plant/+/temp" })
+            .Node("hot", "alarmRaise", new { name = "Hot", level = "warn" })
+            .Node("beep", "sound", new { level = "warn" })
+            .Node("end", "end")
+            .Then("start", "loop").Wire("loop", "body", "in").Then("in", "hot")
+            .Wire("hot", "raised", "beep").Wire("hot", "up", "loop", "next").Wire("beep", "out", "loop", "next")
+            .Wire("loop", "done", "end")
+            .Build());
+
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "95"));
+
+        await Eventually.Until(_time, () => _console.Sounds.Count == 1, "the tone to reach the console");
+        Assert.Equal(["raised a", "sounds"], _console.Told.Where(kind => !kind.StartsWith("status")));
+    }
+
+    /// <summary>A log slow to take a raise: it holds the pump until <paramref name="done"/> holds, or for half a second.</summary>
+    private sealed class SlowLog(Func<bool> done) : IAlertNotifier
+    {
+        public async Task RaisedAsync(IReadOnlyList<Alert> alerts)
+        {
+            var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(500);
+            while (!done() && DateTime.UtcNow < deadline) await Task.Delay(5);
+        }
+
+        public Task ResolvedAsync(IReadOnlyList<Alert> alerts) => Task.CompletedTask;
+
+        public Task DroppedAsync(int total) => Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task A_webhook_post_goes_to_the_webhook_channel_and_a_post_it_gives_up_on_is_counted_on_its_node()
+    {
+        var webhook = new RecordingFlowWebhook();
+        var engine = await RunningAsync(webhook, Once("f1", ("hook", "webhook", new { url = "https://hooks.example.com/x", body = "{\"a\":1}" })));
+
+        await Eventually.Until(_time, () => webhook.Posts.Count == 1, "the post to reach the channel");
+        Assert.Equal("application/json", webhook.Posts[0].ContentType);
+
+        webhook.Fail(0, "The endpoint answered 500.");
+
+        await Eventually.Until(_time, () => Errors(engine, "hook") == 1, "the failure to be counted on the node");
+    }
+
+    [Fact]
+    public async Task A_webhook_with_no_channel_is_an_error_on_its_node()
+    {
+        var engine = await RunningAsync(Once("f1", ("hook", "webhook", new { url = "https://hooks.example.com/x" })));
+
+        // Waited for in the strip, which the console is sent after the status that counts the error.
+        await Eventually.Until(_time, () => _console.Debug.Any(line => line.NodeId == "hook" && line.Text.Contains("AllowWebhooks")),
+            "the refusal to be said in the debug strip");
+        Assert.Equal(1, Errors(engine, "hook"));
+    }
+
+    [Fact]
+    public async Task A_full_webhook_channel_drops_the_post_and_says_so_on_its_node()
+    {
+        var webhook = new RecordingFlowWebhook { Full = true };
+        var engine = await RunningAsync(webhook, Once("f1", ("hook", "webhook", new { url = "https://hooks.example.com/x" })));
+
+        await Eventually.Until(_time, () => _console.Debug.Any(line => line.NodeId == "hook" && line.Text.StartsWith("Too many webhook posts")),
+            "the drop to be said in the debug strip");
+        Assert.Equal(1, Errors(engine, "hook"));
+        Assert.Empty(webhook.Posts);
+    }
+
+    [Fact]
+    public async Task A_run_that_ends_gives_its_filters_back()
+    {
+        var engine = await RunningAsync(Once("f1", ("in", "mqttIn", new { filter = "plant/+/temp" })));
+        Assert.Equal("plant/+/temp", Assert.Single(_subscriber.Filters).Filter);
+
+        await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "1"));
+
+        await Eventually.Until(_time, () => _subscriber.Filters.Count == 0, "the finished run's filter to be taken down");
     }
 
     // ---- the debug strip ----
@@ -651,15 +788,11 @@ public sealed class FlowEngineTests : IAsyncLifetime
     [Fact]
     public async Task Debug_lines_past_a_hundred_a_push_are_dropped_and_counted()
     {
-        var engine = await RunningAsync(new FlowBuilder()
-            .Node("go", "inject", new { payload = "hello" })
-            .Node("again", "repeat", new { count = 150, seconds = 0 })
-            .Node("say", "debug")
-            .Wire("go", "out", "again", "in")
-            .Wire("again", "out", "say", "in")
+        // A For of 150 around a Debug, which runs the moment the flow is switched on.
+        await RunningAsync(new ChartBuilder()
+            .Node("start", "start").Node("again", "for", new { times = 150 }).Node("say", "debug").Node("end", "end")
+            .Then("start", "again").Wire("again", "body", "say").Wire("say", "out", "again", "next").Wire("again", "done", "end")
             .Build());
-
-        engine.Post(new FlowInject("f1", "go"));
 
         await Eventually.Until(_time, () => _console.LinesDropped == 50, "the fifty past the ceiling to be counted");
         Assert.Equal(FlowLimits.DebugPerPush, _console.Debug.Count);
@@ -669,7 +802,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
 
     private static FlowDeploy Deployment(params Flow[] flows)
     {
-        var set = FlowCompiler.CompileAll(flows, FlowBuilder.Prefix);
+        var set = FlowCompiler.CompileAll(flows, ChartBuilder.Prefix);
         return new FlowDeploy(set.Compiled, set.Kept);
     }
 
@@ -679,7 +812,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
     [Fact]
     public async Task A_deploy_is_never_lost_to_a_full_queue()
     {
-        var engine = await StartedAsync(_alerts, _dispatcher, []);
+        var engine = await StartedAsync(_alerts, []);
 
         engine.Post(Deployment(Watch()));
         for (var i = 0; i < FlowEngine.QueueCapacity; i++)
@@ -687,7 +820,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
         Run(engine);
 
         // Run in its place, ahead of every arrival posted after it, and nothing counted as lost.
-        await Eventually.Until(_time, () => Count(engine, "in") == FlowEngine.QueueCapacity,
+        await Eventually.Until(_time, () => Read(engine, "in") == FlowEngine.QueueCapacity,
             "every arrival to be judged by the deployed flow");
         Assert.Equal(0, engine.Dropped);
     }
@@ -695,7 +828,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
     [Fact]
     public async Task An_arrival_posted_before_a_deploy_is_judged_by_the_flows_running_then()
     {
-        var engine = await StartedAsync(_alerts, _dispatcher, [Watch()]);
+        var engine = await StartedAsync(_alerts, [Watch()]);
 
         // Hot, a deploy that takes the flow away, and hot again, all waiting for one turn.
         await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
@@ -715,10 +848,10 @@ public sealed class FlowEngineTests : IAsyncLifetime
     [Fact]
     public async Task A_deploy_replaced_before_the_pump_reached_it_is_held_by_nothing()
     {
-        var engine = await StartedAsync(_alerts, _dispatcher, []);
+        var engine = await StartedAsync(_alerts, []);
 
-        var (replaced, answer) = HandOver(engine, new FlowBuilder("f1").Node("go", "inject").Build());
-        engine.Post(Deployment(new FlowBuilder("f2", "Second").Node("go", "inject").Build()));
+        var (replaced, answer) = HandOver(engine, Once("f1"));
+        engine.Post(Deployment(Once("f2")));
 
         GC.Collect();
         GC.WaitForPendingFinalizers();
@@ -742,18 +875,18 @@ public sealed class FlowEngineTests : IAsyncLifetime
     [Fact]
     public async Task Deploys_the_pump_has_not_reached_are_run_as_the_newest_and_all_are_answered()
     {
-        var engine = await StartedAsync(_alerts, _dispatcher, []);
+        var engine = await StartedAsync(_alerts, []);
 
-        var first = engine.DeployAsync(Deployment(new FlowBuilder("f1").Node("go", "inject").Build()), CancellationToken.None);
-        var second = engine.DeployAsync(Deployment(new FlowBuilder("f2", "Second").Node("go", "inject").Build()), CancellationToken.None);
+        var first = engine.DeployAsync(Deployment(Once("f1")), CancellationToken.None);
+        var second = engine.DeployAsync(Deployment(Once("f2")), CancellationToken.None);
         Assert.False(first.IsCompleted);
 
         Run(engine);
 
         Assert.True(await first.WaitAsync(StopPatience));
         Assert.True(await second.WaitAsync(StopPatience));
-        Assert.False(engine.CanInject("f1", "go"));
-        Assert.True(engine.CanInject("f2", "go"));
+        Assert.False(engine.IsActive("f1"));
+        Assert.True(engine.IsActive("f2"));
     }
 
     // ---- the queue ----
@@ -761,7 +894,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
     [Fact]
     public async Task A_full_queue_drops_the_oldest_and_counts_it()
     {
-        var engine = await StartedAsync(_alerts, _dispatcher, [Watch()]);
+        var engine = await StartedAsync(_alerts, [Watch()]);
 
         // The one arrival that would ring goes in first, and as many again as the queue holds come
         // after it with nothing draining, so the queue makes room by letting the front go.
@@ -772,7 +905,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
         Assert.Equal(1, engine.Dropped);
 
         Run(engine);
-        await Eventually.Until(_time, () => Count(engine, "in") == FlowEngine.QueueCapacity, "the rest to be run");
+        await Eventually.Until(_time, () => Read(engine, "in") == FlowEngine.QueueCapacity, "the rest to be run");
         Assert.Empty(_alerts.Raised);
     }
 
@@ -794,7 +927,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
 
         // Run or dropped, and nothing in between: the queue is deep enough that nothing drops in
         // practice, but the sum is the honest invariant either way.
-        await Eventually.Until(_time, () => Count(engine, "in") + engine.Dropped == writers * each,
+        await Eventually.Until(_time, () => Read(engine, "in") + engine.Dropped == writers * each,
             "every arrival to be run or counted as dropped");
     }
 
@@ -823,10 +956,13 @@ public sealed class FlowEngineTests : IAsyncLifetime
     // ---- a console that is slow to read ----
 
     /// <summary>A flow that answers every reading with a publish and raises nothing, so all the console is sent is pushes.</summary>
-    private static Flow Relay() => new FlowBuilder()
+    private static Flow Relay() => new ChartBuilder()
+        .Node("start", "start").Node("loop", "for", new { forever = true })
         .Node("in", "mqttIn", new { filter = "plant/+/temp" })
         .Node("fan", "publish", new { topic = "plant/{{topic[1]}}/cmd", payload = "on", qos = 1 })
-        .Wire("in", "out", "fan", "in")
+        .Node("end", "end")
+        .Then("start", "loop").Wire("loop", "body", "in").Then("in", "fan").Wire("fan", "out", "loop", "next")
+        .Wire("loop", "done", "end")
         .Build();
 
     // A console that stops reading holds a hub send for as long as its connection lasts — up to the
@@ -861,7 +997,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
             await engine.NotifyMessageReceivedAsync(Msg($"plant/k{i}/temp", "{\"temp\":95}"));
             await ClockStill(() => _publisher.Sent.Count == i, $"arrival {i} to be run");
             _time.Advance(FlowLimits.StatusEvery);
-            await ClockStill(() => Count(engine, "in") == i, $"push {i} to be made");
+            await ClockStill(() => Read(engine, "in") == i, $"push {i} to be made");
 
             // In the console's hands before the next is made. Made first, push 2 could take push 1's
             // place in the slot before the loop had taken it, and the console be sent [0, 2, 3].
@@ -871,7 +1007,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
         _console.Stall = false;
 
         await ClockStill(() => _console.Statuses.Count == 3, "the stuck push and the newest to be taken");
-        Assert.Equal([0, 1, 3], _console.Statuses.Select(status => status.Flows.Single().Nodes.Single(node => node.Id == "in").Count));
+        Assert.Equal([0, 1, 3], _console.Statuses.Select(status => Read(status, "in")));
     }
 
     [Fact]
@@ -919,7 +1055,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
         Assert.Equal(["raised a", "raised b", "resolved a", "raised c"], _console.Alarms);
     }
 
-    // The console reads what an Alarm node holds up from the status, and the badge from the alarms:
+    // The console reads what a Raise alarm node holds up from the status, and the badge from the alarms:
     // a status that counts an alarm the console has not been told of lights the node and not the rail.
     [Fact]
     public async Task An_alarm_is_told_to_the_console_before_the_status_that_counts_it()
@@ -933,12 +1069,12 @@ public sealed class FlowEngineTests : IAsyncLifetime
         // A push that counts the first alarm, a second alarm, and a push that counts both — made while
         // the console holds the first frame, so all three wait for it together.
         _time.Advance(FlowLimits.StatusEvery);
-        await ClockStill(() => engine.Status.Flows.Single().Nodes.Single(node => node.Id == "hot").Standing.Count == 1,
+        await ClockStill(() => engine.Status.Runs.Single().Nodes.Single(node => node.Id == "hot").Standing.Count == 1,
             "the push counting the first alarm to be made");
         await engine.NotifyMessageReceivedAsync(Msg("plant/k2/temp", "{\"temp\":95}"));
         await ClockStill(() => _publisher.Sent.Count == 2, "the second alarm to be raised");
         _time.Advance(FlowLimits.StatusEvery);
-        await ClockStill(() => engine.Status.Flows.Single().Nodes.Single(node => node.Id == "hot").Standing.Count == 2,
+        await ClockStill(() => engine.Status.Runs.Single().Nodes.Single(node => node.Id == "hot").Standing.Count == 2,
             "the push counting both to be made");
 
         _console.Stall = false;
@@ -996,12 +1132,12 @@ public sealed class FlowEngineTests : IAsyncLifetime
     // answer holds the pump for the subscriber's whole deadline, and one a turn left the pump a turn
     // per deadline. The flows run meanwhile, and the filter is asked for again once the pause is over.
     //
-    // The last second is moved on only once the pump is waiting for it, the every test's arrangement:
-    // a turn that has read the clock and not yet made its delay makes it from the moved clock, a
-    // second late, and with the clock then held still the end of the pause never came. The arrival is
-    // run early in the pause, a second in, where it is told to the console at once rather than a
-    // quarter of a second after the start's: from there on every wait ends on a whole second, and at
-    // the last one before the end the pump has nothing but its tick to do.
+    // The last second is moved on only once the pump is waiting for it, as the test of a Wait that ends
+    // in a move's turn does: a turn that has read the clock and not yet made its delay makes it from the
+    // moved clock, a second late, and with the clock then held still the end of the pause never came.
+    // The arrival is run early in the pause, a second in, where it is told to the console at once rather
+    // than a quarter of a second after the start's: from there on every wait ends on a whole second, and
+    // at the last one before the end the pump has nothing but its tick to do.
     [Fact]
     public async Task A_subscribe_the_broker_did_not_answer_is_asked_again_after_a_pause_and_not_on_the_next_turn()
     {
@@ -1097,7 +1233,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
 
         // A deploy with a filter of its own, and the broker silent again.
         _subscriber.Refuse = silence;
-        engine.Post(Deployment(Watch(), new FlowBuilder("f3", "Doors").Node("in", "mqttIn", new { filter = "plant/+/door" }).Build()));
+        engine.Post(Deployment(Watch(), Doors()));
         await Eventually.Until(_time, () => _subscriber.Batches.Count == 4, "the new filter to be asked for");
         var unanswered = _subscriber.AskedAt[3];
 
@@ -1166,13 +1302,14 @@ public sealed class FlowEngineTests : IAsyncLifetime
         Assert.True(_subscriber.AskedAt[2] - _subscriber.AskedAt[1] >= second);
     }
 
-    private static Flow Doors() => new FlowBuilder("f3", "Doors").Node("in", "mqttIn", new { filter = "plant/+/door" }).Build();
+    /// <summary>A flow that waits on plant/+/door, and so holds that filter while it waits.</summary>
+    private static Flow Doors() => Once("f3", ("in", "mqttIn", new { filter = "plant/+/door" }));
 
     [Fact]
     public async Task A_cancellation_from_a_fault_nobody_foresaw_does_not_stop_the_pump()
     {
         var subscriber = new SubscriberProbe(_subscriber);
-        Run(await StartedAsync(_alerts, _dispatcher, [Watch()], subscriber));
+        Run(await StartedAsync(_alerts,[Watch()], subscriber));
 
         // Nothing along this path catches a fault of its own, so only the turn's last line of defence
         // stands between it and RunAsync, which would read any cancellation as shutdown.
@@ -1189,18 +1326,17 @@ public sealed class FlowEngineTests : IAsyncLifetime
     [Fact]
     public async Task A_cancelled_alarm_channel_is_contained_in_that_channel()
     {
-        var cancelled = new OperationCanceledException("The channel gave up.");
-        var log = new AlarmCallLog { NotifierFault = cancelled, DispatcherFault = cancelled };
-        var engine = await RunningAsync(log, log, Watch(webhook: "https://hooks.example.com/boiler"));
+        var log = new AlarmCallLog { NotifierFault = new OperationCanceledException("The channel gave up.") };
+        var engine = await RunningAsync(log, Watch());
 
         await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
 
-        // Neither channel is handed the engine's token, so neither can be telling it to stop: the
-        // webhook is still tried after the console's channel gave up, and its own failure is said as
-        // that — not as a turn of the pump that failed and took the rest of the turn with it.
-        await Eventually.Until(_time, () => _log.Lines.Any(line => line.Message.StartsWith("An alert dispatcher threw")),
-            "the dispatcher's own failure to be logged");
-        Assert.Equal(["told raised", "sent raised"], log.Calls);
+        // The log is not handed the engine's token, so it cannot be telling it to stop: the console is
+        // still told after the log gave up, and the log's own failure is said as that — not as a turn of
+        // the pump that failed and took the rest of the turn with it.
+        await Eventually.Until(_time, () => _console.Alarms.Count == 1, "the console to be told all the same");
+        Assert.Equal(["told raised"], log.Calls);
+        Assert.Contains(_log.Lines, line => line.Message.StartsWith("An alert notifier threw"));
         Assert.DoesNotContain(_log.Lines, line => line.Message.StartsWith("A turn of the flow engine failed"));
     }
 
@@ -1219,7 +1355,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
     [Fact]
     public async Task A_command_that_throws_is_skipped_and_the_rest_of_its_turn_still_happens()
     {
-        var engine = await StartedAsync(_alerts, _dispatcher, [Watch()]);
+        var engine = await StartedAsync(_alerts,[Watch()]);
 
         // Three commands for one turn, the middle one poisoned. Nothing the product posts is known
         // to throw, which is the point: the pump must not bet two good arrivals on it.
@@ -1238,7 +1374,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
     public async Task A_subscriber_that_throws_when_read_does_not_cost_the_turn_its_alarm_its_publish_or_its_push()
     {
         var subscriber = new SubscriberProbe(_subscriber);
-        var engine = await StartedAsync(_alerts, _dispatcher, [Watch()], subscriber);
+        var engine = await StartedAsync(_alerts,[Watch()], subscriber);
 
         // One turn with an arrival to carry out and a tick that looks at the filters, and the look
         // throws — which only the turn's own catch is there to stop.
@@ -1250,7 +1386,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
         await ClockStill(() => _log.Lines.Any(line => line.Message.StartsWith("A turn of the flow engine failed")),
             "the subscriber's fault to reach the turn");
         Assert.Single(_alerts.Raised);
-        Assert.Equal(1, Count(engine, "in"));
+        Assert.Equal(1, Read(engine, "in"));
         await ClockStill(() => _publisher.Sent.Count == 1, "the turn's publish to go out");
     }
 
@@ -1258,7 +1394,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
     public async Task A_subscribe_the_broker_does_not_answer_does_not_hold_back_what_its_turn_decided()
     {
         var subscriber = new SubscriberProbe(_subscriber);
-        var engine = await StartedAsync(_alerts, _dispatcher, [Watch()], subscriber);
+        var engine = await StartedAsync(_alerts,[Watch()], subscriber);
 
         // The flows' filter gone with nothing to show for it, so the tick's look asks for it again —
         // of a broker that never answers — in the same turn as an arrival that raises an alarm.
@@ -1269,7 +1405,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
         Run(engine);
 
         await ClockStill(() => subscriber.Held == 1, "the SUBSCRIBE to be waiting on the broker");
-        await ClockStill(() => _alerts.Raised.Count == 1 && _publisher.Sent.Count == 1 && Count(engine, "in") == 1,
+        await ClockStill(() => _alerts.Raised.Count == 1 && _publisher.Sent.Count == 1 && Read(engine, "in") == 1,
             "the turn's alarm, publish and push to go out while it waits");
     }
 
@@ -1356,7 +1492,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
     public async Task An_arrival_the_old_broker_sent_before_the_move_is_judged_before_it()
     {
         _connection.At("broker-a.plant.local", 1883);
-        var engine = await StartedAsync(_alerts, _dispatcher, [Watch()]);
+        var engine = await StartedAsync(_alerts,[Watch()]);
 
         // Received from broker A, and still queued when the pump first looks: a pump held up for
         // the whole of the move. Broker B came up a second after it arrived.
@@ -1376,7 +1512,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
     public async Task A_move_a_turn_stops_short_of_is_told_by_the_next_turn_where_it_falls()
     {
         _connection.At("broker-a.plant.local", 1883);
-        var engine = await StartedAsync(_alerts, _dispatcher, [Watch()]);
+        var engine = await StartedAsync(_alerts,[Watch()]);
 
         // A turn's worth of broker A's messages, one more of A's that raises an alarm, and B's first,
         // which raises its own: the turn that sees the move stops at its limit short of where it falls.
@@ -1401,11 +1537,11 @@ public sealed class FlowEngineTests : IAsyncLifetime
     public async Task A_publish_failure_among_the_old_brokers_last_messages_does_not_put_them_after_the_move()
     {
         _connection.At("broker-a.plant.local", 1883);
-        var engine = await StartedAsync(_alerts, _dispatcher, [Watch()]);
+        var engine = await StartedAsync(_alerts,[Watch()]);
 
         // A publish broker A failed — one in flight when A was torn down, or one it never answered —
         // comes back to the queue ahead of a message A had already sent. B came up a second later.
-        engine.Post(new FlowPublishFailed("f1", "fan", "The link went before the broker took the publish."));
+        engine.Post(new FlowStepFailed(new FlowRunKey("f1", FlowRunKind.Active), "fan", "The link went before the broker took the publish."));
         await engine.NotifyMessageReceivedAsync(Msg("plant/k1/temp", "{\"temp\":95}"));
         _connection.Link = LinkTo("broker-b.plant.local", connectedAt: T0.AddSeconds(1));
         _subscriber.LinkDropped();
@@ -1422,28 +1558,24 @@ public sealed class FlowEngineTests : IAsyncLifetime
     // Each second is moved on only once the pump is waiting for it: a publish is sent from a loop of
     // its own, so seeing it says nothing about whether the pump has made its next delay yet.
     [Fact]
-    public async Task An_every_that_comes_due_in_the_turn_that_sees_a_move_is_not_refused_for_want_of_a_link()
+    public async Task A_wait_that_ends_in_the_turn_that_sees_a_move_is_not_refused_for_want_of_a_link()
     {
         var clock = new WatchedClock(_time);
         _clock = clock;
         _connection.At("broker-a.plant.local", 1883);
-        await RunningAsync(new FlowBuilder()
-            .Node("tick", "every", new { seconds = 1, topic = "plant/sim/ping", payload = "on" })
-            .Node("send", "publish", new { topic = "{{topic}}", payload = "{{payload}}" })
-            .Wire("tick", "out", "send", "in")
-            .Build());
+        await RunningAsync(Every("f1", 1, ("send", "publish", new { topic = "plant/sim/ping", payload = "on" })));
 
-        await ClockStill(() => clock.Waits(T0.AddSeconds(1)), "the pump to wait for the first emission");
+        await ClockStill(() => clock.Waits(T0.AddSeconds(1)), "the pump to wait for the first wait to end");
         _time.Advance(TimeSpan.FromSeconds(1));
-        await ClockStill(() => _publisher.Sent.Count == 1, "the first emission, on broker A");
-        await ClockStill(() => clock.Waits(T0.AddSeconds(2)), "the pump to wait for the next emission");
+        await ClockStill(() => _publisher.Sent.Count == 1, "the first publish, on broker A");
+        await ClockStill(() => clock.Waits(T0.AddSeconds(2)), "the pump to wait for the next wait to end");
 
-        // The move, seen by the very turn the next emission wakes. The link was never down, so
+        // The move, seen by the very turn the next wait's end wakes. The link was never down, so
         // nothing that comes due in that turn may be told it was.
         _connection.At("broker-b.plant.local", 1883);
         _time.Advance(TimeSpan.FromSeconds(1));
 
-        await ClockStill(() => _publisher.Sent.Count == 2, "the next emission to go out on broker B");
+        await ClockStill(() => _publisher.Sent.Count == 2, "the next publish to go out on broker B");
     }
 
     [Fact]
@@ -1491,7 +1623,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
     public async Task The_flows_filters_are_asked_for_at_qos_1()
     {
         var subscriber = new SubscriberProbe(_subscriber);
-        await StartedAsync(_alerts, _dispatcher, [Watch()], subscriber);
+        await StartedAsync(_alerts,[Watch()], subscriber);
 
         // AlertEngine's RuleQos, and its reason: at QoS 0 a broker may drop the very message a flow
         // was drawn to catch, and say nothing.
@@ -1541,7 +1673,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
         var clock = new SteppingClock(_time);
         _clock = clock;
         var subscriber = new SubscriberProbe(_subscriber);
-        Run(await StartedAsync(_alerts, _dispatcher, [Watch()], subscriber));
+        Run(await StartedAsync(_alerts,[Watch()], subscriber));
 
         // Set back between the turn's reading of the clock and the pump's next one, for its wait — the
         // SUBSCRIBE a turn sends is squarely in between — so no turn is left to put the tick right.

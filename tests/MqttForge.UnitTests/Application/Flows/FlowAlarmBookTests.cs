@@ -1,12 +1,9 @@
-using MqttForge.Application.Flows.Next;
+using MqttForge.Application.Flows;
 using MqttForge.Domain.Enums;
 using MqttForge.Domain.Models;
 using AlertEvent = MqttForge.Application.Alerts.AlertEvent;
-using FlowLimits = MqttForge.Application.Flows.FlowLimits;
-using FlowMessage = MqttForge.Application.Flows.FlowMessage;
-using FlowStanding = MqttForge.Application.Flows.FlowStanding;
 
-namespace MqttForge.UnitTests.Application.Flows.Next;
+namespace MqttForge.UnitTests.Application.Flows;
 
 public class FlowAlarmBookTests
 {

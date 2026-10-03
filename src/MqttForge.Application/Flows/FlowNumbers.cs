@@ -1,6 +1,6 @@
 using MqttForge.Application.Alerts;
 
-namespace MqttForge.Application.Flows.Next;
+namespace MqttForge.Application.Flows;
 
 /// <summary>For's times and Wait's seconds, read from what a box held or a template rendered.</summary>
 // One reading for the compiler, which judges what was typed, and the runtime, which judges what a

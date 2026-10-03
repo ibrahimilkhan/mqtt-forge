@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -7,26 +8,29 @@ using MqttForge.Domain.Models;
 
 namespace MqttForge.Application.Flows;
 
-/// <summary>Every running flow, and everything that happens to one.</summary>
-// Pure, single-threaded, no lock, no I/O and no clock of its own: FlowEngine's pump is the only
-// caller and every call carries the time. The same division as AlertEngineCore and AlertEngine —
-// what a flow does is tested here as a sequence of calls, and the thread is tested there.
+/// <summary>Every run of every flow, one step at a time.</summary>
+// Pure, single-threaded, no lock, no I/O and no clock of its own: the engine's pump is the only caller
+// and every call carries the time, so what a flow does is tested here as a sequence of calls.
 //
-// A message runs depth first, one wire at a time in the order the wires were drawn. The graph is
-// acyclic (the compiler refused anything else), so the recursion is as deep as the longest path
-// through one flow and no deeper; the step budget bounds how wide it can spread.
+// A run moves until it waits — for a time, or for a message — reaches an End, or has taken its share of
+// steps for this turn, when it stops where it is and a later turn takes it on. Which runs a call moves
+// depends on the call: Deploy and StartTest move the runs they start, OnMessage the runs it woke, and
+// OnTick every run whose Wait has ended and every run with steps left over from an earlier turn.
+//
+// Nothing a message can contain stops a run: a step that cannot do its job counts an error and the run
+// goes on its way out. A run stops only at an End, by Stop or Deactivate, by an Update, when a forever
+// loop goes round without waiting, or when this class is itself at fault — a step that throws, which
+// Drive stops where it was, or a loop's next reached outside a turn of it.
 public sealed class FlowRuntime
 {
     private readonly Random _random;
-    private readonly Dictionary<string, FlowState> _flows = new(StringComparer.Ordinal);
-    private readonly PriorityQueue<Scheduled, DateTimeOffset> _schedule = new();
+    private readonly Dictionary<FlowRunKey, FlowRun> _runs = [];
     private readonly FlowAlarmBook _alarms = new();
 
-    private long _generation;
     private long _version;
 
-    // What the last OnTick was told. A publish is refused while it is false: the engine would only
-    // fail it a moment later, and saying so on the node here is what the reader needs to see.
+    // What the last OnTick was told. A publish is refused while it is false: the engine would only fail
+    // it a moment later, and saying so on the node here is what the reader needs to see.
     private bool _linkUp;
 
     public FlowRuntime() : this(Random.Shared) { }
@@ -36,112 +40,134 @@ public sealed class FlowRuntime
     /// <summary>Moves on every change the console would draw differently. The engine pushes on it.</summary>
     public long Version => _version;
 
-    /// <summary>When the next Every tick or Repeat copy is due, if any is.</summary>
-    public DateTimeOffset? NextDue => _schedule.TryPeek(out _, out var due) ? due : null;
+    /// <summary>
+    /// When the runtime next has something to do without being told: at once while a run has steps
+    /// left over from its last turn, else when the earliest Wait ends, else never.
+    /// </summary>
+    public DateTimeOffset? NextDue
+    {
+        get
+        {
+            DateTimeOffset? due = null;
 
+            foreach (var run in _runs.Values)
+            {
+                if (run.State == FlowRunState.Running) return DateTimeOffset.MinValue;
+                if (run.State == FlowRunState.Waiting && run.WakeAt is { } wake && (due is null || wake < due)) due = wake;
+            }
+
+            return due;
+        }
+    }
+
+    /// <summary>The filters of every run that has not ended: what the engine subscribes for the flows.</summary>
     public IReadOnlySet<string> Filters()
     {
         var filters = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var state in _flows.Values)
-            foreach (var input in state.Flow.Inputs)
-                filters.Add(input.Filter);
+
+        foreach (var run in _runs.Values)
+            if (run.Live)
+                foreach (var input in run.Flow.Inputs)
+                    filters.Add(input.Filter);
 
         return filters;
     }
 
-    public IReadOnlySet<(string FlowId, string NodeId)> Injectable()
-    {
-        var injectable = new HashSet<(string, string)>();
-        foreach (var state in _flows.Values)
-            foreach (var node in state.Flow.Nodes.Values)
-                if (node is InjectNode)
-                    injectable.Add((state.Flow.Id, node.Id));
+    /// <summary>The flows whose test run has not ended: what DELETE /api/flows/{id}/test can stop.</summary>
+    public IReadOnlySet<string> Testing() =>
+        _runs.Values.Where(run => run.Key.Kind == FlowRunKind.Test && run.Live)
+            .Select(run => run.Key.FlowId).ToHashSet(StringComparer.Ordinal);
 
-        return injectable;
-    }
+    /// <summary>The flows with an active run, going, waiting, finished or stopped: what is switched on.</summary>
+    public IReadOnlySet<string> Active() =>
+        _runs.Keys.Where(key => key.Kind == FlowRunKind.Active).Select(key => key.FlowId).ToHashSet(StringComparer.Ordinal);
 
-    /// <summary>Runs the enabled flows among <paramref name="flows"/>, and stops the rest.</summary>
+    /// <summary>Runs the enabled flows among <paramref name="flows"/> and ends the active runs of the rest.</summary>
     /// <param name="kept">Every flow id still in the file, so off can be told from removed.</param>
     public FlowOutcome Deploy(IReadOnlyList<CompiledFlow> flows, IReadOnlyCollection<string> kept, DateTimeOffset now)
     {
         var into = new Collector();
 
-        // The first flow with an id is the one that counts, on or off, and any later one with the
-        // same id is left out rather than thrown on. The console never writes two, but flows.json
-        // can be edited by hand, and one slip there must not keep every other flow from running.
+        // The first flow with an id is the one that counts, on or off, and any later one with the same
+        // id is left out rather than thrown on: flows.json can be edited by hand, and one slip there
+        // must not keep every other flow from running.
         var wanted = new Dictionary<string, CompiledFlow>(StringComparer.Ordinal);
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var flow in flows)
             if (seen.Add(flow.Id) && flow.Enabled)
                 wanted.Add(flow.Id, flow);
 
-        var stranded = false;
-
-        foreach (var id in _flows.Keys.Where(id => !wanted.ContainsKey(id)).ToList())
+        foreach (var key in _runs.Keys.Where(key => key.Kind == FlowRunKind.Active && !wanted.ContainsKey(key.FlowId)).ToList())
         {
-            var reason = kept.Contains(id) ? FlowAlarmBook.FlowOff : FlowAlarmBook.FlowRemoved;
-            into.Resolved(_alarms.ResolveFlow(id, reason, now));
-            _flows.Remove(id);
-            stranded = true;
+            var reason = kept.Contains(key.FlowId) ? FlowAlarmBook.FlowOff : FlowAlarmBook.FlowRemoved;
+            into.Resolved(_alarms.ResolveRun(key, reason, now));
+            _runs.Remove(key);
         }
 
         foreach (var flow in wanted.Values)
         {
-            _flows.TryGetValue(flow.Id, out var running);
+            var key = new FlowRunKey(flow.Id, FlowRunKind.Active);
+            _runs.TryGetValue(key, out var running);
 
-            // Untouched: its counters, its timers and its alarms carry on as they were. Somebody who
-            // moved a node, or deployed a different flow, did not ask for this one to start over.
+            // Unchanged: the run carries on where it is — its loops, its waits, its variables, its
+            // alarms. Somebody who moved a node, or saved another flow, did not ask this one to start over.
             if (running is not null && running.Flow.Fingerprint == flow.Fingerprint) continue;
 
-            if (running is not null)
-            {
-                into.Resolved(_alarms.Reconcile(running.Flow, flow, now));
-                stranded = true;
-            }
+            if (running is not null) into.Resolved(_alarms.Reconcile(running.Flow, flow, now));
 
-            // A new generation strands whatever the old one had scheduled, and it goes below.
-            var state = new FlowState(flow, ++_generation, now);
-            _flows[flow.Id] = state;
-
-            foreach (var every in flow.Timers)
-                _schedule.Enqueue(Scheduled.Tick(state, every), now + every.Interval);
+            var run = new FlowRun(flow, FlowRunKind.Active, now);
+            _runs[key] = run;
+            Drive(run, now, into);
         }
-
-        if (stranded) DropStranded();
 
         Touch();
         return into.Outcome();
     }
 
-    /// <summary>Takes out of the schedule every tick and copy whose flow has gone, or been replaced, since it was queued.</summary>
-    // Taken now rather than skipped when it comes due: an Every's next tick can be a day away and a
-    // Repeat's next copy an hour, each holding its message all that time, and a flow edited every few
-    // minutes would leave a day's worth of them behind. The schedule is rebuilt whole, which is as
-    // many entries as there are, once a deploy.
-    private void DropStranded()
+    /// <summary>Runs a flow's draft once, beside its active run, in place of any test of it there was.</summary>
+    public FlowOutcome StartTest(CompiledFlow flow, DateTimeOffset now)
     {
-        var current = _schedule.UnorderedItems
-            .Where(item => _flows.TryGetValue(item.Element.FlowId, out var state) && state.Generation == item.Element.Generation)
-            .ToList();
+        var into = new Collector();
+        var key = new FlowRunKey(flow.Id, FlowRunKind.Test);
 
-        if (current.Count == _schedule.Count) return;
+        if (_runs.Remove(key)) into.Resolved(_alarms.ResolveRun(key, FlowAlarmBook.TestEnded, now));
 
-        _schedule.Clear();
-        _schedule.EnqueueRange(current);
+        var run = new FlowRun(flow, FlowRunKind.Test, now);
+        _runs[key] = run;
+        Drive(run, now, into);
+
+        Touch();
+        return into.Outcome();
     }
 
+    /// <summary>Takes a flow's test run away, going or finished. Nothing when it has none.</summary>
+    public FlowOutcome StopTest(string flowId, DateTimeOffset now)
+    {
+        var key = new FlowRunKey(flowId, FlowRunKind.Test);
+        if (!_runs.Remove(key)) return FlowOutcome.Empty;
+
+        var into = new Collector();
+        into.Resolved(_alarms.ResolveRun(key, FlowAlarmBook.TestEnded, now));
+
+        Touch();
+        return into.Outcome();
+    }
+
+    /// <summary>A message off the broker: into the queue of every MQTT in it matches, and on with the runs it wakes.</summary>
     public FlowOutcome OnMessage(MqttMessage message, DateTimeOffset now)
     {
-        Collector? into = null;
+        var heard = false;
+        HashSet<FlowRun>? woken = null;
 
-        foreach (var state in _flows.Values)
+        foreach (var run in _runs.Values)
         {
-            List<MqttInNode>? matching = null;
+            if (!run.Live) continue;
 
-            foreach (var input in state.Flow.Inputs)
+            List<MqttInNode>? matching = null;
+            foreach (var input in run.Flow.Inputs)
             {
-                // The alert engine's rule, and the same reason: a value the broker replays on
-                // subscribe is not something that just happened.
+                // The alert engine's rule, and its reason: a value the broker replays on subscribe is
+                // not something that just happened.
                 if (message.Replay && !input.Replay) continue;
                 if (!TopicFilterMatch.Matches(input.Filter, message.Topic)) continue;
 
@@ -149,84 +175,70 @@ public sealed class FlowRuntime
             }
 
             if (matching is null) continue;
+            heard = true;
 
-            if (state.Echo.Heard(message, now))
+            if (run.Echo.Heard(message, now))
             {
-                foreach (var input in matching) state.Counter(input.Id).Out("echo");
-                Touch();
+                foreach (var input in matching) run.Counter(input.Id).Out("echo");
                 continue;
             }
 
-            into ??= new Collector();
             foreach (var input in matching)
             {
-                var counter = state.Counter(input.Id);
-                counter.Count++;
-                counter.Note = Excerpt(message.Payload);
+                var queue = run.Queues[input.Id];
 
-                var run = new Run(state, now, into);
-                Emit(run, input, "out", new FlowMessage(message.Topic, message.Payload));
-                Finish(run, input);
+                // The oldest goes: a run this far behind is better off with the newest.
+                if (queue.Count >= FlowLimits.QueuedMessages)
+                {
+                    queue.Dequeue();
+                    run.Counter(input.Id).Out("dropped");
+                }
 
-                // The rest of the arrival goes with it, in this flow: a pattern that ran out of time on
-                // this text will on its way in from the next input too. Another flow's patterns are its
-                // own, and what it makes of the arrival is not this flow's to stop.
-                if (run.TimedOut) break;
+                queue.Enqueue(new FlowMessage(message.Topic, message.Payload, 0));
             }
 
-            Touch();
+            if (run.State == FlowRunState.Waiting && run.WakeAt is null && run.At is MqttInNode waiting && matching.Contains(waiting))
+            {
+                run.State = FlowRunState.Running;
+                (woken ??= []).Add(run);
+            }
         }
 
-        return into?.Outcome() ?? FlowOutcome.Empty;
+        if (!heard) return FlowOutcome.Empty;
+
+        // Only the runs this message woke. A run with steps left over from an earlier call has had its
+        // share, and takes the rest at the next tick, which NextDue makes at once: moved here as well, it
+        // would take another thousand steps at every arrival in a pump turn, and a run that gave up its
+        // turn to a pattern that ran out of time would cost the pump another 50 ms at each.
+        var into = new Collector();
+        if (woken is not null)
+            foreach (var run in Ordered().Where(woken.Contains))
+                Drive(run, now, into);
+
+        Touch();
+        return into.Outcome();
     }
 
-    /// <summary>The link as it is now, and every Every tick and Repeat copy that has come due.</summary>
+    /// <summary>The link as it is now, every Wait that has ended, and every run with steps left over.</summary>
     public FlowOutcome OnTick(DateTimeOffset now, bool connected)
     {
         var into = new Collector();
         Link(connected, now, into);
 
-        while (_schedule.TryPeek(out var item, out var due) && due <= now)
+        foreach (var run in _runs.Values)
         {
-            _schedule.Dequeue();
+            if (run.State != FlowRunState.Waiting || run.WakeAt is not { } wake) continue;
 
-            if (!_flows.TryGetValue(item.FlowId, out var state) || state.Generation != item.Generation) continue;
-            if (!state.Flow.Nodes.TryGetValue(item.NodeId, out var node)) continue;
-
-            var run = new Run(state, now, into);
-
-            if (node is EveryNode every)
-            {
-                var counter = state.Counter(every.Id);
-                counter.Count++;
-
-                Emit(run, every, "out", item.Message with { Index = (int)Math.Min(counter.Count, int.MaxValue) });
-                _schedule.Enqueue(item, NextAfter(due, every.Interval, now));
-            }
-            else if (node is RepeatNode repeat)
-            {
-                Emit(run, repeat, "out", item.Message);
-
-                // A copy whose event was stopped ends its sequence, as the first copy's does in Repeat:
-                // each copy after it would start the same event again, and be stopped the same way.
-                if (item.Remaining > 1 && !run.Stopped)
-                    _schedule.Enqueue(
-                        item with { Message = item.Message with { Index = item.Message.Index + 1 }, Remaining = item.Remaining - 1 },
-                        NextAfter(due, repeat.Interval, now));
-                else
-                    state.Sequences[repeat.Id] = Math.Max(0, state.Sequences.GetValueOrDefault(repeat.Id) - 1);
-            }
-
-            Finish(run, node);
-            Touch();
+            // Over, or further off than the whole wait: the clock was set back since, and the wait is
+            // over rather than as long again as the clock went back.
+            if (wake <= now || wake - now > run.WaitFor) run.State = FlowRunState.Running;
         }
 
+        DriveAll(now, into);
         return into.Outcome();
     }
 
     /// <summary>The link went to another broker between two looks at it: a down and an up, and nothing run between.</summary>
-    // Not OnTick down and up. The down would run whatever has come due against a link that was never
-    // gone and refuse every publish in it; the next tick runs it, on the link that is up.
     public FlowOutcome OnMove(DateTimeOffset now)
     {
         var into = new Collector();
@@ -236,68 +248,58 @@ public sealed class FlowRuntime
         return into.Outcome();
     }
 
-    public FlowOutcome Inject(string flowId, string nodeId, DateTimeOffset now)
+    /// <summary>The engine could not carry out a step this runtime asked for: a publish, a webhook post.</summary>
+    public FlowOutcome StepFailed(FlowRunKey key, string nodeId, string reason, DateTimeOffset now)
     {
-        if (!_flows.TryGetValue(flowId, out var state) ||
-            !state.Flow.Nodes.TryGetValue(nodeId, out var node) ||
-            node is not InjectNode inject)
-            return FlowOutcome.Empty;
+        if (!_runs.TryGetValue(key, out var run) || !run.Flow.Nodes.ContainsKey(nodeId)) return FlowOutcome.Empty;
 
         var into = new Collector();
-        var run = new Run(state, now, into);
+        Fail(run, nodeId, reason, now, into);
 
-        state.Counter(inject.Id).Count++;
-        Emit(run, inject, "out", new FlowMessage(inject.Topic, inject.Payload));
-        Finish(run, inject);
         Touch();
-
         return into.Outcome();
     }
 
-    /// <summary>The engine could not send a publish this runtime asked for.</summary>
-    public FlowOutcome PublishFailed(string flowId, string nodeId, string reason, DateTimeOffset now)
-    {
-        if (!_flows.TryGetValue(flowId, out var state) || !state.Flow.Nodes.ContainsKey(nodeId))
-            return FlowOutcome.Empty;
-
-        var into = new Collector();
-        Fail(state, nodeId, reason, "", now, into);
-        Touch();
-
-        return into.Outcome();
-    }
-
-    /// <summary>The broker said no to these filters; the inputs that asked for them say so.</summary>
+    /// <summary>The broker said no to these filters; the MQTT in nodes that asked for them say so.</summary>
     public void MarkRefused(IReadOnlyCollection<string> filters)
     {
-        foreach (var state in _flows.Values)
-            foreach (var input in state.Flow.Inputs)
+        foreach (var run in _runs.Values)
+        {
+            if (!run.Live) continue;
+
+            foreach (var input in run.Flow.Inputs)
                 if (filters.Contains(input.Filter))
                 {
-                    var counter = state.Counter(input.Id);
+                    var counter = run.Counter(input.Id);
                     counter.Errors++;
                     counter.Note = "The broker refused this filter.";
                 }
+        }
 
         Touch();
     }
 
     public FlowStatus Status()
     {
-        // Grouped once for the whole read. Asked node by node, it walked every standing alarm once for
-        // every Alarm node of every running flow — a thousand alarms times ten thousand nodes, at four
-        // pushes a second.
+        // Grouped once for the whole read, rather than walking every alarm once for every node.
         var standing = _alarms.StandingByNode(FlowLimits.StandingShown);
 
-        return new([.. _flows.Values.Select(state => new FlowRunStatus(
-            state.Flow.Id,
-            state.Fault,
-            [.. state.Flow.Nodes.Keys.Select(id =>
+        return new([.. Ordered().Select(run => new FlowRunStatus(
+            run.Key.FlowId,
+            run.Key.Kind,
+            run.State,
+            run.At.Id,
+            run.State != FlowRunState.Waiting ? null
+                : run.WakeAt is { } until ? new FlowWaiting(until, null)
+                : new FlowWaiting(null, (run.At as MqttInNode)?.Filter),
+            run.Fault,
+            run.Variables.ToDictionary(pair => pair.Key, pair => Excerpt(pair.Value), StringComparer.Ordinal),
+            [.. run.Flow.Nodes.Keys.Select(id =>
             {
-                var counter = state.Peek(id);
+                var counter = run.Peek(id);
 
                 return new FlowNodeStatus(id, counter.Count, new Dictionary<string, long>(counter.Outs),
-                    counter.Errors, counter.Note, standing.GetValueOrDefault((state.Flow.Id, id), []));
+                    counter.Errors, counter.Note, standing.GetValueOrDefault((run.Key, id), []));
             })]))]);
     }
 
@@ -310,112 +312,504 @@ public sealed class FlowRuntime
         Touch();
     }
 
-    // ---- one event ----
+    // ---- moving runs ----
 
-    private void Link(bool connected, DateTimeOffset now, Collector into)
+    // In one order every time, so what a call decides does not depend on how a dictionary was filled.
+    private IEnumerable<FlowRun> Ordered() =>
+        _runs.Values.OrderBy(run => run.Key.FlowId, StringComparer.Ordinal).ThenBy(run => run.Key.Kind);
+
+    private void DriveAll(DateTimeOffset now, Collector into)
     {
-        if (_linkUp && !connected)
-        {
-            // The alert engine's "connection ended": with no link nothing is being watched, and an
-            // alarm left standing would be a claim about a plant nobody can see.
-            into.Resolved(_alarms.ResolveAll(FlowAlarmBook.ConnectionEnded, now));
-            Touch();
-        }
-
-        _linkUp = connected;
+        foreach (var run in Ordered().Where(run => run.State == FlowRunState.Running).ToList())
+            Drive(run, now, into);
     }
 
-    private void Emit(Run run, CompiledNode from, string port, FlowMessage message)
+    /// <summary>Moves one run until it waits, ends, or has taken its share of this turn.</summary>
+    private void Drive(FlowRun run, DateTimeOffset now, Collector into)
     {
-        run.State.Counter(from.Id).Out(port);
+        run.YieldNow = false;
 
-        foreach (var target in from.To(port))
+        for (var steps = 0; steps < FlowLimits.StepsPerTurn && run.State == FlowRunState.Running && !run.YieldNow; steps++)
         {
-            if (run.Stopped) return;
-            Enter(run, target.Node, target.Port, message);
+            var at = run.At;
+
+            try
+            {
+                Step(run, now, into);
+            }
+            catch (Exception ex)
+            {
+                // AlertEngineCore.EvaluateGuarded's rule, for a run: deliberately every exception. A step
+                // that throws leaves the run where it was, so every call after this one would take the
+                // same step and throw again, NextDue would say "at once", and the pump would do nothing
+                // else for any flow. No step is known to throw; this is for the one nobody has thought of.
+                // The fault gives the exception's type with its message, as EvaluateGuarded's does: of an
+                // exception nobody expected, the message alone seldom says what kind it was.
+                Stop(run, at.Id, $"This step failed, so the run was stopped: {ex.GetType().Name}: {ex.Message}", now, into);
+            }
         }
+
+        Touch();
     }
 
-    private void Enter(Run run, CompiledNode node, string port, FlowMessage message)
+    private void Step(FlowRun run, DateTimeOffset now, Collector into)
     {
-        if (++run.Steps > FlowLimits.StepsPerEvent)
-        {
-            run.Exhausted = run.Stopped = true;
-            return;
-        }
+        var node = run.At;
+        var port = run.AtPort;
+        var resuming = run.Resuming;
+        run.Resuming = false;
 
-        run.State.Counter(node.Id).Count++;
+        // A node a run waited at is entered once, however long it waited there.
+        if (!resuming) run.Counter(node.Id).Count++;
 
         switch (node)
         {
-            case IfNode test:
-                If(run, test, message);
+            case StartNode:
+                Go(run, node, "out");
                 break;
-            case ForEachNode each:
-                ForEach(run, each, message);
+            case EndNode:
+                End(run, now, into);
                 break;
-            case RepeatNode repeat:
-                Repeat(run, repeat, message);
+            case MqttInNode input:
+                Read(run, input);
                 break;
-            case AlarmNode alarm:
-                Alarm(run, alarm, port, message);
+            case IfNode decision:
+                Decide(run, decision, now, into);
+                break;
+            case ForNode loop:
+                For(run, loop, port, now, into);
+                break;
+            case ForEachNode loop:
+                ForEach(run, loop, port, now, into);
+                break;
+            case WaitNode wait:
+                Wait(run, wait, resuming, now, into);
+                break;
+            case SetNode set:
+                Set(run, set, now, into);
                 break;
             case PublishNode publish:
-                Publish(run, publish, message);
+                Publish(run, publish, now, into);
+                Go(run, publish, "out");
                 break;
             case DebugNode debug:
-                run.Into.Debug.Add(DebugLine(run.State, debug.Id, run.Now, FlowDebugEntry.Message, message.Topic, message.Payload));
-                run.State.Counter(debug.Id).Note = Excerpt(message.Payload);
+                into.Debug.Add(DebugLine(run, debug.Id, now, FlowDebugEntry.Message, run.Message.Topic, run.Message.Payload));
+                run.Counter(debug.Id).Note = Excerpt(run.Message.Payload);
+                Go(run, debug, "out");
                 break;
+            case AlarmRaiseNode raise:
+                Raise(run, raise, now, into);
+                break;
+            case AlarmClearNode clear:
+                var cleared = _alarms.Clear(run.Key, clear.Alarm, run.Message.Topic, now);
+                if (cleared is not null) into.Resolved([cleared]);
+                Go(run, clear, cleared is not null ? "cleared" : "none");
+                break;
+            case SoundNode sound:
+                Sound(run, sound, now, into);
+                Go(run, sound, "out");
+                break;
+            case NotifyNode notify:
+                Notify(run, notify, now, into);
+                Go(run, notify, "out");
+                break;
+            case WebhookNode webhook:
+                Webhook(run, webhook, now, into);
+                Go(run, webhook, "out");
+                break;
+            default:
+                // A node type the compiler can make and no arm here handles would leave the run going at
+                // that node for ever: nothing here moves it on, and nothing is thrown for the net in Drive
+                // to catch, so every tick would spin a thousand empty steps. Throwing is what lets the net
+                // stop the run on the node, with the type said.
+                throw new InvalidOperationException($"The runtime has no step for the node type {node.GetType().Name}.");
         }
     }
 
-    private void If(Run run, IfNode node, FlowMessage message)
+    private static void Go(FlowRun run, CompiledNode from, string port)
     {
-        var text = PayloadValue.TryExtract(message.Payload, node.Field, out var found) ? found : null;
-        var counter = run.State.Counter(node.Id);
+        run.Counter(from.Id).Out(port);
 
-        FlowVerdict verdict;
+        var target = from.To(port);
+        run.At = target.Node;
+        run.AtPort = target.Port;
+    }
+
+    private void End(FlowRun run, DateTimeOffset now, Collector into)
+    {
+        run.State = FlowRunState.Finished;
+        run.ForgetQueued();
+
+        // A test is over when it reaches an End, and so are its alarms: a test leaves nothing standing.
+        // An active run's alarms stay up — they are real, and nothing pretends the plant got better.
+        if (run.Key.Kind == FlowRunKind.Test) into.Resolved(_alarms.ResolveRun(run.Key, FlowAlarmBook.TestEnded, now));
+    }
+
+    /// <summary>Ends a run where it is, with its fault said on the flow and on the node.</summary>
+    private void Stop(FlowRun run, string nodeId, string fault, DateTimeOffset now, Collector into)
+    {
+        run.State = FlowRunState.Stopped;
+
+        // Cut as a note is, since it stands in the flow's pane the way a note stands under a node: a
+        // fault that quotes an exception is as long as the exception made it. The debug line keeps more.
+        run.Fault = Excerpt(fault);
+        run.ForgetQueued();
+        Fail(run, nodeId, fault, now, into, run.Message.Topic);
+
+        if (run.Key.Kind == FlowRunKind.Test) into.Resolved(_alarms.ResolveRun(run.Key, FlowAlarmBook.TestEnded, now));
+    }
+
+    private static void Read(FlowRun run, MqttInNode input)
+    {
+        if (!run.Queues[input.Id].TryDequeue(out var message))
+        {
+            run.State = FlowRunState.Waiting;
+            run.Resuming = true;
+            return;
+        }
+
+        run.Pauses++;
+        run.Message = message with { Index = run.Message.Index };
+        run.Counter(input.Id).Note = Excerpt(message.Payload);
+        Go(run, input, "out");
+    }
+
+    private void Decide(FlowRun run, IfNode decision, DateTimeOffset now, Collector into)
+    {
+        var text = decision.Field.Read(run.Message, run.Variables);
+        var value = decision.Value.Render(run.Message, run.Variables, now, _random, FlowLimits.TextTemplateLength, out _);
+        var value2 = decision.Value2.Render(run.Message, run.Variables, now, _random, FlowLimits.TextTemplateLength, out _);
+
+        run.Counter(decision.Id).Note = text is null ? "no such field" : Excerpt(text);
+
+        bool yes;
         try
         {
-            verdict = node.Test.Judge(text);
+            yes = decision.Test.Judge(text, value, value2);
+        }
+        catch (FlowStepException ex)
+        {
+            Fail(run, decision.Id, ex.Message, now, into, run.Message.Topic);
+            yes = false;
         }
         catch (RegexMatchTimeoutException)
         {
-            // The whole event ends, not only this message's way through the If. A pattern that ran
-            // out of time on one text will on the next one like it, and every one a For each or a
-            // Repeat brought on after this would cost another 50 ms of the pump that every flow shares.
-            Fail(run.State, node.Id, "The pattern took longer than 50 ms, so the event was stopped.", message.Topic, run.Now, run.Into);
-            run.TimedOut = run.Stopped = true;
+            // The run's share of this turn ends here as well: the next text like this one would cost the
+            // pump another 50 ms, and every run shares the pump.
+            Fail(run, decision.Id, "The pattern took longer than 50 ms, so this message went no.", now, into, run.Message.Topic);
+            run.YieldNow = true;
+            yes = false;
+        }
+
+        Go(run, decision, yes ? "yes" : "no");
+    }
+
+    private void For(FlowRun run, ForNode loop, string port, DateTimeOffset now, Collector into)
+    {
+        if (port == FlowPorts.Next)
+        {
+            Turn(run, loop, now, into);
             return;
         }
 
-        counter.Note = text is null ? "no such field" : Excerpt(text);
-
-        switch (verdict)
+        long? total = null;
+        if (!loop.Forever)
         {
-            case FlowVerdict.Yes:
-                Emit(run, node, "yes", message);
-                break;
-            case FlowVerdict.No:
-                Emit(run, node, "no", message);
-                break;
-            default:
-                counter.Out("skipped");
-                break;
+            var text = loop.Times.Render(run.Message, run.Variables, now, _random, 64, out _);
+            if (FlowNumbers.Times(text) is not { } times)
+            {
+                Fail(run, loop.Id, $"Times has to be a whole number from 0 to 1,000,000; it came out as '{Excerpt(text)}'.",
+                    now, into, run.Message.Topic);
+                Go(run, loop, "done");
+                return;
+            }
+
+            total = times;
+        }
+
+        Enter(run, loop, new LoopState(run.Message, total, null));
+    }
+
+    private void ForEach(FlowRun run, ForEachNode loop, string port, DateTimeOffset now, Collector into)
+    {
+        if (port == FlowPorts.Next)
+        {
+            Turn(run, loop, now, into);
+            return;
+        }
+
+        var text = loop.Array.Read(run.Message, run.Variables);
+        var items = Items(text, out var more, out var unread);
+
+        if (items is null)
+        {
+            Fail(run, loop.Id, text is null
+                    ? "There is no array here: the message does not carry the field."
+                    : $"This is not an array: '{Excerpt(text)}'.",
+                now, into, run.Message.Topic);
+            Go(run, loop, "done");
+            return;
+        }
+
+        // The thousand is written in the invariant culture, as the compiler writes its numbers: the sentence
+        // is English whatever culture the server runs in, and a Turkish or German one would make it "1.000".
+        if (more)
+            Fail(run, loop.Id, $"Only the first {FlowLimits.ForEachElements.ToString("N0", CultureInfo.InvariantCulture)} elements are walked.",
+                now, into, run.Message.Topic);
+
+        if (unread > 0)
+            Fail(run, loop.Id, unread == 1
+                    ? "An element could not be read as text, so it was left out."
+                    : $"{unread} elements could not be read as text, so they were left out.",
+                now, into, run.Message.Topic);
+
+        Enter(run, loop, new LoopState(run.Message, items.Count, items));
+    }
+
+    /// <summary>A loop entered by its way in: its first turn, or straight out by done when it has none.</summary>
+    private static void Enter(FlowRun run, CompiledNode loop, LoopState state)
+    {
+        if (state.Total == 0)
+        {
+            run.Loops.Remove(loop.Id);
+            Go(run, loop, "done");
+            return;
+        }
+
+        run.Loops[loop.Id] = state;
+        state.PausesAtTurn = run.Pauses;
+        Body(run, loop, state);
+    }
+
+    /// <summary>The body's last step came back: the next turn, or done after the last.</summary>
+    private void Turn(FlowRun run, CompiledNode loop, DateTimeOffset now, Collector into)
+    {
+        if (!run.Loops.TryGetValue(loop.Id, out var state))
+        {
+            // The compiler lets only a loop's own body come back to it, so this is a fault in this
+            // class and not in a drawing; the run ends rather than guess which turn this was.
+            Stop(run, loop.Id, "The loop's next was reached outside a turn of it.", now, into);
+            return;
+        }
+
+        // A forever loop that came round without waiting would go round as fast as the server can.
+        if (state.Total is null && run.Pauses == state.PausesAtTurn)
+        {
+            Stop(run, loop.Id, "This loop ran a turn without waiting, so the run was stopped. Put a Wait in it.", now, into);
+            return;
+        }
+
+        state.Turn++;
+
+        if (state.Total is { } total && state.Turn > total)
+        {
+            run.Loops.Remove(loop.Id);
+            run.Message = state.Entry;
+            Go(run, loop, "done");
+            return;
+        }
+
+        state.PausesAtTurn = run.Pauses;
+        Body(run, loop, state);
+    }
+
+    private static void Body(FlowRun run, CompiledNode loop, LoopState state)
+    {
+        var index = (int)Math.Min(state.Turn, int.MaxValue);
+
+        run.Message = state.Items is { } items
+            ? state.Entry with { Payload = items[(int)state.Turn - 1], Index = index }
+            : state.Entry with { Index = index };
+
+        run.Counter(loop.Id).Note = state.Total is { } total ? $"turn {state.Turn} of {total}" : $"turn {state.Turn}";
+        Go(run, loop, "body");
+    }
+
+    private void Wait(FlowRun run, WaitNode wait, bool resuming, DateTimeOffset now, Collector into)
+    {
+        if (resuming)
+        {
+            run.WakeAt = null;
+            run.Pauses++;
+            Go(run, wait, "out");
+            return;
+        }
+
+        var text = wait.Seconds.Render(run.Message, run.Variables, now, _random, 64, out _);
+        if (FlowNumbers.Seconds(text) is not { } span)
+        {
+            Fail(run, wait.Id, $"Wait needs a number of seconds from 0.1 to 86,400; it came out as '{Excerpt(text)}'.",
+                now, into, run.Message.Topic);
+            Go(run, wait, "out");
+            return;
+        }
+
+        run.WakeAt = now + span;
+        run.WaitFor = span;
+        run.State = FlowRunState.Waiting;
+        run.Resuming = true;
+        run.Counter(wait.Id).Note = $"{text.Trim()} s";
+    }
+
+    private void Set(FlowRun run, SetNode set, DateTimeOffset now, Collector into)
+    {
+        var value = set.Value.Render(run.Message, run.Variables, now, _random, FlowLimits.VariableBytes, out var cut);
+
+        if (cut || Encoding.UTF8.GetByteCount(value) > FlowLimits.VariableBytes)
+            Fail(run, set.Id, $"{set.Variable} would be over 64 KB, so it keeps what it had.", now, into, run.Message.Topic);
+        else
+        {
+            run.Variables[set.Variable] = value;
+
+            // The value is cut before the sentence is made of it, so the note costs what it shows and not
+            // a copy of a value that may be 64 KB. The note is the same either way: the sentence starts
+            // with at least four characters, and Excerpt keeps no more than the first seventy-nine.
+            run.Counter(set.Id).Note = Excerpt($"{set.Variable} = {FlowTemplate.Clip(value, FlowLimits.NoteLength)}");
+        }
+
+        Go(run, set, "out");
+    }
+
+    private void Publish(FlowRun run, PublishNode node, DateTimeOffset now, Collector into)
+    {
+        var arrived = run.Message.Topic;
+
+        // The link and the rate before anything is rendered: a publish either of them drops would
+        // otherwise pay for its render first.
+        if (!_linkUp)
+        {
+            Fail(run, node.Id, "No broker link, so nothing was published.", now, into, arrived);
+            return;
+        }
+
+        if (!run.Bucket.TryTake(now))
+        {
+            Fail(run, node.Id, $"More than {FlowLimits.PublishesPerSecond} publishes a second; this one was dropped.", now, into, arrived);
+            return;
+        }
+
+        var topic = node.Topic.Render(run.Message, run.Variables, now, _random, FlowLimits.TopicBytes, out var topicCut);
+
+        if (topicCut || Encoding.UTF8.GetByteCount(topic) > FlowLimits.TopicBytes)
+        {
+            Fail(run, node.Id, "The topic came out longer than the 65,535 bytes MQTT allows, so nothing was published.", now, into, arrived);
+            return;
+        }
+
+        if (topic.Length == 0 || topic.AsSpan().IndexOfAny('+', '#') >= 0 || topic.Contains('\0'))
+        {
+            Fail(run, node.Id, $"The topic came out as '{topic}', which cannot be published to.", now, into, arrived);
+            return;
+        }
+
+        // Rendered to the limit in characters at most. A character is at least a byte, so a payload that
+        // was cut there is over 64 KB whatever it held, and one that was not is measured.
+        var payload = node.Payload.Render(run.Message, run.Variables, now, _random, FlowLimits.PayloadBytes, out var payloadCut);
+        var bytes = payloadCut ? null : Encoding.UTF8.GetBytes(payload);
+
+        if (bytes is null || bytes.Length > FlowLimits.PayloadBytes)
+        {
+            Fail(run, node.Id, "The payload came out larger than 64 KB and was not published.", now, into, topic);
+            return;
+        }
+
+        run.Echo.Remember(topic, bytes, now);
+        into.Publishes.Add(new FlowPublish(run.Key, node.Id, new PublishRequest(topic, bytes, node.Qos, node.Retain)));
+
+        var counter = run.Counter(node.Id);
+        counter.Out("sent");
+        counter.Note = Excerpt(topic);
+    }
+
+    private void Raise(FlowRun run, AlarmRaiseNode raise, DateTimeOffset now, Collector into)
+    {
+        var (alert, isNew) = _alarms.Raise(run.Flow, run.Key.Kind, raise, run.Message, run.Variables, now, _random);
+
+        if (alert is null)
+        {
+            Fail(run, raise.Id, "Too many alarms are up; this one was not raised.", now, into, run.Message.Topic);
+            Go(run, raise, "up");
+            return;
+        }
+
+        run.Counter(raise.Id).Note = Excerpt(alert.Reason);
+        if (isNew) into.Raised(alert);
+
+        Go(run, raise, isNew ? "raised" : "up");
+    }
+
+    private static void Sound(FlowRun run, SoundNode sound, DateTimeOffset now, Collector into)
+    {
+        if (!Allowed(run, sound.Id, now)) return;
+
+        into.Sounds.Add(new FlowSound(run.Key.FlowId, sound.Id, sound.Level, run.Key.Kind == FlowRunKind.Test));
+        run.Counter(sound.Id).Out("played");
+    }
+
+    private void Notify(FlowRun run, NotifyNode notify, DateTimeOffset now, Collector into)
+    {
+        if (!Allowed(run, notify.Id, now)) return;
+
+        var text = notify.Text.Render(run.Message, run.Variables, now, _random, FlowLimits.NoticeLength, out _);
+        into.Notices.Add(new FlowNotice(run.Key.FlowId, run.Flow.Name, notify.Id, text, notify.Level, now, run.Key.Kind == FlowRunKind.Test));
+
+        var counter = run.Counter(notify.Id);
+        counter.Out("shown");
+        counter.Note = Excerpt(text);
+    }
+
+    private void Webhook(FlowRun run, WebhookNode webhook, DateTimeOffset now, Collector into)
+    {
+        if (!Allowed(run, webhook.Id, now)) return;
+
+        var body = webhook.Body.Render(run.Message, run.Variables, now, _random, FlowLimits.PayloadBytes, out var cut);
+        if (cut || Encoding.UTF8.GetByteCount(body) > FlowLimits.PayloadBytes)
+        {
+            Fail(run, webhook.Id, "The body came out larger than 64 KB and was not sent.", now, into, run.Message.Topic);
+            return;
+        }
+
+        into.Webhooks.Add(new FlowWebhookPost(run.Key, webhook.Id, webhook.Url, body, IsJson(body) ? "application/json" : "text/plain"));
+        run.Counter(webhook.Id).Out("posted");
+    }
+
+    /// <summary>One job a second for each Sound, Notify and Webhook node: the rest are counted and let go.</summary>
+    private static bool Allowed(FlowRun run, string nodeId, DateTimeOffset now)
+    {
+        // A clock set back counts as a second gone by, or the node would stay quiet until the clock had
+        // caught up with where it was.
+        if (run.ChannelAt.TryGetValue(nodeId, out var last) && now >= last && now - last < FlowLimits.ChannelEvery)
+        {
+            run.Counter(nodeId).Out("dropped");
+            return false;
+        }
+
+        run.ChannelAt[nodeId] = now;
+        return true;
+    }
+
+    private static bool IsJson(string text)
+    {
+        try
+        {
+            using var _ = JsonDocument.Parse(text);
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
         }
     }
 
-    private void ForEach(Run run, ForEachNode node, FlowMessage message)
+    /// <summary>
+    /// A JSON array's elements as text — a string as itself, anything else as its JSON — whether there
+    /// were more than the limit, and how many could not be read as text.
+    /// </summary>
+    private static List<string>? Items(string? text, out bool more, out int unread)
     {
-        var counter = run.State.Counter(node.Id);
-
-        if (!PayloadValue.TryExtract(message.Payload, node.Field, out var text) || text is null)
-        {
-            counter.Out("skipped");
-            counter.Note = "no such field";
-            return;
-        }
+        more = false;
+        unread = 0;
+        if (text is null) return null;
 
         JsonDocument document;
         try
@@ -424,202 +818,70 @@ public sealed class FlowRuntime
         }
         catch (JsonException)
         {
-            counter.Out("skipped");
-            counter.Note = "not an array";
-            return;
+            return null;
         }
 
         using (document)
         {
-            if (document.RootElement.ValueKind != JsonValueKind.Array)
-            {
-                counter.Out("skipped");
-                counter.Note = "not an array";
-                return;
-            }
+            if (document.RootElement.ValueKind != JsonValueKind.Array) return null;
 
-            // The array it read, as an If shows the value it read. Without this a "not an array"
-            // left by one odd message would stand under a node that has walked arrays ever since.
-            counter.Note = Excerpt(text);
-
-            var index = 0;
+            var items = new List<string>();
+            var looked = 0;
             foreach (var element in document.RootElement.EnumerateArray())
             {
-                if (index == FlowLimits.ForEachElements)
+                // Every element looked at counts toward the limit, whether it can be read or not: counting
+                // only the ones kept, an array of a million strings that cannot be read would be scanned to
+                // its end, with an exception thrown and caught for each, on the pump every flow shares.
+                if (looked == FlowLimits.ForEachElements)
                 {
-                    Fail(run.State, node.Id, $"Only the first {FlowLimits.ForEachElements} elements were sent on.",
-                        message.Topic, run.Now, run.Into);
-                    return;
+                    more = true;
+                    break;
                 }
 
-                index++;
+                looked++;
 
-                // A string element is its text, not its JSON: ["k1","k2"] gives k1 and k2, which is
-                // what a topic template wants to put between two slashes.
-                var payload = element.ValueKind == JsonValueKind.String ? element.GetString()! : element.GetRawText();
-                Emit(run, node, "out", message with { Payload = payload, Index = index });
-
-                if (run.Stopped) return;
-            }
-        }
-    }
-
-    private void Repeat(Run run, RepeatNode node, FlowMessage message)
-    {
-        var state = run.State;
-        var scheduled = node.Count > 1 && node.Interval > TimeSpan.Zero;
-
-        if (scheduled && state.Sequences.GetValueOrDefault(node.Id) >= FlowLimits.RepeatSequences)
-        {
-            Fail(state, node.Id, $"{FlowLimits.RepeatSequences} sequences were already running; this one was dropped.",
-                message.Topic, run.Now, run.Into);
-            return;
-        }
-
-        Emit(run, node, "out", message with { Index = 1 });
-
-        // Nothing more of an event that was stopped, now or later: each copy would start it again, and
-        // be stopped the same way.
-        if (node.Count == 1 || run.Stopped) return;
-
-        if (!scheduled)
-        {
-            for (var copy = 2; copy <= node.Count && !run.Stopped; copy++)
-                Emit(run, node, "out", message with { Index = copy });
-            return;
-        }
-
-        state.Sequences[node.Id] = state.Sequences.GetValueOrDefault(node.Id) + 1;
-        _schedule.Enqueue(
-            new Scheduled(state.Flow.Id, state.Generation, node.Id, message with { Index = 2 }, node.Count - 1),
-            run.Now + node.Interval);
-    }
-
-    private void Alarm(Run run, AlarmNode node, string port, FlowMessage message)
-    {
-        var counter = run.State.Counter(node.Id);
-
-        if (port == "clear")
-        {
-            if (_alarms.Clear(run.State.Flow.Id, node.Id, message.Topic, run.Now) is { } cleared)
-            {
-                run.Into.Resolved([cleared]);
-                counter.Out("cleared");
+                // A string element is its text, not its JSON: ["k1","k2"] gives k1 and k2, which is what
+                // a topic template wants to put between two slashes. Read the way every field is read,
+                // so an element that is no text at all, an escaped half of a surrogate pair, is not
+                // there, and the walk goes on without it.
+                if (PayloadValue.TryText(element, out var item)) items.Add(item);
+                else unread++;
             }
 
-            return;
+            return items;
         }
-
-        var (alert, isNew) = _alarms.Raise(run.State.Flow, node, message, run.Now, _random);
-        if (alert is null)
-        {
-            Fail(run.State, node.Id, "Too many alarms are up; this one was not raised.", message.Topic, run.Now, run.Into);
-            return;
-        }
-
-        counter.Note = Excerpt(alert.Reason);
-
-        if (!isNew) return;
-
-        run.Into.Raised(alert);
-        counter.Out("raised");
     }
 
-    private void Publish(Run run, PublishNode node, FlowMessage message)
+    private void Link(bool connected, DateTimeOffset now, Collector into)
     {
-        var state = run.State;
-
-        // The link and the rate before anything is rendered. A publish either of them drops would
-        // otherwise pay for its render first, and at the rate limit that is every publish past the
-        // fiftieth each second. A publish that then renders wrong has had its turn at the rate.
-        if (!_linkUp)
+        if (_linkUp && !connected)
         {
-            Fail(state, node.Id, "No broker link, so nothing was published.", message.Topic, run.Now, run.Into);
-            return;
+            // The alert engine's "connection ended": with no link nothing is being watched, and an alarm
+            // left standing would be a claim about a plant nobody can see.
+            into.Resolved(_alarms.ResolveAll(FlowAlarmBook.ConnectionEnded, now));
+            Touch();
         }
 
-        if (!state.Bucket.TryTake(run.Now))
-        {
-            Fail(state, node.Id, $"More than {FlowLimits.PublishesPerSecond} publishes a second; this one was dropped.",
-                message.Topic, run.Now, run.Into);
-            return;
-        }
-
-        var topic = node.Topic.Render(message, run.Now, _random, FlowLimits.TopicBytes, out var topicCut);
-
-        if (topicCut || Encoding.UTF8.GetByteCount(topic) > FlowLimits.TopicBytes)
-        {
-            Fail(state, node.Id, "The topic came out longer than the 65,535 bytes MQTT allows, so nothing was published.",
-                message.Topic, run.Now, run.Into);
-            return;
-        }
-
-        if (topic.Length == 0 || topic.AsSpan().IndexOfAny('+', '#') >= 0 || topic.Contains('\0'))
-        {
-            Fail(state, node.Id, $"The topic came out as '{topic}', which cannot be published to.", message.Topic, run.Now, run.Into);
-            return;
-        }
-
-        // Rendered to the limit in characters at most. A character is at least a byte, so a payload
-        // that was cut there is over 64 KB whatever it held, and one that was not is measured.
-        var payload = node.Payload.Render(message, run.Now, _random, FlowLimits.PayloadBytes, out var payloadCut);
-        var bytes = payloadCut ? null : Encoding.UTF8.GetBytes(payload);
-
-        if (bytes is null || bytes.Length > FlowLimits.PayloadBytes)
-        {
-            Fail(state, node.Id, "The payload came out larger than 64 KB and was not published.", topic, run.Now, run.Into);
-            return;
-        }
-
-        state.Echo.Remember(topic, bytes, run.Now);
-        run.Into.Publishes.Add(new FlowPublish(state.Flow.Id, node.Id, new PublishRequest(topic, bytes, node.Qos, node.Retain)));
-
-        var counter = state.Counter(node.Id);
-        counter.Out("sent");
-        counter.Note = Excerpt(topic);
+        _linkUp = connected;
     }
 
-    private void Finish(Run run, CompiledNode start)
+    private static void Fail(FlowRun run, string nodeId, string reason, DateTimeOffset now, Collector into, string topic = "")
     {
-        if (!run.Exhausted) return;
-
-        var state = run.State;
-        state.Fault = $"An event ran more than {FlowLimits.StepsPerEvent} nodes and was stopped.";
-        run.Into.Debug.Add(DebugLine(state, start.Id, run.Now, FlowDebugEntry.Error, "", state.Fault));
-    }
-
-    private static void Fail(FlowState state, string nodeId, string reason, string topic, DateTimeOffset now, Collector into)
-    {
-        var counter = state.Counter(nodeId);
+        var counter = run.Counter(nodeId);
         counter.Errors++;
         counter.Note = Excerpt(reason);
-        into.Debug.Add(DebugLine(state, nodeId, now, FlowDebugEntry.Error, topic, reason));
+        into.Debug.Add(DebugLine(run, nodeId, now, FlowDebugEntry.Error, topic, reason));
     }
 
     /// <summary>A line for the debug strip, with neither its topic nor its text longer than an excerpt.</summary>
-    // Every line is made here, so none can miss the cut, and both halves need it. A Debug node prints
-    // whatever arrived, topic and all; a Publish that failed carries the topic it rendered, which
-    // with {{payload}} in its template is as long as the payload, and its reason may quote it again.
-    private static FlowDebugEntry DebugLine(
-        FlowState state, string nodeId, DateTimeOffset at, string kind, string topic, string text) =>
-        new(state.Flow.Id, nodeId, at, kind, FlowTemplate.Clip(topic, FlowLimits.DebugExcerpt), FlowTemplate.Clip(text, FlowLimits.DebugExcerpt));
-
-    private void Touch() => _version++;
-
-    /// <summary>When an Every tick or a Repeat copy that came due at <paramref name="due"/> goes next.</summary>
-    // From now rather than from when it was due, when the pump fell behind: a stall — a laptop that
-    // slept, a debugger paused on the pump — is one late emission, never a burst of the ones that
-    // were missed. For a Repeat that means its copies come later rather than all at once; it still
-    // sends every one of them.
-    private static DateTimeOffset NextAfter(DateTimeOffset due, TimeSpan interval, DateTimeOffset now)
-    {
-        var next = due + interval;
-        return next > now ? next : now + interval;
-    }
+    private static FlowDebugEntry DebugLine(FlowRun run, string nodeId, DateTimeOffset at, string kind, string topic, string text) =>
+        new(run.Key.FlowId, nodeId, at, kind,
+            FlowTemplate.Clip(topic, FlowLimits.DebugExcerpt), FlowTemplate.Clip(text, FlowLimits.DebugExcerpt),
+            run.Key.Kind == FlowRunKind.Test);
 
     /// <summary>One line, short enough to stand under a node.</summary>
-    // Cut before the line endings are replaced, so a note costs the eighty characters it keeps and not
-    // a copy of a 64 KB payload made first. Never between the halves of a surrogate pair.
+    // Cut before the line endings are replaced, so a note costs the eighty characters it keeps and not a
+    // copy of a 64 KB payload made first. Never between the halves of a surrogate pair.
     private static string Excerpt(string text)
     {
         if (text.Length <= FlowLimits.NoteLength) return text.ReplaceLineEndings(" ");
@@ -627,98 +889,16 @@ public sealed class FlowRuntime
         return FlowTemplate.Clip(text, FlowLimits.NoteLength - 1).ReplaceLineEndings(" ") + "…";
     }
 
-    // ---- state ----
-
-    private sealed class FlowState(CompiledFlow flow, long generation, DateTimeOffset now)
-    {
-        private readonly Dictionary<string, NodeCounter> _counters = new(StringComparer.Ordinal);
-
-        public CompiledFlow Flow { get; } = flow;
-        public long Generation { get; } = generation;
-        public Dictionary<string, int> Sequences { get; } = new(StringComparer.Ordinal);
-        public FlowEchoSet Echo { get; } = new();
-        public TokenBucket Bucket { get; } = new(now);
-        public string? Fault { get; set; }
-
-        public NodeCounter Counter(string id)
-        {
-            if (!_counters.TryGetValue(id, out var counter)) _counters[id] = counter = new NodeCounter();
-            return counter;
-        }
-
-        /// <summary>A node's counter to read, which never makes one: a status read leaves no trace.</summary>
-        public NodeCounter Peek(string id) =>
-            _counters.TryGetValue(id, out var counter) ? counter : NodeCounter.Untouched;
-    }
-
-    private sealed class NodeCounter
-    {
-        // What a node nothing has happened to reads as. One instance for all of them, so it must
-        // never be written: every write goes through FlowState.Counter, which never hands it out.
-        public static readonly NodeCounter Untouched = new();
-
-        public long Count;
-        public long Errors;
-
-        // The status line under a node on the canvas: one line of at most FlowLimits.NoteLength
-        // characters. Anything that can run longer — a payload, a rendered topic, an alarm's
-        // reason, an error that quotes one — goes through Excerpt on its way in.
-        public string? Note;
-        public readonly Dictionary<string, long> Outs = new(StringComparer.Ordinal);
-
-        public void Out(string key) => Outs[key] = Outs.GetValueOrDefault(key) + 1;
-    }
-
-    /// <summary>Fifty publishes a second, refilled continuously, a second's worth at most.</summary>
-    private sealed class TokenBucket(DateTimeOffset now)
-    {
-        private double _tokens = FlowLimits.PublishesPerSecond;
-        private DateTimeOffset _at = now;
-
-        public bool TryTake(DateTimeOffset now)
-        {
-            var elapsed = (now - _at).TotalSeconds;
-            if (elapsed > 0)
-            {
-                _tokens = Math.Min(FlowLimits.PublishesPerSecond, _tokens + elapsed * FlowLimits.PublishesPerSecond);
-                _at = now;
-            }
-
-            if (_tokens < 1) return false;
-
-            _tokens -= 1;
-            return true;
-        }
-    }
-
-    private sealed record Scheduled(string FlowId, long Generation, string NodeId, FlowMessage Message, int Remaining)
-    {
-        public static Scheduled Tick(FlowState state, EveryNode every) =>
-            new(state.Flow.Id, state.Generation, every.Id, new FlowMessage(every.Topic, every.Payload), 0);
-    }
-
-    private sealed class Run(FlowState state, DateTimeOffset now, Collector into)
-    {
-        public FlowState State { get; } = state;
-        public DateTimeOffset Now { get; } = now;
-        public Collector Into { get; } = into;
-        public int Steps { get; set; }
-
-        /// <summary>The event ran past its step budget, which is a fault on its flow.</summary>
-        public bool Exhausted { get; set; }
-
-        /// <summary>Nothing more of the event runs: its budget ran out, or a pattern ran out of time.</summary>
-        public bool Stopped { get; set; }
-
-        /// <summary>A pattern ran out of time, and nothing more of the arrival that started the event runs in its flow.</summary>
-        public bool TimedOut { get; set; }
-    }
+    private void Touch() => _version++;
 
     private sealed class Collector
     {
         public List<FlowPublish> Publishes { get; } = [];
         public List<AlertEvent> Alarms { get; } = [];
         public List<FlowDebugEntry> Debug { get; } = [];
+        public List<FlowSound> Sounds { get; } = [];
+        public List<FlowNotice> Notices { get; } = [];
+        public List<FlowWebhookPost> Webhooks { get; } = [];
 
         public void Raised(Alert alert) => Alarms.Add(new AlertEvent(alert, Raised: true));
 
@@ -728,8 +908,9 @@ public sealed class FlowRuntime
         }
 
         public FlowOutcome Outcome() =>
-            Publishes.Count == 0 && Alarms.Count == 0 && Debug.Count == 0
+            Publishes.Count == 0 && Alarms.Count == 0 && Debug.Count == 0 &&
+            Sounds.Count == 0 && Notices.Count == 0 && Webhooks.Count == 0
                 ? FlowOutcome.Empty
-                : new FlowOutcome(Publishes, Alarms, Debug);
+                : new FlowOutcome(Publishes, Alarms, Debug, Sounds, Notices, Webhooks);
     }
 }

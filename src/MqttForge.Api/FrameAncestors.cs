@@ -5,7 +5,7 @@ namespace MqttForge.Api;
 /// <summary>Which pages may show the console in a frame: its own, and the ones MqttForge:FrameAncestors names.</summary>
 /// <remarks>
 /// A page on another site that frames the console can lay a decoy over its buttons — Disconnect,
-/// Inject, Delete flow, Clear history — and the reader's click lands on the console, whose
+/// Activate, Delete flow, Clear history — and the reader's click lands on the console, whose
 /// requests from inside the frame are its own page's and pass the origin guard. So every answer
 /// says who may frame it, twice: Content-Security-Policy's frame-ancestors, which can name them,
 /// and X-Frame-Options: SAMEORIGIN, which cannot and is there for a browser too old for the first.

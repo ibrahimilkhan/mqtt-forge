@@ -20,6 +20,9 @@ namespace MqttForge.Application.Flows;
 // happened, every one of them while no more than AlarmEvents are waiting, and are sent before any
 // status that counts them — see SendWaitingAsync, and Compact for what happens past that bound,
 // whether the console has stopped taking or one turn handed over more than it holds.
+//
+// Tones and notices are moments: the newest sixteen of each are kept for a slow console, sent after
+// the alarms they may be about.
 public sealed class FlowConsoleSender
 {
     /// <summary>Debug batches kept for a console slow to take them: four seconds of the pump's pushes.</summary>
@@ -30,9 +33,21 @@ public sealed class FlowConsoleSender
     // while the console was not taking go, and what is left is never more than twice what may stand.
     public const int AlarmEvents = 4 * FlowLimits.StandingAlarms;
 
+    /// <summary>Tones and notices kept for a console slow to take them. Past this the oldest go.</summary>
+    // They are moments, not records: a tone played a minute late is a tone about nothing, and a stack of
+    // stale notices hides the one that matters. So a console that was slow is sent the newest, and what
+    // was let go is not counted anywhere — it was never anybody's to keep.
+    public const int Moments = 16;
+
     private readonly IFlowNotifier _console;
     private readonly ILogger _log;
     private readonly Channel<DebugBatch> _debug;
+
+    private readonly Channel<FlowSound> _sounds = Channel.CreateBounded<FlowSound>(
+        new BoundedChannelOptions(Moments) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
+
+    private readonly Channel<FlowNotice> _notices = Channel.CreateBounded<FlowNotice>(
+        new BoundedChannelOptions(Moments) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
 
     // Rung whenever there is something to send, and read empty by the loop before it sends it all.
     // One ring is enough however many came, so a second one is simply not kept.
@@ -79,6 +94,24 @@ public sealed class FlowConsoleSender
         _bell.Writer.TryWrite(true);
     }
 
+    /// <summary>Tones the pump decided on. Never waits.</summary>
+    public void Sounds(IReadOnlyList<FlowSound> sounds)
+    {
+        if (sounds.Count == 0) return;
+
+        foreach (var sound in sounds) _sounds.Writer.TryWrite(sound);
+        _bell.Writer.TryWrite(true);
+    }
+
+    /// <summary>Notices the pump decided on. Never waits.</summary>
+    public void Notices(IReadOnlyList<FlowNotice> notices)
+    {
+        if (notices.Count == 0) return;
+
+        foreach (var notice in notices) _notices.Writer.TryWrite(notice);
+        _bell.Writer.TryWrite(true);
+    }
+
     /// <summary>Nothing more is coming: the loop sends what it holds and ends.</summary>
     public void Complete() => _bell.Writer.TryComplete();
 
@@ -99,8 +132,8 @@ public sealed class FlowConsoleSender
         }
     }
 
-    // Until nothing is waiting: the alarms, a status and then a batch at a time, so a console taking a
-    // backlog of lines is not kept on an old picture meanwhile.
+    // Until nothing is waiting: the alarms, the tones and notices, a status and then a batch at a time,
+    // so a console taking a backlog of lines is not kept on an old picture meanwhile.
     //
     // The status is taken before the alarms. Every alarm it counts was handed over before it, so is
     // among the alarms taken next and goes out ahead of it; an alarm handed over after it goes ahead of
@@ -111,18 +144,38 @@ public sealed class FlowConsoleSender
     // Within the bound, that is. Past it, AlertBacklog lets go both ends of an alarm that came and went
     // while waiting, and the status waiting beside them may have been made while that alarm stood:
     // it then counts an alarm the console is never told of, until the next push, a quarter second on.
+    //
+    // Tones and notices are taken before the alarms too, and for the status's reason. The pump hands an
+    // alarm over before the tones and notices of the same turn, so every alarm one of them may be about
+    // is among the alarms taken next and goes out ahead of it. Taken after, they could take a tone whose
+    // alarm came while the alarms before it were being sent, and send the tone first.
     private async Task SendWaitingAsync(CancellationToken ct)
     {
         while (true)
         {
             var sent = false;
             var status = Interlocked.Exchange(ref _status, null);
+            var sounds = Drain(_sounds);
+            var notices = Drain(_notices);
 
             if (TakeAlarms() is { } alarms)
             {
                 foreach (var (raised, alerts) in AlertEvent.Runs(alarms))
                     await SendAsync(() => raised ? _console.RaisedAsync(alerts, ct) : _console.ResolvedAsync(alerts, ct), ct);
 
+                sent = true;
+            }
+
+            // After the alarms, so a notice about an alarm never reaches a console before the alarm does.
+            if (sounds.Count > 0)
+            {
+                await SendAsync(() => _console.SoundsAsync(sounds, ct), ct);
+                sent = true;
+            }
+
+            if (notices.Count > 0)
+            {
+                await SendAsync(() => _console.NoticesAsync(notices, ct), ct);
                 sent = true;
             }
 
@@ -161,6 +214,13 @@ public sealed class FlowConsoleSender
                             "It shows the alarms as they stand the next time it reads them.", taken.Lost);
 
         return taken.Events.Count > 0 ? taken.Events : null;
+    }
+
+    private static List<T> Drain<T>(Channel<T> channel)
+    {
+        var taken = new List<T>();
+        while (channel.Reader.TryRead(out var item)) taken.Add(item);
+        return taken;
     }
 
     // FlowEngine's rule for every channel: a cancellation is let through only when it is the engine

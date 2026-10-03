@@ -18,17 +18,19 @@ namespace MqttForge.UnitTests.Desktop;
 // has nobody to answer it.
 public sealed class DesktopPageOriginTests
 {
+    // A delete stands for every request that changes something and needs no body to: the kind a page on
+    // another site can send without asking first, and the kind the window's own page has to keep.
     [Fact]
-    public async Task The_page_in_the_window_can_deploy_press_an_Inject_and_open_the_hub()
+    public async Task The_page_in_the_window_can_save_and_delete_a_flow_and_open_the_hub()
     {
         await using var host = await DesktopHost.StartAsync();
         var origin = host.Page.GetLeftPart(UriPartial.Authority);
 
-        var deploy = await host.SendAsync(HttpMethod.Put, "/api/flows/window", origin, JsonContent.Create(Flow));
-        Assert.Equal(HttpStatusCode.OK, deploy.StatusCode);
+        var save = await host.SendAsync(HttpMethod.Put, "/api/flows/window", origin, JsonContent.Create(Flow));
+        Assert.Equal(HttpStatusCode.OK, save.StatusCode);
 
-        var inject = await host.SendAsync(HttpMethod.Post, "/api/flows/window/nodes/press/inject", origin);
-        Assert.Equal(HttpStatusCode.Accepted, inject.StatusCode);
+        var delete = await host.SendAsync(HttpMethod.Delete, "/api/flows/window", origin);
+        Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
 
         using var hub = await host.OpenHubAsync(origin);
         Assert.Equal("{}\u001e", await Handshake(hub));
@@ -39,11 +41,11 @@ public sealed class DesktopPageOriginTests
     {
         await using var host = await DesktopHost.StartAsync();
 
-        var deploy = await host.SendAsync(HttpMethod.Put, "/api/flows/window", origin: null, JsonContent.Create(Flow));
-        Assert.Equal(HttpStatusCode.OK, deploy.StatusCode);
+        var save = await host.SendAsync(HttpMethod.Put, "/api/flows/window", origin: null, JsonContent.Create(Flow));
+        Assert.Equal(HttpStatusCode.OK, save.StatusCode);
 
-        var inject = await host.SendAsync(HttpMethod.Post, "/api/flows/window/nodes/press/inject", "http://evil.example");
-        Assert.Equal(HttpStatusCode.Forbidden, inject.StatusCode);
+        var delete = await host.SendAsync(HttpMethod.Delete, "/api/flows/window", "http://evil.example");
+        Assert.Equal(HttpStatusCode.Forbidden, delete.StatusCode);
 
         using var hub = new ClientWebSocket();
         hub.Options.CollectHttpResponseDetails = true;
@@ -58,10 +60,15 @@ public sealed class DesktopPageOriginTests
         enabled = true,
         nodes = new object[]
         {
-            new { id = "press", type = "inject", x = 40, y = 80, config = new { topic = "plant/k1/button", payload = "1" } },
+            new { id = "start", type = "start", x = 40, y = 80, config = new { } },
             new { id = "look", type = "debug", x = 260, y = 80, config = new { } },
+            new { id = "end", type = "end", x = 480, y = 80, config = new { } },
         },
-        edges = new object[] { new { id = "e1", from = "press", fromPort = "out", to = "look", toPort = "in" } },
+        edges = new object[]
+        {
+            new { id = "e1", from = "start", fromPort = "out", to = "look", toPort = "in" },
+            new { id = "e2", from = "look", fromPort = "out", to = "end", toPort = "in" },
+        },
     };
 
     /// <summary>SignalR's JSON handshake. The hub answers an empty object once it has taken the connection.</summary>

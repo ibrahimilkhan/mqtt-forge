@@ -12,7 +12,7 @@ namespace MqttForge.IntegrationTests.Api;
 /// <summary>
 /// Who may show the console in a frame, said on every answer.
 ///
-/// A page on another site that frames the console can lay a decoy over Disconnect, Inject, Delete
+/// A page on another site that frames the console can lay a decoy over Disconnect, Activate, Delete
 /// flow or Clear history, and the reader's click lands on the console itself, whose requests from
 /// inside the frame are its own page's and pass the origin guard. Nothing said who could frame it.
 /// </summary>
@@ -28,7 +28,7 @@ public sealed class FrameAncestorsEndpointTests : IClassFixture<MqttForgeApiFact
     [InlineData("GET", "/", null, null)]
     [InlineData("GET", "/api/health", null, null)]
     [InlineData("GET", "/api/nothing-here", null, null)]
-    [InlineData("POST", "/api/flows/x/nodes/x/inject", "http://evil.example", null)]
+    [InlineData("POST", "/api/connection/reconnect", "http://evil.example", null)]
     [InlineData("GET", "/api/health", null, "evil.example:5169")]
     public async Task Every_answer_says_only_the_consoles_own_page_may_frame_it(string method, string path, string? origin, string? host)
     {

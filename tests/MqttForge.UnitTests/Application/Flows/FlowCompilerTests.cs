@@ -4,520 +4,455 @@ using MqttForge.Domain.Models;
 
 namespace MqttForge.UnitTests.Application.Flows;
 
-public class FlowCompilerTests
+public partial class FlowCompilerTests
 {
-    private static IReadOnlyList<FlowProblem> Problems(FlowBuilder flow) =>
-        FlowCompiler.Compile(flow.Build(), FlowBuilder.Prefix).Problems;
+    private static readonly DateTimeOffset T0 = new(2026, 10, 3, 9, 0, 0, TimeSpan.Zero);
+    private static readonly IReadOnlyDictionary<string, string> NoVariables = new Dictionary<string, string>();
 
-    private static FlowProblem Only(FlowBuilder flow) => Assert.Single(Problems(flow));
+    private static IReadOnlyList<FlowProblem> Problems(ChartBuilder chart) =>
+        FlowCompiler.Compile(chart.Build(), ChartBuilder.Prefix).Problems;
 
-    // For the shapes FlowBuilder cannot draw: a null list, or a null element in one, or a null
-    // field on a node or edge — everything System.Text.Json can still hand the compiler despite
-    // what the record's constructor promises at compile time.
-    private static FlowProblem Only(Flow flow) =>
-        Assert.Single(FlowCompiler.Compile(flow, FlowBuilder.Prefix).Problems);
+    /// <summary>The one problem a flow has, failing the test with every problem when it has none or several.</summary>
+    private static FlowProblem Only(ChartBuilder chart)
+    {
+        var problems = Problems(chart);
+        Assert.True(problems.Count == 1, $"{problems.Count} problems: " + string.Join(" / ", problems.Select(p => $"{p.Key}: {p.Message}")));
+        return problems[0];
+    }
 
-    private static FlowBuilder One(string type, object? config = null) =>
-        new FlowBuilder().Node("n1", type, config);
+    /// <summary>Start → x → End, for a node x with one way in and one way out.</summary>
+    private static ChartBuilder Step(string type, object? config = null) =>
+        new ChartBuilder().Node("start", "start").Node("x", type, config).Node("end", "end").Then("start", "x", "end");
+
+    /// <summary>Start → a loop whose body is <paramref name="body"/> (or empty) → End.</summary>
+    private static ChartBuilder Loop(string type, object config, string? bodyType = null, object? bodyConfig = null)
+    {
+        var chart = new ChartBuilder().Node("start", "start").Node("loop", type, config).Node("end", "end")
+            .Then("start", "loop").Wire("loop", "done", "end");
+
+        return bodyType is null
+            ? chart.Wire("loop", "body", "loop", "next")
+            : chart.Node("b", bodyType, bodyConfig).Wire("loop", "body", "b").Wire("b", "out", "loop", "next");
+    }
+
+    // ---- the drawing ----
 
     [Fact]
-    public void The_boiler_watch_compiles_and_is_wired_port_by_port()
+    public void Start_wired_to_End_is_a_flow()
     {
-        var flow = new FlowBuilder()
-            .Node("in", "mqttIn", new { filter = "plant/+/temp" })
-            .Node("test", "if", new { field = "$.temp", test = "gt", value = "90" })
-            .Node("hot", "alarm", new { name = "Hot", severity = "critical", reason = "{{topic}}" })
-            .Wire("in", "out", "test", "in")
-            .Wire("test", "yes", "hot", "raise")
-            .Wire("test", "no", "hot", "clear")
-            .Compile();
+        var flow = new ChartBuilder().Node("start", "start").Node("end", "end").Then("start", "end").Compile();
 
-        var input = Assert.Single(flow.Inputs);
-        Assert.Equal("plant/+/temp", input.Filter);
-
-        var test = Assert.IsType<IfNode>(Assert.Single(input.To("out")).Node);
-        Assert.Equal("raise", Assert.Single(test.To("yes")).Port);
-        Assert.Equal("clear", Assert.Single(test.To("no")).Port);
-
-        var alarm = Assert.IsType<AlarmNode>(flow.Nodes["hot"]);
-        Assert.Equal(AlertSeverity.Critical, alarm.Severity);
-        Assert.IsType<ScreenAction>(Assert.Single(alarm.Actions));
+        Assert.IsType<EndNode>(flow.Start.To("out").Node);
+        Assert.Equal("in", flow.Start.To("out").Port);
+        Assert.Empty(flow.Inputs);
     }
 
     [Fact]
-    public void The_fingerprint_ignores_where_nodes_stand_and_notices_what_they_do()
+    public void A_flow_without_a_start_is_refused()
     {
-        var a = new FlowBuilder().Node("n1", "mqttIn", new { filter = "a/#" }).Build();
-        var moved = a with { Nodes = [a.Nodes[0] with { X = 400, Y = 90 }] };
-        var changed = new FlowBuilder().Node("n1", "mqttIn", new { filter = "b/#" }).Build();
-
-        string Print(Flow flow) => FlowCompiler.Compile(flow, FlowBuilder.Prefix).Flow!.Fingerprint;
-
-        Assert.Equal(Print(a), Print(moved));
-        Assert.NotEqual(Print(a), Print(changed));
-    }
-
-    [Theory]
-    [InlineData("")]
-    [InlineData("has space")]
-    [InlineData("an-id-that-is-far-too-long-to-be-an-id-here")]
-    public void A_flow_id_outside_the_pattern_is_refused(string id)
-    {
-        var problem = Only(new FlowBuilder(id: id));
+        var problem = Only(new ChartBuilder().Node("end", "end"));
 
         Assert.Equal("flow", problem.Key);
+        Assert.Contains("Start", problem.Message);
     }
 
     [Fact]
-    public void A_flow_needs_a_name() =>
-        Assert.Equal("flow", Only(new FlowBuilder(name: "  ")).Key);
+    public void A_second_start_is_refused_on_itself() =>
+        Assert.Equal("node:again", Only(new ChartBuilder()
+            .Node("start", "start").Node("again", "start").Node("end", "end")
+            .Then("start", "end").Then("again", "end")).Key);
 
     [Fact]
-    public void Two_nodes_may_not_share_an_id()
+    public void A_way_out_with_no_wire_is_refused_on_its_node()
     {
-        var problem = Only(new FlowBuilder().Node("n1", "debug").Node("n1", "debug"));
+        var problem = Only(new ChartBuilder().Node("start", "start").Node("say", "debug").Then("start", "say"));
 
-        Assert.Equal("node:n1", problem.Key);
+        Assert.Equal("node:say", problem.Key);
+        Assert.Contains("goes nowhere", problem.Message);
     }
 
     [Fact]
-    public void An_unknown_node_type_is_refused_by_name()
+    public void A_decision_names_the_way_out_that_goes_nowhere()
     {
-        var problem = Only(One("teleport"));
+        var problem = Only(new ChartBuilder()
+            .Node("start", "start").Node("test", "if", new { field = "$.x", test = "exists" }).Node("end", "end")
+            .Then("start", "test").Wire("test", "yes", "end"));
 
-        Assert.Equal("node:n1", problem.Key);
-        Assert.Contains("teleport", problem.Message);
-    }
-
-    [Theory]
-    [InlineData("")]
-    [InlineData("plant/#/temp")]
-    public void MQTT_in_needs_a_well_formed_filter(string filter) =>
-        Assert.Equal("node:n1", Only(One("mqttIn", new { filter })).Key);
-
-    // Seen live: plant/#/temp was refused with "Write a topic filter, like plant/+/temp.", which is
-    // what an empty box needs to hear and not what somebody who wrote a filter does.
-    [Fact]
-    public void MQTT_in_says_what_is_wrong_with_its_filter() =>
-        Assert.Contains("'#' can only be the last level", Only(One("mqttIn", new { filter = "plant/#/temp" })).Message);
-
-    [Fact]
-    public void MQTT_in_may_not_listen_where_alarms_are_published() =>
-        Assert.Contains("mqttforge/alerts/", Only(One("mqttIn", new { filter = "mqttforge/#" })).Message);
-
-    [Theory]
-    [InlineData(0.05)]
-    [InlineData(90_000)]
-    public void Every_needs_an_interval_between_a_tenth_of_a_second_and_a_day(double seconds) =>
-        Assert.Equal("node:n1", Only(One("every", new { seconds })).Key);
-
-    [Theory]
-    [InlineData("gt", "")]
-    [InlineData("lt", "ninety")]
-    [InlineData("between", "10")]
-    [InlineData("matches", "(")]
-    [InlineData("oneOf", " , ")]
-    [InlineData("", "90")]
-    public void If_needs_a_test_and_what_the_test_compares_with(string test, string value) =>
-        Assert.Equal("node:n1", Only(One("if", new { field = "$.temp", test, value, value2 = "" })).Key);
-
-    [Fact]
-    public void Between_needs_its_bounds_the_right_way_round() =>
-        Assert.Equal("node:n1", Only(One("if", new { test = "between", value = "20", value2 = "10" })).Key);
-
-    [Theory]
-    [InlineData(0, 1.0)]
-    [InlineData(1001, 1.0)]
-    [InlineData(3, 0.05)]
-    [InlineData(3, 4000.0)]
-    public void Repeat_needs_a_count_and_an_interval_it_can_keep(int count, double seconds) =>
-        Assert.Equal("node:n1", Only(One("repeat", new { count, seconds })).Key);
-
-    [Fact]
-    public void Repeat_with_no_interval_is_allowed() =>
-        Assert.Empty(Problems(One("repeat", new { count = 5, seconds = 0 })));
-
-    [Fact]
-    public void An_alarm_needs_a_name_and_a_level()
-    {
-        Assert.Equal("node:n1", Only(One("alarm", new { name = "", severity = "warn" })).Key);
-        Assert.Equal("node:n1", Only(One("alarm", new { name = "Hot", severity = "loud" })).Key);
+        Assert.Equal("node:test", problem.Key);
+        Assert.Contains("no", problem.Message);
     }
 
     [Fact]
-    public void An_alarm_asks_for_the_channels_it_names()
+    public void A_way_out_with_two_wires_is_refused()
     {
-        var alarm = Assert.IsType<AlarmNode>(One("alarm", new
-        {
-            name = "Hot", severity = "warn", sound = true, webhook = "https://hooks.example.com/boiler",
-            publish = true, publishTopic = "", qos = 1, retain = true
-        }).Compile().Nodes["n1"]);
+        var problem = Only(new ChartBuilder()
+            .Node("start", "start").Node("say", "debug").Node("a", "end").Node("b", "end")
+            .Then("start", "say").Then("say", "a").Then("say", "b"));
 
-        Assert.Collection(alarm.Actions,
-            action => Assert.IsType<ScreenAction>(action),
-            action => Assert.IsType<SoundAction>(action),
-            action => Assert.Equal("https://hooks.example.com/boiler", Assert.IsType<WebhookAction>(action).Url),
-            action =>
-            {
-                var publish = Assert.IsType<PublishAction>(action);
-                Assert.Null(publish.Topic);
-                Assert.Equal(1, publish.Qos);
-                Assert.True(publish.Retain);
-            });
-    }
-
-    // Capped as a topic is: a reason is rendered for every alarm raised, and its template is the
-    // most text one raise can be asked to work through.
-    [Fact]
-    public void An_alarms_reason_is_at_most_1024_characters()
-    {
-        object Reason(int length) => new { name = "Hot", severity = "warn", reason = new string('r', length) };
-
-        Assert.Empty(Problems(One("alarm", Reason(FlowLimits.ReasonTemplateLength))));
-        Assert.Equal($"A reason is at most {FlowLimits.ReasonTemplateLength} characters.",
-            Only(One("alarm", Reason(FlowLimits.ReasonTemplateLength + 1))).Message);
-    }
-
-    // What a Publish may send, an Every or an Inject may hold: every one of their messages carries it,
-    // and an Every holds it for as long as the flow runs.
-    [Theory]
-    [InlineData("publish")]
-    [InlineData("every")]
-    [InlineData("inject")]
-    public void A_payload_is_at_most_64_KB(string type)
-    {
-        object Config(string payload) => type switch
-        {
-            "publish" => new { topic = "sim/x", payload },
-            "every" => new { seconds = 1, payload },
-            _ => new { payload },
-        };
-
-        Assert.Empty(Problems(One(type, Config(new string('x', FlowLimits.PayloadBytes)))));
-        Assert.Equal("A payload is at most 64 KB.", Only(One(type, Config(new string('x', FlowLimits.PayloadBytes + 1)))).Message);
+        Assert.Equal("node:say", problem.Key);
+        Assert.Contains("2 wires", problem.Message);
     }
 
     [Fact]
-    public void An_alarms_webhook_has_to_be_an_http_address() =>
-        Assert.Equal("node:n1", Only(One("alarm", new { name = "Hot", severity = "warn", webhook = "ftp://x" })).Key);
+    public void Two_wires_may_come_into_one_way_in() =>
+        new ChartBuilder()
+            .Node("start", "start").Node("test", "if", new { field = "$.x", test = "exists" }).Node("end", "end")
+            .Then("start", "test").Wire("test", "yes", "end").Wire("test", "no", "end")
+            .Compile();
 
-    // The alert rules' own refusal, and its reason: a password in an address goes to every redirect
-    // and into every log on the way.
     [Fact]
-    public void An_alarms_webhook_may_not_carry_a_username_or_password()
+    public void A_node_nothing_leads_to_is_refused()
     {
-        var problem = Only(One("alarm", new { name = "Hot", severity = "warn", webhook = "https://plant:s3cret@hooks.example.com/boiler" }));
+        var problem = Only(new ChartBuilder()
+            .Node("start", "start").Node("end", "end").Node("lonely", "debug")
+            .Then("start", "end").Then("lonely", "end"));
 
-        Assert.Equal("node:n1", problem.Key);
-        Assert.Equal("A webhook address cannot carry a username or password.", problem.Message);
-    }
-
-    [Theory]
-    [InlineData("mqttforge/alerts/+/boiler")]
-    [InlineData("mqttforge/alerts/#")]
-    [InlineData("mqttforge/alerts/boil\0er")]
-    public void An_alarms_own_topic_cannot_hold_a_wildcard_or_a_NUL(string publishTopic) =>
-        Assert.Equal("An alarm's own topic cannot hold +, # or a NUL character.",
-            Only(One("alarm", new { name = "Hot", severity = "warn", publish = true, publishTopic })).Message);
-
-    // The topic an Every or an Inject gives its messages is one a message could have arrived on. With
-    // a wildcard in it, a Publish of {{topic}} downstream would be refused at every message.
-    [Theory]
-    [InlineData("every", "plant/+/tick")]
-    [InlineData("every", "plant/#")]
-    [InlineData("every", "plant/ti\0ck")]
-    [InlineData("inject", "plant/+/button")]
-    [InlineData("inject", "#")]
-    [InlineData("inject", "plant/but\0ton")]
-    public void An_Every_or_Inject_topic_cannot_hold_a_wildcard_or_a_NUL(string type, string topic) =>
-        Assert.Equal("A message's topic cannot hold +, # or a NUL character.", Only(One(type, new { seconds = 1, topic })).Message);
-
-    [Theory]
-    [InlineData("every")]
-    [InlineData("inject")]
-    [InlineData("publish")]
-    public void A_topic_is_at_most_1024_characters(string type)
-    {
-        object Config(int length) => new { seconds = 1, topic = new string('t', length), payload = "x" };
-
-        Assert.Empty(Problems(One(type, Config(FlowLimits.TopicTemplateLength))));
-        Assert.Equal($"A topic is at most {FlowLimits.TopicTemplateLength} characters.",
-            Only(One(type, Config(FlowLimits.TopicTemplateLength + 1))).Message);
+        Assert.Equal("node:lonely", problem.Key);
+        Assert.Contains("Nothing leads here", problem.Message);
     }
 
     [Fact]
-    public void An_Every_or_Inject_may_leave_its_topic_empty()
+    public void A_circle_without_a_loop_is_refused()
     {
-        Assert.Empty(Problems(One("every", new { seconds = 1, topic = "" })));
-        Assert.Empty(Problems(One("inject", new { topic = "" })));
-    }
-
-    [Theory]
-    [InlineData(-1)]
-    [InlineData(3)]
-    public void A_publish_or_an_alarms_own_publish_asks_for_QoS_0_1_or_2(int qos)
-    {
-        Assert.Equal("QoS is 0, 1 or 2.", Only(One("publish", new { topic = "sim/x", payload = "x", qos })).Message);
-        Assert.Equal("QoS is 0, 1 or 2.", Only(One("alarm", new { name = "Hot", severity = "warn", publish = true, qos })).Message);
-    }
-
-    [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(2)]
-    public void Every_QoS_MQTT_has_is_taken(int qos)
-    {
-        Assert.Empty(Problems(One("publish", new { topic = "sim/x", payload = "x", qos })));
-        Assert.Empty(Problems(One("alarm", new { name = "Hot", severity = "warn", publish = true, qos })));
-    }
-
-    [Fact]
-    public void An_alarms_own_topic_has_to_stay_under_the_alert_prefix() =>
-        Assert.Equal("node:n1", Only(One("alarm", new
-        {
-            name = "Hot", severity = "warn", publish = true, publishTopic = "plant/alarm"
-        })).Key);
-
-    // The alert rules' refusal, for its reason. An Alarm node holds one alarm per topic, and a retained
-    // record at one fixed topic is each topic's alarm written over the last one's — and the empty
-    // message that takes one of them back takes back the record of them all.
-    [Fact]
-    public void A_retained_alarms_own_topic_has_to_carry_the_topic_it_is_about()
-    {
-        var problem = Only(One("alarm", new
-        {
-            name = "Hot", severity = "warn", publish = true, publishTopic = "mqttforge/alerts/boiler", retain = true
-        }));
-
-        Assert.Equal("node:n1", problem.Key);
-        Assert.Equal("A retained alarm's own topic has to carry {topic}, or each topic's alarm replaces the last one's " +
-                     "on the broker. Put {topic} in it, or leave it empty for the usual place.", problem.Message);
-    }
-
-    // The flows' templates are the Publish node's and the reason's, and nowhere else. An alarm's own
-    // topic is filled in by the channel that publishes it, which knows {topic} and nothing more:
-    // {{topic}} went out as mqttforge/alerts/{plant/k1/temp}, braces and all, and {{topic[1]}} as
-    // itself — and with {topic} inside it, the first passed the retained rule above.
-    [Theory]
-    [InlineData("mqttforge/alerts/{{topic}}", false)]
-    [InlineData("mqttforge/alerts/{{topic}}", true)]
-    [InlineData("mqttforge/alerts/boiler/{{topic[1]}}", false)]
-    [InlineData("mqttforge/alerts/boiler/{{topic[1]}}", true)]
-    public void An_alarms_own_topic_is_not_a_template(string publishTopic, bool retain)
-    {
-        var problem = Only(One("alarm", new { name = "Hot", severity = "warn", publish = true, publishTopic, retain }));
-
-        Assert.Equal("node:n1", problem.Key);
-        Assert.Equal("An alarm's own topic cannot hold {{…}}, which only Publish and the reason fill in. " +
-                     "Write {topic} for the topic the alarm is about.", problem.Message);
-    }
-
-    [Theory]
-    [InlineData("mqttforge/alerts/boiler/{topic}", true)]
-    [InlineData("", true)]
-    [InlineData("mqttforge/alerts/boiler", false)]
-    public void An_alarms_own_topic_that_is_one_per_topic_or_not_retained_is_taken(string publishTopic, bool retain) =>
-        Assert.Empty(Problems(One("alarm", new { name = "Hot", severity = "warn", publish = true, publishTopic, retain })));
-
-    [Theory]
-    [InlineData("")]
-    [InlineData("plant/+/cmd")]
-    [InlineData("plant/{{colour}}")]
-    public void Publish_needs_a_topic_it_can_publish_to(string topic) =>
-        Assert.Equal("node:n1", Only(One("publish", new { topic, payload = "x" })).Key);
-
-    [Fact]
-    public void Publish_refuses_a_payload_template_it_cannot_fill_in() =>
-        Assert.Equal("node:n1", Only(One("publish", new { topic = "a", payload = "{{nope}}" })).Key);
-
-    [Fact]
-    public void A_wire_must_start_and_end_on_nodes_and_ports_that_exist()
-    {
-        var problems = Problems(new FlowBuilder()
-            .Node("a", "inject")
-            .Node("b", "debug")
-            .Wire("a", "out", "ghost", "in")
-            .Wire("a", "yes", "b", "in")
-            .Wire("a", "out", "b", "raise"));
-
-        Assert.Equal(["edge:e1", "edge:e2", "edge:e3"], problems.Select(p => p.Key));
-    }
-
-    [Fact]
-    public void Two_wires_between_the_same_ports_are_refused() =>
-        Assert.Equal("edge:e2", Only(new FlowBuilder()
-            .Node("a", "inject").Node("b", "debug")
-            .Wire("a", "out", "b", "in").Wire("a", "out", "b", "in")).Key);
-
-    [Fact]
-    public void Wires_that_go_round_in_a_circle_are_refused()
-    {
-        var problem = Only(new FlowBuilder()
-            .Node("a", "forEach").Node("b", "repeat", new { count = 2, seconds = 0 })
-            .Wire("a", "out", "b", "in").Wire("b", "out", "a", "in"));
+        var problem = Only(new ChartBuilder()
+            .Node("start", "start").Node("a", "debug").Node("b", "debug")
+            .Then("start", "a", "b", "a"));
 
         Assert.Equal("flow", problem.Key);
         Assert.Contains("circle", problem.Message);
     }
 
     [Fact]
-    public void Too_many_nodes_are_refused()
+    public void A_loop_with_an_empty_body_is_wired_to_itself()
     {
-        var flow = new FlowBuilder();
-        for (var i = 0; i <= FlowLimits.NodesPerFlow; i++) flow.Node($"n{i}", "debug");
+        var flow = Loop("for", new { times = "3" }).Compile();
+        var loop = flow.Nodes["loop"];
 
-        Assert.Equal("flow", Only(flow).Key);
+        Assert.Same(loop, loop.To("body").Node);
+        Assert.Equal("next", loop.To("body").Port);
+        Assert.IsType<EndNode>(loop.To("done").Node);
     }
 
-    // Refused on the count alone, before one node is read. Every node here is wrong in a way of its
-    // own, so any node the compiler did read would be a problem of its own beside the count's — and
-    // a flow fifty times over the limit costs what one node over it costs.
     [Fact]
-    public void A_flow_far_over_the_node_limit_is_refused_before_any_node_is_read()
+    public void A_body_comes_back_to_its_loops_next() =>
+        Loop("for", new { times = "3" }, "debug").Compile();
+
+    [Fact]
+    public void Nothing_coming_back_to_a_loop_is_refused()
     {
-        var flow = new FlowBuilder();
-        for (var i = 0; i < 10_000; i++) flow.Node($"n{i}", "teleport");
+        var problem = Only(new ChartBuilder()
+            .Node("start", "start").Node("loop", "for", new { times = "3" }).Node("end", "end")
+            .Then("start", "loop").Wire("loop", "body", "end").Wire("loop", "done", "end"));
 
-        var problem = Only(flow);
+        Assert.Equal("node:loop", problem.Key);
+        Assert.Contains("Nothing comes back", problem.Message);
+    }
 
+    [Fact]
+    public void Only_the_loops_own_body_comes_back_to_its_next()
+    {
+        var problem = Only(new ChartBuilder()
+            .Node("start", "start").Node("test", "if", new { field = "$.x", test = "exists" })
+            .Node("loop", "for", new { times = "3" }).Node("end", "end")
+            .Then("start", "test").Wire("test", "yes", "loop").Wire("test", "no", "loop", "next")
+            .Wire("loop", "body", "loop", "next").Wire("loop", "done", "end"));
+
+        Assert.Equal("edge:e3", problem.Key);
+        Assert.Contains("own body", problem.Message);
+    }
+
+    [Fact]
+    public void What_comes_after_a_loop_cannot_come_back_to_it()
+    {
+        var problem = Only(new ChartBuilder()
+            .Node("start", "start").Node("loop", "for", new { times = "3" }).Node("after", "debug")
+            .Then("start", "loop").Wire("loop", "body", "loop", "next").Wire("loop", "done", "after")
+            .Wire("after", "out", "loop", "next"));
+
+        Assert.Equal("edge:e4", problem.Key);
+    }
+
+    [Fact]
+    public void Entering_a_loop_again_from_its_own_body_is_a_circle()
+    {
+        var problems = Problems(new ChartBuilder()
+            .Node("start", "start").Node("loop", "for", new { times = "3" }).Node("again", "debug").Node("end", "end")
+            .Then("start", "loop").Wire("loop", "body", "again").Then("again", "loop").Wire("loop", "done", "end"));
+
+        Assert.Contains(problems, problem => problem.Key == "flow" && problem.Message.Contains("circle"));
+    }
+
+    [Fact]
+    public void A_forever_loop_must_wait()
+    {
+        var problem = Only(Loop("for", new { forever = true }, "debug"));
+
+        Assert.Equal("node:loop", problem.Key);
+        Assert.Contains("must wait", problem.Message);
+    }
+
+    [Fact]
+    public void A_forever_loop_waits_with_a_wait_or_a_read()
+    {
+        Loop("for", new { forever = true }, "wait", new { seconds = "1" }).Compile();
+        Loop("for", new { forever = true }, "mqttIn", new { filter = "plant/+/temp" }).Compile();
+    }
+
+    [Theory]
+    [InlineData("every")]
+    [InlineData("inject")]
+    [InlineData("repeat")]
+    [InlineData("alarm")]
+    public void A_type_from_the_old_set_is_not_known(string type)
+    {
+        var problems = Problems(new ChartBuilder().Node("start", "start").Node("end", "end").Then("start", "end").Node("old", type));
+
+        Assert.Contains(problems, problem => problem.Key == "node:old" && problem.Message.Contains($"'{type}'"));
+    }
+
+    [Fact]
+    public void A_flow_over_the_node_limit_is_refused_before_a_node_is_read()
+    {
+        var chart = new ChartBuilder();
+        for (var i = 0; i <= 200; i++) chart.Node($"n{i}", "nonsense");
+
+        var problem = Only(chart);
         Assert.Equal("flow", problem.Key);
-        Assert.Equal($"A flow holds at most {FlowLimits.NodesPerFlow} nodes.", problem.Message);
+        Assert.Contains("200 nodes", problem.Message);
     }
 
-    // The wires' twin: each of these leads to a node nobody drew, so any wire the compiler read would
-    // be refused as well — and so would the circle check that walks every wire once per node.
+    // ---- settings ----
+
     [Fact]
-    public void A_flow_far_over_the_wire_limit_is_refused_before_any_wire_is_read()
+    public void An_mqtt_in_needs_a_filter_and_keeps_out_of_the_alarm_prefix()
     {
-        var flow = new FlowBuilder().Node("a", "inject");
-        for (var i = 0; i < 100_000; i++) flow.Wire("a", "out", $"ghost{i}", "in");
+        Assert.Equal("node:x", Only(Step("mqttIn")).Key);
+        Assert.Contains(ChartBuilder.Prefix, Only(Step("mqttIn", new { filter = "mqttforge/alerts/#" })).Message);
 
-        var problem = Only(flow);
-
-        Assert.Equal("flow", problem.Key);
-        Assert.Equal($"A flow holds at most {FlowLimits.EdgesPerFlow} wires.", problem.Message);
+        var input = Assert.Single(Step("mqttIn", new { filter = "plant/+/temp", replay = true }).Compile().Inputs);
+        Assert.Equal("plant/+/temp", input.Filter);
+        Assert.True(input.Replay);
     }
 
-    [Fact]
-    public void A_flow_holds_four_hundred_wires_and_not_one_more()
+    private static ChartBuilder Decision(object config, Action<ChartBuilder>? also = null)
     {
-        // Three Injects, each wired to every one of 134 Debug nodes: 402 wires to take from.
-        FlowBuilder Wired(int wires)
-        {
-            var flow = new FlowBuilder();
-            for (var i = 0; i < 3; i++) flow.Node($"go{i}", "inject");
-            for (var j = 0; j < 134; j++) flow.Node($"say{j}", "debug");
-
-            for (var n = 0; n < wires; n++) flow.Wire($"go{n % 3}", "out", $"say{n / 3}", "in");
-            return flow;
-        }
-
-        Assert.Empty(Problems(Wired(FlowLimits.EdgesPerFlow)));
-        Assert.Equal($"A flow holds at most {FlowLimits.EdgesPerFlow} wires.", Only(Wired(FlowLimits.EdgesPerFlow + 1)).Message);
+        var chart = new ChartBuilder().Node("start", "start").Node("x", "if", config).Node("end", "end")
+            .Then("start", "x").Wire("x", "yes", "end").Wire("x", "no", "end");
+        also?.Invoke(chart);
+        return chart;
     }
 
-    [Fact]
-    public void Two_wires_may_not_share_an_id()
-    {
-        var flow = new FlowBuilder()
-            .Node("a", "inject").Node("b", "debug").Node("c", "debug")
-            .Wire("a", "out", "b", "in")
-            .Wire("a", "out", "c", "in")
-            .Build();
-
-        // Two edges that would otherwise both be fine, given the same id by hand rather than by
-        // FlowBuilder's own counter — the one shape FlowBuilder itself never draws.
-        var duplicated = flow with { Edges = [flow.Edges[0], flow.Edges[1] with { Id = flow.Edges[0].Id }] };
-
-        var problem = Only(duplicated);
-
-        Assert.Equal($"edge:{flow.Edges[0].Id}", problem.Key);
-        Assert.Equal("A wire needs its own id.", problem.Message);
-    }
-
-    // A PUT body built by hand rather than by the console can leave a hole in a list, or a name
-    // out, and the compiler has to answer with problems, the same as it does for anything else
-    // somebody got wrong — not with an exception that skips every other flow being compiled
-    // alongside this one.
+    [Theory]
+    [InlineData("gt", "", "")]
+    [InlineData("gt", "hot", "")]
+    [InlineData("between", "90", "80")]
+    [InlineData("between", "80", "")]
+    [InlineData("matches", "(", "")]
+    [InlineData("oneOf", " , ", "")]
+    [InlineData("nope", "1", "")]
+    public void An_if_with_a_value_its_test_cannot_use_is_refused(string test, string value, string value2) =>
+        Assert.Equal("node:x", Only(Decision(new { field = "$.temp", test, value, value2 })).Key);
 
     [Fact]
-    public void A_null_node_in_the_list_is_a_flow_problem_not_a_crash()
+    public void An_if_may_compare_with_a_variable_it_declares()
     {
-        var problem = Only(new FlowBuilder().Build() with { Nodes = [null!] });
+        Decision(new { field = "$.temp", test = "gt", value = "{{var.limit}}" }, chart => chart.Var("limit", "90")).Compile();
 
-        Assert.Equal("flow", problem.Key);
-        Assert.Equal("A node in this flow is empty.", problem.Message);
+        Assert.Contains("limit", Only(Decision(new { field = "$.temp", test = "gt", value = "{{var.limit}}" })).Message);
     }
 
     [Fact]
-    public void A_null_edge_in_the_list_is_a_flow_problem_not_a_crash()
+    public void An_if_reads_a_field_a_variable_or_the_payload_and_nothing_else()
     {
-        var problem = Only(new FlowBuilder().Build() with { Edges = [null!] });
+        Decision(new { field = "var.limit", test = "exists" }, chart => chart.Var("limit", "90")).Compile();
+        Decision(new { field = "", test = "exists" }).Compile();
 
-        Assert.Equal("flow", problem.Key);
-        Assert.Equal("A wire in this flow is empty.", problem.Message);
+        Assert.Equal("node:x", Only(Decision(new { field = "temp", test = "exists" })).Key);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("2.5")]
+    [InlineData("-1")]
+    [InlineData("1000001")]
+    public void For_needs_whole_times_or_forever(string times) =>
+        Assert.Equal("node:loop", Only(Loop("for", new { times })).Key);
+
+    [Fact]
+    public void For_may_count_a_variable()
+    {
+        var chart = Loop("for", new { times = "{{var.n}}" }).Var("n", "3");
+        var loop = Assert.IsType<ForNode>(chart.Compile().Nodes["loop"]);
+
+        Assert.False(loop.Forever);
+        Assert.Equal(["n"], loop.Times.Variables);
     }
 
     [Fact]
-    public void A_wire_with_no_output_port_named_is_refused_not_a_crash()
+    public void For_each_reads_a_field_or_a_variable()
     {
-        var flow = new FlowBuilder().Node("a", "inject").Node("b", "debug").Build();
-        var broken = flow with { Edges = [new FlowEdge("e1", "a", null!, "b", "in")] };
+        var loop = Assert.IsType<ForEachNode>(Loop("forEach", new { array = "var.sensors" }).Var("sensors", "[]").Compile().Nodes["loop"]);
+        Assert.Equal("sensors", loop.Array.Variable);
 
-        var problem = Only(broken);
+        Assert.Equal("node:loop", Only(Loop("forEach", new { array = "sensors" })).Key);
+    }
 
-        Assert.Equal("edge:e1", problem.Key);
-        Assert.Equal("This node has no output called ''.", problem.Message);
+    [Theory]
+    [InlineData("")]
+    [InlineData("0.05")]
+    [InlineData("86401")]
+    [InlineData("soon")]
+    public void Wait_needs_seconds_from_a_tenth_to_a_day(string seconds) =>
+        Assert.Equal("node:x", Only(Step("wait", new { seconds })).Key);
+
+    [Fact]
+    public void Wait_may_read_its_seconds_from_a_variable() =>
+        Step("wait", new { seconds = "{{var.delay}}" }).Var("delay", "2").Compile();
+
+    [Fact]
+    public void Set_names_a_variable_the_flow_declares()
+    {
+        var set = Assert.IsType<SetNode>(Step("set", new { variable = "limit", value = "{{$.limit}}" }).Var("limit", "90").Compile().Nodes["x"]);
+        Assert.Equal("limit", set.Variable);
+
+        Assert.Contains("limit", Only(Step("set", new { variable = "limit", value = "1" })).Message);
+        Assert.Equal("node:x", Only(Step("set", new { variable = "", value = "1" })).Key);
     }
 
     [Fact]
-    public void A_wire_with_no_input_port_named_is_refused_not_a_crash()
+    public void A_template_may_only_read_variables_the_flow_declares() =>
+        Assert.Contains("site", Only(Step("publish", new { topic = "plant/{{var.site}}/cmd" })).Message);
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("plant/+/cmd")]
+    public void Publish_needs_a_topic_it_can_publish_to(string topic) =>
+        Assert.Equal("node:x", Only(Step("publish", new { topic, payload = "on" })).Key);
+
+    private static ChartBuilder Alarm(object raise, object? clear = null)
     {
-        var flow = new FlowBuilder().Node("a", "inject").Node("b", "debug").Build();
-        var broken = flow with { Edges = [new FlowEdge("e1", "a", "out", "b", null!)] };
+        var chart = new ChartBuilder().Node("start", "start").Node("raise", "alarmRaise", raise).Node("end", "end")
+            .Then("start", "raise");
 
-        var problem = Only(broken);
-
-        Assert.Equal("edge:e1", problem.Key);
-        Assert.Equal("That node has no input called ''.", problem.Message);
+        return clear is null
+            ? chart.Wire("raise", "raised", "end").Wire("raise", "up", "end")
+            : chart.Node("clear", "alarmClear", clear).Wire("raise", "raised", "clear").Wire("raise", "up", "clear")
+                .Wire("clear", "cleared", "end").Wire("clear", "none", "end");
     }
 
     [Fact]
-    public void A_node_with_no_type_named_hits_the_unknown_type_problem_not_a_crash()
+    public void Raise_alarm_reads_its_name_level_reason_and_value()
     {
-        var flow = new FlowBuilder().Build() with { Nodes = [new FlowNode("n1", null!, 0, 0, FlowJson.EmptyConfig)] };
+        var raise = Assert.IsType<AlarmRaiseNode>(Alarm(new { name = "Hot", level = "critical", reason = "{{topic[1]}} at {{$.temp}}", value = "$.temp" })
+            .Compile().Nodes["raise"]);
 
-        Assert.Equal("node:n1", Only(flow).Key);
+        Assert.Equal("Hot", raise.Name);
+        Assert.Equal(AlertSeverity.Critical, raise.Level);
+        Assert.Equal("k1 at 94", raise.Reason.Render(new FlowMessage("plant/k1/temp", "{\"temp\":94}", 0), NoVariables, T0, new Random(1), 200, out _));
+        Assert.Equal("$.temp", raise.Value.Text);
     }
 
     [Fact]
-    public void CompileAll_keeps_every_id_and_runs_only_what_compiled()
+    public void A_reason_left_empty_says_the_alarms_name()
     {
-        var set = FlowCompiler.CompileAll(
-            [
-                new FlowBuilder("good").Node("n1", "debug").Build(),
-                new FlowBuilder("bad").Node("n1", "teleport").Build(),
-            ],
-            FlowBuilder.Prefix);
+        var raise = Assert.IsType<AlarmRaiseNode>(Alarm(new { name = "Hot", level = "warn" }).Compile().Nodes["raise"]);
 
+        Assert.Equal("Hot", raise.Reason.Render(new FlowMessage("a", "", 0), NoVariables, T0, new Random(1), 200, out _));
+    }
+
+    [Theory]
+    [InlineData("", "warn")]
+    [InlineData("Hot", "loud")]
+    public void Raise_alarm_needs_a_name_and_a_level(string name, string level) =>
+        Assert.Equal("node:raise", Only(Alarm(new { name, level })).Key);
+
+    [Fact]
+    public void Clear_alarm_names_a_raise_alarm_of_its_flow()
+    {
+        var clear = Assert.IsType<AlarmClearNode>(Alarm(new { name = "Hot", level = "warn" }, new { alarm = "raise" }).Compile().Nodes["clear"]);
+        Assert.Equal("raise", clear.Alarm);
+
+        Assert.Contains("Pick", Only(Alarm(new { name = "Hot", level = "warn" }, new { alarm = "" })).Message);
+        Assert.Contains("not in this flow", Only(Alarm(new { name = "Hot", level = "warn" }, new { alarm = "end" })).Message);
+    }
+
+    [Fact]
+    public void Sound_and_notify_need_a_level_and_notify_needs_text()
+    {
+        Assert.Equal(AlertSeverity.Warn, Assert.IsType<SoundNode>(Step("sound", new { level = "warn" }).Compile().Nodes["x"]).Level);
+        Assert.Equal("node:x", Only(Step("sound")).Key);
+
+        Step("notify", new { text = "{{topic}} is hot", level = "info" }).Compile();
+        Assert.Equal("node:x", Only(Step("notify", new { text = " ", level = "info" })).Key);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("ftp://hooks.example.com/x")]
+    [InlineData("hooks.example.com/x")]
+    [InlineData("https://user:secret@hooks.example.com/x")]
+    public void Webhook_needs_a_plain_http_address(string url) =>
+        Assert.Equal("node:x", Only(Step("webhook", new { url })).Key);
+
+    [Fact]
+    public void A_webhooks_body_is_the_payload_unless_it_says_otherwise()
+    {
+        var webhook = Assert.IsType<WebhookNode>(Step("webhook", new { url = "https://hooks.example.com/x" }).Compile().Nodes["x"]);
+
+        Assert.Equal("https://hooks.example.com/x", webhook.Url);
+        Assert.Equal("{\"temp\":94}", webhook.Body.Render(new FlowMessage("a", "{\"temp\":94}", 0), NoVariables, T0, new Random(1), 1000, out _));
+    }
+
+    // ---- variables ----
+
+    [Theory]
+    [InlineData("2nd")]
+    [InlineData("my-limit")]
+    public void A_variable_with_a_bad_name_is_refused(string name) =>
+        Assert.Equal("flow", Only(Step("debug").Var(name, "1")).Key);
+
+    [Fact]
+    public void Two_variables_with_one_name_are_refused() =>
+        Assert.Contains("limit", Only(Step("debug").Var("limit", "1").Var("limit", "2")).Message);
+
+    [Fact]
+    public void A_flow_keeps_at_most_fifty_variables()
+    {
+        var chart = Step("debug");
+        for (var i = 0; i < 51; i++) chart.Var($"v{i}", "1");
+
+        Assert.Contains("50", Only(chart).Message);
+    }
+
+    [Fact]
+    public void A_starting_value_over_64_KB_is_refused() =>
+        Assert.Equal("flow", Only(Step("debug").Var("big", new string('x', 64 * 1024 + 1))).Key);
+
+    // ---- what a redeploy compares ----
+
+    [Fact]
+    public void Moving_a_node_keeps_the_fingerprint_and_a_new_starting_value_changes_it()
+    {
+        var flow = Step("debug").Var("limit", "90").Build();
+        var moved = flow with { Nodes = [.. flow.Nodes.Select(node => node with { X = 300, Y = 40 })] };
+        var changed = flow with { Variables = [new FlowVariable("limit", "95")] };
+
+        var fingerprint = FlowCompiler.Compile(flow, ChartBuilder.Prefix).Flow!.Fingerprint;
+
+        Assert.Equal(fingerprint, FlowCompiler.Compile(moved, ChartBuilder.Prefix).Flow!.Fingerprint);
+        Assert.NotEqual(fingerprint, FlowCompiler.Compile(changed, ChartBuilder.Prefix).Flow!.Fingerprint);
+    }
+
+    [Fact]
+    public void Compile_all_keeps_every_id_and_runs_only_what_compiled()
+    {
+        var good = new ChartBuilder("good").Node("start", "start").Node("end", "end").Then("start", "end").Build();
+        var bad = new ChartBuilder("bad").Node("end", "end").Build();
+
+        var set = FlowCompiler.CompileAll([good, bad], ChartBuilder.Prefix);
+
+        Assert.Equal(["good"], set.Compiled.Select(flow => flow.Id));
         Assert.Equal(["good", "bad"], set.Kept);
-        Assert.Equal("good", Assert.Single(set.Compiled).Id);
-
-        var problem = Assert.Single(set.Problems);
-        Assert.Equal("bad", problem.FlowId);
-        Assert.Equal("node:n1", problem.Problem.Key);
-    }
-
-    // Kept is how the runtime tells a flow turned off from one taken away, and the two end their
-    // alarms differently — "flow off" and "flow removed". A flow that is off is still in the file,
-    // so it has to be in Kept, and it compiles like any other: it is the runtime that leaves it idle.
-    [Fact]
-    public void CompileAll_compiles_and_keeps_a_flow_that_is_off()
-    {
-        var set = FlowCompiler.CompileAll([new FlowBuilder("idle").Node("n1", "debug").Off().Build()], FlowBuilder.Prefix);
-
-        Assert.False(Assert.Single(set.Compiled).Enabled);
-        Assert.Equal(["idle"], set.Kept);
-        Assert.Empty(set.Problems);
+        Assert.Equal("bad", Assert.Single(set.Problems).FlowId);
     }
 }

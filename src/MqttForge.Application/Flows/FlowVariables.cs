@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace MqttForge.Application.Flows.Next;
+namespace MqttForge.Application.Flows;
 
 /// <summary>What a variable may be called, written down once for the compiler, the templates and the values.</summary>
 // A program's rule — a letter or an underscore, then letters, digits and underscores — because the

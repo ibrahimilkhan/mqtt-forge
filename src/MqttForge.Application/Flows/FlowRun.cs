@@ -1,4 +1,4 @@
-namespace MqttForge.Application.Flows.Next;
+namespace MqttForge.Application.Flows;
 
 /// <summary>One run's state: where it is, what it carries, what it has done. Only the runtime touches it.</summary>
 // A program counter over a compiled flowchart — the node it enters next, and by which way in — with

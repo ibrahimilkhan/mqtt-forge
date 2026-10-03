@@ -1,8 +1,7 @@
 using MqttForge.Application.Alerts.Conditions;
-using MqttForge.Application.Flows.Next;
-using FlowLimits = MqttForge.Application.Flows.FlowLimits;
+using MqttForge.Application.Flows;
 
-namespace MqttForge.UnitTests.Application.Flows.Next;
+namespace MqttForge.UnitTests.Application.Flows;
 
 public class IfTestTests
 {

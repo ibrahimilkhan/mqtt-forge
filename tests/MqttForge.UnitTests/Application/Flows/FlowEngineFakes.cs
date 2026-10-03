@@ -127,6 +127,8 @@ internal sealed class RecordingFlowNotifier : IFlowNotifier
     private readonly Lock _gate = new();
     private readonly List<FlowStatus> _statuses = [];
     private readonly List<FlowDebugEntry> _debug = [];
+    private readonly List<FlowSound> _sounds = [];
+    private readonly List<FlowNotice> _notices = [];
     private readonly List<string> _told = [];
     private readonly List<string> _alarmIds = [];
     private readonly Dictionary<string, string> _letters = new(StringComparer.Ordinal);
@@ -161,9 +163,9 @@ internal sealed class RecordingFlowNotifier : IFlowNotifier
     public int Answered => Volatile.Read(ref _answered);
 
     /// <summary>
-    /// When set, every send — a push or an alarm — waits until it is cleared, or until its token calls
-    /// it off: a console that has stopped reading. What it is handed meanwhile is recorded only once it
-    /// is let go.
+    /// When set, every send — a push, an alarm, a tone or a notice — waits until it is cleared, or until
+    /// its token calls it off: a console that has stopped reading. What it is handed meanwhile is recorded
+    /// only once it is let go.
     /// </summary>
     public bool Stall
     {
@@ -221,7 +223,24 @@ internal sealed class RecordingFlowNotifier : IFlowNotifier
     // Lettered by id in the order first seen, AlarmCallLog's way and for its reason.
     public IReadOnlyList<string> Alarms
     {
-        get { lock (_gate) return [.. _told.Where(line => !line.StartsWith("status", StringComparison.Ordinal))]; }
+        get
+        {
+            lock (_gate)
+                return [.. _told.Where(line => line.StartsWith("raised ", StringComparison.Ordinal) ||
+                                               line.StartsWith("resolved ", StringComparison.Ordinal))];
+        }
+    }
+
+    /// <summary>Every tone the console was told to play, in the order told.</summary>
+    public IReadOnlyList<FlowSound> Sounds
+    {
+        get { lock (_gate) return [.. _sounds]; }
+    }
+
+    /// <summary>Every notice the console was told to show, in the order told.</summary>
+    public IReadOnlyList<FlowNotice> Notices
+    {
+        get { lock (_gate) return [.. _notices]; }
     }
 
     /// <summary>The ids of the alarms the console was told of, in the order told.</summary>
@@ -231,8 +250,9 @@ internal sealed class RecordingFlowNotifier : IFlowNotifier
     }
 
     /// <summary>
-    /// The alarms and the statuses in the order the console took them, a status as "status N" with N
-    /// the alarms it shows standing.
+    /// The alarms, the statuses, the tones and the notices in the order the console took them: a status
+    /// as "status N" with N the alarms it shows standing, a batch of tones as "sounds" and of notices as
+    /// "notices".
     /// </summary>
     public IReadOnlyList<string> Told
     {
@@ -264,10 +284,32 @@ internal sealed class RecordingFlowNotifier : IFlowNotifier
         lock (_gate)
         {
             _statuses.Add(status);
-            _told.Add($"status {status.Flows.Sum(flow => flow.Nodes.Sum(node => node.Standing.Count))}");
+            _told.Add($"status {status.Runs.Sum(run => run.Nodes.Sum(node => node.Standing.Count))}");
         }
 
         Interlocked.Increment(ref _answered);
+    }
+
+    public async Task SoundsAsync(IReadOnlyList<FlowSound> sounds, CancellationToken ct)
+    {
+        await WaitAsync(ct);
+
+        lock (_gate)
+        {
+            _sounds.AddRange(sounds);
+            _told.Add("sounds");
+        }
+    }
+
+    public async Task NoticesAsync(IReadOnlyList<FlowNotice> notices, CancellationToken ct)
+    {
+        await WaitAsync(ct);
+
+        lock (_gate)
+        {
+            _notices.AddRange(notices);
+            _told.Add("notices");
+        }
     }
 
     public async Task DebugAsync(IReadOnlyList<FlowDebugEntry> entries, int dropped, CancellationToken ct)
@@ -396,6 +438,37 @@ internal sealed class AlarmCallLog : IAlertNotifier, IAlertDispatcher
         }
 
         return fault is null ? Task.CompletedTask : Task.FromException(fault);
+    }
+}
+
+/// <summary>A webhook channel that keeps what it is handed, takes it or refuses it, and fails it on demand.</summary>
+internal sealed class RecordingFlowWebhook : IFlowWebhook
+{
+    private readonly Lock _gate = new();
+    private readonly List<(FlowWebhookPost Post, Action<string> Failed)> _posts = [];
+
+    /// <summary>When true, every post is refused as if the queue were full.</summary>
+    public bool Full { get; set; }
+
+    public IReadOnlyList<FlowWebhookPost> Posts
+    {
+        get { lock (_gate) return [.. _posts.Select(entry => entry.Post)]; }
+    }
+
+    public bool Post(FlowWebhookPost post, Action<string> failed)
+    {
+        if (Full) return false;
+
+        lock (_gate) _posts.Add((post, failed));
+        return true;
+    }
+
+    /// <summary>Gives up on the post at <paramref name="index"/>, as the channel would after its last attempt.</summary>
+    public void Fail(int index, string reason)
+    {
+        Action<string> failed;
+        lock (_gate) failed = _posts[index].Failed;
+        failed(reason);
     }
 }
 

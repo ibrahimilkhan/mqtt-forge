@@ -1,5 +1,5 @@
+using System.Globalization;
 using System.Text;
-using System.Text.Json;
 using MqttForge.Application.Flows;
 using MqttForge.Domain.Enums;
 using MqttForge.Domain.Models;
@@ -9,880 +9,1171 @@ namespace MqttForge.UnitTests.Application.Flows;
 
 public class FlowRuntimeTests
 {
-    private static readonly DateTimeOffset T0 = new(2026, 9, 26, 9, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset T0 = new(2026, 10, 3, 9, 0, 0, TimeSpan.Zero);
 
     private readonly FlowRuntime _runtime = new(new Random(7));
+
+    public FlowRuntimeTests() => _runtime.OnTick(T0, connected: true);
+
+    private FlowOutcome Activate(params CompiledFlow[] flows) =>
+        _runtime.Deploy(flows, [.. flows.Select(flow => flow.Id)], T0);
 
     private static MqttMessage Msg(string topic, string payload, bool replay = false) =>
         new(topic, payload, "text", 0, false, T0, Replay: replay);
 
-    private void Start(params CompiledFlow[] flows)
-    {
-        _runtime.Deploy(flows, [.. flows.Select(flow => flow.Id)], T0);
-        _runtime.OnTick(T0, connected: true);
-    }
+    private FlowRunStatus Run(FlowRunKind kind = FlowRunKind.Active, string flowId = "f1") =>
+        _runtime.Status().Runs.Single(run => run.FlowId == flowId && run.Kind == kind);
+
+    private FlowNodeStatus Node(string id, FlowRunKind kind = FlowRunKind.Active) =>
+        Run(kind).Nodes.Single(node => node.Id == id);
 
     private static string Text(FlowPublish publish) => Encoding.UTF8.GetString(publish.Request.Payload);
 
-    private FlowNodeStatus Node(string id, string flowId = "f1") =>
-        _runtime.Status().Flows.Single(flow => flow.Id == flowId).Nodes.Single(node => node.Id == id);
+    private static IEnumerable<string> Topics(FlowOutcome outcome) => outcome.Publishes.Select(publish => publish.Request.Topic);
 
-    private static FlowBuilder Watch(string id = "f1") => new FlowBuilder(id)
-        .Node("in", "mqttIn", new { filter = "plant/+/temp" })
-        .Node("test", "if", new { field = "$.temp", test = "gt", value = "90" })
-        .Node("hot", "alarm", new { name = "Hot", severity = "critical", reason = "{{topic[1]}} at {{$.temp}}" })
-        .Node("fan", "publish", new { topic = "plant/{{topic[1]}}/cmd", payload = "{\"fan\":\"on\"}", qos = 1 })
-        .Wire("in", "out", "test", "in")
-        .Wire("test", "yes", "hot", "raise")
-        .Wire("test", "yes", "fan", "in")
-        .Wire("test", "no", "hot", "clear");
+    /// <summary>Start → the steps given, one after another → End.</summary>
+    private static ChartBuilder Line(params (string Id, string Type, object? Config)[] steps)
+    {
+        var chart = new ChartBuilder().Node("start", "start").Node("end", "end");
+        foreach (var (id, type, config) in steps) chart.Node(id, type, config);
 
-    // ---- routing ----
+        return chart.Then(["start", .. steps.Select(step => step.Id), "end"]);
+    }
+
+    /// <summary>Start → a loop whose body is the steps given, back to its next; done → End.</summary>
+    private static ChartBuilder Body(string type, object config, params (string Id, string Type, object? Config)[] steps)
+    {
+        var chart = new ChartBuilder().Node("start", "start").Node("loop", type, config).Node("end", "end")
+            .Then("start", "loop").Wire("loop", "done", "end");
+
+        if (steps.Length == 0) return chart.Wire("loop", "body", "loop", "next");
+
+        foreach (var (id, stepType, stepConfig) in steps) chart.Node(id, stepType, stepConfig);
+        chart.Wire("loop", "body", steps[0].Id);
+        for (var i = 0; i + 1 < steps.Length; i++) chart.Wire(steps[i].Id, "out", steps[i + 1].Id);
+
+        return chart.Wire(steps[^1].Id, "out", "loop", "next");
+    }
+
+    /// <summary>Ticks at <paramref name="at"/> while a run has steps left over, gathering what each tick decided.</summary>
+    private List<FlowOutcome> Settle(DateTimeOffset? at = null)
+    {
+        var outcomes = new List<FlowOutcome>();
+        for (var i = 0; i < 1_000 && _runtime.NextDue is { } due && due <= (at ?? T0); i++)
+            outcomes.Add(_runtime.OnTick(at ?? T0, connected: true));
+
+        return outcomes;
+    }
+
+    /// <summary>A monitor: forever, read a temperature; over the limit raise "Hot" and send the fan on once; under it clear.</summary>
+    private static ChartBuilder Watch(string limit = "90", string level = "critical") => new ChartBuilder()
+        .Var("limit", limit)
+        .Node("start", "start").Node("loop", "for", new { forever = true })
+        .Node("read", "mqttIn", new { filter = "plant/+/temp" })
+        .Node("test", "if", new { field = "$.temp", test = "gt", value = "{{var.limit}}" })
+        .Node("hot", "alarmRaise", new { name = "Hot", level, reason = "{{topic[1]}} at {{$.temp}}", value = "$.temp" })
+        .Node("cool", "alarmClear", new { alarm = "hot" })
+        .Node("fan", "publish", new { topic = "plant/{{topic[1]}}/cmd", payload = "on" })
+        .Node("end", "end")
+        .Then("start", "loop").Wire("loop", "body", "read").Then("read", "test")
+        .Wire("test", "yes", "hot").Wire("hot", "raised", "fan").Wire("fan", "out", "loop", "next").Wire("hot", "up", "loop", "next")
+        .Wire("test", "no", "cool").Wire("cool", "cleared", "loop", "next").Wire("cool", "none", "loop", "next")
+        .Wire("loop", "done", "end");
+
+    // ---- a run, from Start to End ----
 
     [Fact]
-    public void A_reading_over_the_line_raises_an_alarm_and_publishes()
+    public void An_active_flow_runs_from_start_to_end_once()
     {
-        Start(Watch().Compile());
-
-        var outcome = _runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":94.2}"), T0);
-
-        var alarm = Assert.Single(outcome.Raised);
-        Assert.Equal("flow-f1-hot", alarm.RuleId);
-        Assert.Equal("Boiler watch · Hot", alarm.RuleName);
-        Assert.Equal("plant/k1/temp", alarm.Topic);
-        Assert.Equal(AlertSeverity.Critical, alarm.Severity);
-        Assert.Equal("k1 at 94.2", alarm.Reason);
-        Assert.Equal("{\"temp\":94.2}", alarm.Sample);
+        var outcome = Activate(Line(("pub", "publish", new { topic = "plant/k1/cmd", payload = "on" })).Compile());
 
         var publish = Assert.Single(outcome.Publishes);
         Assert.Equal("plant/k1/cmd", publish.Request.Topic);
-        Assert.Equal("{\"fan\":\"on\"}", Text(publish));
-        Assert.Equal(1, publish.Request.Qos);
+        Assert.Equal("on", Text(publish));
+        Assert.Equal(new FlowRunKey("f1", FlowRunKind.Active), publish.Run);
+
+        var run = Run();
+        Assert.Equal(FlowRunState.Finished, run.State);
+        Assert.Equal("end", run.At);
+        Assert.Null(run.Waiting);
+        Assert.Equal(1, Node("pub").Count);
+        Assert.Equal(1, Node("pub").Outs["sent"]);
+
+        // Finished, and still switched on: it runs again from Start at the next start of the application.
+        Assert.Equal(["f1"], _runtime.Active());
     }
 
     [Fact]
-    public void A_reading_under_the_line_takes_the_no_branch_and_clears_the_alarm()
+    public void A_flow_that_is_off_does_not_run()
     {
-        Start(Watch().Compile());
-        _runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":94.2}"), T0);
-
-        var outcome = _runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":71}"), T0.AddSeconds(5));
-
-        var cleared = Assert.Single(outcome.Resolved);
-        Assert.Equal("clear", cleared.ResolvedBy);
-        Assert.Equal(T0.AddSeconds(5), cleared.ResolvedAt);
-        Assert.Empty(outcome.Publishes);
-        Assert.Empty(_runtime.Alarms().Active);
+        Assert.Empty(Activate(Line(("pub", "publish", new { topic = "a/b" })).Off().Compile()).Publishes);
+        Assert.Empty(_runtime.Status().Runs);
+        Assert.Empty(_runtime.Active());
     }
 
     [Fact]
-    public void A_second_reading_over_the_line_counts_rather_than_raising_again()
+    public void Debug_prints_the_message_and_the_run_goes_on()
     {
-        Start(Watch().Compile());
-        _runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":94.2}"), T0);
+        var outcome = Activate(Line(("say", "debug", null), ("pub", "publish", new { topic = "a/b" })).Compile());
 
-        var outcome = _runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":95}"), T0.AddSeconds(1));
+        var line = Assert.Single(outcome.Debug);
+        Assert.Equal(FlowDebugEntry.Message, line.Kind);
+        Assert.Equal("say", line.NodeId);
+        Assert.False(line.Test);
+        Assert.Single(outcome.Publishes);
+    }
 
-        Assert.Empty(outcome.Raised);
-        var alarm = Assert.Single(_runtime.Alarms().Active);
-        Assert.Equal(2, alarm.Count);
-        Assert.Equal(T0.AddSeconds(1), alarm.LastSeenAt);
+    // ---- loops ----
+
+    [Fact]
+    public void For_runs_its_body_one_turn_after_another_with_the_turn_as_index()
+    {
+        var outcome = Activate(Body("for", new { times = "3" }, ("pub", "publish", new { topic = "count/{{index}}" })).Compile());
+
+        Assert.Equal(["count/1", "count/2", "count/3"], Topics(outcome));
+        Assert.Equal(FlowRunState.Finished, Run().State);
     }
 
     [Fact]
-    public void Alarms_belong_to_a_topic()
+    public void For_zero_times_goes_straight_to_done()
     {
-        Start(Watch().Compile());
-
-        _runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":94}"), T0);
-        _runtime.OnMessage(Msg("plant/k2/temp", "{\"temp\":96}"), T0);
-        _runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":80}"), T0);
-
-        Assert.Equal("plant/k2/temp", Assert.Single(_runtime.Alarms().Active).Topic);
+        Assert.Empty(Activate(Body("for", new { times = "0" }, ("pub", "publish", new { topic = "a/b" })).Compile()).Publishes);
+        Assert.Equal(FlowRunState.Finished, Run().State);
     }
 
     [Fact]
-    public void A_message_without_the_field_goes_down_neither_branch()
+    public void For_may_take_its_times_from_a_variable()
     {
-        Start(Watch().Compile());
-        _runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":94}"), T0);
+        var chart = Body("for", new { times = "{{var.n}}" }, ("pub", "publish", new { topic = "a/{{index}}" })).Var("n", "2");
 
-        var outcome = _runtime.OnMessage(Msg("plant/k1/temp", "warming up"), T0);
-
-        Assert.True(outcome.IsEmpty);
-        Assert.Single(_runtime.Alarms().Active);
-        Assert.Equal(1, Node("test").Outs["skipped"]);
+        Assert.Equal(["a/1", "a/2"], Topics(Activate(chart.Compile())));
     }
 
     [Fact]
-    public void Exists_sends_a_missing_field_to_no()
+    public void A_wait_in_a_loop_spaces_its_turns()
     {
-        Start(new FlowBuilder()
-            .Node("in", "mqttIn", new { filter = "a/#" })
-            .Node("test", "if", new { field = "$.fault", test = "exists" })
-            .Node("say", "debug")
-            .Wire("in", "out", "test", "in")
-            .Wire("test", "no", "say", "in")
-            .Compile());
+        var chart = Body("for", new { times = "3" },
+            ("pause", "wait", new { seconds = "1" }),
+            ("pub", "publish", new { topic = "tick/{{index}}" }));
 
-        Assert.Single(_runtime.OnMessage(Msg("a/b", "{\"ok\":true}"), T0).Debug);
-        Assert.Empty(_runtime.OnMessage(Msg("a/b", "{\"fault\":1}"), T0).Debug);
-    }
+        Assert.Empty(Activate(chart.Compile()).Publishes);
+        Assert.Equal(new FlowWaiting(T0.AddSeconds(1), null), Run().Waiting);
+        Assert.Equal("pause", Run().At);
 
-    [Theory]
-    [InlineData("gt", "90", "", "{\"v\":90.5}", "yes")]
-    [InlineData("gt", "90", "", "{\"v\":90}", "no")]
-    [InlineData("gte", "90", "", "{\"v\":90}", "yes")]
-    [InlineData("gte", "90", "", "{\"v\":89.9}", "no")]
-    [InlineData("lt", "10", "", "{\"v\":9.99}", "yes")]
-    [InlineData("lt", "10", "", "{\"v\":10}", "no")]
-    [InlineData("lte", "10", "", "{\"v\":10}", "yes")]
-    [InlineData("lte", "10", "", "{\"v\":10.01}", "no")]
-    [InlineData("eq", "90", "", "{\"v\":90.0}", "yes")]
-    [InlineData("eq", "on", "", "{\"v\":\"on\"}", "yes")]
-    [InlineData("eq", "on", "", "{\"v\":\"off\"}", "no")]
-    [InlineData("neq", "on", "", "{\"v\":\"off\"}", "yes")]
-    [InlineData("neq", "on", "", "{\"v\":\"on\"}", "no")]
-    [InlineData("between", "10", "20", "{\"v\":10}", "yes")]
-    [InlineData("between", "10", "20", "{\"v\":20}", "yes")]
-    [InlineData("between", "10", "20", "{\"v\":20.1}", "no")]
-    [InlineData("matches", "^k[0-9]$", "", "{\"v\":\"k1\"}", "yes")]
-    [InlineData("matches", "^k[0-9]$", "", "{\"v\":\"k12\"}", "no")]
-    [InlineData("oneOf", "on, auto", "", "{\"v\":\"auto\"}", "yes")]
-    [InlineData("oneOf", "on, auto", "", "{\"v\":\"off\"}", "no")]
-    [InlineData("exists", "", "", "{\"v\":null}", "yes")]
-    [InlineData("gt", "90", "", "{\"v\":\"hot\"}", "neither")]
-    [InlineData("between", "10", "20", "{\"v\":\"warm\"}", "neither")]
-    [InlineData("eq", "on", "", "{\"w\":\"on\"}", "neither")]
-    public void Each_test_sends_the_message_down_the_branch_it_answers(
-        string test, string value, string value2, string payload, string branch)
-    {
-        Start(new FlowBuilder()
-            .Node("in", "mqttIn", new { filter = "a/#" })
-            .Node("test", "if", new { field = "$.v", test, value, value2 })
-            .Node("yes", "debug")
-            .Node("no", "debug")
-            .Wire("in", "out", "test", "in")
-            .Wire("test", "yes", "yes", "in")
-            .Wire("test", "no", "no", "in")
-            .Compile());
-
-        var outcome = _runtime.OnMessage(Msg("a/b", payload), T0);
-
-        Assert.Equal(branch, outcome.Debug.SingleOrDefault()?.NodeId ?? "neither");
+        Assert.Equal(["tick/1"], Topics(_runtime.OnTick(T0.AddSeconds(1), connected: true)));
+        Assert.Empty(_runtime.OnTick(T0.AddSeconds(1.5), connected: true).Publishes);
+        Assert.Equal(["tick/2"], Topics(_runtime.OnTick(T0.AddSeconds(2), connected: true)));
+        Assert.Equal(["tick/3"], Topics(_runtime.OnTick(T0.AddSeconds(3), connected: true)));
+        Assert.Equal(FlowRunState.Finished, Run().State);
     }
 
     [Fact]
-    public void A_retained_replay_runs_nothing_unless_the_node_asks_for_it()
+    public void A_forever_loop_with_a_wait_keeps_going()
     {
-        Start(
-            new FlowBuilder("plain").Node("in", "mqttIn", new { filter = "a/#" }).Node("say", "debug")
-                .Wire("in", "out", "say", "in").Compile(),
-            new FlowBuilder("replays").Node("in", "mqttIn", new { filter = "a/#", replay = true }).Node("say", "debug")
-                .Wire("in", "out", "say", "in").Compile());
+        var chart = Body("for", new { forever = true },
+            ("pause", "wait", new { seconds = "2" }),
+            ("pub", "publish", new { topic = "sim/ping" }));
+        Activate(chart.Compile());
 
-        var outcome = _runtime.OnMessage(Msg("a/b", "1", replay: true), T0);
+        for (var tick = 1; tick <= 5; tick++)
+            Assert.Single(_runtime.OnTick(T0.AddSeconds(2 * tick), connected: true).Publishes);
 
-        Assert.Equal("replays", Assert.Single(outcome.Debug).FlowId);
+        Assert.Equal(FlowRunState.Waiting, Run().State);
     }
 
     [Fact]
-    public void A_topic_outside_the_filter_runs_nothing()
+    public void A_forever_turn_that_did_not_wait_stops_the_run()
     {
-        Start(Watch().Compile());
-
-        Assert.True(_runtime.OnMessage(Msg("plant/k1/humidity", "{\"temp\":99}"), T0).IsEmpty);
-    }
-
-    // ---- the three loops ----
-
-    [Fact]
-    public void For_each_sends_one_message_per_element_with_strings_unquoted()
-    {
-        Start(new FlowBuilder()
-            .Node("go", "inject", new { payload = "{\"ids\":[\"k1\",\"k2\",{\"id\":3}]}" })
-            .Node("each", "forEach", new { field = "$.ids" })
-            .Node("say", "debug")
-            .Wire("go", "out", "each", "in")
-            .Wire("each", "out", "say", "in")
-            .Compile());
-
-        var outcome = _runtime.Inject("f1", "go", T0);
-
-        Assert.Equal(["k1", "k2", "{\"id\":3}"], outcome.Debug.Select(entry => entry.Text));
-    }
-
-    [Fact]
-    public void For_each_stops_at_its_ceiling_and_says_so()
-    {
-        var many = JsonSerializer.Serialize(Enumerable.Range(0, FlowLimits.ForEachElements + 5));
-        Start(new FlowBuilder()
-            .Node("go", "inject", new { payload = many })
-            .Node("each", "forEach", new { field = "" })
-            .Node("say", "debug")
-            .Wire("go", "out", "each", "in")
-            .Wire("each", "out", "say", "in")
-            .Compile());
-
-        var outcome = _runtime.Inject("f1", "go", T0);
-
-        Assert.Equal(FlowLimits.ForEachElements, outcome.Debug.Count(entry => entry.Kind == FlowDebugEntry.Message));
-        Assert.Single(outcome.Debug, entry => entry.Kind == FlowDebugEntry.Error);
-        Assert.Equal(1, Node("each").Errors);
-    }
-
-    [Fact]
-    public void Repeat_with_no_interval_sends_every_copy_at_once_with_its_index()
-    {
-        Start(new FlowBuilder()
-            .Node("go", "inject")
-            .Node("again", "repeat", new { count = 3, seconds = 0 })
-            .Node("send", "publish", new { topic = "sim/{{index}}", payload = "x" })
-            .Wire("go", "out", "again", "in")
-            .Wire("again", "out", "send", "in")
-            .Compile());
-
-        var outcome = _runtime.Inject("f1", "go", T0);
-
-        Assert.Equal(["sim/1", "sim/2", "sim/3"], outcome.Publishes.Select(p => p.Request.Topic));
-    }
-
-    [Fact]
-    public void Repeat_with_an_interval_sends_the_rest_on_the_clock()
-    {
-        Start(new FlowBuilder()
-            .Node("go", "inject")
-            .Node("again", "repeat", new { count = 3, seconds = 2 })
-            .Node("send", "publish", new { topic = "sim/{{index}}", payload = "x" })
-            .Wire("go", "out", "again", "in")
-            .Wire("again", "out", "send", "in")
-            .Compile());
-
-        Assert.Equal(["sim/1"], _runtime.Inject("f1", "go", T0).Publishes.Select(p => p.Request.Topic));
-        Assert.Equal(T0.AddSeconds(2), _runtime.NextDue);
-
-        Assert.Empty(_runtime.OnTick(T0.AddSeconds(1), connected: true).Publishes);
-        Assert.Equal(["sim/2"], _runtime.OnTick(T0.AddSeconds(2), connected: true).Publishes.Select(p => p.Request.Topic));
-        Assert.Equal(["sim/3"], _runtime.OnTick(T0.AddSeconds(4), connected: true).Publishes.Select(p => p.Request.Topic));
-        Assert.Null(_runtime.NextDue);
-    }
-
-    [Fact]
-    public void Repeat_refuses_a_sequence_past_its_ceiling()
-    {
-        Start(new FlowBuilder()
-            .Node("go", "inject")
-            .Node("again", "repeat", new { count = 5, seconds = 60 })
-            .Wire("go", "out", "again", "in")
-            .Compile());
-
-        for (var i = 0; i < FlowLimits.RepeatSequences; i++) _runtime.Inject("f1", "go", T0);
-        var outcome = _runtime.Inject("f1", "go", T0);
-
-        Assert.Single(outcome.Debug, entry => entry.Kind == FlowDebugEntry.Error);
-        Assert.Equal(1, Node("again").Errors);
-    }
-
-    [Fact]
-    public void Every_fires_one_interval_after_deploy_and_counts_its_ticks()
-    {
-        Start(new FlowBuilder()
-            .Node("tick", "every", new { seconds = 2, topic = "", payload = "[\"k1\"]" })
-            .Node("send", "publish", new { topic = "sim/{{index}}", payload = "{{payload}}" })
-            .Wire("tick", "out", "send", "in")
-            .Compile());
-
-        Assert.Equal(T0.AddSeconds(2), _runtime.NextDue);
-        Assert.Empty(_runtime.OnTick(T0.AddSeconds(1), connected: true).Publishes);
-
-        var first = Assert.Single(_runtime.OnTick(T0.AddSeconds(2), connected: true).Publishes);
-        var second = Assert.Single(_runtime.OnTick(T0.AddSeconds(4), connected: true).Publishes);
-
-        Assert.Equal("sim/1", first.Request.Topic);
-        Assert.Equal("[\"k1\"]", Text(first));
-        Assert.Equal("sim/2", second.Request.Topic);
-        Assert.Equal(2, Node("tick").Count);
-    }
-
-    [Fact]
-    public void Every_does_not_burst_after_a_stall()
-    {
-        Start(new FlowBuilder()
-            .Node("tick", "every", new { seconds = 1 })
-            .Node("say", "debug")
-            .Wire("tick", "out", "say", "in")
-            .Compile());
-
-        var outcome = _runtime.OnTick(T0.AddSeconds(30), connected: true);
-
-        Assert.Single(outcome.Debug);
-        Assert.Equal(T0.AddSeconds(31), _runtime.NextDue);
-    }
-
-    [Fact]
-    public void Repeat_does_not_burst_after_a_stall()
-    {
-        Start(new FlowBuilder()
-            .Node("go", "inject")
-            .Node("again", "repeat", new { count = 5, seconds = 1 })
-            .Node("send", "publish", new { topic = "sim/{{index}}", payload = "x" })
-            .Wire("go", "out", "again", "in")
-            .Wire("again", "out", "send", "in")
-            .Compile());
-        _runtime.Inject("f1", "go", T0);
-
-        var outcome = _runtime.OnTick(T0.AddSeconds(30), connected: true);
-
-        Assert.Equal(["sim/2"], outcome.Publishes.Select(p => p.Request.Topic));
-        Assert.Equal(T0.AddSeconds(31), _runtime.NextDue);
-    }
-
-    [Fact]
-    public void A_changed_flow_leaves_its_old_timer_behind()
-    {
-        static FlowBuilder Ticker(string payload) => new FlowBuilder()
-            .Node("tick", "every", new { seconds = 2, payload })
-            .Node("say", "debug")
-            .Wire("tick", "out", "say", "in");
-
-        Start(Ticker("old").Compile());
-        _runtime.Deploy([Ticker("new").Compile()], ["f1"], T0.AddSeconds(1));
-
-        // The old timer was due at +2 and the new one is due at +3: only the new one may speak, once
-        // an interval.
-        Assert.Empty(_runtime.OnTick(T0.AddSeconds(2), connected: true).Debug);
-        Assert.Equal(["new"], _runtime.OnTick(T0.AddSeconds(3), connected: true).Debug.Select(entry => entry.Text));
-        Assert.Equal(["new"], _runtime.OnTick(T0.AddSeconds(5), connected: true).Debug.Select(entry => entry.Text));
-    }
-
-    // Taken, not left to be skipped when it comes due: an Every's next tick can be a day away, and it
-    // holds its message all that time. The old tick is due at +10 and the new one at +11, so what is
-    // due next says which of them is still queued.
-    [Fact]
-    public void A_redeployed_flow_takes_its_old_timers_with_it()
-    {
-        static FlowBuilder Ticker(string payload) => new FlowBuilder()
-            .Node("tick", "every", new { seconds = 10, payload })
-            .Node("say", "debug")
-            .Wire("tick", "out", "say", "in");
-
-        Start(Ticker("old").Compile());
-        _runtime.Deploy([Ticker("new").Compile()], ["f1"], T0.AddSeconds(1));
-
-        Assert.Equal(T0.AddSeconds(11), _runtime.NextDue);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void A_flow_turned_off_or_taken_away_takes_its_timers_and_its_repeats_with_it(bool keptInTheFile)
-    {
-        FlowBuilder Flow() => new FlowBuilder()
-            .Node("tick", "every", new { seconds = 10 })
-            .Node("go", "inject")
-            .Node("again", "repeat", new { count = 3, seconds = 60 })
-            .Node("say", "debug")
-            .Wire("tick", "out", "say", "in")
-            .Wire("go", "out", "again", "in")
-            .Wire("again", "out", "say", "in");
-
-        Start(Flow().Compile());
-        _runtime.Inject("f1", "go", T0);
-
-        if (keptInTheFile) _runtime.Deploy([Flow().Off().Compile()], ["f1"], T0.AddSeconds(1));
-        else _runtime.Deploy([], [], T0.AddSeconds(1));
-
-        Assert.Null(_runtime.NextDue);
-    }
-
-    [Fact]
-    public void A_repeat_sequence_gives_its_place_back_when_its_last_copy_goes()
-    {
-        Start(new FlowBuilder()
-            .Node("go", "inject")
-            .Node("again", "repeat", new { count = 2, seconds = 1 })
-            .Wire("go", "out", "again", "in")
-            .Compile());
-
-        for (var i = 0; i < FlowLimits.RepeatSequences; i++) _runtime.Inject("f1", "go", T0);
-        _runtime.OnTick(T0.AddSeconds(1), connected: true);
-        _runtime.Inject("f1", "go", T0.AddSeconds(1));
-
-        Assert.Equal(0, Node("again").Errors);
-        Assert.Equal(2 * FlowLimits.RepeatSequences + 1, Node("again").Outs["out"]);
-    }
-
-    // ---- inject and debug ----
-
-    [Fact]
-    public void Inject_sends_its_topic_and_payload_and_debug_prints_them()
-    {
-        Start(new FlowBuilder()
-            .Node("go", "inject", new { topic = "plant/k1/cmd", payload = "{\"fan\":\"on\"}" })
-            .Node("say", "debug")
-            .Wire("go", "out", "say", "in")
-            .Compile());
-
-        var entry = Assert.Single(_runtime.Inject("f1", "go", T0).Debug);
-
-        Assert.Equal(("f1", "say", "plant/k1/cmd", "{\"fan\":\"on\"}", FlowDebugEntry.Message),
-            (entry.FlowId, entry.NodeId, entry.Topic, entry.Text, entry.Kind));
-        Assert.True(_runtime.Injectable().Contains(("f1", "go")));
-        Assert.True(_runtime.Inject("f1", "nope", T0).IsEmpty);
-    }
-
-    // ---- what keeps a flow from running away ----
-
-    private static FlowBuilder Loop(string id) => new FlowBuilder(id)
-        .Node("in", "mqttIn", new { filter = "plant/k1/cmd" })
-        .Node("send", "publish", new { topic = "plant/k1/cmd", payload = "{{payload}}" })
-        .Wire("in", "out", "send", "in");
-
-    [Fact]
-    public void A_flow_does_not_hear_its_own_publish_but_another_flow_does()
-    {
-        Start(Loop("loop").Compile(),
-            new FlowBuilder("watch").Node("in", "mqttIn", new { filter = "plant/#" }).Node("say", "debug")
-                .Wire("in", "out", "say", "in").Compile());
-
-        var first = _runtime.OnMessage(Msg("plant/k1/cmd", "on"), T0);
-        Assert.Single(first.Publishes);
-
-        var echo = _runtime.OnMessage(Msg("plant/k1/cmd", "on"), T0.AddSeconds(1));
-
-        Assert.Empty(echo.Publishes);
-        Assert.Equal("watch", Assert.Single(echo.Debug).FlowId);
-        Assert.Equal(1, Node("in", "loop").Outs["echo"]);
-    }
-
-    [Fact]
-    public void The_echo_window_closes_after_five_seconds()
-    {
-        Start(Loop("loop").Compile());
-        _runtime.OnMessage(Msg("plant/k1/cmd", "on"), T0);
-
-        var later = _runtime.OnMessage(Msg("plant/k1/cmd", "on"), T0.AddSeconds(6));
-
-        Assert.Single(later.Publishes);
-    }
-
-    [Fact]
-    public void A_flow_knows_its_own_publish_when_it_comes_back_as_base64()
-    {
-        Start(new FlowBuilder("loop")
-            .Node("in", "mqttIn", new { filter = "dev/+/cmd" })
-            .Node("send", "publish", new { topic = "dev/{{topic[1]}}/cmd", payload = "\u0006" })
-            .Wire("in", "out", "send", "in")
-            .Compile());
-        Assert.Single(_runtime.OnMessage(Msg("dev/d1/cmd", "go"), T0).Publishes);
-
-        // What the broker hands back: a control byte is not text, so the one byte arrives as base64.
-        var echo = new MqttMessage("dev/d1/cmd", Convert.ToBase64String([0x06]), MqttMessage.Base64, 0, false, T0);
-
-        Assert.Empty(_runtime.OnMessage(echo, T0.AddSeconds(1)).Publishes);
-        Assert.Equal(1, Node("in", "loop").Outs["echo"]);
-    }
-
-    [Fact]
-    public void An_arrival_marked_base64_that_does_not_decode_is_compared_as_text()
-    {
-        Start(Loop("loop").Compile());
-        _runtime.OnMessage(Msg("plant/k1/cmd", "on!"), T0);
-
-        var echo = new MqttMessage("plant/k1/cmd", "on!", MqttMessage.Base64, 0, false, T0);
-
-        Assert.Empty(_runtime.OnMessage(echo, T0.AddSeconds(1)).Publishes);
-        Assert.Equal(1, Node("in", "loop").Outs["echo"]);
-    }
-
-    [Fact]
-    public void Publishes_past_the_rate_limit_are_dropped_and_counted()
-    {
-        Start(new FlowBuilder()
-            .Node("go", "inject")
-            .Node("again", "repeat", new { count = 60, seconds = 0 })
-            .Node("send", "publish", new { topic = "sim/x", payload = "{{index}}" })
-            .Wire("go", "out", "again", "in")
-            .Wire("again", "out", "send", "in")
-            .Compile());
-
-        var outcome = _runtime.Inject("f1", "go", T0);
-
-        Assert.Equal(FlowLimits.PublishesPerSecond, outcome.Publishes.Count);
-        Assert.Equal(60 - FlowLimits.PublishesPerSecond, Node("send").Errors);
-
-        // A second later the bucket has filled again.
-        Assert.Equal(FlowLimits.PublishesPerSecond, _runtime.Inject("f1", "go", T0.AddSeconds(1)).Publishes.Count);
-    }
-
-    [Fact]
-    public void A_topic_that_expands_to_a_wildcard_is_not_published()
-    {
-        Start(new FlowBuilder()
-            .Node("go", "inject", new { payload = "{\"id\":\"#\"}" })
-            .Node("send", "publish", new { topic = "plant/{{$.id}}/cmd", payload = "x" })
-            .Wire("go", "out", "send", "in")
-            .Compile());
-
-        Assert.Empty(_runtime.Inject("f1", "go", T0).Publishes);
-        Assert.Equal(1, Node("send").Errors);
-    }
-
-    [Fact]
-    public void A_topic_that_renders_longer_than_MQTT_allows_is_not_published()
-    {
-        Start(new FlowBuilder()
-            .Node("go", "inject", new { payload = new string('k', FlowLimits.TopicBytes) })
-            .Node("send", "publish", new { topic = "plant/{{payload}}", payload = "x" })
-            .Wire("go", "out", "send", "in")
-            .Compile());
-
-        Assert.Empty(_runtime.Inject("f1", "go", T0).Publishes);
-        Assert.Equal(1, Node("send").Errors);
-        Assert.StartsWith("The topic came out longer than", Node("send").Note);
-    }
-
-    [Fact]
-    public void A_payload_that_renders_past_64_KB_is_not_published_and_is_counted()
-    {
-        Start(new FlowBuilder()
-            .Node("go", "inject", new { payload = new string('x', FlowLimits.PayloadBytes / 2 + 1) })
-            .Node("send", "publish", new { topic = "sim/x", payload = "{{payload}}{{payload}}" })
-            .Wire("go", "out", "send", "in")
-            .Compile());
-
-        Assert.Empty(_runtime.Inject("f1", "go", T0).Publishes);
-        Assert.Equal(1, Node("send").Errors);
-        Assert.Equal("The payload came out larger than 64 KB and was not published.", Node("send").Note);
-    }
-
-    // Every publish the rate drops, and every one while there is no link, would otherwise pay for a
-    // render first. The random number in the payload counts the renders.
-    [Fact]
-    public void A_publish_the_link_or_the_rate_would_refuse_is_never_rendered()
-    {
-        var random = new CountingRandom(7);
-        var runtime = new FlowRuntime(random);
-        var flow = new FlowBuilder()
-            .Node("go", "inject")
-            .Node("again", "repeat", new { count = 60, seconds = 0 })
-            .Node("send", "publish", new { topic = "sim/x", payload = "{{random(0,1)}}" })
-            .Wire("go", "out", "again", "in")
-            .Wire("again", "out", "send", "in")
-            .Compile();
-        runtime.Deploy([flow], ["f1"], T0);
-        runtime.OnTick(T0, connected: true);
-
-        Assert.Equal(FlowLimits.PublishesPerSecond, runtime.Inject("f1", "go", T0).Publishes.Count);
-        Assert.Equal(FlowLimits.PublishesPerSecond, random.Draws);
-
-        runtime.OnTick(T0.AddSeconds(2), connected: false);
-        runtime.Inject("f1", "go", T0.AddSeconds(2));
-
-        Assert.Equal(FlowLimits.PublishesPerSecond, random.Draws);
-    }
-
-    [Fact]
-    public void An_alarms_reason_is_cut_at_200_characters_and_its_sample_at_4_KB()
-    {
-        Start(new FlowBuilder()
-            .Node("go", "inject", new { topic = "plant/k1/temp", payload = new string('p', 5_000) })
-            .Node("hot", "alarm", new { name = "Hot", severity = "warn", reason = "{{payload}}" })
-            .Wire("go", "out", "hot", "raise")
-            .Compile());
-
-        var alarm = Assert.Single(_runtime.Inject("f1", "go", T0).Raised);
-
-        Assert.Equal(new string('p', FlowLimits.ReasonLength), alarm.Reason);
-        Assert.Equal(new string('p', FlowLimits.SampleLength), alarm.Sample);
-    }
-
-    /// <summary>A Random that counts its draws: each {{random}} a render fills is one.</summary>
-    private sealed class CountingRandom(int seed) : Random(seed)
-    {
-        public int Draws { get; private set; }
-
-        public override double NextDouble()
-        {
-            Draws++;
-            return base.NextDouble();
-        }
-    }
-
-    [Fact]
-    public void Nothing_is_published_while_the_link_is_down()
-    {
-        Start(new FlowBuilder()
-            .Node("go", "inject")
-            .Node("send", "publish", new { topic = "sim/x", payload = "x" })
-            .Wire("go", "out", "send", "in")
-            .Compile());
-        _runtime.OnTick(T0, connected: false);
-
-        Assert.Empty(_runtime.Inject("f1", "go", T0).Publishes);
-        Assert.Contains("link", Node("send").Note);
-    }
-
-    [Fact]
-    public void An_event_that_runs_past_its_budget_is_stopped_and_faults_the_flow()
-    {
-        var flow = new FlowBuilder()
-            .Node("go", "inject", new { payload = JsonSerializer.Serialize(Enumerable.Range(0, 1000)) })
-            .Node("each", "forEach", new { field = "" })
-            .Wire("go", "out", "each", "in");
-
-        // Eleven nodes per element, a thousand elements: eleven thousand runs, past the ten.
-        for (var i = 0; i < 11; i++) flow.Node($"say{i}", "debug").Wire("each", "out", $"say{i}", "in");
-        Start(flow.Compile());
-
-        var outcome = _runtime.Inject("f1", "go", T0);
-
-        Assert.Contains(outcome.Debug, entry => entry.Kind == FlowDebugEntry.Error && entry.NodeId == "go");
-        Assert.True(outcome.Debug.Count(entry => entry.Kind == FlowDebugEntry.Message) < FlowLimits.StepsPerEvent);
-        Assert.NotNull(_runtime.Status().Flows.Single().Fault);
-    }
-
-    // Each hostile text costs the pattern its 50 ms. Carried on past the first, a For each of a
-    // thousand of them would hold the pump for fifty seconds, and the step budget for eight minutes.
-    [Fact]
-    public void A_pattern_that_runs_out_of_time_ends_its_event_and_says_why()
-    {
-        Start(new FlowBuilder()
-            .Node("go", "inject", new { payload = JsonSerializer.Serialize(Enumerable.Repeat(HostilePatterns.Payload, 3)) })
-            .Node("each", "forEach", new { field = "" })
-            .Node("test", "if", new { field = "", test = "matches", value = HostilePatterns.Catastrophic })
-            .Node("say", "debug")
-            .Wire("go", "out", "each", "in")
-            .Wire("each", "out", "test", "in")
-            .Wire("each", "out", "say", "in")
-            .Compile());
-
-        var outcome = _runtime.Inject("f1", "go", T0);
-
-        // The first element's pattern, and nothing after it: not the Debug node wired after the If,
-        // and not the next two elements.
-        Assert.Equal(1, Node("test").Count);
-        Assert.Equal(1, Node("test").Errors);
-        Assert.Equal("The pattern took longer than 50 ms, so the event was stopped.", Node("test").Note);
-        Assert.Equal(FlowDebugEntry.Error, Assert.Single(outcome.Debug).Kind);
-        Assert.Null(_runtime.Status().Flows.Single().Fault);
-    }
-
-    // An arrival runs once for each MQTT in node it matches, and three of them on one filter, all wired
-    // to one hostile If, would cost the pattern its 50 ms three times over for every message. The
-    // other flow is a drawing of its own: what it makes of the arrival is not this one's to stop.
-    [Fact]
-    public void A_pattern_that_runs_out_of_time_stops_the_whole_arrival_in_its_flow()
-    {
-        var hostile = new FlowBuilder()
-            .Node("test", "if", new { field = "", test = "matches", value = HostilePatterns.Catastrophic });
-        for (var i = 0; i < 3; i++)
-            hostile.Node($"in{i}", "mqttIn", new { filter = "plant/+/text" }).Wire($"in{i}", "out", "test", "in");
-
-        Start(hostile.Compile(), new FlowBuilder("f2", "Other")
-            .Node("in", "mqttIn", new { filter = "plant/+/text" })
-            .Node("say", "debug")
-            .Wire("in", "out", "say", "in")
-            .Compile());
-
-        var outcome = _runtime.OnMessage(Msg("plant/k1/text", HostilePatterns.Payload), T0);
-
-        Assert.Equal(1, Node("test").Count);
-        Assert.Equal(1, Node("test").Errors);
-        Assert.Equal(1, Node("say", "f2").Count);
-        Assert.Single(outcome.Debug, entry => entry.Kind == FlowDebugEntry.Error);
-    }
-
-    // The first copy goes at once, and the event it started was stopped: the copies after it would
-    // each start the same event again, a second apart, and stop it the same way.
-    [Fact]
-    public void A_repeat_whose_event_was_stopped_schedules_no_copies()
-    {
-        Start(new FlowBuilder()
-            .Node("go", "inject", new { payload = HostilePatterns.Payload })
-            .Node("again", "repeat", new { count = 3, seconds = 1 })
-            .Node("test", "if", new { field = "", test = "matches", value = HostilePatterns.Catastrophic })
-            .Wire("go", "out", "again", "in")
-            .Wire("again", "out", "test", "in")
-            .Compile());
-
-        _runtime.Inject("f1", "go", T0);
-
-        Assert.Equal(1, Node("test").Errors);
-        Assert.Null(_runtime.NextDue);
-    }
-
-    // A copy the clock brings is the event again, and it ends the sequence when it is stopped, as the
-    // first copy does: the copies after it would each be stopped the same way, a turn of the pump
-    // apart. It has a first copy that got through to set it up: turned away short of the pattern by
-    // an inner Repeat whose ten sequences were running then and had all gone by the second copy.
-    [Fact]
-    public void A_repeat_whose_later_copy_was_stopped_schedules_no_more_and_gives_its_place_back()
-    {
-        Start(new FlowBuilder()
-            .Node("fill", "inject", new { payload = "calm" })
-            .Node("go", "inject", new { payload = HostilePatterns.Payload })
-            .Node("again", "inject", new { payload = "calm" })
-            .Node("outer", "repeat", new { count = 3, seconds = 2 })
-            .Node("inner", "repeat", new { count = 2, seconds = 1 })
-            .Node("test", "if", new { field = "", test = "matches", value = HostilePatterns.Catastrophic })
-            .Wire("fill", "out", "inner", "in")
-            .Wire("go", "out", "outer", "in")
-            .Wire("again", "out", "outer", "in")
-            .Wire("outer", "out", "inner", "in")
-            .Wire("inner", "out", "test", "in")
-            .Compile());
-
-        for (var i = 0; i < FlowLimits.RepeatSequences; i++) _runtime.Inject("f1", "fill", T0);
-        _runtime.Inject("f1", "go", T0);
-        Assert.Equal(1, Node("inner").Errors);
-        Assert.Equal(0, Node("test").Errors);
-
-        // The inner sequences end at +1; at +2 the second copy reaches the pattern and runs out of time.
-        _runtime.OnTick(T0.AddSeconds(1), connected: true);
-        _runtime.OnTick(T0.AddSeconds(2), connected: true);
-        Assert.Equal(1, Node("test").Errors);
-
-        Assert.Null(_runtime.NextDue);
-
-        // And its place is free again: ten more sequences, and none of them turned away.
-        for (var i = 0; i < FlowLimits.RepeatSequences; i++) _runtime.Inject("f1", "again", T0.AddSeconds(2));
-        Assert.Equal(0, Node("outer").Errors);
-    }
-
-    [Fact]
-    public void A_publish_that_failed_on_the_way_out_is_counted_on_its_node()
-    {
-        Start(Watch().Compile());
-
-        var outcome = _runtime.PublishFailed("f1", "fan", "No broker link, so nothing was published.", T0);
-
-        Assert.Equal(1, Node("fan").Errors);
-        Assert.Equal("No broker link, so nothing was published.", Node("fan").Note);
-        Assert.Equal(FlowDebugEntry.Error, Assert.Single(outcome.Debug).Kind);
-    }
-
-    [Fact]
-    public void Past_the_ceiling_a_new_alarm_is_refused_and_the_ones_up_carry_on()
-    {
-        Start(new FlowBuilder()
-            .Node("in", "mqttIn", new { filter = "plant/+/temp" })
-            .Node("test", "if", new { field = "$.temp", test = "gt", value = "90" })
-            .Node("hot", "alarm", new { name = "Hot", severity = "critical" })
-            .Wire("in", "out", "test", "in")
-            .Wire("test", "yes", "hot", "raise")
-            .Wire("test", "no", "hot", "clear")
-            .Compile());
-
-        for (var i = 0; i < FlowLimits.StandingAlarms; i++)
-            _runtime.OnMessage(Msg($"plant/k{i}/temp", "{\"temp\":95}"), T0);
-
-        var refused = _runtime.OnMessage(Msg("plant/late/temp", "{\"temp\":95}"), T0);
-
-        Assert.Empty(refused.Raised);
-        Assert.Equal(FlowDebugEntry.Error, Assert.Single(refused.Debug).Kind);
-        Assert.Equal(1, Node("hot").Errors);
-        Assert.Equal("Too many alarms are up; this one was not raised.", Node("hot").Note);
-        Assert.Equal(FlowLimits.StandingAlarms, _runtime.Alarms().Active.Count);
-
-        // One already up still counts and still clears, and the place a clear gives back is taken.
-        _runtime.OnMessage(Msg("plant/k0/temp", "{\"temp\":96}"), T0.AddSeconds(1));
-        Assert.Equal(2, _runtime.Alarms().Active.Single(alarm => alarm.Topic == "plant/k0/temp").Count);
-        Assert.Single(_runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":50}"), T0.AddSeconds(1)).Resolved);
-        Assert.Single(_runtime.OnMessage(Msg("plant/late/temp", "{\"temp\":95}"), T0.AddSeconds(1)).Raised);
-    }
-
-    // ---- what the engine asks of it ----
-
-    [Fact]
-    public void The_filters_are_every_running_input_once()
-    {
-        Start(Watch("a").Compile(), Watch("b").Compile(),
-            new FlowBuilder("c").Node("in", "mqttIn", new { filter = "lab/#" }).Compile());
-
-        Assert.Equal(["lab/#", "plant/+/temp"], _runtime.Filters().Order());
-    }
-
-    [Fact]
-    public void Of_two_flows_with_one_id_the_first_is_the_one_that_counts()
-    {
-        static CompiledFlow Twin(string filter, bool on = true)
-        {
-            var flow = new FlowBuilder("twin").Node("in", "mqttIn", new { filter });
-            return (on ? flow : flow.Off()).Compile();
-        }
-
-        _runtime.Deploy([Twin("a/#"), Twin("b/#")], ["twin"], T0);
-        Assert.Equal(["a/#"], _runtime.Filters());
-
-        _runtime.Deploy([Twin("a/#", on: false), Twin("b/#")], ["twin"], T0);
+        // The body holds a Wait, so it compiles; the If takes this turn round it.
+        var chart = new ChartBuilder()
+            .Node("start", "start").Node("loop", "for", new { forever = true })
+            .Node("test", "if", new { field = "$.go", test = "exists" })
+            .Node("pause", "wait", new { seconds = "1" }).Node("say", "debug").Node("end", "end")
+            .Then("start", "loop").Wire("loop", "body", "test")
+            .Wire("test", "yes", "pause").Wire("pause", "out", "loop", "next")
+            .Wire("test", "no", "say").Wire("say", "out", "loop", "next")
+            .Wire("loop", "done", "end");
+
+        var outcome = Activate(chart.Compile());
+
+        var run = Run();
+        Assert.Equal(FlowRunState.Stopped, run.State);
+        Assert.Contains("without waiting", run.Fault);
+        Assert.Contains(outcome.Debug, line => line.Kind == FlowDebugEntry.Error && line.NodeId == "loop");
         Assert.Empty(_runtime.Filters());
     }
 
     [Fact]
-    public void A_refused_filter_is_said_on_the_inputs_that_asked_for_it()
+    public void For_each_walks_an_array_one_element_a_turn()
     {
-        Start(Watch().Compile());
+        var chart = Body("forEach", new { array = "var.sensors" },
+                ("pub", "publish", new { topic = "plant/{{payload}}/temp", payload = "{{index}}" }))
+            .Var("sensors", "[\"k1\",\"k2\",3]");
 
-        _runtime.MarkRefused(["plant/+/temp"]);
+        var outcome = Activate(chart.Compile());
 
-        Assert.Equal(1, Node("in").Errors);
-        Assert.Contains("refused", Node("in").Note);
+        Assert.Equal(["plant/k1/temp", "plant/k2/temp", "plant/3/temp"], Topics(outcome));
+        Assert.Equal(["1", "2", "3"], outcome.Publishes.Select(Text));
+    }
+
+    [Fact]
+    public void After_its_loop_a_run_carries_the_message_it_went_in_with()
+    {
+        var chart = new ChartBuilder()
+            .Node("start", "start").Node("read", "mqttIn", new { filter = "plant/list" })
+            .Node("loop", "forEach", new { array = "$.ids" }).Node("say", "debug")
+            .Node("echo", "publish", new { topic = "echo/{{topic[1]}}", payload = "{{payload}}" }).Node("end", "end")
+            .Then("start", "read", "loop").Wire("loop", "body", "say").Wire("say", "out", "loop", "next")
+            .Wire("loop", "done", "echo").Then("echo", "end");
+        Activate(chart.Compile());
+
+        var outcome = _runtime.OnMessage(Msg("plant/list", "{\"ids\":[\"a\",\"b\"]}"), T0);
+
+        Assert.Equal(["a", "b"], outcome.Debug.Select(line => line.Text));
+        var echo = Assert.Single(outcome.Publishes);
+        Assert.Equal("echo/list", echo.Request.Topic);
+        Assert.Equal("{\"ids\":[\"a\",\"b\"]}", Text(echo));
+    }
+
+    [Fact]
+    public void For_each_over_something_that_is_not_an_array_says_so_and_goes_done()
+    {
+        var outcome = Activate(Body("forEach", new { array = "var.sensors" }, ("say", "debug", null)).Var("sensors", "k1").Compile());
+
+        Assert.Equal(FlowDebugEntry.Error, Assert.Single(outcome.Debug).Kind);
+        Assert.Equal(1, Node("loop").Errors);
+        Assert.Equal(FlowRunState.Finished, Run().State);
+    }
+
+    [Fact]
+    public void For_each_walks_at_most_a_thousand_elements()
+    {
+        var big = "[" + string.Join(',', Enumerable.Range(0, FlowLimits.ForEachElements + 1)) + "]";
+        var first = Activate(Body("forEach", new { array = "var.big" }, ("say", "debug", null)).Var("big", big).Compile());
+
+        var printed = first.Debug.Concat(Settle().SelectMany(outcome => outcome.Debug))
+            .Count(line => line.Kind == FlowDebugEntry.Message);
+
+        Assert.Equal(FlowLimits.ForEachElements, printed);
+        Assert.Equal(1, Node("loop").Errors);
+    }
+
+    [Fact]
+    public void A_run_takes_a_thousand_steps_a_turn_and_the_rest_on_the_next()
+    {
+        var first = Activate(Body("for", new { times = "1000" }, ("say", "debug", null)).Compile());
+
+        Assert.Equal(FlowRunState.Running, Run().State);
+        Assert.Equal(DateTimeOffset.MinValue, _runtime.NextDue);
+        Assert.True(first.Debug.Count < 1_000);
+
+        var rest = Settle();
+
+        Assert.Equal(1_000, first.Debug.Count + rest.Sum(outcome => outcome.Debug.Count));
+        Assert.Equal(FlowRunState.Finished, Run().State);
+    }
+
+    // ---- reading messages ----
+
+    [Fact]
+    public void Mqtt_in_waits_for_the_next_message_and_goes_on_with_it()
+    {
+        var chart = Line(
+            ("read", "mqttIn", new { filter = "plant/+/temp" }),
+            ("pub", "publish", new { topic = "out/{{topic[1]}}", payload = "{{$.temp}}" }));
+
+        Assert.Empty(Activate(chart.Compile()).Publishes);
+        Assert.Equal(FlowRunState.Waiting, Run().State);
+        Assert.Equal(new FlowWaiting(null, "plant/+/temp"), Run().Waiting);
+        Assert.Equal(["plant/+/temp"], _runtime.Filters());
+
+        var publish = Assert.Single(_runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":94.2}"), T0).Publishes);
+
+        Assert.Equal("out/k1", publish.Request.Topic);
+        Assert.Equal("94.2", Text(publish));
+        Assert.Equal(FlowRunState.Finished, Run().State);
+        Assert.Empty(_runtime.Filters());
+    }
+
+    [Fact]
+    public void Messages_that_come_before_the_read_wait_in_its_queue()
+    {
+        var chart = Line(("pause", "wait", new { seconds = "1" }), ("read", "mqttIn", new { filter = "a/#" }), ("say", "debug", null));
+        Activate(chart.Compile());
+
+        Assert.Empty(_runtime.OnMessage(Msg("a/1", "first"), T0).Debug);
+        _runtime.OnMessage(Msg("a/2", "second"), T0);
+
+        Assert.Equal("first", Assert.Single(_runtime.OnTick(T0.AddSeconds(1), connected: true).Debug).Text);
+    }
+
+    [Fact]
+    public void A_monitor_is_a_forever_loop_round_a_read()
+    {
+        Activate(Body("for", new { forever = true }, ("read", "mqttIn", new { filter = "plant/+/temp" }), ("say", "debug", null)).Compile());
+
+        Assert.Equal("1", Assert.Single(_runtime.OnMessage(Msg("plant/k1/temp", "1"), T0).Debug).Text);
+        Assert.Equal("2", Assert.Single(_runtime.OnMessage(Msg("plant/k2/temp", "2"), T0).Debug).Text);
+        Assert.Equal(FlowRunState.Waiting, Run().State);
+    }
+
+    [Fact]
+    public void A_value_replayed_on_subscribe_is_read_only_by_a_node_that_asks_for_it()
+    {
+        var plain = Line(("read", "mqttIn", new { filter = "a/b" }), ("say", "debug", null));
+        Activate(plain.Compile());
+
+        Assert.Empty(_runtime.OnMessage(Msg("a/b", "old", replay: true), T0).Debug);
+        Assert.Equal("new", Assert.Single(_runtime.OnMessage(Msg("a/b", "new"), T0).Debug).Text);
+
+        var replaying = new ChartBuilder("f2").Node("start", "start").Node("read", "mqttIn", new { filter = "a/b", replay = true })
+            .Node("say", "debug").Node("end", "end").Then("start", "read", "say", "end");
+        Activate(replaying.Compile());
+
+        Assert.Equal("old", Assert.Single(_runtime.OnMessage(Msg("a/b", "old", replay: true), T0).Debug).Text);
+    }
+
+    [Fact]
+    public void A_run_does_not_read_what_it_has_just_published()
+    {
+        Activate(Line(
+            ("pub", "publish", new { topic = "loop/x", payload = "1" }),
+            ("read", "mqttIn", new { filter = "loop/x" }),
+            ("say", "debug", null)).Compile());
+
+        Assert.Empty(_runtime.OnMessage(Msg("loop/x", "1"), T0).Debug);
+        Assert.Equal(1, Node("read").Outs["echo"]);
+        Assert.Equal("2", Assert.Single(_runtime.OnMessage(Msg("loop/x", "2"), T0).Debug).Text);
+    }
+
+    [Fact]
+    public void A_full_queue_lets_its_oldest_go()
+    {
+        Activate(Line(("pause", "wait", new { seconds = "1" }), ("read", "mqttIn", new { filter = "a/b" }), ("say", "debug", null)).Compile());
+
+        for (var i = 0; i <= FlowLimits.QueuedMessages; i++) _runtime.OnMessage(Msg("a/b", $"{i}"), T0);
+
+        Assert.Equal(1, Node("read").Outs["dropped"]);
+        Assert.Equal("1", Assert.Single(_runtime.OnTick(T0.AddSeconds(1), connected: true).Debug).Text);
+    }
+
+    // ---- variables ----
+
+    [Fact]
+    public void Set_gives_a_variable_a_value_the_rest_of_the_run_reads()
+    {
+        var chart = new ChartBuilder().Var("limit", "90")
+            .Node("start", "start").Node("cfg", "mqttIn", new { filter = "cfg/limit" })
+            .Node("keep", "set", new { variable = "limit", value = "{{payload}}" })
+            .Node("read", "mqttIn", new { filter = "plant/temp" })
+            .Node("test", "if", new { field = "", test = "gt", value = "{{var.limit}}" })
+            .Node("hot", "publish", new { topic = "hot", payload = "{{payload}} over {{var.limit}}" }).Node("end", "end")
+            .Then("start", "cfg", "keep", "read", "test").Wire("test", "yes", "hot").Wire("test", "no", "end").Then("hot", "end");
+        Activate(chart.Compile());
+
+        Assert.Equal("90", Run().Variables["limit"]);
+        _runtime.OnMessage(Msg("cfg/limit", "50"), T0);
+        Assert.Equal("50", Run().Variables["limit"]);
+
+        Assert.Equal("60 over 50", Text(Assert.Single(_runtime.OnMessage(Msg("plant/temp", "60"), T0).Publishes)));
+    }
+
+    private static ChartBuilder Remembers(string name = "Boiler watch") => new ChartBuilder("f1", name).Var("n", "start")
+        .Node("start", "start").Node("read", "mqttIn", new { filter = "x/y" })
+        .Node("keep", "set", new { variable = "n", value = "{{payload}}" })
+        .Node("again", "mqttIn", new { filter = "x/z" }).Node("end", "end")
+        .Then("start", "read", "keep", "again", "end");
+
+    [Fact]
+    public void An_unchanged_flow_deployed_again_keeps_its_run()
+    {
+        Activate(Remembers().Compile());
+        _runtime.OnMessage(Msg("x/y", "seen"), T0);
+
+        Activate(Remembers().Compile());
+
+        Assert.Equal("seen", Run().Variables["n"]);
+        Assert.Equal("again", Run().At);
+    }
+
+    [Fact]
+    public void A_changed_flow_starts_again_from_start_with_its_declared_values()
+    {
+        Activate(Remembers().Compile());
+        _runtime.OnMessage(Msg("x/y", "seen"), T0);
+
+        Activate(Remembers("Renamed").Compile());
+
+        Assert.Equal("start", Run().Variables["n"]);
+        Assert.Equal("read", Run().At);
+    }
+
+    [Fact]
+    public void A_value_over_64_KB_leaves_a_variable_as_it_was()
+    {
+        Activate(Line(("keep", "set", new { variable = "n", value = new string('x', FlowLimits.VariableBytes + 1) })).Var("n", "1").Compile());
+
+        Assert.Equal("1", Run().Variables["n"]);
+        Assert.Equal(1, Node("keep").Errors);
+    }
+
+    // ---- decisions and mistakes ----
+
+    [Fact]
+    public void An_if_on_a_missing_field_goes_no()
+    {
+        var chart = new ChartBuilder()
+            .Node("start", "start").Node("test", "if", new { field = "$.temp", test = "lt", value = "10" })
+            .Node("cold", "publish", new { topic = "cold" }).Node("end", "end")
+            .Then("start", "test").Wire("test", "yes", "cold").Wire("test", "no", "end").Then("cold", "end");
+
+        Assert.Empty(Activate(chart.Compile()).Publishes);
+        Assert.Equal(1, Node("test").Outs["no"]);
+        Assert.Equal("no such field", Node("test").Note);
+    }
+
+    [Fact]
+    public void An_if_whose_value_is_not_a_number_counts_an_error_and_goes_no()
+    {
+        var chart = new ChartBuilder().Var("limit", "ninety")
+            .Node("start", "start").Node("test", "if", new { field = "", test = "gt", value = "{{var.limit}}" }).Node("end", "end")
+            .Then("start", "test").Wire("test", "yes", "end").Wire("test", "no", "end");
+
+        var outcome = Activate(chart.Compile());
+
+        Assert.Equal(1, Node("test").Errors);
+        Assert.Contains("ninety", Assert.Single(outcome.Debug).Text);
+        Assert.Equal(1, Node("test").Outs["no"]);
+    }
+
+    [Fact]
+    public void A_pattern_that_runs_out_of_time_goes_no_and_ends_the_runs_turn()
+    {
+        var chart = new ChartBuilder().Var("text", HostilePatterns.Payload)
+            .Node("start", "start").Node("test", "if", new { field = "var.text", test = "matches", value = HostilePatterns.Catastrophic })
+            .Node("say", "debug").Node("end", "end")
+            .Then("start", "test").Wire("test", "yes", "end").Wire("test", "no", "say").Then("say", "end");
+
+        var outcome = Activate(chart.Compile());
+
+        Assert.Equal(1, Node("test").Errors);
+        Assert.Equal(FlowRunState.Running, Run().State);
+        Assert.DoesNotContain(outcome.Debug, line => line.Kind == FlowDebugEntry.Message);
+        Assert.Contains(Settle().SelectMany(next => next.Debug), line => line.NodeId == "say");
+    }
+
+    [Fact]
+    public void A_wait_whose_seconds_are_not_a_number_counts_an_error_and_does_not_wait()
+    {
+        var outcome = Activate(Line(("pause", "wait", new { seconds = "{{var.delay}}" }), ("pub", "publish", new { topic = "a/b" }))
+            .Var("delay", "soon").Compile());
+
+        Assert.Single(outcome.Publishes);
+        Assert.Equal(1, Node("pause").Errors);
+    }
+
+    [Fact]
+    public void A_publish_with_no_link_is_an_error_and_the_run_goes_on()
+    {
+        _runtime.OnTick(T0, connected: false);
+
+        var outcome = Activate(Line(("pub", "publish", new { topic = "a/b" }), ("say", "debug", null)).Compile());
+
+        Assert.Empty(outcome.Publishes);
+        Assert.Equal(1, Node("pub").Errors);
+        Assert.Contains(outcome.Debug, line => line.Kind == FlowDebugEntry.Message && line.NodeId == "say");
+        Assert.Equal(FlowRunState.Finished, Run().State);
+    }
+
+    [Fact]
+    public void A_run_publishes_at_most_fifty_a_second()
+    {
+        var outcome = Activate(Body("for", new { times = "60" }, ("pub", "publish", new { topic = "a/{{index}}" })).Compile());
+
+        Assert.Equal(FlowLimits.PublishesPerSecond, outcome.Publishes.Count);
+        Assert.Equal(60 - FlowLimits.PublishesPerSecond, Node("pub").Errors);
+    }
+
+    [Fact]
+    public void A_step_the_engine_could_not_carry_out_is_counted_on_its_node()
+    {
+        Activate(Line(("pub", "publish", new { topic = "a/b" })).Compile());
+
+        var outcome = _runtime.StepFailed(new FlowRunKey("f1", FlowRunKind.Active), "pub", "The broker said no.", T0);
+
+        Assert.Equal(1, Node("pub").Errors);
+        Assert.Equal("The broker said no.", Assert.Single(outcome.Debug).Text);
+    }
+
+    [Fact]
+    public void A_refused_filter_is_marked_on_the_reads_that_asked_for_it()
+    {
+        Activate(Line(("read", "mqttIn", new { filter = "a/#" })).Compile());
+
+        _runtime.MarkRefused(["a/#"]);
+
+        Assert.Equal(1, Node("read").Errors);
+        Assert.Equal("The broker refused this filter.", Node("read").Note);
+    }
+
+    // ---- alarms ----
+
+    [Fact]
+    public void A_hot_reading_raises_once_and_the_raised_way_runs_once()
+    {
+        Activate(Watch().Compile());
+
+        var first = _runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":94.2}"), T0);
+
+        var alarm = Assert.Single(first.Alarms);
+        Assert.True(alarm.Raised);
+        Assert.Equal("flow-f1-hot", alarm.Alert.RuleId);
+        Assert.Equal("k1 at 94.2", alarm.Alert.Reason);
+        Assert.Equal(94.2, alarm.Alert.Value);
+        Assert.Equal(["plant/k1/cmd"], Topics(first));
+
+        var again = _runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":95}"), T0);
+
+        Assert.Empty(again.Alarms);
+        Assert.Empty(again.Publishes);
+        Assert.Equal(1, Node("hot").Outs["up"]);
+        Assert.Equal("plant/k1/temp", Assert.Single(Node("hot").Standing).Topic);
+    }
+
+    [Fact]
+    public void A_cool_reading_clears_the_alarm_of_its_topic()
+    {
+        Activate(Watch().Compile());
+        _runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":94}"), T0);
+        _runtime.OnMessage(Msg("plant/k2/temp", "{\"temp\":94}"), T0);
+
+        var cleared = Assert.Single(_runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":80}"), T0).Alarms);
+
+        Assert.False(cleared.Raised);
+        Assert.Equal("clear", cleared.Alert.ResolvedBy);
+        Assert.Equal(["plant/k2/temp"], _runtime.Alarms().Active.Select(alert => alert.Topic));
+
+        Assert.Empty(_runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":80}"), T0).Alarms);
+        Assert.Equal(1, Node("cool").Outs["none"]);
+    }
+
+    [Fact]
+    public void A_test_runs_beside_the_active_run_with_alarms_of_its_own()
+    {
+        Activate(Watch().Compile());
+        _runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":94}"), T0);
+
+        _runtime.StartTest(Watch().Compile(), T0);
+        var both = _runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":96}"), T0);
+
+        var test = Assert.Single(both.Alarms);
+        Assert.Equal("flowtest-f1-hot", test.Alert.RuleId);
+        Assert.Equal(2, _runtime.Alarms().Active.Count);
+        Assert.Equal(["f1"], _runtime.Testing());
+        Assert.Equal(FlowRunState.Waiting, Run(FlowRunKind.Test).State);
+    }
+
+    [Fact]
+    public void Stopping_a_test_ends_its_alarms_and_leaves_the_active_ones()
+    {
+        Activate(Watch().Compile());
+        _runtime.StartTest(Watch().Compile(), T0);
+        _runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":94}"), T0);
+
+        var stopped = _runtime.StopTest("f1", T0);
+
+        Assert.Equal("test ended", Assert.Single(stopped.Alarms).Alert.ResolvedBy);
+        Assert.Equal("flow-f1-hot", Assert.Single(_runtime.Alarms().Active).RuleId);
+        Assert.Empty(_runtime.Testing());
+        Assert.DoesNotContain(_runtime.Status().Runs, run => run.Kind == FlowRunKind.Test);
+        Assert.True(_runtime.StopTest("f1", T0).IsEmpty);
+    }
+
+    [Fact]
+    public void A_test_that_reaches_an_end_ends_its_alarms_and_stays_to_be_read()
+    {
+        var chart = new ChartBuilder()
+            .Node("start", "start").Node("hot", "alarmRaise", new { name = "Hot", level = "warn" }).Node("end", "end")
+            .Then("start", "hot").Wire("hot", "raised", "end").Wire("hot", "up", "end");
+
+        var outcome = _runtime.StartTest(chart.Compile(), T0);
+
+        Assert.Equal([true, false], outcome.Alarms.Select(alarm => alarm.Raised));
+        Assert.Equal("test ended", outcome.Alarms[1].Alert.ResolvedBy);
+        Assert.Equal(FlowRunState.Finished, Run(FlowRunKind.Test).State);
+        Assert.Empty(_runtime.Testing());
+    }
+
+    [Fact]
+    public void A_new_test_takes_the_place_of_the_one_still_going()
+    {
+        var waiting = Line(("read", "mqttIn", new { filter = "a/b" })).Compile();
+
+        _runtime.StartTest(waiting, T0);
+        _runtime.StartTest(waiting, T0.AddSeconds(1));
+
+        Assert.Single(_runtime.Status().Runs, run => run.Kind == FlowRunKind.Test);
+    }
+
+    [Fact]
+    public void Deactivating_ends_the_active_alarms_flow_off_and_deleting_flow_removed()
+    {
+        Activate(Watch().Compile());
+        _runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":94}"), T0);
+
+        var off = _runtime.Deploy([Watch().Off().Compile()], ["f1"], T0);
+
+        Assert.Equal("flow off", Assert.Single(off.Alarms).Alert.ResolvedBy);
+        Assert.Empty(_runtime.Status().Runs);
+
+        Activate(Watch().Compile());
+        _runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":94}"), T0);
+
+        Assert.Equal("flow removed", Assert.Single(_runtime.Deploy([], [], T0).Alarms).Alert.ResolvedBy);
+    }
+
+    [Fact]
+    public void An_update_keeps_an_alarm_whose_raise_did_not_change_and_ends_one_that_did()
+    {
+        Activate(Watch().Compile());
+        _runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":94}"), T0);
+
+        Assert.Empty(Activate(Watch(limit: "92").Compile()).Alarms);
+        Assert.Single(_runtime.Alarms().Active);
+
+        Assert.Equal("flow changed", Assert.Single(Activate(Watch(limit: "92", level: "warn").Compile()).Alarms).Alert.ResolvedBy);
+    }
+
+    [Fact]
+    public void A_link_that_drops_ends_every_alarm()
+    {
+        Activate(Watch().Compile());
+        _runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":94}"), T0);
+
+        var dropped = _runtime.OnTick(T0.AddSeconds(1), connected: false);
+
+        Assert.Equal("connection ended", Assert.Single(dropped.Alarms).Alert.ResolvedBy);
+    }
+
+    // ---- channels ----
+
+    [Fact]
+    public void Sound_notify_and_webhook_do_their_job_once_a_second()
+    {
+        var chart = Body("for", new { times = "2" },
+                ("beep", "sound", new { level = "critical" }),
+                ("tell", "notify", new { text = "{{var.site}} is hot", level = "warn" }),
+                ("hook", "webhook", new { url = "https://hooks.example.com/x", body = "{\"site\":\"{{var.site}}\"}" }))
+            .Var("site", "north");
+
+        var outcome = Activate(chart.Compile());
+
+        Assert.Equal(AlertSeverity.Critical, Assert.Single(outcome.Sounds).Level);
+
+        var notice = Assert.Single(outcome.Notices);
+        Assert.Equal("north is hot", notice.Text);
+        Assert.Equal("Boiler watch", notice.FlowName);
+        Assert.Equal(AlertSeverity.Warn, notice.Level);
+
+        var post = Assert.Single(outcome.Webhooks);
+        Assert.Equal("https://hooks.example.com/x", post.Url);
+        Assert.Equal("{\"site\":\"north\"}", post.Body);
+        Assert.Equal("application/json", post.ContentType);
+
+        Assert.Equal(1, Node("beep").Outs["dropped"]);
+        Assert.Equal(1, Node("tell").Outs["dropped"]);
+        Assert.Equal(1, Node("hook").Outs["dropped"]);
+    }
+
+    [Fact]
+    public void A_body_that_is_not_json_goes_as_text() =>
+        Assert.Equal("text/plain", Assert.Single(Activate(Line(("hook", "webhook", new { url = "https://hooks.example.com/x", body = "hot" })).Compile()).Webhooks).ContentType);
+
+    [Fact]
+    public void A_channel_does_its_job_again_a_second_later()
+    {
+        var chart = Body("for", new { times = "2" }, ("beep", "sound", new { level = "info" }), ("pause", "wait", new { seconds = "1" }));
+
+        Assert.Single(Activate(chart.Compile()).Sounds);
+        Assert.Single(_runtime.OnTick(T0.AddSeconds(1), connected: true).Sounds);
+    }
+
+    [Fact]
+    public void What_a_test_says_is_marked_as_a_tests()
+    {
+        var outcome = _runtime.StartTest(Line(("beep", "sound", new { level = "info" }), ("tell", "notify", new { text = "hi", level = "info" }), ("say", "debug", null)).Compile(), T0);
+
+        Assert.True(Assert.Single(outcome.Sounds).Test);
+        Assert.True(Assert.Single(outcome.Notices).Test);
+        Assert.True(Assert.Single(outcome.Debug).Test);
+    }
+
+    // ---- the clock ----
+
+    [Fact]
+    public void Next_due_is_the_earliest_wait()
+    {
+        Activate(Line(("pause", "wait", new { seconds = "5" })).Compile());
+
+        Assert.Equal(T0.AddSeconds(5), _runtime.NextDue);
+    }
+
+    [Fact]
+    public void A_wait_ends_at_once_when_the_clock_is_set_back_past_it()
+    {
+        Activate(Line(("pause", "wait", new { seconds = "10" }), ("pub", "publish", new { topic = "a/b" })).Compile());
+
+        Assert.Single(_runtime.OnTick(T0.AddHours(-1), connected: true).Publishes);
+    }
+
+    // ---- loops inside loops, and the ways out of them ----
+
+    [Fact]
+    public void A_loop_in_a_loop_runs_afresh_at_every_turn_of_the_outer_one()
+    {
+        // The inner turns carry their own index and element, and the inner loop's done hands back the
+        // message of the outer turn it was entered in.
+        var chart = new ChartBuilder().Var("keys", "[\"a\",\"b\"]")
+            .Node("start", "start").Node("outer", "for", new { times = "2" }).Node("inner", "forEach", new { array = "var.keys" })
+            .Node("each", "publish", new { topic = "{{payload}}/{{index}}" })
+            .Node("after", "publish", new { topic = "outer/{{index}}" }).Node("end", "end")
+            .Then("start", "outer").Wire("outer", "body", "inner")
+            .Wire("inner", "body", "each").Wire("each", "out", "inner", "next")
+            .Wire("inner", "done", "after").Wire("after", "out", "outer", "next")
+            .Wire("outer", "done", "end");
+
+        Assert.Equal(["a/1", "b/2", "outer/1", "a/1", "b/2", "outer/2"], Topics(Activate(chart.Compile())));
+        Assert.Equal(FlowRunState.Finished, Run().State);
+    }
+
+    [Fact]
+    public void A_body_that_leaves_its_loop_for_an_end_ends_the_run_there()
+    {
+        var chart = new ChartBuilder().Var("keys", "[\"a\",\"b\",\"c\"]")
+            .Node("start", "start").Node("loop", "forEach", new { array = "var.keys" })
+            .Node("test", "if", new { field = "", test = "eq", value = "b" })
+            .Node("pub", "publish", new { topic = "seen/{{payload}}" }).Node("stop", "end").Node("end", "end")
+            .Then("start", "loop").Wire("loop", "body", "test")
+            .Wire("test", "yes", "stop").Wire("test", "no", "pub").Wire("pub", "out", "loop", "next")
+            .Wire("loop", "done", "end");
+
+        Assert.Equal(["seen/a"], Topics(Activate(chart.Compile())));
+        Assert.Equal(FlowRunState.Finished, Run().State);
+        Assert.Equal("stop", Run().At);
+    }
+
+    [Fact]
+    public void A_break_out_of_two_loops_goes_on_with_the_message_of_the_turn_it_left()
+    {
+        var chart = new ChartBuilder().Var("keys", "[\"a\",\"b\",\"c\"]")
+            .Node("start", "start").Node("outer", "for", new { times = "5" }).Node("inner", "forEach", new { array = "var.keys" })
+            .Node("test", "if", new { field = "", test = "eq", value = "b" })
+            .Node("found", "publish", new { topic = "found/{{payload}}/{{index}}" }).Node("end", "end")
+            .Then("start", "outer").Wire("outer", "body", "inner")
+            .Wire("inner", "body", "test").Wire("test", "no", "inner", "next").Wire("test", "yes", "found")
+            .Wire("inner", "done", "outer", "next")
+            .Wire("outer", "done", "end").Then("found", "end");
+
+        Assert.Equal(["found/b/2"], Topics(Activate(chart.Compile())));
+        Assert.Equal(FlowRunState.Finished, Run().State);
+    }
+
+    [Fact]
+    public void A_loop_left_by_a_break_starts_afresh_when_it_is_entered_again()
+    {
+        // The inner loop goes on to the outer one's next at its second element, every time. Were what it
+        // left behind read as a turn, the outer loop's second turn would not begin at a.
+        var chart = new ChartBuilder().Var("keys", "[\"a\",\"b\",\"c\"]")
+            .Node("start", "start").Node("outer", "for", new { times = "2" }).Node("inner", "forEach", new { array = "var.keys" })
+            .Node("test", "if", new { field = "", test = "eq", value = "b" }).Node("say", "debug").Node("end", "end")
+            .Then("start", "outer").Wire("outer", "body", "inner")
+            .Wire("inner", "body", "test").Wire("test", "no", "say").Wire("say", "out", "inner", "next")
+            .Wire("test", "yes", "outer", "next").Wire("inner", "done", "outer", "next")
+            .Wire("outer", "done", "end");
+
+        Assert.Equal(["a", "a"], Activate(chart.Compile()).Debug.Select(line => line.Text));
+        Assert.Equal(FlowRunState.Finished, Run().State);
+    }
+
+    [Fact]
+    public void For_whose_times_are_not_a_number_counts_an_error_and_goes_done()
+    {
+        var outcome = Activate(Body("for", new { times = "{{var.n}}" }, ("pub", "publish", new { topic = "a/b" })).Var("n", "lots").Compile());
+
+        Assert.Empty(outcome.Publishes);
+        Assert.Equal(1, Node("loop").Errors);
+        Assert.Equal(FlowRunState.Finished, Run().State);
+    }
+
+    [Fact]
+    public void A_forever_turn_whose_only_wait_is_in_a_for_each_over_nothing_stops_the_run()
+    {
+        // It compiles, since its turn holds a Wait, and its first turn comes round without waiting.
+        var chart = new ChartBuilder().Var("list", "[]")
+            .Node("start", "start").Node("loop", "for", new { forever = true }).Node("each", "forEach", new { array = "var.list" })
+            .Node("pause", "wait", new { seconds = "1" }).Node("end", "end")
+            .Then("start", "loop").Wire("loop", "body", "each")
+            .Wire("each", "body", "pause").Wire("pause", "out", "each", "next")
+            .Wire("each", "done", "loop", "next").Wire("loop", "done", "end");
+
+        Activate(chart.Compile());
+
+        Assert.Equal(FlowRunState.Stopped, Run().State);
+        Assert.Equal(1, Node("loop").Errors);
+        Assert.Null(_runtime.NextDue);
+    }
+
+    [Fact]
+    public void A_forever_loop_that_waited_on_one_turn_and_not_on_the_next_is_stopped_at_the_next()
+    {
+        // The guard measures each turn, and not the loop since it was entered: the If sends the first turn
+        // through the Wait and the second one round it.
+        var chart = new ChartBuilder().Var("waited", "no")
+            .Node("start", "start").Node("loop", "for", new { forever = true })
+            .Node("test", "if", new { field = "var.waited", test = "eq", value = "yes" })
+            .Node("keep", "set", new { variable = "waited", value = "yes" })
+            .Node("pause", "wait", new { seconds = "1" }).Node("say", "debug").Node("end", "end")
+            .Then("start", "loop").Wire("loop", "body", "test")
+            .Wire("test", "no", "keep").Then("keep", "pause").Wire("pause", "out", "loop", "next")
+            .Wire("test", "yes", "say").Wire("say", "out", "loop", "next")
+            .Wire("loop", "done", "end");
+        Activate(chart.Compile());
+
+        var second = _runtime.OnTick(T0.AddSeconds(1), connected: true);
+
+        Assert.Equal(FlowRunState.Stopped, Run().State);
+        Assert.Single(second.Debug, line => line.Kind == FlowDebugEntry.Message);
+    }
+
+    // ---- a turn, and the clock ----
+
+    [Fact]
+    public void A_node_a_run_waited_at_is_entered_once()
+    {
+        Activate(Line(("pause", "wait", new { seconds = "1" }), ("read", "mqttIn", new { filter = "a/b" })).Compile());
+
+        _runtime.OnTick(T0.AddSeconds(1), connected: true);
+        _runtime.OnMessage(Msg("a/b", "1"), T0.AddSeconds(1));
+
+        Assert.Equal(1, Node("pause").Count);
+        Assert.Equal(1, Node("read").Count);
+        Assert.Equal(FlowRunState.Finished, Run().State);
+    }
+
+    [Fact]
+    public void A_turn_is_a_thousand_steps_and_no_more()
+    {
+        // An empty body makes every turn one step, the loop coming back to its own next, so a thousand
+        // steps are Start and 999 entries of the loop.
+        Activate(Body("for", new { times = "5000" }).Compile());
+
+        Assert.Equal(FlowLimits.StepsPerTurn - 1, Node("loop").Count);
+    }
+
+    [Fact]
+    public void Next_due_is_the_earliest_wait_of_every_run()
+    {
+        var sooner = new ChartBuilder("f2").Node("start", "start").Node("pause", "wait", new { seconds = "3" }).Node("end", "end")
+            .Then("start", "pause", "end").Compile();
+
+        _runtime.Deploy([Line(("pause", "wait", new { seconds = "5" })).Compile(), sooner], ["f1", "f2"], T0);
+
+        Assert.Equal(T0.AddSeconds(3), _runtime.NextDue);
+    }
+
+    [Fact]
+    public void A_run_publishes_again_once_its_second_is_up()
+    {
+        var chart = new ChartBuilder()
+            .Node("start", "start").Node("outer", "for", new { times = "2" }).Node("burst", "for", new { times = "60" })
+            .Node("pub", "publish", new { topic = "a/{{index}}" }).Node("pause", "wait", new { seconds = "1" }).Node("end", "end")
+            .Then("start", "outer").Wire("outer", "body", "burst").Wire("burst", "body", "pub").Wire("pub", "out", "burst", "next")
+            .Wire("burst", "done", "pause").Wire("pause", "out", "outer", "next").Wire("outer", "done", "end");
+
+        Assert.Equal(FlowLimits.PublishesPerSecond, Activate(chart.Compile()).Publishes.Count);
+        Assert.Equal(FlowLimits.PublishesPerSecond, _runtime.OnTick(T0.AddSeconds(1), connected: true).Publishes.Count);
+    }
+
+    [Fact]
+    public void A_run_publishes_at_its_rate_a_second_after_the_clock_is_set_back()
+    {
+        // Fifty a turn and a Wait of a second: the bucket is empty when the clock goes back an hour, and
+        // the turn after that must find it refilled by the second it waited, not by the hour to come.
+        var chart = new ChartBuilder()
+            .Node("start", "start").Node("loop", "for", new { forever = true }).Node("burst", "for", new { times = "50" })
+            .Node("pub", "publish", new { topic = "a/{{index}}" }).Node("pause", "wait", new { seconds = "1" }).Node("end", "end")
+            .Then("start", "loop").Wire("loop", "body", "burst").Wire("burst", "body", "pub").Wire("pub", "out", "burst", "next")
+            .Wire("burst", "done", "pause").Wire("pause", "out", "loop", "next").Wire("loop", "done", "end");
+        Assert.Equal(FlowLimits.PublishesPerSecond, Activate(chart.Compile()).Publishes.Count);
+
+        var back = T0.AddHours(-1);
+        _runtime.OnTick(back, connected: true);
+
+        Assert.Equal(FlowLimits.PublishesPerSecond, _runtime.OnTick(back.AddSeconds(1), connected: true).Publishes.Count);
+    }
+
+    [Fact]
+    public void A_channel_does_its_job_again_after_the_clock_is_set_back()
+    {
+        var chart = Body("for", new { times = "2" }, ("beep", "sound", new { level = "info" }), ("pause", "wait", new { seconds = "1" }));
+
+        Assert.Single(Activate(chart.Compile()).Sounds);
+        Assert.Single(_runtime.OnTick(T0.AddHours(-1), connected: true).Sounds);
+    }
+
+    [Fact]
+    public void A_move_to_another_broker_ends_every_alarm_and_runs_nothing_that_is_due()
+    {
+        var waiting = new ChartBuilder("f2").Node("start", "start").Node("pause", "wait", new { seconds = "1" })
+            .Node("pub", "publish", new { topic = "a/b" }).Node("end", "end").Then("start", "pause", "pub", "end").Compile();
+        _runtime.Deploy([Watch().Compile(), waiting], ["f1", "f2"], T0);
+        _runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":94}"), T0);
+
+        var moved = _runtime.OnMove(T0.AddSeconds(2));
+
+        Assert.Equal("connection ended", Assert.Single(moved.Alarms).Alert.ResolvedBy);
+        Assert.Empty(moved.Publishes);
+        Assert.Equal(FlowRunState.Waiting, Run(flowId: "f2").State);
+        Assert.Single(_runtime.OnTick(T0.AddSeconds(2), connected: true).Publishes);
     }
 
     [Fact]
     public void Every_change_moves_the_version()
     {
-        Start(Watch().Compile());
+        Activate(Line(("pause", "wait", new { seconds = "1" }), ("read", "mqttIn", new { filter = "a/b" })).Compile());
+
         var before = _runtime.Version;
+        _runtime.OnTick(T0.AddSeconds(1), connected: true);
+        var woken = _runtime.Version;
+        _runtime.OnMessage(Msg("a/b", "1"), T0.AddSeconds(1));
 
-        _runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":50}"), T0);
+        Assert.True(woken > before);
+        Assert.True(_runtime.Version > woken);
+    }
 
-        Assert.True(_runtime.Version > before);
+    // ---- reading messages, and what a run keeps to itself ----
+
+    [Fact]
+    public void A_message_read_in_a_loop_keeps_the_turn_as_its_index()
+    {
+        Activate(Body("for", new { times = "2" },
+            ("read", "mqttIn", new { filter = "a/b" }),
+            ("pub", "publish", new { topic = "out/{{index}}", payload = "{{payload}}" })).Compile());
+
+        Assert.Equal(["out/1"], Topics(_runtime.OnMessage(Msg("a/b", "x"), T0)));
+        Assert.Equal(["out/2"], Topics(_runtime.OnMessage(Msg("a/b", "y"), T0)));
     }
 
     [Fact]
-    public void Status_counts_per_port()
+    public void A_run_does_not_read_its_own_publish_but_another_run_does()
     {
-        Start(Watch().Compile());
+        var talker = Line(
+            ("pub", "publish", new { topic = "loop/x", payload = "1" }),
+            ("read", "mqttIn", new { filter = "loop/x" }),
+            ("say", "debug", null)).Compile();
+        var listener = new ChartBuilder("f2").Node("start", "start").Node("read", "mqttIn", new { filter = "loop/x" })
+            .Node("say", "debug").Node("end", "end").Then("start", "read", "say", "end").Compile();
+        _runtime.Deploy([talker, listener], ["f1", "f2"], T0);
+
+        Assert.Equal("f2", Assert.Single(_runtime.OnMessage(Msg("loop/x", "1"), T0).Debug).FlowId);
+    }
+
+    [Fact]
+    public void Of_two_flows_with_one_id_the_first_is_the_one_that_counts()
+    {
+        var other = Line(("pub", "publish", new { topic = "second" })).Compile();
+
+        Assert.Equal(["first"], Topics(_runtime.Deploy([Line(("pub", "publish", new { topic = "first" })).Compile(), other], ["f1"], T0)));
+
+        _runtime.Deploy([], [], T0);
+        Assert.Empty(_runtime.Deploy([Line(("pub", "publish", new { topic = "first" })).Off().Compile(), other], ["f1"], T0).Publishes);
+    }
+
+    [Fact]
+    public void Variables_whose_names_differ_only_in_case_are_two_variables()
+    {
+        Activate(Line(("keep", "set", new { variable = "Limit", value = "3" })).Var("limit", "1").Var("Limit", "2").Compile());
+
+        Assert.Equal("1", Run().Variables["limit"]);
+        Assert.Equal("3", Run().Variables["Limit"]);
+    }
+
+    [Fact]
+    public void A_test_starts_from_the_declared_values_whatever_the_active_run_has_set()
+    {
+        Activate(Remembers().Compile());
+        _runtime.OnMessage(Msg("x/y", "seen"), T0);
+
+        _runtime.StartTest(Remembers().Compile(), T0);
+
+        Assert.Equal("seen", Run().Variables["n"]);
+        Assert.Equal("start", Run(FlowRunKind.Test).Variables["n"]);
+        Assert.Equal("read", Run(FlowRunKind.Test).At);
+    }
+
+    // ---- alarms, again: whose they are and when they end ----
+
+    [Fact]
+    public void An_active_run_that_reaches_an_end_leaves_its_alarms_up()
+    {
+        var chart = new ChartBuilder()
+            .Node("start", "start").Node("hot", "alarmRaise", new { name = "Hot", level = "warn" }).Node("end", "end")
+            .Then("start", "hot").Wire("hot", "raised", "end").Wire("hot", "up", "end");
+
+        Assert.True(Assert.Single(Activate(chart.Compile()).Alarms).Raised);
+        Assert.Equal(FlowRunState.Finished, Run().State);
+        Assert.Single(_runtime.Alarms().Active);
+    }
+
+    [Fact]
+    public void A_test_the_forever_guard_stopped_ends_its_alarms()
+    {
+        var chart = new ChartBuilder()
+            .Node("start", "start").Node("loop", "for", new { forever = true })
+            .Node("test", "if", new { field = "$.go", test = "exists" }).Node("pause", "wait", new { seconds = "1" })
+            .Node("hot", "alarmRaise", new { name = "Hot", level = "warn" }).Node("end", "end")
+            .Then("start", "loop").Wire("loop", "body", "test")
+            .Wire("test", "yes", "pause").Wire("pause", "out", "loop", "next")
+            .Wire("test", "no", "hot").Wire("hot", "raised", "loop", "next").Wire("hot", "up", "loop", "next")
+            .Wire("loop", "done", "end");
+
+        var outcome = _runtime.StartTest(chart.Compile(), T0);
+
+        Assert.Equal(FlowRunState.Stopped, Run(FlowRunKind.Test).State);
+        Assert.Equal([true, false], outcome.Alarms.Select(alarm => alarm.Raised));
+        Assert.Equal("test ended", outcome.Alarms[1].Alert.ResolvedBy);
+    }
+
+    [Fact]
+    public void A_new_test_ends_the_alarms_of_the_one_it_replaces()
+    {
+        _runtime.StartTest(Watch().Compile(), T0);
         _runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":94}"), T0);
-        _runtime.OnMessage(Msg("plant/k2/temp", "{\"temp\":70}"), T0);
 
-        Assert.Equal(2, Node("in").Count);
-        Assert.Equal(1, Node("test").Outs["yes"]);
-        Assert.Equal(1, Node("test").Outs["no"]);
-        Assert.Equal(1, Node("fan").Outs["sent"]);
-        Assert.Equal(1, Node("hot").Outs["raised"]);
-        Assert.Equal("plant/k1/temp", Assert.Single(Node("hot").Standing).Topic);
+        var replaced = _runtime.StartTest(Watch().Compile(), T0.AddSeconds(1));
+
+        Assert.Equal("test ended", Assert.Single(replaced.Alarms).Alert.ResolvedBy);
+        Assert.Empty(_runtime.Alarms().Active);
     }
-
-    // ---- what stands under a node, and in the debug strip ----
 
     [Fact]
-    public void A_note_is_one_line_that_fits_under_its_node()
+    public void A_tests_clear_closes_its_own_alarm_and_the_active_runs_closes_its_own()
     {
-        Start(Watch().Compile());
+        Activate(Watch().Compile());
+        _runtime.StartTest(Watch().Compile(), T0);
+        _runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":94}"), T0);
 
-        // A level long enough that the rendered topic and the alarm's reason both run past a note.
-        _runtime.OnMessage(Msg($"plant/{new string('k', 120)}/temp", "{\"temp\":94.2}"), T0);
+        var cooled = _runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":80}"), T0);
 
-        Assert.Equal(1, Node("fan").Outs["sent"]);
-        Assert.Equal(1, Node("hot").Outs["raised"]);
-        Assert.All(_runtime.Status().Flows.Single().Nodes, node =>
-            Assert.True(node.Note is null || node.Note.Length <= FlowLimits.NoteLength, $"{node.Id}: {node.Note}"));
+        Assert.Equal(["flow-f1-hot", "flowtest-f1-hot"], cooled.Alarms.Select(alarm => alarm.Alert.RuleId));
+        Assert.Empty(_runtime.Alarms().Active);
     }
 
-    // A note shows eighty characters and must cost about that: the line endings are replaced in what
-    // is kept, not in a copy of the whole payload made first. The text is the same either way, so the
-    // allocation is the proof — two megabyte copies against a few hundred bytes.
+    [Fact]
+    public void Switching_a_flow_off_leaves_its_test_going_with_its_alarms()
+    {
+        Activate(Watch().Compile());
+        _runtime.StartTest(Watch().Compile(), T0);
+        _runtime.OnMessage(Msg("plant/k1/temp", "{\"temp\":94}"), T0);
+
+        var off = _runtime.Deploy([Watch().Off().Compile()], ["f1"], T0);
+
+        Assert.Equal("flow-f1-hot", Assert.Single(off.Alarms).Alert.RuleId);
+        Assert.Equal("flowtest-f1-hot", Assert.Single(_runtime.Alarms().Active).RuleId);
+        Assert.Equal(["f1"], _runtime.Testing());
+        Assert.Equal(FlowRunState.Waiting, Run(FlowRunKind.Test).State);
+    }
+
+    // ---- what a step will not send ----
+
+    [Fact]
+    public void A_topic_longer_than_MQTT_carries_is_not_published()
+    {
+        Activate(Line(("read", "mqttIn", new { filter = "a/b" }), ("pub", "publish", new { topic = "{{payload}}" })).Compile());
+
+        Assert.Empty(_runtime.OnMessage(Msg("a/b", new string('x', FlowLimits.TopicBytes + 1)), T0).Publishes);
+        Assert.Equal(1, Node("pub").Errors);
+    }
+
+    [Fact]
+    public void A_payload_over_64_KB_is_not_published()
+    {
+        Activate(Line(("read", "mqttIn", new { filter = "a/b" }), ("pub", "publish", new { topic = "a/out", payload = "{{payload}}" })).Compile());
+
+        Assert.Empty(_runtime.OnMessage(Msg("a/b", new string('x', FlowLimits.PayloadBytes + 1)), T0).Publishes);
+        Assert.Equal(1, Node("pub").Errors);
+    }
+
+    [Fact]
+    public void A_webhook_body_over_64_KB_is_not_posted()
+    {
+        Activate(Line(("read", "mqttIn", new { filter = "a/b" }), ("hook", "webhook", new { url = "https://hooks.example.com/x" })).Compile());
+
+        Assert.Empty(_runtime.OnMessage(Msg("a/b", new string('x', FlowLimits.PayloadBytes + 1)), T0).Webhooks);
+        Assert.Equal(1, Node("hook").Errors);
+    }
+
+    [Fact]
+    public void A_notice_shows_its_first_200_characters()
+    {
+        var outcome = Activate(Line(("tell", "notify", new { text = new string('n', FlowLimits.TextTemplateLength), level = "info" })).Compile());
+
+        Assert.Equal(new string('n', FlowLimits.NoticeLength), Assert.Single(outcome.Notices).Text);
+    }
+
+    // The link and the rate are asked before anything is rendered: a publish either of them refuses would
+    // otherwise pay for its render first, and at the rate limit that is every publish past the fiftieth
+    // each second. The random number in the payload counts the renders.
+    [Fact]
+    public void A_publish_the_link_or_the_rate_would_refuse_is_never_rendered()
+    {
+        var random = new CountingRandom(7);
+        var runtime = new FlowRuntime(random);
+        runtime.OnTick(T0, connected: true);
+        var chart = Body("for", new { times = "60" }, ("pub", "publish", new { topic = "sim/x", payload = "{{random(0,1)}}" }));
+
+        Assert.Equal(FlowLimits.PublishesPerSecond, runtime.Deploy([chart.Compile()], ["f1"], T0).Publishes.Count);
+        Assert.Equal(FlowLimits.PublishesPerSecond, random.Draws);
+
+        runtime.OnTick(T0.AddSeconds(2), connected: false);
+        runtime.StartTest(chart.Compile(), T0.AddSeconds(2));
+
+        Assert.Equal(FlowLimits.PublishesPerSecond, random.Draws);
+    }
+
+    // ---- what is said under a node ----
+
+    [Fact]
+    public void A_failure_that_quotes_a_long_text_is_cut_to_a_note_and_to_an_excerpt_in_the_debug_strip()
+    {
+        // The sentence that refuses a topic quotes the topic, which here is the whole payload.
+        Activate(Line(("read", "mqttIn", new { filter = "a/b" }), ("pub", "publish", new { topic = "{{payload}}" })).Compile());
+
+        var line = Assert.Single(_runtime.OnMessage(Msg("a/b", new string('x', 3 * FlowLimits.DebugExcerpt) + "+"), T0).Debug);
+
+        Assert.Equal(FlowDebugEntry.Error, line.Kind);
+        Assert.Equal(FlowLimits.DebugExcerpt, line.Text.Length);
+        Assert.Equal(FlowLimits.NoteLength, Node("pub").Note!.Length);
+        Assert.EndsWith("…", Node("pub").Note);
+    }
+
+    [Fact]
+    public void A_note_is_one_line()
+    {
+        Activate(Line(("read", "mqttIn", new { filter = "a/b" }), ("say", "debug", null)).Compile());
+
+        _runtime.OnMessage(Msg("a/b", "first\r\nsecond"), T0);
+
+        Assert.Equal("first second", Node("say").Note);
+    }
+
+    // A note shows eighty characters and must cost about that: the line endings are replaced in what is
+    // kept, not in a copy of the whole payload made first. The text is the same either way, so the
+    // allocation is the proof: two copies of two megabytes against a few kilobytes.
     [Fact]
     public void A_note_costs_what_it_shows_and_not_a_copy_of_the_payload()
     {
-        Start(new FlowBuilder()
-            .Node("in", "mqttIn", new { filter = "a/#" })
-            .Node("say", "debug")
-            .Wire("in", "out", "say", "in")
-            .Compile());
+        Activate(Body("for", new { forever = true }, ("read", "mqttIn", new { filter = "a/#" }), ("say", "debug", null)).Compile());
         _runtime.OnMessage(Msg("a/b", "warming up"), T0);
 
         var lines = Msg("a/b", string.Concat(Enumerable.Repeat("a line\n", 150_000)));
@@ -895,78 +1186,333 @@ public class FlowRuntimeTests
         Assert.True(allocated < 64 * 1024, $"{allocated:N0} bytes were allocated to run one message into two notes.");
     }
 
-    // One read, and every Alarm node its own list: oldest first, at most twenty. Raised newest first
-    // here, so the order is the read's own and not the order they came in.
+    // A Set's note says the variable and its new value, and costs what it shows in the same way: a value of
+    // sixty thousand characters, which a Set keeps without copying it, is not copied whole into a sentence
+    // to show eighty of them.
     [Fact]
-    public void Each_alarm_node_lists_its_own_standing_alarms_oldest_first_and_at_most_twenty()
+    public void A_set_note_costs_what_it_shows_and_not_a_copy_of_the_value()
     {
-        static FlowBuilder Pair(string id) => new FlowBuilder(id)
-            .Node("in", "mqttIn", new { filter = $"{id}/+/temp" })
-            .Node("hot", "alarm", new { name = "Hot", severity = "warn" })
-            .Node("cold", "alarm", new { name = "Cold", severity = "info" })
-            .Wire("in", "out", "hot", "raise")
-            .Wire("in", "out", "cold", "raise");
-        Start(Pair("a").Compile(), Pair("b").Compile());
+        Activate(Body("for", new { forever = true },
+            ("read", "mqttIn", new { filter = "a/b" }),
+            ("keep", "set", new { variable = "n", value = new string('v', 60_000) })).Var("n", "").Compile());
+        _runtime.OnMessage(Msg("a/b", "warming up"), T0);
 
-        for (var i = 0; i < 25; i++) _runtime.OnMessage(Msg($"a/k{i}/temp", "1"), T0.AddSeconds(100 - i));
-        _runtime.OnMessage(Msg("b/k0/temp", "1"), T0);
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        _runtime.OnMessage(Msg("a/b", "1"), T0);
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
-        string[] oldestTwenty = [.. Enumerable.Range(5, 20).Reverse().Select(i => $"a/k{i}/temp")];
-
-        Assert.Equal(oldestTwenty, Node("hot", "a").Standing.Select(standing => standing.Topic));
-        Assert.Equal(oldestTwenty, Node("cold", "a").Standing.Select(standing => standing.Topic));
-        Assert.Equal(["b/k0/temp"], Node("hot", "b").Standing.Select(standing => standing.Topic));
-        Assert.Empty(Node("in", "a").Standing);
+        Assert.StartsWith("n = vvv", Node("keep").Note);
+        Assert.Equal(FlowLimits.NoteLength, Node("keep").Note!.Length);
+        Assert.True(allocated < 64 * 1024, $"{allocated:N0} bytes were allocated to set a variable and say so.");
     }
 
     [Fact]
-    public void An_error_carrying_a_rendered_topic_is_cut_to_an_excerpt()
+    public void A_variable_is_shown_as_an_excerpt()
     {
-        Start(new FlowBuilder()
-            .Node("go", "inject", new { payload = new string('x', 5000) + "/#" })
-            .Node("send", "publish", new { topic = "{{payload}}", payload = "x" })
-            .Wire("go", "out", "send", "in")
-            .Compile());
+        Activate(Line(("say", "debug", null)).Var("long", new string('v', 2 * FlowLimits.NoteLength)).Compile());
 
-        var entry = Assert.Single(_runtime.Inject("f1", "go", T0).Debug);
+        Assert.Equal(FlowLimits.NoteLength, Run().Variables["long"].Length);
+    }
 
-        Assert.Equal(FlowDebugEntry.Error, entry.Kind);
-        Assert.True(entry.Text.Length <= FlowLimits.DebugExcerpt);
-        Assert.True(Node("send").Note!.Length <= FlowLimits.NoteLength);
+    // ---- what a message cannot do ----
+
+    [Fact]
+    public void A_field_that_cannot_be_read_as_text_is_not_there_and_the_run_goes_on()
+    {
+        // The drawing one message once stopped every flow with: a monitor whose If reads a field holding
+        // an escaped half of a surrogate pair, beside a simulator that publishes every second.
+        var monitor = new ChartBuilder()
+            .Node("start", "start").Node("loop", "for", new { forever = true })
+            .Node("read", "mqttIn", new { filter = "plant/+/temp" })
+            .Node("test", "if", new { field = "$.temp", test = "gt", value = "90" }).Node("end", "end")
+            .Then("start", "loop").Wire("loop", "body", "read").Then("read", "test")
+            .Wire("test", "yes", "loop", "next").Wire("test", "no", "loop", "next").Wire("loop", "done", "end");
+        var simulator = new ChartBuilder("f2")
+            .Node("start", "start").Node("loop", "for", new { forever = true })
+            .Node("pause", "wait", new { seconds = "1" }).Node("pub", "publish", new { topic = "sim/ping" }).Node("end", "end")
+            .Then("start", "loop").Wire("loop", "body", "pause").Then("pause", "pub").Wire("pub", "out", "loop", "next")
+            .Wire("loop", "done", "end");
+        _runtime.Deploy([monitor.Compile(), simulator.Compile()], ["f1", "f2"], T0);
+
+        _runtime.OnMessage(Msg("plant/k1/temp", """{"temp":"\ud800"}"""), T0);
+
+        Assert.Equal(1, Node("test").Outs["no"]);
+        Assert.Equal("no such field", Node("test").Note);
+        Assert.Equal(FlowRunState.Waiting, Run().State);
+        Assert.Equal(3, Enumerable.Range(1, 3).Sum(second => _runtime.OnTick(T0.AddSeconds(second), connected: true).Publishes.Count));
     }
 
     [Fact]
-    public void A_debug_line_carries_no_more_of_a_topic_than_an_excerpt()
+    public void For_each_leaves_out_an_element_that_cannot_be_read_as_text_and_says_so()
     {
-        Start(new FlowBuilder()
-            .Node("in", "mqttIn", new { filter = "x/#" })
-            .Node("say", "debug")
-            .Node("send", "publish", new { topic = "{{topic}}/out", payload = "x" })
-            .Wire("in", "out", "say", "in")
-            .Wire("in", "out", "send", "in")
-            .Compile());
-        _runtime.OnTick(T0, connected: false);
+        var chart = Body("forEach", new { array = "var.ids" }, ("pub", "publish", new { topic = "plant/{{payload}}", payload = "{{index}}" }))
+            .Var("ids", """["k1","\udc00","k3"]""");
 
-        var outcome = _runtime.OnMessage(Msg("x/" + new string('k', 5000), "1"), T0);
+        var outcome = Activate(chart.Compile());
 
-        // The Debug node's line, and the Publish node's error, which carries the topic it rendered.
-        Assert.Equal([FlowDebugEntry.Message, FlowDebugEntry.Error], outcome.Debug.Select(entry => entry.Kind));
-        Assert.All(outcome.Debug, entry => Assert.True(entry.Topic.Length <= FlowLimits.DebugExcerpt, entry.NodeId));
+        Assert.Equal(["plant/k1", "plant/k3"], Topics(outcome));
+        Assert.Equal(["1", "2"], outcome.Publishes.Select(Text));
+        Assert.Equal(1, Node("loop").Errors);
+    }
+
+    /// <summary>A string element that cannot be read as text, as it is written in the JSON of an array.</summary>
+    private const string Unreadable = "\"\\ud800\"";
+
+    private static IEnumerable<string> Errors(FlowOutcome outcome) =>
+        outcome.Debug.Where(line => line.Kind == FlowDebugEntry.Error).Select(line => line.Text);
+
+    [Fact]
+    public void For_each_counts_the_elements_it_cannot_read_toward_its_thousand()
+    {
+        // An array of strings that cannot be read as text is stopped at the limit as one of readable ones
+        // is: scanned to its end instead, it would cost a thrown and caught exception for each of them,
+        // on the pump that every flow shares.
+        var array = "[" + string.Join(',', Enumerable.Repeat(Unreadable, FlowLimits.ForEachElements + 1)) + "]";
+
+        var outcome = Activate(Body("forEach", new { array = "var.big" }, ("say", "debug", null)).Var("big", array).Compile());
+
+        Assert.Equal(
+        [
+            "Only the first 1,000 elements are walked.",
+            $"{FlowLimits.ForEachElements} elements could not be read as text, so they were left out.",
+        ], Errors(outcome));
+        Assert.Equal(2, Node("loop").Errors);
+        Assert.DoesNotContain(outcome.Debug, line => line.Kind == FlowDebugEntry.Message);
+        Assert.Equal(FlowRunState.Finished, Run().State);
     }
 
     [Fact]
-    public void For_each_shows_the_array_it_walked_rather_than_an_earlier_skip()
+    public void For_each_counts_the_elements_it_can_read_and_those_it_cannot_toward_one_thousand()
     {
-        Start(new FlowBuilder()
-            .Node("in", "mqttIn", new { filter = "a/#" })
-            .Node("each", "forEach", new { field = "$.ids" })
-            .Wire("in", "out", "each", "in")
-            .Compile());
+        // The limit is on the elements looked at, so the one readable element that is the thousandth is
+        // walked and the one after it is not.
+        var array = "[" + string.Join(',', Enumerable.Repeat(Unreadable, FlowLimits.ForEachElements - 1)) + ",\"last\",\"beyond\"]";
 
-        _runtime.OnMessage(Msg("a/b", "{\"ids\":7}"), T0);
-        Assert.Equal("not an array", Node("each").Note);
+        var outcome = Activate(Body("forEach", new { array = "var.mixed" }, ("say", "debug", null)).Var("mixed", array).Compile());
 
-        _runtime.OnMessage(Msg("a/b", "{\"ids\":[\"k1\",\"k2\"]}"), T0);
-        Assert.Equal("[\"k1\",\"k2\"]", Node("each").Note);
+        Assert.Equal(["last"], outcome.Debug.Where(line => line.Kind == FlowDebugEntry.Message).Select(line => line.Text));
+        Assert.Equal(
+        [
+            "Only the first 1,000 elements are walked.",
+            $"{FlowLimits.ForEachElements - 1} elements could not be read as text, so they were left out.",
+        ], Errors(outcome));
+    }
+
+    // The sentence is English, and so is its number. Written in the culture the server runs in, a host
+    // set to Turkish or German formats would say "1.000", which an English reader takes for one.
+    [Fact]
+    public void The_limit_a_for_each_says_is_written_the_same_in_any_culture()
+    {
+        var array = "[" + string.Join(',', Enumerable.Range(0, FlowLimits.ForEachElements + 1)) + "]";
+        var was = CultureInfo.CurrentCulture;
+
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo("tr-TR");
+
+            var outcome = Activate(Body("forEach", new { array = "var.big" }).Var("big", array).Compile());
+
+            Assert.Equal(["Only the first 1,000 elements are walked."], Errors(outcome));
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = was;
+        }
+    }
+
+    // ---- an arrival, and the runs it did not wake ----
+
+    /// <summary>Start, then forever: read the next message on a/b. It wakes at every arrival there.</summary>
+    private static CompiledFlow Reader(string id) => new ChartBuilder(id)
+        .Node("start", "start").Node("loop", "for", new { forever = true }).Node("read", "mqttIn", new { filter = "a/b" })
+        .Node("end", "end")
+        .Then("start", "loop").Wire("loop", "body", "read").Wire("read", "out", "loop", "next").Wire("loop", "done", "end")
+        .Compile();
+
+    [Fact]
+    public void An_arrival_moves_only_the_runs_it_woke()
+    {
+        // A run with steps left over takes them at the next tick: were every arrival in a pump turn to
+        // move it as well, it would take another thousand steps at each.
+        _runtime.Deploy([Body("for", new { times = "1000000" }, ("say", "debug", null)).Compile(), Reader("f2")], ["f1", "f2"], T0);
+
+        var arrivals = Enumerable.Range(0, 10).SelectMany(i => _runtime.OnMessage(Msg("a/b", $"{i}"), T0).Debug).ToList();
+
+        Assert.DoesNotContain(arrivals, line => line.FlowId == "f1");
+        Assert.Equal(FlowRunState.Running, Run().State);
+        Assert.Equal(500, _runtime.OnTick(T0, connected: true).Debug.Count(line => line.FlowId == "f1"));
+    }
+
+    [Fact]
+    public void A_pattern_that_ran_out_of_time_costs_its_run_a_tick_and_not_every_arrival()
+    {
+        var hostile = new ChartBuilder().Var("text", HostilePatterns.Payload)
+            .Node("start", "start").Node("loop", "for", new { times = "100" })
+            .Node("test", "if", new { field = "var.text", test = "matches", value = HostilePatterns.Catastrophic })
+            .Node("end", "end")
+            .Then("start", "loop").Wire("loop", "body", "test")
+            .Wire("test", "yes", "loop", "next").Wire("test", "no", "loop", "next").Wire("loop", "done", "end");
+        _runtime.Deploy([hostile.Compile(), Reader("f2")], ["f1", "f2"], T0);
+
+        for (var i = 0; i < 5; i++) _runtime.OnMessage(Msg("a/b", $"{i}"), T0);
+
+        Assert.Equal(1, Node("test").Errors);
+    }
+
+    // ---- what a run lets go of when it ends ----
+
+    /// <summary>Queues a message the run will never read, and keeps no more than a weak hold on its payload.</summary>
+    // A method of its own, never inlined, so that nothing on the test's stack holds the payload once it
+    // has returned: only the run's queue can keep it alive after that, and nothing reads a queue of a run
+    // that has ended, so what it holds is seen only by whether the collector can take it.
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private WeakReference Queued(string topic)
+    {
+        var payload = new string('q', 10_000);
+        _runtime.OnMessage(Msg(topic, payload), T0);
+        return new WeakReference(payload);
+    }
+
+    private static bool Collected(WeakReference weak)
+    {
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        return !weak.IsAlive;
+    }
+
+    [Fact]
+    public void A_run_that_reaches_an_end_lets_go_of_the_messages_it_had_queued()
+    {
+        var chart = new ChartBuilder()
+            .Node("start", "start").Node("first", "mqttIn", new { filter = "a/b" })
+            .Node("test", "if", new { field = "", test = "eq", value = "stop" })
+            .Node("second", "mqttIn", new { filter = "c/d" }).Node("end", "end")
+            .Then("start", "first", "test").Wire("test", "yes", "end").Wire("test", "no", "second").Then("second", "end");
+        Activate(chart.Compile());
+        var queued = Queued("c/d");
+
+        _runtime.OnMessage(Msg("a/b", "stop"), T0);
+
+        Assert.Equal(FlowRunState.Finished, Run().State);
+        Assert.True(Collected(queued));
+    }
+
+    [Fact]
+    public void A_run_the_forever_guard_stopped_lets_go_of_the_messages_it_had_queued()
+    {
+        var chart = new ChartBuilder()
+            .Node("start", "start").Node("first", "mqttIn", new { filter = "a/b" }).Node("loop", "for", new { forever = true })
+            .Node("test", "if", new { field = "$.go", test = "exists" })
+            .Node("second", "mqttIn", new { filter = "c/d" }).Node("say", "debug").Node("end", "end")
+            .Then("start", "first", "loop").Wire("loop", "body", "test")
+            .Wire("test", "yes", "second").Wire("second", "out", "loop", "next")
+            .Wire("test", "no", "say").Wire("say", "out", "loop", "next")
+            .Wire("loop", "done", "end");
+        Activate(chart.Compile());
+        var queued = Queued("c/d");
+
+        _runtime.OnMessage(Msg("a/b", "{}"), T0);
+
+        Assert.Equal(FlowRunState.Stopped, Run().State);
+        Assert.True(Collected(queued));
+    }
+
+    // ---- a step that fails in a way no step expects ----
+
+    [Fact]
+    public void A_step_that_throws_stops_its_run_there_and_no_other()
+    {
+        // Nothing the product does is known to throw out of a step any more; a Random that throws on its
+        // draw stands in for whatever will, through {{random}} in a Set's value.
+        var runtime = new FlowRuntime(new BrokenRandom());
+        runtime.OnTick(T0, connected: true);
+        var broken = Line(("keep", "set", new { variable = "n", value = "{{random(0,1)}}" })).Var("n", "0").Compile();
+        var other = new ChartBuilder("f2").Node("start", "start").Node("pub", "publish", new { topic = "a/b" }).Node("end", "end")
+            .Then("start", "pub", "end").Compile();
+
+        var outcome = runtime.Deploy([broken, other], ["f1", "f2"], T0);
+
+        var run = runtime.Status().Runs.Single(one => one.FlowId == "f1");
+        Assert.Equal(FlowRunState.Stopped, run.State);
+        Assert.Equal("keep", run.At);
+
+        // The exception's type as well as its message, as the alert engine records a rule's fault. A note
+        // has room for no more than the start of the message; the debug line keeps all of this one.
+        Assert.StartsWith("This step failed, so the run was stopped: InvalidOperationException: The dice", run.Fault);
+        Assert.Equal(FlowLimits.NoteLength, run.Fault!.Length);
+        Assert.Equal(1, run.Nodes.Single(node => node.Id == "keep").Errors);
+        Assert.Contains(outcome.Debug, line => line.Kind == FlowDebugEntry.Error && line.NodeId == "keep" &&
+            line.Text.StartsWith("This step failed, so the run was stopped: InvalidOperationException: The dice are lost, ", StringComparison.Ordinal));
+        Assert.Equal("f2", Assert.Single(outcome.Publishes).Run.FlowId);
+        Assert.Null(runtime.NextDue);
+    }
+
+    /// <summary>A Random whose every draw throws, with a message longer than a note.</summary>
+    private sealed class BrokenRandom() : Random(7)
+    {
+        public override double NextDouble() =>
+            throw new InvalidOperationException("The dice are lost, " + new string('x', 2 * FlowLimits.NoteLength));
+    }
+
+    /// <summary>A node of a type the compiler never makes: what a node added to the language and not yet to the runtime would be.</summary>
+    private sealed class UnknownNode(string id) : CompiledNode(id);
+
+    /// <summary>Start, then an <see cref="UnknownNode"/> called "odd", with nothing after it.</summary>
+    private static CompiledFlow FlowWithUnknownNode()
+    {
+        var drawn = Line().Compile();
+        var unknown = new UnknownNode("odd");
+
+        // A way out is attached by the compiler alone, which no node it does not make can ask for, so the
+        // one from Start is pointed at the odd node by hand. By name, so a rename is said as one here, and
+        // not as a NullReferenceException that sends the reader looking at the runtime.
+        var attach = typeof(CompiledNode).GetMethod("Attach", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                     ?? throw new InvalidOperationException(
+                         "CompiledNode has no internal Attach(string, FlowTarget) any more, which the compiler used to wire a " +
+                         "node's ways out. Point this test at whatever wires them now.");
+
+        attach.Invoke(drawn.Start, ["out", new FlowTarget(unknown, "in")]);
+
+        return new CompiledFlow
+        {
+            Id = drawn.Id,
+            Name = drawn.Name,
+            Enabled = true,
+            Fingerprint = drawn.Fingerprint,
+            Nodes = new Dictionary<string, CompiledNode>(drawn.Nodes) { ["odd"] = unknown },
+            Start = drawn.Start,
+            Inputs = [],
+            Variables = [],
+        };
+    }
+
+    [Fact]
+    public void A_node_the_runtime_has_no_step_for_stops_its_run_there_and_does_not_leave_it_going()
+    {
+        // Nothing is thrown for the safety net to catch when a switch has no arm for a node, so without
+        // one of its own the run would stay at the node and spin a thousand empty steps at every tick.
+        var outcome = Activate(FlowWithUnknownNode());
+
+        var run = Run();
+        Assert.Equal(FlowRunState.Stopped, run.State);
+        Assert.Equal("odd", run.At);
+        Assert.StartsWith("This step failed, so the run was stopped: ", run.Fault);
+        Assert.Contains(nameof(UnknownNode), Assert.Single(Errors(outcome)));
+        Assert.Equal(1, Node("odd").Count);
+        Assert.Equal(1, Node("odd").Errors);
+        Assert.Null(_runtime.NextDue);
+    }
+
+    /// <summary>A Random that counts its draws: each {{random}} a render fills is one.</summary>
+    private sealed class CountingRandom(int seed) : Random(seed)
+    {
+        public int Draws { get; private set; }
+
+        public override double NextDouble()
+        {
+            Draws++;
+            return base.NextDouble();
+        }
     }
 }

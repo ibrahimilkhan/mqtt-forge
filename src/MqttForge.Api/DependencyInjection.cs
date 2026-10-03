@@ -164,12 +164,14 @@ public static class DependencyInjection
 
         // The flows: a store, the pure runtime, the hub's notifier, and the engine around them. The
         // engine is built by hand for AlertEngine's reason — it needs the subscriber, which is on
-        // the other side of the notifier ring — and it is handed the dispatcher the alert engine
-        // has, which is how a flow's alarm reaches the webhook and the broker without a line of
-        // either changing.
+        // the other side of the notifier ring.
+        //
+        // A flow alarm is told to the badge and the alarm list alone, and is handed to no dispatcher:
+        // a flow that wants a webhook or a publish after an alarm draws the step, and a Webhook node's
+        // posts will go to the webhook channel directly, through the engine's IFlowWebhook.
         //
         // Of the alert engine's two channels it is handed the log alone, which its pump tells. The
-        // console's half — the badge, the sound — goes through the flow notifier instead, sent from
+        // console's half — the badge and the list — goes through the flow notifier instead, sent from
         // the loop the engine's pushes go out on, as the alert engine sends its own: told on the
         // pump, the hub would have it wait on the slowest console.
         services.AddSingleton<IFlowStore>(sp =>
@@ -186,8 +188,7 @@ public static class DependencyInjection
             new DeferredSubscriber(sp),
             sp.GetRequiredService<IMqttPublisher>(),
             sp.GetRequiredService<AlertEngineOptions>(),
-            sp.GetRequiredService<ILogger<FlowEngine>>(),
-            dispatcher: sp.GetRequiredService<IAlertDispatcher>()));
+            sp.GetRequiredService<ILogger<FlowEngine>>()));
         services.AddSingleton<FlowService>();
 
         // The message path forks here rather than inside MqttnetSubscriber, which goes on knowing

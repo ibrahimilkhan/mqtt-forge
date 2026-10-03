@@ -1,11 +1,9 @@
 using System.Text.Json;
-using MqttForge.Application.Flows.Next;
+using MqttForge.Application.Flows;
 using MqttForge.Domain.Enums;
 using MqttForge.Domain.Models;
-using FlowLimits = MqttForge.Application.Flows.FlowLimits;
-using FlowMessage = MqttForge.Application.Flows.FlowMessage;
 
-namespace MqttForge.UnitTests.Application.Flows.Next;
+namespace MqttForge.UnitTests.Application.Flows;
 
 public partial class FlowCompilerTests
 {

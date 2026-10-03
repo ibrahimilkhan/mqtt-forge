@@ -10,18 +10,7 @@ public static class FlowLimits
     public const int NodesPerFlow = 200;
     public const int EdgesPerFlow = 400;
 
-    /// <summary>How many nodes one event may run before it is stopped.</summary>
-    public const int StepsPerEvent = 10_000;
-
     public const int ForEachElements = 1_000;
-    public const int RepeatCount = 1_000;
-
-    /// <summary>How many Repeat sequences one node may have running at once.</summary>
-    public const int RepeatSequences = 10;
-
-    public static readonly TimeSpan MinInterval = TimeSpan.FromMilliseconds(100);
-    public static readonly TimeSpan MaxEvery = TimeSpan.FromHours(24);
-    public static readonly TimeSpan MaxRepeatInterval = TimeSpan.FromHours(1);
 
     public const int PublishesPerSecond = 50;
 
@@ -30,7 +19,7 @@ public static class FlowLimits
 
     public const int EchoFingerprints = 1_000;
 
-    /// <summary>The largest payload a Publish node will send, in bytes once encoded.</summary>
+    /// <summary>The largest payload a Publish node sends or a Webhook node posts, in bytes once encoded.</summary>
     public const int PayloadBytes = 64 * 1024;
 
     public const int TopicTemplateLength = 1_024;
@@ -40,7 +29,7 @@ public static class FlowLimits
 
     public const int NameLength = 80;
 
-    /// <summary>The longest reason an Alarm node may be given, placeholders and all. What it renders is cut at <see cref="ReasonLength"/>.</summary>
+    /// <summary>The longest reason a Raise alarm node may be given, placeholders and all. What it renders is cut at <see cref="ReasonLength"/>.</summary>
     public const int ReasonTemplateLength = 1_024;
 
     public const int ReasonLength = 200;
@@ -65,7 +54,7 @@ public static class FlowLimits
     /// <summary>The fastest the console is told what the flows are doing.</summary>
     public static readonly TimeSpan StatusEvery = TimeSpan.FromMilliseconds(250);
 
-    // ---- the flowchart's (2026-10-03). The ones above that only the old node set uses go with it. ----
+    // ---- the flowchart's (2026-10-03) ----
 
     /// <summary>How many steps one run takes in one turn of the pump before the next run gets its turn.</summary>
     // A loop of a thousand turns with no Wait in it is a thousand turns of work; taken in one go it

@@ -6,30 +6,39 @@ using MqttForge.Application.Alerts;
 
 namespace MqttForge.Application.Flows;
 
-/// <summary>A Publish or Alarm text with <c>{{placeholders}}</c> in it, parsed once at deploy.</summary>
-// Parsed at deploy and not at every message, for the same reason CompiledPatterns compiles a
-// rule's regex once: this runs once per publish, fifty times a second at the limit, and a template
-// that fails has to fail while the person who wrote it is still looking at the editor.
+/// <summary>A text with <c>{{placeholders}}</c> in it, parsed once when its flow is compiled.</summary>
+// Parsed at compile time and not at every message, for the reason CompiledPatterns compiles a rule's
+// regex once: a template runs at every step that uses it, and one that fails has to fail while the
+// person who wrote it is still looking at the editor.
 //
-// Deliberately small. Seven placeholders cover what the examples and the 2026-09-13 cases need —
-// the topic and a level of it, the payload and a field of it, the index, the time and a random
-// number for a simulator — and anything cleverer is the Function node's job when it comes.
-// Nothing is escaped: a payload template that produces broken JSON publishes broken JSON, which is
-// what the person wrote.
+// Deliberately small: the topic and a level of it, the payload and a field of it, the index, the
+// time, a random number for a simulator, and the flow's own variables. Nothing is escaped: a payload
+// template that produces broken JSON publishes broken JSON, which is what the person wrote.
 public sealed partial class FlowTemplate
 {
     private readonly IReadOnlyList<Part> _parts;
 
-    private FlowTemplate(IReadOnlyList<Part> parts) => _parts = parts;
+    private FlowTemplate(IReadOnlyList<Part> parts)
+    {
+        _parts = parts;
+        Variables = parts.Where(part => part.Kind == PartKind.Variable).Select(part => part.Text)
+            .ToHashSet(StringComparer.Ordinal);
+    }
 
     /// <summary>The text with every placeholder taken out — what a topic check looks at.</summary>
     public string LiteralText =>
         string.Concat(_parts.Where(part => part.Kind == PartKind.Text).Select(part => part.Text));
 
+    /// <summary>No placeholder at all, so the compiler can judge the value before any run does.</summary>
+    public bool IsLiteral => _parts.All(part => part.Kind == PartKind.Text);
+
+    /// <summary>The variables it reads, which the compiler holds against the ones its flow declares.</summary>
+    public IReadOnlySet<string> Variables { get; }
+
     /// <summary>
     /// Reads the template. A problem is said in <paramref name="problem"/>, and the template that
-    /// comes back then renders the text as it was written, so a caller that only wanted the
-    /// problem never has a null to guard.
+    /// comes back then renders the text as it was written, so a caller that only wanted the problem
+    /// never has a null to guard.
     /// </summary>
     public static FlowTemplate Parse(string text, out string? problem)
     {
@@ -67,14 +76,17 @@ public sealed partial class FlowTemplate
     }
 
     /// <summary>
-    /// The text for one message, and no more than <paramref name="most"/> characters of it: what
-    /// would run past them is never written, and <paramref name="cut"/> says whether any was left out.
+    /// The text for one message and the run's variables, and no more than <paramref name="most"/>
+    /// characters of it: what would run past them is never written, and <paramref name="cut"/> says
+    /// whether any was left out.
     /// </summary>
     // Bounded here, not clipped by the caller, because the caller's limit is the only thing that
-    // bounds the work. Ninety {{payload}}s in a reason over a 64 KB payload are six million
-    // characters, every one of them built to keep the 200 an alarm shows. For the same reason the
-    // payload is read as a document once a render, however many {{$.field}}s ask for a field of it.
-    public string Render(FlowMessage message, DateTimeOffset now, Random random, int most, out bool cut)
+    // bounds the work. Ninety {{payload}}s in a reason over a 64 KB payload are six million characters,
+    // every one of them built to keep the 200 an alarm shows. For the same reason the payload is read
+    // as a document once a render, however many {{$.field}}s ask for a field of it.
+    public string Render(
+        FlowMessage message, IReadOnlyDictionary<string, string> variables, DateTimeOffset now, Random random,
+        int most, out bool cut)
     {
         // The common case is a payload with no placeholder at all: {"fan":"on"}.
         if (_parts.Count == 1 && _parts[0].Kind == PartKind.Text)
@@ -103,6 +115,9 @@ public sealed partial class FlowTemplate
                 PartKind.Now => now.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture),
                 PartKind.Random => Math.Round(part.Low + random.NextDouble() * (part.High - part.Low), 1)
                     .ToString("0.0", CultureInfo.InvariantCulture),
+                // The compiler refuses a variable the flow does not declare, so a missing one here is a
+                // template rendered outside a flow — a test, a preview — and reads as empty, like a field.
+                PartKind.Variable => variables.GetValueOrDefault(part.Text, ""),
                 _ => throw new ArgumentOutOfRangeException(nameof(part), part.Kind, "A part this template never makes."),
             };
 
@@ -157,6 +172,20 @@ public sealed partial class FlowTemplate
             return true;
         }
 
+        if (inner.StartsWith(FlowVariables.Prefix, StringComparison.Ordinal))
+        {
+            var name = inner[FlowVariables.Prefix.Length..];
+            if (!FlowVariables.IsName(name))
+            {
+                problem = $"{{{{{inner}}}}} does not name a variable: a variable's name is a letter or _, " +
+                          "then letters, digits or _.";
+                return false;
+            }
+
+            part = new Part(PartKind.Variable, Text: name);
+            return true;
+        }
+
         if (TopicLevelPattern().Match(inner) is { Success: true } level)
         {
             part = new Part(PartKind.TopicLevel, Level: int.Parse(level.Groups[1].Value, CultureInfo.InvariantCulture));
@@ -179,22 +208,26 @@ public sealed partial class FlowTemplate
         }
 
         problem = $"{{{{{inner}}}}} is not something a template can fill in. Use topic, topic[1], " +
-                  "payload, $.field, index, now or random(a,b).";
+                  "payload, $.field, var.name, index, now or random(a,b).";
         return false;
     }
 
-    private static FlowTemplate Verbatim(string text) => new([Part.Literal(text)]);
+    /// <summary>A template that renders <paramref name="text"/> as it is, braces and all: it is never read for placeholders.</summary>
+    internal static FlowTemplate Verbatim(string text) => new([Part.Literal(text)]);
 
     /// <summary>The furthest level {{topic[N]}} can name: the pattern below takes two digits.</summary>
     private const int FurthestLevel = 99;
 
-    [GeneratedRegex(@"^topic\[(\d{1,2})\]$", RegexOptions.CultureInvariant)]
+    // Both patterns write a digit as [0-9] and not \d. In .NET \d matches every Unicode decimal digit,
+    // full-width ones among them, and the invariant-culture parse after the match takes ASCII only, so
+    // with \d a full-width digit would throw out of Parse where Parse promises a problem.
+    [GeneratedRegex(@"^topic\[([0-9]{1,2})\]$", RegexOptions.CultureInvariant)]
     private static partial Regex TopicLevelPattern();
 
-    [GeneratedRegex(@"^random\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^random\(\s*(-?[0-9]+(?:\.[0-9]+)?)\s*,\s*(-?[0-9]+(?:\.[0-9]+)?)\s*\)$", RegexOptions.CultureInvariant)]
     private static partial Regex RandomPattern();
 
-    private enum PartKind { Text, Topic, TopicLevel, Payload, Field, Index, Now, Random }
+    private enum PartKind { Text, Topic, TopicLevel, Payload, Field, Index, Now, Random, Variable }
 
     private sealed record Part(PartKind Kind, string Text = "", int Level = 0, double Low = 0, double High = 0)
     {

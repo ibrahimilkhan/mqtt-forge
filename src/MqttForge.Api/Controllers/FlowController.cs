@@ -10,24 +10,22 @@ namespace MqttForge.Api.Controllers;
 [Route("api/flows")]
 public sealed class FlowController : ControllerBase
 {
-    /// <summary>The largest body a deploy may send, in bytes.</summary>
-    // Worked out from the compiler's own limits, for a flow written with ordinary payloads. A node at
-    // its largest is a Publish, an Every or an Inject: a 64 KiB payload and a 1,024-character topic,
-    // which UTF-8 makes at most 3 KiB — 67 KiB. Two hundred of those are 13.1 MiB, and their ids,
-    // types, positions and setting names, with the 400 wires between them, add 0.1 MiB more. The
-    // 2.8 MiB left is JSON's own escaping, which the compiler's limits do not count: the console
-    // writes a quote or a backslash as two bytes, so every node can be at its largest with a fifth of
-    // each template quotes. (FlowDeployLimitTests sends exactly that flow.)
+    /// <summary>The largest body a save or a test may send, in bytes.</summary>
+    // Worked out from the compiler's own limits, for a flow written with ordinary text. The largest node
+    // is now a Webhook: a 64 KiB body and a 2,048-character address, which UTF-8 makes at most 6 KiB —
+    // 70 KiB. A flow is a Start, an End and 198 of those, 13.5 MiB, and its 50 variables of 64 KiB each
+    // add 3.1 MiB. A fifth of every body and value written as quotes — the console writes a quote or a
+    // backslash as two bytes — adds 3.1 MiB more, and the ids, types, positions and wires 0.2 MiB:
+    // 19.9 MiB. (FlowDeployLimitTests sends exactly that flow.)
     //
     // Not every flow the compiler would run fits. A control character goes on the wire as \u00XX, six
-    // bytes for one, so a payload of 64 KiB of them is 384 KiB, and two hundred are 75 MiB. A limit
-    // that let those through would let 75 MiB of anything through — two and a half times Kestrel's own
-    // default of 30 MB — for the model binder to read before the compiler can refuse it on the count.
-    // So such a flow is refused with a 413, unread.
+    // bytes for one, so bodies of nothing but control characters are 74 MiB. A limit that let those
+    // through would let 74 MiB of anything through — two and a half times Kestrel's own default of
+    // 30 MB — for the model binder to read before the compiler can refuse it on the count. So such a
+    // flow is refused with a 413, unread.
     //
-    // A setting with no limit of its own — an If's value, a field path, a webhook address — has
-    // this one.
-    public const long DeployBodyBytes = 16 * 1024 * 1024;
+    // A setting with no limit of its own — an If's field, a variable's name — has this one.
+    public const long DeployBodyBytes = 24 * 1024 * 1024;
 
     private readonly FlowService _flows;
     private readonly FlowEngine _engine;
@@ -74,13 +72,6 @@ public sealed class FlowController : ControllerBase
         await _flows.DeleteAsync(id, ct)
             ? NoContent()
             : NotFoundProblem("No such flow", $"There is no flow '{id}' to delete.", "flowUnknown");
-
-    [HttpPost("{id}/nodes/{nodeId}/inject")]
-    public IActionResult Inject(string id, string nodeId) =>
-        _flows.Inject(id, nodeId)
-            ? Accepted()
-            : NotFoundProblem("Nothing to inject",
-                $"No running flow '{id}' has an Inject node '{nodeId}'. Deploy the flow first.", "injectUnknown");
 
     // A 400 in ValidationProblemDetails' shape, so the console's ApiError already carries the
     // errors map — keyed flow, node:{id} and edge:{id} — and the reason word it branches on.

@@ -1,21 +1,30 @@
 using System.Text.Json;
 using MqttForge.Application.Flows;
+using MqttForge.Domain.Enums;
 using MqttForge.Domain.Models;
 
 namespace MqttForge.Api.Contracts;
 
-/// <summary>What every running flow has done, as the hub pushes it and GET /api/flows/status answers.</summary>
-public sealed record FlowStatusDto(IReadOnlyList<FlowRunStatusDto> Flows)
+/// <summary>Every run there is, as the hub pushes it and GET /api/flows/status answers.</summary>
+public sealed record FlowStatusDto(IReadOnlyList<FlowRunStatusDto> Runs)
 {
-    public static FlowStatusDto Of(FlowStatus status) => new([.. status.Flows.Select(flow => new FlowRunStatusDto(
-        flow.Id, flow.Fault,
-        [.. flow.Nodes.Select(node => new FlowNodeStatusDto(
+    public static FlowStatusDto Of(FlowStatus status) => new([.. status.Runs.Select(run => new FlowRunStatusDto(
+        run.FlowId, run.Kind, run.State, run.At,
+        run.Waiting is { } waiting ? new FlowWaitingDto(waiting.Until, waiting.Filter) : null,
+        run.Fault, run.Variables,
+        [.. run.Nodes.Select(node => new FlowNodeStatusDto(
             node.Id, node.Count, node.Outs, node.Errors, node.Note,
             [.. node.Standing.Select(standing => new FlowStandingDto(
                 standing.Topic, standing.FiredAt, standing.Reason, standing.Count))]))]))]);
 }
 
-public sealed record FlowRunStatusDto(string Id, string? Fault, IReadOnlyList<FlowNodeStatusDto> Nodes);
+// Variables is written with its keys as they are, like Outs below: ASP.NET's naming policy renames
+// properties and never dictionary keys, and a variable is read by the name its flow gave it.
+public sealed record FlowRunStatusDto(
+    string FlowId, FlowRunKind Kind, FlowRunState State, string? At, FlowWaitingDto? Waiting, string? Fault,
+    IReadOnlyDictionary<string, string> Variables, IReadOnlyList<FlowNodeStatusDto> Nodes);
+
+public sealed record FlowWaitingDto(DateTimeOffset? Until, string? Filter);
 
 // Outs is written with its keys as they are — "yes", "sent", "raised" — because ASP.NET's naming
 // policy renames properties and never dictionary keys, and the console reads them by those names.
@@ -25,11 +34,25 @@ public sealed record FlowNodeStatusDto(
 
 public sealed record FlowStandingDto(string Topic, DateTimeOffset FiredAt, string Reason, int Count);
 
-/// <summary>A line for the debug strip.</summary>
-public sealed record FlowDebugDto(string FlowId, string NodeId, DateTimeOffset At, string Kind, string Topic, string Text)
+/// <summary>A line for the debug strip, and whether a test's run printed it.</summary>
+public sealed record FlowDebugDto(string FlowId, string NodeId, DateTimeOffset At, string Kind, string Topic, string Text, bool Test)
 {
     public static FlowDebugDto Of(FlowDebugEntry entry) =>
-        new(entry.FlowId, entry.NodeId, entry.At, entry.Kind, entry.Topic, entry.Text);
+        new(entry.FlowId, entry.NodeId, entry.At, entry.Kind, entry.Topic, entry.Text, entry.Test);
+}
+
+/// <summary>A tone a Sound node asked for.</summary>
+public sealed record FlowSoundDto(string FlowId, string NodeId, AlertSeverity Level, bool Test)
+{
+    public static FlowSoundDto Of(FlowSound sound) => new(sound.FlowId, sound.NodeId, sound.Level, sound.Test);
+}
+
+/// <summary>A notice a Notify node asked for.</summary>
+public sealed record FlowNoticeDto(
+    string FlowId, string FlowName, string NodeId, string Text, AlertSeverity Level, DateTimeOffset At, bool Test)
+{
+    public static FlowNoticeDto Of(FlowNotice notice) =>
+        new(notice.FlowId, notice.FlowName, notice.NodeId, notice.Text, notice.Level, notice.At, notice.Test);
 }
 
 /// <summary>One flow on the wire: the file's shape, one for one.</summary>

@@ -13,9 +13,9 @@ namespace MqttForge.Api;
 /// another origin read one. But a request that changes something has done it before anybody reads
 /// the answer, and a form, or a fetch in no-cors mode, sends a POST with a text/plain body and no
 /// preflight. A JSON action refuses that body with a 415 before it runs; one that needs no body
-/// does not, and pressing a flow's Inject, opening the host's folder dialog and dialling the
-/// broker again are all like that. A WebSocket is not CORS's business at all, so a page on any site
-/// could open one to the hub and hear every broadcast, the reader's broker traffic among them.
+/// does not, and opening the host's folder dialog and dialling the broker again are both like
+/// that. A WebSocket is not CORS's business at all, so a page on any site could open one to the
+/// hub and hear every broadcast, the reader's broker traffic among them.
 /// <para>
 /// So every request that is not GET, HEAD, OPTIONS or TRACE, and every request under /hubs, has to
 /// come from this app's own page. A browser says where a request came from in two headers a page

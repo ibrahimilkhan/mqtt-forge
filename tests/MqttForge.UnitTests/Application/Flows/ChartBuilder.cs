@@ -1,9 +1,8 @@
 using System.Text.Json;
-using MqttForge.Application.Flows.Next;
+using MqttForge.Application.Flows;
 using MqttForge.Domain.Models;
-using FlowJson = MqttForge.Application.Flows.FlowJson;
 
-namespace MqttForge.UnitTests.Application.Flows.Next;
+namespace MqttForge.UnitTests.Application.Flows;
 
 /// <summary>A flowchart written the way a test reads: nodes by id, wires by port.</summary>
 internal sealed class ChartBuilder
