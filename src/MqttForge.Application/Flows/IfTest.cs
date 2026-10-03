@@ -84,10 +84,12 @@ public sealed class BetweenTest : IfTest
     }
 }
 
-/// <summary>A regex, compiled the way every regex in this product is — see CompiledPatterns.</summary>
+/// <summary>A regex, compiled the way a flow compiles every one — see CompiledPatterns.CompileTimed.</summary>
 // A pattern typed into the node is compiled once, by the compiler; one that comes from a variable is
-// compiled when it changes, and the last one kept. RegexMatchTimeoutException is let out: the runtime
-// counts it on the node and ends the run's turn, since the next text like it costs another 50 ms.
+// compiled when it changes, and the last one kept. Both are compiled on the ordinary engine, with its 50 ms
+// match timeout, since the pattern, if it is read from a variable, and the text it is matched against can
+// each be 64 KB. RegexMatchTimeoutException is let out: the runtime counts it on the node and ends the
+// run's turn, since the next text like it costs another 50 ms.
 public sealed class MatchesTest(Regex? compiled) : IfTest
 {
     // The last pattern and the regex compiled from it are one value in one field, so a reader sees the
@@ -107,7 +109,7 @@ public sealed class MatchesTest(Regex? compiled) : IfTest
 
         try
         {
-            var regex = CompiledPatterns.Compile(pattern);
+            var regex = CompiledPatterns.CompileTimed(pattern);
             _last = new Entry(pattern, regex);
             return regex;
         }

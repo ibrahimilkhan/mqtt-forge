@@ -486,19 +486,52 @@ public class FlowRuntimeTests
         Assert.Equal("A value came out larger than 64 KB, so this message went no.", Assert.Single(outcome.Debug).Text);
     }
 
-    [Fact]
-    public void A_pattern_that_runs_out_of_time_goes_no_and_ends_the_runs_turn()
+    // '(a+)+$' is the textbook runaway pattern, and the linear engine answered it at once, with a no and not a
+    // word about it. A flow's patterns are all on the ordinary engine, which backtracks, so over a text made for
+    // it this one runs out of its 50 ms, and that is an error on the node, the sentence that says so, and a no.
+    // So does the pattern a rule has to put a lookbehind on to be kept off the linear engine.
+    [Theory]
+    [InlineData("(a+)+$")]
+    [InlineData(HostilePatterns.Catastrophic)]
+    public void A_pattern_that_runs_out_of_time_goes_no_and_ends_the_runs_turn(string pattern)
     {
         var chart = new ChartBuilder().Var("text", HostilePatterns.Payload)
-            .Node("start", "start").Node("test", "if", new { field = "var.text", test = "matches", value = HostilePatterns.Catastrophic })
+            .Node("start", "start").Node("test", "if", new { field = "var.text", test = "matches", value = pattern })
             .Node("say", "debug").Node("end", "end")
             .Then("start", "test").Wire("test", "yes", "end").Wire("test", "no", "say").Then("say", "end");
 
         var outcome = Activate(chart.Compile());
 
         Assert.Equal(1, Node("test").Errors);
+        Assert.Equal("The pattern took longer than 50 ms, so this message went no.", Assert.Single(outcome.Debug).Text);
         Assert.Equal(FlowRunState.Running, Run().State);
         Assert.DoesNotContain(outcome.Debug, line => line.Kind == FlowDebugEntry.Message);
+        Assert.Contains(Settle().SelectMany(next => next.Debug), line => line.NodeId == "say");
+    }
+
+    // A flow keeps neither the text nor the pattern small: a variable holds a text of 64 KB or a pattern of ten
+    // thousand characters, and a counted loop is as long as its count, so ten characters typed into the node can
+    // be as long as that. The ordinary engine starts the match again at each place in the text, and for a
+    // pattern that begins with nine thousand 'a's over a text of 64 KB of them it runs to the end of the text and
+    // back from each: fifteen seconds for one match with no timeout, twenty for the pattern from a variable, on
+    // the pump every flow shares, from a Test that needs no save. It checks its timeout as it steps, so the
+    // match ends at the 50 ms, and goes no with the error: a matches step does not hold the pump past that.
+    [Theory]
+    [InlineData("{{var.pattern}}")]
+    [InlineData("a{9000}.*z")]
+    public void A_pattern_that_is_slow_over_a_long_text_runs_out_of_time_typed_in_or_read_from_a_variable(string value)
+    {
+        var chart = new ChartBuilder()
+            .Var("text", new string('a', FlowLimits.VariableBytes)).Var("pattern", new string('a', 9_896) + ".*z")
+            .Node("start", "start").Node("test", "if", new { field = "var.text", test = "matches", value })
+            .Node("say", "debug").Node("end", "end")
+            .Then("start", "test").Wire("test", "yes", "end").Wire("test", "no", "say").Then("say", "end");
+
+        var outcome = Activate(chart.Compile());
+
+        Assert.Equal(1, Node("test").Errors);
+        Assert.Equal("The pattern took longer than 50 ms, so this message went no.", Assert.Single(outcome.Debug).Text);
+        Assert.Equal(FlowRunState.Running, Run().State);
         Assert.Contains(Settle().SelectMany(next => next.Debug), line => line.NodeId == "say");
     }
 

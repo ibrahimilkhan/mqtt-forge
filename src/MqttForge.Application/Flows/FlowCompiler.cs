@@ -485,7 +485,7 @@ public static partial class FlowCompiler
                 {
                     try
                     {
-                        compiled = CompiledPatterns.Compile(value.LiteralText);
+                        compiled = CompiledPatterns.CompileTimed(value.LiteralText);
                     }
                     catch (ArgumentException ex)
                     {
