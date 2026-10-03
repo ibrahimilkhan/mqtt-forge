@@ -2132,6 +2132,30 @@ describe('a draft and the server\'s copy', () => {
     expect(screen.getByText('$.temp > 95')).toBeInTheDocument();
   });
 
+  // Switched on as well, the flow is on, and Deactivate is offered beside the tabs: the line does not
+  // say it was not activated, only that what runs is not what was pressed.
+  it('activates nothing of a flow with no draft that another console has changed and switched on since, and says it is on', async () => {
+    const { kept, puts, reads } = keeping([{ ...watch, enabled: false }]);
+    render(<FlowsPage />);
+    await screen.findByRole('button', { name: 'Activate' });
+    const before = reads();
+
+    kept[0] = { ...v2, name: 'Boiler watch, from another console', enabled: true };
+    await userEvent.click(screen.getByRole('button', { name: 'Activate' }));
+    await waitFor(() => expect(reads()).toBeGreaterThan(before));
+    await turns();
+
+    expect(puts).toEqual([]);
+    const said =
+      'Boiler watch was changed on another console since this page read it, and switched on there. What it has now is on screen.';
+    expect(await screen.findByText(said)).toBeInTheDocument();
+    expect(outcome(said)).not.toBeNull();
+    expect(screen.getByText(said)).toHaveClass(panelStyles.fault);
+    expect(screen.queryByText(/not activated/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Deactivate' })).toBeInTheDocument();
+    expect(screen.getByText('$.temp > 95')).toBeInTheDocument();
+  });
+
   it('brings back no flow with no draft that another console has deleted since, and says so', async () => {
     const { kept, puts, reads } = keeping([{ ...watch, enabled: false }, sim]);
     render(<FlowsPage />);
@@ -2180,6 +2204,51 @@ describe('a draft and the server\'s copy', () => {
     expect(screen.getByRole('tab', { name: 'Boiler watch 2, not running, changes not saved' })).toBeInTheDocument();
   });
 
+  /*
+   * The line of an Update held back from a flow switched off tells the reader Activate saves the
+   * change: so it stands only while there is a change to save and the flow is still off. It goes
+   * once the change is let go, or another console switches the flow back on, and does not come back
+   * with a change made since, or the flow switched off again: the press it was about is over.
+   */
+
+  it('stops saying Activate saves a change held back from a flow switched off once the change is discarded', async () => {
+    const { kept, puts } = keeping([watch]);
+    render(<FlowsPage />);
+    await userEvent.type(await screen.findByLabelText('Name'), ' 2');
+    kept[0] = { ...watch, enabled: false };
+    await userEvent.click(screen.getByRole('button', { name: 'Update' }));
+    const said =
+      'Boiler watch 2 was switched off on another console since this page read it, so your change was not saved. Activate saves it and switches it on.';
+    expect(await screen.findByText(said)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(screen.queryByText(said)).not.toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText('Name'), ' 3');
+    expect(screen.getByRole('tab', { name: 'Boiler watch 3, not running, changes not saved' })).toBeInTheDocument();
+    expect(screen.queryByText(said)).not.toBeInTheDocument();
+    expect(puts).toEqual([]);
+  });
+
+  it('stops saying Activate saves a change held back from a flow switched off once another console switches it back on', async () => {
+    const { kept } = keeping([watch]);
+    const { queryClient } = render(<FlowsPage />);
+    await userEvent.type(await screen.findByLabelText('Name'), ' 2');
+    kept[0] = { ...watch, enabled: false };
+    await userEvent.click(screen.getByRole('button', { name: 'Update' }));
+    const said =
+      'Boiler watch 2 was switched off on another console since this page read it, so your change was not saved. Activate saves it and switches it on.';
+    expect(await screen.findByText(said)).toBeInTheDocument();
+
+    await elsewhere(queryClient, () => (kept[0] = watch));
+    expect(screen.queryByText(said)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Update' })).toBeInTheDocument();
+
+    await elsewhere(queryClient, () => (kept[0] = { ...watch, enabled: false }));
+    expect(screen.getByRole('button', { name: 'Activate' })).toBeInTheDocument();
+    expect(screen.queryByText(said)).not.toBeInTheDocument();
+  });
+
   it('sends nothing more for an Activate another console has already made, and says so', async () => {
     const { kept, puts, reads } = keeping([{ ...watch, enabled: false }]);
     render(<FlowsPage />);
@@ -2199,6 +2268,22 @@ describe('a draft and the server\'s copy', () => {
     expect(screen.getByText(said)).toHaveClass(panelStyles.note);
     expect(screen.getByText(said)).not.toHaveClass(panelStyles.fault);
     expect(screen.getByRole('button', { name: 'Deactivate' })).toBeInTheDocument();
+  });
+
+  it('sends a standing draft on Activate, switched on, when another console has only switched the flow on since', async () => {
+    const { kept, puts, reads } = keeping([{ ...watch, enabled: false }]);
+    render(<FlowsPage />);
+    await userEvent.type(await screen.findByLabelText('Name'), ' 2');
+    const before = reads();
+
+    kept[0] = watch;
+    await userEvent.click(screen.getByRole('button', { name: 'Activate' }));
+
+    await waitFor(() => expect(puts).toEqual([{ ...watch, name: 'Boiler watch 2', enabled: true }]));
+    expect(reads()).toBeGreaterThan(before);
+    expect(kept[0]).toEqual({ ...watch, name: 'Boiler watch 2', enabled: true });
+    await waitFor(() => expect(useFlowDraftStore.getState().drafts.watch).toBeUndefined());
+    expect(screen.queryByText(/another console/)).not.toBeInTheDocument();
   });
 
   it('sends nothing for a Deactivate another console has already made, and says so', async () => {
@@ -2237,6 +2322,52 @@ describe('a draft and the server\'s copy', () => {
     expect(outcome(said)).not.toBeNull();
   });
 
+  /*
+   * The flow was the only one: the list the press reads has none, and the page becomes the way to
+   * start a flow. The keyboard goes to the first way to start, as it does when the last flow is
+   * deleted here, and the line that says why goes into a region already in the page.
+   */
+
+  it('says on the empty page an Activate of the last flow, which another console has deleted since', async () => {
+    const { kept, puts, reads } = keeping([{ ...watch, enabled: false }]);
+    render(<FlowsPage />);
+    const activate = await screen.findByRole('button', { name: 'Activate' });
+    const before = reads();
+    const heard = listen();
+
+    kept.splice(0, 1);
+    await userEvent.click(activate);
+    await waitFor(() => expect(reads()).toBeGreaterThan(before));
+    await turns();
+
+    const said = 'Boiler watch was deleted on another console, so it was not activated.';
+    expect(await screen.findByText(said)).toBeInTheDocument();
+    expect(heard()).toContain(said);
+    expect(puts).toEqual([]);
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Start from an example' }));
+  });
+
+  it('says on the empty page a Deactivate of the last flow, which another console has deleted since', async () => {
+    const { kept, puts, reads } = keeping([watch]);
+    render(<FlowsPage />);
+    const deactivate = await screen.findByRole('button', { name: 'Deactivate' });
+    const before = reads();
+    const heard = listen();
+
+    kept.splice(0, 1);
+    await userEvent.click(deactivate);
+    await waitFor(() => expect(reads()).toBeGreaterThan(before));
+    await turns();
+
+    const said = 'Boiler watch was deleted on another console, so there was nothing to switch off.';
+    expect(await screen.findByText(said)).toBeInTheDocument();
+    expect(heard()).toContain(said);
+    expect(puts).toEqual([]);
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Start from an example' }));
+  });
+
   // Without the list there is no telling whether another console has overtaken the draft, so
   // nothing goes, and the page says why rather than leaving the reader with a press that did nothing.
   it('sends nothing when the list cannot be read first, and says so', async () => {
@@ -2258,6 +2389,28 @@ describe('a draft and the server\'s copy', () => {
 /** The answer the server gives a request it could not carry out, for a reason that is not about the flow. */
 /** The line under the tabs that says what did not go through, as a screen reader is told it. */
 const outcome = (text: string | RegExp) => screen.getByText(text).closest('[aria-live="polite"]');
+
+/**
+ * Listens from now on for the lines put into a polite live region that is already in the page, and
+ * hands back, once, what it heard. A region that comes into the page with its words already inside
+ * is not read out by every screen reader, so a line that comes in that way is not heard here either.
+ */
+function listen() {
+  const heard: string[] = [];
+  const take = (records: MutationRecord[]) => {
+    for (const record of records)
+      if (record.target instanceof Element && record.target.matches('[aria-live="polite"]'))
+        for (const node of record.addedNodes) heard.push(node.textContent ?? '');
+  };
+  const observer = new MutationObserver(take);
+  observer.observe(document.body, { childList: true, subtree: true });
+
+  return () => {
+    take(observer.takeRecords());
+    observer.disconnect();
+    return heard;
+  };
+}
 
 /**
  * What the reader asked of the server that did not go through. The page covers the log, so each is

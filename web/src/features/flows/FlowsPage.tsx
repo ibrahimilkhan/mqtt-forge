@@ -33,7 +33,7 @@ import { useFlowDraftStore } from './flowDraftStore';
 import { Inspector } from './Inspector';
 import { Palette } from './Palette';
 import { FLOW_PANEL, focusTab, tabIdOf, Toolbar } from './Toolbar';
-import { useSave, type Held, type SaveKind } from './useSave';
+import { useSave, type Held, type SaveKind, type Unsaved } from './useSave';
 import { useTest } from './useTest';
 import styles from './FlowsPage.module.css';
 
@@ -65,7 +65,9 @@ const standingAs = (standings: ReadonlyArray<readonly [string, DraftStanding]>, 
  * flow the server has changed, or — `gone` — no longer has, in the words its tab says it in.
  *
  * A press that found done what it asked for is a note, not a fault: nothing went wrong, and the
- * flow is as the reader wanted it.
+ * flow is as the reader wanted it. One that found the flow on, but changed, is a fault all the same
+ * — the flow runs, though not as the reader pressed it — and is not called not activated: it is on,
+ * and Deactivate beside the tabs says so.
  */
 function heldSaying(kind: SaveKind, held: Held, name: string, gone: boolean): { text: string; fault: boolean } {
   const not = kind === 'activate' ? 'activated' : 'saved';
@@ -79,6 +81,11 @@ function heldSaying(kind: SaveKind, held: Held, name: string, gone: boolean): { 
     case 'changed':
       return {
         text: `${name} was changed on another console since this page read it, so it was not ${not}. What it has now is on screen.`,
+        fault: true,
+      };
+    case 'changedOn':
+      return {
+        text: `${name} was changed on another console since this page read it, and switched on there. What it has now is on screen.`,
         fault: true,
       };
     case 'deleted':
@@ -271,6 +278,37 @@ function Page() {
     else document.getElementById(START)?.focus();
   }, [flows, shown]);
 
+  // What a save held back says (see heldSaying), for as long as it is so. A draft held back is said
+  // while it is held back on the copy it was started from: kept over the server's copy, or let go,
+  // it is held back no longer, and the line would ask the reader for what they have done. An Update
+  // held back from a flow another console switched off says Activate saves the change, which is so
+  // while there is a change to save and the flow is still off: not once the reader has let the
+  // change go, nor once another console has switched the flow back on. The rest stand until the
+  // next save, as a failure does.
+  //
+  // A line that has stopped being so is gone for good, though what it stood on can come about again
+  // — a new change of the same copy, the flow switched off once more — because the press it was
+  // about is over: said again, it would tell the reader of a press they never made. So the page
+  // keeps the answer whose line went, and says no more of it; the next save's answer is new.
+  const [spent, setSpent] = useState<Unsaved | null>(null);
+  const held = save.isSuccess && save.data !== null && 'held' in save.data && save.data !== spent ? save.data : null;
+  const pressed = save.isSuccess ? save.variables.kind : null;
+  const stands =
+    held === null || pressed === null
+      ? false
+      : held.held === 'overtaken'
+        ? overtaken.has(held.id) && bases[held.id] === held.base
+        : held.held === 'off' && pressed !== 'deactivate'
+          ? changed.has(held.id) && byId.get(held.id)?.enabled === false
+          : true;
+  useLayoutEffect(() => {
+    if (held !== null && !stands) setSpent(held);
+  }, [held, stands]);
+  const heldLine =
+    held !== null && pressed !== null && stands
+      ? heldSaying(pressed, held.held, held.name, !deployedIds.has(held.id))
+      : null;
+
   if (isPending) return <p className={styles.missing}>Reading the flows…</p>;
 
   // Only when there has never been an answer. A read that fails once the flows are on screen
@@ -286,8 +324,6 @@ function Page() {
       </p>
     );
 
-  if (!shown) return <Start />;
-
   // For its actions, which the handlers below call when they run. Actions never change, so a
   // subscription to them would only re-render the page for nothing.
   const store = useFlowDraftStore.getState();
@@ -296,68 +332,64 @@ function Page() {
   // already there, in the first clear place across from it and then down a row — as many across as
   // fit between the middle and the right edge of the view — so three clicks are three nodes that
   // can each be read and grabbed, and not one stack.
-  const add = (type: FlowNodeType) => {
+  const add = (flow: FlowDto, type: FlowNodeType) => {
     const box = document.getElementById(CANVAS)?.getBoundingClientRect();
     const middle = screenToFlowPosition({ x: box ? box.left + box.width / 2 : 0, y: box ? box.top + box.height / 2 : 0 });
     const right = screenToFlowPosition({ x: box ? box.right : 0, y: 0 }).x;
     const { start, across } = placesInView(middle, right, NODE_BOX, ROOM);
-    const at = freeSpot(shown, start, NODE_BOX, across, ROOM);
+    const at = freeSpot(flow, start, NODE_BOX, across, ROOM);
     const id = newId('n');
 
-    store.edit(shown, (flow) => addNode(flow, type, at, id));
+    store.edit(flow, (drawing) => addNode(drawing, type, at, id));
     store.select(id);
   };
 
-  // What a save held back says (see heldSaying). A draft held back is said while it is held back on
-  // the copy it was started from: kept over the server's copy, or let go, it is held back no longer,
-  // and the line would ask the reader for what they have done. The rest stand until the next save,
-  // as a failure does.
-  const heldLine =
-    save.isSuccess &&
-    save.data !== null &&
-    'held' in save.data &&
-    (save.data.held !== 'overtaken' || (overtaken.has(save.data.id) && bases[save.data.id] === save.data.base))
-      ? heldSaying(save.variables.kind, save.data.held, save.data.name, !deployedIds.has(save.data.id))
-      : null;
-
+  // With no flow left — none yet, or the last one gone — the page is the way to start one, in the
+  // console's own empty-page block, which sizes itself: the page's grid is for a flow on screen. The
+  // line under the tabs stays where it was all the same, in the region it was in (see below).
   return (
     <Failures.Provider value={failures}>
-      <div className={styles.page}>
+      <div className={shown ? styles.page : undefined}>
         <div className={styles.top}>
-          <Toolbar
-            flows={flows}
-            changed={changed}
-            overtaken={overtaken}
-            deployed={deployedIds}
-            current={shown.id}
-            active={activeIds}
-            running={running}
-            testing={testing}
-            refused={refused}
-            busy={save.isPending || test.start.isPending}
-            onNew={() => {
-              const flow = emptyFlow(nextName(flows));
-              store.put(flow);
-              store.show(flow.id);
-            }}
-            // Not for a draft held back. Its pane says why it is held, with Keep mine and Discard under
-            // the sentence — where the reader is looking when they choose, and the one place both
-            // answers are — so a second Discard up here would only ask the same question twice.
-            onDiscard={changed.has(shown.id) && byId.has(shown.id) ? () => store.discard(shown.id) : undefined}
-            onTest={() => test.start.mutate(shown)}
-            onStop={() => test.stop.mutate(shown.id)}
-            onActivate={() => save.mutate({ flow: shown, kind: 'activate' })}
-            // Offered for a draft held back too, off, where it says why: a flow that is on with
-            // changes the reader cannot send yet is not one with nothing to send.
-            onUpdate={
-              changed.has(shown.id) || overtaken.has(shown.id) ? () => save.mutate({ flow: shown, kind: 'update' }) : undefined
-            }
-            // The server's copy, never the drawing: a drawing the server would refuse cannot keep a flow
-            // from being stopped. (useSave sends the copy it reads just before, which may be newer.)
-            onDeactivate={
-              activeIds.has(shown.id) ? () => save.mutate({ flow: byId.get(shown.id)!, kind: 'deactivate' }) : undefined
-            }
-          />
+          {shown && (
+            <Toolbar
+              flows={flows}
+              changed={changed}
+              overtaken={overtaken}
+              deployed={deployedIds}
+              current={shown.id}
+              active={activeIds}
+              running={running}
+              testing={testing}
+              refused={refused}
+              busy={save.isPending || test.start.isPending}
+              onNew={() => {
+                const flow = emptyFlow(nextName(flows));
+                store.put(flow);
+                store.show(flow.id);
+              }}
+              // Not for a draft held back. Its pane says why it is held, with Keep mine and Discard
+              // under the sentence — where the reader is looking when they choose, and the one place
+              // both answers are — so a second Discard up here would only ask the same question twice.
+              onDiscard={changed.has(shown.id) && byId.has(shown.id) ? () => store.discard(shown.id) : undefined}
+              onTest={() => test.start.mutate(shown)}
+              onStop={() => test.stop.mutate(shown.id)}
+              onActivate={() => save.mutate({ flow: shown, kind: 'activate' })}
+              // Offered for a draft held back too, off, where it says why: a flow that is on with
+              // changes the reader cannot send yet is not one with nothing to send.
+              onUpdate={
+                changed.has(shown.id) || overtaken.has(shown.id)
+                  ? () => save.mutate({ flow: shown, kind: 'update' })
+                  : undefined
+              }
+              // The server's copy, never the drawing: a drawing the server would refuse cannot keep a
+              // flow from being stopped. (useSave sends the copy it reads just before, which may be
+              // newer.)
+              onDeactivate={
+                activeIds.has(shown.id) ? () => save.mutate({ flow: byId.get(shown.id)!, kind: 'deactivate' }) : undefined
+              }
+            />
+          )}
 
           {/* The page covers the log, so what did not go through is said here: a save or a test that
               failed, or that the server refused — which marks the nodes it is about, but a flow
@@ -370,7 +402,14 @@ function Page() {
 
               A refusal is said while the very refusal its request filed stands. A flow has one at a
               time, the last the server gave, whose marks are the ones on the drawing; the line of a
-              test or a save refused before it would say marks are there that are gone. */}
+              test or a save refused before it would say marks are there that are gone.
+
+              The region stays in the page whatever the page shows, the empty page included. A press
+              can take the last flow away with it — an Activate or a Deactivate of a flow another
+              console has deleted — and the line that says so goes into a region that was there
+              before it: a region that comes into the page with its words already inside is not read
+              out by every screen reader, and the empty page comes in with the very answer that
+              holds the line. */}
           <div aria-live="polite">
             {/* In the words of the button: what a Deactivate did not do is stop the flow, which runs on. */}
             {save.isError && (
@@ -405,29 +444,33 @@ function Page() {
           </div>
         </div>
 
-        {/* What the tabs control: everything under them is about the flow on screen, the palette
-            included, since what it adds goes into that flow. */}
-        <div id={FLOW_PANEL} role="tabpanel" aria-labelledby={tabIdOf(shown.id)} className={styles.flow}>
-          <div className={styles.body}>
-            <Palette onAdd={add} />
-            {/* Keyed apart as well as by flow: siblings that share a key cannot be told apart, and
-                each tab shown would leave its canvas behind in the page. */}
-            <FlowCanvas key={`canvas-${shown.id}`} flow={shown} problems={problems[shown.id] ?? NOTHING_WRONG} />
-            {/* One inspector per flow, like the canvas: what it holds — a delete it is asking about —
-                is about the flow it was opened on, and must not stand over the next one. */}
-            <Inspector
-              key={`inspector-${shown.id}`}
-              flow={shown}
-              deployed={byId.get(shown.id)}
-              running={running.has(shown.id)}
-              overtaken={overtaken.has(shown.id)}
-              problems={problems[shown.id] ?? NOTHING_WRONG}
-              facts={{ allowWebhooks: data.allowWebhooks }}
-            />
-          </div>
+        {shown ? (
+          // What the tabs control: everything under them is about the flow on screen, the palette
+          // included, since what it adds goes into that flow.
+          <div id={FLOW_PANEL} role="tabpanel" aria-labelledby={tabIdOf(shown.id)} className={styles.flow}>
+            <div className={styles.body}>
+              <Palette onAdd={(type) => add(shown, type)} />
+              {/* Keyed apart as well as by flow: siblings that share a key cannot be told apart, and
+                  each tab shown would leave its canvas behind in the page. */}
+              <FlowCanvas key={`canvas-${shown.id}`} flow={shown} problems={problems[shown.id] ?? NOTHING_WRONG} />
+              {/* One inspector per flow, like the canvas: what it holds — a delete it is asking about —
+                  is about the flow it was opened on, and must not stand over the next one. */}
+              <Inspector
+                key={`inspector-${shown.id}`}
+                flow={shown}
+                deployed={byId.get(shown.id)}
+                running={running.has(shown.id)}
+                overtaken={overtaken.has(shown.id)}
+                problems={problems[shown.id] ?? NOTHING_WRONG}
+                facts={{ allowWebhooks: data.allowWebhooks }}
+              />
+            </div>
 
-          <DebugStrip flow={shown} />
-        </div>
+            <DebugStrip flow={shown} />
+          </div>
+        ) : (
+          <Start />
+        )}
       </div>
     </Failures.Provider>
   );

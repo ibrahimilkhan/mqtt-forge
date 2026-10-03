@@ -45,12 +45,14 @@ export type SaveKind = 'activate' | 'update' | 'deactivate';
  *   (see standingOf). It stays, held back, until its reader keeps it or lets it go in its pane.
  * - `changed`, `deleted`: a flow with no draft, pressed as the copy this page read, which another
  *   console has since changed or deleted. What the server has now is on screen in its place.
+ * - `changedOn`: changed, and switched on as well, where an Activate of a flow with no draft finds
+ *   it: the flow is on, though not as it was pressed.
  * - `off`: switched off by another console since this page read it. An Update would start again a
  *   flow somebody stopped; a Deactivate finds done what it asked for.
  * - `on`: switched on by another console since this page read it, which is all an Activate of a
  *   flow with no draft asked for.
  */
-export type Held = 'overtaken' | 'changed' | 'deleted' | 'off' | 'on';
+export type Held = 'overtaken' | 'changed' | 'changedOn' | 'deleted' | 'off' | 'on';
 
 /**
  * A save that did not save what was pressed: the flow, by its id and by the name it was pressed
@@ -86,8 +88,9 @@ const unread = (error: unknown) =>
  * Whether a flow is switched on is no part of a drawing (see canonical), so each press says what it
  * expects of it. Update expects a flow that is on: one another console has switched off since is
  * not started again over whoever stopped it. Activate of a flow with no draft expects one that is
- * off: one switched on since has nothing left to send. A draft is the reader's changes, and
- * Activate saves them however the flow is switched now.
+ * off: one switched on since has nothing left to send, and is said to be on whether or not it was
+ * changed as well. A draft is the reader's changes, and Activate saves them however the flow is
+ * switched now.
  *
  * Deactivate sends the server's copy, not the drawing: the run stops however the drawing stands. The
  * copy is the one in the list just read, so a flow another console has saved since goes back
@@ -107,7 +110,7 @@ function weigh(
     if (standingOf(flow, base, copy) === 'overtaken') return 'overtaken';
   } else {
     if (copy === undefined) return 'deleted';
-    if (!sameFlow(flow, copy)) return 'changed';
+    if (!sameFlow(flow, copy)) return kind === 'activate' && copy.enabled ? 'changedOn' : 'changed';
     if (kind === 'activate' && copy.enabled) return 'on';
   }
 
