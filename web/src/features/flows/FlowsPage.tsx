@@ -17,6 +17,7 @@ import { CANVAS, FlowCanvas, NODE_HEIGHT, NODE_WIDTH } from './FlowCanvas';
 import {
   addNode,
   emptyFlow,
+  fingerprint,
   freeSpot,
   newId,
   nextName,
@@ -32,7 +33,7 @@ import { useFlowDraftStore } from './flowDraftStore';
 import { Inspector } from './Inspector';
 import { Palette } from './Palette';
 import { FLOW_PANEL, focusTab, tabIdOf, Toolbar } from './Toolbar';
-import { useSave } from './useSave';
+import { useSave, type Held, type SaveKind } from './useSave';
 import { useTest } from './useTest';
 import styles from './FlowsPage.module.css';
 
@@ -59,6 +60,44 @@ const standingAs = (standings: ReadonlyArray<readonly [string, DraftStanding]>, 
   new Set(standings.flatMap(([id, standing]) => (standing === wanted ? [id] : [])));
 
 /**
+ * What the page says of a press the list read first held back (see Held), naming the flow as it
+ * was pressed, and what was not done in the words of the button pressed. A draft held back is of a
+ * flow the server has changed, or — `gone` — no longer has, in the words its tab says it in.
+ *
+ * A press that found done what it asked for is a note, not a fault: nothing went wrong, and the
+ * flow is as the reader wanted it.
+ */
+function heldSaying(kind: SaveKind, held: Held, name: string, gone: boolean): { text: string; fault: boolean } {
+  const not = kind === 'activate' ? 'activated' : 'saved';
+
+  switch (held) {
+    case 'overtaken':
+      return {
+        text: `${name} was ${gone ? 'deleted' : 'changed'} on another console since you started, so your changes were held back. Keep yours or discard them in the flow’s pane.`,
+        fault: true,
+      };
+    case 'changed':
+      return {
+        text: `${name} was changed on another console since this page read it, so it was not ${not}. What it has now is on screen.`,
+        fault: true,
+      };
+    case 'deleted':
+      return kind === 'deactivate'
+        ? { text: `${name} was deleted on another console, so there was nothing to switch off.`, fault: true }
+        : { text: `${name} was deleted on another console, so it was not ${not}.`, fault: true };
+    case 'off':
+      return kind === 'deactivate'
+        ? { text: `${name} was already switched off on another console.`, fault: false }
+        : {
+            text: `${name} was switched off on another console since this page read it, so your change was not saved. Activate saves it and switches it on.`,
+            fault: true,
+          };
+    case 'on':
+      return { text: `${name} was already activated on another console.`, fault: false };
+  }
+}
+
+/**
  * The Flows page. The default export, because React.lazy loads a module's default.
  *
  * A browser with no ResizeObserver cannot size a canvas, so it is told so rather than shown a
@@ -82,6 +121,7 @@ function Page() {
   const bases = useFlowDraftStore((state) => state.bases);
   const current = useFlowDraftStore((state) => state.current);
   const refusals = useFlowDraftStore((state) => state.refusals);
+  const refusedCopies = useFlowDraftStore((state) => state.refusedCopies);
   const unkept = useFlowDraftStore((state) => state.unkept);
   const asked = useFlowAlarmStore((state) => state.asked);
   // Which flows have a run going, and nothing else of the numbers: that is all the page draws of them,
@@ -161,13 +201,28 @@ function Page() {
   // the meantime is an edit of the copy that was sent (see useSave), and taken back to the copy the
   // server had, it says to undo the change, not that there is nothing to keep. Deactivate sends the
   // server's copy, not the drawing, so the drawing is not on its way.
-  const sending = save.isPending && save.variables.enabled ? save.variables.flow.id : null;
+  const sending = save.isPending && save.variables.kind !== 'deactivate' ? save.variables.flow.id : null;
   useLayoutEffect(() => {
     if (!data || data.unreadable) return;
 
     const spent = standings.flatMap(([id, standing]) => (standing === 'nothing' && id !== sending ? [id] : []));
     if (spent.length > 0) useFlowDraftStore.getState().settle(spent);
   }, [data, sending, standings]);
+
+  // A refusal of the server's own copy of a flow — tested, or activated, with no draft — is about
+  // that copy, and has no draft to go with (see refusedCopies). Once the server has another copy,
+  // or none, what was refused is not there any more: kept, the refusal would mark the copy another
+  // console saved with what the server said of the one it replaced. Switched on or off, a copy is
+  // the same copy. The page tells the store, as it does of the drafts, once the list has been read.
+  useLayoutEffect(() => {
+    if (!data || data.unreadable) return;
+
+    const gone = Object.entries(refusedCopies).flatMap(([id, copy]) => {
+      const now = byId.get(id);
+      return now !== undefined && fingerprint(now) === copy ? [] : [id];
+    });
+    if (gone.length > 0) useFlowDraftStore.getState().lapse(gone);
+  }, [byId, data, refusedCopies]);
 
   // A flow alarm the reader asked to see, from its row on the alarm wall: the page opens on the
   // flow it came from, with its Alarm node picked. Only once the flows are read, since until then
@@ -253,6 +308,18 @@ function Page() {
     store.select(id);
   };
 
+  // What a save held back says (see heldSaying). A draft held back is said while it is held back on
+  // the copy it was started from: kept over the server's copy, or let go, it is held back no longer,
+  // and the line would ask the reader for what they have done. The rest stand until the next save,
+  // as a failure does.
+  const heldLine =
+    save.isSuccess &&
+    save.data !== null &&
+    'held' in save.data &&
+    (save.data.held !== 'overtaken' || (overtaken.has(save.data.id) && bases[save.data.id] === save.data.base))
+      ? heldSaying(save.variables.kind, save.data.held, save.data.name, !deployedIds.has(save.data.id))
+      : null;
+
   return (
     <Failures.Provider value={failures}>
       <div className={styles.page}>
@@ -279,32 +346,44 @@ function Page() {
             onDiscard={changed.has(shown.id) && byId.has(shown.id) ? () => store.discard(shown.id) : undefined}
             onTest={() => test.start.mutate(shown)}
             onStop={() => test.stop.mutate(shown.id)}
-            onActivate={() => save.mutate({ flow: shown, enabled: true })}
+            onActivate={() => save.mutate({ flow: shown, kind: 'activate' })}
             // Offered for a draft held back too, off, where it says why: a flow that is on with
             // changes the reader cannot send yet is not one with nothing to send.
             onUpdate={
-              changed.has(shown.id) || overtaken.has(shown.id) ? () => save.mutate({ flow: shown, enabled: true }) : undefined
+              changed.has(shown.id) || overtaken.has(shown.id) ? () => save.mutate({ flow: shown, kind: 'update' }) : undefined
             }
             // The server's copy, never the drawing: a drawing the server would refuse cannot keep a flow
             // from being stopped. (useSave sends the copy it reads just before, which may be newer.)
-            onDeactivate={activeIds.has(shown.id) ? () => save.mutate({ flow: byId.get(shown.id)!, enabled: false }) : undefined}
+            onDeactivate={
+              activeIds.has(shown.id) ? () => save.mutate({ flow: byId.get(shown.id)!, kind: 'deactivate' }) : undefined
+            }
           />
 
           {/* The page covers the log, so what did not go through is said here: a save or a test that
               failed, or that the server refused — which marks the nodes it is about, but a flow
-              refused on another tab has only its lamp to show it — a test that did not stop, a flow
-              not deleted, and drafts this browser would not keep. One polite live region, so a
-              reader who cannot see the marks is told as well, and nothing in it is drawn from the
-              numbers, so a push of them says nothing. A refusal is said while it stands, and named
-              as the flow was sent: a name read from the draft would be said again with every letter
-              of a rename. */}
+              refused on another tab has only its lamp to show it — a save held back, or one that
+              found done what it asked for, a test that did not stop, a flow not deleted, and drafts
+              this browser would not keep. One polite live region, so a reader who cannot see the
+              marks is told as well, and nothing in it is drawn from the numbers, so a push of them
+              says nothing. A flow is named as it was when the reader pressed: a name read from the
+              draft would be said again with every letter of a rename.
+
+              A refusal is said while the very refusal its request filed stands. A flow has one at a
+              time, the last the server gave, whose marks are the ones on the drawing; the line of a
+              test or a save refused before it would say marks are there that are gone. */}
           <div aria-live="polite">
-            {save.isError && <p className={panel.fault}>Not saved. {describeError(save.error)}</p>}
-            {save.data && save.data.id in refusals && (
+            {/* In the words of the button: what a Deactivate did not do is stop the flow, which runs on. */}
+            {save.isError && (
+              <p className={panel.fault}>
+                {save.variables.kind === 'deactivate' ? 'Not switched off.' : 'Not saved.'} {describeError(save.error)}
+              </p>
+            )}
+            {save.data && 'refused' in save.data && refusals[save.data.id] === save.data.refused && (
               <p className={panel.fault}>The server refused {save.data.name}, so it was not saved. What it refused is marked on it.</p>
             )}
+            {heldLine !== null && <p className={heldLine.fault ? panel.fault : panel.note}>{heldLine.text}</p>}
             {test.start.isError && <p className={panel.fault}>The test did not start. {describeError(test.start.error)}</p>}
-            {test.start.data === 'refused' && test.start.variables.id in refusals && (
+            {test.start.data && refusals[test.start.variables.id] === test.start.data && (
               <p className={panel.fault}>
                 The server refused {titleOf(test.start.variables)}, so the test did not start. What it refused is marked on it.
               </p>

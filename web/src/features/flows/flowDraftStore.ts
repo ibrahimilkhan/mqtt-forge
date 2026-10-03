@@ -36,10 +36,18 @@ type DraftState = {
   wire: string | null;
   /**
    * What the server said, the last time it refused a flow, of what it was sent: flow id, then flow /
-   * node:{id} / edge:{id}. What it was sent is the flow's draft, or — for a Test of a flow with none —
-   * the server's own copy. A refusal of a draft goes with that draft, however the draft goes.
+   * node:{id} / edge:{id}. What it was sent is the flow's draft, or — for a Test or an Activate of a
+   * flow with none — the server's own copy. A refusal of a draft goes with that draft, however the
+   * draft goes.
    */
   refusals: Record<string, Record<string, string[]>>;
+  /**
+   * For a refusal of the server's own copy of a flow — tested, or activated, with no draft — that
+   * copy's fingerprint. Such a refusal is about the copy, not about anything drawn here, and has no
+   * draft to go with: it lapses once the server has another copy, or none. Only the page reads the
+   * list, so it is the page that tells the store, through lapse.
+   */
+  refusedCopies: Record<string, string>;
   /**
    * This browser would not keep a draft — its storage is full, or site data is blocked — so a
    * reload brings back older drafts than the ones on screen, or none. Set by the first draft it
@@ -76,10 +84,19 @@ type DraftState = {
   select: (nodeId: string | null) => void;
   /** The canvas says which wire is picked: its id when exactly one wire and no node is, or null. */
   pickWire: (edgeId: string | null) => void;
-  refuse: (flowId: string, errors: Record<string, string[]>) => void;
+  /**
+   * Files what the server said when it refused `sent`: the flow's draft, when `drafted` says the
+   * flow had one as the request went, or else the server's own copy of a flow with none, which is
+   * filed against that copy (see refusedCopies). A draft let go while the request was out — on
+   * another tab, or taken back — has nothing left for the answer to be about, and nothing is filed:
+   * marked on the copy the page shows in its place, it would say the server refused a flow nobody
+   * sent. A test and every save of a drawing file theirs here, so the rule is kept in one place.
+   */
+  refuse: (sent: FlowDto, drafted: boolean, errors: Record<string, string[]>) => void;
   /**
    * What the server refused of these flows is no longer what is there: a test of each has started
-   * since, so the drawing it refused is not the one running now. The drafts stay.
+   * since, so the drawing it refused is not the one running now; or the server's copy it refused
+   * has since been replaced, or deleted. The drafts stay.
    */
   lapse: (flowIds: readonly string[]) => void;
 };
@@ -213,6 +230,12 @@ function draftsKept(): Pick<DraftState, 'drafts' | 'bases'> {
 const without = <T>(record: Record<string, T>, ...keys: readonly string[]): Record<string, T> =>
   Object.fromEntries(Object.entries(record).filter(([id]) => !keys.includes(id)));
 
+/** These flows' refusals gone, and with them which copies of the server's any of them was of. */
+const unrefused = (state: Pick<DraftState, 'refusals' | 'refusedCopies'>, flowIds: readonly string[]) => ({
+  refusals: without(state.refusals, ...flowIds),
+  refusedCopies: without(state.refusedCopies, ...flowIds),
+});
+
 /**
  * What the page has changed and not saved.
  *
@@ -240,6 +263,7 @@ export function createFlowDraftStore() {
     selected: null,
     wire: null,
     refusals: {},
+    refusedCopies: {},
     unkept: false,
 
     edit: (base, change) =>
@@ -259,7 +283,7 @@ export function createFlowDraftStore() {
       set((state) => ({
         drafts: without(state.drafts, ...flowIds),
         bases: without(state.bases, ...flowIds),
-        refusals: without(state.refusals, ...flowIds),
+        ...unrefused(state, flowIds),
       })),
 
     rebase: (flowId, base) => set((state) => ({ bases: { ...state.bases, [flowId]: base } })),
@@ -268,7 +292,7 @@ export function createFlowDraftStore() {
       set((state) => ({
         drafts: without(state.drafts, id),
         bases: without(state.bases, id),
-        refusals: without(state.refusals, id),
+        ...unrefused(state, [id]),
         // A selection belongs to whatever canvas is open; discarding some other flow's draft
         // must not blank out what the reader is looking at right now.
         selected: state.current === id ? null : state.selected,
@@ -281,9 +305,20 @@ export function createFlowDraftStore() {
 
     pickWire: (wire) => set({ wire }),
 
-    refuse: (flowId, errors) => set((state) => ({ refusals: { ...state.refusals, [flowId]: errors } })),
+    refuse: (sent, drafted, errors) =>
+      set((state) =>
+        drafted && !(sent.id in state.drafts)
+          ? state
+          : {
+              refusals: { ...state.refusals, [sent.id]: errors },
+              // Of the server's copy, it goes with that copy; of a draft, with the draft.
+              refusedCopies: drafted
+                ? without(state.refusedCopies, sent.id)
+                : { ...state.refusedCopies, [sent.id]: fingerprint(sent) },
+            },
+      ),
 
-    lapse: (flowIds) => set((state) => ({ refusals: without(state.refusals, ...flowIds) })),
+    lapse: (flowIds) => set((state) => unrefused(state, flowIds)),
   }));
 
   // True while this store takes in another tab's write, which is already in storage.
@@ -318,7 +353,7 @@ export function createFlowDraftStore() {
     }
     if (!ours || (event.key !== null && !event.key.startsWith(DRAFT_PREFIX))) return;
 
-    const { drafts, bases, refusals } = store.getState();
+    const { drafts, bases, refusals, refusedCopies } = store.getState();
     let next: Pick<DraftState, 'drafts' | 'bases'>;
 
     if (event.key === null) {
@@ -347,7 +382,7 @@ export function createFlowDraftStore() {
 
     hearing = true;
     try {
-      store.setState(gone.length > 0 ? { ...next, refusals: without(refusals, ...gone) } : next);
+      store.setState(gone.length > 0 ? { ...next, ...unrefused({ refusals, refusedCopies }, gone) } : next);
     } finally {
       hearing = false;
     }

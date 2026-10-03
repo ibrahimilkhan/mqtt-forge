@@ -31,8 +31,37 @@ export async function putInList(queryClient: QueryClient, id: string, kept: Flow
   });
 }
 
-/** A flow the server refused, by its id and by the name it was sent with. */
-export type Refused = { id: string; name: string };
+/**
+ * The button pressed, which says what the press expects of the server's copy: Activate, of a flow
+ * the server has switched off or does not have; Update and Deactivate, of one it has switched on.
+ */
+export type SaveKind = 'activate' | 'update' | 'deactivate';
+
+/**
+ * Why a save sent nothing: what the list it read first had of the flow that the page did not, when
+ * the reader pressed.
+ *
+ * - `overtaken`: the draft was started from a copy another console has since replaced or deleted
+ *   (see standingOf). It stays, held back, until its reader keeps it or lets it go in its pane.
+ * - `changed`, `deleted`: a flow with no draft, pressed as the copy this page read, which another
+ *   console has since changed or deleted. What the server has now is on screen in its place.
+ * - `off`: switched off by another console since this page read it. An Update would start again a
+ *   flow somebody stopped; a Deactivate finds done what it asked for.
+ * - `on`: switched on by another console since this page read it, which is all an Activate of a
+ *   flow with no draft asked for.
+ */
+export type Held = 'overtaken' | 'changed' | 'deleted' | 'off' | 'on';
+
+/**
+ * A save that did not save what was pressed: the flow, by its id and by the name it was pressed
+ * with — in a live region, a name read from the draft would be said again with every letter of a
+ * rename — and either why nothing was sent, or what the server refused of it. With why, the copy a
+ * draft was started from, for the page to say a draft held back while that draft is held back; with
+ * what was refused, the very object filed, for the page to say it while that refusal stands.
+ */
+export type Unsaved =
+  | { id: string; name: string; held: Held; base: string | null }
+  | { id: string; name: string; refused: Record<string, string[]> };
 
 /**
  * What a save says when the list could not be read before it. Nothing was sent: without the
@@ -45,20 +74,62 @@ const unread = (error: unknown) =>
   );
 
 /**
- * Saves the flow on screen, switched on or off, on its own request, and answers with it when the
- * server refused it.
+ * What a press comes to against the list read just before it, `copy` being the server's copy there:
+ * the flow to send, or why nothing goes.
  *
- * It reads the list first, as Deploy did: a draft started from a copy another console has since
- * replaced or deleted is held back rather than sent over it (see standingOf), and only a list read
- * now can tell. A list that cannot be read sends nothing, and says so. What the server keeps goes
- * into the list before the draft it was sent from goes, and what was typed while the request was
- * out stays a draft of the copy just kept.
+ * What Activate and Update press is a drawing: the flow's draft, or for a flow with none, the copy
+ * this page read, as the page showed it. A drawing goes only onto the copy it was drawn on. A draft
+ * of a copy the server has replaced or deleted since is held back until its reader keeps it or lets
+ * it go (see standingOf). A flow with no draft has no copy kept of where it started, and needs none:
+ * the copy it was pressed as is the one to find in the list, as it was, or nothing goes.
  *
- * Deactivate sends the server's copy, not the draft: the run stops however the drawing stands. The
+ * Whether a flow is switched on is no part of a drawing (see canonical), so each press says what it
+ * expects of it. Update expects a flow that is on: one another console has switched off since is
+ * not started again over whoever stopped it. Activate of a flow with no draft expects one that is
+ * off: one switched on since has nothing left to send. A draft is the reader's changes, and
+ * Activate saves them however the flow is switched now.
+ *
+ * Deactivate sends the server's copy, not the drawing: the run stops however the drawing stands. The
  * copy is the one in the list just read, so a flow another console has saved since goes back
  * switched off as that console left it, not as this page last saw it; and one the server no longer
- * has, or has switched off already, is left as it is. What the server refuses of that copy is not
- * about the drawing, so it is not marked there: it fails the save, which says why.
+ * has, or has switched off already, is left as it is.
+ */
+function weigh(
+  kind: SaveKind,
+  flow: FlowDto,
+  drafted: boolean,
+  base: string | null,
+  copy: FlowDto | undefined,
+): FlowDto | Held {
+  if (kind === 'deactivate') return copy === undefined ? 'deleted' : copy.enabled ? copy : 'off';
+
+  if (drafted) {
+    if (standingOf(flow, base, copy) === 'overtaken') return 'overtaken';
+  } else {
+    if (copy === undefined) return 'deleted';
+    if (!sameFlow(flow, copy)) return 'changed';
+    if (kind === 'activate' && copy.enabled) return 'on';
+  }
+
+  // A draft with no copy to find that was not held back above is of a flow started here, which the
+  // server never had and no page offers Update for. Should one come, it is not there to update.
+  if (kind === 'update' && !copy?.enabled) return copy === undefined ? 'deleted' : 'off';
+  return flow;
+}
+
+/**
+ * Saves the flow on screen, switched on or off, on its own request, and answers with what came of it
+ * when it was not saved: held back, or refused.
+ *
+ * It reads the list first, as Deploy did: a drawing of a copy another console has since replaced
+ * or deleted is held back rather than sent over it (see weigh), and only a list read now can tell.
+ * The list it reads goes on screen, so what was held back is seen beside what the server has now. A
+ * list that cannot be read sends nothing, and says so. What the server keeps goes into the list
+ * before the draft it was sent from goes, and what was typed while the request was out stays a draft
+ * of the copy just kept.
+ *
+ * What the server refuses of the copy a Deactivate sends is not about the drawing, so it is not
+ * marked there: it fails the save, which says why.
  */
 export function useSave() {
   const queryClient = useQueryClient();
@@ -66,10 +137,13 @@ export function useSave() {
   return useMutation({
     // Only Deactivate sends `enabled: false`, and it sends the server's copy rather than the
     // drawing: Activate and Update send the flow as drawn, switched on.
-    mutationFn: async ({ flow, enabled }: { flow: FlowDto; enabled: boolean }): Promise<Refused | null> => {
-      const drawing = enabled;
-      // Whether what goes is a draft, or the server's own copy of a flow with none: see below.
-      const drafted = flow.id in useFlowDraftStore.getState().drafts;
+    mutationFn: async ({ flow, kind }: { flow: FlowDto; kind: SaveKind }): Promise<Unsaved | null> => {
+      const drawing = kind !== 'deactivate';
+      // What was pressed, as it was pressed: a draft, and the copy it was started from, or the
+      // server's own copy of a flow with none.
+      const { drafts, bases } = useFlowDraftStore.getState();
+      const drafted = flow.id in drafts;
+      const base = bases[flow.id] ?? null;
 
       // Asked here rather than through the query's fetchQuery, whose read the page can cancel while
       // it is out — a delete's answer cancels the list's reads — and a cancelled fetchQuery hands
@@ -91,16 +165,11 @@ export function useSave() {
       const now = queryClient.getQueryData<FlowsDto>(queryKeys.flows) ?? read;
       if (now.unreadable) return null;
 
-      const copy = now.flows.find((one) => one.id === flow.id);
-      const { bases } = useFlowDraftStore.getState();
-      if (drawing && standingOf(flow, bases[flow.id] ?? null, copy) === 'overtaken') return null;
-
-      // Deactivate has nothing to switch off when the server has no copy, or has it off already.
-      const sent = drawing ? flow : copy?.enabled ? copy : null;
-      if (sent === null) return null;
+      const sent = weigh(kind, flow, drafted, base, now.flows.find((one) => one.id === flow.id));
+      if (typeof sent === 'string') return { id: flow.id, name: titleOf(flow), held: sent, base };
 
       try {
-        const { flow: kept } = await putFlow({ ...sent, enabled });
+        const { flow: kept } = await putFlow({ ...sent, enabled: drawing });
         // Before the draft goes, so the tab never shows the old flow in between.
         await putInList(queryClient, kept.id, kept);
 
@@ -116,14 +185,13 @@ export function useSave() {
       } catch (error) {
         if (!drawing || !isFlowInvalid(error)) throw error;
 
-        // Marked on the drawing it is about. A draft let go while the request was out — discarded,
-        // or taken back — has nothing left for it to be about.
-        const store = useFlowDraftStore.getState();
-        if (!drafted || flow.id in store.drafts) store.refuse(flow.id, error.errors ?? { flow: [error.message] });
-        return { id: flow.id, name: titleOf(flow) };
+        // Marked on the drawing it is about, while there is one (see refuse).
+        const refused = error.errors ?? { flow: [error.message] };
+        useFlowDraftStore.getState().refuse(flow, drafted, refused);
+        return { id: flow.id, name: titleOf(flow), refused };
       }
     },
-    onError: (error) => logFault('Flow not saved', error),
+    onError: (error, { kind }) => logFault(kind === 'deactivate' ? 'Flow not switched off' : 'Flow not saved', error),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: queryKeys.flows }),
   });
 }

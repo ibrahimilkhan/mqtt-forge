@@ -83,7 +83,16 @@ export function standInForTheBrowser() {
 
 /** No drafts, nothing refused, nothing picked: the draft store as a page that has never been opened finds it. */
 export function forgetDrafts(current: string | null = null) {
-  useFlowDraftStore.setState({ drafts: {}, bases: {}, current, selected: null, wire: null, refusals: {}, unkept: false });
+  useFlowDraftStore.setState({
+    drafts: {},
+    bases: {},
+    current,
+    selected: null,
+    wire: null,
+    refusals: {},
+    refusedCopies: {},
+    unkept: false,
+  });
 }
 
 /**

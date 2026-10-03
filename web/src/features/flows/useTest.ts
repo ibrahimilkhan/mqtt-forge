@@ -11,27 +11,32 @@ import { useFlowDraftStore } from './flowDraftStore';
  * earlier refusal go, since the drawing it was about is not the one running now.
  *
  * A flow with no draft is tested as the server has it, and what the server refuses of that copy is
- * filed all the same: it has no draft to go with, and stands until a test of the flow starts or the
- * flow is saved. One sent as a draft that was let go while the request was out — discarded, or
- * taken back — has nothing left for it to be about, and is not filed.
+ * filed all the same: it has no draft to go with, and stands until a test of the flow starts, the
+ * flow is saved, or the server has another copy of it, or none (see refusedCopies). One sent as a
+ * draft that was let go while the request was out has nothing left for it to be about, and is not
+ * filed (see refuse).
+ *
+ * A start answers with what the server refused — the very object it asks the store to file, so the
+ * page can tell this refusal from one filed since — or null once the test has started.
  *
  * Stop on a test the server no longer has is the run already over, which is what was asked.
  */
 export function useTest() {
   const start = useMutation({
-    mutationFn: async (flow: FlowDto): Promise<'started' | 'refused'> => {
+    mutationFn: async (flow: FlowDto): Promise<Record<string, string[]> | null> => {
+      // Whether what goes is a draft, as it goes: see refuse.
       const drafted = flow.id in useFlowDraftStore.getState().drafts;
 
       try {
         await testFlow(flow);
         useFlowDraftStore.getState().lapse([flow.id]);
-        return 'started';
+        return null;
       } catch (error) {
         if (!isFlowInvalid(error)) throw error;
 
-        const store = useFlowDraftStore.getState();
-        if (!drafted || flow.id in store.drafts) store.refuse(flow.id, error.errors ?? { flow: [error.message] });
-        return 'refused';
+        const refused = error.errors ?? { flow: [error.message] };
+        useFlowDraftStore.getState().refuse(flow, drafted, refused);
+        return refused;
       }
     },
     onError: (error) => logFault('Test not started', error),

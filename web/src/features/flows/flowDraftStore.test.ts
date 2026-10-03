@@ -71,7 +71,7 @@ describe('flow drafts', () => {
     const store = useFlowDraftStore.getState();
     store.put(flow);
     store.show(flow.id);
-    store.refuse(flow.id, { 'node:n1': ['Pick a test.'] });
+    store.refuse(flow, true, { 'node:n1': ['Pick a test.'] });
     store.select('n1');
 
     useFlowDraftStore.getState().discard(flow.id);
@@ -126,7 +126,7 @@ describe('flow drafts', () => {
     const flow = emptyFlow('Shipped');
     useFlowDraftStore.getState().put(flow);
     useFlowDraftStore.getState().show(flow.id);
-    useFlowDraftStore.getState().refuse(flow.id, { flow: ['Name the flow.'] });
+    useFlowDraftStore.getState().refuse(flow, true, { flow: ['Name the flow.'] });
 
     useFlowDraftStore.getState().settle([flow.id]);
 
@@ -135,14 +135,34 @@ describe('flow drafts', () => {
     expect(useFlowDraftStore.getState().current).toBe(flow.id);
   });
 
+  // A test, an Activate and an Update each file what the server refused through this one action, so
+  // the rule of whether there is still anything for the answer to be about is said once: a draft
+  // let go while the request was out has nothing left, and the server's own copy of a flow sent
+  // with no draft is there whatever the drafts are.
+  it('files a refusal of a draft only while the draft is there, and one of the server\'s copy whatever the drafts', () => {
+    const drafted = emptyFlow('Drafted');
+    const letGo = emptyFlow('Let go');
+    const copy = emptyFlow('Only on the server');
+    const store = useFlowDraftStore.getState();
+    store.put(drafted);
+    store.put(letGo);
+    store.discard(letGo.id);
+
+    store.refuse(drafted, true, { flow: ['Name the flow.'] });
+    store.refuse(letGo, true, { flow: ['Name the flow.'] });
+    store.refuse(copy, false, { flow: ['Name the flow.'] });
+
+    expect(Object.keys(useFlowDraftStore.getState().refusals)).toEqual([drafted.id, copy.id]);
+  });
+
   it('lets the refusals of some flows lapse, and keeps the drafts and the other refusals', () => {
     const back = emptyFlow('Back');
     const still = emptyFlow('Still refused');
     const store = useFlowDraftStore.getState();
     store.put(back);
     store.put(still);
-    store.refuse(back.id, { flow: ['Name the flow.'] });
-    store.refuse(still.id, { flow: ['Name the flow.'] });
+    store.refuse(back, true, { flow: ['Name the flow.'] });
+    store.refuse(still, true, { flow: ['Name the flow.'] });
 
     useFlowDraftStore.getState().lapse([back.id]);
 
@@ -200,7 +220,7 @@ describe('flow drafts', () => {
     store.put(other);
     store.show(back.id);
     store.select('n1');
-    store.refuse(back.id, { flow: ['Name the flow.'] });
+    store.refuse(back, true, { flow: ['Name the flow.'] });
 
     useFlowDraftStore.getState().settle([back.id]);
 
@@ -391,8 +411,8 @@ describe('two tabs', () => {
   });
 
   // A refusal is the server's answer about what it was sent: a draft, or the server's own copy of a
-  // flow with none, which a Test sends. One about a draft the other tab let go has nothing left to
-  // be about; one about the server's copy had no draft to go with.
+  // flow with none, which a Test or an Activate sends. One about a draft the other tab let go has
+  // nothing left to be about; one about the server's copy had no draft to go with.
   it('let a refusal go with the draft the other let go, and keep a refusal of the server\'s copy', () => {
     const other = createFlowDraftStore();
     const drafted = emptyFlow('Drafted');
@@ -400,8 +420,8 @@ describe('two tabs', () => {
     let before = held();
     useFlowDraftStore.getState().put(drafted);
     announce(before);
-    other.getState().refuse(drafted.id, { flow: ['Name the flow.'] });
-    other.getState().refuse(copy.id, { flow: ['Name the flow.'] });
+    other.getState().refuse(drafted, true, { flow: ['Name the flow.'] });
+    other.getState().refuse(copy, false, { flow: ['Name the flow.'] });
 
     before = held();
     useFlowDraftStore.getState().discard(drafted.id);

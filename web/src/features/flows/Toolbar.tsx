@@ -248,12 +248,20 @@ export function Toolbar(props: Props) {
         </button>
       </div>
 
+      {/* Every button from here on is off while a save or a test start is out, but said rather than
+          set: a button switched off in the hand that pressed it loses the focus in some browsers,
+          and a save that ends in a refusal leaves it on again with the reader still on it. Discard
+          too: pressed while an Update is out, it would be undone by the answer, which puts the flow
+          the server kept on screen. Activate and Update are off the same way for a draft held back,
+          and say why where the pointer and a screen reader find it. */}
       {onDiscard && (
         <button
           ref={going}
           type="button"
           className="ghost ends"
+          aria-disabled={busy || undefined}
           onClick={() => {
+            if (busy) return;
             // Discard takes itself away with the changes, and the keyboard with it.
             onDiscard();
             focusTab(current);
@@ -263,10 +271,6 @@ export function Toolbar(props: Props) {
         </button>
       )}
 
-      {/* Off while a save or a test start is out, but said rather than set: a button switched off
-          in the hand that pressed it loses the focus in some browsers, and a save that ends in a
-          refusal leaves it on again with the reader still on it. Activate and Update are off the
-          same way for a draft held back, and say why where the pointer and a screen reader find it. */}
       {testing.has(current) ? (
         <button
           key="stop"
