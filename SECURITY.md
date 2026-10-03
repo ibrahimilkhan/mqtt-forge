@@ -76,7 +76,7 @@ once for each such page, when a refusal differs from its own address only in the
 
 The app also says who may show the console in a frame. Every answer carries
 `Content-Security-Policy: frame-ancestors 'self'` and `X-Frame-Options: SAMEORIGIN`; without them a
-page on another site could frame the console and lay a decoy over Disconnect, Inject, Delete flow or
+page on another site could frame the console and lay a decoy over Disconnect, Test, Delete flow or
 Clear history, and your click would land on the console itself, whose requests are its own. To show
 the console inside a page of your own — a Home Assistant panel, say — name that page's origin in
 `MqttForge:FrameAncestors`, several with a space or a comma between them:
@@ -139,7 +139,8 @@ answering messages, raising alarms.
 A Test of a flow is a standing instruction too, and one that is written down nowhere. Anyone who can
 reach the port can test a flow, or a draft that was never saved, and a test that loops for ever keeps
 running until somebody presses Stop, the flow is deleted or the app restarts. It is not in
-`flows.json`, and `GET /api/flows/status` is the only place that lists it.
+`flows.json`, and the flows' status — `GET /api/flows/status` and the push each open console gets —
+is the only place that lists it.
 
 Each run of a flow is held to fifty publishes a second, and a flow's active run and a Test of it are
 two runs, fifty each. At most fifty flows are kept, and at most fifty tests — of saved flows or of
