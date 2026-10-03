@@ -5,10 +5,14 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { queryKeys } from '../api/queryKeys';
 import { server } from '../test/server';
+import { fakeAudio } from '../test/fakeAudio';
+import { forgetSound, TONES, turnSoundOn } from '../features/alerts/alertSound';
 import { emptyAlerts, useAlertStore } from '../stores/alertStore';
+import { useAppearanceStore } from '../stores/appearanceStore';
 import { useFlowStatusStore } from '../stores/flowStatusStore';
 import { MAX_LOG_ENTRIES, runFor, useLogStore } from '../stores/logStore';
 import { useHealthStore } from '../stores/healthStore';
+import { useNoticeStore } from '../stores/noticeStore';
 import { usePauseStore } from '../stores/pauseStore';
 import { useTopicTreeStore } from '../stores/topicTreeStore';
 import type { AlertDto, FlowStatusDto, MqttMessage } from '../types/api';
@@ -547,6 +551,46 @@ describe('flow events', () => {
 
     expect(Object.keys(useFlowStatusStore.getState().runs)).toEqual(['watch']);
     expect(useFlowStatusStore.getState().debug.watch[0].text).toBe('hello');
+  });
+
+  describe('a notice and a tone', () => {
+    // Both outlive a test: the notices in a store, the sound as one context for the life of a page
+    // and a preference the browser keeps. What one test leaves must not reach the next.
+    const reset = () => {
+      useNoticeStore.setState(useNoticeStore.getInitialState());
+      forgetSound();
+      useAppearanceStore.getState().reset();
+      localStorage.clear();
+    };
+    beforeEach(reset);
+    afterEach(reset);
+
+    it('hands notices to the notice store', () => {
+      const hub = createFakeHub();
+      renderBridge(hub);
+
+      act(() => hub.emit('flowNotice', [{ flowId: 'watch', flowName: 'Watch', nodeId: 'tell', text: 'hot', level: 'warn', at: '2026-10-03T09:00:00Z', test: false }]));
+
+      expect(useNoticeStore.getState().notices.map((one) => one.text)).toEqual(['hot']);
+    });
+
+    // Heard rather than spied on: the tone the room gets is what this is about, and the bridge's
+    // part in it — the levels handed over, in whatever order — is only how it gets there.
+    it('plays one tone for a batch of tones, at the loudest level in it', async () => {
+      const audio = fakeAudio();
+      await turnSoundOn();
+      const hub = createFakeHub();
+      renderBridge(hub);
+
+      act(() => hub.emit('flowSound', [
+        { flowId: 'a', nodeId: 'beep', level: 'info', test: false },
+        { flowId: 'b', nodeId: 'beep', level: 'critical', test: false },
+      ]));
+
+      expect(audio.tones.map((tone) => tone.hz)).toEqual(
+        Array.from({ length: TONES.critical.beeps }, () => TONES.critical.hz),
+      );
+    });
   });
 
   describe('after a reconnect', () => {

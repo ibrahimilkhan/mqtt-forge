@@ -239,6 +239,17 @@ export function soundFor(alerts: ReadonlyArray<AlertDto>): boolean {
 }
 
 /**
+ * A Sound node's tones, as a batch the hub sent together: one tone, at the loudest level among them,
+ * for soundFor's reason — a room cannot tell three tones played over each other apart.
+ */
+export function soundLevels(levels: readonly AlertSeverity[]): boolean {
+  if (levels.length === 0) return false;
+
+  const worst = levels.reduce((found, level) => (RANK[level] > RANK[found] ? level : found));
+  return soundAlert(worst);
+}
+
+/**
  * The button: the preference and the permission in one press.
  *
  * They are asked for together because the press is the gesture. Setting the preference now and

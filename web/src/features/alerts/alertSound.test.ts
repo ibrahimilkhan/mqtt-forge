@@ -9,6 +9,7 @@ import {
   NOT_READY,
   soundAlert,
   soundFor,
+  soundLevels,
   TONES,
   turnSoundOff,
   turnSoundOn,
@@ -112,6 +113,27 @@ describe('the tone', () => {
 
     soundFor([alertWith('critical', ['screen', 'webhook: 404'])]);
 
+    expect(audio.tones).toHaveLength(0);
+  });
+
+  // A Sound node's tones come in batches the way alerts do, and a room cannot tell two tones
+  // played over each other apart: one tone, at the worst level in the batch, and none of the others.
+  it('plays a batch of levels as one tone at the loudest', async () => {
+    const audio = fakeAudio();
+    await turnSoundOn();
+
+    expect(soundLevels(['info', 'warn'])).toBe(true);
+
+    expect(audio.tones.map((tone) => tone.hz)).toEqual([TONES.warn.hz, TONES.warn.hz]);
+  });
+
+  // The hub never sends an empty batch, and the reduce under this has no starting value, so an
+  // empty one would throw out of a hub handler rather than say nothing.
+  it('says nothing for a batch with no levels in it', async () => {
+    const audio = fakeAudio();
+    await turnSoundOn();
+
+    expect(soundLevels([])).toBe(false);
     expect(audio.tones).toHaveLength(0);
   });
 });

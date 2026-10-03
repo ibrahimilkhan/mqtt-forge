@@ -1,0 +1,102 @@
+/* The notices Notify nodes asked for, in the bottom inline-end corner of the console.
+
+   Fixed to the window and out of every layout: a notice is a moment for whoever has the console
+   open, on whatever page, and it must not move a plate when it comes or goes. The newest is first
+   in the markup and so on top. The stack is held to the corner, so it grows up from it, and what
+   has stood longest is what is nearest the edge — the one that goes next.
+
+   398, one under the prompt, whose own note has the rest of the ladder. Over the rail lying over a
+   narrow workspace (300), a thrown-open chart (200) and a rule window standing over both: a notice
+   that comes up beneath what the reader is looking at has not been delivered. Under the prompt,
+   which says why an alarm made no sound and is the one line that must never end up beneath
+   anything.
+
+   The stack itself takes no pointer. The gaps between its notices are the console's own, and a
+   click aimed at the tree or the log behind one should land there. Each notice takes its own. */
+.stack {
+  position: fixed;
+  inset-block-end: 12px;
+  inset-inline-end: 12px;
+  z-index: 398;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* 320px where there is room, and the window less the two margins where there is not. */
+  width: min(320px, calc(100vw - 24px));
+  pointer-events: none;
+}
+
+/* A plate of its own, dressed as the sound prompt is: the surface, the hairline, the plate's corner
+   and the same shadow, so the two read as one family of things the console says on its own account.
+
+   The level is the edge the text starts from, in the colour an alarm of that level is drawn in
+   everywhere else — see the alert wall's rows and the rules table. The hairline's colour is what
+   a level the console does not know is drawn in, so the edge is never missing. */
+.notice {
+  pointer-events: auto;
+  padding: 8px 10px 9px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-inline-start: 3px solid var(--rule);
+  border-radius: var(--r-plate);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 12%);
+  color: var(--ink);
+}
+.notice[data-level='critical'] { border-inline-start-color: var(--fault); }
+.notice[data-level='warn'] { border-inline-start-color: var(--warn); }
+.notice[data-level='info'] { border-inline-start-color: var(--signal); }
+
+/* Whose it is, whether a test said it, and the way out, on one line. */
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.flow {
+  min-width: 0;
+  font-size: var(--t-small);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* A small outlined chip, in the flow name's own colour: the level already has the loud one, and a
+   test is a fact about where the notice came from and not a second thing wrong. */
+.test {
+  flex: none;
+  padding: 0 5px;
+  font-family: var(--mono);
+  font-size: var(--t-nano);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid currentColor;
+  border-radius: var(--r-control);
+}
+
+/* The ×, at the end of the line. Twenty-four pixels square, which is the least a target is asked to
+   be, and pulled out of the line's height by the amount it overhangs it: the head is as tall as the
+   flow's name and nothing more, so a notice is not four pixels deeper for having a way to close it.
+   The border is the ghost's, kept and made invisible, so the console's own hover still draws it. */
+.close {
+  flex: none;
+  margin-inline-start: auto;
+  margin-block: -2px;
+  margin-inline-end: -4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 24px;
+  block-size: 24px;
+  padding: 0;
+  font-size: var(--t-body);
+  line-height: 1;
+  border-color: transparent;
+}
+
+/* Set apart from the head by a hair, and wrapped wherever it has to be: a template can put a long
+   topic or an unbroken payload in it, and one of those must not push the notice out of the corner. */
+.text {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
