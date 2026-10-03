@@ -146,6 +146,12 @@ export function insertAfter(
 export type Box = { width: number; height: number };
 
 /**
+ * The room a node of each type takes. Handed in by whoever draws the nodes, which knows their sizes:
+ * an If's diamond stands in a box of its own, larger than a step's.
+ */
+export type BoxOf = (type: string) => Box;
+
+/**
  * Where the palette's adds start in the view, and how many places go to a row before the next row:
  * a node centred on the middle of the view, and as many beside it as fit, `gap` apart, before the
  * view's right edge. The middle and the edge are in the canvas's own units, so its zoom is already
@@ -157,34 +163,43 @@ export function placesInView(middle: { x: number; y: number }, right: number, bo
 }
 
 /**
- * Where a node the palette adds goes: `start` if nothing is there, or else the first place along
- * from it — `across` places to a row, then down a row, `gap` apart — that touches no node the flow
- * has. Where the nodes stand decides it, not how many have been added, so a node dragged into the
- * way is stepped round like any other.
+ * Where a node of `type` the palette adds goes: `start` if nothing is there, or else the first place
+ * along from it — `across` places to a row, then down a row, `gap` apart — that comes within `gap` of
+ * no node the flow has. Where the nodes stand decides it, not how many have been added, so a node
+ * dragged into the way is stepped round like any other.
+ *
+ * Each node by its own box, and the new one by its own (`boxOf`). Every node reckoned as a step, the
+ * lower half of an If's diamond, half again as tall, was free ground, and a node put after the step
+ * before the If went down onto it.
  *
  * The places are reckoned from `start` rounded, because that is where a node put there is kept
  * (see addNode). Reckoned from up to half a pixel short of it, the node just put down reached that
  * far into the next place along, and every add passed over a place that was free.
  *
- * Every node can stand in the way of four places at most, so one of the first few past four for
- * each node is free; the count stops the search at that, whatever the flow holds.
+ * A node stands in the way of only so many places — as many across as its box, the new one's and
+ * the gap on either side reach, and as many down — so one of the first that many past them all is
+ * free; the count stops the search at that, whatever the flow holds.
  */
 export function freeSpot(
   flow: FlowDto,
   start: { x: number; y: number },
-  box: Box,
+  type: string,
+  boxOf: BoxOf,
   across: number,
   gap: number,
 ): { x: number; y: number } {
+  const box = boxOf(type);
   const first = { x: Math.round(start.x), y: Math.round(start.y) };
   const clear = (x: number, y: number) =>
-    flow.nodes.every(
-      (node) =>
+    flow.nodes.every((node) => {
+      const other = boxOf(node.type);
+      return (
         x + box.width + gap <= node.x ||
-        node.x + box.width + gap <= x ||
+        node.x + other.width + gap <= x ||
         y + box.height + gap <= node.y ||
-        node.y + box.height + gap <= y,
-    );
+        node.y + other.height + gap <= y
+      );
+    });
 
   const columns = Math.max(1, Math.floor(across));
   const place = (index: number) => ({
@@ -192,7 +207,16 @@ export function freeSpot(
     y: first.y + Math.floor(index / columns) * (box.height + gap),
   });
 
-  for (let index = 0; index <= 4 * flow.nodes.length; index++) {
+  const reach = (span: number, step: number) => Math.floor(span / step) + 1;
+  const tries = flow.nodes.reduce((count, node) => {
+    const other = boxOf(node.type);
+    return (
+      count +
+      reach(other.width + box.width + 2 * gap, box.width + gap) * reach(other.height + box.height + 2 * gap, box.height + gap)
+    );
+  }, 0);
+
+  for (let index = 0; index <= tries; index++) {
     const spot = place(index);
     if (clear(spot.x, spot.y)) return spot;
   }

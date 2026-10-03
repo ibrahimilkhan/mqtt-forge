@@ -26,8 +26,9 @@ import {
   withDrafts,
   type Wire,
 } from './flowDocument';
+import { laneOver, MARGIN, riseOf } from './backWires';
 import { exampleFlows } from './examples';
-import { DECISION_HEIGHT, DECISION_WIDTH, NODE_WIDTH } from './FlowCanvas';
+import { DECISION_HEIGHT, DECISION_WIDTH, NODE_WIDTH, STEP_HEIGHT } from './FlowCanvas';
 import { NODE_SPECS, sideOf } from './nodeTypes';
 
 /**
@@ -288,28 +289,46 @@ describe('flow document', () => {
   describe('where a node the palette adds goes', () => {
     const box = { width: 188, height: 80 };
     const gap = 24;
+    /** Every node a step's box. */
+    const steps = () => box;
+    /** An If's diamond in a box of its own, every other node a step's: as the page reckons them. */
+    const shapes = (type: string) => (type === 'if' ? { width: 252, height: 128 } : box);
     /** A flow with no nodes at all, not even the Start and the End a new flow has: an empty canvas. */
     const bare = (): FlowDto => ({ ...emptyFlow('Placed'), nodes: [], edges: [] });
     const at = (x: number, y: number): FlowDto => addNode(bare(), 'debug', { x, y }, 'there');
 
     it('goes where it was asked to when nothing is there', () => {
-      expect(freeSpot(bare(), { x: 100, y: 50 }, box, 3, gap)).toEqual({ x: 100, y: 50 });
+      expect(freeSpot(bare(), { x: 100, y: 50 }, 'debug', steps, 3, gap)).toEqual({ x: 100, y: 50 });
     });
 
     it('steps across past a node in the way, and a gap beyond it', () => {
-      expect(freeSpot(at(100, 50), { x: 100, y: 50 }, box, 3, gap)).toEqual({ x: 100 + 188 + 24, y: 50 });
+      expect(freeSpot(at(100, 50), { x: 100, y: 50 }, 'debug', steps, 3, gap)).toEqual({ x: 100 + 188 + 24, y: 50 });
     });
 
     it('goes down a row once the row is full', () => {
       let flow = at(100, 50);
       flow = addNode(flow, 'debug', { x: 312, y: 50 }, 'beside');
 
-      expect(freeSpot(flow, { x: 100, y: 50 }, box, 2, gap)).toEqual({ x: 100, y: 50 + 80 + 24 });
+      expect(freeSpot(flow, { x: 100, y: 50 }, 'debug', steps, 2, gap)).toEqual({ x: 100, y: 50 + 80 + 24 });
     });
 
     // A node dragged half across the place the click would have used is in the way all the same.
     it('steps round a node that only covers part of a place', () => {
-      expect(freeSpot(at(200, 90), { x: 100, y: 50 }, box, 1, gap)).toEqual({ x: 100, y: 50 + 2 * (80 + 24) });
+      expect(freeSpot(at(200, 90), { x: 100, y: 50 }, 'debug', steps, 1, gap)).toEqual({ x: 100, y: 50 + 2 * (80 + 24) });
+    });
+
+    // An If's diamond reaches 48 further down than a step's box: a step put a row under it, reckoned
+    // as a step, stood on its lower half.
+    it('measures each node in the way by its own box', () => {
+      const branching = addNode(bare(), 'if', { x: 100, y: 50 }, 'test');
+
+      expect(freeSpot(branching, { x: 100, y: 50 }, 'debug', shapes, 1, gap)).toEqual({ x: 100, y: 50 + 2 * (80 + 24) });
+      expect(freeSpot(branching, { x: 100, y: 50 }, 'debug', steps, 1, gap)).toEqual({ x: 100, y: 50 + 80 + 24 });
+    });
+
+    it('steps the node it puts down by its own box', () => {
+      expect(freeSpot(at(100, 50), { x: 100, y: 50 }, 'if', shapes, 3, gap)).toEqual({ x: 100 + 252 + 24, y: 50 });
+      expect(freeSpot(at(100, 50), { x: 100, y: 50 }, 'if', shapes, 1, gap)).toEqual({ x: 100, y: 50 + 128 + 24 });
     });
 
     // The middle of the view is seldom on a whole pixel, and a node is kept on one. Reckoned from
@@ -318,7 +337,7 @@ describe('flow document', () => {
     it('reckons its places from where a node put at the start is kept', () => {
       const start = { x: 100.6, y: 50.6 };
       let flow = bare();
-      for (const id of ['a', 'b', 'c', 'd']) flow = addNode(flow, 'debug', freeSpot(flow, start, box, 3, gap), id);
+      for (const id of ['a', 'b', 'c', 'd']) flow = addNode(flow, 'debug', freeSpot(flow, start, 'debug', steps, 3, gap), id);
 
       expect(flow.nodes.map(({ x, y }) => [x, y])).toEqual([[101, 51], [313, 51], [525, 51], [101, 155]]);
     });
@@ -641,13 +660,12 @@ describe('the examples', () => {
   });
 
   // As the canvas draws them: a node's ports stand at half its height, the If is DECISION_WIDTH by
-  // DECISION_HEIGHT, and every other node NODE_WIDTH across and as tall as a step, which Chrome draws
-  // 71.52 high at the default type size. Two nodes whose heights overlap stand on one row, with room
-  // between them for a way out's name; and a wire from a way out on the right to the next node's way
-  // in on the left, along a row, runs level.
+  // DECISION_HEIGHT, and every other node NODE_WIDTH across and STEP_HEIGHT down. Two nodes whose
+  // heights overlap stand on one row, with room between them for a way out's name; and a wire from a
+  // way out on the right to the next node's way in on the left, along a row, runs level.
   it('are laid out for the shapes the canvas draws', () => {
     const boxOf = (node: FlowNodeDto) =>
-      node.type === 'if' ? { width: DECISION_WIDTH, height: DECISION_HEIGHT } : { width: NODE_WIDTH, height: 71.52 };
+      node.type === 'if' ? { width: DECISION_WIDTH, height: DECISION_HEIGHT } : { width: NODE_WIDTH, height: STEP_HEIGHT };
     const onOneRow = (a: FlowNodeDto, b: FlowNodeDto) => a.y < b.y + boxOf(b).height && b.y < a.y + boxOf(a).height;
 
     for (const flow of exampleFlows()) {
@@ -662,6 +680,51 @@ describe('the examples', () => {
         if (sideOf(edge.fromPort) !== 'right' || sideOf(edge.toPort, false) !== 'left' || !onOneRow(from, to)) continue;
 
         expect(Math.abs(from.y + boxOf(from).height / 2 - (to.y + boxOf(to).height / 2)), edge.id).toBeLessThan(0.5);
+      }
+    }
+  });
+
+  // And as a wire going back is drawn (backWires.ts): out past its node — down first, from a way out
+  // at its foot — up to a lane above everything standing between its ends, and down onto its loop's
+  // next. The lane is clear of what it runs over by how it is worked out; nothing may stand where a
+  // way back runs out, rises or comes down. And their only ways back are their loops' returns: every
+  // other wire runs forward, to a way in further right, and is drawn as the curve it is.
+  it('leave every way back a clear run up past its node and down onto its loop', () => {
+    const boxOf = (node: FlowNodeDto) =>
+      node.type === 'if' ? { width: DECISION_WIDTH, height: DECISION_HEIGHT } : { width: NODE_WIDTH, height: STEP_HEIGHT };
+
+    for (const flow of exampleFlows()) {
+      const placed = flow.nodes.map((node) => ({ id: node.id, x: node.x, y: node.y, ...boxOf(node) }));
+      const at = (id: string) => placed.find((node) => node.id === id)!;
+      /** The nodes standing across an upright line at `x`, between `top` and `bottom`. */
+      const upright = (x: number, top: number, bottom: number) =>
+        placed.filter((node) => node.x < x && x < node.x + node.width && node.y < bottom && top < node.y + node.height).map((node) => node.id);
+      /** The nodes standing across a level line at `y`, between `left` and `right`. */
+      const level = (y: number, left: number, right: number) =>
+        placed.filter((node) => node.y < y && y < node.y + node.height && node.x < right && left < node.x + node.width).map((node) => node.id);
+
+      for (const edge of flow.edges) {
+        const from = at(edge.from);
+        const to = at(edge.to);
+        const down = sideOf(edge.fromPort) === 'bottom';
+        const out = down ? from.x + from.width / 2 : from.x + from.width;
+
+        if (edge.toPort !== 'next') {
+          expect(to.x, `${edge.id} runs forward`).toBeGreaterThan(out);
+          continue;
+        }
+
+        const rise = riseOf(from.x + from.width);
+        const drop = to.x + to.width / 2;
+        const lane = laneOver(
+          Math.min(...placed.filter((node) => node.x < Math.max(rise, drop) && Math.min(rise, drop) < node.x + node.width).map((node) => node.y)),
+          to.y,
+        );
+        const foot = down ? from.y + from.height + MARGIN : from.y + from.height / 2;
+
+        expect(down ? level(foot, out, rise) : [], `${edge.id} runs out under`).toEqual([]);
+        expect(upright(rise, lane, foot), `${edge.id} rises through`).toEqual([]);
+        expect(upright(drop, lane, to.y), `${edge.id} comes down through`).toEqual([]);
       }
     }
   });

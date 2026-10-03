@@ -20,7 +20,7 @@ import { Position } from '@xyflow/react';
  * the wires going forward.
  */
 
-/** How far a wire going back runs out of its port, and stands off the way in it comes into, before it turns. */
+/** How far past its node a wire going back turns up, and how far left of the way in it comes into it comes down. */
 export const MARGIN = 24;
 
 /** How far above the highest node between its ends a wire going back runs. */
@@ -45,12 +45,14 @@ export const goesBack = (sourceX: number, targetX: number, targetPosition: Posit
   targetPosition === Position.Top || targetX < sourceX;
 
 /**
- * Where a wire going back rises to its lane. Out of a way out on the right, the margin past the port;
- * out of one at the foot of its node, the margin past the node's right edge, after going down the
- * margin first — rising straight from the port, it would go up through its own node.
+ * Where a wire going back rises to its lane: the margin past its node's right edge. Out of a way out
+ * on the right it runs straight there; out of one at the foot of the node it goes down the margin
+ * first, or it would rise through its own node. Every wire going back from one node rises on the one
+ * line — the Clear alarm's two ways out, both back to their loop, read as one way back, not as two
+ * lines side by side. From the node's edge and not the port's: React Flow ends a wire at the outer
+ * edge of a port, a few pixels out from the node, and at the middle of a port underneath it.
  */
-export const riseOf = (sourceX: number, sourcePosition: Position, sourceRight: number) =>
-  (sourcePosition === Position.Bottom ? sourceRight : sourceX) + MARGIN;
+export const riseOf = (sourceRight: number) => sourceRight + MARGIN;
 
 /** Where it comes down from its lane: straight above a next, or the margin left of a way in. */
 export const dropOf = (targetX: number, targetPosition: Position) =>

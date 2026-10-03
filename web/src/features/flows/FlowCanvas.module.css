@@ -214,10 +214,10 @@
 .handle[data-unwired] { border-color: var(--fault); background: color-mix(in srgb, var(--fault) 18%, var(--surface)); }
 
 /* A port's name stands outside the outline beside its handle, where a flowchart writes yes and no.
-   Beside a port on the left or the right it stands past --wire-margin, how far a wire going back runs
-   out of its port before it turns up (backWires.ts, through the canvas, as --node-width comes): a name
-   just past the port had that wire run up through its letters, and a wire going forward still has its
-   name beside it. */
+   Beside a port on the left or the right it stands past --wire-margin, how far past its node a wire
+   going back turns up (backWires.ts, through the canvas, as --node-width comes): a name just past the
+   port had that wire run up through its letters, and a wire going forward still has its name beside
+   it. */
 .port {
   position: absolute;
   font-family: var(--mono);

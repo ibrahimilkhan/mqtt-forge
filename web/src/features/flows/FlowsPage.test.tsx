@@ -3,7 +3,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { Profiler, StrictMode } from 'react';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { queryKeys } from '../../api/queryKeys';
 import { useFlowAlarmStore } from '../../stores/flowAlarmStore';
 import { useFlowStatusStore } from '../../stores/flowStatusStore';
@@ -12,11 +12,20 @@ import panelStyles from '../../styles/panel.module.css';
 import { server } from '../../test/server';
 import { renderWithClient as render } from '../../test/renderWithClient';
 import type { FlowDebugDto, FlowDto, FlowNodeDto, FlowRunStatusDto, FlowsDto, FlowStatusDto } from '../../types/api';
-import { forgetDrafts, runOf, standInForTheBrowser, withoutComments } from './canvasTestbed';
+import {
+  forgetDrafts,
+  MeasuredTogether,
+  paneSized,
+  runOf,
+  standInForTheBrowser,
+  viewport,
+  withoutComments,
+} from './canvasTestbed';
 import { DebugStrip } from './DebugStrip';
 import strip from './DebugStrip.module.css';
 import stripSheet from './DebugStrip.module.css?raw';
-import { NODE_HEIGHT, NODE_WIDTH } from './FlowCanvas';
+import { exampleFlows } from './examples';
+import { DECISION_HEIGHT, DECISION_WIDTH, NODE_HEIGHT, NODE_WIDTH, STEP_HEIGHT } from './FlowCanvas';
 import { emptyFlow, moveNodes } from './flowDocument';
 import { DRAFT_PREFIX, useFlowDraftStore } from './flowDraftStore';
 import FlowsPage from './FlowsPage';
@@ -584,6 +593,195 @@ describe('the palette builds a chain', () => {
     expect(screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual(
       expect.arrayContaining(['Input', 'Control', 'Actions', 'Alarm']),
     );
+  });
+
+  /** A flow's draft, once the palette has put something in it. */
+  const draftOf = (id: string) => useFlowDraftStore.getState().drafts[id];
+
+  /** The room a node takes as the page reckons it: an If's diamond a box of its own, every other node a step's. */
+  const roomOf = (node: FlowNodeDto) =>
+    node.type === 'if' ? { width: DECISION_WIDTH, height: DECISION_HEIGHT } : { width: NODE_WIDTH, height: NODE_HEIGHT };
+
+  /** Whether two nodes stand the palette's room apart — the 24 it keeps between the nodes it puts down and the rest — by their own boxes. */
+  const roomApart = (a: FlowNodeDto, b: FlowNodeDto) =>
+    a.x + roomOf(a).width + 24 <= b.x ||
+    b.x + roomOf(b).width + 24 <= a.x ||
+    a.y + roomOf(a).height + 24 <= b.y ||
+    b.y + roomOf(b).height + 24 <= a.y;
+
+  // The If is drawn in a box of its own, wider and taller than a step's. Reckoned as a step, its lower
+  // half was free ground, and the next node went down onto it.
+  it('keeps a node it puts after another clear of an If standing there, by the If’s own box', async () => {
+    const flow = { ...emptyFlow('Flow 1'), id: 'f1' };
+    renderPage([flow]);
+    await screen.findByRole('button', { name: '▶ Test' });
+
+    act(() => useFlowDraftStore.getState().select('start'));
+    fireEvent.click(palette().getByRole('button', { name: /^MQTT in/ }));
+    fireEvent.click(palette().getByRole('button', { name: /^If/ }));
+    const read = draftOf('f1').nodes.find((node) => node.type === 'mqttIn')!;
+    act(() => useFlowDraftStore.getState().select(read.id));
+    fireEvent.click(palette().getByRole('button', { name: /^Debug/ }));
+
+    const test = draftOf('f1').nodes.find((node) => node.type === 'if')!;
+    const say = draftOf('f1').nodes.find((node) => node.type === 'debug')!;
+    expect(roomApart(say, test), `Debug at ${say.x},${say.y}, If at ${test.x},${test.y}`).toBe(true);
+  });
+
+  it('keeps a node it puts after the watch’s Debug clear of the If after it', async () => {
+    const watching = { ...exampleFlows()[1], id: 'w' };
+    renderPage([watching]);
+    await screen.findByRole('button', { name: '▶ Test' });
+
+    act(() => useFlowDraftStore.getState().select('say'));
+    fireEvent.click(palette().getByRole('button', { name: /^Publish/ }));
+
+    const added = draftOf('w').nodes.find((node) => !watching.nodes.some((one) => one.id === node.id))!;
+    const test = watching.nodes.find((node) => node.id === 'test')!;
+    expect(roomApart(added, test), `Publish at ${added.x},${added.y}`).toBe(true);
+  });
+
+  // The examples' own rule: a node's ports stand at half its height, so an If, taller than a step,
+  // stands higher by half the difference, and the wire between them runs level.
+  it('levels an If it puts after a step with that step', async () => {
+    const flow = { ...emptyFlow('Flow 1'), id: 'f1' };
+    // The End out of the way, so the place beside the Start is free.
+    renderPage([{ ...flow, nodes: [flow.nodes[0], { ...flow.nodes[1], x: 900, y: 400 }] }]);
+    await screen.findByRole('button', { name: '▶ Test' });
+
+    act(() => useFlowDraftStore.getState().select('start'));
+    fireEvent.click(palette().getByRole('button', { name: /^If/ }));
+
+    const [start, , test] = draftOf('f1').nodes;
+    expect(test.type).toBe('if');
+    expect(Math.abs(test.y + DECISION_HEIGHT / 2 - (start.y + STEP_HEIGHT / 2))).toBeLessThan(0.5);
+  });
+
+  // A loop's empty body is a wire from the loop back into it, so half-way along it is the loop itself:
+  // a node put there stepped down under the loop, and both its wires went round the loop to reach it.
+  it('puts a node on a loop’s empty body after the loop, level with it, as a body is drawn', async () => {
+    const looping: FlowDto = {
+      ...emptyFlow('Flow 1'),
+      id: 'f1',
+      nodes: [
+        { id: 'start', type: 'start', x: 40, y: 120, config: {} },
+        { id: 'loop', type: 'for', x: 324, y: 120, config: { times: '3', forever: false } },
+        { id: 'end', type: 'end', x: 324, y: 300, config: {} },
+      ],
+      edges: [
+        { id: 'e1', from: 'start', fromPort: 'out', to: 'loop', toPort: 'in' },
+        { id: 'e2', from: 'loop', fromPort: 'body', to: 'loop', toPort: 'next' },
+        { id: 'e3', from: 'loop', fromPort: 'done', to: 'end', toPort: 'in' },
+      ],
+    };
+    renderPage([looping]);
+    await screen.findByRole('button', { name: '▶ Test' });
+
+    act(() => useFlowDraftStore.getState().pickWire('e2'));
+    fireEvent.click(palette().getByRole('button', { name: /^Debug/ }));
+
+    const say = draftOf('f1').nodes.find((node) => node.type === 'debug')!;
+    expect({ x: say.x, y: say.y }).toEqual({ x: 324 + NODE_WIDTH + 2 * 24, y: 120 });
+    expect(draftOf('f1').edges.map((edge) => `${edge.from}.${edge.fromPort}>${edge.to}.${edge.toPort}`).sort()).toEqual(
+      ['start.out>loop.in', `loop.body>${say.id}.in`, `${say.id}.out>loop.next`, 'loop.done>end.in'].sort(),
+    );
+  });
+
+  // A chain clicked together runs right, and its last wire goes back to the End where the new flow
+  // had it. Half-way along that wire is behind the chain's last node: what is put on it goes after
+  // that node, as the chain's next step.
+  it('puts a node on a wire that goes back after the node the wire leaves', async () => {
+    const flow = { ...emptyFlow('Flow 1'), id: 'f1' };
+    const end = flow.nodes[1];
+    renderPage([
+      {
+        ...flow,
+        nodes: [flow.nodes[0], { id: 'say', type: 'debug', x: 600, y: 120, config: {} }, { ...end, x: 320, y: 300 }],
+        edges: [
+          { id: 'e1', from: 'start', fromPort: 'out', to: 'say', toPort: 'in' },
+          { id: 'e2', from: 'say', fromPort: 'out', to: end.id, toPort: 'in' },
+        ],
+      },
+    ]);
+    await screen.findByRole('button', { name: '▶ Test' });
+
+    act(() => useFlowDraftStore.getState().pickWire('e2'));
+    fireEvent.click(palette().getByRole('button', { name: /^Publish/ }));
+
+    const send = draftOf('f1').nodes.find((node) => node.type === 'publish')!;
+    expect({ x: send.x, y: send.y }).toEqual({ x: 600 + NODE_WIDTH + 2 * 24, y: 120 });
+  });
+
+  // Which of an If's two ways out the reader meant is theirs to say, by picking its wire.
+  it('puts a node free, wired to nothing, when the node picked has two ways out', async () => {
+    renderPage([watch]);
+    await screen.findByRole('tabpanel');
+
+    act(() => useFlowDraftStore.getState().select('test'));
+    fireEvent.click(palette().getByRole('button', { name: /^Debug/ }));
+
+    const draft = draftOf('watch');
+    const say = draft.nodes.find((node) => node.type === 'debug')!;
+    expect(draft.edges).toEqual(watch.edges);
+    expect(useFlowDraftStore.getState().selected).toBe(say.id);
+  });
+
+  // Discard takes back the change, and the pick with it: the next click must not land on a wire the
+  // canvas no longer shows picked, though the flow put back has a wire of that id.
+  it('does not put a node on a wire picked before a Discard', async () => {
+    renderPage([watch]);
+    await edit('watch', (flow) => moveNodes(flow, { end: { x: 900, y: 300 } }));
+    act(() => useFlowDraftStore.getState().pickWire('e1'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    fireEvent.click(palette().getByRole('button', { name: /^Publish/ }));
+
+    const draft = draftOf('watch');
+    expect(draft.nodes.map((node) => node.type)).toEqual(['start', 'mqttIn', 'if', 'end', 'publish']);
+    expect(draft.edges).toEqual(watch.edges);
+  });
+
+  /**
+   * The canvas fits the flow when it opens, and not again: a chain clicked past the edge of the view
+   * would go on growing out of sight, each click seeming to do nothing. A node put down out of view is
+   * brought into it, at the zoom the reader has; one put down in view leaves the view as it is.
+   */
+  describe('in view', () => {
+    let unsized = () => {};
+    let observer: unknown;
+    beforeEach(() => {
+      unsized = paneSized(800, 600);
+      observer = globalThis.ResizeObserver;
+      vi.stubGlobal('ResizeObserver', MeasuredTogether);
+    });
+    afterEach(() => {
+      unsized();
+      vi.stubGlobal('ResizeObserver', observer);
+    });
+
+    it('pans to a node it puts down out of sight, at the zoom it had, and leaves the view alone for one in sight', async () => {
+      const flow = { ...emptyFlow('Flow 1'), id: 'f1' };
+      renderPage([flow]);
+      await screen.findByRole('button', { name: '▶ Test' });
+      // Fitted: the Start at 40 and the End at 360, a pixel square each in jsdom, round the middle at 1.
+      await waitFor(() => expect(viewport()[0]).toBeCloseTo(400 - (40 + 361) / 2));
+      const fitted = viewport();
+
+      act(() => useFlowDraftStore.getState().select('start'));
+      fireEvent.click(palette().getByRole('button', { name: /^MQTT in/ }));
+      // Beside the Start, under the End: in sight.
+      expect(viewport()).toEqual(fitted);
+
+      fireEvent.click(palette().getByRole('button', { name: /^Debug/ }));
+      const say = draftOf('f1').nodes.find((node) => node.type === 'debug')!;
+      // Past the right edge, 600 in at a zoom of 1: brought to the middle of the view, the zoom as it was.
+      await waitFor(() => {
+        const [x, y, zoom] = viewport();
+        expect(zoom).toBe(fitted[2]);
+        expect(x + (say.x + NODE_WIDTH / 2) * zoom).toBeCloseTo(400);
+        expect(y + (say.y + NODE_HEIGHT / 2) * zoom).toBeCloseTo(300);
+      });
+    });
   });
 });
 

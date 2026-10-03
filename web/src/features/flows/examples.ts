@@ -15,8 +15,17 @@ import { newId } from './flowDocument';
  * the If, DECISION_WIDTH across, 64 more. A node's ports stand at half its height, so the If,
  * DECISION_HEIGHT tall, stands 28 higher than the steps beside it, and every wire along a row runs
  * level. A way out at the foot of a node — a loop's done, the If's no — leads down to a row of its
- * own, far enough under it that the port's name clears what stands there; the watch's yes leads up to
- * the alarm's row, which starts out past the If's right-hand point, so the wire never bends back.
+ * own, far enough under it that the port's name clears what stands there.
+ *
+ * And for the way a wire going back is drawn (backWires.ts): out past its node, up to a lane above
+ * everything between its ends, and back. So nothing stands where a return rises — the watch's Clear
+ * alarm stands under its Raise alarm, and the three ways back out of the two rise on one line through
+ * the gap after the Raise alarm — and a loop inside another stands a row lower than the outer one,
+ * so the lane of its own return runs under the outer loop's: on one row the two returns would share a
+ * lane, and nothing would say which goes back to which loop.
+ *
+ * The watch's main line is nine nodes long, too long to read fitted to the canvas, so the canvas
+ * opens it at a size it can be read at, from its Start or on the node picked (see FlowCanvas).
  */
 export function exampleFlows(): FlowDto[] {
   const simulator: FlowDto = {
@@ -27,16 +36,17 @@ export function exampleFlows(): FlowDto[] {
     nodes: [
       { id: 'start', type: 'start', x: 40, y: 120, config: {} },
       { id: 'loop', type: 'for', x: 324, y: 120, config: { times: '', forever: true } },
-      { id: 'each', type: 'forEach', x: 608, y: 120, config: { array: 'var.sensors' } },
+      { id: 'each', type: 'forEach', x: 608, y: 240, config: { array: 'var.sensors' } },
       {
         id: 'send',
         type: 'publish',
         x: 892,
-        y: 120,
+        y: 240,
         config: { topic: 'plant/{{payload}}/temp', payload: '{"temp": {{random(80,95)}}}', qos: 0, retain: false },
       },
-      { id: 'tick', type: 'wait', x: 764, y: 296, config: { seconds: '2' } },
-      { id: 'end', type: 'end', x: 480, y: 296, config: {} },
+      // Out past the Publish, so its way back rises clear of it and of the For each's own.
+      { id: 'tick', type: 'wait', x: 916, y: 416, config: { seconds: '2' } },
+      { id: 'end', type: 'end', x: 480, y: 416, config: {} },
     ],
     edges: [
       { id: 'e1', from: 'start', fromPort: 'out', to: 'loop', toPort: 'in' },
@@ -55,29 +65,30 @@ export function exampleFlows(): FlowDto[] {
     enabled: false,
     variables: [{ name: 'limit', value: '90' }],
     nodes: [
-      { id: 'start', type: 'start', x: 40, y: 280, config: {} },
-      { id: 'loop', type: 'for', x: 324, y: 280, config: { times: '', forever: true } },
-      { id: 'read', type: 'mqttIn', x: 608, y: 280, config: { filter: 'plant/+/temp', replay: false } },
-      { id: 'say', type: 'debug', x: 892, y: 280, config: {} },
-      { id: 'test', type: 'if', x: 1176, y: 252, config: { field: '$.temp', test: 'gt', value: '{{var.limit}}', value2: '' } },
+      { id: 'start', type: 'start', x: 40, y: 120, config: {} },
+      { id: 'loop', type: 'for', x: 324, y: 120, config: { times: '', forever: true } },
+      { id: 'read', type: 'mqttIn', x: 608, y: 120, config: { filter: 'plant/+/temp', replay: false } },
+      { id: 'say', type: 'debug', x: 892, y: 120, config: {} },
+      { id: 'test', type: 'if', x: 1176, y: 92, config: { field: '$.temp', test: 'gt', value: '{{var.limit}}', value2: '' } },
       {
         id: 'hot',
         type: 'alarmRaise',
-        x: 1568,
-        y: 40,
+        x: 1524,
+        y: 120,
         config: { name: 'Boiler too hot', level: 'warn', reason: '{{topic[1]}} is at {{$.temp}} °C', value: '$.temp' },
       },
-      { id: 'beep', type: 'sound', x: 1852, y: 40, config: { level: 'warn' } },
-      { id: 'tell', type: 'notify', x: 2136, y: 40, config: { text: '{{topic[1]}} is at {{$.temp}} °C', level: 'warn' } },
+      { id: 'beep', type: 'sound', x: 1808, y: 120, config: { level: 'warn' } },
+      { id: 'tell', type: 'notify', x: 2092, y: 120, config: { text: '{{topic[1]}} is at {{$.temp}} °C', level: 'warn' } },
       {
         id: 'fan',
         type: 'publish',
-        x: 2420,
-        y: 40,
+        x: 2376,
+        y: 120,
         config: { topic: 'plant/{{topic[1]}}/cmd', payload: '{"fan":"on"}', qos: 1, retain: false },
       },
-      { id: 'cool', type: 'alarmClear', x: 1364, y: 456, config: { alarm: 'hot' } },
-      { id: 'end', type: 'end', x: 480, y: 456, config: {} },
+      // Under its Raise alarm: both of its ways back rise with the Raise alarm's, after it.
+      { id: 'cool', type: 'alarmClear', x: 1524, y: 296, config: { alarm: 'hot' } },
+      { id: 'end', type: 'end', x: 480, y: 296, config: {} },
     ],
     edges: [
       { id: 'e1', from: 'start', fromPort: 'out', to: 'loop', toPort: 'in' },

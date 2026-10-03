@@ -87,13 +87,24 @@ export const NODE_WIDTH = 188;
  */
 export const NODE_HEIGHT = 80;
 
+/**
+ * How tall a step is drawn at the default type size, as Chrome lays it out: its three lines — the
+ * name, what it is set to, what it has done — at the console's line height, with its padding and its
+ * frame. A pill, the parallelogram and the hexagon are as tall. Nothing is drawn at this, since a node
+ * is as tall as what is in it; it is what the examples are laid out by, so the wires along their rows
+ * run level where the browser puts the ports, what a node put after a step is levelled by, and what
+ * the renderer tells jsdom a node measures. Measured once and written once: a change to the type
+ * scale moves it, and all of them with it.
+ */
+export const STEP_HEIGHT = 71.52;
+
 /** The If's box: a diamond keeps its three lines in its middle, so it is drawn larger than the rest. */
 export const DECISION_WIDTH = NODE_WIDTH + 64;
 export const DECISION_HEIGHT = 128;
 
 /**
  * The sizes, where the stylesheet reads them: the If's as well, for the same reason as the width; and
- * how far a wire going back runs out of its port before it turns, which a port's name stands past.
+ * how far past its node a wire going back turns up, which a port's name stands past.
  */
 const NODE_SIZE = {
   '--node-width': `${NODE_WIDTH}px`,
@@ -143,6 +154,28 @@ function spread({ ins, outs }: Ports): ReadonlyMap<string, string> {
 
 /** A first view with room round the flow, and never closer than the size the nodes are drawn at. */
 const FIT = { padding: 0.2, maxZoom: 1 };
+
+/**
+ * The least zoom a flow opens at: under it, a node's name and what it is set to are too small to
+ * read. A flow that fits the canvas only further out opens at this instead (see FlowCanvas).
+ */
+const LEGIBLE = 0.6;
+
+/** How far in from the canvas's left edge the Start stands when a flow opens at LEGIBLE. */
+const START_INSET = 40;
+
+/** Where the canvas looks, as React Flow keeps it: how far it is panned, and its zoom. */
+type View = { x: number; y: number; zoom: number };
+
+/**
+ * Whether a box on the canvas — a node, in the canvas's own units — is wholly on screen in a canvas
+ * `width` by `height` pixels looking at `view`.
+ */
+export const inView = (box: { x: number; y: number; width: number; height: number }, view: View, width: number, height: number) =>
+  box.x * view.zoom + view.x >= 0 &&
+  box.y * view.zoom + view.y >= 0 &&
+  (box.x + box.width) * view.zoom + view.x <= width &&
+  (box.y + box.height) * view.zoom + view.y <= height;
 
 /** Where a dragged node comes to rest: every 8 pixels, on a dot of the background or halfway between two. */
 const SNAP: [number, number] = [8, 8];
@@ -293,8 +326,62 @@ export function FlowCanvas({ flow, problems }: { flow: FlowDto; problems: Proble
   const wire = useFlowDraftStore((state) => state.wire);
   const [sizes, setSizes] = useState<Record<string, Size>>({});
   const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set());
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, setViewport } = useReactFlow();
   const drawing = useStoreApi<CanvasNode, CanvasEdge>();
+
+  // React Flow fits the flow to the canvas once it has measured the nodes: all of it on screen, never
+  // larger than drawn. A long flow fitted so is a strip too small to read — the watch, nine steps
+  // along its main line, came out at the least zoom the canvas allows, a node's name a few pixels
+  // high. So a flow the fit puts under LEGIBLE opens at LEGIBLE instead, from where every run begins:
+  // its Start START_INSET from the left edge, the middle of its rows halfway down. The reader pans
+  // along it from there. The first view only: whoever zooms out later meant to.
+  //
+  // Unless a node is picked as the canvas opens and that view leaves it out: the alarm wall opens the
+  // page on the Raise alarm an alarm came from, and a node picked before another panel took the canvas
+  // away is picked still. Fitted, the whole flow was on screen, the node too; from the Start, the node
+  // the reader came for could be out of sight. The view is on that node instead, at the same zoom.
+  //
+  // The fit is waited for when it is still to come. React Flow can have made it already, as the
+  // canvas was drawn — a ResizeObserver that measures at once — and then it is taken as it is.
+  useEffect(() => {
+    const legible = () => {
+      const { transform, nodeLookup, width, height } = drawing.getState();
+      if (transform[2] >= LEGIBLE || nodeLookup.size === 0) return;
+
+      let left = Infinity;
+      let top = Infinity;
+      let bottom = -Infinity;
+      let start: number | undefined;
+      for (const node of nodeLookup.values()) {
+        const { x, y } = node.internals.positionAbsolute;
+        left = Math.min(left, x);
+        top = Math.min(top, y);
+        bottom = Math.max(bottom, y + (node.measured.height ?? 0));
+        if (node.data.node.type === 'start') start = x;
+      }
+      const fromStart = { x: START_INSET - (start ?? left) * LEGIBLE, y: height / 2 - ((top + bottom) / 2) * LEGIBLE, zoom: LEGIBLE };
+
+      const picked = nodeLookup.get(useFlowDraftStore.getState().selected ?? '');
+      const box = picked && { ...picked.internals.positionAbsolute, width: picked.measured.width ?? 0, height: picked.measured.height ?? 0 };
+      void setViewport(
+        box && !inView(box, fromStart, width, height)
+          ? { x: width / 2 - (box.x + box.width / 2) * LEGIBLE, y: height / 2 - (box.y + box.height / 2) * LEGIBLE, zoom: LEGIBLE }
+          : fromStart,
+      );
+    };
+
+    if (!drawing.getState().fitViewQueued) {
+      legible();
+      return;
+    }
+
+    const stop = drawing.subscribe((state) => {
+      if (state.fitViewQueued) return;
+      stop();
+      legible();
+    });
+    return stop;
+  }, [drawing, setViewport]);
 
   // React Flow reports one click as two batches of changes, the nodes' and then the wires' (or the
   // other way round), and both arrive before the canvas renders again. Each batch has to start from
@@ -835,10 +922,13 @@ type Ends = Pick<
   'source' | 'target' | 'sourceX' | 'sourceY' | 'sourcePosition' | 'targetX' | 'targetY' | 'targetPosition'
 >;
 
-/** Where React Flow has a node's right edge: where it stands, and how wide it measured it. */
+/**
+ * Where React Flow has a node's right edge: where it stands, and how wide it measured it. A node it
+ * has not measured has no edge yet, and `otherwise` stands in for it.
+ */
 function rightOf(nodes: ReactFlowState['nodeLookup'], id: string, otherwise: number) {
   const node = nodes.get(id);
-  return node ? node.internals.positionAbsolute.x + (node.measured.width ?? 0) : otherwise;
+  return node?.measured.width === undefined ? otherwise : node.internals.positionAbsolute.x + node.measured.width;
 }
 
 /**
@@ -875,10 +965,7 @@ function BackWire({
   draw,
 }: Ends & { draw: (path: string) => ReactElement }) {
   const rise = useStore(
-    useCallback(
-      (state: ReactFlowState) => riseOf(sourceX, sourcePosition, rightOf(state.nodeLookup, source, sourceX)),
-      [source, sourcePosition, sourceX],
-    ),
+    useCallback((state: ReactFlowState) => riseOf(rightOf(state.nodeLookup, source, sourceX)), [source, sourceX]),
   );
   const drop = dropOf(targetX, targetPosition);
   const lane = useStore(

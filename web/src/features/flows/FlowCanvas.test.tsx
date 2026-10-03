@@ -5,7 +5,15 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { nodeKey, useFlowStatusStore } from '../../stores/flowStatusStore';
 import { renderWithClient as render } from '../../test/renderWithClient';
 import type { FlowDto, FlowNodeStatusDto, FlowStatusDto, FlowWaitingDto } from '../../types/api';
-import { forgetDrafts, runOf, standInForTheBrowser, withoutComments } from './canvasTestbed';
+import {
+  forgetDrafts,
+  MeasuredTogether,
+  paneSized,
+  runOf,
+  standInForTheBrowser,
+  viewport,
+  withoutComments,
+} from './canvasTestbed';
 import * as backWires from './backWires';
 import { DRAG_TYPE, FlowCanvas } from './FlowCanvas';
 import sheet from './FlowCanvas.module.css?raw';
@@ -95,13 +103,6 @@ const drawPage = (flow: FlowDto = button) => {
 /** A port on the canvas, by its node and its name. */
 const port = (nodeId: string, name: string) =>
   document.querySelector<HTMLElement>(`.react-flow__handle[data-nodeid="${nodeId}"][data-handleid="${name}"]`)!;
-
-/** How far the canvas is panned and how far it is zoomed, read off the transform it draws with. */
-function viewport(): [number, number, number] {
-  const transform = document.querySelector<HTMLElement>('.react-flow__viewport')!.style.transform;
-  const [, x, y, zoom] = /translate\((-?[\d.]+)px, ?(-?[\d.]+)px\) scale\(([\d.]+)\)/.exec(transform)!;
-  return [Number(x), Number(y), Number(zoom)];
-}
 
 /** The ids of the draft's wires, in the order it has them. */
 const wireIds = () => useFlowDraftStore.getState().drafts.button?.edges.map((edge) => edge.id);
@@ -1131,6 +1132,92 @@ describe('a flowchart on the canvas', () => {
 
     fireEvent.click(document.querySelector('[data-id="test"]')!);
     expect(useFlowDraftStore.getState().wire).toBeNull();
+  });
+});
+
+/**
+ * A flow opens fitted to the canvas, unless it is too wide to read fitted: then it opens at the
+ * smallest size its text can be read at, from its Start, and the reader pans along it from where every
+ * run begins. jsdom lays nothing out, so each node is a pixel square; the pane is given a size.
+ */
+describe('the view a flow opens in', () => {
+  let unsized = () => {};
+  let observer: unknown;
+  beforeEach(() => {
+    unsized = paneSized(800, 600);
+    observer = globalThis.ResizeObserver;
+    vi.stubGlobal('ResizeObserver', MeasuredTogether);
+  });
+  afterEach(() => {
+    unsized();
+    vi.stubGlobal('ResizeObserver', observer);
+  });
+
+  /** Start → ten Debugs → End, along a row, 284 apart: as wide as a long chain clicked together. */
+  const wide: FlowDto = {
+    ...button,
+    id: 'wide',
+    nodes: [
+      { id: 'start', type: 'start', x: 0, y: 100, config: {} },
+      ...Array.from({ length: 10 }, (_, at) => ({ id: `d${at + 1}`, type: 'debug', x: 284 * (at + 1), y: 100, config: {} })),
+      { id: 'end', type: 'end', x: 284, y: 300, config: {} },
+    ],
+    edges: ['start', ...Array.from({ length: 10 }, (_, at) => `d${at + 1}`)].map((from, at, all) => ({
+      id: `e${at + 1}`,
+      from,
+      fromPort: 'out',
+      to: all[at + 1] ?? 'end',
+      toPort: 'in',
+    })),
+  };
+
+  it('opens a flow too wide to read fitted at 0.6, its Start 40 from the left and its middle halfway down', async () => {
+    draw(wide);
+
+    // Fitted, the flow's 2841 across would be at 0.25 in 800, past what can be read.
+    await waitFor(() => expect(viewport()[2]).toBe(0.6));
+    const [x, y] = viewport();
+    // The Start's left edge at 40; the flow from its top, 100, to its foot, 301, about the middle.
+    expect(x).toBeCloseTo(40 - 0 * 0.6);
+    expect(y).toBeCloseTo(300 - ((100 + 301) / 2) * 0.6);
+  });
+
+  // The alarm wall opens the page with the flow's Raise alarm picked, and a node picked before
+  // another panel took the canvas away is picked still: shown from its Start, a long flow would leave
+  // the node the reader came for out of sight.
+  it('opens such a flow on the node picked when the Start leaves it out of view, and from the Start when not', async () => {
+    useFlowDraftStore.getState().select('d9');
+    const { unmount } = draw(wide);
+
+    await waitFor(() => expect(viewport()[2]).toBe(0.6));
+    const [x, y] = viewport();
+    // d9 stands at 2556, 100, a pixel square: its middle in the middle of the pane.
+    expect(x).toBeCloseTo(400 - 2556.5 * 0.6);
+    expect(y).toBeCloseTo(300 - 100.5 * 0.6);
+    unmount();
+
+    // 284 is in view from the Start, which shows as far as (800 - 40) / 0.6 = 1266.
+    useFlowDraftStore.getState().select('d1');
+    draw(wide);
+    await waitFor(() => expect(viewport()[2]).toBe(0.6));
+    expect(viewport()[0]).toBeCloseTo(40);
+  });
+
+  it('fits a flow that can be read fitted, as it did', async () => {
+    draw({
+      ...button,
+      nodes: [
+        { id: 'start', type: 'start', x: 0, y: 80, config: {} },
+        { id: 'test', type: 'if', x: 417, y: 80, config: { field: '$.temp', test: 'gt', value: '90', value2: '' } },
+        { id: 'end', type: 'end', x: 834, y: 80, config: {} },
+      ],
+    });
+
+    // 835 across in 800, less a twelfth of it at each side: 0.8, centred.
+    await waitFor(() => expect(viewport()[2]).toBeCloseTo(0.8));
+    const [x, y] = viewport();
+    expect(x).toBeCloseTo(400 - (835 / 2) * 0.8);
+    expect(y).toBeCloseTo(300 - 80.5 * 0.8);
   });
 });
 

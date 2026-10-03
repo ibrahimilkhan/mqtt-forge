@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ReactFlowProvider, useReactFlow } from '@xyflow/react';
+import { ReactFlowProvider, useReactFlow, useStoreApi } from '@xyflow/react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { useShallow } from 'zustand/react/shallow';
@@ -9,11 +9,20 @@ import { describeError } from '../../lib/problemDetails';
 import { alarmSource, useFlowAlarmStore } from '../../stores/flowAlarmStore';
 import { catchUp, isLive, shownRun, useFlowStatusStore } from '../../stores/flowStatusStore';
 import panel from '../../styles/panel.module.css';
-import type { FlowDto, FlowNodeType, FlowsDto } from '../../types/api';
+import type { FlowDto, FlowNodeDto, FlowNodeType, FlowsDto } from '../../types/api';
 import { DebugStrip } from './DebugStrip';
 import { exampleFlows } from './examples';
 import { Failures, type Attempt } from './failures';
-import { CANVAS, FlowCanvas, NODE_HEIGHT, NODE_WIDTH } from './FlowCanvas';
+import {
+  CANVAS,
+  DECISION_HEIGHT,
+  DECISION_WIDTH,
+  FlowCanvas,
+  inView,
+  NODE_HEIGHT,
+  NODE_WIDTH,
+  STEP_HEIGHT,
+} from './FlowCanvas';
 import {
   addNode,
   emptyFlow,
@@ -33,6 +42,7 @@ import {
 } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
 import { Inspector } from './Inspector';
+import { specOf } from './nodeTypes';
 import { Palette } from './Palette';
 import { FLOW_PANEL, focusTab, tabIdOf, Toolbar } from './Toolbar';
 import { useSave, type Held, type SaveKind, type Unsaved } from './useSave';
@@ -50,6 +60,15 @@ const ROOM = 24;
 
 /** The room a node takes, as the palette reckons it when it puts one down. */
 const NODE_BOX = { width: NODE_WIDTH, height: NODE_HEIGHT };
+
+/** The If's: its diamond is drawn in a box of its own, wider and taller than a step's. */
+const DECISION_BOX = { width: DECISION_WIDTH, height: DECISION_HEIGHT };
+
+/** The room a node of each type takes: the canvas draws the decision's diamond in the If's box. */
+const boxOf = (type: string) => (specOf(type).shape === 'decision' ? DECISION_BOX : NODE_BOX);
+
+/** How tall a node of each type is drawn, to put one level with another. */
+const heightOf = (type: string) => (specOf(type).shape === 'decision' ? DECISION_HEIGHT : STEP_HEIGHT);
 
 /** The empty page's first way to start, where the keyboard goes once the last flow has gone. */
 const START = 'flows-start';
@@ -147,7 +166,9 @@ function Page() {
   const testing = useMemo(() => new Set(testingIds), [testingIds]);
   const save = useSave();
   const test = useTest();
-  const { screenToFlowPosition } = useReactFlow();
+  const { getViewport, getZoom, screenToFlowPosition, setCenter } = useReactFlow();
+  // The canvas as React Flow measures it, for whether a node the palette puts down is in view.
+  const drawing = useStoreApi();
 
   // What did not go through besides a save or a test, by what was tried — see failures.ts. The
   // inspector is handed the way to say it; the page says it, under the tabs, where it stays whichever
@@ -338,30 +359,59 @@ function Page() {
   // the node picked when it has one way out, so a chain is built by clicking one node after
   // another. With neither, it goes in the middle of what is on screen, or in the first clear place
   // across from it, unwired until the reader wires it — the canvas marks it until then.
-  const add = (type: FlowNodeType) => {
-    const id = newId('n');
+  const where = (type: FlowNodeType, id: string): [{ x: number; y: number }, (flow: FlowDto) => FlowDto] => {
     const { wire, selected } = useFlowDraftStore.getState();
     const onWire = wire === null ? undefined : shown.edges.find((edge) => edge.id === wire);
     const after = selected === null ? undefined : shown.nodes.find((node) => node.id === selected);
 
+    // Beside a node, after it: past its right edge, and level with it, as the examples are laid out —
+    // their middles at one height, where their ports stand, so the wire between them runs straight.
+    // An If, taller than a step, stands higher.
+    const beside = (node: FlowNodeDto) => ({
+      x: node.x + boxOf(node.type).width + 2 * ROOM,
+      y: node.y + (heightOf(node.type) - heightOf(type)) / 2,
+    });
+
     if (onWire) {
       const from = shown.nodes.find((node) => node.id === onWire.from)!;
       const to = shown.nodes.find((node) => node.id === onWire.to)!;
-      const at = freeSpot(shown, { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 }, NODE_BOX, 1, ROOM);
-      store.edit(shown, (flow) => insertOnWire(flow, onWire.id, type, at, id));
-    } else if (after && insertAfter(shown, after.id, type, after, id) !== null) {
-      const at = freeSpot(shown, { x: after.x + NODE_WIDTH + 2 * ROOM, y: after.y }, NODE_BOX, 1, ROOM);
-      store.edit(shown, (flow) => insertAfter(flow, after.id, type, at, id) ?? flow);
-    } else {
-      const box = document.getElementById(CANVAS)?.getBoundingClientRect();
-      const middle = screenToFlowPosition({ x: box ? box.left + box.width / 2 : 0, y: box ? box.top + box.height / 2 : 0 });
-      const right = screenToFlowPosition({ x: box ? box.right : 0, y: 0 }).x;
-      const { start, across } = placesInView(middle, right, NODE_BOX, ROOM);
-      const at = freeSpot(shown, start, NODE_BOX, across, ROOM);
-      store.edit(shown, (flow) => addNode(flow, type, at, id));
+      // Half-way between the wire's two nodes, when it runs forward. One that goes back — a loop's
+      // return, or its empty body, from the loop back into it; a chain's last wire back to the End
+      // where the new flow had it — has its new node after the node it leaves, the next step of what
+      // that node ends. Half-way stood behind that node, or under the loop, and both of the new
+      // node's wires went back round what stood between (see backWires.ts).
+      const back = onWire.toPort === 'next' || to.x < from.x + boxOf(from.type).width;
+      const at = freeSpot(shown, back ? beside(from) : { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 }, type, boxOf, 1, ROOM);
+      return [at, (flow) => insertOnWire(flow, onWire.id, type, at, id)];
     }
 
+    if (after && specOf(after.type).outs.length === 1) {
+      const at = freeSpot(shown, beside(after), type, boxOf, 1, ROOM);
+      return [at, (flow) => insertAfter(flow, after.id, type, at, id) ?? flow];
+    }
+
+    const box = document.getElementById(CANVAS)?.getBoundingClientRect();
+    const middle = screenToFlowPosition({ x: box ? box.left + box.width / 2 : 0, y: box ? box.top + box.height / 2 : 0 });
+    const right = screenToFlowPosition({ x: box ? box.right : 0, y: 0 }).x;
+    const { start, across } = placesInView(middle, right, boxOf(type), ROOM);
+    const at = freeSpot(shown, start, type, boxOf, across, ROOM);
+    return [at, (flow) => addNode(flow, type, at, id)];
+  };
+
+  // Wherever it goes, the reader sees it go there. The canvas fits the view to the flow when it
+  // opens and never again, and a chain clicked together grows to the right a node at a time: past
+  // the edge, each click put a node out of sight, wired in where nobody could see it, and seemed to
+  // do nothing. A node put down out of view is brought into the middle of it, at the zoom it had.
+  const add = (type: FlowNodeType) => {
+    const id = newId('n');
+    const [at, put] = where(type, id);
+    store.edit(shown, put);
     store.select(id);
+
+    const { width, height } = drawing.getState();
+    const room = boxOf(type);
+    if (!inView({ ...at, ...room }, getViewport(), width, height))
+      void setCenter(at.x + room.width / 2, at.y + room.height / 2, { zoom: getZoom() });
   };
 
   // With no flow left — none yet, or the last one gone — the page is the way to start one, in the

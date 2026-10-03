@@ -25,7 +25,7 @@ import { App } from './App';
 import { queryKeys } from './api/queryKeys';
 import { forgetDrafts, runOf, standInForTheBrowser } from './features/flows/canvasTestbed';
 import { exampleFlows } from './features/flows/examples';
-import { DECISION_HEIGHT, DECISION_WIDTH, NODE_WIDTH } from './features/flows/FlowCanvas';
+import { DECISION_HEIGHT, DECISION_WIDTH, NODE_WIDTH, STEP_HEIGHT } from './features/flows/FlowCanvas';
 import { useFlowDraftStore } from './features/flows/flowDraftStore';
 import { createFakeHub } from './realtime/fakeHub';
 import { useAlertStore } from './stores/alertStore';
@@ -42,20 +42,16 @@ const OUT = join(dirname(fileURLToPath(import.meta.url)), '../../src/MqttForge.A
  * tabs, any line under them and the debug strip — which is why its height is each page's own.
  * React Flow fits the flow to this, and a canvas it took to be another size fitted the flow past
  * its edge, or into a corner of it.
+ *
+ * At this width every example is too wide to read fitted, so the canvas opens each at the least zoom
+ * its text can be read at (see FlowCanvas): the simulator from its Start, whole; the watch on the node
+ * picked — its Raise alarm, and on the refused page its Clear alarm — since from its Start that node
+ * would be out of sight.
  */
 const CANVAS_ACROSS = 715;
 
 /** Reset for each page, to the height its canvas has in that window. */
 let canvasDown = 562;
-
-/**
- * A node as the browser lays it out, by its shape. A step, a pill, a parallelogram and a hexagon are
- * all NODE_WIDTH across and three lines down — the name, the settings and the numbers, at the
- * console's line height — with their padding and the frame: Chrome draws them 71.52 high at the
- * default type size. The If's diamond is drawn in its own box, DECISION_WIDTH by DECISION_HEIGHT,
- * with its three lines in the middle of it.
- */
-const STEP_HEIGHT = 71.52;
 
 /**
  * A node the server refused says the first thing it was told under its name: one more line, of
@@ -70,6 +66,12 @@ const PORT = 10;
 /** The shape of the node an element of the canvas belongs to: the node itself, or one of its ports. */
 const shapeOf = (element) => element.closest('.react-flow__node')?.querySelector('[data-shape]')?.dataset.shape;
 
+/**
+ * A node as the browser lays it out, by its shape. A step, a pill, a parallelogram and a hexagon are
+ * all NODE_WIDTH across and STEP_HEIGHT down, as Chrome draws them at the default type size; the If's
+ * diamond is drawn in its own box, DECISION_WIDTH by DECISION_HEIGHT, with its three lines in the
+ * middle of it.
+ */
 function boxOf(element) {
   const lines = STEP_HEIGHT + (element.closest('.react-flow__node')?.querySelector('[data-problem]') ? PROBLEM_LINE : 0);
   return shapeOf(element) === 'decision'

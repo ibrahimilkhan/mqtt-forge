@@ -81,6 +81,79 @@ export function standInForTheBrowser() {
     ({ x: 0, y: 0, width: 0, height: 0 }) as DOMRect;
 }
 
+/**
+ * A ResizeObserver that reports as a browser does: once, for every element handed to it in one go,
+ * after they are laid out — where standInForTheBrowser's reports each one the moment it is handed
+ * over. React Flow fits its first view to the nodes it has measured when it first hears of any, so
+ * told of them one at a time it fits the view to the first node alone. For the cases about that view;
+ * stub it in with `vi.stubGlobal('ResizeObserver', MeasuredTogether)` before the canvas is drawn.
+ */
+export class MeasuredTogether {
+  private readonly callback: ResizeObserverCallback;
+  private waiting: Element[] = [];
+
+  constructor(callback: ResizeObserverCallback) {
+    this.callback = callback;
+  }
+
+  observe(target: Element) {
+    this.waiting.push(target);
+    if (this.waiting.length > 1) return;
+
+    queueMicrotask(() =>
+      this.callback(
+        this.waiting.splice(0).map((one) => {
+          const { offsetWidth: width, offsetHeight: height } = one as HTMLElement;
+          const contentRect = { x: 0, y: 0, top: 0, left: 0, right: width, bottom: height, width, height } as DOMRectReadOnly;
+          return { target: one, contentRect } as ResizeObserverEntry;
+        }),
+        this as unknown as ResizeObserver,
+      ),
+    );
+  }
+
+  unobserve() {}
+
+  disconnect() {}
+}
+
+/**
+ * Gives the canvas's pane a size, as a browser lays it out: under standInForTheBrowser it is a hundred
+ * pixels square, read off the 100% it is styled with, and a view a hundred pixels across shows less
+ * than one node. Returns what puts the stand-in back.
+ */
+export function paneSized(width: number, height: number) {
+  const was = {
+    offsetWidth: Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth')!,
+    offsetHeight: Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')!,
+  };
+  const pane = (element: HTMLElement) => element.classList.contains('react-flow__renderer');
+
+  Object.defineProperties(HTMLElement.prototype, {
+    offsetWidth: {
+      configurable: true,
+      get(this: HTMLElement) {
+        return pane(this) ? width : was.offsetWidth.get!.call(this);
+      },
+    },
+    offsetHeight: {
+      configurable: true,
+      get(this: HTMLElement) {
+        return pane(this) ? height : was.offsetHeight.get!.call(this);
+      },
+    },
+  });
+
+  return () => Object.defineProperties(HTMLElement.prototype, was);
+}
+
+/** How far the canvas is panned and how far it is zoomed, read off the transform it draws with. */
+export function viewport(): [number, number, number] {
+  const transform = document.querySelector<HTMLElement>('.react-flow__viewport')!.style.transform;
+  const [, x, y, zoom] = /translate\((-?[\d.]+)px, ?(-?[\d.]+)px\) scale\(([\d.]+)\)/.exec(transform)!;
+  return [Number(x), Number(y), Number(zoom)];
+}
+
 /** No drafts, nothing refused, nothing picked: the draft store as a page that has never been opened finds it. */
 export function forgetDrafts(current: string | null = null) {
   useFlowDraftStore.setState({
