@@ -36,7 +36,7 @@ import {
 import { useShallow } from 'zustand/react/shallow';
 import { isLive, nodeKey, shownRun, useFlowStatusStore, type FlowStatusState } from '../../stores/flowStatusStore';
 import type { FlowDto, FlowNodeDto } from '../../types/api';
-import { backPath, MARGIN, NAME_ROOM, namesOf, routes, type Box, type End, type Leg, type Placed, type Route } from './backWires';
+import { backPath, MARGIN, NAME_ROOM, namesOf, routes, Traces, type Box, type Drag, type End, type Leg, type Placed, type Route } from './backWires';
 import {
   addNode,
   canConnect,
@@ -335,6 +335,7 @@ function canvasNode(
   problems: readonly string[] | undefined,
   selected: boolean,
   measured: Size | undefined,
+  dragging: boolean,
 ): CanvasNode {
   const last = handed.get(node);
   if (
@@ -346,6 +347,7 @@ function canvasNode(
     last.data.problems === problems &&
     last.selected === selected &&
     last.measured === measured &&
+    last.dragging === dragging &&
     samePorts(last.data.ports, ports)
   )
     return last;
@@ -357,6 +359,7 @@ function canvasNode(
     data: { flowId: flow.id, flow, node, ports, unwired, unreached: cutOff, problems },
     selected,
     measured,
+    dragging,
     // Every run begins at the Start, so nothing takes it away: not the key here, and not React Flow.
     deletable: node.type !== 'start',
   };
@@ -428,6 +431,9 @@ export function FlowCanvas({ flow, problems }: { flow: FlowDto; problems: Proble
   const wire = useFlowDraftStore((state) => state.wire);
   const [sizes, setSizes] = useState<Record<string, Size>>({});
   const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set());
+  // The nodes being dragged, as React Flow says with each move of one: the wires are worked out by it
+  // (see routesIn), the dragged node's own on every frame and the rest when it is let go.
+  const [dragged, setDragged] = useState<ReadonlySet<string>>(() => new Set());
   const { screenToFlowPosition, setViewport } = useReactFlow();
   const drawing = useStoreApi<CanvasNode, CanvasEdge>();
 
@@ -590,9 +596,10 @@ export function FlowCanvas({ flow, problems }: { flow: FlowDto; problems: Proble
         problems[NODE + node.id],
         picked.has(NODE + node.id),
         sizes[node.id],
+        dragged.has(node.id),
       );
     });
-  }, [flow, picked, problems, sizes]);
+  }, [dragged, flow, picked, problems, sizes]);
 
   const edges = useMemo<CanvasEdge[]>(
     () =>
@@ -632,18 +639,33 @@ export function FlowCanvas({ flow, problems }: { flow: FlowDto; problems: Proble
 
   // React Flow reports moves, sizes and picks here. Never a node taken away: it has no key of its
   // own (see onKeyDown), and nothing else on the page asks it to take one.
+  //
+  // A move says whether it is a frame of a drag: every frame of one says so, and the drop says it no
+  // longer is, from where the last frame left the node — as does a move by the arrow keys. A drag
+  // broken off says so too, so no node is left marked as dragged.
   const onNodesChange = useCallback(
     (changes: NodeChange<CanvasNode>[]) => {
       const moved: Record<string, { x: number; y: number }> = {};
       const measured: Record<string, Size> = {};
       const picks: Array<{ pick: string; selected: boolean }> = [];
+      const drags: Array<[string, boolean]> = [];
 
       for (const change of changes) {
+        if (change.type === 'position') drags.push([change.id, change.dragging === true]);
         if (change.type === 'position' && change.position) moved[change.id] = change.position;
         else if (change.type === 'dimensions' && change.dimensions) measured[change.id] = change.dimensions;
         else if (change.type === 'select') picks.push({ pick: NODE + change.id, selected: change.selected });
       }
 
+      if (drags.length > 0)
+        setDragged((was) => {
+          const now = new Set(was);
+          for (const [id, on] of drags) {
+            if (on) now.add(id);
+            else now.delete(id);
+          }
+          return now.size === was.size && [...now].every((id) => was.has(id)) ? was : now;
+        });
       if (Object.keys(moved).length > 0) edit(flow, (current) => moveNodes(current, moved));
       if (Object.keys(measured).length > 0) setSizes((known) => ({ ...known, ...measured }));
       if (picks.length > 0) pick(picks);
@@ -1050,8 +1072,23 @@ const routeFrom = (key: string): Route =>
  * The routes are worked out once for each state of the store — the first wire to ask works them out,
  * the rest read what it found — and from scratch only when a node or a wire changed, which React Flow
  * tells by handing over a new object for it. A pan moves no node, and finds them all as they were.
+ *
+ * But not while a node is dragged (it is marked so, see onNodesChange): then only its own wires are
+ * worked out on each frame, round the routes every other wire had when the drag began, which they keep
+ * until the node is let go. Every wire worked out on every frame was a tenth of a second at a time in a
+ * flow of a hundred nodes or more, and seconds once the node stood on another.
  */
-type Plan = { nodes: readonly InternalNode[]; edges: readonly Edge[]; routes: ReadonlyMap<string, Route> };
+type Plan = {
+  nodes: readonly InternalNode[];
+  edges: readonly Edge[];
+  routes: ReadonlyMap<string, Route>;
+  /** The routes of the last plan made with nothing dragged: the ones a drag holds the other wires to. */
+  rest: ReadonlyMap<string, Route>;
+  /** The drag going on, the same from one of its frames to the next (see Drag); none at rest. */
+  drag?: Drag;
+  /** The canvas's traces, which go when it goes. */
+  traces: Traces;
+};
 
 /** The routes each canvas last worked out, and from what, by the map its store keeps its nodes in, which lives as long as the canvas does. */
 const planned = new WeakMap<object, Plan>();
@@ -1070,8 +1107,22 @@ function routesIn(state: ReactFlowState): ReadonlyMap<string, Route> {
     last.edges === state.edges &&
     last.nodes.length === nodes.length &&
     last.nodes.every((node, at) => node === nodes[at]);
-  const found = same ? last.routes : routes(placedOf(nodes), legsOf(state));
-  if (!same) planned.set(state.nodeLookup, { nodes, edges: state.edges, routes: found });
+
+  if (same) {
+    asked.set(state, last.routes);
+    return last.routes;
+  }
+
+  const traces = last?.traces ?? new Traces();
+  const moving = new Set(nodes.flatMap((node) => (node.dragging ? [node.id] : [])));
+  // A frame of the drag the last plan was made for, when the same nodes are dragged; or the first of one.
+  const was = last?.drag;
+  const going = was !== undefined && was.moving.size === moving.size && [...moving].every((id) => was.moving.has(id));
+  let drag: Drag | undefined;
+  if (going) drag = was;
+  else if (moving.size > 0 && last !== undefined) drag = { moving, held: last.rest, spent: new Set() };
+  const found = routes(placedOf(nodes), legsOf(state), { traces, drag });
+  planned.set(state.nodeLookup, { nodes, edges: state.edges, routes: found, rest: drag ? drag.held : found, drag, traces });
 
   asked.set(state, found);
   return found;

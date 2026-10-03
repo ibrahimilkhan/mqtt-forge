@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { FlowDto, FlowNodeType } from '../../types/api';
-import { MARGIN, routes, wayOf, type End } from './backWires';
+import { DRAG_STATES, MARGIN, routes, Traces, wayOf, type End, type Work } from './backWires';
 import { exampleFlows } from './examples';
-import { emptyFlow, GAP } from './flowDocument';
-import { clicked, drawnAs, drawnBox, overlapsIn, routedIn, wrongWith, type Drawn } from './wireTestbed';
+import { addNode, emptyFlow, GAP, moveNodes } from './flowDocument';
+import { clicked, drawnAs, drawnBox, freshFlow, named, overlapsIn, randomSession, routedIn, wrongWith, type Drawn } from './wireTestbed';
 
 /**
  * A flow of the nodes and wires given, as a reader might have left it: each node `id:type@x,y`, each
@@ -270,6 +270,51 @@ describe('a wire drawn round, in the drawings the review found wanting', () => {
     expect(Math.max(...pointsOf(no).map((point) => point.y))).toBeLessThan(laneOf(done));
   });
 
+  // With a node standing in front of its way in, a wire has no way into its port from anywhere, and is
+  // drawn the curve, through that node, until one of them moves. Looked for, its way was every place
+  // within reach of its two ends, at each reach in turn — on a drag, on every frame.
+  it('gives up at once on a wire with a node standing in front of its way in', () => {
+    const flow = drawing(
+      ['start:start@-300,0', 'a:debug@0,0', 'c:debug@400,0', 'b:debug@600,0', 'end:end@900,0'],
+      'start.out>a.in',
+      'a.out>b.in',
+      'b.out>end.in',
+    );
+    const { nodes, legs } = drawnAs(flow);
+    const work: Work = { wires: 0, states: 0 };
+
+    expect(routes(nodes, legs, { work }).has('w2')).toBe(false);
+    expect(work.states).toBe(0);
+  });
+
+  // A wire with a way in that nothing outside reaches — the stretch in front of it walled off by nodes
+  // standing edge to edge — finds no way within its reach, and none further out either. Looked for
+  // over the whole canvas, its way was a quarter of a million places, and a node put down anywhere,
+  // however far off, made the search larger still; it is looked for round its two ends only.
+  it('looks for a wire’s way round its two ends only, never as far as a node far from both', () => {
+    const walled = [
+      'start:start@-400,0',
+      'a:debug@0,0',
+      'b:debug@1000,0',
+      'over:debug@812,-72',
+      'under:debug@812,72',
+      'top:debug@620,-72',
+      'middle:debug@620,0',
+      'bottom:debug@620,72',
+      'end:end@1300,0',
+    ];
+    const wires = ['start.out>a.in', 'a.out>b.in', 'b.out>end.in'];
+    const states = (...more: string[]) => {
+      const { nodes, legs } = drawnAs(drawing([...walled, ...more], ...wires));
+      const work: Work = { wires: 0, states: 0 };
+      expect(routes(nodes, legs, { work }).has('w2')).toBe(false);
+      return work.states;
+    };
+
+    expect(states()).toBeGreaterThan(0);
+    expect(states('far:debug@5000,0')).toBe(states());
+  });
+
   it('draws nothing round a wire that goes forward', () => {
     const flow = clickedTogether['a new flow, the Start picked, MQTT in clicked'];
     const { nodes, legs } = drawnAs(flow);
@@ -339,6 +384,13 @@ describe('the drawings clicked at random that went wrong', () => {
       const watch = exampleFlows()[1];
       return clicked(watch, { wire: wireOf(watch, 'hot', 'up') }, 'debug', 'note');
     })(),
+    // Out of the Raise alarm's foot and up into the End, level with the alarm's side, its already up
+    // ran into the End along the start of the raised curve out of that side, and the two read as one
+    // wire out of the side. Every wire's first and last MARGIN are held for it from the start: its stubs.
+    'a Raise alarm on a new flow’s wire, and a For put free under it': (() => {
+      const flow = named(clicked(freshFlow(), { wire: freshFlow().edges[0].id }, 'alarmRaise', 'n0'));
+      return named(addNode(flow, 'for', { x: 306, y: 256 }, 'n1'));
+    })(),
   };
 
   it.each(Object.entries(drawings))('%s: no node on another, and every wire clear', (_, flow) => {
@@ -378,5 +430,92 @@ describe('the drawings clicked at random that went wrong', () => {
     // On the Clear alarm's row, past it: the wire goes down, along and in, not round the Clear alarm.
     expect(note.y).toBe(cool.y);
     expect(note.x).toBeGreaterThan(cool.x + drawnBox('alarmClear').width);
+  });
+});
+
+/**
+ * A drag in a flow of two hundred nodes, the most the editor takes, a node dragged past and over its
+ * neighbours a frame at a time. Worked out whole on every frame, that was a tenth of a second a frame
+ * at a hundred nodes and more, and seconds once the node stood on another: every wire was worked out
+ * again, and a wire that found no way looked for one over the whole canvas. Counted in states the
+ * traces look past, not in time, which says as much about the machine as about the work.
+ */
+describe('a frame of a drag in a flow of two hundred nodes', () => {
+  // Its own timeout, and a generous one: the flow is clicked together three hundred clicks long, and
+  // worked out whole once before the drags, which on a busy machine takes longer than five seconds. What
+  // is counted here is states, not time.
+  it('works out the dragged node’s wires alone, and its traces never look past the count a frame has', { timeout: 60_000 }, () => {
+    const flow = randomSession(4242, 300).find(({ flow }) => flow.nodes.length >= 200)!.flow;
+    const wiresOf = (id: string) => flow.edges.filter((edge) => edge.from === id || edge.to === id).length;
+    const busiest = [...flow.nodes].sort((a, b) => wiresOf(b.id) - wiresOf(a.id) || (a.id < b.id ? -1 : 1)).slice(0, 3);
+    const traces = new Traces();
+    const opened = drawnAs(flow);
+    const held = routes(opened.nodes, opened.legs, { traces });
+    let ranOut = 0;
+
+    for (const node of busiest) {
+      const drag = { moving: new Set([node.id]), held, spent: new Set<string>() };
+      let frames = 0;
+      for (let frame = 0; frame < 40; frame++) {
+        const moved = moveNodes(flow, { [node.id]: { x: node.x + 8 * frame, y: node.y + Math.round(90 * Math.sin(frame / 5)) } });
+        const { nodes, legs } = drawnAs(moved);
+        const work: Work = { wires: 0, states: 0 };
+        routes(nodes, legs, { traces, drag, work });
+
+        expect(work.wires, `${node.id}, frame ${frame}`).toBe(wiresOf(node.id));
+        expect(work.states, `${node.id}, frame ${frame}`).toBeLessThanOrEqual(DRAG_STATES);
+        if (work.states === DRAG_STATES) frames++;
+      }
+      // A wire that ran a frame's count out is not traced again in the drag: it would run out again.
+      expect(frames, node.id).toBeLessThanOrEqual(wiresOf(node.id));
+      ranOut += frames;
+    }
+
+    // A drag that needs the count: some wire of it costs more to trace than a frame has.
+    expect(ranOut).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * The traces a canvas keeps, so a plan made again traces again only what moved: kept by the canvas and
+ * gone with it, so much of them and no more, the least lately used let go first.
+ */
+describe('the traces kept', () => {
+  const corners = (count: number) => Array.from({ length: count }, (_, at) => ({ x: at, y: 0 }));
+
+  it('keep so many corners at the most, and let the least lately used go first', () => {
+    const traces = new Traces(10);
+    traces.set(1, corners(4));
+    traces.set(2, corners(4));
+    traces.get(1);
+    traces.set(3, corners(4));
+
+    expect(traces.get(2)).toBeUndefined();
+    expect(traces.get(1)).toEqual(corners(4));
+    expect(traces.get(3)).toEqual(corners(4));
+    expect(traces.size).toEqual({ traces: 2, corners: 8 });
+  });
+
+  it('are the canvas’s own: a plan asked for with none keeps nothing for the next', () => {
+    // A body of two and a Debug on the loop's done, whose curve up to the End would cut the row above:
+    // it is traced.
+    const wireOf = (flow: FlowDto, from: string, port: string) => flow.edges.find((edge) => edge.from === from && edge.fromPort === port)!.id;
+    let flow = named(clicked(freshFlow(), { node: 'start' }, 'for', 'loop'));
+    flow = named(clicked(flow, { wire: wireOf(flow, 'loop', 'body') }, 'debug', 'say'));
+    flow = named(clicked(flow, { node: 'say' }, 'publish', 'send'));
+    flow = named(clicked(flow, { wire: wireOf(flow, 'loop', 'done') }, 'debug', 'after'));
+    const { nodes, legs } = drawnAs(flow);
+    const plan = (traces?: Traces) => {
+      const work: Work = { wires: 0, states: 0 };
+      routes(nodes, legs, { traces, work });
+      return work.states;
+    };
+    const first = plan();
+    const traces = new Traces();
+    plan(traces);
+
+    expect(first).toBeGreaterThan(0);
+    expect(plan()).toBe(first);
+    expect(plan(traces)).toBe(0);
   });
 });

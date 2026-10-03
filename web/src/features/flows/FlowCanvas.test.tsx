@@ -1544,6 +1544,55 @@ describe('a wire drawn round', () => {
       drawn.mockRestore();
     }
   });
+
+  // A drag moves its node a frame at a time, each frame a new plan. Worked out whole on every frame, a
+  // node dragged past its neighbours in a flow of a hundred nodes or more held the page a tenth of a
+  // second a frame. So each frame works out the dragged node's own wires, and every other wire keeps
+  // where it ran when the drag began; the drop works all of them out again.
+  it('works out only the dragged node’s wires while it is dragged, and every wire once it is let go', async () => {
+    const flow = looping({ x: 200, y: 180 });
+    let drawing: ReturnType<typeof useStoreApi> | undefined;
+    function Peek() {
+      drawing = useStoreApi();
+      return null;
+    }
+    useFlowDraftStore.getState().show(flow.id);
+    render(
+      <ReactFlowProvider>
+        <div style={{ width: 800, height: 600 }}>
+          <Page flow={flow} />
+        </div>
+        <Peek />
+      </ReactFlowProvider>,
+    );
+    expect(laneOf(await pathOf('e3'))).toBe(180 - 32);
+    // As React Flow reports a drag: each move of the pointer a frame of it, and the drop where the last left the node.
+    const move = (y: number, dragging: boolean) =>
+      act(() => drawing!.getState().triggerNodeChanges([{ id: 'say', type: 'position', position: { x: 200, y }, dragging }]));
+    const planned = vi.spyOn(backWires, 'routes');
+
+    try {
+      // The Debug, which no wire leads to or from, dragged up into the lane of the Publish's way back.
+      move(160, true);
+      move(120, true);
+      await waitFor(() => expect(document.querySelector('.react-flow__node[data-id="say"]')).toHaveStyle({ transform: 'translate(200px,120px)' }));
+
+      const moving = planned.mock.calls.map(([, , planning]) => [...(planning?.drag?.moving ?? [])]);
+      expect(moving.length).toBeGreaterThan(0);
+      expect(moving.every((ids) => ids.join() === 'say')).toBe(true);
+      expect(laneOf(await pathOf('e3'))).toBe(180 - 32);
+
+      planned.mockClear();
+      move(120, false);
+
+      // Let go wholly above the lane, the Debug has it run under it, 32 above the loop.
+      await waitFor(async () => expect(laneOf(await pathOf('e3'))).toBe(200 - 32));
+      expect(planned).toHaveBeenCalled();
+      expect(planned.mock.calls.every(([, , planning]) => planning?.drag === undefined)).toBe(true);
+    } finally {
+      planned.mockRestore();
+    }
+  });
 });
 
 /**

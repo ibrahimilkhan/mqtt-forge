@@ -47,7 +47,7 @@ import { isNodeType, nameOf, sideOf, type Ports, type Side } from './nodeTypes';
  * short runs out of a port and into one were never looked at, and a way in whose drop was pushed left
  * past a node on its row went into it through that node. A route that does not run clear is traced
  * instead (trace): the shortest way with the fewest turns through the gaps between the nodes, which a
- * flowchart always has, round everything if need be.
+ * flowchart always has, round whatever stands near its two ends if need be.
  *
  * The narrowest are worked out first, so a loop inside another has its return under the outer one's —
  * nested, the two never cross — and what runs along under a row after what climbs out of it (see the
@@ -103,12 +103,16 @@ const CROSSING = 12;
 const MOUTH = 6;
 
 /**
- * How far round its two ends a traced wire looks for its way, before it looks further: most go round
- * a node or two near them, and the whole canvas is far more to search on every frame of a drag.
+ * How far round its two ends a traced wire looks for its way, the nearer first: most go round a node
+ * or two near them. It never looks over the whole canvas. A wire with no way within 720 of its ends
+ * has none further out either, as a rule — its port has a node or a name standing in its mouth, which
+ * no way reaches from anywhere — and the whole canvas was a quarter of a million places to search for
+ * nothing, on every frame of a drag: a node dragged over its neighbours in a flow of a hundred nodes
+ * stopped the page for a second at a time.
  */
-const REACHES = [240, 720, Infinity];
+const REACHES = [240, 720];
 
-/** The most places a trace searches over the whole canvas: a flow past that is drawn as best the routes above can. */
+/** The most places one trace searches: a wire whose reach holds more is drawn as best the routes above can. */
 const PLACES = 250_000;
 
 export type Point = { x: number; y: number };
@@ -222,6 +226,37 @@ const MOVES = 1000;
 const PLANS = 3;
 
 /**
+ * How many states the traces of one frame of a drag look past between them at the most: a few
+ * milliseconds' work, where a wire traced on most frames takes a few thousand. A wire that comes a long
+ * way to the node dragged — a loop's return from the far end of a flow of two hundred nodes, round
+ * everything between — can need twenty times the count, and every frame of the drag traced it again;
+ * past the count it is drawn the way it was tried first, and not traced again until the node is let go
+ * (see Drag), when it is traced in full.
+ */
+export const DRAG_STATES = 10_000;
+
+/**
+ * Nodes being dragged, by their ids, and where every wire drawn round ran before the drag began, by
+ * its id (see routes); and the wires that ran a frame's traces out of states earlier in the drag (see
+ * DRAG_STATES), which routes adds to and traces no more while the drag lasts. What a long way round
+ * costs on one frame it costs on the next, and traced on each it took every frame's count, and the
+ * other wires' with it.
+ */
+export type Drag = { moving: ReadonlySet<string>; held: ReadonlyMap<string, Route>; spent?: Set<string> };
+
+/**
+ * What working the routes out took: how many wires were worked out, and how many states their traces
+ * looked past. Counted for whoever asks, since the time it took says as much about the machine.
+ */
+export type Work = { wires: number; states: number };
+
+/**
+ * What routes is handed besides the drawing: the traces it worked out before (see Traces), the drag
+ * going on, if there is one, and where to count what it does.
+ */
+export type Planning = { traces?: Traces; drag?: Drag; work?: Work };
+
+/**
  * Where every wire of `legs` that is drawn round runs, by its id, round `nodes` and the names beside
  * them. A wire whose curve runs clear, or one with an end on a node not yet measured, has none: the
  * canvas draws it as the curve.
@@ -231,8 +266,26 @@ const PLANS = 3;
  * along just past that, and no way out between them. So the routes are worked out again with the wires
  * that found no clear way first, and the others round them; the plan kept is the one that left the
  * fewest such wires. A drawing with none, which is nearly all of them, is worked out once.
+ *
+ * While nodes are dragged, only their own wires are worked out, each round the routes every other wire
+ * had before the drag began (`drag`), which keep them; and once the nodes are let go, everything is
+ * worked out again. Worked out whole on every frame, a node dragged past its neighbours in a flow of a
+ * hundred nodes or more stopped the page for a tenth of a second at a time, or a second when it stood
+ * on another and some wire found no way at all. The rest of the wires are where they were for the
+ * moment of the drag — one may run through the node dragged over it — and settle when it ends.
  */
-export function routes(nodes: readonly Placed[], legs: readonly Leg[]): Map<string, Route> {
+export function routes(nodes: readonly Placed[], legs: readonly Leg[], { traces = new Traces(), drag, work }: Planning = {}): Map<string, Route> {
+  // The wires worked out: every one, or a dragged node's only, with every other on its route from before.
+  const worked = drag ? legs.filter((leg) => drag.moving.has(leg.from) || drag.moving.has(leg.to)) : legs;
+  const ids = new Set(worked.map((leg) => leg.id));
+  const held = new Map<string, Route>();
+  if (drag)
+    for (const leg of legs) {
+      const route = ids.has(leg.id) ? undefined : drag.held.get(leg.id);
+      if (route !== undefined) held.set(leg.id, route);
+    }
+  if (work) work.wires += worked.length;
+
   // The curves that would run through a node or a name, whatever the plan: each is traced.
   const boxes = new Map(nodes.map((node) => [node.id, node.box]));
   const kept = {
@@ -240,15 +293,18 @@ export function routes(nodes: readonly Placed[], legs: readonly Leg[]): Map<stri
     names: nodes.flatMap((node) => node.names).map((name) => around(name, NAME_CLEAR)),
   };
   const curved = new Set(
-    legs
+    worked
       .filter((leg) => wayOf(leg.source, leg.target) === 'forward' && boxes.has(leg.from) && boxes.has(leg.to) && !curveRunsClear(leg, kept))
       .map((leg) => leg.id),
   );
 
+  // A drag is worked out once a frame, on a count of states (see DRAG_STATES): its frames come too fast
+  // to make the plan again for a wire that found no way, which the drop does.
+  const look: Look = { traces, work, left: drag ? { states: DRAG_STATES } : undefined, spent: drag?.spent };
   let first: string[] = [];
   let best: Plan | null = null;
-  for (let round = 0; round < PLANS; round++) {
-    const made = plan(nodes, legs, curved, first);
+  for (let round = 0; round < (drag ? 1 : PLANS); round++) {
+    const made = plan(nodes, legs, worked, held, curved, first, look);
     if (best === null || made.stuck.length < best.stuck.length) best = made;
     if (made.stuck.length === 0) break;
     first = [...first, ...made.stuck.filter((id) => !first.includes(id))];
@@ -259,8 +315,26 @@ export function routes(nodes: readonly Placed[], legs: readonly Leg[]): Map<stri
 /** The routes worked out once, and the wires that found no clear way: drawn the curve, or a way that runs through something. */
 type Plan = { found: Map<string, Route>; stuck: string[] };
 
-/** The routes worked out with the wires of `first` before the rest, in that order; `curved` those going forward whose curve would run through something. */
-function plan(nodes: readonly Placed[], legs: readonly Leg[], curved: ReadonlySet<string>, first: readonly string[]): Plan {
+/**
+ * Where a trace looks up what it worked out before, where it counts what it does, how many states the
+ * traces have left to look past, when they are on a count, and the wires not to trace (see Drag).
+ */
+type Look = { traces: Traces; work?: Work; left?: { states: number }; spent?: Set<string> };
+
+/**
+ * The routes of `worked` worked out with the wires of `first` before the rest, in that order, round
+ * the routes `held` for the rest of `legs`; `curved` those going forward whose curve would run through
+ * something.
+ */
+function plan(
+  nodes: readonly Placed[],
+  legs: readonly Leg[],
+  worked: readonly Leg[],
+  held: ReadonlyMap<string, Route>,
+  curved: ReadonlySet<string>,
+  first: readonly string[],
+  look: Look,
+): Plan {
   const boxes = new Map(nodes.map((node) => [node.id, node.box]));
   const names = nodes.flatMap((node) => node.names);
   // Every wire's stubs are held from the start, its own wire's to run on, and every other's to keep
@@ -485,12 +559,23 @@ function plan(nodes: readonly Placed[], legs: readonly Leg[], curved: ReadonlySe
     { leg: leg.id, into: `${leg.to}:${leg.toPort}`, rect: throatOf(leg.target, arriving[leg.target.side] ^ 1) },
   ]);
   const traced = (leg: Leg, blocks: readonly Rect[]) => {
+    if (look.spent?.has(leg.id)) return null;
     const into = `${leg.to}:${leg.toPort}`;
     const mouths = throats.flatMap((throat) => (throat.leg === leg.id || throat.into === into ? [] : [throat.rect]));
-    return trace(leg, blocks, mouths, nodes, names, levels.filter(others), uprights.filter(others));
+    const had = look.left?.states ?? 0;
+    const points = trace(leg, blocks, mouths, nodes, names, levels.filter(others), uprights.filter(others), look);
+    // The wire that ran the count out, not one that came to it already run out.
+    if (points === null && had > 0 && look.left !== undefined && look.left.states <= 0) look.spent?.add(leg.id);
+    return points;
   };
 
-  const back = legs
+  // The routes held through a drag, in the way of what is worked out as any route kept is.
+  for (const leg of legs) {
+    const route = held.get(leg.id);
+    if (route !== undefined) keep(leg, [leg.source, ...route, leg.target]);
+  }
+
+  const back = worked
     .flatMap((leg) => {
       const way = wayOf(leg.source, leg.target);
       const from = boxes.get(leg.from);
@@ -506,7 +591,7 @@ function plan(nodes: readonly Placed[], legs: readonly Leg[], curved: ReadonlySe
 
   // The curves that would run through a node or a name, the narrowest first, after the rest: round what
   // is drawn by then.
-  const crossing = legs
+  const crossing = worked
     .filter((leg) => curved.has(leg.id))
     .map((leg) => ({ leg, span: Math.abs(leg.target.x - leg.source.x) + Math.abs(leg.target.y - leg.source.y) }))
     .sort((a, b) => a.span - b.span || (a.leg.id < b.leg.id ? -1 : a.leg.id > b.leg.id ? 1 : 0));
@@ -691,10 +776,13 @@ function trace(
   names: readonly Box[],
   levels: readonly Run[],
   uprights: readonly Run[],
+  look: Look,
 ): Point[] | null {
   for (const reach of REACHES) {
-    const points = traceWithin(leg, reach, blocks, mouths, nodes, names, levels, uprights);
+    const points = traceWithin(leg, reach, blocks, mouths, nodes, names, levels, uprights, look);
     if (points !== null) return points;
+    // Out of states, it found nothing because it stopped looking: further out is more to look at.
+    if (look.left !== undefined && look.left.states <= 0) return null;
   }
   return null;
 }
@@ -712,22 +800,14 @@ function traceWithin(
   allNames: readonly Box[],
   allLevels: readonly Run[],
   allUprights: readonly Run[],
+  { traces, work, left }: Look,
 ): Point[] | null {
   const { source, target } = leg;
-  const into = `${leg.to}:${leg.toPort}`;
 
-  // Where it looks: round its two ends, or round everything there is. Only what stands there counts,
-  // and its lines: a flow of two hundred nodes is far more than one wire needs to go round, worked out
-  // again on every frame of a drag.
-  const spans = [...allBlocks, ...allMouths];
-  const low = {
-    x: Number.isFinite(reach) ? Math.min(source.x, target.x) - reach : Math.min(source.x, target.x, ...spans.map((rect) => rect.x1)) - 2 * OVER,
-    y: Number.isFinite(reach) ? Math.min(source.y, target.y) - reach : Math.min(source.y, target.y, ...spans.map((rect) => rect.y1)) - 2 * OVER,
-  };
-  const high = {
-    x: Number.isFinite(reach) ? Math.max(source.x, target.x) + reach : Math.max(source.x, target.x, ...spans.map((rect) => rect.x2)) + 2 * OVER,
-    y: Number.isFinite(reach) ? Math.max(source.y, target.y) + reach : Math.max(source.y, target.y, ...spans.map((rect) => rect.y2)) + 2 * OVER,
-  };
+  // Where it looks: round its two ends. Only what stands there counts, and its lines: a flow of two
+  // hundred nodes is far more than one wire needs to go round.
+  const low = { x: Math.min(source.x, target.x) - reach, y: Math.min(source.y, target.y) - reach };
+  const high = { x: Math.max(source.x, target.x) + reach, y: Math.max(source.y, target.y) + reach };
   const within = (rect: Rect) => rect.x1 < high.x && low.x < rect.x2 && rect.y1 < high.y && low.y < rect.y2;
   const runWithin = (level: boolean) => (run: Run) =>
     level
@@ -744,28 +824,110 @@ function traceWithin(
     ...mouths.map((rect) => ({ rect, weight: MOUTH })),
   ];
 
-  // The same wire among the same things takes the same way: on a frame of a drag, only the wires near
-  // the node dragged are traced again.
-  const key = [
-    reach, source.x, source.y, source.side, target.x, target.y, target.side, into,
-    '|', ...blocks.flatMap((rect) => [rect.x1, rect.y1, rect.x2, rect.y2]),
-    '|', ...mouths.flatMap((rect) => [rect.x1, rect.y1, rect.x2, rect.y2]),
-    '|', ...nodes.flatMap(({ box }) => [box.x, box.y, box.width, box.height]),
-    '|', ...names.flatMap((name) => [name.x, name.y, name.width, name.height]),
-    '|', ...levels.flatMap((run) => [run.at, run.lo, run.hi, run.into, run.approach]),
-    '|', ...uprights.flatMap((run) => [run.at, run.lo, run.hi, run.into, run.approach]),
-  ].join(',');
+  // The same wire among the same things takes the same way: a plan made again for a pick, or once a
+  // drag is over, traces again only the wires near what moved.
+  const key = keyOf(reach, leg, blocks, mouths, nodes, names, levels, uprights);
   const known = traces.get(key);
   if (known !== undefined) return known;
-  if (traces.size >= TRACES) traces.clear();
-  const found = search(leg, { low, high }, blocks, zones, nodes, names, levels, uprights);
-  traces.set(key, found);
+  if (left !== undefined && left.states <= 0) return null;
+  const found = search(leg, { low, high }, blocks, zones, nodes, names, levels, uprights, work, left);
+  // A search stopped short by the count says nothing about the wire: it is not kept.
+  if (found !== null || left === undefined || left.states > 0) traces.set(key, found);
   return found;
+}
+
+/*
+ * A trace's key: everything it is worked out from, hashed — the wire's two ends and the port it goes
+ * into, and every block, mouth, node, name and run within its reach — by cyrb53's mixing, as a flow's
+ * fingerprint is (flowDocument.ts), fed each number a 32-bit half at a time and each name a letter at
+ * a time, and each list's length ahead of it. Written out as text, as it was, a key spelled out all of
+ * it: a drag of eight seconds over a flow of two hundred nodes left three thousand keys holding sixty
+ * million characters. Two different things to trace hash alike once in some 2^53, and drawn on that
+ * once, a wire takes a way through something until the next plan.
+ */
+const FLOAT = new Float64Array(1);
+const HALVES = new Uint32Array(FLOAT.buffer);
+
+function keyOf(
+  reach: number,
+  leg: Leg,
+  blocks: readonly Rect[],
+  mouths: readonly Rect[],
+  nodes: readonly Placed[],
+  names: readonly Box[],
+  levels: readonly Run[],
+  uprights: readonly Run[],
+): number {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  const word = (value: number) => {
+    h1 = Math.imul(h1 ^ value, 2654435761);
+    h2 = Math.imul(h2 ^ value, 1597334677);
+  };
+  const number = (value: number) => {
+    FLOAT[0] = value;
+    word(HALVES[0]);
+    word(HALVES[1]);
+  };
+  const text = (value: string) => {
+    number(value.length);
+    for (let at = 0; at < value.length; at++) word(value.charCodeAt(at));
+  };
+  const rects = (all: readonly Rect[]) => {
+    number(all.length);
+    for (const rect of all) {
+      number(rect.x1);
+      number(rect.y1);
+      number(rect.x2);
+      number(rect.y2);
+    }
+  };
+  const boxes = (all: readonly Box[]) => {
+    number(all.length);
+    for (const box of all) {
+      number(box.x);
+      number(box.y);
+      number(box.width);
+      number(box.height);
+    }
+  };
+  const runs = (all: readonly Run[]) => {
+    number(all.length);
+    for (const run of all) {
+      number(run.at);
+      number(run.lo);
+      number(run.hi);
+      text(run.into);
+      number(run.approach ? 1 : 0);
+    }
+  };
+
+  number(reach);
+  for (const end of [leg.source, leg.target]) {
+    number(end.x);
+    number(end.y);
+    text(end.side);
+  }
+  text(`${leg.to}:${leg.toPort}`);
+  rects(blocks);
+  rects(mouths);
+  boxes(nodes.map(({ box }) => box));
+  boxes(names);
+  runs(levels);
+  runs(uprights);
+
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
+  h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
+  h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return 4294967296 * (2097151 & h2) + (h1 >>> 0);
 }
 
 /**
  * The search itself, within `low`..`high` (see trace): the lines of what stands there, where each step
- * along them may go and what it costs, and the cheapest way over them from one port to the other.
+ * along them may go and what it costs, and the cheapest way over them from one port to the other. The
+ * states it looks past are counted in `work`, and taken off `left`, when it is on a count: it stops
+ * when that runs out, and has then found nothing.
  */
 function search(
   leg: Leg,
@@ -776,6 +938,8 @@ function search(
   names: readonly Box[],
   levels: readonly Run[],
   uprights: readonly Run[],
+  work: Work | undefined,
+  left: { states: number } | undefined,
 ): Point[] | null {
   const { source, target } = leg;
   const into = `${leg.to}:${leg.toPort}`;
@@ -855,6 +1019,7 @@ function search(
   // on those of the wires already into the same port, as they come down to it and go in together.
   const shared = stepsOf(true);
   const wayIn = wayInto(home, ti, tj, ny, across, down, target, shared);
+  if (!wayIn.open) return null;
 
   const { spent, came } = searching(nx * ny * 4);
   const queue = new Queue();
@@ -871,9 +1036,17 @@ function search(
   spent[start * 4 + out] = 0;
   queue.push(guess(start, out), start * 4 + out);
 
-  while (queue.size > 0) {
+  let popped = 0;
+  const most = left?.states ?? Infinity;
+  const done = () => {
+    if (work) work.states += popped;
+    if (left) left.states -= popped;
+  };
+  while (queue.size > 0 && popped < most) {
     const state = queue.pop();
+    popped++;
     if (state === arrived) {
+      done();
       const last = came[state] >> 2;
       return cornersOnly([...placesOf(came[state], came, across, down, nx), ...wayIn.points(last % nx, Math.floor(last / nx)), target]);
     }
@@ -914,6 +1087,7 @@ function search(
     }
   }
 
+  done();
   return null;
 }
 
@@ -929,11 +1103,56 @@ function searching(states: number) {
 }
 
 /**
- * The traces worked out lately, by everything each was worked out from (see traceWithin), and how
- * many it keeps before it lets them all go.
+ * The traces a canvas worked out lately, by the key of what each was worked out from (see keyOf), and
+ * whether each found a way: the same wire among the same things takes the same way, so a plan made
+ * again traces again only what moved. The canvas keeps one for as long as it is drawn, and it goes
+ * with the canvas; routes asked with none makes one for the one plan.
+ *
+ * It holds so many corners at the most, a trace that found no way counting as one, and lets the least
+ * lately used go first to make room: one kept by the count of its keys, the keys spelling out all a
+ * trace was worked out from, grew to tens of megabytes in a long drag, and once full let every trace go
+ * at once, mid-drag, so the next frame traced everything again.
  */
-const traces = new Map<string, Point[] | null>();
-const TRACES = 4096;
+export class Traces {
+  private readonly kept = new Map<number, Point[] | null>();
+  private readonly most: number;
+  private corners = 0;
+
+  constructor(most = TRACED_CORNERS) {
+    this.most = most;
+  }
+
+  /** The trace kept for `key`, null when it found no way, or undefined when there is none. */
+  get(key: number): Point[] | null | undefined {
+    const found = this.kept.get(key);
+    if (found !== undefined) {
+      // Last in the map is the most lately used.
+      this.kept.delete(key);
+      this.kept.set(key, found);
+    }
+    return found;
+  }
+
+  set(key: number, found: Point[] | null) {
+    this.kept.set(key, found);
+    this.corners += sizeOf(found);
+    for (const [oldest, trace] of this.kept) {
+      if (this.corners <= this.most) break;
+      this.kept.delete(oldest);
+      this.corners -= sizeOf(trace);
+    }
+  }
+
+  /** How many traces it keeps, and how many corners they have between them. */
+  get size() {
+    return { traces: this.kept.size, corners: this.corners };
+  }
+}
+
+/** How many corners a canvas's traces keep between them at the most: well under a megabyte. */
+const TRACED_CORNERS = 16_384;
+
+const sizeOf = (trace: Point[] | null) => (trace === null ? 1 : trace.length);
 
 /**
  * A trace's way into its port at (ti, tj), heading `home`, by the steps that may share the runs into
@@ -966,6 +1185,14 @@ function wayInto(
   } else columns.set(ti, reach(ti));
 
   return {
+    /**
+     * Whether it can go in at all: along the port's height from a line CORNER or more left of it, or
+     * down onto it from CORNER or more above. With a node, a name or another wire in front of the port
+     * there is no way in from anywhere, and a search that looked for one anyway looked at every place
+     * it could reach before it gave up.
+     */
+    open: side ? columns.size > 0 : down[columns.get(ti)!.top] <= target.y - CORNER,
+
     cost(i: number, j: number, heading: number, turnable: boolean): number {
       const column = columns.get(i);
       if (column === undefined || j < column.top || j > column.bottom) return Infinity;

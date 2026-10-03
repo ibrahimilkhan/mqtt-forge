@@ -1,6 +1,6 @@
 import { getBezierPath } from '@xyflow/react';
 import type { FlowDto, FlowNodeDto, FlowNodeType } from '../../types/api';
-import { backPath, namesOf, POSITIONS, routes, type Box, type End, type Leg, type Placed, type Route } from './backWires';
+import { backPath, MARGIN, namesOf, POSITIONS, routes, type Box, type End, type Leg, type Placed, type Route } from './backWires';
 import { DECISION_HEIGHT, DECISION_WIDTH, MEASURE, NODE_WIDTH, STEP_HEIGHT } from './FlowCanvas';
 import { addNode, emptyFlow, freeSpot, insertAfter, insertOnWire, moveNodes, noReturn, placeAfter, unwiredOuts } from './flowDocument';
 import { NODE_SPECS, portsOf, sideOf, specOf } from './nodeTypes';
@@ -190,7 +190,11 @@ export function routedIn(flow: FlowDto): { nodes: Placed[]; drawn: Drawn[] } {
  * - a port's name any wire runs through;
  * - another wire drawn round that one drawn round lies on, or runs beside closer than 16, along a run
  *   longer than four pixels — but for the last runs of two wires into the same port, where they meet
- *   and go in together.
+ *   and go in together;
+ * - the stub of a curve — its first MARGIN out of its port, or its last into the other, which the
+ *   routes hold for it — that a wire drawn round lies on or runs beside closer than 16, in the same way:
+ *   out of an alarm's foot and up into the End level with it, a wire ran into the End along the start
+ *   of the curve out of the alarm's side, and the two read as one line out of the side.
  */
 export function wrongWith(flow: FlowDto): string[] {
   const { nodes, wires } = wiresIn(flow);
@@ -236,8 +240,44 @@ export function wrongWith(flow: FlowDto): string[] {
         }
     }
 
+  const stubs = wires.flatMap(({ leg, route }) => (route ? [] : stubsOf(leg)));
+  for (const { leg, d } of drawn) {
+    const runs = runsOf(d);
+    const into = `${leg.to}:${leg.toPort}`;
+    const approach = (index: number) => index >= runs.length - (leg.target.side === 'top' ? 1 : 2);
+    for (const [index, r] of runs.entries())
+      for (const stub of stubs) {
+        if (stub.into === into && approach(index)) continue;
+        const level = Math.abs(r.from.y - r.to.y) < 0.01 && stub.from.y === stub.to.y && Math.abs(r.from.y - stub.from.y) < 15.99;
+        const upright = Math.abs(r.from.x - r.to.x) < 0.01 && stub.from.x === stub.to.x && Math.abs(r.from.x - stub.from.x) < 15.99;
+        if (!level && !upright) continue;
+
+        const [ar, br] = level ? [[r.from.x, r.to.x], [stub.from.x, stub.to.x]] : [[r.from.y, r.to.y], [stub.from.y, stub.to.y]];
+        const shared = Math.min(Math.max(...ar), Math.max(...br)) - Math.max(Math.min(...ar), Math.min(...br));
+        if (shared <= 4) continue;
+
+        const apart = level ? Math.abs(r.from.y - stub.from.y) : Math.abs(r.from.x - stub.from.x);
+        wrong.push(`${leg.id} ${apart < 0.5 ? 'lies on' : 'runs beside'} the stub of ${stub.leg} for ${Math.round(shared)}`);
+      }
+  }
+
   return wrong;
 }
+
+/** The way a port on each side faces: the way a wire leaves it, or comes to it from. */
+const OUT: Record<End['side'], Point> = { right: { x: 1, y: 0 }, left: { x: -1, y: 0 }, bottom: { x: 0, y: 1 }, top: { x: 0, y: -1 } };
+
+/** A wire's two stubs, as the routes hold them (see stubsOf in backWires.ts): MARGIN out of its way out, and MARGIN in front of its way in. */
+const stubsOf = (leg: Leg) =>
+  [
+    { end: leg.source, into: null },
+    { end: leg.target, into: `${leg.to}:${leg.toPort}` },
+  ].map(({ end, into }) => ({
+    leg: leg.id,
+    into,
+    from: { x: end.x, y: end.y },
+    to: { x: end.x + OUT[end.side].x * MARGIN, y: end.y + OUT[end.side].y * MARGIN },
+  }));
 
 /** Every two nodes of a flow that stand on one another, as Chrome draws them, each by its own box. */
 export function overlapsIn(flow: FlowDto): string[] {
