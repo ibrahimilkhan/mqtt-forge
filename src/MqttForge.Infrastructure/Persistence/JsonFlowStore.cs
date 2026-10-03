@@ -109,12 +109,16 @@ public sealed class JsonFlowStore : IFlowStore
         {
             if (!Whole(flow)) return new FlowDocument([], Unreadable: true);
 
-            // The one repair made on the way in: a node with no settings at all gets empty ones.
-            // It is what Debug is written with by hand, and leaving it Undefined would make the
+            // Two repairs are made on the way in. A node with no settings at all gets empty ones:
+            // it is what Debug is written with by hand, and leaving it Undefined would make the
             // next write of this file throw.
+            //
+            // A list of variables left out is none, and so is one written as null: variables came
+            // after the file's first version, and a flow from before them is still a whole flow.
             flows.Add(flow with
             {
-                Nodes = [.. flow.Nodes.Select(node => node with { Config = FlowJson.OrEmpty(node.Config) })]
+                Nodes = [.. flow.Nodes.Select(node => node with { Config = FlowJson.OrEmpty(node.Config) })],
+                Variables = flow.Variables ?? [],
             });
         }
 
@@ -122,11 +126,14 @@ public sealed class JsonFlowStore : IFlowStore
     }
 
     // The members STJ fills with null when the property is missing, even though the record says
-    // they cannot be. A flow without them is not something to run or to write back.
+    // they cannot be. A flow without them is not something to run or to write back. The list of
+    // variables is the one member allowed to be null, because ReadAsync reads that as none; what
+    // is in the list is held to the same rule as the rest.
     private static bool Whole(Flow? flow) =>
         flow is { Id: not null, Name: not null, Nodes: not null, Edges: not null } &&
         flow.Nodes.All(node => node is { Id: not null, Type: not null }) &&
-        flow.Edges.All(edge => edge is { Id: not null, From: not null, FromPort: not null, To: not null, ToPort: not null });
+        flow.Edges.All(edge => edge is { Id: not null, From: not null, FromPort: not null, To: not null, ToPort: not null }) &&
+        (flow.Variables is null || flow.Variables.All(variable => variable is { Name: not null, Value: not null }));
 
     private async Task WriteAsync(IReadOnlyList<Flow> flows, CancellationToken ct)
     {

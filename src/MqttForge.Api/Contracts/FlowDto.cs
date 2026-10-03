@@ -38,29 +38,37 @@ public sealed record FlowDebugDto(string FlowId, string NodeId, DateTimeOffset A
 // every other refusal a deploy can meet. Here a missing name is simply an empty one, and the
 // compiler says so in the same sentence-per-node form as everything else.
 public sealed record FlowDto(
-    string? Id, string? Name, bool Enabled, IReadOnlyList<FlowNodeDto>? Nodes, IReadOnlyList<FlowEdgeDto>? Edges)
+    string? Id, string? Name, bool Enabled, IReadOnlyList<FlowNodeDto>? Nodes, IReadOnlyList<FlowEdgeDto>? Edges,
+    IReadOnlyList<FlowVariableDto>? Variables = null)
 {
     // A node or edge in the array can itself be JSON null — STJ allows a hole in the middle of an
     // array same as it allows the array to be missing — and FlowCompiler already turns that into
     // its own flow-level problem ("A node in this flow is empty." / "A wire in this flow is
     // empty."). So a null here is passed through as a null rather than dereferenced, and the
-    // compiler is left to say why it is refused, the same way it says why any other node is.
+    // compiler is left to say why it is refused, the same way it says why any other node is. A
+    // variable missing its name or value has an empty one, which the compiler refuses by name.
     public Flow ToFlow() => new(
         Id ?? "", Name ?? "", Enabled,
         [.. (Nodes ?? []).Select(node => node is null ? null! : new FlowNode(
             node.Id ?? "", node.Type ?? "", node.X, node.Y, FlowJson.OrEmpty(node.Config)))],
         [.. (Edges ?? []).Select(edge => edge is null ? null! : new FlowEdge(
-            edge.Id ?? "", edge.From ?? "", edge.FromPort ?? "", edge.To ?? "", edge.ToPort ?? ""))]);
+            edge.Id ?? "", edge.From ?? "", edge.FromPort ?? "", edge.To ?? "", edge.ToPort ?? ""))])
+    {
+        Variables = [.. (Variables ?? []).Select(variable => new FlowVariable(variable?.Name ?? "", variable?.Value ?? ""))],
+    };
 
     public static FlowDto Of(Flow flow) => new(
         flow.Id, flow.Name, flow.Enabled,
         [.. flow.Nodes.Select(node => new FlowNodeDto(node.Id, node.Type, node.X, node.Y, node.Config))],
-        [.. flow.Edges.Select(edge => new FlowEdgeDto(edge.Id, edge.From, edge.FromPort, edge.To, edge.ToPort))]);
+        [.. flow.Edges.Select(edge => new FlowEdgeDto(edge.Id, edge.From, edge.FromPort, edge.To, edge.ToPort))],
+        [.. flow.Variables.Select(variable => new FlowVariableDto(variable.Name, variable.Value))]);
 }
 
 public sealed record FlowNodeDto(string? Id, string? Type, double X, double Y, JsonElement Config);
 
 public sealed record FlowEdgeDto(string? Id, string? From, string? FromPort, string? To, string? ToPort);
+
+public sealed record FlowVariableDto(string? Name, string? Value);
 
 /// <summary>A problem with a flow in the file, under the key the console marks.</summary>
 public sealed record FlowProblemDto(string FlowId, string Key, string Message);

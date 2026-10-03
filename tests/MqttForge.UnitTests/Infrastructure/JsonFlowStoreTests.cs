@@ -133,4 +133,40 @@ public sealed class JsonFlowStoreTests : IDisposable
             Directory.Delete(_path + ".tmp");
         }
     }
+
+    [Fact]
+    public async Task A_flows_variables_come_back_with_it()
+    {
+        var store = new JsonFlowStore(_path);
+
+        await store.SaveAsync(Watch() with { Variables = [new FlowVariable("limit", "90"), new FlowVariable("sensors", "[\"k1\"]")] },
+            CancellationToken.None);
+
+        var flow = Assert.Single((await store.LoadAsync(CancellationToken.None)).Flows);
+        Assert.Equal([new FlowVariable("limit", "90"), new FlowVariable("sensors", "[\"k1\"]")], flow.Variables);
+    }
+
+    // Written before variables existed, or by hand: no list at all is no variables, and so is null.
+    [Theory]
+    [InlineData("")]
+    [InlineData(""", "variables": null""")]
+    public async Task A_flow_without_a_variables_list_has_none(string variables)
+    {
+        await File.WriteAllTextAsync(_path,
+            $$"""{ "version": 1, "flows": [ { "id": "f1", "name": "F", "enabled": true, "nodes": [], "edges": [] {{variables}} } ] }""");
+
+        var document = await new JsonFlowStore(_path).LoadAsync(CancellationToken.None);
+
+        Assert.False(document.Unreadable);
+        Assert.Empty(Assert.Single(document.Flows).Variables);
+    }
+
+    [Fact]
+    public async Task A_variable_without_a_name_makes_the_file_unreadable()
+    {
+        await File.WriteAllTextAsync(_path,
+            """{ "version": 1, "flows": [ { "id": "f1", "name": "F", "enabled": true, "nodes": [], "edges": [], "variables": [ { "value": "1" } ] } ] }""");
+
+        Assert.True((await new JsonFlowStore(_path).LoadAsync(CancellationToken.None)).Unreadable);
+    }
 }

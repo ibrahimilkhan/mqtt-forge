@@ -15,7 +15,16 @@ public sealed record Flow(
     string Name,
     bool Enabled,
     IReadOnlyList<FlowNode> Nodes,
-    IReadOnlyList<FlowEdge> Edges);
+    IReadOnlyList<FlowEdge> Edges)
+{
+    /// <summary>The flow's variables, each with the value every run of the flow starts from.</summary>
+    // A property and not a sixth parameter: a flows.json written before variables existed has none,
+    // and a missing property leaves this at its empty default where a missing parameter is null.
+    public IReadOnlyList<FlowVariable> Variables { get; init; } = [];
+}
+
+/// <summary>A variable a flow declares, and the text every run of the flow starts it at.</summary>
+public sealed record FlowVariable(string Name, string Value);
 
 /// <summary>A node: what kind it is, where it stands on the canvas, and its settings.</summary>
 // X and Y belong to the editor. They are kept so the canvas comes back the way it was left, and
