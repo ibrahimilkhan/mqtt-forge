@@ -146,12 +146,15 @@ own access control.
 
 A Webhook node makes this app POST to whatever http or https address the node names, each time a
 deployed flow — or a Test of one, while it runs — reaches it, at most once a second for each Webhook
-node. What it posts is the node's body, and unless the node says otherwise that is the message the
-flow is carrying, as it arrived. Local and private addresses are reachable, as they are for a rule's
-webhook, and a redirect is never followed. With `MqttForge:AllowWebhooks` set to `false`, no Webhook
-node sends anything. A flow's alarm goes no further than the screen and the app's own log: it
-carries no webhook and publishes nothing to the broker. Flows are kept in `flows.json` beside the
-other settings.
+node in each run; a deployed flow and its Test count apart. What it posts is the node's body, and
+unless the node says otherwise that is the message the flow is carrying, as it arrived. Local and
+private addresses are reachable, as they are for a rule's webhook, and a redirect is never followed.
+A Webhook node has no headers, so a secret the receiver checks has to go in the address — and an
+address, a node's or a rule's, sits in plain text in `flows.json` or `alert-rules.json`, and the API
+sends it back as it was written. With `MqttForge:AllowWebhooks` set to `false`, no Webhook node
+sends anything. A flow's alarm goes no further than the screen and the app's own log: it carries no
+webhook and publishes nothing to the broker. Flows are kept in `flows.json` beside the other
+settings.
 
 None of these is a vulnerability report; they are how the app is built. Something that lets a
 person do more than the above is worth telling me about.

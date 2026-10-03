@@ -39,9 +39,10 @@ namespace MqttForge.Infrastructure.Alerts;
 // And they differ in how many there can be, which is why they never share a line and do not share
 // the slots evenly. A rule's alarm goes out when an alarm goes up or comes down; a flow can ask for
 // a post every second from every Webhook node it has, for as long as it runs. So the flows' posts
-// are capped (FlowPostsWaiting), wait in lines of their own (Chain), and may hold half the slots
-// and no more (FlowsInFlight): a flow posting to a host that has stopped answering costs its own
-// posts their time, and a rule's alarm none of it.
+// are capped, in all (FlowPostsWaiting) and at each endpoint (FlowPostsPerEndpoint), wait in lines
+// of their own (Chain), and may hold half the slots and no more (FlowsInFlight): a flow posting to
+// a host that has stopped answering costs the posts to that host their time and their places, the
+// flows' posts to other hosts one of their two slots, and a rule's alarm none of it.
 public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedService
 {
     /// <summary>The named client the wiring builds with <see cref="CreateHandler"/>.</summary>
@@ -67,9 +68,17 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
     // rule's alarm. Without it, four posts to four hosts that have stopped answering would hold every slot
     // for their twenty seconds each, and then the next four, and an alarm to a host that would have answered
     // at once would wait for all of them.
+    //
+    // Two receivers that are failing can still hold both of the flows' slots between them, through their
+    // backoff waits as well as their attempts, so that the flows' posts to every other host get one turn
+    // each time one of the two is let go. That is the bargain the rules' alarms already have with the four,
+    // and the flows' two keep it on purpose.
     public const int FlowsInFlight = 2;
 
-    /// <summary>How many of the flows' posts may be waiting or on their way before the newest is refused.</summary>
+    /// <summary>
+    /// How many of the flows' posts, to every endpoint together, may be waiting or on their way before the
+    /// newest is refused.
+    /// </summary>
     // The queue's capacity cannot be this number. While the pump runs, the queue is empty again the moment
     // a delivery arrives — the pump moves each one on into its endpoint's chain at once — and a chain is as
     // long as its endpoint is slow. A flow can ask for a post every second from every Webhook node it has,
@@ -79,10 +88,28 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
     // counted as dropped, as one the full queue lets go is.
     //
     // A hundred and twenty-eight is more than two for each of the fifty flows a host keeps, which is room
-    // enough while the hosts answer. And it is all a host that has stopped answering can keep waiting: a
-    // hundred and twenty-eight bodies at the most, each given its twenty seconds in turn, rather than one
-    // for every second the host has been down.
+    // enough while the hosts answer. It bounds the memory the flows' posts can hold, and no longer what one
+    // receiver can keep waiting, which is FlowPostsPerEndpoint: it takes eight receivers that have stopped
+    // answering to fill it, and a hundred and twenty-eight bodies are then all they can keep between them,
+    // rather than one for every second they have been down.
     public const int FlowPostsWaiting = 128;
+
+    /// <summary>
+    /// How many of the flows' posts to one endpoint may be waiting or on their way before the newest to it is
+    /// refused.
+    /// </summary>
+    // One receiver that has stopped answering, or answers every post with an error, must hold up the posts
+    // to itself and nobody else's: Chain's rule for the order the posts go in, kept here for how many of
+    // them may wait. Every answer but a 2xx is tried again, so a post to a receiver that answers 404 or 500
+    // takes about three seconds to be given up on, and one to a receiver that never answers takes its
+    // twenty, while a Webhook node asks again every second. Held only to FlowPostsWaiting, that one address
+    // would fill it in two or three minutes, and from then on every flow's posts, to every host, would be
+    // refused and counted on nodes that had done nothing wrong.
+    //
+    // Sixteen leaves room for a burst to one receiver while it answers — a message that sets off every
+    // Webhook node posting to one Node-RED at once — and it takes eight receivers failing at the same time
+    // to fill the hundred and twenty-eight.
+    public const int FlowPostsPerEndpoint = 16;
 
     /// <summary>How many times one delivery is offered to one endpoint.</summary>
     public const int MaxAttempts = 3;
@@ -109,6 +136,11 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
     // whether a node is told when it is given up on.
     private abstract record Delivery(string Url, IReadOnlyDictionary<string, string> Headers, string ContentType)
     {
+        /// <summary>The endpoint this delivery goes to: the line it waits in, and where a flow's post is counted.</summary>
+        // Worked out once, so that the count a flow's post is held to when it is taken and the count it gives
+        // its place back to when it ends are the same one by construction rather than by two parses agreeing.
+        public string Endpoint { get; } = EndpointOf(Url);
+
         /// <summary>Set by <see cref="OnDropped"/> when the queue let this one go instead of taking it.</summary>
         // The only way the writer can tell: see Post. Set and read by the thread that wrote the delivery,
         // which is the thread the queue calls OnDropped on, so it is not shared with anything.
@@ -154,12 +186,19 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
     private int _pending;
     private int _saidWebhooksAreOff;
 
-    // The flows' posts among _pending: what FlowPostsWaiting is held against. See Ended.
+    // The flows' posts among _pending, in all and at each endpoint: what FlowPostsWaiting and
+    // FlowPostsPerEndpoint are held against. Raised in Admitted, on the thread that posted, and lowered in
+    // Ended, on whichever thread a post ended on, so both are under this lock — the dictionary cannot be
+    // written from two threads at once, and a post is checked against both caps and counted against both
+    // in one step. An endpoint is taken out when its last post ends, or every address a flow, or a Test of
+    // one, ever posted to would stay in it for the life of the process.
+    private readonly Lock _flowCountLock = new();
+    private readonly Dictionary<string, int> _flowPostsAt = new(StringComparer.Ordinal);
     private int _flowPosts;
 
     /// <summary>
-    /// Deliveries let go: by a full queue, or a flow's post past <see cref="FlowPostsWaiting"/>. The
-    /// panel's <c>webhooksDropped</c>.
+    /// Deliveries let go: by a full queue, or a flow's post past <see cref="FlowPostsWaiting"/> or
+    /// <see cref="FlowPostsPerEndpoint"/>. The panel's <c>webhooksDropped</c>.
     /// </summary>
     public int Dropped => Volatile.Read(ref _dropped);
 
@@ -249,7 +288,8 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
 
     /// <summary>
     /// A Webhook node's post. Queued, never waited for: false when <see cref="FlowPostsWaiting"/> of the
-    /// flows' posts are waiting already, or when the queue is full or closed.
+    /// flows' posts are waiting already, or <see cref="FlowPostsPerEndpoint"/> of them at its endpoint, or
+    /// when the queue is full or closed.
     /// </summary>
     // The gate is the engine's, which is given no webhook channel at all when AllowWebhooks is false; it
     // is checked here as well, for the reason the alert half checks it: a switch enforced in one place is
@@ -269,18 +309,16 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
             return true;
         }
 
-        // The flows' cap comes first, and a post that does not fit under it takes its count straight back.
-        // Interlocked, because what lowers the count is a post ending, on whichever thread its last attempt
-        // ended on.
-        if (Interlocked.Increment(ref _flowPosts) > FlowPostsWaiting)
+        var delivery = new FlowDelivery(post, failed);
+
+        // The flows' caps come first. A post past either of them is refused and counted as dropped, and
+        // nothing of it is kept.
+        if (!Admitted(delivery))
         {
-            Interlocked.Decrement(ref _flowPosts);
             CountDropped();
 
             return false;
         }
-
-        var delivery = new FlowDelivery(post, failed);
 
         // Counted before it is written, as Queue counts an alert: the pump may have finished it before
         // this thread reaches its next line.
@@ -301,6 +339,23 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
         // OnDropped has already run, on this thread, before TryWrite returned: it marked the delivery,
         // ended it and counted it as dropped, so there is nothing to undo here.
         return !delivery.LetGo;
+    }
+
+    // Whether a flow's post fits under both of the flows' caps — the one for every endpoint together and
+    // the one for its own — and if it does, it is counted against both. A post that does not fit is
+    // counted against neither, so there is nothing to take back.
+    private bool Admitted(FlowDelivery delivery)
+    {
+        lock (_flowCountLock)
+        {
+            var atEndpoint = _flowPostsAt.GetValueOrDefault(delivery.Endpoint);
+            if (_flowPosts >= FlowPostsWaiting || atEndpoint >= FlowPostsPerEndpoint) return false;
+
+            _flowPosts++;
+            _flowPostsAt[delivery.Endpoint] = atEndpoint + 1;
+
+            return true;
+        }
     }
 
     // A switch an operator turned on purpose, said once. A line per alarm would bury the alarms
@@ -324,7 +379,7 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
         CountDropped();
     }
 
-    // A delivery let go, by the full queue or by the flows' cap.
+    // A delivery let go, by the full queue or by one of the flows' caps.
     private void CountDropped()
     {
         Interlocked.Increment(ref _dropped);
@@ -339,13 +394,26 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
 
     // The end of a delivery that was counted, whichever way it ends: sent or given up on (DeliverAsync),
     // let go by the full queue (OnDropped), or — a flow's post — refused by a closed one (Post). Once for
-    // each and never twice, so that Pending is what is still to be done and the flows' cap counts the
-    // flows' posts that are. One left counted would be a place under the cap lost for the life of the
+    // each and never twice, so that Pending is what is still to be done and the flows' caps count the
+    // flows' posts that are. One left counted would be a place under a cap lost for the life of the
     // process.
+    //
+    // Pending goes last, so that whoever reads it at nought finds every place it stood for given back.
     private void Ended(Delivery job)
     {
+        if (job is FlowDelivery)
+        {
+            lock (_flowCountLock)
+            {
+                _flowPosts--;
+
+                var left = _flowPostsAt[job.Endpoint] - 1;
+                if (left == 0) _flowPostsAt.Remove(job.Endpoint);
+                else _flowPostsAt[job.Endpoint] = left;
+            }
+        }
+
         Interlocked.Decrement(ref _pending);
-        if (job is FlowDelivery) Interlocked.Decrement(ref _flowPosts);
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -377,9 +445,11 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
             // Not an error and not a retry: the process is going. Said out loud because an
             // endpoint that is missing an alert or a flow's post is entitled to know it was this
             // and not the network. Whatever is still in flight goes with the process a moment from
-            // now. Deliveries and not alerts, because Pending counts both kinds.
+            // now. Deliveries and not alerts, because Pending counts both kinds. The number goes after
+            // the sentence rather than inside it, which then reads right at one as it does at a
+            // thousand, and it stays a value of its own for a log that a machine reads.
             _log.LogWarning(
-                "{Count} webhook deliveries were still unsent when MQTTForge stopped.", Pending);
+                "Webhook deliveries still unsent when MQTTForge stopped: {Count}", Pending);
         }
     }
 
@@ -409,7 +479,8 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
     // One at a time per endpoint, four endpoints at a time. The spec's "cevap vermeyen uç nokta
     // yalnızca kendi sırasını tıkasın": an address that has stopped answering must hold up its
     // own queue and nobody else's, and a chain per endpoint says that without a thread per
-    // endpoint or a lock anywhere.
+    // endpoint or a lock on the chains. (How many of the flows' posts may wait in one line is
+    // the same rule kept for their number: see FlowPostsPerEndpoint.)
     //
     // A chain for each kind at each endpoint, and not one for both. A flow posting every second
     // to a host that has stopped answering is that host's queue as well, and in a single line a
@@ -418,7 +489,7 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
     // host goes beside them, as it would have before there were any.
     private void Chain(Delivery job)
     {
-        var line = (job is FlowDelivery, EndpointOf(job.Url));
+        var line = (job is FlowDelivery, job.Endpoint);
         var previous = _chains.TryGetValue(line, out var tail) ? tail : Task.CompletedTask;
 
         // Not ExecuteSynchronously: the continuation would then start on the pump thread and hold

@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http;
+using System.Reflection;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
@@ -116,6 +117,13 @@ public class WebhookDispatcherTests : IAsyncLifetime
     private static FlowWebhookPost Posting(
         string url = EndpointA, string body = "hot", string contentType = "text/plain") =>
         new(new FlowRunKey("f1", FlowRunKind.Active), 1, "hook", url, body, contentType);
+
+    // As many hosts as it takes to fill the flows' cap, since one host is held to FlowPostsPerEndpoint of their
+    // posts: eight.
+    private const int Hosts = WebhookDispatcher.FlowPostsWaiting / WebhookDispatcher.FlowPostsPerEndpoint;
+
+    /// <summary>The <paramref name="i"/>th of the posts that fill the flows' cap, to each of the hosts in turn.</summary>
+    private static FlowWebhookPost Filling(int i) => Posting($"http://h{i % Hosts}.example/hook");
 
     /// <summary>Waits, in real time only, for something the pump does without the clock moving.</summary>
     private static async Task Settle(Func<bool> until, string what)
@@ -480,7 +488,9 @@ public class WebhookDispatcherTests : IAsyncLifetime
     }
 
     // Every delivery still waiting is counted, a flow's posts among them, so what is said is deliveries and
-    // not alerts: an operator reading "alert webhooks" goes looking for an alarm that was never raised.
+    // not alerts: an operator reading "alert webhooks" goes looking for an alarm that was never raised. And
+    // the number comes after the sentence rather than inside it, so that the line reads right at one as it
+    // does at a thousand, and it is still a value of its own for a log that a machine reads.
     [Fact]
     public async Task Shutdown_counts_a_flows_post_among_what_it_could_not_send()
     {
@@ -499,7 +509,9 @@ public class WebhookDispatcherTests : IAsyncLifetime
         await AdvanceUntil(() => _log.Lines.Any(l => l.Message.Contains("still unsent")),
             "the drain budget ran out");
 
-        Assert.Contains(_log.Lines, l => l.Message.StartsWith("1 webhook deliveries were still unsent"));
+        var line = Assert.Single(_log.Lines, l => l.Message.Contains("still unsent"));
+        Assert.Equal("Webhook deliveries still unsent when MQTTForge stopped: 1", line.Message);
+        Assert.Equal(1, Assert.IsType<int>(line.Values["Count"]));
 
         _gateA.TrySetResult(true);
         await stopping;
@@ -607,9 +619,10 @@ public class WebhookDispatcherTests : IAsyncLifetime
     // long as its host does. A flow can ask for a post every second from every Webhook node it has, for as
     // long as it runs, so their posts are counted from Post to the end of their last attempt, and past the cap
     // the newest is refused: answered false, which the engine counts on the node that asked, and counted as
-    // dropped where the panel can see it.
+    // dropped where the panel can see it. The posts go to eight hosts, because one host is held to
+    // FlowPostsPerEndpoint of them, and it takes eight that do not answer to fill the cap.
     [Fact]
-    public async Task A_flows_posts_past_their_cap_are_refused_while_their_host_does_not_answer()
+    public async Task A_flows_posts_past_their_cap_are_refused_while_their_hosts_do_not_answer()
     {
         var panel = new AlertPanelCounters();
         var sut = Build(async (_, _) =>
@@ -621,19 +634,20 @@ public class WebhookDispatcherTests : IAsyncLifetime
         await sut.StartAsync(CancellationToken.None);
 
         for (var i = 0; i < WebhookDispatcher.FlowPostsWaiting; i++)
-            Assert.True(sut.Post(Posting(), _ => { }));
+            Assert.True(sut.Post(Filling(i), _ => { }));
 
-        await Settle(() => Handler.Sent.Count == 1, "the first post to be on its way");
+        await Settle(() => Handler.Sent.Count == WebhookDispatcher.FlowsInFlight, "the first posts to be on their way");
 
-        // The flows' cap, and not the host's: a post to another host is refused as well.
-        Assert.False(sut.Post(Posting(), _ => { }));
-        Assert.False(sut.Post(Posting(EndpointB), _ => { }));
+        // The cap bounds what the flows' posts hold between them, so past it a post is refused wherever it
+        // goes: to one of the eight hosts, and to a ninth that has none of them waiting as well.
+        Assert.False(sut.Post(Filling(WebhookDispatcher.FlowPostsWaiting), _ => { }));
+        Assert.False(sut.Post(Posting("http://ninth.example/hook"), _ => { }));
 
         Assert.Equal(WebhookDispatcher.FlowPostsWaiting, sut.Pending);
         Assert.Equal(2, sut.Dropped);
         Assert.Equal(2, panel.WebhooksDropped);
 
-        // And every post that ends gives its place back: the host answers, and the next post is taken.
+        // And every post that ends gives its place back: the hosts answer, and the next post is taken.
         _gateA.TrySetResult(true);
         await Settle(() => sut.Pending == 0, "every post to have been delivered");
 
@@ -645,14 +659,14 @@ public class WebhookDispatcherTests : IAsyncLifetime
     // node that asked, and a post it was told was queued is a post nobody would ever account for. The queue
     // is filled with a rule's alarms, because the flows' own posts stop at their cap long before it is full.
     [Fact]
-    public async Task A_flows_post_past_a_full_queue_is_refused_and_holds_no_place_under_their_cap()
+    public async Task A_flows_post_past_a_full_queue_is_refused_and_holds_no_place_under_their_caps()
     {
         // Not started yet, as the DropWrite test above has it: with nothing draining, the queue fills as far
-        // as its capacity and not one item further.
+        // as its capacity and not one item further. The alarms' host answers, and the flows' hosts do not.
         var panel = new AlertPanelCounters();
         var sut = Build(async (request, _) =>
         {
-            if (request.RequestUri!.Host == "a.example") await _gateA.Task;
+            if (request.RequestUri!.Host != "b.example") await _gateA.Task;
 
             return new HttpResponseMessage(HttpStatusCode.OK);
         }, panel: panel);
@@ -664,7 +678,7 @@ public class WebhookDispatcherTests : IAsyncLifetime
 
         await sut.RaisedAsync(alerts);
 
-        Assert.False(sut.Post(Posting(), said.Enqueue));
+        Assert.False(sut.Post(Filling(0), said.Enqueue));
 
         // Counted where the alerts that do not fit are counted, once, and no longer waiting.
         Assert.Equal(1, sut.Dropped);
@@ -675,15 +689,67 @@ public class WebhookDispatcherTests : IAsyncLifetime
         // the same post counted on its node twice.
         Assert.Empty(said);
 
-        // Nor left counted against the flows' cap. With the alarms sent and the queue empty, as many posts are
-        // taken as ever, and it is the one past the cap that is refused.
+        // Nor left counted against the flows' caps, in all or at its own host. With the alarms sent and the
+        // queue empty, as many posts are taken as ever, as many to its host as to each of the others, and it is
+        // the one past the cap that is refused.
         await sut.StartAsync(CancellationToken.None);
         await Settle(() => sut.Pending == 0, "the alarms to have been sent");
 
         for (var i = 0; i < WebhookDispatcher.FlowPostsWaiting; i++)
-            Assert.True(sut.Post(Posting(), said.Enqueue));
+            Assert.True(sut.Post(Filling(i), said.Enqueue));
 
-        Assert.False(sut.Post(Posting(), said.Enqueue));
+        Assert.False(sut.Post(Filling(WebhookDispatcher.FlowPostsWaiting), said.Enqueue));
+    }
+
+    // One host that has stopped answering holds up its own posts and nobody else's. Each post to it is given
+    // its attempts in turn, and a Webhook node asks again every second, so counted with every other host's its
+    // posts would fill the cap in two or three minutes: from then on every flow's posts, to every host, would
+    // be refused, and counted on nodes that had done nothing wrong. So it is held to FlowPostsPerEndpoint of
+    // them, and the next post to it is refused while a post to a host that answers is taken.
+    [Fact]
+    public async Task Flow_posts_stuck_at_one_host_leave_a_post_to_another_host_taken()
+    {
+        var panel = new AlertPanelCounters();
+        var sut = Build(async (request, _) =>
+        {
+            if (request.RequestUri!.Host == "a.example") await _gateA.Task;
+
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        }, panel: panel);
+        await sut.StartAsync(CancellationToken.None);
+
+        for (var i = 0; i < WebhookDispatcher.FlowPostsPerEndpoint; i++)
+            Assert.True(sut.Post(Posting(EndpointA), _ => { }));
+
+        // One more to the same host is refused, and counted where the panel can see it.
+        Assert.False(sut.Post(Posting(EndpointA), _ => { }));
+        Assert.Equal(1, sut.Dropped);
+        Assert.Equal(1, panel.WebhooksDropped);
+
+        // One to another host is taken, and goes out while they wait.
+        Assert.True(sut.Post(Posting(EndpointB), _ => { }));
+        await Settle(() => Handler.Sent.Any(sent => sent.Url.Host == "b.example"), "the post to the other host to be sent");
+
+        // And the stuck host's places come back as its posts end: it answers, and the next post to it is taken.
+        _gateA.TrySetResult(true);
+        await Settle(() => sut.Pending == 0, "every post to have been delivered");
+
+        Assert.True(sut.Post(Posting(EndpointA), _ => { }));
+    }
+
+    // An endpoint is counted only while the flows' posts to it are waiting. Left in at nought, it would stay
+    // for every address a flow, or a Test of one, ever posted to, for as long as the process runs.
+    [Fact]
+    public async Task An_endpoint_is_no_longer_counted_once_its_last_post_has_ended()
+    {
+        var sut = await Started((_, _) => Status(HttpStatusCode.OK));
+
+        foreach (var host in new[] { "h1", "h2", "h3" })
+            Assert.True(sut.Post(Posting($"http://{host}.example/hook"), _ => { }));
+
+        await Settle(() => sut.Pending == 0, "every post to have been delivered");
+
+        Assert.Empty(FlowPostsAt(sut));
     }
 
     // A rule's alarms and a flow's posts to one host wait in lines of their own. In one line, a flow posting
@@ -790,6 +856,19 @@ public class WebhookDispatcherTests : IAsyncLifetime
         Assert.Equal(3, Handler.Sent.Count);
         Assert.All(Handler.Sent, sent => Assert.Equal(EndpointA, sent.Url.ToString()));
         Assert.Contains("302", Assert.Single(said));
+    }
+
+    // The dispatcher shows nobody how many of the flows' posts are waiting at each endpoint, since nothing outside
+    // it has a use for the number. By name, so a rename is said as one here and not as a NullReferenceException
+    // that sends the reader looking at the dispatcher.
+    private static IReadOnlyDictionary<string, int> FlowPostsAt(WebhookDispatcher sut)
+    {
+        var field = typeof(WebhookDispatcher).GetField("_flowPostsAt", BindingFlags.Instance | BindingFlags.NonPublic)
+                    ?? throw new InvalidOperationException(
+                        "WebhookDispatcher has no field called _flowPostsAt any more, which counts the flows' posts " +
+                        "waiting at each endpoint. Point this test at wherever the dispatcher keeps that count now.");
+
+        return (IReadOnlyDictionary<string, int>)field.GetValue(sut)!;
     }
 
     // The content type is the media type alone: the charset the content adds after it is the encoding's
