@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -550,8 +551,11 @@ public sealed class FlowRuntime
             return;
         }
 
+        // The thousand is written in the invariant culture, as the compiler writes its numbers: the sentence
+        // is English whatever culture the server runs in, and a Turkish or German one would make it "1.000".
         if (more)
-            Fail(run, loop.Id, $"Only the first {FlowLimits.ForEachElements:N0} elements are walked.", now, into, run.Message.Topic);
+            Fail(run, loop.Id, $"Only the first {FlowLimits.ForEachElements.ToString("N0", CultureInfo.InvariantCulture)} elements are walked.",
+                now, into, run.Message.Topic);
 
         if (unread > 0)
             Fail(run, loop.Id, unread == 1

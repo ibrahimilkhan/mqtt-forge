@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using MqttForge.Application.Flows.Next;
 using MqttForge.Domain.Enums;
@@ -1274,7 +1275,7 @@ public class FlowRuntimeTests
 
         Assert.Equal(
         [
-            $"Only the first {FlowLimits.ForEachElements:N0} elements are walked.",
+            "Only the first 1,000 elements are walked.",
             $"{FlowLimits.ForEachElements} elements could not be read as text, so they were left out.",
         ], Errors(outcome));
         Assert.Equal(2, Node("loop").Errors);
@@ -1294,9 +1295,31 @@ public class FlowRuntimeTests
         Assert.Equal(["last"], outcome.Debug.Where(line => line.Kind == FlowDebugEntry.Message).Select(line => line.Text));
         Assert.Equal(
         [
-            $"Only the first {FlowLimits.ForEachElements:N0} elements are walked.",
+            "Only the first 1,000 elements are walked.",
             $"{FlowLimits.ForEachElements - 1} elements could not be read as text, so they were left out.",
         ], Errors(outcome));
+    }
+
+    // The sentence is English, and so is its number. Written in the culture the server runs in, a host
+    // set to Turkish or German formats would say "1.000", which an English reader takes for one.
+    [Fact]
+    public void The_limit_a_for_each_says_is_written_the_same_in_any_culture()
+    {
+        var array = "[" + string.Join(',', Enumerable.Range(0, FlowLimits.ForEachElements + 1)) + "]";
+        var was = CultureInfo.CurrentCulture;
+
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo("tr-TR");
+
+            var outcome = Activate(Body("forEach", new { array = "var.big" }).Var("big", array).Compile());
+
+            Assert.Equal(["Only the first 1,000 elements are walked."], Errors(outcome));
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = was;
+        }
     }
 
     // ---- an arrival, and the runs it did not wake ----
@@ -1444,9 +1467,14 @@ public class FlowRuntimeTests
         var unknown = new UnknownNode("odd");
 
         // A way out is attached by the compiler alone, which no node it does not make can ask for, so the
-        // one from Start is pointed at the odd node by hand.
-        typeof(CompiledNode).GetMethod("Attach", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
-            .Invoke(drawn.Start, new object[] { "out", new FlowTarget(unknown, "in") });
+        // one from Start is pointed at the odd node by hand. By name, so a rename is said as one here, and
+        // not as a NullReferenceException that sends the reader looking at the runtime.
+        var attach = typeof(CompiledNode).GetMethod("Attach", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                     ?? throw new InvalidOperationException(
+                         "CompiledNode has no internal Attach(string, FlowTarget) any more, which the compiler used to wire a " +
+                         "node's ways out. Point this test at whatever wires them now.");
+
+        attach.Invoke(drawn.Start, ["out", new FlowTarget(unknown, "in")]);
 
         return new CompiledFlow
         {

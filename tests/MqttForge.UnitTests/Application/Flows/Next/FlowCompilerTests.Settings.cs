@@ -528,6 +528,11 @@ public partial class FlowCompilerTests
 
     // ---- text that cannot be read ----
 
+    // Said of the node and not of one setting: the text can be in a name, in a box the pane hides, or on a
+    // node that shows no settings at all, and the way out has to be one the reader can take from there.
+    private const string Unreadable =
+        "This node's settings hold text that cannot be read. Retype what you can, or delete the node and draw it again.";
+
     /// <summary>Start → x → End, as <see cref="Step"/>, for settings written as the JSON text they arrive in.</summary>
     private static ChartBuilder RawStep(string type, string settings) =>
         new ChartBuilder().Node("start", "start").RawNode("x", type, settings).Node("end", "end").Then("start", "x", "end");
@@ -544,7 +549,7 @@ public partial class FlowCompilerTests
         var problem = Only(RawStep("publish", settings));
 
         Assert.Equal("node:x", problem.Key);
-        Assert.Equal("This setting holds text that cannot be read.", problem.Message);
+        Assert.Equal(Unreadable, problem.Message);
     }
 
     // A number is read out of text as well, since the editor writes what a text box holds, and text that
@@ -555,7 +560,7 @@ public partial class FlowCompilerTests
         var problem = Only(RawStep("publish", """{"topic":"plant/k1","payload":"on","qos":"\ud800"}"""));
 
         Assert.Equal("node:x", problem.Key);
-        Assert.Equal("This setting holds text that cannot be read.", problem.Message);
+        Assert.Equal(Unreadable, problem.Message);
     }
 
     // The whole of a node's settings is judged, and not only what its kind reads. A name is text too, and
@@ -574,7 +579,7 @@ public partial class FlowCompilerTests
         var problem = Only(RawStep(type, settings));
 
         Assert.Equal("node:x", problem.Key);
-        Assert.Equal("This setting holds text that cannot be read.", problem.Message);
+        Assert.Equal(Unreadable, problem.Message);
     }
 
     // The console marks every refused node at once, so a node refused for its text is still a node of the

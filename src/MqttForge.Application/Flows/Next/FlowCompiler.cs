@@ -81,13 +81,16 @@ public static partial class FlowCompiler
             // fingerprint below, and by the file the flow is kept in, where it is an exception and not a
             // sentence. Said here it is said on the node, like any setting that cannot be used, and the
             // node's wires and the rest of the drawing are still judged with it.
+            //
+            // Said of the node's settings and not of one setting, for the same reason: the reader may find
+            // no box that shows the text, so the way out is one that works wherever it is.
             CompiledNode? compiled = null;
             string? problem = null;
 
             if (Settings.TryRead(node.Config, out var settings))
                 compiled = Node(node, settings, alertTopicPrefix, declared, out problem);
             else
-                problem = "This setting holds text that cannot be read.";
+                problem = "This node's settings hold text that cannot be read. Retype what you can, or delete the node and draw it again.";
 
             if (problem is not null) problems.Add(new(node.Id, null, problem));
             else if (compiled is not null) nodes.Add(node.Id, compiled);
@@ -230,7 +233,8 @@ public static partial class FlowCompiler
             case FlowPorts.For:
             {
                 // A forever loop counts nothing, and the pane hides times while forever is ticked but keeps what
-                // was typed there: that is taken as empty, so it can neither refuse the node nor be carried into it.
+                // was typed there: that is taken as empty, so it can neither refuse the node nor be carried into it
+                // — unless it is text that cannot be read at all, which Compile refuses before this is reached.
                 var forever = settings.Bool("forever");
                 var timesText = forever ? "" : settings.Text("times");
                 var times = Template(timesText, declared, out problem);
@@ -401,7 +405,9 @@ public static partial class FlowCompiler
         // The test is read before the values because it says which of them there are: the pane shows
         // value for every test but exists and value2 for between alone, and keeps what was typed in a box
         // it hides. A box the test does not read is taken as empty, so what was left in it — a variable
-        // deleted since, say — cannot refuse the node with a sentence about a box nobody can see.
+        // deleted since, say — cannot refuse the node with a sentence about a box nobody can see. Unless
+        // what was left is text that cannot be read at all, which refuses the node before this is reached:
+        // see Compile, where every node's settings are judged whole.
         var test = settings.Text("test");
         var valueText = test == "exists" ? "" : settings.Text("value");
         var value2Text = test == "between" ? settings.Text("value2") : "";

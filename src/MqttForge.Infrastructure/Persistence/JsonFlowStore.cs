@@ -1,4 +1,5 @@
 using System.Text.Json;
+using MqttForge.Application.Alerts;
 using MqttForge.Application.Flows;
 using MqttForge.Domain.Abstractions;
 using MqttForge.Domain.Exceptions;
@@ -13,8 +14,8 @@ namespace MqttForge.Infrastructure.Persistence;
 //
 // Unlike the rule store, the whole file is one verdict. A flow's settings are kept as JSON and the
 // compiler reads them, so there is no per-item type for this store to fail to bind; what can go
-// wrong is the envelope — a missing array, a missing id — and that is a truncated or hand-broken
-// file, not one flow a newer build wrote.
+// wrong is the envelope — a missing array, a missing id — or text in it that could not be written
+// back, and either is a truncated or hand-broken file, not one flow a newer build wrote.
 public sealed class JsonFlowStore : IFlowStore
 {
     // The envelope's only version so far. It exists so that the day the shape changes, the old
@@ -129,9 +130,15 @@ public sealed class JsonFlowStore : IFlowStore
     // they cannot be. A flow without them is not something to run or to write back. The list of
     // variables is the one member allowed to be null, because ReadAsync reads that as none; what
     // is in the list is held to the same rule as the rest.
+    //
+    // And a node's settings have to be text all through. They are kept as the JSON they were read
+    // as, so an escaped half of a surrogate pair — valid JSON, and no text — comes in without a
+    // murmur where a name or an id holding one would not have, and is found out only when the file
+    // is written back: the serializer throws on it, and every save writes the whole file. Kept as
+    // readable, one such node would fail every later save of every flow until somebody found it.
     private static bool Whole(Flow? flow) =>
         flow is { Id: not null, Name: not null, Nodes: not null, Edges: not null } &&
-        flow.Nodes.All(node => node is { Id: not null, Type: not null }) &&
+        flow.Nodes.All(node => node is { Id: not null, Type: not null } && PayloadValue.ReadsAsText(node.Config)) &&
         flow.Edges.All(edge => edge is { Id: not null, From: not null, FromPort: not null, To: not null, ToPort: not null }) &&
         (flow.Variables is null || flow.Variables.All(variable => variable is { Name: not null, Value: not null }));
 

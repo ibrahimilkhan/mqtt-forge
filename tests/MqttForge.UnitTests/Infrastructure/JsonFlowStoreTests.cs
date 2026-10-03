@@ -161,6 +161,26 @@ public sealed class JsonFlowStoreTests : IDisposable
         Assert.Empty(Assert.Single(document.Flows).Variables);
     }
 
+    // An escaped half of a surrogate pair is valid JSON and no text, and a hand-edited file can hold one in
+    // a node's settings, which the store keeps as the JSON they are. Every save writes the whole file back,
+    // and the serializer cannot write such text, so taken as readable the file would fail every later save
+    // of every flow for as long as it held it. Taken as unreadable, it is refused once and left alone.
+    [Fact]
+    public async Task A_node_setting_that_holds_text_that_cannot_be_read_makes_the_file_unreadable_and_it_is_not_written_over()
+    {
+        const string content = """
+            { "version": 1, "flows": [ { "id": "f1", "name": "F", "enabled": true,
+              "nodes": [ { "id": "n1", "type": "debug", "x": 0, "y": 0, "config": { "note": "\ud800" } } ], "edges": [] } ] }
+            """;
+        await File.WriteAllTextAsync(_path, content);
+        var store = new JsonFlowStore(_path);
+
+        Assert.True((await store.LoadAsync(CancellationToken.None)).Unreadable);
+        await Assert.ThrowsAsync<FlowsUnreadableException>(() => store.SaveAsync(Watch(), CancellationToken.None));
+
+        Assert.Equal(content, await File.ReadAllTextAsync(_path));
+    }
+
     [Fact]
     public async Task A_variable_without_a_name_makes_the_file_unreadable()
     {
