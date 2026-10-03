@@ -24,7 +24,10 @@ public sealed class FlowController : ControllerBase
     // 30 MB — for the model binder to read before the compiler can refuse it on the count. So such a
     // flow is refused with a 413, unread.
     //
-    // A setting with no limit of its own — an If's field — has this one.
+    // Every setting the compiler reads has a limit of its own, or is only ever compared with the few things
+    // it may be: a level, a test, a QoS, a variable it names. This one is for what it does not read. A node's
+    // settings are kept and sent back as they were written, keys this build has no use for among them — one a
+    // newer console writes, or any a PUT made by hand carries — and nothing else bounds those.
     public const long DeployBodyBytes = 24 * 1024 * 1024;
 
     private readonly FlowService _flows;
@@ -54,11 +57,13 @@ public sealed class FlowController : ControllerBase
     public IActionResult Status() => Ok(FlowStatusDto.Of(_engine.Status));
 
     /// <summary>A deploy: the flow is kept and run, or refused with every reason on the node it is about.</summary>
+    // Said as a save, since every button that comes here saves — Activate, Update and Deactivate alike — and
+    // what a refusal means to each of them is that the file was left as it was.
     [HttpPut("{id}")]
     [RequestSizeLimit(DeployBodyBytes)]
     public async Task<IActionResult> Deploy(string id, FlowDto dto, CancellationToken ct)
     {
-        const string title = "The flow was not deployed";
+        const string title = "The flow was not saved";
 
         var flow = dto.ToFlow();
         if (flow.Id != id)

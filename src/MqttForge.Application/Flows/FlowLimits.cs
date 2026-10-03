@@ -78,7 +78,14 @@ public static class FlowLimits
 
     public const int NoticeLength = 200;
 
-    /// <summary>The longest text a Notify or an If's value may be written as, placeholders and all.</summary>
+    /// <summary>
+    /// The longest a node's text may be written, placeholders and all: a Notify's text, an If's values, For's
+    /// times, Wait's seconds and Set's value, and where an If, a For each or a Raise alarm reads from.
+    /// </summary>
+    // Each of them is rendered or read every time a run passes the node, on the pump every flow shares, and
+    // with nothing to hold them but the size of a request, one Set or Wait of half a million empty
+    // placeholders cost the pump four seconds a turn — from a Test, which saves nothing and needs no save.
+    // What a template fills in is held to a limit of its own where it is used.
     public const int TextTemplateLength = 1_024;
 
     public const int UrlLength = 2_048;

@@ -105,6 +105,9 @@ public sealed class FlowEndpointTests : IClassFixture<MqttForgeApiFactory>
         var problem = await Json(response);
         Assert.Equal("flowInvalid", problem.GetProperty("reason").GetString());
         Assert.True(problem.GetProperty("errors").TryGetProperty("node:n1", out _));
+
+        // Activate, Update and Deactivate all save, and what a refusal says happened is that nothing was.
+        Assert.Equal("The flow was not saved", problem.GetProperty("title").GetString());
     }
 
     // A hand-built body — the console never sends a hole in either array, but a PUT typed by hand

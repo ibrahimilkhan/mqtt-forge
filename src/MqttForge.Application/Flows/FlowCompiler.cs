@@ -237,6 +237,15 @@ public static partial class FlowCompiler
                 // — unless it is text that cannot be read at all, which Compile refuses before this is reached.
                 var forever = settings.Bool("forever");
                 var timesText = forever ? "" : settings.Text("times");
+
+                // Judged before it is parsed, so a box of a million characters costs nothing to refuse; why
+                // there is a limit at all is said where it is kept, in FlowLimits.TextTemplateLength.
+                if (timesText.Length > FlowLimits.TextTemplateLength)
+                {
+                    problem = $"Times is at most {FlowLimits.TextTemplateLength} characters.";
+                    return null;
+                }
+
                 var times = Template(timesText, declared, out problem);
 
                 if (problem is null && !forever)
@@ -256,6 +265,13 @@ public static partial class FlowCompiler
             case FlowPorts.Wait:
             {
                 var secondsText = settings.Text("seconds");
+
+                if (secondsText.Length > FlowLimits.TextTemplateLength)
+                {
+                    problem = $"Seconds is at most {FlowLimits.TextTemplateLength} characters.";
+                    return null;
+                }
+
                 var seconds = Template(secondsText, declared, out problem);
 
                 if (problem is null)
@@ -284,7 +300,16 @@ public static partial class FlowCompiler
                     return null;
                 }
 
-                return new SetNode(node.Id, variable, Template(settings.Text("value"), declared, out problem));
+                // Held, and said, as an If's value is: the limit is on what is written in the box, and what it
+                // fills in can still take the variable to the 64 KB a variable may hold.
+                var valueText = settings.Text("value");
+                if (valueText.Length > FlowLimits.TextTemplateLength)
+                {
+                    problem = $"A value is at most {FlowLimits.TextTemplateLength} characters.";
+                    return null;
+                }
+
+                return new SetNode(node.Id, variable, Template(valueText, declared, out problem));
             }
 
             case FlowPorts.Publish:
@@ -307,7 +332,7 @@ public static partial class FlowCompiler
                     problem = "A topic to publish to cannot hold + or #.";
                 else if (payloadProblem is not null)
                     problem = payloadProblem;
-                else if (PayloadProblem(payloadText) is { } tooLarge)
+                else if (PayloadProblem(payloadText, "A payload") is { } tooLarge)
                     problem = tooLarge;
                 else if (qos is not (0 or 1 or 2))
                     problem = "QoS is 0, 1 or 2.";
@@ -382,7 +407,7 @@ public static partial class FlowCompiler
                 var bodyText = settings.Text("body");
                 if (bodyText.Trim().Length == 0) bodyText = "{{payload}}";
 
-                if (PayloadProblem(bodyText) is { } tooLarge)
+                if (PayloadProblem(bodyText, "A body") is { } tooLarge)
                 {
                     problem = tooLarge;
                     return null;
@@ -548,9 +573,17 @@ public static partial class FlowCompiler
         return template;
     }
 
-    /// <summary>A value, and a problem when it cannot be read or reads a variable the flow does not declare.</summary>
+    /// <summary>A value, and a problem when it is too long, cannot be read or reads a variable the flow does not declare.</summary>
+    // Too long is said of a field's path, since that is all such a box can hold at that length: a variable's
+    // name is forty characters at most, and the whole payload is no characters at all.
     private static FlowValue Value(string text, IReadOnlySet<string> declared, out string? problem)
     {
+        if (text.Length > FlowLimits.TextTemplateLength)
+        {
+            problem = $"A field's path is at most {FlowLimits.TextTemplateLength} characters.";
+            return FlowValue.Payload;
+        }
+
         var value = FlowValue.Parse(text, out problem);
 
         if (problem is null && value.Variable is { } name && !declared.Contains(name))
@@ -640,7 +673,12 @@ public static partial class FlowCompiler
             // and not everything the body leads to: that takes in wherever a break goes as well — an End,
             // what done leads to, the next turn of a loop around this one — and a Wait out there is one
             // the run reaches only once it has left the turn.
-            if (nodes.GetValueOrDefault(loop) is ForNode { Forever: true } &&
+            //
+            // Only a loop its own body comes back to has a turn to look in. One that nothing comes back to
+            // has been told so, and one whose returns are all refused has been told of each of them; told
+            // to wait as well, its writer would go looking for a Wait to add when the one the body holds
+            // is simply on its way somewhere else.
+            if (lastSteps.Count > 0 && nodes.GetValueOrDefault(loop) is ForNode { Forever: true } &&
                 !Turn(wires, body, lastSteps).Any(id => types[id] is FlowPorts.Wait or FlowPorts.MqttIn))
                 problems.Add(new(loop, null,
                     "A forever loop must wait. Put a Wait or an MQTT in in its body, on the way back to its next."));
@@ -688,7 +726,10 @@ public static partial class FlowCompiler
     /// <summary>The nodes of a loop's body that a turn goes through: those from which one of its last steps can still be reached.</summary>
     // A last step is a node whose wire back to the loop's next is the loop's own; an empty body's is the
     // loop itself, which is no node of its body. Walked backwards from them, through the body alone. A loop
-    // held in the turn brings all of its own body in with it, since that leads back to the loop it is in.
+    // held in the turn brings in the part of its own body that leads back to it, since that part leads on,
+    // through it, to the loop it is in; a step of its body that only breaks out — to an End, or past both
+    // loops — leads back to neither, and is no more in the turn than a step of this loop's own body that
+    // breaks out would be.
     private static HashSet<string> Turn(IReadOnlyList<FlowEdge> wires, IReadOnlySet<string> body, IEnumerable<string> lastSteps)
     {
         var turn = new HashSet<string>(lastSteps.Where(body.Contains), StringComparer.Ordinal);
@@ -774,9 +815,10 @@ public static partial class FlowCompiler
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(shape)));
     }
 
-    // One limit for every payload a flow holds: what a Publish sends and what a Webhook posts.
-    private static string? PayloadProblem(string payload) =>
-        Encoding.UTF8.GetByteCount(payload) > FlowLimits.PayloadBytes ? "A payload is at most 64 KB." : null;
+    // One limit for every payload a flow holds — what a Publish sends and what a Webhook posts — said in the
+    // word its pane uses for the box: a Publish has a payload and a Webhook a body.
+    private static string? PayloadProblem(string payload, string what) =>
+        Encoding.UTF8.GetByteCount(payload) > FlowLimits.PayloadBytes ? $"{what} is at most 64 KB." : null;
 
     // \z where the rule is written with $: in .NET a $ also matches in front of a final line break,
     // so "n1\n" would pass as an id that is safe in a topic, a rule id and a file, and is none of them.

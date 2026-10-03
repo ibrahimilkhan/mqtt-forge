@@ -233,6 +233,50 @@ public partial class FlowCompilerTests
         Assert.Equal("node:x", Only(Step("set", new { variable = "limit", value = "{{var.nope}}" }).Var("limit", "1")).Key);
     }
 
+    // ---- what a box may hold ----
+
+    /// <summary>A node whose <paramref name="setting"/> holds <paramref name="length"/> characters it could otherwise run, and the node's key.</summary>
+    // Each text is one the node would take at any length — a number with spaces before it, a value, a field's
+    // path — so that what is judged is the length and nothing else.
+    private static (ChartBuilder Chart, string Key) Holding(string setting, int length)
+    {
+        var path = "$." + new string('a', length - 2);
+
+        return setting switch
+        {
+            "times" => (Loop("for", new { times = "3".PadLeft(length) }), "node:loop"),
+            "seconds" => (Step("wait", new { seconds = "1".PadLeft(length) }), "node:x"),
+            "value" => (Step("set", new { variable = "limit", value = new string('x', length) }).Var("limit", "1"), "node:x"),
+            "field" => (Decision(new { field = path, test = "exists" }), "node:x"),
+            "array" => (Loop("forEach", new { array = path }), "node:loop"),
+            "number" => (Alarm(new { name = "Hot", level = "warn", value = path }), "node:raise"),
+            _ => throw new ArgumentOutOfRangeException(nameof(setting), setting, "A setting this test does not know."),
+        };
+    }
+
+    // Every text a run reads or renders at each step is held to a length of its own, as a topic, a value or a
+    // notice already was: that work is done on the pump every flow shares, and with no limit but the request's,
+    // a Set or a Wait of half a million empty placeholders took four seconds a turn — from a Test, which needs
+    // no save. For's times, Wait's seconds and Set's value are templates; If's field, For each's array and
+    // Raise alarm's number say where a value is read from.
+    [Theory]
+    [InlineData("times", "Times is at most 1024 characters.")]
+    [InlineData("seconds", "Seconds is at most 1024 characters.")]
+    [InlineData("value", "A value is at most 1024 characters.")]
+    [InlineData("field", "A field's path is at most 1024 characters.")]
+    [InlineData("array", "A field's path is at most 1024 characters.")]
+    [InlineData("number", "A field's path is at most 1024 characters.")]
+    public void A_setting_a_run_reads_at_every_step_is_at_most_1024_characters(string setting, string said)
+    {
+        Holding(setting, FlowLimits.TextTemplateLength).Chart.Compile();
+
+        var (chart, key) = Holding(setting, FlowLimits.TextTemplateLength + 1);
+        var problem = Only(chart);
+
+        Assert.Equal(key, problem.Key);
+        Assert.Equal(said, problem.Message);
+    }
+
     // ---- Publish ----
 
     [Fact]
@@ -440,8 +484,14 @@ public partial class FlowCompilerTests
         Assert.Equal("{}", Rendered(blank.Body, new FlowMessage("plant/k1", "{}", 0)));
 
         Step("webhook", new { url = Url, body = new string('x', FlowLimits.PayloadBytes) }).Compile();
-        Assert.Equal("node:x", Only(Step("webhook", new { url = Url, body = new string('x', FlowLimits.PayloadBytes + 1) })).Key);
         Assert.Equal("node:x", Only(Step("webhook", new { url = Url, body = "{{var.nope}}" })).Key);
+
+        // Said of the body, which is what the pane calls it: a Webhook node has no payload box.
+        var tooLarge = Only(Step("webhook", new { url = Url, body = new string('x', FlowLimits.PayloadBytes + 1) }));
+        Assert.Equal("node:x", tooLarge.Key);
+        Assert.Equal("A body is at most 64 KB.", tooLarge.Message);
+        Assert.Equal("A payload is at most 64 KB.",
+            Only(Step("publish", new { topic = "a", payload = new string('x', FlowLimits.PayloadBytes + 1) })).Message);
     }
 
     // ---- variables ----

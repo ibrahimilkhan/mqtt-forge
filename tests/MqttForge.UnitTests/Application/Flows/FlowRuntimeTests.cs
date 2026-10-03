@@ -411,7 +411,10 @@ public class FlowRuntimeTests
     [Fact]
     public void A_value_over_64_KB_leaves_a_variable_as_it_was()
     {
-        Activate(Line(("keep", "set", new { variable = "n", value = new string('x', FlowLimits.VariableBytes + 1) })).Var("n", "1").Compile());
+        // Taken past the limit by what it fills in, a variable at the limit and one character more: what is
+        // written in the box is held to 1,024 characters.
+        Activate(Line(("keep", "set", new { variable = "n", value = "{{var.big}}!" }))
+            .Var("n", "1").Var("big", new string('x', FlowLimits.VariableBytes)).Compile());
 
         Assert.Equal("1", Run().Variables["n"]);
         Assert.Equal(1, Node("keep").Errors);
@@ -1352,23 +1355,34 @@ public class FlowRuntimeTests
     }
 
     // A Set's note says the variable and its new value, and costs what it shows in the same way: a value of
-    // sixty thousand characters, which a Set keeps without copying it, is not copied whole into a sentence
-    // to show eighty of them.
+    // sixty thousand characters is not copied whole into a sentence to show eighty of them. The value is
+    // filled in from the message, since what is written in the box is held to 1,024 characters, and filling
+    // it in costs what it costs whatever the note does: what is measured is the cost on top of that.
     [Fact]
     public void A_set_note_costs_what_it_shows_and_not_a_copy_of_the_value()
     {
-        Activate(Body("for", new { forever = true },
+        var flow = Body("for", new { forever = true },
             ("read", "mqttIn", new { filter = "a/b" }),
-            ("keep", "set", new { variable = "n", value = new string('v', 60_000) })).Var("n", "").Compile());
+            ("keep", "set", new { variable = "n", value = "{{payload}}" })).Var("n", "").Compile();
+        Activate(flow);
         _runtime.OnMessage(Msg("a/b", "warming up"), T0);
 
+        var value = new string('v', 60_000);
+        var template = Assert.IsType<SetNode>(flow.Nodes["keep"]).Value;
+
         var before = GC.GetAllocatedBytesForCurrentThread();
-        _runtime.OnMessage(Msg("a/b", "1"), T0);
+        template.Render(new FlowMessage("a/b", value, 1), new Dictionary<string, string>(), T0, new Random(1),
+            FlowLimits.VariableBytes, out _);
+        var rendered = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        before = GC.GetAllocatedBytesForCurrentThread();
+        _runtime.OnMessage(Msg("a/b", value), T0);
         var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
         Assert.StartsWith("n = vvv", Node("keep").Note);
         Assert.Equal(FlowLimits.NoteLength, Node("keep").Note!.Length);
-        Assert.True(allocated < 64 * 1024, $"{allocated:N0} bytes were allocated to set a variable and say so.");
+        Assert.True(allocated - rendered < 64 * 1024,
+            $"{allocated - rendered:N0} bytes were allocated, past filling the value in, to set a variable and say so.");
     }
 
     [Fact]

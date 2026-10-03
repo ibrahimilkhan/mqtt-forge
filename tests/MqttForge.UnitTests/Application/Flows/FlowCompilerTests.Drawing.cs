@@ -288,6 +288,21 @@ public partial class FlowCompilerTests
         Assert.Contains("must wait", problem.Message);
     }
 
+    // A loop nothing comes back to has no turn, so there is nowhere in it a Wait could be missing from, and it
+    // is told the one thing that is wrong: told that it must wait as well, its writer would go looking for a
+    // Wait to put in when there is one already, on the way to the End.
+    [Fact]
+    public void A_forever_loop_nothing_comes_back_to_is_told_that_and_not_that_it_must_wait()
+    {
+        var problem = Only(new ChartBuilder()
+            .Node("start", "start").Node("loop", "for", new { forever = true })
+            .Node("pause", "wait", new { seconds = "1" }).Node("end", "end")
+            .Then("start", "loop").Wire("loop", "body", "pause").Then("pause", "end").Wire("loop", "done", "end"));
+
+        Assert.Equal("node:loop", problem.Key);
+        Assert.StartsWith("Nothing comes back", problem.Message);
+    }
+
     // A break leaves the turn, so a Wait it goes on to is one the run reaches only once the turn is over:
     // the loop is refused alike with that Wait and without it, and told where a Wait has to go.
     [Theory]
