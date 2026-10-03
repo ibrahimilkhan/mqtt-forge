@@ -23,6 +23,13 @@ namespace MqttForge.Application.Flows;
 // Drive stops where it was, or a loop's next reached outside a turn of it.
 public sealed class FlowRuntime
 {
+    /// <summary>What a Webhook node counts a post as once it has asked for it: posted.</summary>
+    // Counted when the step asks, because the runtime never sees the hand-over: the engine hands the
+    // post on at the end of the turn. A post the channel would not take — there is none, it was full, it
+    // threw — was never posted, so the engine names this with the failure it reports and the count is
+    // taken back. One the channel took and gave up on later was posted, and counts its error beside it.
+    internal const string Posted = "posted";
+
     private readonly Random _random;
     private readonly Dictionary<FlowRunKey, FlowRun> _runs = [];
     private readonly FlowAlarmBook _alarms = new();
@@ -283,16 +290,23 @@ public sealed class FlowRuntime
     }
 
     /// <summary>The engine could not carry out a step this runtime asked for: a publish, a webhook post.</summary>
+    /// <param name="takeBack">
+    /// What the step counted as done when it asked, for a step the engine never carried out at all: see
+    /// <see cref="Posted"/>. Null for one that was carried out and failed afterwards, which keeps its count.
+    /// </param>
     // Counted on the run that asked for the step, and on no other. A failure comes back after the step
     // that asked — at the end of its turn, from the publish loop, or from the webhook's channel once it
     // has given up — and an Update or a new Test can have put another run where that one stood in the
     // meantime. Counted there, it would be an error on a run that never asked: a test that failed on an
     // address since put right, said again on the test that has it right. A run that is gone has nowhere
     // to show it, so it goes.
-    public FlowOutcome StepFailed(FlowRunKey key, long serial, string nodeId, string reason, DateTimeOffset now)
+    public FlowOutcome StepFailed(FlowRunKey key, long serial, string nodeId, string reason, DateTimeOffset now,
+                                  string? takeBack = null)
     {
         if (!_runs.TryGetValue(key, out var run) || run.Serial != serial || !run.Flow.Nodes.ContainsKey(nodeId))
             return FlowOutcome.Empty;
+
+        if (takeBack is not null) run.Counter(nodeId).TakeBack(takeBack);
 
         var into = new Collector();
         Fail(run, nodeId, reason, now, into);
@@ -812,7 +826,7 @@ public sealed class FlowRuntime
 
         into.Webhooks.Add(new FlowWebhookPost(run.Key, run.Serial, webhook.Id, webhook.Url, body,
             IsJson(body) ? "application/json" : "text/plain"));
-        run.Counter(webhook.Id).Out("posted");
+        run.Counter(webhook.Id).Out(Posted);
     }
 
     /// <summary>One job a second for each Sound, Notify and Webhook node: the rest are counted and let go.</summary>

@@ -124,9 +124,10 @@ To turn all of it off, set `MqttForge:AllowWebhooks` to `false`:
 docker run -d -p 5169:5169 -e MqttForge__AllowWebhooks=false ghcr.io/ibrahimilkhan/mqtt-forge
 ```
 
-With that set, a rule's webhook action is never delivered and no HTTP request leaves the process
-for one. Everything else about alerting carries on, including the action that publishes the alert
-back onto your own broker — that one goes nowhere the broker connection was not already going.
+With that set, a rule's webhook action and a flow's Webhook node send nothing, and no HTTP request
+leaves the process for either. Everything else about alerting carries on, including the action that
+publishes the alert back onto your own broker — that one goes nowhere the broker connection was not
+already going.
 
 ## Flows
 
@@ -138,13 +139,18 @@ flows are kept, so together they can publish up to 2,500 messages a second.
 
 A Publish node can write to any topic the broker lets this app write to, and it can set the retain
 flag, so what it writes stays on the broker for every client that subscribes later. That includes
-the alert prefix: a flow can leave a retained message there that looks like an alarm record. An
-Alarm node's own MQTT record has to stay under the prefix, but nothing keeps a Publish node out of
-it. If something acts on what is published under the prefix, decide who may write there in the
-broker's own access control.
+the alert prefix: a flow can leave a retained message there that looks like an alarm record. A
+rule's MQTT alarm has to stay under the prefix, but nothing keeps a Publish node out of it. If
+something acts on what is published under the prefix, decide who may write there in the broker's
+own access control.
 
-A flow's alarm webhook goes through the same `MqttForge:AllowWebhooks` switch as a rule's, and its
-MQTT alarm stays under the alert prefix, as a rule's does. Flows are kept in `flows.json` beside the
+A Webhook node makes this app POST to whatever http or https address the node names, each time a
+deployed flow — or a Test of one, while it runs — reaches it, at most once a second for each Webhook
+node. What it posts is the node's body, and unless the node says otherwise that is the message the
+flow is carrying, as it arrived. Local and private addresses are reachable, as they are for a rule's
+webhook, and a redirect is never followed. With `MqttForge:AllowWebhooks` set to `false`, no Webhook
+node sends anything. A flow's alarm goes no further than the screen and the app's own log: it
+carries no webhook and publishes nothing to the broker. Flows are kept in `flows.json` beside the
 other settings.
 
 None of these is a vulnerability report; they are how the app is built. Something that lets a

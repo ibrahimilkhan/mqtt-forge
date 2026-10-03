@@ -124,6 +124,17 @@ internal sealed class NodeCounter
     public readonly Dictionary<string, long> Outs = new(StringComparer.Ordinal);
 
     public void Out(string key) => Outs[key] = Outs.GetValueOrDefault(key) + 1;
+
+    /// <summary>Takes one <see cref="Out"/> back, for a step the engine says was never carried out.</summary>
+    // Gone at nought rather than left there, so a node whose every post was refused reads the same as one
+    // that never asked for one.
+    public void TakeBack(string key)
+    {
+        if (!Outs.TryGetValue(key, out var count)) return;
+
+        if (count > 1) Outs[key] = count - 1;
+        else Outs.Remove(key);
+    }
 }
 
 /// <summary>Fifty publishes a second, refilled continuously, a second's worth at most.</summary>

@@ -13,7 +13,8 @@ namespace MqttForge.Infrastructure.Alerts;
 
 /// <summary>
 /// The alert, POSTed to an address the user gave — and a Webhook node's post, to the address its node
-/// gives. One bounded queue, one pump, four deliveries in flight, and one at a time per endpoint.
+/// gives. One bounded queue, one pump, four deliveries in flight and no more than two of them a flow's,
+/// and one at a time per endpoint for each kind.
 /// </summary>
 // Shaped after SignalRMessageNotifier — a bounded channel written to from a path that may not
 // block, and a pump that owns everything slow — and it differs from it in exactly one place, on
@@ -34,6 +35,13 @@ namespace MqttForge.Infrastructure.Alerts;
 // who hears of a failure: an alert's body is made from the alert when it is sent, and a delivery
 // given up on is a line in the log; a flow's is the body its node rendered, and its node is told
 // as well, because a post that never lands is a step that failed.
+//
+// And they differ in how many there can be, which is why they never share a line and do not share
+// the slots evenly. A rule's alarm goes out when an alarm goes up or comes down; a flow can ask for
+// a post every second from every Webhook node it has, for as long as it runs. So the flows' posts
+// are capped (FlowPostsWaiting), wait in lines of their own (Chain), and may hold half the slots
+// and no more (FlowsInFlight): a flow posting to a host that has stopped answering costs its own
+// posts their time, and a rule's alarm none of it.
 public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedService
 {
     /// <summary>The named client the wiring builds with <see cref="CreateHandler"/>.</summary>
@@ -54,6 +62,28 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
     /// <summary>How many endpoints are talked to at the same time.</summary>
     public const int MaxInFlight = 4;
 
+    /// <summary>How many of the <see cref="MaxInFlight"/> may be a flow's post at the same time.</summary>
+    // Half, so that however many hosts the flows' posts are waiting on, two slots are always free for a
+    // rule's alarm. Without it, four posts to four hosts that have stopped answering would hold every slot
+    // for their twenty seconds each, and then the next four, and an alarm to a host that would have answered
+    // at once would wait for all of them.
+    public const int FlowsInFlight = 2;
+
+    /// <summary>How many of the flows' posts may be waiting or on their way before the newest is refused.</summary>
+    // The queue's capacity cannot be this number. While the pump runs, the queue is empty again the moment
+    // a delivery arrives — the pump moves each one on into its endpoint's chain at once — and a chain is as
+    // long as its endpoint is slow. A flow can ask for a post every second from every Webhook node it has,
+    // and each post carries the body its node rendered, up to 64 KB of it, where an alert's is made when it
+    // is sent. So the flows' posts are counted from Post until their last attempt has ended, and past this
+    // many the newest is refused — answered false, which the engine counts on the node that asked — and
+    // counted as dropped, as one the full queue lets go is.
+    //
+    // A hundred and twenty-eight is more than two for each of the fifty flows a host keeps, which is room
+    // enough while the hosts answer. And it is all a host that has stopped answering can keep waiting: a
+    // hundred and twenty-eight bodies at the most, each given its twenty seconds in turn, rather than one
+    // for every second the host has been down.
+    public const int FlowPostsWaiting = 128;
+
     /// <summary>How many times one delivery is offered to one endpoint.</summary>
     public const int MaxAttempts = 3;
 
@@ -72,18 +102,37 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
 
     private static readonly TimeSpan FirstBackoff = TimeSpan.FromSeconds(1);
 
-    /// <summary>One post: where, what, how it is said in the log, and who to tell when it is given up on.</summary>
+    /// <summary>One post: where it goes, with which headers, and what it carries.</summary>
     // An alert's body is made from the alert when it is sent, a flow's is the body its node rendered.
-    // Everything after that — the endpoint's chain, the slots, the attempts, the budget — is one path.
-    private sealed record Delivery(
-        string Url, IReadOnlyDictionary<string, string> Headers, Func<string> Body, string ContentType,
-        string Describe, Action<string>? Failed)
+    // Everything after that — the attempts, the budget, the client — is one path. Which kind a delivery
+    // is decides the rest: the line it waits in, the slots it may take, what the log calls it, and
+    // whether a node is told when it is given up on.
+    private abstract record Delivery(string Url, IReadOnlyDictionary<string, string> Headers, string ContentType)
     {
         /// <summary>Set by <see cref="OnDropped"/> when the queue let this one go instead of taking it.</summary>
         // The only way the writer can tell: see Post. Set and read by the thread that wrote the delivery,
         // which is the thread the queue calls OnDropped on, so it is not shared with anything.
         public bool LetGo { get; set; }
+
+        public abstract string Body();
     }
+
+    /// <summary>A rule's alarm, raised or resolved, to one of the rule's webhooks.</summary>
+    private sealed record AlertDelivery(Alert Alert, string Event, WebhookAction Webhook)
+        : Delivery(Webhook.Url, Webhook.Headers, "application/json")
+    {
+        public override string Body() => AlertPayload.For(Alert, Event);
+    }
+
+    /// <summary>A Webhook node's post, and who to tell when it is given up on.</summary>
+    private sealed record FlowDelivery(FlowWebhookPost Post, Action<string> Failed)
+        : Delivery(Post.Url, NoHeaders, Post.ContentType)
+    {
+        public override string Body() => Post.Body;
+    }
+
+    // A Webhook node has no headers to give, and one empty set does for every post.
+    private static readonly IReadOnlyDictionary<string, string> NoHeaders = new Dictionary<string, string>();
 
     private readonly HttpClient _client;
     private readonly AlertEngineOptions _options;
@@ -92,21 +141,31 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
     private readonly TimeProvider _time;
     private readonly Channel<Delivery> _queue;
     private readonly SemaphoreSlim _slots = new(MaxInFlight, MaxInFlight);
+    private readonly SemaphoreSlim _flowSlots = new(FlowsInFlight, FlowsInFlight);
     private readonly CancellationTokenSource _stopping = new();
 
-    // One task per endpoint, each the tail of that endpoint's chain. Touched by the pump thread
-    // and nothing else — the channel is SingleReader — so there is no lock on it.
-    private readonly Dictionary<string, Task> _chains = new(StringComparer.Ordinal);
+    // One task per line — a kind of delivery and an endpoint — each the tail of that line's chain.
+    // Touched by the pump thread and nothing else — the channel is SingleReader — so there is no lock
+    // on it.
+    private readonly Dictionary<(bool Flow, string Endpoint), Task> _chains = [];
 
     private Task? _pump;
     private int _dropped;
     private int _pending;
     private int _saidWebhooksAreOff;
 
-    /// <summary>Deliveries the queue had to discard. The panel's <c>webhooksDropped</c>.</summary>
+    // The flows' posts among _pending: what FlowPostsWaiting is held against. See Ended.
+    private int _flowPosts;
+
+    /// <summary>
+    /// Deliveries let go: by a full queue, or a flow's post past <see cref="FlowPostsWaiting"/>. The
+    /// panel's <c>webhooksDropped</c>.
+    /// </summary>
     public int Dropped => Volatile.Read(ref _dropped);
 
-    /// <summary>Deliveries queued or in flight. Read at shutdown to say what is being lost.</summary>
+    /// <summary>
+    /// Deliveries queued, waiting in their line or in flight. Read at shutdown to say what is being lost.
+    /// </summary>
     public int Pending => Volatile.Read(ref _pending);
 
     // The panel goes last, after the clock, and both are optional. The tests build this
@@ -182,15 +241,16 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
                 }
 
                 Interlocked.Increment(ref _pending);
-                _queue.Writer.TryWrite(new Delivery(
-                    webhook.Url, webhook.Headers, () => AlertPayload.For(alert, @event), "application/json",
-                    $"{alert.RuleName} on {alert.Topic}", null));
+                _queue.Writer.TryWrite(new AlertDelivery(alert, @event, webhook));
             }
 
         return Task.CompletedTask;
     }
 
-    /// <summary>A Webhook node's post. Queued, never waited for: false when the queue is full or closed.</summary>
+    /// <summary>
+    /// A Webhook node's post. Queued, never waited for: false when <see cref="FlowPostsWaiting"/> of the
+    /// flows' posts are waiting already, or when the queue is full or closed.
+    /// </summary>
     // The gate is the engine's, which is given no webhook channel at all when AllowWebhooks is false; it
     // is checked here as well, for the reason the alert half checks it: a switch enforced in one place is
     // one forgotten branch away from doing nothing.
@@ -202,24 +262,36 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
         if (!_options.AllowWebhooks)
         {
             // Said back at once and answered true, because it was dealt with: a false would have the engine
-            // count a full queue on the node on top of this.
-            failed("Webhooks are turned off on this host (MqttForge:AllowWebhooks), so nothing was sent.");
+            // count a full queue on the node on top of this. True does leave the node counting it as posted
+            // beside its error, as no other refusal does; only a wiring that hands the engine this channel
+            // with the switch off can get here.
+            failed(IFlowWebhook.TurnedOff);
             return true;
         }
 
-        var delivery = new Delivery(post.Url, new Dictionary<string, string>(), () => post.Body, post.ContentType,
-            $"flow {post.Run.FlowId}'s node {post.NodeId}", failed);
+        // The flows' cap comes first, and a post that does not fit under it takes its count straight back.
+        // Interlocked, because what lowers the count is a post ending, on whichever thread its last attempt
+        // ended on.
+        if (Interlocked.Increment(ref _flowPosts) > FlowPostsWaiting)
+        {
+            Interlocked.Decrement(ref _flowPosts);
+            CountDropped();
+
+            return false;
+        }
+
+        var delivery = new FlowDelivery(post, failed);
 
         // Counted before it is written, as Queue counts an alert: the pump may have finished it before
         // this thread reaches its next line.
         Interlocked.Increment(ref _pending);
 
-        // False is a queue that has been closed. The delivery never went in, so nothing else has counted
-        // it — and it is not a drop either, because a closed queue is a host that is stopping and not one
-        // that cannot keep up.
+        // False is a queue that has been closed. The delivery never went in, so nothing else will end it —
+        // and it is not a drop either, because a closed queue is a host that is stopping and not one that
+        // cannot keep up.
         if (!_queue.Writer.TryWrite(delivery))
         {
-            Interlocked.Decrement(ref _pending);
+            Ended(delivery);
 
             return false;
         }
@@ -227,7 +299,7 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
         // True is not "taken", though. A full DropWrite queue lets the newest go and answers as if it had
         // been written, which would tell the engine that a post was queued when nobody ever will send it.
         // OnDropped has already run, on this thread, before TryWrite returned: it marked the delivery,
-        // took it off _pending and counted it as dropped, so there is nothing to undo here.
+        // ended it and counted it as dropped, so there is nothing to undo here.
         return !delivery.LetGo;
     }
 
@@ -248,7 +320,13 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
     {
         job.LetGo = true;
 
-        Interlocked.Decrement(ref _pending);
+        Ended(job);
+        CountDropped();
+    }
+
+    // A delivery let go, by the full queue or by the flows' cap.
+    private void CountDropped()
+    {
         Interlocked.Increment(ref _dropped);
 
         // The same drop, counted a second time where GET /api/alerts can read it. Dropped is this
@@ -257,6 +335,17 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
         // snapshot — the core is a pure function of messages and rules and has no idea a queue
         // out here overflowed.
         _panel?.WebhookDropped();
+    }
+
+    // The end of a delivery that was counted, whichever way it ends: sent or given up on (DeliverAsync),
+    // let go by the full queue (OnDropped), or — a flow's post — refused by a closed one (Post). Once for
+    // each and never twice, so that Pending is what is still to be done and the flows' cap counts the
+    // flows' posts that are. One left counted would be a place under the cap lost for the life of the
+    // process.
+    private void Ended(Delivery job)
+    {
+        Interlocked.Decrement(ref _pending);
+        if (job is FlowDelivery) Interlocked.Decrement(ref _flowPosts);
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -286,10 +375,11 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
         catch (Exception ex) when (ex is TimeoutException or OperationCanceledException)
         {
             // Not an error and not a retry: the process is going. Said out loud because an
-            // endpoint that is missing an alert is entitled to know it was this and not the
-            // network. Whatever is still in flight goes with the process a moment from now.
+            // endpoint that is missing an alert or a flow's post is entitled to know it was this
+            // and not the network. Whatever is still in flight goes with the process a moment from
+            // now. Deliveries and not alerts, because Pending counts both kinds.
             _log.LogWarning(
-                "{Count} alert webhook(s) were still unsent when MQTTForge stopped.", Pending);
+                "{Count} webhook deliveries were still unsent when MQTTForge stopped.", Pending);
         }
     }
 
@@ -310,44 +400,50 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
             _log.LogError(ex, "The webhook pump stopped reading its queue.");
         }
 
-        // Every endpoint's chain, including what the drain just handed them. DeliverAsync never
+        // Every line's chain, including what the drain just handed them. DeliverAsync never
         // throws, so this never does either.
         await Task.WhenAll([.. _chains.Values]);
     }
 
-    /// <summary>Puts one delivery behind whatever its own endpoint is already doing.</summary>
+    /// <summary>Puts one delivery behind whatever its own line — its kind, at its endpoint — is already doing.</summary>
     // One at a time per endpoint, four endpoints at a time. The spec's "cevap vermeyen uç nokta
     // yalnızca kendi sırasını tıkasın": an address that has stopped answering must hold up its
     // own queue and nobody else's, and a chain per endpoint says that without a thread per
     // endpoint or a lock anywhere.
+    //
+    // A chain for each kind at each endpoint, and not one for both. A flow posting every second
+    // to a host that has stopped answering is that host's queue as well, and in a single line a
+    // rule's alarm to the same host would wait behind every post the flow had made, twenty seconds
+    // apiece. So the flows' posts hold each other up and nothing else, and an alarm to the same
+    // host goes beside them, as it would have before there were any.
     private void Chain(Delivery job)
     {
-        var endpoint = EndpointOf(job.Url);
-        var previous = _chains.TryGetValue(endpoint, out var tail) ? tail : Task.CompletedTask;
+        var line = (job is FlowDelivery, EndpointOf(job.Url));
+        var previous = _chains.TryGetValue(line, out var tail) ? tail : Task.CompletedTask;
 
         // Not ExecuteSynchronously: the continuation would then start on the pump thread and hold
         // it until the first real await, which is the one thread that must never wait for HTTP.
-        _chains[endpoint] = previous
+        _chains[line] = previous
             .ContinueWith(_ => DeliverAsync(job), CancellationToken.None,
                           TaskContinuationOptions.None, TaskScheduler.Default)
             .Unwrap();
 
-        Prune(endpoint);
+        Prune(line);
     }
 
-    // Endpoints, not deliveries, so this dictionary is small — but a rule set that names a
-    // hundred hosts would still leave a hundred finished tasks in it for the life of the process.
-    private void Prune(string keep)
+    // Lines, not deliveries, so this dictionary is small — but a rule set that names a hundred
+    // hosts would still leave a hundred finished tasks in it for the life of the process.
+    private void Prune((bool Flow, string Endpoint) keep)
     {
-        List<string>? finished = null;
+        List<(bool Flow, string Endpoint)>? finished = null;
 
-        foreach (var (endpoint, task) in _chains)
-            if (task.IsCompleted && !string.Equals(endpoint, keep, StringComparison.Ordinal))
-                (finished ??= []).Add(endpoint);
+        foreach (var (line, task) in _chains)
+            if (task.IsCompleted && line != keep)
+                (finished ??= []).Add(line);
 
         if (finished is null) return;
 
-        foreach (var endpoint in finished) _chains.Remove(endpoint);
+        foreach (var line in finished) _chains.Remove(line);
     }
 
     /// <summary>Scheme, host and port. Two paths on one host are one endpoint.</summary>
@@ -363,6 +459,13 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
 
     private async Task DeliverAsync(Delivery job)
     {
+        // A flow's post takes one of the flows' own slots first, and only then one of the four, so
+        // the flows can never hold more than FlowsInFlight of them. The other way round, a post
+        // waiting for the flows' share would sit on one of the four while it waited, and the flows
+        // could hold every one of them after all.
+        var share = job is FlowDelivery ? _flowSlots : null;
+        if (share is not null) await share.WaitAsync();
+
         await _slots.WaitAsync();
 
         try
@@ -377,8 +480,9 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
         }
         finally
         {
-            Interlocked.Decrement(ref _pending);
+            Ended(job);
             _slots.Release();
+            share?.Release();
         }
     }
 
@@ -420,13 +524,29 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
         }
     }
 
+    // A template for each kind, so that each keeps what it names as values of their own — the rule
+    // and the topic an alarm was for, the flow and the node a post was for — which a log read by a
+    // machine filters on. Folded into one value they would make the same sentence and lose both.
     private void GiveUp(Delivery job, int attempts, string reason)
     {
-        _log.LogWarning(
-            "The webhook for {Describe} was not delivered to {Url} after {Attempts} attempt(s): {Reason}",
-            job.Describe, Redacted(job.Url), attempts, reason);
+        switch (job)
+        {
+            case AlertDelivery alert:
+                _log.LogWarning(
+                    "The webhook for {RuleName} on {Topic} was not delivered to {Url} after " +
+                    "{Attempts} attempt(s): {Reason}",
+                    alert.Alert.RuleName, alert.Alert.Topic, Redacted(job.Url), attempts, reason);
+                break;
 
-        job.Failed?.Invoke($"The webhook was not delivered after {attempts} attempt(s): {reason}.");
+            case FlowDelivery flow:
+                _log.LogWarning(
+                    "The webhook for flow {Flow}'s node {Node} was not delivered to {Url} after " +
+                    "{Attempts} attempt(s): {Reason}",
+                    flow.Post.Run.FlowId, flow.Post.NodeId, Redacted(job.Url), attempts, reason);
+
+                flow.Failed($"The webhook was not delivered after {attempts} attempt(s): {reason}.");
+                break;
+        }
     }
 
     private async Task<(bool Delivered, string Reason)> AttemptAsync(

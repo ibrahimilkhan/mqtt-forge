@@ -505,6 +505,33 @@ public class FlowRuntimeTests
         Assert.Equal("The broker said no.", Assert.Single(outcome.Debug).Text);
     }
 
+    // A Webhook node counts its post as posted when it asks for it, before the engine has handed it on. One
+    // the engine could not hand on at all was never posted, so the engine says what to take back with the
+    // failure; one it handed on and that failed later was posted, and keeps the count beside its error.
+    [Fact]
+    public void A_post_the_engine_never_handed_on_is_taken_back_off_posted()
+    {
+        var post = Assert.Single(Activate(Line(("hook", "webhook", new { url = "https://hooks.example.com/x" })).Compile()).Webhooks);
+        Assert.Equal(1, Node("hook").Outs["posted"]);
+
+        _runtime.StepFailed(post.Run, post.Serial, post.NodeId, "Too many webhook posts were waiting; this one was dropped.", T0,
+            takeBack: "posted");
+
+        Assert.Equal(0, Node("hook").Outs.GetValueOrDefault("posted"));
+        Assert.Equal(1, Node("hook").Errors);
+    }
+
+    [Fact]
+    public void A_post_that_failed_after_it_was_handed_on_stays_posted()
+    {
+        var post = Assert.Single(Activate(Line(("hook", "webhook", new { url = "https://hooks.example.com/x" })).Compile()).Webhooks);
+
+        _runtime.StepFailed(post.Run, post.Serial, post.NodeId, "The webhook was not delivered after 3 attempt(s): 500.", T0);
+
+        Assert.Equal(1, Node("hook").Outs["posted"]);
+        Assert.Equal(1, Node("hook").Errors);
+    }
+
     // A publish fails in the engine's own loop, and a webhook post is given up on by its channel, a while
     // after the turn that asked for them. By then an Update or a new Test can have put another run where
     // the one that asked was, and what comes back is the asking run's alone.

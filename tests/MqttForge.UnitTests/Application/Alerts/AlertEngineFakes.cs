@@ -438,9 +438,9 @@ internal sealed class FakeConnection : IMqttConnectionManager
 internal sealed class RecordingLogger<T> : ILogger<T>
 {
     private readonly Lock _gate = new();
-    private readonly List<(LogLevel Level, string Message)> _lines = [];
+    private readonly List<(LogLevel Level, string Message, IReadOnlyDictionary<string, object?> Values)> _lines = [];
 
-    public IReadOnlyList<(LogLevel Level, string Message)> Lines
+    public IReadOnlyList<(LogLevel Level, string Message, IReadOnlyDictionary<string, object?> Values)> Lines
     {
         get { lock (_gate) return [.. _lines]; }
     }
@@ -449,10 +449,17 @@ internal sealed class RecordingLogger<T> : ILogger<T>
 
     public bool IsEnabled(LogLevel logLevel) => true;
 
+    // The values a line was given by name, as well as the sentence they made. A structured log keeps each
+    // of them as a property of its own, and a template that folded two of them into one would still make
+    // the same sentence: only the values can tell the two apart.
     public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
                             Func<TState, Exception?, string> formatter)
     {
-        lock (_gate) _lines.Add((logLevel, formatter(state, exception)));
+        var values = new Dictionary<string, object?>(StringComparer.Ordinal);
+        if (state is IEnumerable<KeyValuePair<string, object?>> named)
+            foreach (var (name, value) in named) values[name] = value;
+
+        lock (_gate) _lines.Add((logLevel, formatter(state, exception), values));
     }
 }
 

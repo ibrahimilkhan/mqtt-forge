@@ -704,9 +704,12 @@ public sealed class FlowEngine
                 debug.AddRange(_runtime.StepFailed(publish.Run, publish.Serial, publish.NodeId,
                     "Too many publishes were waiting for the broker; this one was dropped.", now).Debug);
 
+        // A post the channel would not take was never posted, so it is taken back off the node's count with
+        // the failure. One it took and gives up on later stays posted: that failure comes back as a command.
         foreach (var post in outcome.Webhooks)
             if (Refusal(post) is { } refused)
-                debug.AddRange(_runtime.StepFailed(post.Run, post.Serial, post.NodeId, refused, now).Debug);
+                debug.AddRange(_runtime.StepFailed(post.Run, post.Serial, post.NodeId, refused, now,
+                    takeBack: FlowRuntime.Posted).Debug);
 
         foreach (var entry in debug)
         {
@@ -738,8 +741,7 @@ public sealed class FlowEngine
     // goes on.
     private string? Refusal(FlowWebhookPost post)
     {
-        if (_webhook is null)
-            return "Webhooks are turned off on this host (MqttForge:AllowWebhooks), so nothing was sent.";
+        if (_webhook is null) return IFlowWebhook.TurnedOff;
 
         try
         {

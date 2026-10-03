@@ -167,6 +167,10 @@ public sealed class FlowEngineTests : IAsyncLifetime
     private static string? Note(FlowEngine engine, string node) =>
         engine.Status.Runs.SelectMany(run => run.Nodes).FirstOrDefault(one => one.Id == node)?.Note;
 
+    /// <summary>How many of a Webhook node's posts the channel took, as the engine last pushed it.</summary>
+    private static long Posted(FlowEngine engine, string node) =>
+        engine.Status.Runs.SelectMany(run => run.Nodes).FirstOrDefault(one => one.Id == node)?.Outs.GetValueOrDefault("posted") ?? 0;
+
     /// <summary>How many messages an MQTT in node has read, as the engine last pushed it.</summary>
     // What left by its way out, and not its count: a run that read a message comes round to wait at the
     // node again, and has then entered it once more than it has read.
@@ -787,6 +791,8 @@ public sealed class FlowEngineTests : IAsyncLifetime
         public Task DroppedAsync(int total) => Task.CompletedTask;
     }
 
+    // Taken, and given up on later: the channel had it, so it was posted, and its failure is counted beside
+    // that and does not take it back.
     [Fact]
     public async Task A_webhook_post_goes_to_the_webhook_channel_and_a_post_it_gives_up_on_is_counted_on_its_node()
     {
@@ -799,10 +805,13 @@ public sealed class FlowEngineTests : IAsyncLifetime
         webhook.Fail(0, "The endpoint answered 500.");
 
         await Eventually.Until(_time, () => Errors(engine, "hook") == 1, "the failure to be counted on the node");
+        Assert.Equal(1, Posted(engine, "hook"));
     }
 
+    // Refused at the hand-over, by an engine that has no channel to hand it to: an error on its node, and not
+    // a post, since nothing was ever posted.
     [Fact]
-    public async Task A_webhook_with_no_channel_is_an_error_on_its_node()
+    public async Task A_webhook_with_no_channel_is_an_error_on_its_node_and_is_not_counted_as_posted()
     {
         var engine = await RunningAsync(Once("f1", ("hook", "webhook", new { url = "https://hooks.example.com/x" })));
 
@@ -810,10 +819,15 @@ public sealed class FlowEngineTests : IAsyncLifetime
         await Eventually.Until(_time, () => _console.Debug.Any(line => line.NodeId == "hook" && line.Text.Contains("AllowWebhooks")),
             "the refusal to be said in the debug strip");
         Assert.Equal(1, Errors(engine, "hook"));
+        Assert.Equal(0, Posted(engine, "hook"));
+
+        // The channel's sentence, word for word: a node says the same thing whichever of the two locks held.
+        // Read in the strip, which carries it whole; the note under the node is cut to its eighty characters.
+        Assert.Contains(_console.Debug, line => line.NodeId == "hook" && line.Text == IFlowWebhook.TurnedOff);
     }
 
     [Fact]
-    public async Task A_full_webhook_channel_drops_the_post_and_says_so_on_its_node()
+    public async Task A_full_webhook_channel_drops_the_post_says_so_on_its_node_and_does_not_count_it_as_posted()
     {
         var webhook = new RecordingFlowWebhook { Full = true };
         var engine = await RunningAsync(webhook, Once("f1", ("hook", "webhook", new { url = "https://hooks.example.com/x" })));
@@ -821,6 +835,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
         await Eventually.Until(_time, () => _console.Debug.Any(line => line.NodeId == "hook" && line.Text.StartsWith("Too many webhook posts")),
             "the drop to be said in the debug strip");
         Assert.Equal(1, Errors(engine, "hook"));
+        Assert.Equal(0, Posted(engine, "hook"));
         Assert.Empty(webhook.Posts);
     }
 
@@ -848,8 +863,10 @@ public sealed class FlowEngineTests : IAsyncLifetime
             "the turn's alarm and tone to reach the console");
         await Eventually.Until(_time, () => Errors(engine, "hook") == 1, "the failure to be counted on the node");
 
-        // Said as the channel's own fault, and not as a turn of the pump that failed: the turn went on.
+        // Said as the channel's own fault, and not as a turn of the pump that failed: the turn went on. And a
+        // post the channel threw on was never taken, so it was never posted either.
         Assert.Equal("Webhook failed: the queue is gone", Note(engine, "hook"));
+        Assert.Equal(0, Posted(engine, "hook"));
         Assert.Contains(_log.Lines, line => line.Level == LogLevel.Error && line.Message.StartsWith("The webhook channel threw"));
         Assert.DoesNotContain(_log.Lines, line => line.Message.StartsWith("A turn of the flow engine failed"));
     }
