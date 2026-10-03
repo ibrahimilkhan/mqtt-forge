@@ -1,4 +1,4 @@
-import type { FlowDto, FlowNodeType, FlowProblemDto } from '../../types/api';
+import type { FlowDto, FlowEdgeDto, FlowNodeDto, FlowNodeType, FlowProblemDto } from '../../types/api';
 import { isLoop, isNodeType, NODE_SPECS, specOf } from './nodeTypes';
 
 /*
@@ -60,7 +60,11 @@ export const addNode = (flow: FlowDto, type: FlowNodeType, at: { x: number; y: n
 /**
  * A node put on a wire: the wire now runs into it, and every way out it has goes where the wire went —
  * a decision's yes and no alike. A loop put on a wire gets an empty body, wired to its own next, and
- * its done goes where the wire went. Nothing is left unwired, so the program stays whole.
+ * its done goes where the wire went. Nothing is left unwired.
+ *
+ * An End has no way out, though. Put on a wire, it ends the run there, and what the wire led to is
+ * left for the reader to wire again or take out: a step nothing else led to is reached no more, and
+ * a loop whose last way back the wire was has nothing coming back to it. The canvas marks either.
  */
 export function insertOnWire(
   flow: FlowDto,
@@ -73,21 +77,34 @@ export function insertOnWire(
   if (!wire) return flow;
 
   const added = addNode(flow, type, at, id);
-  const edges = added.edges.filter((edge) => edge.id !== edgeId);
+  return {
+    ...added,
+    edges: [
+      ...added.edges.filter((edge) => edge.id !== edgeId),
+      { id: newId('e'), from: wire.from, fromPort: wire.fromPort, to: id, toPort: 'in' },
+      ...waysOut(id, type, wire),
+    ],
+  };
+}
 
-  edges.push({ id: newId('e'), from: wire.from, fromPort: wire.fromPort, to: id, toPort: 'in' });
-  for (const port of NODE_SPECS[type].outs) {
-    if (isLoop(type) && port === 'body') edges.push({ id: newId('e'), from: id, fromPort: 'body', to: id, toPort: 'next' });
-    else edges.push({ id: newId('e'), from: id, fromPort: port, to: wire.to, toPort: wire.toPort });
-  }
-
-  return { ...added, edges };
+/**
+ * The wires out of a node just put down. A loop's body goes back to the loop's own next, wherever
+ * the loop is put: that is how a loop is drawn until a step is put on the wire, and a loop with
+ * nothing coming back to it is one the server refuses. Every other way out goes where `onward` led,
+ * or, when there was no wire to follow, is left unwired for the canvas to mark.
+ */
+function waysOut(id: string, type: FlowNodeType, onward?: { to: string; toPort: string }): FlowEdgeDto[] {
+  return NODE_SPECS[type].outs.flatMap((port) => {
+    if (isLoop(type) && port === 'body') return [{ id: newId('e'), from: id, fromPort: port, to: id, toPort: 'next' }];
+    return onward ? [{ id: newId('e'), from: id, fromPort: port, to: onward.to, toPort: onward.toPort }] : [];
+  });
 }
 
 /**
  * A node put after one with a single way out: on that way out's wire when it has one, and wired
- * straight from it when it has none. Null for a node with no way out, or with two — which of them
- * the reader meant is theirs to say, by picking the wire.
+ * straight from it when it has none — a loop with its empty body, and any other way out the new
+ * node has left unwired, since there is no wire end to send it to. Null for a node with no way out,
+ * or with two — which of them the reader meant is theirs to say, by picking the wire.
  */
 export function insertAfter(
   flow: FlowDto,
@@ -104,7 +121,10 @@ export function insertAfter(
   if (wire) return insertOnWire(flow, wire.id, type, at, id);
 
   const added = addNode(flow, type, at, id);
-  return { ...added, edges: [...added.edges, { id: newId('e'), from: nodeId, fromPort: outs[0], to: id, toPort: 'in' }] };
+  return {
+    ...added,
+    edges: [...added.edges, { id: newId('e'), from: nodeId, fromPort: outs[0], to: id, toPort: 'in' }, ...waysOut(id, type)],
+  };
 }
 
 /** How much room a node takes on the canvas, as the one putting a node down reckons it. */
@@ -206,14 +226,21 @@ export function removeEdges(flow: FlowDto, ids: readonly string[]): FlowDto {
 }
 
 /**
- * Whether a wire may be drawn: both ends on nodes, ports that exist, and not closing a circle —
- * except the one wire that may go back, a loop body's return into that loop's next. Two ways out of
- * one node may go to the same place (an If whose yes and no both end the run). The server refuses
- * the same things; saying no while the wire is still being dragged is kinder than saying it when
- * the flow is tested. A node of a type this build does not know has no ports here, as it has none
- * on the server, so no wire goes to or from it.
+ * Whether a wire may be drawn: both ends on nodes, ports that exist, no circle, and nothing coming
+ * back to a loop's next from where no turn of that loop can be. Two ways out of one node may go to
+ * the same place (an If whose yes and no both end the run). The server refuses the same things;
+ * saying no while the wire is still being dragged is kinder than saying it when the flow is tested.
+ * A node of a type this build does not know has no ports here, as it has none on the server, so no
+ * wire goes to or from it.
  *
- * Asked as if the wire the way out already has were gone, since drawing a new one replaces it.
+ * Asked of the flow as it would be with the wire, in place of the one its way out has, since
+ * drawing a new one replaces it. A wire can spoil a return it does not touch: one into a loop's body
+ * from its done, or from before the loop, makes a step a run reaches with no turn going, and that
+ * step's wire back to next becomes one the server refuses. So the returns the wire could spoil are
+ * judged again, and it is refused when it is a stray return itself or would make another one stray
+ * (see strays). A return already stray is the flow's fault and not the wire's — testing the flow
+ * says so — and holding it against every wire would leave the reader nothing to draw, not even the
+ * wire that puts it right.
  */
 export function canConnect(flow: FlowDto, wire: Wire): boolean {
   const from = flow.nodes.find((node) => node.id === wire.from);
@@ -226,55 +253,160 @@ export function canConnect(flow: FlowDto, wire: Wire): boolean {
   const back = wire.toPort === 'next' && isLoop(to.type);
   if (from.id === to.id) return back && wire.fromPort === 'body';
 
-  const others = { ...flow, edges: flow.edges.filter((edge) => !(edge.from === wire.from && edge.fromPort === wire.fromPort)) };
+  const drawn: FlowEdgeDto = { id: '', from: wire.from, fromPort: wire.fromPort, to: wire.to, toPort: wire.toPort };
+  const wiring = wiringOf(flow.nodes, [
+    ...flow.edges.filter((edge) => !(edge.from === wire.from && edge.fromPort === wire.fromPort)),
+    drawn,
+  ]);
 
-  if (back) return bodyOf(others, to.id).has(from.id);
-  return !reachesForward(others, wire.to, wire.from);
+  // The one wire that may go back is a return, which no circle counts; any other closes one when
+  // where it goes already leads, forward, to where it starts.
+  if (!back && walk(wiring.outs, [wire.to], (edge) => !isReturn(wiring, edge)).has(wire.from)) return false;
+
+  // A return turns stray only when a run can get to the node it comes from by a way it could not
+  // before, and every such way goes through this wire. So the loops judged again are the one the
+  // wire comes back to, if it does, and those with a return from somewhere the wire leads: in a flow
+  // of many loops, a wire touches few of them.
+  const onward = walk(wiring.outs, [wire.to], () => true);
+  const touched = [...wiring.returns]
+    .filter(([loop, returns]) => loop === wire.to || returns.some((edge) => onward.has(edge.from)))
+    .map(([loop]) => loop);
+
+  const now = strays(wiring, touched);
+  if (now.size === 0) return true;
+
+  // A stray return the flow already had is let be. The drawn wire is not one of the flow's, so a
+  // stray one is refused here too.
+  const had = straysOf(flow);
+  return [...now].every((edge) => had.has(edge));
 }
 
-/** Whether following wires forward from `start` arrives at `goal`, a loop's return counting as no way forward. */
-function reachesForward(flow: FlowDto, start: string, goal: string): boolean {
-  const loops = new Set(flow.nodes.filter((node) => isLoop(node.type)).map((node) => node.id));
-  const seen = new Set<string>();
-  const waiting = [start];
+/**
+ * The returns into the loops named — into every loop, unless they are named — that the server
+ * refuses because a run gets to where they come from by the loop's done, or without going through
+ * the loop at all. A turn ends when the run comes back to next, so only a node a turn can be at may
+ * wire there: one of the loop's body that nothing before the loop and nothing after its done also
+ * leads to, or the loop itself by its body, which is how an empty body is drawn. A run at a node a
+ * stray return comes from would come to next with no turn going.
+ *
+ * A return from a node nothing leads to, neither the Start nor the loop, is refused by the server
+ * too, and is not counted here. The canvas already draws that node as one nothing leads to, and the
+ * reader is in the middle of wiring it: a body drawn from its last step back, or a step the wire
+ * before it has just left. It is settled when something comes to lead there — through the body it
+ * is the loop's own; any other way it turns stray, and canConnect refuses that wire.
+ */
+function strays(wiring: Wiring, loops: Iterable<string> = wiring.returns.keys()): Set<FlowEdgeDto> {
+  const found = new Set<FlowEdgeDto>();
+  const start = wiring.start;
 
-  while (waiting.length > 0) {
-    const at = waiting.pop()!;
-    if (at === goal) return true;
-    if (seen.has(at)) continue;
-    seen.add(at);
+  for (const loop of loops) {
+    // An empty body's wire is the loop's own whatever leads to the loop: its turn never leaves it.
+    const returns = (wiring.returns.get(loop) ?? []).filter((edge) => !(edge.from === loop && edge.fromPort === 'body'));
+    if (returns.length === 0) continue;
 
-    for (const edge of flow.edges)
-      if (edge.from === at && !(edge.toPort === 'next' && loops.has(edge.to))) waiting.push(edge.to);
+    const after = region(wiring, loop, 'done');
+    // Where a run gets to from the Start without going on through the loop: the loop is reached, not gone through.
+    const outside = start === undefined ? new Set<string>() : walk(wiring.outs, [start], (edge) => edge.from !== loop);
+
+    for (const edge of returns) if (after.has(edge.from) || outside.has(edge.from)) found.add(edge);
   }
 
-  return false;
+  return found;
+}
+
+/*
+ * Each flow's stray returns, kept against the flow object as the answers further down are: a wire
+ * being dragged over a flow that already holds one asks about the same flow on every move.
+ */
+const strayReturns = new WeakMap<FlowDto, ReadonlySet<FlowEdgeDto>>();
+
+function straysOf(flow: FlowDto): ReadonlySet<FlowEdgeDto> {
+  let found = strayReturns.get(flow);
+  if (found === undefined) {
+    found = strays(wiringOf(flow.nodes, flow.edges));
+    strayReturns.set(flow, found);
+  }
+  return found;
+}
+
+/**
+ * A flow's wires as the walks follow them, made once for each question asked: each node's wires out,
+ * by the node, so that a walk costs only the wires it follows. Looked for among all the wires at
+ * every node it came to, a walk over a flow of two hundred nodes and four hundred wires took tens of
+ * thousands of steps, and a wire being dragged asks on every move of the pointer.
+ */
+type Wiring = {
+  outs: ReadonlyMap<string, readonly FlowEdgeDto[]>;
+  /** The wires into each loop's next, by the loop: its returns. A loop with none has no entry. */
+  returns: ReadonlyMap<string, readonly FlowEdgeDto[]>;
+  loops: ReadonlySet<string>;
+  start: string | undefined;
+};
+
+function wiringOf(nodes: readonly FlowNodeDto[], edges: readonly FlowEdgeDto[]): Wiring {
+  const loops = new Set(nodes.filter((node) => isLoop(node.type)).map((node) => node.id));
+  const outs = new Map<string, FlowEdgeDto[]>();
+  const returns = new Map<string, FlowEdgeDto[]>();
+
+  const file = (filed: Map<string, FlowEdgeDto[]>, key: string, edge: FlowEdgeDto) => {
+    const list = filed.get(key);
+    if (list) list.push(edge);
+    else filed.set(key, [edge]);
+  };
+
+  for (const edge of edges) {
+    file(outs, edge.from, edge);
+    if (edge.toPort === 'next' && loops.has(edge.to)) file(returns, edge.to, edge);
+  }
+
+  return { outs, returns, loops, start: nodes.find((node) => node.type === 'start')?.id };
+}
+
+const isReturn = (wiring: Wiring, edge: FlowEdgeDto) => edge.toPort === 'next' && wiring.loops.has(edge.to);
+
+/** Every node a run gets to from `seeds`, taking only the wires `takes` lets it. */
+function walk(
+  outs: ReadonlyMap<string, readonly FlowEdgeDto[]>,
+  seeds: readonly string[],
+  takes: (edge: FlowEdgeDto) => boolean,
+): Set<string> {
+  const found = new Set(seeds);
+  const waiting = [...found];
+
+  while (waiting.length > 0)
+    for (const edge of outs.get(waiting.pop()!) ?? [])
+      if (!found.has(edge.to) && takes(edge)) {
+        found.add(edge.to);
+        waiting.push(edge.to);
+      }
+
+  return found;
+}
+
+/** What one of a loop's ways out leads to, never going into the loop again: the server's Region. */
+function region(wiring: Wiring, loop: string, port: string): Set<string> {
+  const away = (edge: FlowEdgeDto) => edge.to !== loop;
+  const first = (wiring.outs.get(loop) ?? []).filter((edge) => edge.fromPort === port && away(edge)).map((edge) => edge.to);
+  return walk(wiring.outs, first, away);
 }
 
 /** The nodes of a loop's body: everything its body's wire leads to, without passing through the loop again. */
 export function bodyOf(flow: FlowDto, loopId: string): ReadonlySet<string> {
-  const body = new Set<string>();
-  const waiting = flow.edges.filter((edge) => edge.from === loopId && edge.fromPort === 'body').map((edge) => edge.to);
-
-  while (waiting.length > 0) {
-    const at = waiting.pop()!;
-    if (at === loopId || body.has(at)) continue;
-    body.add(at);
-    for (const edge of flow.edges) if (edge.from === at) waiting.push(edge.to);
-  }
-
-  return body;
+  return region(wiringOf(flow.nodes, flow.edges), loopId, 'body');
 }
 
 /**
  * The flow with the wire added — in place of the wire its way out had, since a way out has one — or
- * the same flow when the wire may not be drawn.
+ * the same flow when the wire may not be drawn. The same flow, too, when the way out already has
+ * that wire: dropped again on the port it goes to, it is no change, and a new id would make it
+ * read as one — a draft the page offers to deploy, of a flow nobody changed.
  */
 export function connect(flow: FlowDto, wire: Wire, id: string = newId('e')): FlowDto {
+  const had = flow.edges.filter((edge) => edge.from === wire.from && edge.fromPort === wire.fromPort);
+  if (had.length === 1 && had[0].to === wire.to && had[0].toPort === wire.toPort) return flow;
   if (!canConnect(flow, wire)) return flow;
 
-  const edges = flow.edges.filter((edge) => !(edge.from === wire.from && edge.fromPort === wire.fromPort));
-  return { ...flow, edges: [...edges, { id, ...wire }] };
+  return { ...flow, edges: [...flow.edges.filter((edge) => !had.includes(edge)), { id, ...wire }] };
 }
 
 export const setConfig = (flow: FlowDto, nodeId: string, config: Record<string, unknown>): FlowDto => ({
@@ -288,6 +420,7 @@ export const setConfig = (flow: FlowDto, nodeId: string, config: Record<string, 
  */
 const unwiredOf = new WeakMap<FlowDto, ReadonlySet<string>>();
 const unreachedOf = new WeakMap<FlowDto, ReadonlySet<string>>();
+const noReturnOf = new WeakMap<FlowDto, ReadonlySet<string>>();
 
 /**
  * Every way out of a known node that has no wire, as `nodeId:port`. The canvas draws them red: a run
@@ -326,6 +459,23 @@ export function unreached(flow: FlowDto): ReadonlySet<string> {
 
     found = new Set(flow.nodes.filter((node) => !reached.has(node.id) && node.type !== 'start').map((node) => node.id));
     unreachedOf.set(flow, found);
+  }
+  return found;
+}
+
+/**
+ * Every loop nothing comes back to: no wire into its next, not even its own empty body's. The server
+ * refuses such a loop, since a turn of it, once begun, would have no way to end — and every way out
+ * can be wired and every node reached while it is so. A loop is put down with its body wired to its
+ * own next, so it comes to this only when that wire, or its last wire back, ends at an End put on it
+ * or is drawn somewhere else. The canvas marks the loop's next until something comes back to it.
+ */
+export function noReturn(flow: FlowDto): ReadonlySet<string> {
+  let found = noReturnOf.get(flow);
+  if (found === undefined) {
+    const back = new Set(flow.edges.filter((edge) => edge.toPort === 'next').map((edge) => edge.to));
+    found = new Set(flow.nodes.filter((node) => isLoop(node.type) && !back.has(node.id)).map((node) => node.id));
+    noReturnOf.set(flow, found);
   }
   return found;
 }

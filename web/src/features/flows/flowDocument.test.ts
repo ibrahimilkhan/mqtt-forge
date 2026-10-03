@@ -13,6 +13,7 @@ import {
   moveNodes,
   newId,
   nextName,
+  noReturn,
   placesInView,
   problemsOf,
   removeEdges,
@@ -23,6 +24,7 @@ import {
   unreached,
   unwiredOuts,
   withDrafts,
+  type Wire,
 } from './flowDocument';
 import { exampleFlows } from './examples';
 import { NODE_SPECS } from './nodeTypes';
@@ -67,6 +69,23 @@ const line = (type: FlowNodeType = 'debug'): FlowDto => ({
 
 const wires = (flow: FlowDto) => flow.edges.map((edge) => `${edge.from}.${edge.fromPort}>${edge.to}.${edge.toPort}`).sort();
 
+/** A wire written as `wires` prints one: `from.port>to.port`. */
+const wire = (text: string): Wire => {
+  const [from, fromPort, to, toPort] = text.split(/[.>]/);
+  return { from, fromPort, to, toPort };
+};
+
+/** A flow of the nodes named, each of the type given, wired as the lines say. */
+const drawing = (nodes: Record<string, FlowNodeType>, ...wired: string[]): FlowDto => ({
+  id: 'f', name: 'F', enabled: false, variables: [],
+  nodes: Object.entries(nodes).map(([id, type], index) => ({ id, type, x: index * 200, y: 0, config: {} })),
+  edges: wired.map((text, index) => ({ id: `w${index + 1}`, ...wire(text) })),
+});
+
+/** Start → For l, whose body is one Publish wired back to l's next, and whose done ends the run. */
+const looped = () =>
+  drawing({ start: 'start', l: 'for', p: 'publish', end: 'end' }, 'start.out>l.in', 'l.body>p.in', 'p.out>l.next', 'l.done>end.in');
+
 describe('flow document', () => {
   it('makes ids the server accepts', () => {
     for (let i = 0; i < 50; i++) expect(newId('n')).toMatch(/^n[a-z0-9]{8}$/);
@@ -99,7 +118,11 @@ describe('flow document', () => {
 
   it('refuses a wire that would go round in a circle, back into its own node, or from or to a port that is not there', () => {
     const flow = line();
+    const longer = chain();
 
+    // Set back to Wait, which leads to Set: a circle through two nodes, with no loop to count its turns.
+    expect(canConnect(longer, { from: 'c', fromPort: 'out', to: 'b', toPort: 'in' })).toBe(false);
+    expect(connect(longer, { from: 'c', fromPort: 'out', to: 'b', toPort: 'in' })).toBe(longer);
     expect(canConnect(flow, { from: 'a', fromPort: 'out', to: 'a', toPort: 'in' })).toBe(false);
     expect(canConnect(flow, { from: 'end', fromPort: 'out', to: 'a', toPort: 'in' })).toBe(false);
     expect(canConnect(flow, { from: 'a', fromPort: 'yes', to: 'end', toPort: 'in' })).toBe(false);
@@ -327,6 +350,21 @@ describe('a flowchart stays whole while it is built', () => {
     expect(wires(insertAfter(line(), 'a', 'wait', at, 'w')!)).toEqual(['a.out>w.in', 'start.out>a.in', 'w.out>end.in']);
   });
 
+  // With no wire to follow, the new node is wired from the node it follows and its ways out have
+  // nowhere to go yet — but for a loop's body, which goes back to its own next wherever the loop is
+  // put: a loop is drawn with an empty body, and one nothing came back to would be refused.
+  it('puts a node after one whose way out has no wire, a loop with its empty body', () => {
+    const open: FlowDto = { ...line(), edges: line().edges.filter((edge) => edge.id !== 'e2') };
+    const step = insertAfter(open, 'a', 'wait', at, 'w')!;
+    const loop = insertAfter(open, 'a', 'for', at, 'l')!;
+
+    expect(wires(step)).toEqual(['a.out>w.in', 'start.out>a.in']);
+    expect(unwiredOuts(step)).toEqual(new Set(['w:out']));
+    expect(wires(loop)).toEqual(['a.out>l.in', 'l.body>l.next', 'start.out>a.in']);
+    expect(unwiredOuts(loop)).toEqual(new Set(['l:done']));
+    expect(noReturn(loop)).toEqual(new Set());
+  });
+
   it('cannot put a node after one with two ways out', () => {
     const decision = insertOnWire(line(), 'e2', 'if', at, 'q');
     expect(insertAfter(decision, 'q', 'debug', at, 'd')).toBeNull();
@@ -343,10 +381,61 @@ describe('a flowchart stays whole while it is built', () => {
     expect(removeNodes(line(), ['start']).nodes.map((node) => node.id)).toEqual(['start', 'a', 'end']);
   });
 
+  // Joined over, the last step's way in — the loop's body — goes where its way out went: the loop's
+  // own next. The loop is left as it was put down, and not as one nothing comes back to.
+  it("leaves a loop an empty body when the last step of the body is taken out", () => {
+    const flow = removeNodes(looped(), ['p']);
+
+    expect(wires(flow)).toEqual(['l.body>l.next', 'l.done>end.in', 'start.out>l.in']);
+    expect(noReturn(flow)).toEqual(new Set());
+  });
+
+  // Each is joined over in the flow the one before it left, so the chain is whole whichever of
+  // its steps is named first.
+  it('joins over several steps of a chain taken out at once, in whatever order they are named', () => {
+    const flow = chain();
+
+    for (const ids of [['b', 'c'], ['c', 'b']]) {
+      const left = removeNodes(flow, ids);
+      expect(left.nodes.map((node) => node.id)).toEqual(['a', 'd']);
+      expect(wires(left)).toEqual(['a.out>d.in']);
+    }
+  });
+
+  // Which of a decision's two ways the run should have gone on by is the reader's to say: its wires
+  // go with it, and the way into it is left unwired for the canvas to mark.
+  it('drops the wires of a node with two ways out, and joins nothing over it', () => {
+    const flow = removeNodes(
+      drawing({ start: 'start', q: 'if', hot: 'end', cold: 'end' }, 'start.out>q.in', 'q.yes>hot.in', 'q.no>cold.in'),
+      ['q'],
+    );
+
+    expect(wires(flow)).toEqual([]);
+    expect(unwiredOuts(flow)).toEqual(new Set(['start:out']));
+  });
+
+  // A step wired back into itself is one only a hand-edited flows.json holds — the canvas and the
+  // server both refuse the wire. Joined over, the wires into the step would end on the very step
+  // that was taken out.
+  it('drops the wires into a step whose way out goes back into it, and joins none of them to it', () => {
+    const flow = removeNodes(drawing({ start: 'start', a: 'debug' }, 'start.out>a.in', 'a.out>a.in'), ['a']);
+
+    expect(flow.nodes.map((node) => node.id)).toEqual(['start']);
+    expect(wires(flow)).toEqual([]);
+  });
+
   it("replaces a way out's wire with a new one, since a way out has one", () => {
     const flow = { ...line(), nodes: [...line().nodes, { id: 'b', type: 'end', x: 0, y: 200, config: {} }] };
 
     expect(wires(connect(flow, { from: 'a', fromPort: 'out', to: 'b', toPort: 'in' }, 'e3'))).toEqual(['a.out>b.in', 'start.out>a.in']);
+  });
+
+  // A wire dropped on the port it already goes to is no change; given a new id it would read as
+  // one, and the page would offer to deploy a flow nobody changed.
+  it('leaves the flow as it was when the wire drawn is the one the way out already has', () => {
+    const flow = line();
+
+    expect(connect(flow, wire('a.out>end.in'))).toBe(flow);
   });
 
   it("lets a body come back to its own loop's next, and nothing else go back", () => {
@@ -367,6 +456,150 @@ describe('a flowchart stays whole while it is built', () => {
 
     expect(unwiredOuts(flow)).toEqual(new Set(['lonely:out']));
     expect(unreached(flow)).toEqual(new Set(['lonely']));
+  });
+
+  // Every way out wired and every node reached, and still refused: a loop whose turn, once begun,
+  // has no way to end. A loop is put down with its body wired to its own next, so it comes to this
+  // when an End is put on that wire, or when its last wire back is drawn somewhere else.
+  it('names every loop nothing comes back to', () => {
+    const empty = insertOnWire(line(), 'e2', 'for', at, 'l');
+    const body = empty.edges.find((edge) => edge.fromPort === 'body')!.id;
+    const filled = insertOnWire(empty, body, 'publish', at, 'p');
+    const ended = insertOnWire(empty, body, 'end', at, 'stop');
+    const rewired = connect(filled, wire('p.out>end.in'));
+
+    expect(noReturn(emptyFlow('A'))).toEqual(new Set());
+    expect(noReturn(empty)).toEqual(new Set());
+    expect(noReturn(filled)).toEqual(new Set());
+
+    for (const flow of [ended, rewired]) {
+      expect(unwiredOuts(flow)).toEqual(new Set());
+      expect(unreached(flow)).toEqual(new Set());
+      expect(noReturn(flow)).toEqual(new Set(['l']));
+      // Asked on every frame of a drag, as the others are: worked out once for each flow.
+      expect(noReturn(flow)).toBe(noReturn(flow));
+    }
+  });
+});
+
+/*
+ * The server's rule for a wire into a loop's next: it is the loop's own return when it comes from a
+ * step of the loop's body that neither the way in before the loop nor the loop's done also leads
+ * to — or from the loop itself, when the body is empty. A run anywhere else would come to next with
+ * no turn going.
+ */
+describe("only a loop's own body comes back to its next", () => {
+  // p would be after the loop as well as in it: a run that came to p from done would go on to
+  // next with no turn going, and the server would refuse p's wire back.
+  it("refuses a wire from a loop's done into its body", () => {
+    expect(canConnect(looped(), wire('l.done>p.in'))).toBe(false);
+  });
+
+  // Led to from before the loop too, p is somewhere a run gets to without the loop.
+  it('refuses a wire into a body from before the loop', () => {
+    const flow = drawing(
+      { start: 'start', q: 'if', l: 'for', p: 'publish', end: 'end' },
+      'start.out>q.in', 'q.yes>l.in', 'q.no>end.in', 'l.body>p.in', 'p.out>l.next', 'l.done>end.in',
+    );
+
+    expect(canConnect(flow, wire('q.no>p.in'))).toBe(false);
+  });
+
+  // A loop whose body breaks out of it has nothing coming back, and the wire from before it would be
+  // the only one there: still not the loop's own.
+  it("refuses a wire into next from before the loop when nothing else comes back to it", () => {
+    const flow = drawing(
+      { start: 'start', q: 'if', l: 'for', p: 'publish', end: 'end' },
+      'start.out>q.in', 'q.yes>l.in', 'q.no>end.in', 'l.body>p.in', 'p.out>end.in', 'l.done>end.in',
+    );
+
+    expect(noReturn(flow)).toEqual(new Set(['l']));
+    expect(canConnect(flow, wire('q.no>l.next'))).toBe(false);
+  });
+
+  // A break: a way out of the body that leaves the loop for what follows it. Nothing there comes
+  // back to next, so no return is spoiled.
+  it("lets a way out of the body go where the loop's done goes", () => {
+    const flow = drawing(
+      { start: 'start', l: 'for', q: 'if', a: 'debug', end: 'end' },
+      'start.out>l.in', 'l.body>q.in', 'q.yes>l.next', 'q.no>l.next', 'l.done>a.in', 'a.out>end.in',
+    );
+
+    expect(canConnect(flow, wire('q.no>a.in'))).toBe(true);
+  });
+
+  // A turn of the inner loop that gives up on it goes on to the outer loop's next turn: q is in the
+  // outer loop's body too, and neither before that loop nor after it.
+  it("lets a step of a loop inside another come back to the outer loop's next", () => {
+    const flow = drawing(
+      { start: 'start', o: 'for', i: 'forEach', q: 'if', end: 'end' },
+      'start.out>o.in', 'o.body>i.in', 'i.body>q.in', 'q.yes>i.next', 'q.no>i.next', 'i.done>o.next', 'o.done>end.in',
+    );
+
+    expect(canConnect(flow, wire('q.no>o.next'))).toBe(true);
+  });
+
+  // A loop put down away from the wires, its body wired back to its own next, is wired in like any
+  // other node: an empty body is the loop's own however a run comes to the loop.
+  it('lets a loop with an empty body be wired in from where it was put down', () => {
+    const flow = drawing(
+      { start: 'start', a: 'debug', end: 'end', l: 'for' },
+      'start.out>a.in', 'a.out>end.in', 'l.body>l.next', 'l.done>end.in',
+    );
+
+    expect(canConnect(flow, wire('a.out>l.in'))).toBe(true);
+  });
+
+  it('still refuses a circle inside a body, and a step wired to itself', () => {
+    const flow = drawing(
+      { start: 'start', l: 'for', p: 'publish', w: 'wait', end: 'end' },
+      'start.out>l.in', 'l.body>p.in', 'p.out>w.in', 'w.out>l.next', 'l.done>end.in',
+    );
+
+    expect(canConnect(flow, wire('w.out>p.in'))).toBe(false);
+    expect(canConnect(flow, wire('p.out>p.in'))).toBe(false);
+  });
+
+  // flows.json, or a console of an older build, can hand the page a return the server refuses.
+  // Testing the flow says so; it must not stop every other wire from being drawn — not even one
+  // into the loop it belongs to, which leaves it no worse than it was.
+  it('lets a wire be drawn elsewhere in a flow that already has a return the server refuses', () => {
+    const flow = drawing(
+      { start: 'start', q: 'if', l: 'for', p: 'publish', end: 'end', stop: 'end' },
+      'start.out>q.in', 'q.yes>l.in', 'q.no>end.in', 'l.body>p.in', 'p.out>l.next', 'l.done>p.in',
+    );
+
+    expect(canConnect(flow, wire('q.no>stop.in'))).toBe(true);
+    expect(canConnect(flow, wire('q.no>l.in'))).toBe(true);
+  });
+
+  // A step the wire before it no longer leads to is drawn faded, as one nothing leads to. Its wire
+  // back is decided when something leads there again, and only the body may.
+  it('lets a wire in a body be moved to a new step while the step it left still comes back, and that step be led to again from the body only', () => {
+    const flow = drawing(
+      { start: 'start', q: 'if', l: 'for', a: 'debug', x: 'wait', b: 'publish', end: 'end' },
+      'start.out>q.in', 'q.yes>l.in', 'q.no>end.in', 'l.body>a.in', 'a.out>x.in', 'x.out>l.next', 'l.done>end.in',
+    );
+    const moved = connect(flow, wire('a.out>b.in'));
+
+    expect(wires(moved)).toContain('a.out>b.in');
+    expect(canConnect(moved, wire('b.out>x.in'))).toBe(true);
+    expect(canConnect(moved, wire('q.no>x.in'))).toBe(false);
+    expect(canConnect(moved, wire('l.done>x.in'))).toBe(false);
+  });
+
+  // A body can be drawn from its last step back: the step is faded until the body leads to it.
+  it('lets a return be drawn from a step nothing leads to yet, and that step be led to from the body only', () => {
+    const flow = drawing(
+      { start: 'start', q: 'if', l: 'for', b: 'publish', end: 'end' },
+      'start.out>q.in', 'q.yes>l.in', 'q.no>end.in', 'l.body>l.next', 'l.done>end.in',
+    );
+    const back = connect(flow, wire('b.out>l.next'));
+
+    expect(wires(back)).toContain('b.out>l.next');
+    expect(canConnect(back, wire('l.body>b.in'))).toBe(true);
+    expect(canConnect(back, wire('q.no>b.in'))).toBe(false);
+    expect(canConnect(back, wire('l.done>b.in'))).toBe(false);
   });
 });
 

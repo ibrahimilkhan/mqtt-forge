@@ -68,6 +68,10 @@ export function NodeSettings({ flow, node, set, facts }: Props) {
     </label>
   );
 
+  const level = () => (
+    <Segmented label="Level" name={id('level')} options={SEVERITIES} value={levelOf(config.level)} onChange={(picked) => set({ level: picked })} />
+  );
+
   // A node a newer build wrote can be of a type this one has no form for. It is taken as null, so
   // the switch covers every node there is — see its default.
   const known = isNodeType(node.type) ? node.type : null;
@@ -166,7 +170,7 @@ export function NodeSettings({ flow, node, set, facts }: Props) {
       return (
         <>
           {box('name', 'Name', 'Boiler too hot', false)}
-          <Segmented label="Level" name={id('level')} options={SEVERITIES} value={levelOf(config.level)} onChange={(level) => set({ level })} />
+          {level()}
           {box('reason', 'Reason', '{{topic[1]}} is at {{$.temp}} °C')}
           {box('value', 'Number', '$.temp or var.limit — empty for the whole payload')}
         </>
@@ -189,13 +193,13 @@ export function NodeSettings({ flow, node, set, facts }: Props) {
       );
 
     case 'sound':
-      return <Segmented label="Level" name={id('level')} options={SEVERITIES} value={levelOf(config.level)} onChange={(level) => set({ level })} />;
+      return level();
 
     case 'notify':
       return (
         <>
           {area('text', 'Text', '{{topic[1]}} is at {{$.temp}} °C')}
-          <Segmented label="Level" name={id('level')} options={SEVERITIES} value={levelOf(config.level)} onChange={(level) => set({ level })} />
+          {level()}
         </>
       );
 
