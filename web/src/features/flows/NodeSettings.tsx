@@ -137,23 +137,31 @@ export function NodeSettings({ flow, node, set, facts }: Props) {
     case 'wait':
       return box('seconds', 'Seconds', '1 or {{var.delay}}');
 
-    case 'set':
+    case 'set': {
+      // Each name once, and none that is empty. The flow's settings take whatever is typed into a
+      // variable's name, so two variables can share one and one can have none; an option for every
+      // variable would offer a name twice, and a choice that picks nothing. The name is what makes
+      // an option this one, so it is the key. The line under the box follows what is offered: with
+      // every variable unnamed there is nothing to pick, as with none.
+      const names = [...new Set(flow.variables.map((variable) => variable.name))].filter((name) => name !== '');
+
       return (
         <>
           <Field label="Variable" htmlFor={id('variable')}>
             <select id={id('variable')} value={text('variable')} onChange={(event) => set({ variable: event.target.value })}>
               <option value="">Pick a variable</option>
-              {flow.variables.map((variable) => (
-                <option key={variable.name} value={variable.name}>
-                  {variable.name}
+              {names.map((name) => (
+                <option key={name} value={name}>
+                  {name}
                 </option>
               ))}
             </select>
           </Field>
-          {flow.variables.length === 0 && <p className={panel.hint}>Add a variable in the flow’s settings first.</p>}
+          {names.length === 0 && <p className={panel.hint}>Add a variable in the flow’s settings first.</p>}
           {box('value', 'Value', '90 or {{$.limit}}')}
         </>
       );
+    }
 
     case 'publish':
       return (

@@ -7,6 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { queryKeys } from '../../api/queryKeys';
 import { useFlowAlarmStore } from '../../stores/flowAlarmStore';
 import { useFlowStatusStore } from '../../stores/flowStatusStore';
+import { useLogStore } from '../../stores/logStore';
 import panelStyles from '../../styles/panel.module.css';
 import { server } from '../../test/server';
 import { renderWithClient as render } from '../../test/renderWithClient';
@@ -32,6 +33,7 @@ beforeEach(() => {
   forgetDrafts();
   useFlowStatusStore.setState(useFlowStatusStore.getInitialState());
   useFlowAlarmStore.setState({ asked: null });
+  useLogStore.getState().clear();
 });
 
 /**
@@ -1691,11 +1693,15 @@ describe('deleting a flow', () => {
   // A flow the server never had can still be running there, as a test of its drawing, and once it is
   // gone from the page nothing is left to press Stop on: the delete is what stops it. The server has
   // no such flow, and says so — and whatever it says, the reader's draft goes, since nothing of the
-  // reader's is on the server to keep.
-  it.each<[string, (() => Response) | null]>([
-    ['that it has no such flow', null],
-    ['that it could not', () => couldNot('The disk is full.')],
-  ])('asks the server to delete a flow it never had, and drops the flow when it answers %s', async (_, answer) => {
+  // reader's is on the server to keep. That answer is the one the delete expects, and the log says
+  // nothing of it. Any other leaves the test, if there is one, running with no console left to stop
+  // it, and the log is where that is said.
+  const notStopped = 'Flow deleted here, but its test may still be running on the server';
+  it.each<[string, (() => Response) | null, object[]]>([
+    ['that it has no such flow', null, []],
+    ['that it could not', () => couldNot('The disk is full.'), [{ kind: 'fault', verb: notStopped, body: 'The disk is full.' }]],
+    ['nothing at all', () => HttpResponse.error(), [{ kind: 'fault', verb: notStopped, body: expect.any(String) }]],
+  ])('asks the server to delete a flow it never had, and drops the flow when it answers %s', async (_, answer, logged) => {
     const { deletes } = keeping();
     if (answer)
       server.use(
@@ -1716,6 +1722,7 @@ describe('deleting a flow', () => {
     expect(useFlowDraftStore.getState().drafts).toEqual({});
     expect(deletes).toEqual([made]);
     expect(screen.queryByText(/was not deleted/)).not.toBeInTheDocument();
+    expect(useLogStore.getState().commands).toEqual(logged.map((entry) => expect.objectContaining(entry)));
   });
 
   /*
@@ -2030,12 +2037,16 @@ describe('a draft and the server\'s copy', () => {
       await screen.findByRole('tab', { name: 'Boiler watch 2, not running, deleted on the server since you started' }),
     ).toBeInTheDocument();
     expect(screen.getByText(/^Deleted on the server since you started/)).toBeInTheDocument();
+    // The pane's line agrees with its box: the server had the flow, and has not now.
+    expect(screen.getByText('Not on the server')).toBeInTheDocument();
     const activate = () => screen.getByRole('button', { name: 'Activate' });
     expect(activate()).toHaveAttribute('aria-disabled', 'true');
     expect(activate()).toHaveAttribute('title', expect.stringMatching(/^Deleted on the server since you started/));
 
     await userEvent.click(screen.getByRole('button', { name: 'Keep mine' }));
     expect(screen.getByRole('tab', { name: 'Boiler watch 2, not running, not saved' })).toBeInTheDocument();
+    // Kept, it is a flow to be saved again, as one never saved is.
+    expect(screen.getByText('Not saved yet')).toBeInTheDocument();
     await userEvent.click(activate());
 
     await waitFor(() => expect(puts.map((flow) => flow.name)).toEqual(['Boiler watch 2']));

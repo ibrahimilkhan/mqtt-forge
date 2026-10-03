@@ -206,8 +206,21 @@ function useDrawnRun(flowId: string): FlowRunStatusDto | undefined {
 }
 
 /** The shown run in a line: what it is and where, or how the flow stands with none. */
-function stateLine(flow: FlowDto, deployed: FlowDto | undefined, run: FlowRunStatusDto | undefined, now: number): string {
-  if (!run) return deployed === undefined ? 'Not saved yet' : deployed.enabled ? 'Active · not running' : 'Off';
+function stateLine(
+  flow: FlowDto,
+  deployed: FlowDto | undefined,
+  overtaken: boolean,
+  run: FlowRunStatusDto | undefined,
+  now: number,
+): string {
+  if (!run) {
+    if (deployed) return deployed.enabled ? 'Active · not running' : 'Off';
+
+    // The server has no copy: it never had one, or another console deleted it since this draft was
+    // started, which is what an overtaken draft with no copy is. The box over the pane says so, and
+    // "Not saved yet" under it would say the flow had never been there.
+    return overtaken ? 'Not on the server' : 'Not saved yet';
+  }
 
   const kind = run.kind === 'test' ? 'Test' : 'Active';
   const at = flow.nodes.find((node) => node.id === run.at);
@@ -218,7 +231,14 @@ function stateLine(flow: FlowDto, deployed: FlowDto | undefined, run: FlowRunSta
     case 'stopped':
       return `${kind} · stopped`;
     case 'waiting':
-      if (run.waiting?.filter != null) return `${kind} · waiting for a message on ${run.waiting.filter} — send one from Publish`;
+      if (run.waiting?.filter != null) {
+        const waiting = `${kind} · waiting for a message on ${run.waiting.filter}`;
+
+        // A test waits for the reader who pressed it, and Publish is where one is sent from. The flow
+        // at work waits for the plant's own traffic, and a line that told its reader to send one would
+        // read as advice to put a message into production.
+        return run.kind === 'test' ? `${waiting} — send one from Publish` : waiting;
+      }
       if (run.waiting?.until != null)
         return `${kind} · Wait ${(Math.max(0, Date.parse(run.waiting.until) - now) / 1000).toFixed(1)} s`;
       return `${kind} · waiting`;
@@ -238,7 +258,17 @@ function stateLine(flow: FlowDto, deployed: FlowDto | undefined, run: FlowRunSta
  * as the wait comes in. The clock it last read may be minutes old — nothing was counting — and a
  * line worked out from it would say the wait had minutes left until the first tick put it right.
  */
-function RunLine({ flow, deployed, run }: { flow: FlowDto; deployed: FlowDto | undefined; run: FlowRunStatusDto | undefined }) {
+function RunLine({
+  flow,
+  deployed,
+  overtaken,
+  run,
+}: {
+  flow: FlowDto;
+  deployed: FlowDto | undefined;
+  overtaken: boolean;
+  run: FlowRunStatusDto | undefined;
+}) {
   const until = run?.state === 'waiting' ? (run.waiting?.until ?? null) : null;
   const [now, setNow] = useState(() => Date.now());
   const counting = until !== null && now < Date.parse(until);
@@ -249,7 +279,7 @@ function RunLine({ flow, deployed, run }: { flow: FlowDto; deployed: FlowDto | u
     return () => clearInterval(timer);
   }, [counting]);
 
-  return <p className={panel.note}>{stateLine(flow, deployed, run, now)}</p>;
+  return <p className={panel.note}>{stateLine(flow, deployed, overtaken, run, now)}</p>;
 }
 
 type FlowPaneProps = { flow: FlowDto; deployed: FlowDto | undefined; overtaken: boolean; problems: Problems };
@@ -285,11 +315,20 @@ function FlowPane({ flow, deployed, overtaken, problems }: FlowPaneProps) {
     // console since this one last read the list: either way the flow is gone, which is what the
     // reader asked for. And of a flow it never had, nothing it answers keeps the flow here: there is
     // nothing of the reader's on the server to keep.
+    //
+    // What it answers still matters, though. Any answer but "no such flow" — a server that failed,
+    // or could not be reached — leaves the test it may have running, with the flow gone from the
+    // page and the only Stop there was. The page does not say so under the tabs, as it does of a
+    // flow that stays: that line is about a flow, and this one has gone. So the log does, where the
+    // console keeps what a command did not do.
     mutationFn: async (id: string) => {
       try {
         await deleteFlow(id);
       } catch (error) {
-        if (deployed && !isFlowUnknown(error)) throw error;
+        if (isFlowUnknown(error)) return;
+        if (deployed) throw error;
+
+        logFault('Flow deleted here, but its test may still be running on the server', error);
       }
     },
     onMutate: () => failures.trying('delete'),
@@ -399,8 +438,10 @@ function FlowPane({ flow, deployed, overtaken, problems }: FlowPaneProps) {
                   editVariables((all) => all.filter((_, at) => at !== index));
                   // The last row goes with the button that took it away, and a browser hands the
                   // keyboard of a button taken out to the body. Add variable is under where the
-                  // row was. A row above the last keeps its place, and the keyboard stays on its
-                  // button, which now takes out the variable that moved up into it.
+                  // row was. A row above the last keeps its place, and its button, which now takes
+                  // out the variable that moved up into it. Where a click gives a button the
+                  // keyboard, it stays on that button; where a click does not, as in Safari, it
+                  // stays where it was.
                   if (index === flow.variables.length - 1) adder.current?.focus();
                 }}
               >
@@ -429,7 +470,7 @@ function FlowPane({ flow, deployed, overtaken, problems }: FlowPaneProps) {
         </p>
       </section>
 
-      <RunLine key={run?.waiting?.until ?? ''} flow={flow} deployed={deployed} run={run} />
+      <RunLine key={run?.waiting?.until ?? ''} flow={flow} deployed={deployed} overtaken={overtaken} run={run} />
       {fault !== null && <p className={panel.fault}>{fault}</p>}
 
       {!asking ? (

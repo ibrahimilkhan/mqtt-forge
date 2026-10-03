@@ -65,12 +65,23 @@ const kinds: FlowDto = {
 
 /**
  * The inspector on a flow, as the page draws it: on the flow's draft once it has one, beside
- * `deployed`, the copy the server has — undefined for a flow it does not have.
+ * `deployed`, the copy the server has — undefined for a flow it does not have — and `overtaken`
+ * when the draft was started from a copy the server has since replaced or deleted.
  */
-function Drawn({ flow, deployed, allowWebhooks = true }: { flow: FlowDto; deployed: FlowDto | undefined; allowWebhooks?: boolean }) {
+function Drawn({
+  flow,
+  deployed,
+  overtaken = false,
+  allowWebhooks = true,
+}: {
+  flow: FlowDto;
+  deployed: FlowDto | undefined;
+  overtaken?: boolean;
+  allowWebhooks?: boolean;
+}) {
   const shownFlow = useFlowDraftStore((state) => state.drafts[flow.id]) ?? flow;
   return (
-    <Inspector flow={shownFlow} deployed={deployed} overtaken={false} problems={{}} facts={{ ...facts, allowWebhooks }} />
+    <Inspector flow={shownFlow} deployed={deployed} overtaken={overtaken} problems={{}} facts={{ ...facts, allowWebhooks }} />
   );
 }
 
@@ -88,11 +99,12 @@ const example: FlowDto = { ...exampleFlows()[1], id: 'watch' };
 
 /**
  * The inspector on a flow, with `selected` picked if it says one. The server's copy is the flow
- * itself unless `deployed` says another, or — given as undefined — that the server has none.
+ * itself unless `deployed` says another, or — given as undefined — that the server has none, and
+ * the draft is its own unless `overtaken` says the server has moved on since it was started.
  */
-function drawInspector(flow: FlowDto, options: { deployed?: FlowDto; selected?: string } = {}) {
+function drawInspector(flow: FlowDto, options: { deployed?: FlowDto; selected?: string; overtaken?: boolean } = {}) {
   if (options.selected !== undefined) useFlowDraftStore.getState().select(options.selected);
-  return render(<Drawn flow={flow} deployed={'deployed' in options ? options.deployed : flow} />);
+  return render(<Drawn flow={flow} deployed={'deployed' in options ? options.deployed : flow} overtaken={options.overtaken} />);
 }
 
 /** The watch's draft, which the first edit in its pane makes. */
@@ -330,6 +342,46 @@ describe('the node forms', () => {
     expect(screen.getByText('Add a variable in the flow’s settings first.')).toBeInTheDocument();
   });
 
+  // The flow pane takes whatever is typed into a variable's name: nothing there says a name is
+  // taken or empty until the server is asked. So a flow can have two variables of one name and one
+  // with none, and a Set offers each name once and no empty one — an option for every variable
+  // would offer the same name twice, and a choice that picks nothing.
+  describe('for a Set in a flow whose variables share a name or have none', () => {
+    const odd: FlowDto = {
+      ...kinds,
+      variables: [
+        { name: 'limit', value: '90' },
+        { name: 'limit', value: '95' },
+        { name: '', value: '' },
+      ],
+    };
+
+    afterEach(() => vi.restoreAllMocks());
+
+    it('offers each name once, and no empty one', () => {
+      formOf('set', { flow: odd });
+
+      expect(offered('Variable')).toEqual(['Pick a variable', 'limit']);
+    });
+
+    // Two options of one key are two siblings React cannot tell apart, and it says so in the console.
+    it('does not hand React two options of one key', () => {
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      formOf('set', { flow: odd });
+
+      expect(errors.mock.calls.filter(([message]) => /same key/.test(String(message)))).toEqual([]);
+    });
+
+    // With nothing named there is nothing to pick, and the hint under the box says where to add one.
+    it('says where to add a variable when none of them has a name', () => {
+      formOf('set', { flow: { ...kinds, variables: [{ name: '', value: '' }] } });
+
+      expect(offered('Variable')).toEqual(['Pick a variable']);
+      expect(screen.getByText('Add a variable in the flow’s settings first.')).toBeInTheDocument();
+    });
+  });
+
   it('sets up a Publish: the topic, the payload, its QoS and whether the broker keeps it', async () => {
     formOf('publish');
 
@@ -533,6 +585,7 @@ describe('the flow pane', () => {
     expect(screen.getByText('now 96')).toBeInTheDocument();
   });
 
+  // A test waits for the reader, who pressed it and is there to send it a message from Publish.
   it('says where the shown run is and what it waits for', () => {
     useFlowStatusStore.getState().setStatus(
       run('watch', { kind: 'test', state: 'waiting', at: 'read', waiting: { until: null, filter: 'plant/+/temp' } }),
@@ -555,17 +608,36 @@ describe('the flow pane', () => {
     ['a run at a node the drawing no longer has', runOf('watch', { state: 'running', at: 'gone' }), example, 'Active · running'],
     ['a test that reached an End', runOf('watch', { kind: 'test', state: 'finished', at: 'end' }), example, 'Test · finished at End'],
     ['a run stopped', runOf('watch', { state: 'stopped' }), example, 'Active · stopped'],
+    // The flow at work waits for the plant's own traffic. "Send one from Publish" there would read
+    // as advice to put a message into production, so only a test is told it.
     [
       'the active run waiting for a message',
       runOf('watch', { state: 'waiting', at: 'read', waiting: { until: null, filter: 'plant/+/temp' } }),
       example,
-      'Active · waiting for a message on plant/+/temp — send one from Publish',
+      'Active · waiting for a message on plant/+/temp',
     ],
   ])('says, of %s, where it is in one line', (_, shown, deployed, line) => {
     if (shown) useFlowStatusStore.getState().setStatus({ runs: [shown] });
     drawInspector(example, { deployed });
 
     expect(screen.getByText(line)).toBeInTheDocument();
+  });
+
+  // The box over the pane says another console deleted the flow since this draft was started, and
+  // "Not saved yet" under it would say the flow was never on the server.
+  it('says a flow another console deleted is not on the server, not that it is not saved yet', () => {
+    drawInspector(example, { deployed: undefined, overtaken: true });
+
+    expect(screen.getByText('Not on the server')).toBeInTheDocument();
+    expect(screen.queryByText('Not saved yet')).not.toBeInTheDocument();
+  });
+
+  // Changed is not deleted: the server still has the flow, and the line says how it has it.
+  it('says how the server has a flow another console changed, not that it is gone', () => {
+    drawInspector(example, { deployed: { ...example, enabled: false }, overtaken: true });
+
+    expect(screen.getByText('Off')).toBeInTheDocument();
+    expect(screen.queryByText('Not on the server')).not.toBeInTheDocument();
   });
 
   it('no longer has Run it once deployed', () => {
