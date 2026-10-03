@@ -1593,6 +1593,91 @@ describe('a wire drawn round', () => {
       planned.mockRestore();
     }
   });
+
+  // Nodes picked together are dragged together: React Flow reports one move for all of them, each
+  // marked as dragged, and the drag is of the lot. So every frame works out the wires of every node
+  // dragged — the Debug's way on to the End, the Publish's way back to its loop — round what the other
+  // wires ran when the drag began, which a wire of neither node keeps until they are let go: the first
+  // Publish's way back, which ran 32 above the Debug where it stood. The drop works every wire out again.
+  it('works out the wires of every node dragged together on each frame, and every wire once they are let go', async () => {
+    const looped = looping({ x: 200, y: 180 });
+    // The Debug wired on to the End, and a second loop with its Publish, which goes back to its For each.
+    const flow: FlowDto = {
+      ...looped,
+      nodes: [
+        ...looped.nodes,
+        { id: 'each', type: 'forEach', x: 0, y: 600, config: { array: '' } },
+        { id: 'tell', type: 'publish', x: 400, y: 600, config: { topic: 'plant/k2/cmd', payload: '', qos: 0, retain: false } },
+      ],
+      edges: [
+        ...looped.edges,
+        { id: 'e5', from: 'say', fromPort: 'out', to: 'end', toPort: 'in' },
+        { id: 'e6', from: 'each', fromPort: 'body', to: 'tell', toPort: 'in' },
+        { id: 'e7', from: 'tell', fromPort: 'out', to: 'each', toPort: 'next' },
+      ],
+    };
+    let drawing: ReturnType<typeof useStoreApi> | undefined;
+    function Peek() {
+      drawing = useStoreApi();
+      return null;
+    }
+    useFlowDraftStore.getState().show(flow.id);
+    const { unmount } = render(
+      <ReactFlowProvider>
+        <div style={{ width: 800, height: 600 }}>
+          <Page flow={flow} />
+        </div>
+        <Peek />
+      </ReactFlowProvider>,
+    );
+    expect(laneOf(await pathOf('e3'))).toBe(180 - 32);
+    // As React Flow reports a drag of two nodes: both in each move, the Debug and the Publish, up together.
+    const move = (up: number, dragging: boolean) =>
+      act(() =>
+        drawing!.getState().triggerNodeChanges([
+          { id: 'say', type: 'position', position: { x: 200, y: 180 - up }, dragging },
+          { id: 'tell', type: 'position', position: { x: 400, y: 600 - up }, dragging },
+        ]),
+      );
+    /** The y a wire's first run goes level out of its way out at, or null when its way out is not level with where it turns: a route held while its node moved. */
+    const outAt = async (wire: string) => {
+      const [first] = runsOf(await pathOf(wire));
+      return first.from.y === first.to.y ? first.from.y : null;
+    };
+    const planned = vi.spyOn(backWires, 'routes');
+
+    try {
+      move(30, true);
+      move(60, true);
+      await waitFor(() => expect(document.querySelector('.react-flow__node[data-id="tell"]')).toHaveStyle({ transform: 'translate(400px,540px)' }));
+
+      const drags = planned.mock.calls.map(([, , planning]) => planning?.drag);
+      expect(drags.length).toBeGreaterThan(0);
+      // Both nodes in every plan, and the same drag from one frame to the next, with what it has given up.
+      expect(drags.every((drag) => [...(drag?.moving ?? [])].sort().join() === 'say,tell')).toBe(true);
+      expect(new Set(drags).size).toBe(1);
+      // The wires of both are worked out where they stand now: level out of their ways out.
+      expect(await outAt('e5')).toBe(120.5);
+      expect(await outAt('e7')).toBe(540.5);
+      // And the wire of neither keeps the lane it ran in, though the Debug has gone up over it.
+      expect(laneOf(await pathOf('e3'))).toBe(180 - 32);
+
+      planned.mockClear();
+      move(60, false);
+
+      // Let go wholly above the lane, the Debug has the first Publish's way back run under it.
+      await waitFor(async () => expect(laneOf(await pathOf('e3'))).toBe(200 - 32));
+      expect(planned).toHaveBeenCalled();
+      expect(planned.mock.calls.every(([, , planning]) => planning?.drag === undefined)).toBe(true);
+      // Every wire as it runs once they are let go is where a canvas drawn fresh runs it.
+      const settled = await Promise.all(['e3', 'e5', 'e7'].map(pathOf));
+      unmount();
+      drawPage(flow);
+      expect(await Promise.all(['e3', 'e5', 'e7'].map(pathOf))).toEqual(settled);
+    } finally {
+      planned.mockRestore();
+    }
+  });
 });
 
 /**
