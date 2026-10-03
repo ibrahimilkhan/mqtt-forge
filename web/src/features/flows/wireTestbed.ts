@@ -1,14 +1,15 @@
+import { getBezierPath } from '@xyflow/react';
 import type { FlowDto, FlowNodeDto, FlowNodeType } from '../../types/api';
-import { backPath, namesOf, routes, type Box, type End, type Leg, type Placed, type Route } from './backWires';
+import { backPath, namesOf, POSITIONS, routes, type Box, type End, type Leg, type Placed, type Route } from './backWires';
 import { DECISION_HEIGHT, DECISION_WIDTH, MEASURE, NODE_WIDTH, STEP_HEIGHT } from './FlowCanvas';
 import { insertAfter, insertOnWire, moveNodes, noReturn, placeAfter, unwiredOuts } from './flowDocument';
 import { portsOf, sideOf, specOf } from './nodeTypes';
 
 /*
- * What the cases about wires drawn round need: a flow as Chrome draws it and React Flow measures it,
- * the clicks of the palette that make one, and what a route runs through once it is drawn. jsdom
- * lays nothing out, so a canvas drawn there has every node a pixel square; the routes are reckoned
- * here over the boxes the browser draws instead, as the review that found them wanting did.
+ * What the cases about wires need: a flow as Chrome draws it and React Flow measures it, the clicks
+ * of the palette that make one, and what each wire runs through once it is drawn, drawn round or the
+ * curve. jsdom lays nothing out, so a canvas drawn there has every node a pixel square; the wires are
+ * reckoned here over the boxes the browser draws instead, as the reviews that found them wanting did.
  */
 
 /** The box Chrome draws a node of each type in: the If's diamond in its own, every other shape NODE_WIDTH by STEP_HEIGHT. */
@@ -77,9 +78,12 @@ export function clicked(flow: FlowDto, pick: { node: string } | { wire: string }
 
 type Point = { x: number; y: number };
 
-/** The points along a path's straight runs and rounded corners, a pixel or so apart. */
+/**
+ * The points along a path, a pixel or so apart: its straight runs and rounded corners, as a wire
+ * drawn round is drawn, and React Flow's curve, as every other wire is.
+ */
 export function sampled(d: string): Point[] {
-  const steps = [...d.matchAll(/([MLQ])([^MLQ]*)/g)].map(([, command, numbers]) => ({
+  const steps = [...d.matchAll(/([MLQC])([^MLQC]*)/g)].map(([, command, numbers]) => ({
     command,
     values: numbers.trim().split(/[ ,]+/).map(Number),
   }));
@@ -96,13 +100,27 @@ export function sampled(d: string): Point[] {
       for (let step = 1; step <= count; step++)
         points.push({ x: at.x + ((to.x - at.x) * step) / count, y: at.y + ((to.y - at.y) * step) / count });
       at = to;
-    } else {
+    } else if (command === 'Q') {
       const [cx, cy, x, y] = values;
       for (let step = 1; step <= 12; step++) {
         const t = step / 12;
         points.push({
           x: (1 - t) ** 2 * at.x + 2 * (1 - t) * t * cx + t * t * x,
           y: (1 - t) ** 2 * at.y + 2 * (1 - t) * t * cy + t * t * y,
+        });
+      }
+      at = { x, y };
+    } else {
+      // A curve is never longer than the line through its control points, so that many steps are a pixel or less apart.
+      const [ax, ay, bx, by, x, y] = values;
+      const reach = Math.hypot(ax - at.x, ay - at.y) + Math.hypot(bx - ax, by - ay) + Math.hypot(x - bx, y - by);
+      const count = Math.max(1, Math.ceil(reach));
+      for (let step = 1; step <= count; step++) {
+        const t = step / count;
+        const u = 1 - t;
+        points.push({
+          x: u ** 3 * at.x + 3 * u * u * t * ax + 3 * u * t * t * bx + t ** 3 * x,
+          y: u ** 3 * at.y + 3 * u * u * t * ay + 3 * u * t * t * by + t ** 3 * y,
         });
       }
       at = { x, y };
@@ -136,43 +154,60 @@ const inside = (box: Box, { x, y }: Point, inset = 1.5) =>
 /** A wire drawn round, as the canvas draws it: its leg, its route and its path. */
 export type Drawn = { leg: Leg; route: Route; d: string };
 
-/** The wires of a flow the canvas draws round, routed over the flow as Chrome draws it. */
-export function routedIn(flow: FlowDto): { nodes: Placed[]; drawn: Drawn[] } {
+/** Every wire of a flow as the canvas draws it, over the flow as Chrome draws it: round, along its route, or React Flow's curve. */
+export function wiresIn(flow: FlowDto): { nodes: Placed[]; wires: Array<{ leg: Leg; route: Route | undefined; d: string }> } {
   const { nodes, legs } = drawnAs(flow);
   const found = routes(nodes, legs);
-  const drawn = legs.flatMap((leg) => {
+  const wires = legs.map((leg) => {
     const route = found.get(leg.id);
-    return route
-      ? [{ leg, route, d: backPath({ source: leg.source, target: leg.target, ...route }) }]
-      : [];
+    const d = route
+      ? backPath({ source: leg.source, target: leg.target, corners: route })
+      : getBezierPath({
+          sourceX: leg.source.x,
+          sourceY: leg.source.y,
+          sourcePosition: POSITIONS[leg.source.side],
+          targetX: leg.target.x,
+          targetY: leg.target.y,
+          targetPosition: POSITIONS[leg.target.side],
+        })[0];
+    return { leg, route, d };
   });
-  return { nodes, drawn };
+  return { nodes, wires };
+}
+
+/** The wires of a flow the canvas draws round, routed over the flow as Chrome draws it. */
+export function routedIn(flow: FlowDto): { nodes: Placed[]; drawn: Drawn[] } {
+  const { nodes, wires } = wiresIn(flow);
+  return { nodes, drawn: wires.flatMap(({ leg, route, d }) => (route ? [{ leg, route, d }] : [])) };
 }
 
 /**
- * Everything wrong with the wires a flow has drawn round, as sentences, so a case that fails says
- * which wire and what it ran through:
- * - a node it runs through, other than its own two at their ports (ten pixels from either end);
- * - a port's name it runs through;
- * - another such wire it lies on, or runs beside closer than 16, along a run longer than four
- *   pixels — but for the last runs of two wires into the same port, where they meet and go in
- *   together.
+ * Everything wrong with a flow's wires as the canvas draws them, as sentences, so a case that fails
+ * says which wire and what it ran through:
+ * - a node any wire runs through — drawn round, or the curve — other than its own two at their ports
+ *   (ten pixels from either end);
+ * - a port's name any wire runs through;
+ * - another wire drawn round that one drawn round lies on, or runs beside closer than 16, along a run
+ *   longer than four pixels — but for the last runs of two wires into the same port, where they meet
+ *   and go in together.
  */
 export function wrongWith(flow: FlowDto): string[] {
-  const { nodes, drawn } = routedIn(flow);
+  const { nodes, wires } = wiresIn(flow);
+  const drawn = wires.flatMap(({ leg, route, d }) => (route ? [{ leg, route, d }] : []));
   const wrong: string[] = [];
 
-  for (const { leg, d } of drawn) {
+  for (const { leg, route, d } of wires) {
     const points = sampled(d);
     const [first, last] = [points[0], points[points.length - 1]];
     const near = (point: Point, end: Point) => Math.hypot(point.x - end.x, point.y - end.y) < 10;
+    const how = route ? 'runs' : 'curves';
     const through = nodes.filter(({ id, box }) =>
       points.some((point) => inside(box, point) && !((id === leg.from && near(point, first)) || (id === leg.to && near(point, last)))),
     );
-    for (const node of through) wrong.push(`${leg.id} runs through ${node.id}`);
+    for (const node of through) wrong.push(`${leg.id} ${how} through ${node.id}`);
 
     for (const node of nodes)
-      if (node.names.some((name) => points.some((point) => inside(name, point, 0)))) wrong.push(`${leg.id} runs through a name of ${node.id}`);
+      if (node.names.some((name) => points.some((point) => inside(name, point, 0)))) wrong.push(`${leg.id} ${how} through a name of ${node.id}`);
   }
 
   for (const [at, a] of drawn.entries())
@@ -201,4 +236,15 @@ export function wrongWith(flow: FlowDto): string[] {
     }
 
   return wrong;
+}
+
+/** Every two nodes of a flow that stand on one another, as Chrome draws them, each by its own box. */
+export function overlapsIn(flow: FlowDto): string[] {
+  const boxes = flow.nodes.map((node) => ({ id: node.id, x: node.x, y: node.y, ...drawnBox(node.type) }));
+  return boxes.flatMap((a, at) =>
+    boxes
+      .slice(at + 1)
+      .filter((b) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height)
+      .map((b) => `${a.id} stands on ${b.id}`),
+  );
 }

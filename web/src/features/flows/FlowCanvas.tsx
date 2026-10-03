@@ -917,7 +917,7 @@ function WireView({
           backPath({
             source: { x: sourceX, y: sourceY, side: SIDES[sourcePosition] },
             target: { x: targetX, y: targetY, side: SIDES[targetPosition] },
-            ...routeFrom(route),
+            corners: routeFrom(route),
           }),
         ];
 
@@ -941,15 +941,15 @@ const SIDES: Record<Position, Side> = {
   [Position.Bottom]: 'bottom',
 };
 
-/** A route as text, for a wire to compare by value: empty for a wire drawn as the curve. */
-const routeKey = (route: Route | undefined) =>
-  route ? `${route.rise ?? ''} ${route.below ?? ''} ${route.lane} ${route.drop}` : '';
+/** A route as text, its corners one after another, for a wire to compare by value: empty for a wire drawn as the curve. */
+const routeKey = (route: Route | undefined) => (route ? route.map(({ x, y }) => `${x},${y}`).join(' ') : '');
 
 /** A route back from its text. */
-function routeFrom(key: string): Route {
-  const [rise, below, lane, drop] = key.split(' ');
-  return { rise: rise === '' ? null : Number(rise), below: below === '' ? null : Number(below), lane: Number(lane), drop: Number(drop) };
-}
+const routeFrom = (key: string): Route =>
+  key.split(' ').map((corner) => {
+    const [x, y] = corner.split(',');
+    return { x: Number(x), y: Number(y) };
+  });
 
 /*
  * Where every wire drawn round runs. Where one runs depends on where every node stands and on where
