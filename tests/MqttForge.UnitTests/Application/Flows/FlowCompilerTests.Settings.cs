@@ -236,8 +236,8 @@ public partial class FlowCompilerTests
     // ---- what a box may hold ----
 
     /// <summary>A node whose <paramref name="setting"/> holds <paramref name="length"/> characters it could otherwise run, and the node's key.</summary>
-    // Each text is one the node would take at any length — a number with spaces before it, a value, a field's
-    // path — so that what is judged is the length and nothing else.
+    // Each text is one the compiler would take at any length — a number with spaces before it, a value, a
+    // field's path — so that what is judged is the length and nothing else.
     private static (ChartBuilder Chart, string Key) Holding(string setting, int length)
     {
         var path = "$." + new string('a', length - 2);
