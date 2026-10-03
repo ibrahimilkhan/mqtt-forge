@@ -1,20 +1,27 @@
+using System.Collections.Concurrent;
+using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.Extensions.DependencyInjection;
 using MqttForge.Api.Contracts;
 using MqttForge.Api.Hubs;
 using MqttForge.Api.Realtime;
 using MqttForge.Application.Flows;
 using MqttForge.Domain.Enums;
 using MqttForge.Domain.Models;
+using MqttForge.IntegrationTests.Support;
 using NSubstitute;
 using Xunit;
 
 namespace MqttForge.IntegrationTests.Api;
 
-/// <summary>What a console is told about the flows, and that the loop telling it can call a send off.</summary>
+/// <summary>What a console is told about the flows, that the loop telling it can call a send off, and that a console hears it.</summary>
 // Built as AlertHubTests is and for its reason: IHubContext lives in the ASP.NET shared framework,
-// which only a project with a framework reference can compile against. The hub is a substitute, so
-// every assertion is about what this notifier handed to SignalR.
+// which only a project with a framework reference can compile against. Where a test reads what this
+// notifier handed to SignalR the hub is a substitute; Tones_and_notices_reach_a_hub_client starts a
+// host instead, and reads what reached a console connected to its hub.
 public class FlowHubTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 9, 26, 9, 0, 0, TimeSpan.Zero);
@@ -111,6 +118,104 @@ public class FlowHubTests
 
         Assert.Equal(6, hub.Tokens.Count);
         Assert.All(hub.Tokens, token => Assert.Equal(stop.Token, token));
+    }
+
+    /// <summary>Start → Sound → Notify → End, with the name the notice greets in a variable.</summary>
+    private static Flow Greeting()
+    {
+        static JsonElement Config(object config) => JsonSerializer.SerializeToElement(config, FlowJson.Options);
+
+        return new Flow("greeting", "Control room greeting", true,
+            [
+                new FlowNode("start", "start", 0, 0, Config(new { })),
+                new FlowNode("beep", "sound", 0, 0, Config(new { level = "critical" })),
+                new FlowNode("tell", "notify", 0, 0, Config(new { text = "Hello {{var.who}}", level = "info" })),
+                new FlowNode("end", "end", 0, 0, Config(new { })),
+            ],
+            [
+                new FlowEdge("e1", "start", "out", "beep", "in"),
+                new FlowEdge("e2", "beep", "out", "tell", "in"),
+                new FlowEdge("e3", "tell", "out", "end", "in"),
+            ])
+        {
+            Variables = [new FlowVariable("who", "world")],
+        };
+    }
+
+    /// <summary>Starts a console on the host's hub, and comes back once a frame sent to every console has reached it.</summary>
+    // StartAsync is over once the hub has answered the handshake, and the hub counts the console among the
+    // ones a send to all goes to only after it has answered: a frame sent to all in that moment passes it
+    // by. A tone and a notice are moments, never sent again, so no flow is switched on before a frame sent
+    // to all has come.
+    private static async Task ConnectedAsync(MqttForgeApiFactory host, HubConnection console)
+    {
+        var counted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        console.On("counted", () => counted.TrySetResult());
+        await console.StartAsync();
+
+        var hub = host.Services.GetRequiredService<IHubContext<MqttHub>>();
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+
+        while (!counted.Task.IsCompleted)
+        {
+            Assert.True(DateTime.UtcNow < deadline, "No frame sent to every console reached this one.");
+            await hub.Clients.All.SendAsync("counted");
+            await Task.WhenAny(counted.Task, Task.Delay(50));
+        }
+    }
+
+    // The whole trip, through a host and a console connected to its hub: a flow switched on, its Sound and
+    // its Notify run, and the two frames the console's bridge listens for arrive in the words it reads.
+    [Fact]
+    public async Task Tones_and_notices_reach_a_hub_client()
+    {
+        using var host = new MqttForgeApiFactory();
+        await using var console = new HubConnectionBuilder()
+            .WithUrl(new Uri(host.Server.BaseAddress, "hubs/mqtt"),
+                o => o.HttpMessageHandlerFactory = _ => host.Server.CreateHandler())
+            .Build();
+
+        // JsonElement rather than the DTOs: the shape is the contract, and a record would bind whatever
+        // it could and stay silent about the rest.
+        var tones = new ConcurrentQueue<JsonElement[]>();
+        var notices = new ConcurrentQueue<JsonElement[]>();
+        var toned = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var noticed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        console.On<JsonElement[]>("flowSound", frame =>
+        {
+            tones.Enqueue(frame);
+            toned.TrySetResult();
+        });
+        console.On<JsonElement[]>("flowNotice", frame =>
+        {
+            notices.Enqueue(frame);
+            noticed.TrySetResult();
+        });
+
+        await ConnectedAsync(host, console);
+
+        Assert.Equal(HttpStatusCode.OK,
+            (await host.CreateClient().PutAsJsonAsync("/api/flows/greeting", Greeting(), FlowJson.Options)).StatusCode);
+
+        var both = Task.WhenAll(toned.Task, noticed.Task);
+        if (await Task.WhenAny(both, Task.Delay(TimeSpan.FromSeconds(10))) != both)
+            Assert.Fail($"In ten seconds the console heard {tones.Count} tone frames and {notices.Count} notice frames.");
+
+        // One frame of each, with one tone and one notice in it: the flow ran once.
+        var tone = Assert.Single(Assert.Single(tones));
+        Assert.Equal("greeting", tone.GetProperty("flowId").GetString());
+        Assert.Equal("beep", tone.GetProperty("nodeId").GetString());
+        Assert.Equal("critical", tone.GetProperty("level").GetString());
+        Assert.False(tone.GetProperty("test").GetBoolean());
+
+        var notice = Assert.Single(Assert.Single(notices));
+        Assert.Equal("greeting", notice.GetProperty("flowId").GetString());
+        Assert.Equal("Control room greeting", notice.GetProperty("flowName").GetString());
+        Assert.Equal("tell", notice.GetProperty("nodeId").GetString());
+        Assert.Equal("Hello world", notice.GetProperty("text").GetString());
+        Assert.Equal("info", notice.GetProperty("level").GetString());
+        Assert.False(notice.GetProperty("test").GetBoolean());
     }
 
     /// <summary>Captures what reached the hub: which method, with what, and with which token.</summary>
