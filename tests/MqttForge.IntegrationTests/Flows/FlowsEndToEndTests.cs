@@ -275,19 +275,20 @@ public sealed class FlowsEndToEndTests : IClassFixture<MosquittoFixture>, IAsync
 
         Assert.Equal(HttpStatusCode.OK, (await client.PutAsJsonAsync("/api/flows/ticker", Ticker(), FlowJson.Options)).StatusCode);
 
-        await Until(() => _heard.Count >= 3, "the plant to hear three ticks");
+        await Until(() => _heard.Count >= 5, "the plant to hear five ticks");
 
-        var ticks = _heard.Take(3).ToList();
-        Assert.All(ticks, tick => Assert.Equal("sim/tick", tick.Topic));
-        Assert.Equal(["1", "2", "3"], ticks.Select(tick => tick.Payload).ToList());
+        // The turns in order, one message each: the plant listens on sim/tick alone, so what it heard is the
+        // loop's count, and a turn lost or sent twice would show in it.
+        var ticks = _heard.Take(5).ToList();
+        Assert.Equal(["1", "2", "3", "4", "5"], ticks.Select(tick => tick.Payload).ToList());
 
-        // A fifth of a second short of the Wait, for the trip each tick makes to the plant: a turn that
-        // did not wait its second out would bring them closer than that.
-        for (var i = 1; i < ticks.Count; i++)
-        {
-            var gap = Stopwatch.GetElapsedTime(ticks[i - 1].At, ticks[i].At);
-            Assert.True(gap >= TimeSpan.FromSeconds(0.8), $"Tick {i + 1} came {gap.TotalMilliseconds:0} ms after tick {i}.");
-        }
+        // Four waits of a second lie between the first and the last, and the span is measured whole rather than
+        // gap by gap, so that the trip one tick makes to the plant cannot fail the test on its own. At least
+        // eight tenths of a second for each wait, since a turn that did not wait its second out would bring them
+        // closer than that, and at most ten in all, for a loop that waits longer than it is told to.
+        var span = Stopwatch.GetElapsedTime(ticks[0].At, ticks[^1].At);
+        Assert.True(span >= TimeSpan.FromSeconds(3.2), $"Five ticks came {span.TotalMilliseconds:0} ms from first to last.");
+        Assert.True(span <= TimeSpan.FromSeconds(10), $"Five ticks came {span.TotalMilliseconds:0} ms from first to last.");
     }
 
     // Test is what the console's button does, and a message published to the broker is how its reader
