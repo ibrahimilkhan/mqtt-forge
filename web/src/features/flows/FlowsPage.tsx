@@ -9,20 +9,11 @@ import { describeError } from '../../lib/problemDetails';
 import { alarmSource, useFlowAlarmStore } from '../../stores/flowAlarmStore';
 import { catchUp, isLive, shownRun, useFlowStatusStore } from '../../stores/flowStatusStore';
 import panel from '../../styles/panel.module.css';
-import type { FlowDto, FlowNodeDto, FlowNodeType, FlowsDto } from '../../types/api';
+import type { FlowDto, FlowNodeType, FlowsDto } from '../../types/api';
 import { DebugStrip } from './DebugStrip';
 import { exampleFlows } from './examples';
 import { Failures, type Attempt } from './failures';
-import {
-  CANVAS,
-  DECISION_HEIGHT,
-  DECISION_WIDTH,
-  FlowCanvas,
-  inView,
-  NODE_HEIGHT,
-  NODE_WIDTH,
-  STEP_HEIGHT,
-} from './FlowCanvas';
+import { CANVAS, FlowCanvas, inView, MEASURE } from './FlowCanvas';
 import {
   addNode,
   emptyFlow,
@@ -30,8 +21,10 @@ import {
   freeSpot,
   insertAfter,
   insertOnWire,
+  moveNodes,
   newId,
   nextName,
+  placeAfter,
   placesInView,
   problemsOf,
   standingOf,
@@ -54,21 +47,6 @@ import styles from './FlowsPage.module.css';
  * what it is handed changes, and the page renders again on every push of the numbers.
  */
 const NOTHING_WRONG: Problems = {};
-
-/** The room left between a node the palette adds and the nodes already on the canvas. */
-const ROOM = 24;
-
-/** The room a node takes, as the palette reckons it when it puts one down. */
-const NODE_BOX = { width: NODE_WIDTH, height: NODE_HEIGHT };
-
-/** The If's: its diamond is drawn in a box of its own, wider and taller than a step's. */
-const DECISION_BOX = { width: DECISION_WIDTH, height: DECISION_HEIGHT };
-
-/** The room a node of each type takes: the canvas draws the decision's diamond in the If's box. */
-const boxOf = (type: string) => (specOf(type).shape === 'decision' ? DECISION_BOX : NODE_BOX);
-
-/** How tall a node of each type is drawn, to put one level with another. */
-const heightOf = (type: string) => (specOf(type).shape === 'decision' ? DECISION_HEIGHT : STEP_HEIGHT);
 
 /** The empty page's first way to start, where the keyboard goes once the last flow has gone. */
 const START = 'flows-start';
@@ -357,44 +335,30 @@ function Page() {
 
   // A click in the palette puts the node where the program needs it: on the wire picked, or after
   // the node picked when it has one way out, so a chain is built by clicking one node after
-  // another. With neither, it goes in the middle of what is on screen, or in the first clear place
-  // across from it, unwired until the reader wires it — the canvas marks it until then.
+  // another. Either way it stands after the node it follows, on its row, the rest of the chain moved
+  // along to make room (see placeAfter) — on a wire, after the node the wire leaves, whichever way
+  // the wire runs. With neither, it goes in the middle of what is on screen, or in the first clear
+  // place across from it, unwired until the reader wires it — the canvas marks it until then.
   const where = (type: FlowNodeType, id: string): [{ x: number; y: number }, (flow: FlowDto) => FlowDto] => {
     const { wire, selected } = useFlowDraftStore.getState();
     const onWire = wire === null ? undefined : shown.edges.find((edge) => edge.id === wire);
     const after = selected === null ? undefined : shown.nodes.find((node) => node.id === selected);
 
-    // Beside a node, after it: past its right edge, and level with it, as the examples are laid out —
-    // their middles at one height, where their ports stand, so the wire between them runs straight.
-    // An If, taller than a step, stands higher.
-    const beside = (node: FlowNodeDto) => ({
-      x: node.x + boxOf(node.type).width + 2 * ROOM,
-      y: node.y + (heightOf(node.type) - heightOf(type)) / 2,
-    });
-
     if (onWire) {
-      const from = shown.nodes.find((node) => node.id === onWire.from)!;
-      const to = shown.nodes.find((node) => node.id === onWire.to)!;
-      // Half-way between the wire's two nodes, when it runs forward. One that goes back — a loop's
-      // return, or its empty body, from the loop back into it; a chain's last wire back to the End
-      // where the new flow had it — has its new node after the node it leaves, the next step of what
-      // that node ends. Half-way stood behind that node, or under the loop, and both of the new
-      // node's wires went back round what stood between (see backWires.ts).
-      const back = onWire.toPort === 'next' || to.x < from.x + boxOf(from.type).width;
-      const at = freeSpot(shown, back ? beside(from) : { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 }, type, boxOf, 1, ROOM);
-      return [at, (flow) => insertOnWire(flow, onWire.id, type, at, id)];
+      const { at, moved } = placeAfter(shown, onWire.from, onWire.fromPort, type, MEASURE);
+      return [at, (flow) => insertOnWire(moveNodes(flow, moved), onWire.id, type, at, id)];
     }
 
     if (after && specOf(after.type).outs.length === 1) {
-      const at = freeSpot(shown, beside(after), type, boxOf, 1, ROOM);
-      return [at, (flow) => insertAfter(flow, after.id, type, at, id) ?? flow];
+      const { at, moved } = placeAfter(shown, after.id, specOf(after.type).outs[0], type, MEASURE);
+      return [at, (flow) => insertAfter(moveNodes(flow, moved), after.id, type, at, id) ?? flow];
     }
 
     const box = document.getElementById(CANVAS)?.getBoundingClientRect();
     const middle = screenToFlowPosition({ x: box ? box.left + box.width / 2 : 0, y: box ? box.top + box.height / 2 : 0 });
     const right = screenToFlowPosition({ x: box ? box.right : 0, y: 0 }).x;
-    const { start, across } = placesInView(middle, right, boxOf(type), ROOM);
-    const at = freeSpot(shown, start, type, boxOf, across, ROOM);
+    const { start, across } = placesInView(middle, right, MEASURE.boxOf(type), MEASURE.room);
+    const at = freeSpot(shown, start, type, MEASURE.boxOf, across, MEASURE.room);
     return [at, (flow) => addNode(flow, type, at, id)];
   };
 
@@ -409,7 +373,7 @@ function Page() {
     store.select(id);
 
     const { width, height } = drawing.getState();
-    const room = boxOf(type);
+    const room = MEASURE.boxOf(type);
     if (!inView({ ...at, ...room }, getViewport(), width, height))
       void setCenter(at.x + room.width / 2, at.y + room.height / 2, { zoom: getZoom() });
   };
