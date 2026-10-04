@@ -55,9 +55,11 @@ export type FlowStatusState = {
   /** Empties one flow's strip, and starts its count of lines left out again. */
   clearDebug: (flowId: string) => void;
   /**
-   * The flow was deleted: its lines, and where its strip was last cleared, go with it, and any
-   * that come for it later are dropped. Nothing else would let them go — a strip's own Clear is the
-   * only other way, and it has no strip now.
+   * The flow was deleted: its runs and the numbers of their nodes, its lines, and where its strip was
+   * last cleared go with it, and any lines that come for it later are dropped. The lines nothing else
+   * would let go — a strip's own Clear is the only other way, and it has no strip now. The runs stand
+   * until the next push otherwise, up to a quarter of a second, and the page lists the test of a flow
+   * it has no tab for with a Stop: a flow deleted a moment ago was listed there too.
    */
   forget: (flowId: string) => void;
 };
@@ -78,6 +80,13 @@ let arrived = 0;
 
 const without = <T>(record: Record<string, T>, key: string): Record<string, T> =>
   Object.fromEntries(Object.entries(record).filter(([id]) => id !== key));
+
+/**
+ * The nodes of the run each flow's canvas shows (see shownRun), by nodeKey: what `nodes` is made
+ * from whenever the runs are, so that it never holds the numbers of a run the store does not.
+ */
+const nodesOf = (runs: Iterable<[string, FlowRuns]>): Record<string, FlowNodeStatusDto> =>
+  Object.fromEntries([...runs].flatMap(([flowId, both]) => (shownRun(both)?.nodes ?? []).map((node) => [nodeKey(flowId, node.id), node])));
 
 /**
  * What the runs have done, as the server last said.
@@ -102,10 +111,7 @@ export const useFlowStatusStore = create<FlowStatusState>()((set) => ({
       const byFlow = new Map<string, FlowRuns>();
       for (const run of status.runs) byFlow.set(run.flowId, { ...byFlow.get(run.flowId), [run.kind]: run });
       const runs = Object.fromEntries(byFlow);
-
-      const nodes: Record<string, FlowNodeStatusDto> = Object.fromEntries(
-        [...byFlow].flatMap(([flowId, both]) => (shownRun(both)?.nodes ?? []).map((node) => [nodeKey(flowId, node.id), node])),
-      );
+      const nodes = nodesOf(byFlow);
 
       const deleted = [...byFlow.keys()].some((id) => Object.hasOwn(state.deleted, id))
         ? Object.fromEntries(Object.entries(state.deleted).filter(([id]) => !byFlow.has(id)))
@@ -148,11 +154,17 @@ export const useFlowStatusStore = create<FlowStatusState>()((set) => ({
     })),
 
   forget: (flowId) =>
-    set((state) => ({
-      debug: without(state.debug, flowId),
-      debugClearedAt: without(state.debugClearedAt, flowId),
-      deleted: { ...state.deleted, [flowId]: true },
-    })),
+    set((state) => {
+      const runs = without(state.runs, flowId);
+
+      return {
+        runs,
+        nodes: nodesOf(Object.entries(runs)),
+        debug: without(state.debug, flowId),
+        debugClearedAt: without(state.debugClearedAt, flowId),
+        deleted: { ...state.deleted, [flowId]: true },
+      };
+    }),
 }));
 
 /**
@@ -161,8 +173,9 @@ export const useFlowStatusStore = create<FlowStatusState>()((set) => ({
  *
  * Pushes carry nothing to put them in order by, so the answer is kept only if no push has come in
  * while it was out: one that has is newer than the answer. Every push builds a new picture, which is
- * what makes an identity check enough. Hands back what lets the answer go, for a reader that has
- * shut before it comes back.
+ * what makes an identity check enough — and so does a flow forgotten, whose run an answer from before
+ * its delete would bring back. Hands back what lets the answer go, for a reader that has shut before
+ * it comes back.
  */
 export function catchUp(): () => void {
   let wanted = true;

@@ -243,4 +243,52 @@ describe('a notice the reader is at', () => {
     expect(screen.queryByText('k1 is hot')).not.toBeInTheDocument();
     expect(document.activeElement).toBe(close('k2 is hot'));
   });
+
+  // A browser focuses a button the pointer presses, and draws no ring on it, so the Close that was
+  // clicked had the focus as its notice went, and the stack handed it on to the next notice's Close.
+  // That card was then held, since a card is held while it has the focus, with nothing on screen to
+  // say why, and stood until the reader clicked somewhere else. The watch says one notice for each
+  // sensor that runs hot, so closing one of several with the pointer is what a reader does. user-event
+  // focuses on the press, as the browser does; fireEvent.click, which does not, could not show it.
+  it('holds no other notice when one is closed with the pointer, which has no keyboard to put anywhere', async () => {
+    // The clock also runs on, as the page's cases do, since user-event waits on it between its steps.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    render(
+      <>
+        <button type="button">Elsewhere</button>
+        <Notices />
+      </>,
+    );
+    act(() => useNoticeStore.getState().add([notice({ text: 'k1 is hot' }), notice({ text: 'k2 is hot' })]));
+
+    await userEvent.click(close('k2 is hot'));
+    expect(screen.queryByText('k2 is hot')).not.toBeInTheDocument();
+    await userEvent.hover(screen.getByRole('button', { name: 'Elsewhere' }));
+
+    act(() => vi.advanceTimersByTime(NOTICE_MS / 2));
+    expect(screen.getByText('k1 is hot')).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(NOTICE_MS));
+    expect(screen.queryByText('k1 is hot')).not.toBeInTheDocument();
+  });
+
+  // What the pointer did last is not what the reader does next: a key pressed after it is the
+  // keyboard's again, and the keyboard goes on to the next Close as before.
+  it('still puts the keyboard on the next Close for a notice closed from it, after one was closed with the pointer', async () => {
+    render(
+      <>
+        <button type="button">Elsewhere</button>
+        <Notices />
+      </>,
+    );
+    act(() => useNoticeStore.getState().add(['k1', 'k2', 'k3'].map((sensor) => notice({ text: `${sensor} is hot` }))));
+
+    await userEvent.click(close('k3 is hot'));
+    screen.getByRole('button', { name: 'Elsewhere' }).focus();
+    await userEvent.tab();
+    expect(document.activeElement).toBe(close('k2 is hot'));
+    await userEvent.keyboard('{Enter}');
+
+    expect(screen.queryByText('k2 is hot')).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(close('k1 is hot'));
+  });
 });

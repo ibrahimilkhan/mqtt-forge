@@ -22,6 +22,15 @@ import styles from './Notices.module.css';
  * or the one before it when it was the last; and with none left, back where they came into the stack
  * from — or, when that has gone too, to the stack itself, which stays in the page and is not a stop
  * on the Tab key.
+ *
+ * Only when the reader is on the keyboard, though. A browser focuses a button the pointer presses and
+ * draws no ring on it, so the Close that was clicked had the focus as its notice went, exactly as one
+ * pressed from the keyboard has. Handed on, that focus held the next notice — a card is held while it
+ * has the focus — with nothing on screen to say why, and the notice stood until the reader clicked
+ * somewhere else. The watch says one notice for each sensor that runs hot, so closing one of several
+ * with the pointer is what a reader does. The stack therefore keeps which the reader pressed last, the
+ * pointer or a key. That is what a browser's `:focus-visible` answers, but jsdom answers it by a guess
+ * from the events it happened to see earlier, which no case here could pin.
  */
 export function Notices() {
   const notices = useNoticeStore((state) => state.notices);
@@ -30,9 +39,26 @@ export function Notices() {
   const cameFrom = useRef<HTMLElement | null>(null);
   const lost = useRef<number | null>(null);
   const before = useRef(notices);
+  // Whether the last thing the reader pressed, anywhere in the page, was with the pointer. Anywhere:
+  // the Tab that brings the keyboard to a Close is pressed outside the stack, and a stack that heard
+  // only what is pressed in it would still hold the pointer's last press, from an earlier click on a notice.
+  const pointed = useRef(false);
 
+  useEffect(() => {
+    const pressed = (event: Event) => {
+      pointed.current = event.type === 'pointerdown';
+    };
+    document.addEventListener('pointerdown', pressed, true);
+    document.addEventListener('keydown', pressed, true);
+    return () => {
+      document.removeEventListener('pointerdown', pressed, true);
+      document.removeEventListener('keydown', pressed, true);
+    };
+  }, []);
+
+  // A card that had the focus as it went says so; whether that was the keyboard's is for the stack to say.
   const tookTheKeyboard = useCallback((id: number) => {
-    lost.current = id;
+    if (!pointed.current) lost.current = id;
   }, []);
 
   // Only from outside the stack, and only from an element still in the page: the keyboard put on a
@@ -96,8 +122,8 @@ function NoticeCard({ notice, onTakeTheKeyboard }: { notice: Notice; onTakeTheKe
     return () => clearTimeout(timer);
   }, [dismiss, held, notice.id]);
 
-  // As the card goes, while it is still in the page — before the browser hands the keyboard to the
-  // body — whether the keyboard was in it, for the stack to put it somewhere else.
+  // As the card goes, while it is still in the page — before the browser hands the focus to the
+  // body — whether the focus was in it, for the stack to put it somewhere else if it was the keyboard's.
   useLayoutEffect(() => {
     const element = card.current;
     return () => {

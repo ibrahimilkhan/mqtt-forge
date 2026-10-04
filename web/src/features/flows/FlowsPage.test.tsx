@@ -1447,6 +1447,33 @@ describe('the numbers the page reads when it opens', () => {
     expect(screen.queryByText('412 read')).not.toBeInTheDocument();
   });
 
+  // A delete is as new as a push. An answer to a read made before it still has the deleted flow's run
+  // in it, and would put it back, to be listed under Tests with no tab until the next push.
+  it('does not put back the run of a flow deleted while the read was out', async () => {
+    keeping([watch, sim]);
+    const answer = held();
+    let answered = false;
+    server.use(
+      http.get('/api/flows/status', async () => {
+        await answer.until;
+        answered = true;
+        return HttpResponse.json(testRun('watch', 'running'));
+      }),
+    );
+    render(<FlowsPage />);
+    await screen.findByText('Boiler watch', { selector: 'h3' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete flow' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+    await waitFor(() => expect(screen.queryByRole('tab', { name: /^Boiler watch/ })).not.toBeInTheDocument());
+    answer.release();
+    await waitFor(() => expect(answered).toBe(true));
+    await turns();
+
+    expect(useFlowStatusStore.getState().runs).toEqual({});
+    expect(screen.queryByRole('region', { name: 'Tests with no tab' })).toBeNull();
+  });
+
   it('lets the read go when the page is shut before it comes back', async () => {
     keeping([watch]);
     const answer = held();
@@ -1761,7 +1788,7 @@ describe('test and activate', () => {
   });
 
   // A push that never comes — the hub gone away — must not hold Stop off for good.
-  it('frees Stop three seconds after the press when no push says the test stopped', async () => {
+  it('frees Stop three seconds after the answer when no push says the test stopped', async () => {
     const server = testsOfTheWatch();
     renderPage([{ ...watch, enabled: false }]);
     await screen.findByRole('tabpanel');
@@ -1773,6 +1800,46 @@ describe('test and activate', () => {
       await waitFor(() => expect(server.sent.stops).toBe(1));
       await turns();
       expect(screen.getByRole('button', { name: 'Stop' })).toHaveAttribute('aria-disabled', 'true');
+
+      act(() => vi.advanceTimersByTime(3_000));
+
+      expect(screen.getByRole('button', { name: 'Stop' })).not.toHaveAttribute('aria-disabled');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // The hold is for the stretch between the 204 and the push that shows the test stopped, so the three
+  // seconds that end it are counted from the 204. Counted from the press, a stop the server took longer
+  // than that to answer was let go before its answer came, and found Stop pressable with the numbers
+  // still showing the test going: a second press then threw the stopped test away.
+  it('holds Stop for three seconds from the answer to a stop that took longer than that to answer', async () => {
+    let stops = 0;
+    const answer = held();
+    server.use(
+      http.delete('/api/flows/:id/test', async () => {
+        stops++;
+        await answer.until;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    renderPage([{ ...watch, enabled: false }]);
+    await screen.findByRole('tabpanel');
+    act(() => useFlowStatusStore.getState().setStatus(testRun('watch', 'running')));
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+      await waitFor(() => expect(stops).toBe(1));
+      act(() => vi.advanceTimersByTime(3_000));
+      answer.release();
+      await turns();
+
+      const stop = screen.getByRole('button', { name: 'Stop' });
+      expect(stop).toHaveAttribute('aria-disabled', 'true');
+      fireEvent.click(stop);
+      await turns();
+      expect(stops).toBe(1);
 
       act(() => vi.advanceTimersByTime(3_000));
 
@@ -2249,6 +2316,25 @@ describe('deleting a flow', () => {
     expect(screen.getByRole('button', { name: 'Delete flow' })).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: /^Boiler watch/ })).not.toBeInTheDocument();
     expect(deletes).toEqual(['watch']);
+  });
+
+  // The server stops the test of a flow it deletes, and says so in its next push, up to a quarter of
+  // a second on. Until then the numbers still showed a test going of a flow the page no longer had,
+  // and the page listed it under Tests with no tab, with a Stop that asked the server to stop what
+  // was gone. The numbers of a flow the reader deleted are not numbers of anything.
+  it('does not list the test of a flow it deleted under Tests with no tab, while the numbers still show it', async () => {
+    const { deletes } = keeping([watch, sim]);
+    render(<FlowsPage />);
+    await screen.findByText('Boiler watch', { selector: 'h3' });
+    act(() => useFlowStatusStore.getState().setStatus(testRun('watch', 'running')));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete flow' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+    await waitFor(() => expect(screen.queryByRole('tab', { name: /^Boiler watch/ })).not.toBeInTheDocument());
+    await turns();
+
+    expect(deletes).toEqual(['watch']);
+    expect(screen.queryByRole('region', { name: 'Tests with no tab' })).toBeNull();
   });
 
   // The answer is about the flow that was deleted, whichever tab the reader has gone on to since.
@@ -3123,11 +3209,6 @@ function listen() {
 }
 
 /**
- * What the reader asked of the server that did not go through. The page covers the log, so each is
- * said under the tabs, where a save or a test that did not go through is said — and in one polite
- * live region, so a reader who cannot see the marks it leaves is told as well.
- */
-/**
  * What the server refused is marked on the nodes it refused, and the line under the tabs says so.
  * A flow wider than the canvas opens at a zoom it can be read at, so most of it can be out of sight,
  * and a refusal marked only there said "marked on it" of marks nobody could see.
@@ -3199,6 +3280,11 @@ describe('a refusal of the flow on screen', () => {
   });
 });
 
+/**
+ * What the reader asked of the server that did not go through. The page covers the log, so each is
+ * said under the tabs, where a save or a test that did not go through is said — and in one polite
+ * live region, so a reader who cannot see the marks it leaves is told as well.
+ */
 describe('what did not go through', () => {
   it('says a save that failed in a live region of its own, not over the whole page', async () => {
     keeping([watch]);
