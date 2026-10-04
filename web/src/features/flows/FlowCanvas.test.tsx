@@ -798,11 +798,6 @@ function BoxThem() {
 }
 
 /**
- * A delete key takes away what the keyboard may be on: the node, a wire of it, the box round nodes
- * picked together. A browser hands the focus of an element taken out to the body, and the next key
- * would miss the canvas, so the keyboard stays in the canvas instead.
- */
-/**
  * What the canvas tells a reader who cannot see it. React Flow named a wire by the ids of its nodes —
  * "Edge from nsu7n6vkd to n1ka59sx9" — and a node not at all: every node was a group with no name.
  */
@@ -843,6 +838,11 @@ describe('what a reader who cannot see the canvas is told', () => {
   });
 });
 
+/**
+ * A delete key takes away what the keyboard may be on: the node, a wire of it, the box round nodes
+ * picked together. A browser hands the focus of an element taken out to the body, and the next key
+ * would miss the canvas, so the keyboard stays in the canvas instead.
+ */
 describe('where the keyboard goes when a key takes something away', () => {
   const canvas = () => document.getElementById('flow-canvas');
   const ids = () => useFlowDraftStore.getState().drafts.button?.nodes.map((node) => node.id);

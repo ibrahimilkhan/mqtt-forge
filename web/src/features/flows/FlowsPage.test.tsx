@@ -3209,11 +3209,6 @@ function listen() {
 }
 
 /**
- * What the reader asked of the server that did not go through. The page covers the log, so each is
- * said under the tabs, where a save or a test that did not go through is said — and in one polite
- * live region, so a reader who cannot see the marks it leaves is told as well.
- */
-/**
  * What the server refused is marked on the nodes it refused, and the line under the tabs says so.
  * A flow wider than the canvas opens at a zoom it can be read at, so most of it can be out of sight,
  * and a refusal marked only there said "marked on it" of marks nobody could see.
@@ -3285,6 +3280,11 @@ describe('a refusal of the flow on screen', () => {
   });
 });
 
+/**
+ * What the reader asked of the server that did not go through. The page covers the log, so each is
+ * said under the tabs, where a save or a test that did not go through is said — and in one polite
+ * live region, so a reader who cannot see the marks it leaves is told as well.
+ */
 describe('what did not go through', () => {
   it('says a save that failed in a live region of its own, not over the whole page', async () => {
     keeping([watch]);

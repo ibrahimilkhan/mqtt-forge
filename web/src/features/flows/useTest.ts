@@ -102,7 +102,14 @@ function useHeld(done: (runs: FlowRuns | undefined) => boolean) {
   return { held, hold, answered, free };
 }
 
-/** A test of the flow is on show: the one just started, going or already over. */
+/**
+ * A test of the flow is on show: the one just started, going or already over. The numbers carry no id
+ * for a run, so this cannot tell the one just started from the flow's previous test, which the server
+ * keeps, finished or stopped, until another replaces it. A push the server made just before it took
+ * the new test, and that reaches the console after the answer, shows the previous one, and frees
+ * Test early: a press in the quarter of a second before the next push starts the test over. Nothing
+ * in FlowRunStatusDto says which test a picture is of, so the hold cannot be made exact from here.
+ */
 const tested = (runs: FlowRuns | undefined) => runs?.test !== undefined;
 
 /** No test of the flow is going: the one just stopped has stopped, or is gone. */
