@@ -332,15 +332,18 @@ function Page() {
   // it is held back no longer, and the line would ask the reader for what they have done. An Update
   // held back from a flow another console switched off says Activate saves the change, which is so
   // while there is a change to save and the flow is still off: not once the reader has let the
-  // change go, nor once another console has switched the flow back on. The rest stand until the
-  // next save, as a failure does.
+  // change go, nor once another console has switched the flow back on. A flow pressed with no draft
+  // that another console changed says that what the server has now is on screen, which is so while
+  // the server has the flow: once another console has deleted it too, the line stood on the empty
+  // page over nothing. The rest stand until the next save, as a failure does.
   //
   // A line that has stopped being so is gone for good, though what it stood on can come about again
   // — a new change of the same copy, the flow switched off once more — because the press it was
   // about is over: said again, it would tell the reader of a press they never made. So the page
-  // keeps the answer whose line went, and says no more of it; the next save's answer is new.
-  const [spent, setSpent] = useState<Unsaved | null>(null);
-  const held = save.isSuccess && save.data !== null && 'held' in save.data && save.data !== spent ? save.data : null;
+  // keeps the answer whose line went, and says no more of it. That one answer, by its object: the
+  // next save's answer is another, said though it say the very same thing.
+  const [unsaid, setUnsaid] = useState<Unsaved | null>(null);
+  const held = save.isSuccess && save.data !== null && 'held' in save.data && save.data !== unsaid ? save.data : null;
   const pressed = save.isSuccess ? save.variables.kind : null;
   const stands =
     held === null || pressed === null
@@ -349,9 +352,11 @@ function Page() {
         ? overtaken.has(held.id) && own(bases, held.id) === held.base
         : held.held === 'off' && pressed !== 'deactivate'
           ? changed.has(held.id) && byId.get(held.id)?.enabled === false
-          : true;
+          : held.held === 'changed' || held.held === 'changedOn'
+            ? byId.has(held.id)
+            : true;
   useLayoutEffect(() => {
-    if (held !== null && !stands) setSpent(held);
+    if (held !== null && !stands) setUnsaid(held);
   }, [held, stands]);
   const heldLine =
     held !== null && pressed !== null && stands

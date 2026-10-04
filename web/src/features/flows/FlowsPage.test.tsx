@@ -2949,6 +2949,48 @@ describe('a draft and the server\'s copy', () => {
    * deleted here, and the line that says why goes into a region already in the page.
    */
 
+  // "What it has now is on screen" is so while the server has the flow: once another console has
+  // deleted it as well, the line stood on the empty page over nothing.
+  it('stops saying what another console changed of a flow pressed with no draft once the flow is gone', async () => {
+    const { kept } = keeping([{ ...watch, enabled: false }]);
+    const { queryClient } = render(<FlowsPage />);
+    await screen.findByRole('button', { name: 'Activate' });
+
+    kept[0] = { ...v2, name: 'Boiler watch, from another console', enabled: false };
+    await userEvent.click(screen.getByRole('button', { name: 'Activate' }));
+    const said =
+      'Boiler watch was changed on another console since this page read it, so it was not activated. What it has now is on screen.';
+    expect(await screen.findByText(said)).toBeInTheDocument();
+
+    await elsewhere(queryClient, () => kept.splice(0, 1));
+
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+    expect(screen.queryByText(said)).not.toBeInTheDocument();
+  });
+
+  // A line that went is gone for good, as the answer it was of; but the next press is another
+  // answer, said whatever it says — though it say the very same thing as the one before.
+  it('says a press held back again when it is pressed again, though the line of the one before went', async () => {
+    const { kept } = keeping([{ ...watch, enabled: false }]);
+    const { queryClient } = render(<FlowsPage />);
+    await screen.findByRole('button', { name: 'Activate' });
+    const said =
+      'Boiler watch was changed on another console since this page read it, so it was not activated. What it has now is on screen.';
+
+    kept[0] = { ...v2, name: 'Boiler watch, from another console', enabled: false };
+    await userEvent.click(screen.getByRole('button', { name: 'Activate' }));
+    expect(await screen.findByText(said)).toBeInTheDocument();
+    await elsewhere(queryClient, () => kept.splice(0, 1));
+    expect(screen.queryByText(said)).not.toBeInTheDocument();
+
+    // Saved again on another console as it was first, and read here; then changed there once more.
+    await elsewhere(queryClient, () => kept.push({ ...watch, enabled: false }));
+    kept[0] = { ...v2, name: 'Boiler watch, from another console', enabled: false };
+    await userEvent.click(await screen.findByRole('button', { name: 'Activate' }));
+
+    expect(await screen.findByText(said)).toBeInTheDocument();
+  });
+
   it('says on the empty page an Activate of the last flow, which another console has deleted since', async () => {
     const { kept, puts, reads } = keeping([{ ...watch, enabled: false }]);
     render(<FlowsPage />);
