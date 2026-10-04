@@ -43,6 +43,8 @@ export type FlowStatusState = {
   /**
    * The flows deleted since the console opened. A batch the server sent before a delete landed
    * can arrive after it, and its lines are dropped rather than kept under a flow with no strip.
+   * Until the numbers show a run of one again: it was saved again under its id, on another console,
+   * and what it prints is its own again.
    */
   deleted: Record<string, true>;
   setStatus: (status: FlowStatusDto) => void;
@@ -90,18 +92,24 @@ export const useFlowStatusStore = create<FlowStatusState>()((set) => ({
   debugClearedAt: {},
   deleted: {},
 
-  // Gathered by flow in a Map, and made a record whose every key is its own: see own.
-  setStatus: (status) => {
-    const byFlow = new Map<string, FlowRuns>();
-    for (const run of status.runs) byFlow.set(run.flowId, { ...byFlow.get(run.flowId), [run.kind]: run });
-    const runs = Object.fromEntries(byFlow);
+  // Gathered by flow in a Map, and made a record whose every key is its own: see own. A flow deleted
+  // here that has a run is a flow again (see deleted).
+  setStatus: (status) =>
+    set((state) => {
+      const byFlow = new Map<string, FlowRuns>();
+      for (const run of status.runs) byFlow.set(run.flowId, { ...byFlow.get(run.flowId), [run.kind]: run });
+      const runs = Object.fromEntries(byFlow);
 
-    const nodes: Record<string, FlowNodeStatusDto> = Object.fromEntries(
-      [...byFlow].flatMap(([flowId, both]) => (shownRun(both)?.nodes ?? []).map((node) => [nodeKey(flowId, node.id), node])),
-    );
+      const nodes: Record<string, FlowNodeStatusDto> = Object.fromEntries(
+        [...byFlow].flatMap(([flowId, both]) => (shownRun(both)?.nodes ?? []).map((node) => [nodeKey(flowId, node.id), node])),
+      );
 
-    set({ runs, nodes });
-  },
+      const deleted = [...byFlow.keys()].some((id) => Object.hasOwn(state.deleted, id))
+        ? Object.fromEntries(Object.entries(state.deleted).filter(([id]) => !byFlow.has(id)))
+        : state.deleted;
+
+      return { runs, nodes, deleted };
+    }),
 
   // A batch arrives oldest first; the strip reads newest first. Each flow keeps its own last
   // DEBUG_KEPT, because the strip shows one flow at a time, and one that prints on every message

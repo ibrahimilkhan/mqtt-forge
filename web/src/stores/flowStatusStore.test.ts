@@ -173,6 +173,20 @@ describe('flow status store', () => {
     // What the server says it left out is still counted: it never says whose it was.
     expect(leftOut(state(), 'busy')).toBe(1);
   });
+
+  // Deleted here, then saved again on another console under the same id, and switched on or tested
+  // there: a run of it is a flow again, and what it prints is printed. Kept as deleted, it printed
+  // nothing in this console for the rest of the session.
+  it('prints the lines of a flow deleted here again once the numbers show it running', () => {
+    state().forget('watch');
+    state().addDebug([line('late', 'watch')], 0);
+    expect(state().debug.watch).toBeUndefined();
+
+    state().setStatus({ runs: [run()] });
+    state().addDebug([line('again', 'watch')], 0);
+
+    expect(texts('watch')).toEqual(['again']);
+  });
 });
 
 /**
