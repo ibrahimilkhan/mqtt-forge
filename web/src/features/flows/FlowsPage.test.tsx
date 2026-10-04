@@ -2306,7 +2306,7 @@ describe('deleting a flow', () => {
     const [made] = Object.keys(useFlowDraftStore.getState().drafts);
 
     await userEvent.click(screen.getByRole('button', { name: 'Delete flow' }));
-    expect(screen.getByText('Drop Flow 1? It was never saved.')).toBeInTheDocument();
+    expect(screen.getByText('Drop Flow 1? It was never saved, and the drawing goes with it.')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Delete it' }));
 
     expect(await screen.findByRole('button', { name: 'Start from an example' })).toBeInTheDocument();

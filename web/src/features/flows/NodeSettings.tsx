@@ -142,7 +142,8 @@ export function NodeSettings({ flow, node, set, facts }: Props) {
       // variable's name, so two variables can share one and one can have none; an option for every
       // variable would offer a name twice, and a choice that picks nothing. The name is what makes
       // an option this one, so it is the key. The line under the box follows what is offered: with
-      // every variable unnamed there is nothing to pick, as with none.
+      // every variable unnamed there is nothing to pick, as with none — but what is wanting then is
+      // a name, not another variable.
       const names = [...new Set(flow.variables.map((variable) => variable.name))].filter((name) => name !== '');
 
       return (
@@ -157,7 +158,11 @@ export function NodeSettings({ flow, node, set, facts }: Props) {
               ))}
             </select>
           </Field>
-          {names.length === 0 && <p className={panel.hint}>Add a variable in the flow’s settings first.</p>}
+          {names.length === 0 && (
+            <p className={panel.hint}>
+              {flow.variables.length === 0 ? 'Add a variable' : 'Name a variable'} in the flow’s settings first.
+            </p>
+          )}
           {box('value', 'Value', '90 or {{$.limit}}')}
         </>
       );

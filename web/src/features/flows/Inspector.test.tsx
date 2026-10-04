@@ -403,12 +403,14 @@ describe('the node forms', () => {
       expect(errors.mock.calls.filter(([message]) => /same key/.test(String(message)))).toEqual([]);
     });
 
-    // With nothing named there is nothing to pick, and the hint under the box says where to add one.
-    it('says where to add a variable when none of them has a name', () => {
+    // With nothing named there is nothing to pick. There are variables, though, and the hint under the
+    // box says what they want: a name, not another variable.
+    it('says to name a variable when none of them has a name', () => {
       formOf('set', { flow: { ...kinds, variables: [{ name: '', value: '' }] } });
 
       expect(offered('Variable')).toEqual(['Pick a variable']);
-      expect(screen.getByText('Add a variable in the flow’s settings first.')).toBeInTheDocument();
+      expect(screen.getByText('Name a variable in the flow’s settings first.')).toBeInTheDocument();
+      expect(screen.queryByText('Add a variable in the flow’s settings first.')).not.toBeInTheDocument();
     });
   });
 
@@ -676,17 +678,39 @@ describe('the flow pane', () => {
     expect(screen.queryByText('Run it once deployed')).toBeNull();
   });
 
-  // What deleting does depends on how the server has the flow, and the question says which.
-  it.each<[string, FlowDto | undefined, string]>([
-    ['switched on', { ...watch, enabled: true }, 'Delete Boiler watch? It stops running.'],
-    ['switched off', { ...watch, enabled: false }, 'Delete Boiler watch? It is saved switched off.'],
-    ['never saved', undefined, 'Drop Boiler watch? It was never saved.'],
-  ])('asks before deleting a flow %s, saying what deleting it does', async (_, deployed, question) => {
-    drawInspector(watch, { deployed });
+  // What deleting does depends on how the server has the flow, and the question says which: what
+  // becomes of its run, of the server's copy, of the drawing here.
+  it.each<[string, FlowDto | undefined, boolean, string]>([
+    ['switched on', { ...watch, enabled: true }, false, 'Delete Boiler watch? It stops running, and the server forgets it.'],
+    ['switched off', { ...watch, enabled: false }, false, 'Delete Boiler watch? The server forgets it.'],
+    ['never saved', undefined, false, 'Drop Boiler watch? It was never saved, and the drawing goes with it.'],
+    ['deleted on another console', undefined, true, 'Drop Boiler watch? It is no longer on the server, and your changes go with it.'],
+  ])('asks before deleting a flow %s, saying what deleting it does', async (_, deployed, overtaken, question) => {
+    drawInspector(watch, { deployed, overtaken });
 
     await userEvent.click(screen.getByRole('button', { name: 'Delete flow' }));
 
     expect(screen.getByText(question)).toBeInTheDocument();
+  });
+
+  // The delete is what stops a test of the flow: once the flow is gone, nothing is left to press Stop on.
+  it('says a test going stops with the flow', async () => {
+    useFlowStatusStore.getState().setStatus(run('watch', { kind: 'test', state: 'running' }));
+    drawInspector(watch, { deployed: undefined });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete flow' }));
+
+    expect(screen.getByText('Drop Boiler watch? It was never saved, and the drawing goes with it. Its test stops.')).toBeInTheDocument();
+  });
+
+  // Named as the flow is named everywhere else: a flow with no name read "Delete ? It stops running."
+  it('names a flow with no name Untitled in the question', async () => {
+    const unnamed = { ...watch, name: '  ' };
+    drawInspector(unnamed, { deployed: { ...unnamed, enabled: true } });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete flow' }));
+
+    expect(screen.getByText('Delete Untitled? It stops running, and the server forgets it.')).toBeInTheDocument();
   });
 });
 

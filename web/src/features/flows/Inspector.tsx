@@ -488,13 +488,7 @@ function FlowPane({ flow, deployed, overtaken, problems }: FlowPaneProps) {
         </div>
       ) : (
         <div className={styles.confirm}>
-          <p>
-            {deployed
-              ? `Delete ${flow.name}? ${deployed.enabled ? 'It stops running.' : 'It is saved switched off.'}`
-              : overtaken
-                ? `Drop ${flow.name}? It is no longer on the server.`
-                : `Drop ${flow.name}? It was never saved.`}
-          </p>
+          <p>{deleting(flow, deployed, overtaken, isLive(run) && run?.kind === 'test')}</p>
           <div className={panel.actions}>
             <button type="button" className="ghost" onClick={() => setAsking(false)}>
               Keep it
@@ -517,6 +511,23 @@ function FlowPane({ flow, deployed, overtaken, problems }: FlowPaneProps) {
       )}
     </>
   );
+}
+
+/**
+ * What the delete question asks: the flow, named as it is named everywhere else — a flow with no name
+ * read "Delete ? It stops running." — and what deleting it does, which depends on how the server has
+ * it: a flow switched on stops running, and the server forgets the copy it has; one it never had, or
+ * no longer has, is only the drawing here, which goes. A test going stops with it either way: once
+ * the flow is gone from the page, the delete is what stops it.
+ */
+function deleting(flow: FlowDto, deployed: FlowDto | undefined, overtaken: boolean, testing: boolean): string {
+  const title = titleOf(flow);
+  const asked = deployed
+    ? `Delete ${title}? ${deployed.enabled ? 'It stops running, and the server forgets it.' : 'The server forgets it.'}`
+    : overtaken
+      ? `Drop ${title}? It is no longer on the server, and your changes go with it.`
+      : `Drop ${title}? It was never saved, and the drawing goes with it.`;
+  return testing ? `${asked} Its test stops.` : asked;
 }
 
 function Standing({ flowId, nodeId }: { flowId: string; nodeId: string }) {
