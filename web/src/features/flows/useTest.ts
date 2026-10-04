@@ -180,7 +180,7 @@ export function useTest() {
     /** Flows whose Stop is held off: pressed, and the numbers still show the test going. */
     stopping: stopping.held,
     /** Test pressed: sends nothing while the flow's Test is held off. */
-    test: (flow: FlowDto) => {
+    run: (flow: FlowDto) => {
       if (starting.hold(flow.id, true)) start.mutate(flow);
     },
     /** Stop pressed: sends nothing while the flow's Stop is held off. */

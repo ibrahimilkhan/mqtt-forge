@@ -457,7 +457,7 @@ function Page() {
               // under the sentence — where the reader is looking when they choose, and the one place
               // both answers are — so a second Discard up here would only ask the same question twice.
               onDiscard={changed.has(shown.id) && byId.has(shown.id) ? () => store.discard(shown.id) : undefined}
-              onTest={() => test.test(shown)}
+              onTest={() => test.run(shown)}
               onStop={() => test.halt(shown.id)}
               onActivate={() => save.mutate({ flow: shown, kind: 'activate' })}
               // Offered for a draft held back too, off, where it says why: a flow that is on with
