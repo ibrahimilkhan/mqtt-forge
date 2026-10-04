@@ -42,6 +42,13 @@ public record SavedConnectionDto(
 /// <summary>A saved connection, under the name it was saved with.</summary>
 public sealed record SavedProfileDto(string Name, SavedConnectionDto Connection);
 
+/// <summary>
+/// A broker this console reached, kept or not, with when it was last reached.
+/// </summary>
+// No name, because nobody gave it one: the id is a digest of the connection, and it is here so
+// that a card can be forgotten without inventing a label for it.
+public sealed record RecentBrokerDto(string Id, SavedConnectionDto Connection, DateTimeOffset LastConnectedAt);
+
 /// <summary>What the console sends to keep one. The connection half is a connect request.</summary>
 public sealed record SaveProfileRequestDto(string Name, ConnectRequestDto Connection);
 

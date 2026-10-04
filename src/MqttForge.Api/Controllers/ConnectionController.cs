@@ -14,15 +14,17 @@ public sealed class ConnectionController : ControllerBase
 
     private readonly ConnectionService _service;
     private readonly SavedProfileService _profiles;
+    private readonly RecentBrokerService _recent;
     private readonly CertificatePicker _files;
     private readonly InstallIdentity _identity;
 
     public ConnectionController(
-        ConnectionService service, SavedProfileService profiles, CertificatePicker files,
-        InstallIdentity identity)
+        ConnectionService service, SavedProfileService profiles, RecentBrokerService recent,
+        CertificatePicker files, InstallIdentity identity)
     {
         _service = service;
         _profiles = profiles;
+        _recent = recent;
         _files = files;
         _identity = identity;
     }
@@ -137,6 +139,25 @@ public sealed class ConnectionController : ControllerBase
     [HttpDelete("profiles/{name}")]
     public async Task<IActionResult> DeleteProfile(string name, CancellationToken ct) =>
         await _profiles.DeleteAsync(name, ct) ? NoContent() : NotFound();
+
+    // ---- brokers this console reached, kept or not ----
+    //
+    // Written by connecting rather than by choosing, newest first. Nothing here is added by a
+    // request: the only way in is a connection the broker accepted, which ConnectionService notes
+    // beside the settings cache.
+
+    [HttpGet("recent")]
+    public async Task<IActionResult> GetRecent(CancellationToken ct)
+    {
+        var brokers = await _recent.GetAsync(ct);
+
+        return Ok(brokers.Select(one =>
+            new RecentBrokerDto(one.Id, SavedConnectionDto.Of(one.Settings), one.LastConnectedAt)));
+    }
+
+    [HttpDelete("recent/{id}")]
+    public async Task<IActionResult> ForgetRecent(string id, CancellationToken ct) =>
+        await _recent.ForgetAsync(id, ct) ? NoContent() : NotFound();
 
     // Deliberately not given the request's token. A dial belongs to the link, not to the browser
     // that asked for it: a reader who reloads the page mid-connect, or whose tab is closed by the

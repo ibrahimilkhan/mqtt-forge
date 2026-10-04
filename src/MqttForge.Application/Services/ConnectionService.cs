@@ -10,6 +10,7 @@ public sealed class ConnectionService
 {
     private readonly IMqttConnectionManager _manager;
     private readonly IConnectionSettingsStore _store;
+    private readonly RecentBrokerService? _recent;
     private readonly ILogger<ConnectionService> _logger;
 
     // Tracks live-connection settings to detect a repeat connect
@@ -35,12 +36,16 @@ public sealed class ConnectionService
     // The attempt currently running, or null when nothing is in flight
     private CancellationTokenSource? _attempt;
 
+    // The history is optional. It is a convenience the console draws above its saved brokers,
+    // not something a connection needs, and the dozens of tests that build this service to watch
+    // a link come up have no business knowing about a file of old addresses.
     public ConnectionService(IMqttConnectionManager manager, IConnectionSettingsStore store,
-        ILogger<ConnectionService> logger)
+        ILogger<ConnectionService> logger, RecentBrokerService? recent = null)
     {
         _manager = manager;
         _store = store;
         _logger = logger;
+        _recent = recent;
     }
 
     public ConnectionState CurrentState => _manager.State;
@@ -151,6 +156,27 @@ public sealed class ConnectionService
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             _logger.LogWarning(ex, "Connected, but failed to save connection settings");
+        }
+
+        // Noted here rather than in the controller so that every way a link comes up writes it:
+        // the panel's Connect, the desktop window's, and the supervisor putting one back after an
+        // outage.
+        //
+        // Caught whatever it throws, not only the two file errors the settings above are caught
+        // for. The link is up by this line, and a history nobody can write — or a file somebody
+        // edited into a shape the store did not expect — is not a reason to report a connection
+        // that plainly worked as a failure, nor for the supervisor to skip putting the console's
+        // filters back. Only a cancellation goes through, because that one was asked for.
+        if (_recent is not null)
+        {
+            try
+            {
+                await _recent.RecordAsync(settings, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "Connected, but failed to note the broker in the history");
+            }
         }
 
         return false;

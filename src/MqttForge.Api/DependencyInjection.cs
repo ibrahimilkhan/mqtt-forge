@@ -46,6 +46,9 @@ public static class DependencyInjection
         services.AddSingleton<ISavedProfileStore>(sp =>
             new JsonSavedProfileStore(StorePaths.SavedProfiles(sp.GetRequiredService<IConfiguration>())));
 
+        services.AddSingleton<IRecentBrokerStore>(sp =>
+            new JsonRecentBrokerStore(StorePaths.RecentBrokers(sp.GetRequiredService<IConfiguration>())));
+
         services.AddSingleton<IAlertRuleStore>(sp =>
             new JsonAlertRuleStore(StorePaths.AlertRules(sp.GetRequiredService<IConfiguration>())));
 
@@ -219,6 +222,7 @@ public static class DependencyInjection
         services.AddSingleton<ConnectionService>();
         services.AddSingleton<ColourRuleService>();
         services.AddSingleton<SavedProfileService>();
+        services.AddSingleton<RecentBrokerService>();
         services.AddSingleton<PublishService>();
         services.AddSingleton<SubscriptionService>();
         // One window, so one dialog on it — whichever of the two asked for it.

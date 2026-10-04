@@ -17,6 +17,7 @@ public sealed class MqttForgeApiFactory : WebApplicationFactory<Program>
     private readonly string _settingsPath;
     private readonly string _colourRulesPath;
     private readonly string _savedProfilesPath;
+    private readonly string _recentBrokersPath;
     private readonly string _alertRulesPath;
     private readonly string _alertStatePath;
     private readonly string _reconnectPath;
@@ -33,6 +34,10 @@ public sealed class MqttForgeApiFactory : WebApplicationFactory<Program>
         // And the saved brokers, for the same reason. This one bites harder: the rules are
         // replaced whole by every test that writes them, and these accumulate.
         _savedProfilesPath = Own("api-brokers.json");
+        // And the history beside them. Left unset it would default to a file beside the settings,
+        // shared by every host pointed at those settings, and this one is written by connecting —
+        // so a class that brings a link up would leave rows in a list another class reads.
+        _recentBrokersPath = Own("api-recent.json");
         // The alert rules, for the same reason again, and this one bites hardest of the three: an
         // enabled rule in a shared file would have every host this suite starts dial a broker on
         // its own and subscribe, in test classes that are about something else entirely.
@@ -53,12 +58,14 @@ public sealed class MqttForgeApiFactory : WebApplicationFactory<Program>
 
     private MqttForgeApiFactory(
         string settingsPath, string colourRulesPath, string? savedProfilesPath,
-        string? alertRulesPath, string? alertStatePath, string? reconnectPath, string? flowsPath)
+        string? alertRulesPath, string? alertStatePath, string? reconnectPath, string? flowsPath,
+        string? recentBrokersPath)
     {
         _directory = Directory.CreateTempSubdirectory("mqttforge-api-").FullName;
         _settingsPath = settingsPath;
         _colourRulesPath = colourRulesPath;
         _savedProfilesPath = savedProfilesPath ?? Own("api-brokers.json");
+        _recentBrokersPath = recentBrokersPath ?? Own("api-recent.json");
         _alertRulesPath = alertRulesPath ?? Own("api-alert-rules.json");
         _alertStatePath = alertStatePath ?? Own("api-alert-state.json");
         _reconnectPath = reconnectPath ?? Own("api-reconnect.json");
@@ -82,12 +89,14 @@ public sealed class MqttForgeApiFactory : WebApplicationFactory<Program>
     public static MqttForgeApiFactory PointedAt(
         string settingsPath, string colourRulesPath, string? savedProfilesPath = null,
         string? alertRulesPath = null, string? alertStatePath = null,
-        string? reconnectPath = null, string? flowsPath = null) =>
-        new(settingsPath, colourRulesPath, savedProfilesPath, alertRulesPath, alertStatePath, reconnectPath, flowsPath);
+        string? reconnectPath = null, string? flowsPath = null, string? recentBrokersPath = null) =>
+        new(settingsPath, colourRulesPath, savedProfilesPath, alertRulesPath, alertStatePath, reconnectPath, flowsPath,
+            recentBrokersPath);
 
     public string SettingsPath => _settingsPath;
     public string ColourRulesPath => _colourRulesPath;
     public string SavedProfilesPath => _savedProfilesPath;
+    public string RecentBrokersPath => _recentBrokersPath;
     public string AlertRulesPath => _alertRulesPath;
     public string AlertStatePath => _alertStatePath;
     public string ReconnectPath => _reconnectPath;
@@ -103,6 +112,7 @@ public sealed class MqttForgeApiFactory : WebApplicationFactory<Program>
                 ["MqttForge:SettingsPath"] = _settingsPath,
                 ["MqttForge:ColourRulesPath"] = _colourRulesPath,
                 ["MqttForge:SavedProfilesPath"] = _savedProfilesPath,
+                ["MqttForge:RecentBrokersPath"] = _recentBrokersPath,
                 ["MqttForge:AlertRulesPath"] = _alertRulesPath,
                 ["MqttForge:AlertStatePath"] = _alertStatePath,
                 ["MqttForge:ReconnectOptionPath"] = _reconnectPath,

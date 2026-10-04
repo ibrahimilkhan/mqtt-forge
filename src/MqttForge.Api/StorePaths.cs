@@ -1,11 +1,12 @@
 namespace MqttForge.Api;
 
-/// <summary>Where the app keeps the six things it remembers between runs.</summary>
+/// <summary>Where the app keeps the seven things it remembers between runs.</summary>
 public static class StorePaths
 {
     public const string ColourRulesFileName = "colour-rules.json";
     public const string ConnectionSettingsFileName = "connection-settings.json";
     public const string SavedProfilesFileName = "saved-brokers.json";
+    public const string RecentBrokersFileName = "recent-brokers.json";
     public const string AlertRulesFileName = "alert-rules.json";
     public const string AlertStateFileName = "alert-state.json";
     public const string ReconnectOptionFileName = "reconnect.json";
@@ -30,6 +31,15 @@ public static class StorePaths
     /// </summary>
     public static string SavedProfiles(IConfiguration config) =>
         config["MqttForge:SavedProfilesPath"] ?? Beside(config, SavedProfilesFileName);
+
+    /// <summary>
+    /// The brokers this console reached, kept or not, beside the rest for the same reason. Its
+    /// own variable rather than sharing the saved brokers': this one is written by connecting
+    /// rather than by choosing, and somebody mounting a read-only set of saved brokers should
+    /// still be able to let the history go somewhere writable.
+    /// </summary>
+    public static string RecentBrokers(IConfiguration config) =>
+        config["MqttForge:RecentBrokersPath"] ?? Beside(config, RecentBrokersFileName);
 
     /// <summary>
     /// The alert rules, beside the rest. Spec: "alert-rules.json, MqttForge:AlertRulesPath

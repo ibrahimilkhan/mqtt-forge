@@ -221,6 +221,52 @@ public class ConnectionServiceTests
         await _manager.Received(1).ConnectAsync(_settings, Arg.Any<CancellationToken>());
     }
 
+    // ---- the history the Broker panel draws above its saved brokers ----
+
+    private readonly IRecentBrokerStore _recent = Substitute.For<IRecentBrokerStore>();
+
+    private ConnectionService CreateSutWithHistory() =>
+        new(_manager, _store, _logger, new RecentBrokerService(_recent));
+
+    [Fact]
+    public async Task A_connect_that_worked_is_noted_in_the_history()
+    {
+        await CreateSutWithHistory().ConnectAsync(_settings, CancellationToken.None);
+
+        await _recent.Received(1).RecordAsync(_settings, Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task A_connect_that_failed_is_not()
+    {
+        _manager.ConnectAsync(_settings, Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidOperationException("broker down")));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => CreateSutWithHistory().ConnectAsync(_settings, CancellationToken.None));
+
+        await _recent.DidNotReceive()
+            .RecordAsync(Arg.Any<BrokerConnectionSettings>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
+    }
+
+    // The link is up by the time the history is written. Whatever the history throws — a full disk,
+    // or a file edited into a shape the store did not expect — the connection is still reported as
+    // the one that worked.
+    [Theory]
+    [InlineData(typeof(IOException))]
+    [InlineData(typeof(NullReferenceException))]
+    [InlineData(typeof(InvalidOperationException))]
+    public async Task A_history_that_cannot_be_written_does_not_fail_a_connect_that_worked(Type thrown)
+    {
+        _recent.RecordAsync(Arg.Any<BrokerConnectionSettings>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException((Exception)Activator.CreateInstance(thrown)!));
+
+        var exception = await Record.ExceptionAsync(
+            () => CreateSutWithHistory().ConnectAsync(_settings, CancellationToken.None));
+
+        Assert.Null(exception);
+    }
+
     [Fact]
     public async Task DisconnectAsync_delegates_to_manager()
     {
