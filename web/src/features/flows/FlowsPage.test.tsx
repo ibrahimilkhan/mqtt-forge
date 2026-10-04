@@ -2113,6 +2113,40 @@ describe('tests of flows the page does not have', () => {
     expect(strays()).toBeNull();
   });
 
+  // Its row goes once the numbers show the test stopped, and its Stop with it: the keyboard goes to the
+  // tab of the flow on screen, as it does when a button beside the tabs takes itself away.
+  it('puts the keyboard on the tab of the flow on screen when the test it stopped leaves the list', async () => {
+    server.use(http.delete('/api/flows/:id/test', () => new HttpResponse(null, { status: 204 })));
+    renderPage([watch]);
+    await screen.findByRole('tabpanel');
+    act(() => useFlowStatusStore.getState().setStatus({ runs: [testOf('flost1')] }));
+
+    await userEvent.click(within(await screen.findByRole('region', { name: 'Tests with no tab' })).getByRole('button', { name: 'Stop the test of flost1' }));
+    act(() => useFlowStatusStore.getState().setStatus({ runs: [testOf('flost1', 'stopped')] }));
+
+    expect(strays()).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('tab', { selected: true }));
+  });
+
+  it('puts the keyboard on the first way to start when the last such test leaves the empty page', async () => {
+    keeping();
+    server.use(http.delete('/api/flows/:id/test', () => new HttpResponse(null, { status: 204 })));
+    render(<FlowsPage />);
+    await screen.findByRole('button', { name: 'Start from an example' });
+    act(() => useFlowStatusStore.getState().setStatus({ runs: [testOf('flost1'), testOf('flost2')] }));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Stop the test of flost1' }));
+    act(() => useFlowStatusStore.getState().setStatus({ runs: [testOf('flost1', 'stopped'), testOf('flost2')] }));
+    // Another test is still listed: the keyboard goes to its Stop.
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Stop the test of flost2' }));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Stop the test of flost2' }));
+    act(() => useFlowStatusStore.getState().setStatus({ runs: [testOf('flost1', 'stopped'), testOf('flost2', 'stopped')] }));
+
+    expect(strays()).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Start from an example' }));
+  });
+
   it('lists one on the empty page as well', async () => {
     keeping();
     render(<FlowsPage />);

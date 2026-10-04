@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ReactFlowProvider, useReactFlow, useStoreApi } from '@xyflow/react';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { useShallow } from 'zustand/react/shallow';
 import { getFlows } from '../../api/flows';
@@ -38,7 +38,7 @@ import { useFlowDraftStore } from './flowDraftStore';
 import { Inspector } from './Inspector';
 import { specOf } from './nodeTypes';
 import { Palette } from './Palette';
-import { FLOW_PANEL, focusTab, tabIdOf, Toolbar } from './Toolbar';
+import { FLOW_PANEL, focusShownTab, focusTab, tabIdOf, Toolbar } from './Toolbar';
 import { useSave, type Held, type SaveKind, type Unsaved } from './useSave';
 import { useTest } from './useTest';
 import styles from './FlowsPage.module.css';
@@ -579,6 +579,11 @@ function Page() {
  * in: the numbers bring this list, and another console's test of its draft would be read out with
  * every push. Stop is held off once pressed, as the toolbar's is (see useTest), and the test leaves
  * the list once the numbers show it stopped.
+ *
+ * Its Stop goes with it, and the keyboard with that, which a browser hands to the body. The reader
+ * goes to the next test's Stop instead, or the one before it, and with none left to the tab of the
+ * flow on screen — or, on the empty page, to the first way to start — as a button beside the tabs
+ * that takes itself away leaves them there. A Stop says as it goes whether it had the keyboard.
  */
 function TestsWithNoTab({
   ids,
@@ -591,20 +596,51 @@ function TestsWithNoTab({
   busy: boolean;
   onStop: (id: string) => void;
 }) {
+  const list = useRef<HTMLUListElement>(null);
+  const before = useRef(ids);
+  const fell = useRef<string | null>(null);
+  const going = useCallback((button: HTMLButtonElement | null) => {
+    if (button === null) return;
+    return () => {
+      if (document.activeElement === button) fell.current = button.dataset.flow ?? null;
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    const was = before.current;
+    before.current = ids;
+    const gone = fell.current;
+    fell.current = null;
+    if (gone === null || (document.activeElement !== null && document.activeElement !== document.body)) return;
+
+    const at = was.indexOf(gone);
+    const next = [...was.slice(at + 1), ...was.slice(0, at).reverse()].find((id) => ids.includes(id));
+    const stop = [...(list.current?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find((one) => one.dataset.flow === next);
+    if (stop) {
+      stop.focus();
+      return;
+    }
+
+    focusShownTab();
+    if (document.activeElement === null || document.activeElement === document.body) document.getElementById(START)?.focus();
+  });
+
   if (ids.length === 0) return null;
 
   return (
     <section className={styles.strays} aria-label="Tests with no tab">
       <p className={panel.note}>Tests running of flows this page does not have — a draft on another console, or one this browser lost:</p>
-      <ul className={styles.strayList}>
+      <ul ref={list} className={styles.strayList}>
         {ids.map((id) => {
           const off = busy || stopping.has(id);
           return (
             <li key={id} className={styles.stray}>
               <span className={styles.strayId}>{id}</span>
               <button
+                ref={going}
                 type="button"
                 className="ghost"
+                data-flow={id}
                 aria-label={`Stop the test of ${id}`}
                 aria-disabled={off || undefined}
                 onClick={() => !off && onStop(id)}
