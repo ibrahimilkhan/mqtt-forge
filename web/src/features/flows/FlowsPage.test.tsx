@@ -259,7 +259,7 @@ describe('Flows page', () => {
     ]);
     expect(screen.getByRole('tab', { name: 'Boiler simulator, not running, not saved' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Boiler watch, not running, not saved' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '▶ Test' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Test' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Activate' })).toBeInTheDocument();
     expect(await screen.findByText('2 s')).toBeInTheDocument();
   });
@@ -367,7 +367,7 @@ describe('Flows page', () => {
     render(<FlowsPage />);
 
     expect(await screen.findByText(/could not be read/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '▶ Test' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Test' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Activate' })).not.toBeInTheDocument();
   });
 
@@ -559,7 +559,7 @@ describe('the palette builds a chain', () => {
   it('puts a node on the picked wire', async () => {
     const flow = { ...emptyFlow('Flow 1'), id: 'f1' };
     renderPage([flow]);
-    await screen.findByRole('button', { name: '▶ Test' });
+    await screen.findByRole('button', { name: 'Test' });
 
     act(() => useFlowDraftStore.getState().pickWire(flow.edges[0].id));
     fireEvent.click(palette().getByRole('button', { name: /^Publish/ }));
@@ -574,7 +574,7 @@ describe('the palette builds a chain', () => {
   it('puts a node after the picked one, and picks it, so the next goes after that', async () => {
     const flow = { ...emptyFlow('Flow 1'), id: 'f1' };
     renderPage([flow]);
-    await screen.findByRole('button', { name: '▶ Test' });
+    await screen.findByRole('button', { name: 'Test' });
 
     act(() => useFlowDraftStore.getState().select('start'));
     fireEvent.click(palette().getByRole('button', { name: /^MQTT in/ }));
@@ -589,7 +589,7 @@ describe('the palette builds a chain', () => {
 
   it('leaves the Start out of the palette', async () => {
     renderPage([{ ...emptyFlow('Flow 1'), id: 'f1' }]);
-    await screen.findByRole('button', { name: '▶ Test' });
+    await screen.findByRole('button', { name: 'Test' });
 
     expect(screen.queryByRole('button', { name: /^Start/ })).toBeNull();
     expect(screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual(
@@ -616,7 +616,7 @@ describe('the palette builds a chain', () => {
   it('keeps a node it puts after another clear of an If standing there, by the If’s own box', async () => {
     const flow = { ...emptyFlow('Flow 1'), id: 'f1' };
     renderPage([flow]);
-    await screen.findByRole('button', { name: '▶ Test' });
+    await screen.findByRole('button', { name: 'Test' });
 
     act(() => useFlowDraftStore.getState().select('start'));
     fireEvent.click(palette().getByRole('button', { name: /^MQTT in/ }));
@@ -633,7 +633,7 @@ describe('the palette builds a chain', () => {
   it('keeps a node it puts after the watch’s Debug clear of the If after it', async () => {
     const watching = { ...exampleFlows()[1], id: 'w' };
     renderPage([watching]);
-    await screen.findByRole('button', { name: '▶ Test' });
+    await screen.findByRole('button', { name: 'Test' });
 
     act(() => useFlowDraftStore.getState().select('say'));
     fireEvent.click(palette().getByRole('button', { name: /^Publish/ }));
@@ -649,7 +649,7 @@ describe('the palette builds a chain', () => {
     const flow = { ...emptyFlow('Flow 1'), id: 'f1' };
     // The End out of the way, so the place beside the Start is free.
     renderPage([{ ...flow, nodes: [flow.nodes[0], { ...flow.nodes[1], x: 900, y: 400 }] }]);
-    await screen.findByRole('button', { name: '▶ Test' });
+    await screen.findByRole('button', { name: 'Test' });
 
     act(() => useFlowDraftStore.getState().select('start'));
     fireEvent.click(palette().getByRole('button', { name: /^If/ }));
@@ -677,7 +677,7 @@ describe('the palette builds a chain', () => {
   it('keeps a chain clicked together from the Start on one row, the End at its end, nothing overlapping', async () => {
     const flow = { ...emptyFlow('Flow 1'), id: 'f1' };
     renderPage([flow]);
-    await screen.findByRole('button', { name: '▶ Test' });
+    await screen.findByRole('button', { name: 'Test' });
 
     act(() => useFlowDraftStore.getState().select('start'));
     for (const name of [/^MQTT in/, /^Debug/, /^If/, /^Publish/]) fireEvent.click(palette().getByRole('button', { name }));
@@ -697,7 +697,7 @@ describe('the palette builds a chain', () => {
   it('makes room after the watch’s Debug: what comes after it moves along, and nothing overlaps', async () => {
     const watching = { ...exampleFlows()[1], id: 'w' };
     renderPage([watching]);
-    await screen.findByRole('button', { name: '▶ Test' });
+    await screen.findByRole('button', { name: 'Test' });
 
     act(() => useFlowDraftStore.getState().select('say'));
     fireEvent.click(palette().getByRole('button', { name: /^Publish/ }));
@@ -722,7 +722,7 @@ describe('the palette builds a chain', () => {
   it('puts a node on a way out at a foot on the row under its node, and moves along what that way led to', async () => {
     const watching = { ...exampleFlows()[1], id: 'w' };
     renderPage([watching]);
-    await screen.findByRole('button', { name: '▶ Test' });
+    await screen.findByRole('button', { name: 'Test' });
 
     act(() => useFlowDraftStore.getState().pickWire('e14'));
     fireEvent.click(palette().getByRole('button', { name: /^Debug/ }));
@@ -742,7 +742,7 @@ describe('the palette builds a chain', () => {
   it('puts a node after a named way out far enough along that the name stands clear of it', async () => {
     const flow = { ...emptyFlow('Flow 1'), id: 'f1' };
     renderPage([flow]);
-    await screen.findByRole('button', { name: '▶ Test' });
+    await screen.findByRole('button', { name: 'Test' });
 
     act(() => useFlowDraftStore.getState().select('start'));
     fireEvent.click(palette().getByRole('button', { name: /^For(?! each)/ }));
@@ -778,7 +778,7 @@ describe('the palette builds a chain', () => {
       ],
     };
     renderPage([looping]);
-    await screen.findByRole('button', { name: '▶ Test' });
+    await screen.findByRole('button', { name: 'Test' });
 
     act(() => useFlowDraftStore.getState().pickWire('e2'));
     fireEvent.click(palette().getByRole('button', { name: /^Debug/ }));
@@ -806,7 +806,7 @@ describe('the palette builds a chain', () => {
         ],
       },
     ]);
-    await screen.findByRole('button', { name: '▶ Test' });
+    await screen.findByRole('button', { name: 'Test' });
 
     act(() => useFlowDraftStore.getState().pickWire('e2'));
     fireEvent.click(palette().getByRole('button', { name: /^Publish/ }));
@@ -865,7 +865,7 @@ describe('the palette builds a chain', () => {
     it('pans to a node it puts down out of sight, at the zoom it had, and leaves the view alone for one in sight', async () => {
       const flow = { ...emptyFlow('Flow 1'), id: 'f1' };
       renderPage([flow]);
-      await screen.findByRole('button', { name: '▶ Test' });
+      await screen.findByRole('button', { name: 'Test' });
       // Fitted: the Start at 40 and the End at 360, a pixel square each in jsdom, round the middle at 1.
       await waitFor(() => expect(viewport()[0]).toBeCloseTo(400 - (40 + 361) / 2));
       const fitted = viewport();
@@ -955,9 +955,9 @@ describe('where the keyboard goes', () => {
       }),
     );
     render(<FlowsPage />);
-    const test = () => screen.getByRole('button', { name: '▶ Test' });
+    const test = () => screen.getByRole('button', { name: 'Test' });
 
-    await userEvent.click(await screen.findByRole('button', { name: '▶ Test' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Test' }));
     await waitFor(() => expect(started).toBe(true));
     await turns();
     // Held off until the numbers show the test, with the keyboard still on it.
@@ -966,7 +966,7 @@ describe('where the keyboard goes', () => {
 
     act(() => useFlowStatusStore.getState().setStatus(testRun('watch', 'running')));
 
-    expect(screen.getByRole('button', { name: '■ Stop' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
     expect(document.activeElement).toBe(shownTab());
   });
 
@@ -990,7 +990,7 @@ describe('where the keyboard goes', () => {
     await userEvent.click(activate);
     await waitFor(() => expect(activate).toHaveAttribute('aria-disabled', 'true'));
     expect(activate).toBeEnabled();
-    expect(screen.getByRole('button', { name: '▶ Test' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('button', { name: 'Test' })).toHaveAttribute('aria-disabled', 'true');
     expect(document.activeElement).toBe(activate);
     await userEvent.click(activate);
 
@@ -1094,7 +1094,7 @@ describe('the delete keys', () => {
     fireEvent.click(await drawn('If'));
     expect(useFlowDraftStore.getState().selected).toBe('test');
 
-    const buttons = ['Discard', '▶ Test', 'Update', 'Deactivate'].map((name) => screen.getByRole('button', { name }));
+    const buttons = ['Discard', 'Test', 'Update', 'Deactivate'].map((name) => screen.getByRole('button', { name }));
     for (const control of [shownTab(), ...buttons]) {
       act(() => control.focus());
       await userEvent.keyboard('{Backspace}{Delete}');
@@ -1551,6 +1551,19 @@ describe('saving', () => {
 });
 
 describe('test and activate', () => {
+  // A screen reader read the glyph out with the word: "black right-pointing triangle Test", "black
+  // square Stop". The glyph is for the eye, and the button is named by its word.
+  it('names Test and Stop by their words, and shows them with their glyphs', async () => {
+    renderPage([watch]);
+
+    const test = await screen.findByRole('button', { name: 'Test' });
+    expect(test).toHaveTextContent('▶ Test');
+
+    act(() => useFlowStatusStore.getState().setStatus(testRun('watch', 'running')));
+
+    expect(screen.getByRole('button', { name: 'Stop' })).toHaveTextContent('■ Stop');
+  });
+
   it('tests the flow as drawn, without saving it, and becomes Stop while the test runs', async () => {
     let tested: FlowDto | null = null;
     let saved = false;
@@ -1567,12 +1580,12 @@ describe('test and activate', () => {
     renderPage([watch]);
     await edit('watch', (flow) => ({ ...flow, name: 'Boiler watch 2' }));
 
-    fireEvent.click(await screen.findByRole('button', { name: '▶ Test' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Test' }));
     await waitFor(() => expect(tested?.name).toBe('Boiler watch 2'));
     expect(saved).toBe(false);
 
     act(() => useFlowStatusStore.getState().setStatus(testRun('watch', 'running')));
-    expect(await screen.findByRole('button', { name: '■ Stop' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Stop' })).toBeInTheDocument();
   });
 
   it('stops the test run', async () => {
@@ -1586,7 +1599,7 @@ describe('test and activate', () => {
     renderPage([watch]);
     act(() => useFlowStatusStore.getState().setStatus(testRun('watch', 'running')));
 
-    fireEvent.click(await screen.findByRole('button', { name: '■ Stop' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop' }));
     await waitFor(() => expect(stopped).toBe(true));
   });
 
@@ -1606,7 +1619,7 @@ describe('test and activate', () => {
     renderPage([watch]);
     act(() => useFlowStatusStore.getState().setStatus(testRun('watch', 'running')));
 
-    fireEvent.click(await screen.findByRole('button', { name: '■ Stop' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop' }));
     await waitFor(() => expect(asked).toBe(true));
     await turns();
 
@@ -1618,13 +1631,13 @@ describe('test and activate', () => {
     renderPage([watch]);
     act(() => useFlowStatusStore.getState().setStatus(testRun('watch', 'running')));
 
-    fireEvent.click(await screen.findByRole('button', { name: '■ Stop' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop' }));
 
     const said = 'The test did not stop. The server is starting.';
     expect(await screen.findByText(said)).toBeInTheDocument();
     expect(outcome(said)).not.toBeNull();
     // Nothing was stopped, so Stop can be pressed again.
-    expect(screen.getByRole('button', { name: '■ Stop' })).not.toHaveAttribute('aria-disabled');
+    expect(screen.getByRole('button', { name: 'Stop' })).not.toHaveAttribute('aria-disabled');
   });
 
   /**
@@ -1676,7 +1689,7 @@ describe('test and activate', () => {
     await screen.findByRole('tabpanel');
     server.going();
 
-    const stop = screen.getByRole('button', { name: '■ Stop' });
+    const stop = screen.getByRole('button', { name: 'Stop' });
     fireEvent.click(stop);
     fireEvent.click(stop);
     await waitFor(() => expect(server.sent.stops).toBe(1));
@@ -1691,7 +1704,7 @@ describe('test and activate', () => {
     await screen.findByRole('tabpanel');
     server.going();
 
-    const stop = screen.getByRole('button', { name: '■ Stop' });
+    const stop = screen.getByRole('button', { name: 'Stop' });
     fireEvent.click(stop);
     fireEvent.click(stop);
     await waitFor(() => expect(server.sent.stops).toBeGreaterThan(0));
@@ -1700,7 +1713,7 @@ describe('test and activate', () => {
 
     expect(screen.getByText('Test · stopped')).toBeInTheDocument();
     expect(screen.getByText('3 read')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '▶ Test' })).not.toHaveAttribute('aria-disabled');
+    expect(screen.getByRole('button', { name: 'Test' })).not.toHaveAttribute('aria-disabled');
   });
 
   // The server has stopped the test, and no push has said so yet: Stop is still on screen, and is not
@@ -1711,10 +1724,10 @@ describe('test and activate', () => {
     await screen.findByRole('tabpanel');
     server.going();
 
-    fireEvent.click(screen.getByRole('button', { name: '■ Stop' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
     await waitFor(() => expect(server.sent.stops).toBe(1));
     await turns();
-    const stop = screen.getByRole('button', { name: '■ Stop' });
+    const stop = screen.getByRole('button', { name: 'Stop' });
     expect(stop).toHaveAttribute('aria-disabled', 'true');
     fireEvent.click(stop);
     await turns();
@@ -1722,8 +1735,8 @@ describe('test and activate', () => {
 
     server.push();
 
-    expect(screen.queryByRole('button', { name: '■ Stop' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '▶ Test' })).not.toHaveAttribute('aria-disabled');
+    expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Test' })).not.toHaveAttribute('aria-disabled');
     expect(screen.getByText('Test · stopped')).toBeInTheDocument();
   });
 
@@ -1733,10 +1746,10 @@ describe('test and activate', () => {
     const server = testsOfTheWatch();
     renderPage([{ ...watch, enabled: false }]);
 
-    fireEvent.click(await screen.findByRole('button', { name: '▶ Test' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Test' }));
     await waitFor(() => expect(server.sent.tests).toBe(1));
     await turns();
-    const test = screen.getByRole('button', { name: '▶ Test' });
+    const test = screen.getByRole('button', { name: 'Test' });
     expect(test).toHaveAttribute('aria-disabled', 'true');
     fireEvent.click(test);
     await turns();
@@ -1744,7 +1757,7 @@ describe('test and activate', () => {
 
     server.push();
 
-    expect(screen.getByRole('button', { name: '■ Stop' })).not.toHaveAttribute('aria-disabled');
+    expect(screen.getByRole('button', { name: 'Stop' })).not.toHaveAttribute('aria-disabled');
   });
 
   // A push that never comes — the hub gone away — must not hold Stop off for good.
@@ -1756,14 +1769,14 @@ describe('test and activate', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
 
     try {
-      fireEvent.click(screen.getByRole('button', { name: '■ Stop' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
       await waitFor(() => expect(server.sent.stops).toBe(1));
       await turns();
-      expect(screen.getByRole('button', { name: '■ Stop' })).toHaveAttribute('aria-disabled', 'true');
+      expect(screen.getByRole('button', { name: 'Stop' })).toHaveAttribute('aria-disabled', 'true');
 
       act(() => vi.advanceTimersByTime(3_000));
 
-      expect(screen.getByRole('button', { name: '■ Stop' })).not.toHaveAttribute('aria-disabled');
+      expect(screen.getByRole('button', { name: 'Stop' })).not.toHaveAttribute('aria-disabled');
     } finally {
       vi.useRealTimers();
     }
@@ -1777,7 +1790,7 @@ describe('test and activate', () => {
     );
     renderPage([watch]);
 
-    fireEvent.click(await screen.findByRole('button', { name: '▶ Test' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Test' }));
     expect(await screen.findByText(/so the test did not start/)).toBeInTheDocument();
     expect(useFlowDraftStore.getState().refusals.watch).toEqual({ 'node:read': ['Give it a filter.'] });
   });
@@ -1788,7 +1801,7 @@ describe('test and activate', () => {
     renderPage([watch]);
     await edit('watch', (flow) => ({ ...flow, name: 'Boiler watch 2' }));
 
-    fireEvent.click(await screen.findByRole('button', { name: '▶ Test' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Test' }));
 
     const said = 'The server refused Boiler watch 2, so the test did not start. What it refused is marked on it.';
     expect(await screen.findByText(said)).toBeInTheDocument();
@@ -1804,11 +1817,11 @@ describe('test and activate', () => {
     );
     renderPage([watch]);
     await edit('watch', (flow) => ({ ...flow, name: 'Boiler watch 2' }));
-    fireEvent.click(await screen.findByRole('button', { name: '▶ Test' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Test' }));
     await screen.findByText(/so the test did not start/);
 
     refuse = false;
-    fireEvent.click(screen.getByRole('button', { name: '▶ Test' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Test' }));
 
     await waitFor(() => expect(useFlowDraftStore.getState().refusals.watch).toBeUndefined());
     expect(screen.queryByText(/so the test did not start/)).not.toBeInTheDocument();
@@ -1819,7 +1832,7 @@ describe('test and activate', () => {
     server.use(http.post('/api/flows/:id/test', () => couldNot('The server is starting.', 503)));
     renderPage([watch]);
 
-    fireEvent.click(await screen.findByRole('button', { name: '▶ Test' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Test' }));
 
     expect(await screen.findByText('The test did not start. The server is starting.')).toBeInTheDocument();
   });
@@ -1836,10 +1849,10 @@ describe('test and activate', () => {
     renderPage([{ ...watch, enabled: false }]);
     await edit('watch', (flow) => ({ ...flow, name: 'Boiler watch 2' }));
 
-    fireEvent.click(await screen.findByRole('button', { name: '▶ Test' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Test' }));
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Activate' })).toHaveAttribute('aria-disabled', 'true'));
-    expect(screen.getByRole('button', { name: '▶ Test' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('button', { name: 'Test' })).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByRole('button', { name: 'Discard' })).toHaveAttribute('aria-disabled', 'true');
     answer.release();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Activate' })).not.toHaveAttribute('aria-disabled'));
@@ -2035,13 +2048,13 @@ describe('test and activate', () => {
     renderPage([watch]);
     await edit('watch', (flow) => ({ ...flow, name: 'Boiler watch 2' }));
 
-    fireEvent.click(await screen.findByRole('button', { name: '▶ Test' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Test' }));
     await waitFor(() => expect(reached).toBe(true));
     await userEvent.type(screen.getByLabelText('Name'), '{Backspace}{Backspace}');
     expect(useFlowDraftStore.getState().drafts.watch).toBeUndefined();
     answer.release();
 
-    await waitFor(() => expect(screen.getByRole('button', { name: '▶ Test' })).not.toHaveAttribute('aria-disabled'));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Test' })).not.toHaveAttribute('aria-disabled'));
     expect(useFlowDraftStore.getState().refusals.watch).toBeUndefined();
     expect(screen.queryByText(/^The server refused/)).not.toBeInTheDocument();
     expect(document.querySelector('[data-problem]')).toBeNull();
@@ -2058,7 +2071,7 @@ describe('test and activate', () => {
   it('has no Deploy button any more', async () => {
     renderPage([watch]);
 
-    await screen.findByRole('button', { name: '▶ Test' });
+    await screen.findByRole('button', { name: 'Test' });
     expect(screen.queryByRole('button', { name: /Deploy/ })).toBeNull();
   });
 });
@@ -3124,11 +3137,11 @@ describe('a refusal of the flow on screen', () => {
   it('brings the first node it marks into view, at the zoom it had, when it marks none in sight', async () => {
     server.use(http.post('/api/flows/:id/test', () => refusal({ 'node:far': ['Pick a level.'], 'node:end': ['Not this End.'] })));
     renderPage([wide]);
-    await screen.findByRole('button', { name: '▶ Test' });
+    await screen.findByRole('button', { name: 'Test' });
     await waitFor(() => expect(viewport()[2]).toBe(0.6));
     expect(seen('far')).toBe(false);
 
-    fireEvent.click(screen.getByRole('button', { name: '▶ Test' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Test' }));
     await screen.findByText(/so the test did not start/);
 
     await waitFor(() => expect(seen('far')).toBe(true));
@@ -3202,14 +3215,14 @@ describe('what did not go through', () => {
     const tested = 'The server refused Boiler watch 2, so the test did not start. What it refused is marked on it.';
     const saved = 'The server refused Boiler watch 2, so it was not saved. What it refused is marked on it.';
 
-    await userEvent.click(screen.getByRole('button', { name: '▶ Test' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Test' }));
     expect(await screen.findByText(tested)).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Update' }));
     expect(await screen.findByText(saved)).toBeInTheDocument();
     expect(screen.queryByText(tested)).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: '▶ Test' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Test' }));
     expect(await screen.findByText(tested)).toBeInTheDocument();
     expect(screen.queryByText(saved)).not.toBeInTheDocument();
   });
@@ -3563,7 +3576,7 @@ describe('a refusal', () => {
     const { kept } = keeping([watch]);
     server.use(http.post('/api/flows/:id/test', () => refusal({ 'node:test': ['Pick a test.'] })));
     const { queryClient } = render(<FlowsPage />);
-    await userEvent.click(await screen.findByRole('button', { name: '▶ Test' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Test' }));
     expect(await screen.findByTitle('Pick a test.')).toHaveAttribute('data-problem');
 
     await elsewhere(queryClient, () => (kept[0] = { ...watch, enabled: false }));
@@ -3580,7 +3593,7 @@ describe('a refusal', () => {
     const { kept } = keeping([watch, sim]);
     server.use(http.post('/api/flows/:id/test', () => refusal({ 'node:test': ['Pick a test.'] })));
     const { queryClient } = render(<FlowsPage />);
-    await userEvent.click(await screen.findByRole('button', { name: '▶ Test' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Test' }));
     await screen.findByTitle('Pick a test.');
 
     await elsewhere(queryClient, () => kept.splice(0, 1));
@@ -3619,11 +3632,11 @@ describe('flows called by a name every object answers to', () => {
     expect(({} as Record<string, unknown>).test).toBeUndefined();
     expect(({} as Record<string, unknown>).active).toBeUndefined();
     // The watch runs, and nothing tests it.
-    expect(screen.getByRole('button', { name: '▶ Test' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Test' })).toBeInTheDocument();
 
     for (const flowId of INHERITED) {
       await userEvent.click(screen.getByRole('tab', { name: new RegExp(`^Flow ${flowId}, running`) }));
-      expect(screen.getByRole('button', { name: '■ Stop' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
       expect(screen.getByText('Test · running')).toBeInTheDocument();
       expect(within(debugStrip()).getByText(`printed by ${flowId}`)).toBeInTheDocument();
     }
@@ -3632,7 +3645,7 @@ describe('flows called by a name every object answers to', () => {
     act(() => useFlowStatusStore.getState().setStatus({ runs: [] }));
     expect(screen.getByRole('tab', { name: 'Flow toString, not running' })).toBeInTheDocument();
     expect(screen.getByText('Off')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '▶ Test' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Test' })).toBeInTheDocument();
   });
 
   // A test of the server's copy of a flow with no draft is refused of that copy, and the refusal goes
@@ -3641,7 +3654,7 @@ describe('flows called by a name every object answers to', () => {
     const { kept } = keeping([called('toString')]);
     server.use(http.post('/api/flows/:id/test', () => refusal({ 'node:test': ['Pick a test.'] })));
     const { queryClient } = render(<FlowsPage />);
-    await userEvent.click(await screen.findByRole('button', { name: '▶ Test' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Test' }));
     expect(await screen.findByTitle('Pick a test.')).toHaveAttribute('data-problem');
 
     await elsewhere(queryClient, () => (kept[0] = { ...called('toString'), name: 'Flow toString, mended' }));

@@ -278,6 +278,8 @@ export function Toolbar(props: Props) {
         </button>
       )}
 
+      {/* The glyphs are for the eye: read out, they said "black square Stop". Each button is named
+          by its word, as the debug strip's fold is. */}
       {testing.has(current) ? (
         <button
           key="stop"
@@ -287,7 +289,7 @@ export function Toolbar(props: Props) {
           aria-disabled={busy || stopping.has(current) || undefined}
           onClick={() => !busy && !stopping.has(current) && onStop()}
         >
-          ■ Stop
+          <span aria-hidden="true">■</span> Stop
         </button>
       ) : (
         <button
@@ -298,7 +300,7 @@ export function Toolbar(props: Props) {
           aria-disabled={busy || starting.has(current) || undefined}
           onClick={() => !busy && !starting.has(current) && onTest()}
         >
-          ▶ Test
+          <span aria-hidden="true">▶</span> Test
         </button>
       )}
       {!active.has(current) ? (
