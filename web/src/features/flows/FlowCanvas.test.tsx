@@ -1677,6 +1677,52 @@ describe('a wire drawn round', () => {
     }
   });
 
+  // Handed a new list of wires, React Flow works out again what it looks them up by and tells its
+  // store, and it is handed one whenever the wires are worked out again, which their names — their
+  // nodes' — make every frame of a drag, and every edit of a node. Every wire comes out as the object
+  // it was, so the list is the one React Flow had; and a wire whose drawing changed makes a new list,
+  // with the one new object in it.
+  it('hands React Flow the list of wires it had for a frame of a drag or a setting typed, and a new one when a wire changes', async () => {
+    const flow = looping({ x: 200, y: 180 });
+    let drawing: ReturnType<typeof useStoreApi> | undefined;
+    function Peek() {
+      drawing = useStoreApi();
+      return null;
+    }
+    useFlowDraftStore.getState().show(flow.id);
+    render(
+      <ReactFlowProvider>
+        <div style={{ width: 800, height: 600 }}>
+          <Page flow={flow} />
+        </div>
+        <Peek />
+      </ReactFlowProvider>,
+    );
+    await pathOf('e3');
+    const wires = () => drawing!.getState().edges;
+    const had = wires();
+    expect(had.map((wire) => wire.id)).toEqual(['e1', 'e2', 'e3', 'e4']);
+
+    // A frame of a drag: the Debug, which no wire leads to or from.
+    act(() => drawing!.getState().triggerNodeChanges([{ id: 'say', type: 'position', position: { x: 200, y: 160 }, dragging: true }]));
+    await waitFor(() => expect(document.querySelector('.react-flow__node[data-id="say"]')).toHaveStyle({ transform: 'translate(200px,160px)' }));
+    expect(wires()).toBe(had);
+
+    // A setting typed into a node's pane.
+    const send = flow.nodes.find((node) => node.id === 'send')!;
+    act(() =>
+      useFlowDraftStore.getState().edit(flow, (current) => setConfig(current, 'send', { ...send.config, topic: 'plant/k2/cmd' })),
+    );
+    expect(await screen.findByText('plant/k2/cmd')).toBeInTheDocument();
+    expect(wires()).toBe(had);
+
+    // A wire picked is drawn another way: a new list, and the picked wire the only new object in it.
+    fireEvent.click(document.querySelector('.react-flow__edge[data-id="e3"]')!);
+    await waitFor(() => expect(document.querySelector('.react-flow__edge[data-id="e3"] .react-flow__edge-path')).toHaveAttribute('data-selected'));
+    expect(wires()).not.toBe(had);
+    expect(wires().flatMap((wire, at) => (wire === had[at] ? [] : [wire.id]))).toEqual(['e3']);
+  });
+
   // A drag moves its node a frame at a time, each frame a new plan. Worked out whole on every frame, a
   // node dragged past its neighbours in a flow of a hundred nodes or more held the page a tenth of a
   // second a frame. So each frame works out the dragged node's own wires, and every other wire keeps

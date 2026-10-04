@@ -522,6 +522,34 @@ function wireName(edge: FlowEdgeDto, nodes: ReadonlyMap<string, FlowNodeDto>, ed
   return `${from.label}${from.port ? `, ${from.port},` : ''} to ${to.label}${to.port ? `, ${to.port}` : ''}`;
 }
 
+/*
+ * The list of wires as React Flow was last handed it, kept against the flow's own list of wires, as
+ * each wire is (see handedWires). React Flow works out again what it looks wires up by, and tells its
+ * store, whenever it is handed a list that is not the one it had. The wires are worked out again
+ * whenever the nodes change, since a wire's name is its nodes' — every frame of a drag, and every
+ * edit of a node — though each comes out as the object it was.
+ */
+const handedLists = new WeakMap<readonly FlowEdgeDto[], CanvasEdge[]>();
+
+/** The wires as React Flow is handed them: the list it had last time, when every wire in it is the object it was. */
+function canvasEdges(
+  flowId: string,
+  nodes: readonly FlowNodeDto[],
+  edges: readonly FlowEdgeDto[],
+  picked: ReadonlySet<string>,
+  problems: Problems,
+): CanvasEdge[] {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const made = edges.map((edge) =>
+    canvasEdge(flowId, edge, picked.has(EDGE + edge.id), problems[EDGE + edge.id], wireName(edge, byId, edges)),
+  );
+
+  const last = handedLists.get(edges);
+  if (last !== undefined && last.length === made.length && last.every((wire, at) => wire === made[at])) return last;
+  handedLists.set(edges, made);
+  return made;
+}
+
 const wireOf = (connection: Connection | CanvasEdge): Wire => ({
   from: connection.source,
   fromPort: connection.sourceHandle ?? '',
@@ -754,15 +782,13 @@ export function FlowCanvas({ flow, problems }: { flow: FlowDto; problems: Proble
     });
   }, [dragged, flow, picked, problems, sizes]);
 
-  // Each wire handed over as the object it was unless what it draws changed with it — see canvasEdge.
-  // Its name is its nodes', so the wires are worked out again whenever the nodes are: on every frame
-  // of a drag, for which each is the object it was.
-  const edges = useMemo<CanvasEdge[]>(() => {
-    const byId = new Map(flow.nodes.map((node) => [node.id, node]));
-    return flow.edges.map((edge) =>
-      canvasEdge(flow.id, edge, picked.has(EDGE + edge.id), problems[EDGE + edge.id], wireName(edge, byId, flow.edges)),
-    );
-  }, [flow.id, flow.nodes, flow.edges, picked, problems]);
+  // Each wire handed over as the object it was unless what it draws changed with it, and the list as
+  // the one it was unless a wire did — see canvasEdges. Its name is its nodes', so the wires are worked
+  // out again whenever the nodes are: on every frame of a drag, for which each is the object it was.
+  const edges = useMemo<CanvasEdge[]>(
+    () => canvasEdges(flow.id, flow.nodes, flow.edges, picked, problems),
+    [flow.id, flow.nodes, flow.edges, picked, problems],
+  );
 
   const pick = useCallback(
     (changes: ReadonlyArray<{ pick: string; selected: boolean }>) => {
