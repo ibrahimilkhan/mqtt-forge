@@ -158,8 +158,8 @@ export function wayOf(source: End, target: End): Way {
  * A port's name, as FlowCanvas.module.css stands it (`.port`), and as wide as the largest type the
  * appearance panel offers draws it, with some to spare: beside a port on the right, past where a wire
  * turns up there, its foot 6 above the port's middle; under a way out at the foot and over a next, 9
- * right of the port and 3 off the node. A node's frame is a pixel wide, and the stylesheet places a
- * name from inside it.
+ * right of the port and 6 off the node, past the ring a picked node wears. A node's frame is a pixel
+ * wide, and the stylesheet places a name from inside it.
  */
 const NAME_CHAR = 6.5;
 const NAME_LINE = 11;
@@ -186,9 +186,9 @@ export function namesOf(box: Box, type: string, ports: Ports, unwired: readonly 
       case 'left':
         return [{ x: box.x - MARGIN - 5 - width, y: middle - 6 - NAME_LINE, width, height: NAME_LINE }];
       case 'bottom':
-        return [{ x: centre + 9, y: box.y + box.height + 2, width, height: NAME_LINE }];
+        return [{ x: centre + 9, y: box.y + box.height + 5, width, height: NAME_LINE }];
       case 'top':
-        return [{ x: centre + 9, y: box.y - 2 - NAME_LINE, width, height: NAME_LINE }];
+        return [{ x: centre + 9, y: box.y - 5 - NAME_LINE, width, height: NAME_LINE }];
     }
   };
 

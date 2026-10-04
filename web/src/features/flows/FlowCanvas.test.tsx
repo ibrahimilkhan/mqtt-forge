@@ -15,7 +15,7 @@ import {
   withoutComments,
 } from './canvasTestbed';
 import * as backWires from './backWires';
-import { DRAG_TYPE, FlowCanvas } from './FlowCanvas';
+import { DRAG_TYPE, FlowCanvas, STEP_HEIGHT } from './FlowCanvas';
 import sheet from './FlowCanvas.module.css?raw';
 import { exampleFlows } from './examples';
 import { connect, moveNodes, removeEdges, setConfig, type Problems } from './flowDocument';
@@ -1501,6 +1501,43 @@ describe('a wire drawn round', () => {
     draw();
     await screen.findByText('If');
     expect(document.getElementById('flow-canvas')!.style.getPropertyValue('--wire-margin')).toBe(`${backWires.MARGIN}px`);
+  });
+
+  // A picked node wears a ring off its frame. The names over a next and under a foot stood 3 off the
+  // node, inside the ring, which ran through their letters; they stand past it, and the routes keep
+  // wires off them where they are drawn (namesOf), a pixel in from where the stylesheet places them
+  // from: inside the node's frame.
+  it('stands the names over and under a node past the ring a picked node wears, where the routes reckon them', () => {
+    const rules = withoutComments(sheet);
+    const ring = /\.node\[data-selected\]\s*\{[^}]*outline:\s*(\d+)px[^}]*outline-offset:\s*(\d+)px/.exec(rules)!;
+    const reach = Number(ring[1]) + Number(ring[2]);
+    const off = (side: 'top' | 'bottom', edge: 'top' | 'bottom') =>
+      Number(new RegExp(String.raw`\.port\[data-side='${side}'\]\s*\{[^}]*${edge}:\s*calc\(100% \+ (\d+)px\)`).exec(rules)![1]);
+
+    // From inside the frame, a pixel wide.
+    expect(off('bottom', 'top') - 1).toBeGreaterThan(reach);
+    expect(off('top', 'bottom') - 1).toBeGreaterThan(reach);
+
+    const box = { x: 0, y: 0, width: 188, height: 71.52 };
+    const [next, , done] = backWires.namesOf(box, 'for', NODE_SPECS.for, []);
+    expect(next.y + next.height).toBe(box.y - (off('top', 'bottom') - 1));
+    expect(done.y).toBe(box.y + box.height + off('bottom', 'top') - 1);
+  });
+
+  // A step at the console's own type size, 13px, stood 64.64 high, not the STEP_HEIGHT the page lays
+  // steps out by, which is a step at 15px: its ports were 3.7 off the If's beside it, and the wires
+  // between them bent. Held to STEP_HEIGHT, with its lines in its middle, a step is that high at any
+  // size its lines fit in, as an If is DECISION_HEIGHT.
+  it('holds every node at least as high as the page lays steps out by, its lines in its middle', async () => {
+    const rules = withoutComments(sheet);
+    const node = /(?:^|\})\s*\.node\s*\{([^}]*)\}/.exec(rules)![1];
+
+    expect(node).toMatch(/min-height:\s*var\(--step-height\)/);
+    expect(node).toMatch(/align-content:\s*center/);
+
+    draw();
+    await screen.findByText('If');
+    expect(document.getElementById('flow-canvas')!.style.getPropertyValue('--step-height')).toBe(`${STEP_HEIGHT}px`);
   });
 
   it('draws a wire that goes forward as the curve it was', async () => {

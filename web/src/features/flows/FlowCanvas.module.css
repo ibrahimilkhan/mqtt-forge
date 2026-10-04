@@ -64,10 +64,21 @@
 
 /* The width is FlowCanvas.tsx's NODE_WIDTH, which the canvas sets as --node-width: the page reckons
    where a new node goes from the same number. A port's name stands outside the node (see .port),
-   so the text inside runs edge to edge. */
+   so the text inside runs edge to edge.
+
+   And at least STEP_HEIGHT high, which the canvas sets as --step-height, with its lines in its
+   middle: the page lays steps out by that height, and stands an If level with the step before it by
+   it. Left to its lines, a step was as high as the type size made them — 64.64 at the console's own
+   13px, not the 71.52 of 15px the page reckons with — and its ports stood 3.7 off the If's beside
+   it, so the wires between them bent. One column no wider than the node, so a line that is cut is
+   cut at its edge rather than widening it. */
 .node {
   position: relative;
   width: var(--node-width);
+  min-height: var(--step-height);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: center;
   background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: var(--r-plate);
@@ -217,7 +228,9 @@
    Beside a port on the left or the right it stands past --wire-margin, how far past its node a wire
    going back turns up (backWires.ts, through the canvas, as --node-width comes): a name just past the
    port had that wire run up through its letters, and a wire going forward still has its name beside
-   it. */
+   it. Under a foot and over a next it stands 6 off the node, past the ring a picked node wears, 2 to
+   4 off its frame, which ran through the letters of a name 3 off it. backWires.ts's namesOf reckons
+   every name where this stands it. */
 .port {
   position: absolute;
   font-family: var(--mono);
@@ -228,8 +241,8 @@
   pointer-events: none;
 }
 .port[data-side='right'] { left: calc(100% + var(--wire-margin) + 6px); bottom: calc(100% - var(--along, 50%) + 6px); }
-.port[data-side='bottom'] { left: calc(var(--along, 50%) + 9px); top: calc(100% + 3px); }
-.port[data-side='top'] { left: calc(var(--along, 50%) + 9px); bottom: calc(100% + 3px); }
+.port[data-side='bottom'] { left: calc(var(--along, 50%) + 9px); top: calc(100% + 6px); }
+.port[data-side='top'] { left: calc(var(--along, 50%) + 9px); bottom: calc(100% + 6px); }
 .port[data-side='left'] { right: calc(100% + var(--wire-margin) + 6px); bottom: calc(100% - var(--along, 50%) + 6px); }
 .port[data-unwired] { color: var(--fault); }
 

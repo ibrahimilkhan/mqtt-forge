@@ -92,13 +92,15 @@ export const NODE_WIDTH = 188;
 export const NODE_HEIGHT = 80;
 
 /**
- * How tall a step is drawn at the default type size, as Chrome lays it out: its three lines — the
- * name, what it is set to, what it has done — at the console's line height, with its padding and its
- * frame. A pill, the parallelogram and the hexagon are as tall. Nothing is drawn at this, since a node
- * is as tall as what is in it; it is what the examples are laid out by, so the wires along their rows
- * run level where the browser puts the ports, what a node put after a step is levelled by, and what
- * the renderer tells jsdom a node measures. Measured once and written once: a change to the type
- * scale moves it, and all of them with it.
+ * How tall a step is drawn: its three lines — the name, what it is set to, what it has done — at the
+ * console's line height, with its padding and its frame, as Chrome lays them out at a 15px type size.
+ * A pill, the parallelogram and the hexagon are as tall. The stylesheet holds every node at least this
+ * high (--step-height), its lines in its middle, so a step is as high at the console's own 13px, or
+ * any size its lines fit in: left to its lines it was 64.64 at 13px, and the wires from it to an If
+ * levelled by this bent. It is what the examples are laid out by, so the wires along their rows run
+ * level where the browser puts the ports, what a node put after a step is levelled by, and what the
+ * renderer tells jsdom a node measures. Measured once and written once: a change to the type scale
+ * moves it, and all of them with it.
  */
 export const STEP_HEIGHT = 71.52;
 
@@ -292,11 +294,13 @@ const REACH = Math.max(
 export const MEASURE: Measure = { boxOf, heightOf, room: ROOM, margin: MARGIN, crowds, reach: REACH };
 
 /**
- * The sizes, where the stylesheet reads them: the If's as well, for the same reason as the width; and
- * how far past its node a wire going back turns up, which a port's name stands past.
+ * The sizes, where the stylesheet reads them: how high a step is held, and the If's box, for the same
+ * reason as the width; and how far past its node a wire going back turns up, which a port's name stands
+ * past.
  */
 const NODE_SIZE = {
   '--node-width': `${NODE_WIDTH}px`,
+  '--step-height': `${STEP_HEIGHT}px`,
   '--decision-width': `${DECISION_WIDTH}px`,
   '--decision-height': `${DECISION_HEIGHT}px`,
   '--wire-margin': `${MARGIN}px`,
