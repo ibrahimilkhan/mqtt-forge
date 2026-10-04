@@ -161,6 +161,20 @@ describe('flow status store', () => {
     expect(state().debugClearedAt.busy).toBe(3);
   });
 
+  // The page lists a test going of a flow it has no tab for, with a Stop. A flow that was just
+  // deleted is such a flow, and its run stood in the numbers until the next push, a quarter of a
+  // second on: the page listed the test of the flow the reader had deleted, with a Stop to press.
+  it('forgets a deleted flow\'s runs and the numbers of its nodes, and keeps the others\'', () => {
+    state().setStatus({ runs: [run(), run({ kind: 'test', state: 'running' }), run({ flowId: 'sim', kind: 'test', state: 'running' })] });
+
+    state().forget('watch');
+
+    expect(Object.keys(state().runs)).toEqual(['sim']);
+    expect(state().runs.sim.test?.state).toBe('running');
+    expect(Object.keys(state().nodes).sort()).toEqual(['sim/in', 'sim/test']);
+    expect(state().nodes[nodeKey('sim', 'test')].outs).toEqual({ yes: 3, no: 409 });
+  });
+
   // A batch the server sent before the delete landed can arrive after it, and the lines it brought
   // back would sit under a flow with no strip left to clear them.
   it('drops the lines of a flow deleted in this session, however late they come', () => {
@@ -233,6 +247,19 @@ describe('flows called by a name every object answers to', () => {
     state().addDebug([], 2);
     expect(leftOut(state(), 'constructor')).toBe(2);
     expect(leftOut(state(), 'toString')).toBe(5);
+  });
+
+  it('drops the runs and the numbers of one of them deleted here, and only that one\'s', () => {
+    state().setStatus({ runs: INHERITED.map((flowId) => run({ flowId, kind: 'test', state: 'running' })) });
+
+    state().forget('__proto__');
+
+    expect(Object.keys(state().runs).sort()).toEqual(['constructor', 'toString']);
+    expect(Object.keys(state().nodes).sort()).toEqual(['constructor/in', 'constructor/test', 'toString/in', 'toString/test']);
+    for (const each of everywhere()) {
+      expect(each.active).toBeUndefined();
+      expect(each.test).toBeUndefined();
+    }
   });
 
   it('drops the lines of one of them deleted here, and only that one\'s', () => {

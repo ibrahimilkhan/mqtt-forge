@@ -1447,6 +1447,33 @@ describe('the numbers the page reads when it opens', () => {
     expect(screen.queryByText('412 read')).not.toBeInTheDocument();
   });
 
+  // A delete is as new as a push. An answer to a read made before it still has the deleted flow's run
+  // in it, and would put it back, to be listed under Tests with no tab until the next push.
+  it('does not put back the run of a flow deleted while the read was out', async () => {
+    keeping([watch, sim]);
+    const answer = held();
+    let answered = false;
+    server.use(
+      http.get('/api/flows/status', async () => {
+        await answer.until;
+        answered = true;
+        return HttpResponse.json(testRun('watch', 'running'));
+      }),
+    );
+    render(<FlowsPage />);
+    await screen.findByText('Boiler watch', { selector: 'h3' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete flow' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+    await waitFor(() => expect(screen.queryByRole('tab', { name: /^Boiler watch/ })).not.toBeInTheDocument());
+    answer.release();
+    await waitFor(() => expect(answered).toBe(true));
+    await turns();
+
+    expect(useFlowStatusStore.getState().runs).toEqual({});
+    expect(screen.queryByRole('region', { name: 'Tests with no tab' })).toBeNull();
+  });
+
   it('lets the read go when the page is shut before it comes back', async () => {
     keeping([watch]);
     const answer = held();
@@ -2249,6 +2276,25 @@ describe('deleting a flow', () => {
     expect(screen.getByRole('button', { name: 'Delete flow' })).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: /^Boiler watch/ })).not.toBeInTheDocument();
     expect(deletes).toEqual(['watch']);
+  });
+
+  // The server stops the test of a flow it deletes, and says so in its next push, up to a quarter of
+  // a second on. Until then the numbers still showed a test going of a flow the page no longer had,
+  // and the page listed it under Tests with no tab, with a Stop that asked the server to stop what
+  // was gone. The numbers of a flow the reader deleted are not numbers of anything.
+  it('does not list the test of a flow it deleted under Tests with no tab, while the numbers still show it', async () => {
+    const { deletes } = keeping([watch, sim]);
+    render(<FlowsPage />);
+    await screen.findByText('Boiler watch', { selector: 'h3' });
+    act(() => useFlowStatusStore.getState().setStatus(testRun('watch', 'running')));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete flow' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+    await waitFor(() => expect(screen.queryByRole('tab', { name: /^Boiler watch/ })).not.toBeInTheDocument());
+    await turns();
+
+    expect(deletes).toEqual(['watch']);
+    expect(screen.queryByRole('region', { name: 'Tests with no tab' })).toBeNull();
   });
 
   // The answer is about the flow that was deleted, whichever tab the reader has gone on to since.
