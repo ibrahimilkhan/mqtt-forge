@@ -26,6 +26,11 @@
   pointer-events: none;
 }
 
+/* The stack takes the keyboard only when the last notice went with it and the reader came into the
+   stack from nothing still in the page (see Notices): a strip with nothing in it, which is not a
+   control, and is not ringed as one. */
+.stack:focus { outline: none; }
+
 /* A plate of its own, dressed as the sound prompt is: the surface, the hairline, the plate's corner
    and the same shadow, so the two read as one family of things the console says on its own account.
 

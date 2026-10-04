@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NOTICE_MS, useNoticeStore } from '../../stores/noticeStore';
@@ -61,26 +61,35 @@ describe('notices', () => {
     render(<Notices />);
     act(() => useNoticeStore.getState().add([notice()]));
 
-    await userEvent.click(screen.getByRole('button', { name: 'Close notice from Boiler watch' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Close notice from Boiler watch: k1 is hot' }));
 
     expect(screen.queryByText('k1 is hot')).not.toBeInTheDocument();
   });
 
   // Four stand at once, and four buttons that all say Close are four a reader has to tell apart by
-  // where they happen to be. Each says whose notice it closes, and closes that one only.
-  it('names each Close for the flow that said the notice, and closes that notice alone', async () => {
+  // where they happen to be. Each says whose notice it closes, and what it says — one flow says one
+  // notice for each sensor that runs hot — and closes that one only.
+  it('names each Close for the flow that said the notice and for what it says, and closes that notice alone', async () => {
     render(<Notices />);
     act(() =>
       useNoticeStore.getState().add([
         notice({ text: 'k1 is hot' }),
+        notice({ text: 'k2 is hot' }),
         notice({ flowId: 'kiln', flowName: 'Kiln line', text: 'the door is open' }),
       ]),
     );
 
-    await userEvent.click(screen.getByRole('button', { name: 'Close notice from Kiln line' }));
+    expect(screen.getAllByRole('button').map((close) => close.getAttribute('aria-label'))).toEqual([
+      'Close notice from Kiln line: the door is open',
+      'Close notice from Boiler watch: k2 is hot',
+      'Close notice from Boiler watch: k1 is hot',
+    ]);
 
-    expect(screen.queryByText('the door is open')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Close notice from Boiler watch: k2 is hot' }));
+
+    expect(screen.queryByText('k2 is hot')).not.toBeInTheDocument();
     expect(screen.getByText('k1 is hot')).toBeInTheDocument();
+    expect(screen.getByText('the door is open')).toBeInTheDocument();
   });
 
   // A screen reader goes through a notice in the order it is written: what it says, and then the
@@ -90,7 +99,7 @@ describe('notices', () => {
     act(() => useNoticeStore.getState().add([notice()]));
 
     const says = screen.getByText('k1 is hot');
-    const close = screen.getByRole('button', { name: 'Close notice from Boiler watch' });
+    const close = screen.getByRole('button', { name: 'Close notice from Boiler watch: k1 is hot' });
 
     expect(says.compareDocumentPosition(close) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
@@ -141,5 +150,97 @@ describe('notices', () => {
     render(<Notices />);
 
     expect(stack()).toHaveAttribute('aria-live', 'polite');
+  });
+
+  // The word is the first thing a screen reader says of a notice, and the first thing in its card.
+  it('says the level before anything else in the card', () => {
+    render(<Notices />);
+    act(() => useNoticeStore.getState().add([notice({ test: true })]));
+
+    expect(stack().children[0].textContent).toMatch(/^critical/);
+  });
+});
+
+/**
+ * A notice is held while the reader is at it, with the pointer or the keyboard: one that went from
+ * under the pointer, or took the keyboard with it, was gone before it was read, and left the reader
+ * at the top of the document.
+ */
+describe('a notice the reader is at', () => {
+  beforeEach(() => useNoticeStore.setState(useNoticeStore.getInitialState()));
+  afterEach(() => vi.useRealTimers());
+
+  const close = (text: string) => screen.getByRole('button', { name: `Close notice from Boiler watch: ${text}` });
+
+  it('stays while the keyboard is in it, and goes eight seconds after the keyboard leaves', () => {
+    vi.useFakeTimers();
+    render(
+      <>
+        <button type="button">Elsewhere</button>
+        <Notices />
+      </>,
+    );
+    act(() => useNoticeStore.getState().add([notice()]));
+
+    act(() => close('k1 is hot').focus());
+    act(() => vi.advanceTimersByTime(NOTICE_MS));
+    expect(screen.getByText('k1 is hot')).toBeInTheDocument();
+
+    act(() => screen.getByRole('button', { name: 'Elsewhere' }).focus());
+    act(() => vi.advanceTimersByTime(NOTICE_MS - 1));
+    expect(screen.getByText('k1 is hot')).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(1));
+    expect(screen.queryByText('k1 is hot')).not.toBeInTheDocument();
+  });
+
+  it('stays while the pointer is on it, and goes eight seconds after the pointer leaves', () => {
+    vi.useFakeTimers();
+    render(<Notices />);
+    act(() => useNoticeStore.getState().add([notice()]));
+    const card = stack().children[0];
+
+    fireEvent.mouseEnter(card);
+    act(() => vi.advanceTimersByTime(NOTICE_MS));
+    expect(screen.getByText('k1 is hot')).toBeInTheDocument();
+
+    fireEvent.mouseLeave(card);
+    act(() => vi.advanceTimersByTime(NOTICE_MS - 1));
+    expect(screen.getByText('k1 is hot')).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(1));
+    expect(screen.queryByText('k1 is hot')).not.toBeInTheDocument();
+  });
+
+  it('puts the keyboard on the next Close when a notice is closed from it, and back where it came from when the last goes', async () => {
+    render(
+      <>
+        <button type="button">Elsewhere</button>
+        <Notices />
+      </>,
+    );
+    act(() => useNoticeStore.getState().add([notice({ text: 'k1 is hot' }), notice({ text: 'k2 is hot' })]));
+    screen.getByRole('button', { name: 'Elsewhere' }).focus();
+
+    await userEvent.tab();
+    expect(document.activeElement).toBe(close('k2 is hot'));
+    await userEvent.keyboard('{Enter}');
+
+    expect(screen.queryByText('k2 is hot')).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(close('k1 is hot'));
+    await userEvent.keyboard('{Enter}');
+
+    expect(screen.queryByText('k1 is hot')).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Elsewhere' }));
+  });
+
+  // A fifth notice pushes the one that has stood longest out of the stack, keyboard or none.
+  it('puts the keyboard on the Close before it when a new notice pushes out the one it was on', () => {
+    render(<Notices />);
+    act(() => useNoticeStore.getState().add(['k1', 'k2', 'k3', 'k4'].map((sensor) => notice({ text: `${sensor} is hot` }))));
+    act(() => close('k1 is hot').focus());
+
+    act(() => useNoticeStore.getState().add([notice({ text: 'k5 is hot' })]));
+
+    expect(screen.queryByText('k1 is hot')).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(close('k2 is hot'));
   });
 });
