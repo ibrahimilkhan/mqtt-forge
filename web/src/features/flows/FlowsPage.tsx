@@ -397,7 +397,9 @@ function Page() {
               running={running}
               testing={testing}
               refused={refused}
-              busy={save.isPending || test.start.isPending}
+              busy={save.isPending || test.start.isPending || test.stop.isPending}
+              starting={test.starting}
+              stopping={test.stopping}
               onNew={() => {
                 const flow = emptyFlow(nextName(flows));
                 store.put(flow);
@@ -407,8 +409,8 @@ function Page() {
               // under the sentence — where the reader is looking when they choose, and the one place
               // both answers are — so a second Discard up here would only ask the same question twice.
               onDiscard={changed.has(shown.id) && byId.has(shown.id) ? () => store.discard(shown.id) : undefined}
-              onTest={() => test.start.mutate(shown)}
-              onStop={() => test.stop.mutate(shown.id)}
+              onTest={() => test.test(shown)}
+              onStop={() => test.halt(shown.id)}
               onActivate={() => save.mutate({ flow: shown, kind: 'activate' })}
               // Offered for a draft held back too, off, where it says why: a flow that is on with
               // changes the reader cannot send yet is not one with nothing to send.

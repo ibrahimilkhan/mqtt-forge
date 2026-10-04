@@ -55,8 +55,12 @@ type Props = {
    * file.
    */
   refused: ReadonlySet<string>;
-  /** A save or a test start is out. */
+  /** A save, a test start or a stop is out. */
   busy: boolean;
+  /** Flows whose Test is held off: pressed, and no push since the server took it shows the test yet (see useTest). */
+  starting: ReadonlySet<string>;
+  /** Flows whose Stop is held off: pressed, and the numbers still show the test going (see useTest). */
+  stopping: ReadonlySet<string>;
   onNew: () => void;
   /**
    * Puts the flow on screen back to the copy the server has. Left out when there is nothing to go
@@ -158,6 +162,8 @@ export function Toolbar(props: Props) {
     testing,
     refused,
     busy,
+    starting,
+    stopping,
     onNew,
     onDiscard,
     onTest,
@@ -248,12 +254,13 @@ export function Toolbar(props: Props) {
         </button>
       </div>
 
-      {/* Every button from here on is off while a save or a test start is out, but said rather than
-          set: a button switched off in the hand that pressed it loses the focus in some browsers,
-          and a save that ends in a refusal leaves it on again with the reader still on it. Discard
-          too: pressed while an Update is out, it would be undone by the answer, which puts the flow
-          the server kept on screen. Activate and Update are off the same way for a draft held back,
-          and say why where the pointer and a screen reader find it. */}
+      {/* Every button from here on is off while a save, a test start or a stop is out, but said
+          rather than set: a button switched off in the hand that pressed it loses the focus in some
+          browsers, and a save that ends in a refusal leaves it on again with the reader still on it.
+          Discard too: pressed while an Update is out, it would be undone by the answer, which puts
+          the flow the server kept on screen. Activate and Update are off the same way for a draft
+          held back, and say why where the pointer and a screen reader find it; and Test and Stop
+          for the flow whose press of them the numbers have not caught up with yet (see useTest). */}
       {onDiscard && (
         <button
           ref={going}
@@ -277,8 +284,8 @@ export function Toolbar(props: Props) {
           ref={going}
           type="button"
           className="ghost"
-          aria-disabled={busy || undefined}
-          onClick={() => !busy && onStop()}
+          aria-disabled={busy || stopping.has(current) || undefined}
+          onClick={() => !busy && !stopping.has(current) && onStop()}
         >
           ■ Stop
         </button>
@@ -288,8 +295,8 @@ export function Toolbar(props: Props) {
           ref={going}
           type="button"
           className="ghost"
-          aria-disabled={busy || undefined}
-          onClick={() => !busy && onTest()}
+          aria-disabled={busy || starting.has(current) || undefined}
+          onClick={() => !busy && !starting.has(current) && onTest()}
         >
           ▶ Test
         </button>

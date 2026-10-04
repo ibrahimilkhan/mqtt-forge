@@ -947,12 +947,21 @@ describe('where the keyboard goes', () => {
   // stop it again.
   it('goes to the tab when Test becomes Stop', async () => {
     keeping([watch]);
-    server.use(http.post('/api/flows/:id/test', () => new HttpResponse(null, { status: 202 })));
+    let started = false;
+    server.use(
+      http.post('/api/flows/:id/test', () => {
+        started = true;
+        return new HttpResponse(null, { status: 202 });
+      }),
+    );
     render(<FlowsPage />);
     const test = () => screen.getByRole('button', { name: '▶ Test' });
 
     await userEvent.click(await screen.findByRole('button', { name: '▶ Test' }));
-    await waitFor(() => expect(test()).not.toHaveAttribute('aria-disabled'));
+    await waitFor(() => expect(started).toBe(true));
+    await turns();
+    // Held off until the numbers show the test, with the keyboard still on it.
+    expect(test()).toHaveAttribute('aria-disabled', 'true');
     expect(document.activeElement).toBe(test());
 
     act(() => useFlowStatusStore.getState().setStatus(testRun('watch', 'running')));
@@ -1614,6 +1623,150 @@ describe('test and activate', () => {
     const said = 'The test did not stop. The server is starting.';
     expect(await screen.findByText(said)).toBeInTheDocument();
     expect(outcome(said)).not.toBeNull();
+    // Nothing was stopped, so Stop can be pressed again.
+    expect(screen.getByRole('button', { name: '■ Stop' })).not.toHaveAttribute('aria-disabled');
+  });
+
+  /**
+   * The server's tests of the watch, as the real one keeps them: a test it is sent runs, and answers
+   * 202; one it is asked to stop is stopped and kept, counters and all, while it is going, and taken
+   * away once it is not, and either answers 204; with none, it answers 404. The console hears of it
+   * only when `push` says what the server has, as the hub does four times a second.
+   */
+  function testsOfTheWatch() {
+    let test: FlowRunStatusDto | null = null;
+    const sent = { tests: 0, stops: 0 };
+    const going = () =>
+      runOf('watch', { kind: 'test', state: 'running', nodes: [{ id: 'in', count: 3, outs: { out: 3 }, errors: 0, note: null, standing: [] }] });
+
+    server.use(
+      http.post('/api/flows/:id/test', () => {
+        sent.tests++;
+        test = going();
+        return new HttpResponse(null, { status: 202 });
+      }),
+      http.delete('/api/flows/:id/test', () => {
+        sent.stops++;
+        if (test === null)
+          return HttpResponse.json(
+            { title: 'No such test', detail: 'There is no test of that flow.', reason: 'testUnknown' },
+            { status: 404, headers: { 'Content-Type': 'application/problem+json' } },
+          );
+        test = test.state === 'running' || test.state === 'waiting' ? { ...test, state: 'stopped' } : null;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+
+    return {
+      sent,
+      /** A test of the watch going on the server already, the page told of it. */
+      going: () => {
+        test = going();
+        act(() => useFlowStatusStore.getState().setStatus({ runs: [test!] }));
+      },
+      push: () => act(() => useFlowStatusStore.getState().setStatus({ runs: test ? [test] : [] })),
+    };
+  }
+
+  // The server stops a test that is going and keeps it, and throws one that is not going away: a
+  // second press after the first had stopped it took "Test · stopped" and its counters with it.
+  it('sends one stop for a double click of Stop', async () => {
+    const server = testsOfTheWatch();
+    renderPage([{ ...watch, enabled: false }]);
+    await screen.findByRole('tabpanel');
+    server.going();
+
+    const stop = screen.getByRole('button', { name: '■ Stop' });
+    fireEvent.click(stop);
+    fireEvent.click(stop);
+    await waitFor(() => expect(server.sent.stops).toBe(1));
+    await turns();
+
+    expect(server.sent.stops).toBe(1);
+  });
+
+  it('keeps a stopped test, its counters and Test on screen when Stop was pressed twice, with no active run', async () => {
+    const server = testsOfTheWatch();
+    renderPage([{ ...watch, enabled: false }]);
+    await screen.findByRole('tabpanel');
+    server.going();
+
+    const stop = screen.getByRole('button', { name: '■ Stop' });
+    fireEvent.click(stop);
+    fireEvent.click(stop);
+    await waitFor(() => expect(server.sent.stops).toBeGreaterThan(0));
+    await turns();
+    server.push();
+
+    expect(screen.getByText('Test · stopped')).toBeInTheDocument();
+    expect(screen.getByText('3 read')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '▶ Test' })).not.toHaveAttribute('aria-disabled');
+  });
+
+  // The server has stopped the test, and no push has said so yet: Stop is still on screen, and is not
+  // to be pressed. It goes once the push says the test has stopped, and Test is there to press.
+  it('sends nothing for Stop pressed between the answer and the push that says the test stopped, and frees it after', async () => {
+    const server = testsOfTheWatch();
+    renderPage([{ ...watch, enabled: false }]);
+    await screen.findByRole('tabpanel');
+    server.going();
+
+    fireEvent.click(screen.getByRole('button', { name: '■ Stop' }));
+    await waitFor(() => expect(server.sent.stops).toBe(1));
+    await turns();
+    const stop = screen.getByRole('button', { name: '■ Stop' });
+    expect(stop).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(stop);
+    await turns();
+    expect(server.sent.stops).toBe(1);
+
+    server.push();
+
+    expect(screen.queryByRole('button', { name: '■ Stop' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '▶ Test' })).not.toHaveAttribute('aria-disabled');
+    expect(screen.getByText('Test · stopped')).toBeInTheDocument();
+  });
+
+  // Pressed again before a push shows the test, Test started it over, and its alarms, notices and
+  // tones came again.
+  it('sends nothing for a second Test pressed before the push that shows the first', async () => {
+    const server = testsOfTheWatch();
+    renderPage([{ ...watch, enabled: false }]);
+
+    fireEvent.click(await screen.findByRole('button', { name: '▶ Test' }));
+    await waitFor(() => expect(server.sent.tests).toBe(1));
+    await turns();
+    const test = screen.getByRole('button', { name: '▶ Test' });
+    expect(test).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(test);
+    await turns();
+    expect(server.sent.tests).toBe(1);
+
+    server.push();
+
+    expect(screen.getByRole('button', { name: '■ Stop' })).not.toHaveAttribute('aria-disabled');
+  });
+
+  // A push that never comes — the hub gone away — must not hold Stop off for good.
+  it('frees Stop three seconds after the press when no push says the test stopped', async () => {
+    const server = testsOfTheWatch();
+    renderPage([{ ...watch, enabled: false }]);
+    await screen.findByRole('tabpanel');
+    server.going();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
+    try {
+      fireEvent.click(screen.getByRole('button', { name: '■ Stop' }));
+      await waitFor(() => expect(server.sent.stops).toBe(1));
+      await turns();
+      expect(screen.getByRole('button', { name: '■ Stop' })).toHaveAttribute('aria-disabled', 'true');
+
+      act(() => vi.advanceTimersByTime(3_000));
+
+      expect(screen.getByRole('button', { name: '■ Stop' })).not.toHaveAttribute('aria-disabled');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('marks what the server refused in a test, and says the test did not start', async () => {
