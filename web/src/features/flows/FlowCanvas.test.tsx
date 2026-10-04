@@ -1625,6 +1625,58 @@ describe('a wire drawn round', () => {
     }
   });
 
+  // A pick, a node's or a wire's, changes nothing the routes are made from, and nor does a setting
+  // typed into a node's pane; but each hands React Flow new objects, and the routes were worked out
+  // again whenever it had any: twice for a pick, and every wire drawn round drawn again — fifty to
+  // eighty milliseconds a click in a draft of two hundred nodes.
+  it('works out no route again for a pick or a setting typed, and draws again only the wire whose pick changed', async () => {
+    const flow = looping({ x: 200, y: 180 });
+    // The End down and to the left of the For: its done goes under the For to it, drawn round too.
+    const both = { ...flow, nodes: flow.nodes.map((node) => (node.id === 'end' ? { ...node, x: -200, y: 400 } : node)) };
+    const drawn = vi.spyOn(backWires, 'backPath');
+    const planned = vi.spyOn(backWires, 'routes');
+    drawPage(both);
+    await pathOf('e3');
+    await pathOf('e4');
+    const settled = async () => {
+      for (let turn = 0; turn < 5; turn++) await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    };
+    await settled();
+    /** The wires drawn again, by the x of the way out each starts at: the Publish's, 401, is e3's. */
+    const redrawn = () => drawn.mock.calls.map(([wire]) => wire.source.x);
+
+    try {
+      drawn.mockClear();
+      planned.mockClear();
+      fireEvent.click(document.querySelector('.react-flow__edge[data-id="e3"]')!);
+      await settled();
+      expect(document.querySelector('.react-flow__edge[data-id="e3"] .react-flow__edge-path')).toHaveAttribute('data-selected');
+      expect(planned).not.toHaveBeenCalled();
+      expect(redrawn().length).toBeGreaterThan(0);
+      expect(redrawn().every((x) => x === 401)).toBe(true);
+
+      drawn.mockClear();
+      act(() => useFlowDraftStore.getState().select('say'));
+      await settled();
+      expect(document.querySelector('.react-flow__node[data-id="say"]')).toHaveClass('selected');
+      expect(planned).not.toHaveBeenCalled();
+      expect(redrawn().every((x) => x === 401)).toBe(true);
+
+      drawn.mockClear();
+      const send = both.nodes.find((node) => node.id === 'send')!;
+      act(() =>
+        useFlowDraftStore.getState().edit(both, (current) => setConfig(current, 'send', { ...send.config, topic: 'plant/k2/cmd' })),
+      );
+      await settled();
+      expect(await screen.findByText('plant/k2/cmd')).toBeInTheDocument();
+      expect(planned).not.toHaveBeenCalled();
+      expect(drawn).not.toHaveBeenCalled();
+    } finally {
+      drawn.mockRestore();
+      planned.mockRestore();
+    }
+  });
+
   // A drag moves its node a frame at a time, each frame a new plan. Worked out whole on every frame, a
   // node dragged past its neighbours in a flow of a hundred nodes or more held the page a tenth of a
   // second a frame. So each frame works out the dragged node's own wires, and every other wire keeps

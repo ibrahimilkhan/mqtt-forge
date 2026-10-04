@@ -1221,10 +1221,15 @@ const routeFrom = (key: string): Route =>
  * (routes, in backWires.ts), over the nodes and their ports as React Flow has measured them, and each
  * wire reads its own.
  *
- * Every wire asks whenever React Flow's store changes: a frame of a pan or of a drag, a node measured.
- * The routes are worked out once for each state of the store — the first wire to ask works them out,
- * the rest read what it found — and from scratch only when a node or a wire changed, which React Flow
- * tells by handing over a new object for it. A pan moves no node, and finds them all as they were.
+ * Every wire asks whenever React Flow's store changes: a frame of a pan or of a drag, a node measured,
+ * a pick. The routes are worked out once for each state of the store — the first wire to ask works them
+ * out, the rest read what it found — and from scratch only when something they are made from changed:
+ * where a node stands and how big it is measured, the names beside its ports, where each wire's ends
+ * are, which nodes are dragged. A pan moves no node, and finds them all as the objects they were. A
+ * pick, or a setting typed into a node's pane, hands React Flow new objects for what it changed, made
+ * from the same: compared by object, each worked every route out again — twice for a pick, every wire
+ * drawn round drawn again with it, fifty to eighty milliseconds a click in a draft of two hundred
+ * nodes — and compared by what the routes are made from, neither works out any.
  *
  * But not while a node is dragged (it is marked so, see onNodesChange): then only its own wires are
  * worked out on each frame, round the routes every other wire had when the drag began, which they keep
@@ -1234,6 +1239,10 @@ const routeFrom = (key: string): Route =>
 type Plan = {
   nodes: readonly InternalNode[];
   edges: readonly Edge[];
+  /** What the routes were made from: the nodes as they stand, the wires' ends, and the nodes dragged. */
+  placed: readonly Placed[];
+  legs: readonly Leg[];
+  moving: ReadonlySet<string>;
   routes: ReadonlyMap<string, Route>;
   /** The routes of the last plan made with nothing dragged: the ones a drag holds the other wires to. */
   rest: ReadonlyMap<string, Route>;
@@ -1255,31 +1264,86 @@ function routesIn(state: ReactFlowState): ReadonlyMap<string, Route> {
 
   const nodes = [...state.nodeLookup.values()];
   const last = planned.get(state.nodeLookup);
-  const same =
+  // The very objects of the last plan: nothing can have moved.
+  const untouched =
     last !== undefined &&
     last.edges === state.edges &&
     last.nodes.length === nodes.length &&
     last.nodes.every((node, at) => node === nodes[at]);
 
-  if (same) {
+  if (untouched) {
+    asked.set(state, last.routes);
+    return last.routes;
+  }
+
+  const placed = placedOf(nodes);
+  const legs = legsOf(state);
+  const moving = new Set(nodes.flatMap((node) => (node.dragging ? [node.id] : [])));
+
+  // Other objects made from the same: a pick, a setting typed. The plan stands, kept against them.
+  if (last !== undefined && sameSet(last.moving, moving) && samePlaced(last.placed, placed) && sameLegs(last.legs, legs)) {
+    planned.set(state.nodeLookup, { ...last, nodes, edges: state.edges });
     asked.set(state, last.routes);
     return last.routes;
   }
 
   const traces = last?.traces ?? new Traces();
-  const moving = new Set(nodes.flatMap((node) => (node.dragging ? [node.id] : [])));
   // A frame of the drag the last plan was made for, when the same nodes are dragged; or the first of one.
   const was = last?.drag;
-  const going = was !== undefined && was.moving.size === moving.size && [...moving].every((id) => was.moving.has(id));
+  const going = was !== undefined && sameSet(was.moving, moving);
   let drag: Drag | undefined;
   if (going) drag = was;
   else if (moving.size > 0 && last !== undefined) drag = { moving, held: last.rest, spent: new Set() };
-  const found = routes(placedOf(nodes), legsOf(state), { traces, drag });
-  planned.set(state.nodeLookup, { nodes, edges: state.edges, routes: found, rest: drag ? drag.held : found, drag, traces });
+  const found = routes(placed, legs, { traces, drag });
+  planned.set(state.nodeLookup, {
+    nodes,
+    edges: state.edges,
+    placed,
+    legs,
+    moving,
+    routes: found,
+    rest: drag ? drag.held : found,
+    drag,
+    traces,
+  });
 
   asked.set(state, found);
   return found;
 }
+
+const sameSet = (a: ReadonlySet<string>, b: ReadonlySet<string>) => a.size === b.size && [...a].every((one) => b.has(one));
+
+const sameBox = (a: Box, b: Box) => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+
+/** Whether two lists of nodes stand alike for the routes: the same nodes, in the same boxes, with the same names round them. */
+const samePlaced = (a: readonly Placed[], b: readonly Placed[]) =>
+  a.length === b.length &&
+  a.every((one, at) => {
+    const other = b[at];
+    return (
+      one.id === other.id &&
+      sameBox(one.box, other.box) &&
+      one.names.length === other.names.length &&
+      one.names.every((name, index) => sameBox(name, other.names[index]))
+    );
+  });
+
+const sameEnd = (a: End, b: End) => a.x === b.x && a.y === b.y && a.side === b.side;
+
+/** Whether two lists of wires run alike for the routes: the same wires, between the same nodes, from and to the same places. */
+const sameLegs = (a: readonly Leg[], b: readonly Leg[]) =>
+  a.length === b.length &&
+  a.every((one, at) => {
+    const other = b[at];
+    return (
+      one.id === other.id &&
+      one.from === other.from &&
+      one.to === other.to &&
+      one.toPort === other.toPort &&
+      sameEnd(one.source, other.source) &&
+      sameEnd(one.target, other.target)
+    );
+  });
 
 /** Each node React Flow has measured, where it stands, as big as it is drawn, and the names of its ports round it. */
 function placedOf(nodes: readonly InternalNode[]): Placed[] {
