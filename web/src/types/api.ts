@@ -515,7 +515,7 @@ export type FlowsDto = {
 
 export type FlowSavedDto = { flow: FlowDto };
 
-/** A flow alarm that is up, as its Alarm node's inspector lists it. */
+/** A flow alarm that is up, as the pane of the Raise alarm node that raised it lists it. */
 export type FlowStandingDto = { topic: string; firedAt: string; reason: string; count: number };
 
 /**
@@ -556,7 +556,10 @@ export type FlowRunStatusDto = {
   nodes: FlowNodeStatusDto[];
 };
 
-/** Every run there is. A flow with no run in it is neither switched on nor being tested. */
+/**
+ * Every run there is. A flow with no run in it is not being tested, and is switched off — or switched
+ * on, but saved as the server can no longer compile it, which runs nothing either.
+ */
 export type FlowStatusDto = { runs: FlowRunStatusDto[] };
 
 /** A line for the debug strip: what a Debug node printed, or what went wrong — and whether a test did. */

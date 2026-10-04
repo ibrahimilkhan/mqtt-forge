@@ -83,12 +83,13 @@
    label with a space in it — broke over two lines, a button half again as tall as those beside it. */
 .toolbar > button { flex: none; white-space: nowrap; }
 
-/* The buttons about the flow on screen, off while a save or a test start is out — and Activate and
-   Update while its draft is held back: off to the eye and to the hand, but still buttons that can
-   hold the focus they were pressed with — see the markup. Drawn the way global.css draws a disabled
-   button, with the hover that global.css only holds back from a real one held back here too: a
-   filled button keeps its fill, and a ghost its bare ground. The pointer says which: a wait that
-   ends by itself, or a choice the reader has to make first. */
+/* The buttons about the flow on screen, off while a save, a test start or a stop is out — Test and
+   Stop while the numbers have not caught up with a press of them, and Activate and Update while its
+   draft is held back: off to the eye and to the hand, but still buttons that can hold the focus they
+   were pressed with — see the markup. Drawn the way global.css draws a disabled button, with the
+   hover that global.css only holds back from a real one held back here too: a filled button keeps
+   its fill, and a ghost its bare ground. The pointer says which: a wait that ends by itself, or a
+   choice the reader has to make first. */
 .toolbar > button[aria-disabled='true'] { opacity: 0.35; cursor: progress; }
 .toolbar > button[data-held] { cursor: not-allowed; }
 .activate[aria-disabled='true']:hover { background: var(--tone); border-color: var(--tone); }

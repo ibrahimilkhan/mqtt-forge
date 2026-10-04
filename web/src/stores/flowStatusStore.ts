@@ -30,7 +30,10 @@ export function shownRun(runs: FlowRuns | undefined): FlowRunStatusDto | undefin
 }
 
 export type FlowStatusState = {
-  /** Every flow's runs, by flow id. A flow missing here is neither switched on nor being tested. */
+  /**
+   * Every flow's runs, by flow id. A flow missing here is not being tested, and is switched off — or
+   * switched on, but saved as the server can no longer compile it, which runs nothing either.
+   */
   runs: Record<string, FlowRuns>;
   /** The nodes of the run each flow's canvas shows (see shownRun), by nodeKey, so a node subscribes to one entry. */
   nodes: Record<string, FlowNodeStatusDto>;

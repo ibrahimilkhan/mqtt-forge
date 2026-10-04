@@ -121,8 +121,8 @@ function NoticeCard({ notice, onTakeTheKeyboard }: { notice: Notice; onTakeTheKe
         {/* The level in a word, and first. The edge's colour is the second signal and this is the
             first: a screen reader has no colour to read, forced colours takes the edge's away, and
             a reader who cannot tell the three apart has neither. The raw word, as the rules table
-            prints it and as a flow's own nodes call the levels, so one level is one word wherever
-            the console says it. */}
+            prints it and as the Notify node that said this calls its level — not the alarm wall's
+            "warning", which is the wall's own word for an alarm standing. */}
         <span className={styles.level}>{notice.level}</span>
         <span className={styles.flow}>{notice.flowName}</span>
         {notice.test && <span className={styles.test}>test</span>}

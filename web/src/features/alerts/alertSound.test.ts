@@ -118,8 +118,9 @@ describe('the tone', () => {
 
   // A Sound node's tones come in batches the way alerts do, and a room cannot tell two tones
   // played over each other apart: one tone, at the worst level in the batch, and none of the others.
-  // The loudest is neither first nor last in this batch, as in the one above: with it at either
-  // end, picking the level by its place would pass for picking the loudest.
+  // The loudest is neither first nor last in this batch, as in the batch of alerts that sounds once,
+  // two cases up: with it at either end, picking the level by its place would pass for picking the
+  // loudest.
   it('plays a batch of levels as one tone at the loudest', async () => {
     const audio = fakeAudio();
     await turnSoundOn();

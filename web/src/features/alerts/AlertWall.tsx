@@ -41,7 +41,7 @@ export function AlertWall({ open }: { open: (id: PanelId) => void }) {
 
   // A rule's alarm opens the Alerts panel, where its rule is. A flow alarm has no rule there — the
   // panel lists rules, not alarms, and would say nothing about it — so its row opens the Flows
-  // page on the flow and the Alarm node it came from, whose pane lists what the node holds up.
+  // page on the flow and the Raise alarm node it came from, whose pane lists what the node holds up.
   const opening = (alert: AlertDto) => {
     if (!isFlowAlarm(alert.ruleId)) return open('alerts');
 
