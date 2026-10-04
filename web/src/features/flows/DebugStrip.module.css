@@ -53,6 +53,18 @@
 .line[data-kind='error'] { color: var(--fault); }
 
 .time { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* A line a test printed, marked before its node: ruled round as a tag, so it reads as a word about
+   the line rather than as part of what was printed, and in blue, apart from the line's own ink and
+   from the red of an error line. */
+.test {
+  flex: none;
+  align-self: center;
+  padding: 0 4px;
+  border: 1px solid var(--signal);
+  border-radius: var(--r-control);
+  color: var(--signal);
+  font-size: var(--t-nano);
+}
 .node { flex: none; color: var(--muted); }
 /* The word on an error line, in the line's own colour and set as a tag, before what went wrong. */
 .error { flex: none; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }

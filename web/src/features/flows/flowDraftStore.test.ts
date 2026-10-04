@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyFlow, fingerprint } from './flowDocument';
+import { exampleFlows } from './examples';
 import { createFlowDraftStore, DRAFT_PREFIX, useFlowDraftStore } from './flowDraftStore';
 import { forgetDrafts } from './canvasTestbed';
 
@@ -53,12 +54,24 @@ describe('flow drafts', () => {
     expect(reloaded.getState().current).toBe(flow.id);
   });
 
+  // Every flow the page makes itself is a draft like any other, and is read back by the same check of
+  // whether it is whole: one made without something that check asks for would be on the page until the
+  // first reload, and gone after it.
+  it('keeps the flows the page makes itself, a new flow and the examples, whole through a reload', async () => {
+    const made = [emptyFlow('New'), ...exampleFlows()];
+    for (const flow of made) useFlowDraftStore.getState().put(flow);
+
+    const reloaded = await reopened();
+
+    expect(reloaded.getState().drafts).toEqual(Object.fromEntries(made.map((flow) => [flow.id, flow])));
+  });
+
   it('forgets a draft, its refusal and its selection on discard', () => {
     const flow = emptyFlow('Doomed');
     const store = useFlowDraftStore.getState();
     store.put(flow);
     store.show(flow.id);
-    store.refuse(flow.id, { 'node:n1': ['Pick a test.'] });
+    store.refuse(flow, true, { 'node:n1': ['Pick a test.'] });
     store.select('n1');
 
     useFlowDraftStore.getState().discard(flow.id);
@@ -66,6 +79,18 @@ describe('flow drafts', () => {
     expect(useFlowDraftStore.getState().drafts[flow.id]).toBeUndefined();
     expect(useFlowDraftStore.getState().refusals[flow.id]).toBeUndefined();
     expect(useFlowDraftStore.getState().selected).toBeNull();
+  });
+
+  it('forgets the wire picked when the flow on screen is discarded', () => {
+    const flow = emptyFlow('Doomed');
+    const store = useFlowDraftStore.getState();
+    store.put(flow);
+    store.show(flow.id);
+    store.pickWire(flow.edges[0].id);
+
+    useFlowDraftStore.getState().discard(flow.id);
+
+    expect(useFlowDraftStore.getState().wire).toBeNull();
   });
 
   it('keeps the selection when the flow discarded is not the one on screen', () => {
@@ -83,11 +108,25 @@ describe('flow drafts', () => {
     expect(useFlowDraftStore.getState().selected).toBe('n1');
   });
 
+  it('keeps the wire picked when the flow discarded is not the one on screen', () => {
+    const shown = emptyFlow('On screen');
+    const other = emptyFlow('Elsewhere');
+    const store = useFlowDraftStore.getState();
+    store.put(shown);
+    store.put(other);
+    store.show(shown.id);
+    store.pickWire(shown.edges[0].id);
+
+    useFlowDraftStore.getState().discard(other.id);
+
+    expect(useFlowDraftStore.getState().wire).toBe(shown.edges[0].id);
+  });
+
   it('drops the draft and the refusal once the flow is deployed, and keeps what is on screen', () => {
     const flow = emptyFlow('Shipped');
     useFlowDraftStore.getState().put(flow);
     useFlowDraftStore.getState().show(flow.id);
-    useFlowDraftStore.getState().refuse(flow.id, { flow: ['Name the flow.'] });
+    useFlowDraftStore.getState().refuse(flow, true, { flow: ['Name the flow.'] });
 
     useFlowDraftStore.getState().settle([flow.id]);
 
@@ -96,14 +135,34 @@ describe('flow drafts', () => {
     expect(useFlowDraftStore.getState().current).toBe(flow.id);
   });
 
+  // A test, an Activate and an Update each file what the server refused through this one action, so
+  // the rule of whether there is still anything for the answer to be about is said once: a draft
+  // let go while the request was out has nothing left, and the server's own copy of a flow sent
+  // with no draft is there whatever the drafts are.
+  it('files a refusal of a draft only while the draft is there, and one of the server\'s copy whatever the drafts', () => {
+    const drafted = emptyFlow('Drafted');
+    const letGo = emptyFlow('Let go');
+    const copy = emptyFlow('Only on the server');
+    const store = useFlowDraftStore.getState();
+    store.put(drafted);
+    store.put(letGo);
+    store.discard(letGo.id);
+
+    store.refuse(drafted, true, { flow: ['Name the flow.'] });
+    store.refuse(letGo, true, { flow: ['Name the flow.'] });
+    store.refuse(copy, false, { flow: ['Name the flow.'] });
+
+    expect(Object.keys(useFlowDraftStore.getState().refusals)).toEqual([drafted.id, copy.id]);
+  });
+
   it('lets the refusals of some flows lapse, and keeps the drafts and the other refusals', () => {
     const back = emptyFlow('Back');
     const still = emptyFlow('Still refused');
     const store = useFlowDraftStore.getState();
     store.put(back);
     store.put(still);
-    store.refuse(back.id, { flow: ['Name the flow.'] });
-    store.refuse(still.id, { flow: ['Name the flow.'] });
+    store.refuse(back, true, { flow: ['Name the flow.'] });
+    store.refuse(still, true, { flow: ['Name the flow.'] });
 
     useFlowDraftStore.getState().lapse([back.id]);
 
@@ -116,6 +175,20 @@ describe('flow drafts', () => {
     useFlowDraftStore.getState().show('f2');
 
     expect(useFlowDraftStore.getState().selected).toBeNull();
+  });
+
+  it('keeps the one wire picked until a node is picked or another flow is shown', () => {
+    const store = useFlowDraftStore.getState();
+
+    store.pickWire('e1');
+    expect(useFlowDraftStore.getState().wire).toBe('e1');
+
+    store.select('n1');
+    expect(useFlowDraftStore.getState().wire).toBeNull();
+
+    store.pickWire('e1');
+    store.show('other');
+    expect(useFlowDraftStore.getState().wire).toBeNull();
   });
 
   // The server sends no version of a flow, so a draft remembers a fingerprint of the copy it was
@@ -147,7 +220,7 @@ describe('flow drafts', () => {
     store.put(other);
     store.show(back.id);
     store.select('n1');
-    store.refuse(back.id, { flow: ['Name the flow.'] });
+    store.refuse(back, true, { flow: ['Name the flow.'] });
 
     useFlowDraftStore.getState().settle([back.id]);
 
@@ -221,6 +294,36 @@ describe('what storage keeps', () => {
     expect(localStorage.getItem(`${DRAFT_PREFIX}bare`)).toBeNull();
     expect(localStorage.getItem(DRAFT_PREFIX + startless.id)).toBeNull();
     expect(localStorage.getItem(DRAFT_PREFIX + newer.id)).not.toBeNull();
+  });
+
+  // A flow carries variables now, and a draft kept without them was made in a build that was never
+  // released: nothing makes it whole, so it goes like any other draft that is not. So does one with a
+  // variable short of its name or its value, which the page would read as text and find `undefined`.
+  it('keeps a draft with its variables, and lets go of one without them or with one that is not whole', async () => {
+    const set = { ...emptyFlow('Set'), variables: [{ name: 'limit', value: '90' }] };
+    const keptKey = DRAFT_PREFIX + set.id;
+    localStorage.setItem(keptKey, JSON.stringify({ version: 1, flow: set, base: null }));
+
+    const broken = [
+      ['before variables', undefined],
+      ['not a list', { limit: '90' }],
+      ['an entry that is not an object', ['limit']],
+      ['a variable with no name', [{ value: '90' }]],
+      ['a variable with no value', [{ name: 'limit' }]],
+      ['a value that is not text', [{ name: 'limit', value: 90 }]],
+    ] as const;
+    const goneKeys = broken.map(([name, variables]) => {
+      const flow = { ...emptyFlow(name), variables };
+      localStorage.setItem(DRAFT_PREFIX + flow.id, JSON.stringify({ version: 1, flow, base: null }));
+      return DRAFT_PREFIX + flow.id;
+    });
+
+    const opened = await reopened();
+
+    expect(Object.keys(opened.getState().drafts)).toEqual([set.id]);
+    expect(opened.getState().drafts[set.id].variables).toEqual([{ name: 'limit', value: '90' }]);
+    expect(localStorage.getItem(keptKey)).not.toBeNull();
+    for (const key of goneKeys) expect(localStorage.getItem(key)).toBeNull();
   });
 });
 
@@ -305,5 +408,84 @@ describe('two tabs', () => {
 
     expect(other.getState().drafts[theirs.id]).toBeUndefined();
     expect(other.getState().drafts[mine.id]?.name).toBe('Mine');
+  });
+
+  // A refusal is the server's answer about what it was sent: a draft, or the server's own copy of a
+  // flow with none, which a Test or an Activate sends. One about a draft the other tab let go has
+  // nothing left to be about; one about the server's copy had no draft to go with.
+  it('let a refusal go with the draft the other let go, and keep a refusal of the server\'s copy', () => {
+    const other = createFlowDraftStore();
+    const drafted = emptyFlow('Drafted');
+    const copy = emptyFlow('Only on the server');
+    let before = held();
+    useFlowDraftStore.getState().put(drafted);
+    announce(before);
+    other.getState().refuse(drafted, true, { flow: ['Name the flow.'] });
+    other.getState().refuse(copy, false, { flow: ['Name the flow.'] });
+
+    before = held();
+    useFlowDraftStore.getState().discard(drafted.id);
+    announce(before);
+
+    expect(other.getState().drafts[drafted.id]).toBeUndefined();
+    expect(Object.keys(other.getState().refusals)).toEqual([copy.id]);
+  });
+});
+
+/**
+ * Ids the server's pattern takes, ^[A-Za-z0-9_-]{1,40}$, that every object already answers to: what an
+ * object inherits from, the Object function, and a method. A flow can be called any of them.
+ */
+describe('flows called by a name every object answers to', () => {
+  const INHERITED = ['__proto__', 'constructor', 'toString'];
+  const called = (id: string) => ({ ...emptyFlow(`Flow ${id}`), id });
+
+  it('start their drafts from the copy edited, under their own ids, and keep them through a reload', async () => {
+    const flows = INHERITED.map(called);
+    for (const flow of flows) useFlowDraftStore.getState().edit(flow, (one) => ({ ...one, name: `${one.name}, renamed` }));
+
+    const { drafts, bases } = useFlowDraftStore.getState();
+    for (const flow of flows) {
+      expect(Object.hasOwn(drafts, flow.id)).toBe(true);
+      expect(drafts[flow.id]).toEqual({ ...flow, name: `${flow.name}, renamed` });
+      expect(Object.hasOwn(bases, flow.id) && bases[flow.id]).toBe(fingerprint(flow));
+    }
+
+    const reloaded = await reopened();
+    expect(Object.keys(reloaded.getState().drafts).sort()).toEqual([...INHERITED].sort());
+    expect(reloaded.getState().drafts.constructor).toEqual({ ...flows[1], name: 'Flow constructor, renamed' });
+  });
+
+  it('let a draft go from storage when it is discarded', () => {
+    const flow = called('constructor');
+    useFlowDraftStore.getState().put(flow);
+    expect(localStorage.getItem(DRAFT_PREFIX + flow.id)).not.toBeNull();
+
+    useFlowDraftStore.getState().discard(flow.id);
+
+    expect(localStorage.getItem(DRAFT_PREFIX + flow.id)).toBeNull();
+  });
+
+  it('file a refusal of a draft only while the draft is there', () => {
+    useFlowDraftStore.getState().refuse(called('toString'), true, { flow: ['Name the flow.'] });
+
+    expect(Object.hasOwn(useFlowDraftStore.getState().refusals, 'toString')).toBe(false);
+  });
+
+  it('let a refusal go with the draft another tab let go', () => {
+    const other = createFlowDraftStore();
+    const flow = called('toString');
+    let before = held();
+    useFlowDraftStore.getState().put(flow);
+    announce(before);
+    other.getState().refuse(flow, true, { flow: ['Name the flow.'] });
+    expect(Object.hasOwn(other.getState().refusals, 'toString')).toBe(true);
+
+    before = held();
+    useFlowDraftStore.getState().discard(flow.id);
+    announce(before);
+
+    expect(Object.hasOwn(other.getState().drafts, 'toString')).toBe(false);
+    expect(Object.hasOwn(other.getState().refusals, 'toString')).toBe(false);
   });
 });

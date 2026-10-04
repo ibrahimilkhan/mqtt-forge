@@ -64,7 +64,7 @@ const defaultHandlers = [
       alertTopicPrefix: 'mqttforge/alerts/',
     }),
   ),
-  http.get('/api/flows/status', () => HttpResponse.json({ flows: [] })),
+  http.get('/api/flows/status', () => HttpResponse.json({ runs: [] })),
 ];
 
 export const server = setupServer(...defaultHandlers);

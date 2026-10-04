@@ -72,20 +72,28 @@
 }
 
 .changed { color: var(--warn); font-weight: 700; }
-/* A draft the server has moved on from under: held back from Deploy until the reader chooses. */
+/* A draft the server has moved on from under: held back from Activate and Update until the reader
+   chooses. */
 .changed[data-overtaken] { color: var(--fault); }
 
 .add { flex: none; padding: 3px 10px; font-size: var(--t-body); }
 
-/* Deploy while a run is out: off to the eye and to the hand, but still a button that can hold the
-   focus it was pressed with — see the markup. Drawn the way global.css draws a disabled button,
-   with the hover that global.css only holds back from a real one held back here too. */
-.deploy[aria-disabled='true'] { opacity: 0.35; cursor: progress; }
-.deploy[aria-disabled='true']:hover { background: var(--tone); border-color: var(--tone); }
+/* The buttons about the flow on screen keep their size and their one line: the tab row is what
+   gives way when the toolbar is short of room, and it scrolls. Left to shrink, ▶ Test — the one
+   label with a space in it — broke over two lines, a button half again as tall as those beside it. */
+.toolbar > button { flex: none; white-space: nowrap; }
 
-.count {
-  flex: none;
-  font-family: var(--mono);
-  font-size: var(--t-micro);
-  color: var(--muted);
+/* The buttons about the flow on screen, off while a save, a test start or a stop is out — Test and
+   Stop while the numbers have not caught up with a press of them, and Activate and Update while its
+   draft is held back: off to the eye and to the hand, but still buttons that can hold the focus they
+   were pressed with — see the markup. Drawn the way global.css draws a disabled button, with the
+   hover that global.css only holds back from a real one held back here too: a filled button keeps
+   its fill, and a ghost its bare ground. The pointer says which: a wait that ends by itself, or a
+   choice the reader has to make first. */
+.toolbar > button[aria-disabled='true'] { opacity: 0.35; cursor: progress; }
+.toolbar > button[data-held] { cursor: not-allowed; }
+.activate[aria-disabled='true']:hover { background: var(--tone); border-color: var(--tone); }
+.toolbar > button:global(.ghost)[aria-disabled='true']:hover {
+  background: transparent;
+  border-color: var(--tone);
 }

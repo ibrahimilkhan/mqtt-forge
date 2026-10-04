@@ -5,6 +5,7 @@ import { http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { server } from './test/server';
 import { App } from './App';
+import { PANELS } from './features/panels';
 import { createFakeHub } from './realtime/fakeHub';
 import { useHubStatusStore } from './stores/hubStatusStore';
 
@@ -399,6 +400,35 @@ describe('App', () => {
     expect(screen.getByTestId('layout')).toHaveAttribute('data-panel', 'fill');
     // jsdom has no ResizeObserver, so the page says so instead of drawing a canvas it cannot size.
     expect(await screen.findByText(/needs a browser that can measure/)).toBeInTheDocument();
+  });
+});
+
+// A notice is for whoever has the console open, on whatever page they are on, so the stack belongs
+// to the console and not to any one panel: a panel opening or shutting neither brings it nor takes
+// it away. It stands in the page with nothing in it, as well, because a live region put in
+// together with its first message is not read out.
+describe('the notices', () => {
+  it.each(PANELS.map((panel) => panel.label))('stand in the console with the %s panel open', async (label) => {
+    renderApp();
+    await screen.findByRole('button', { name: 'Close Broker panel' });
+
+    // Only when it is not already the open one: the rail's rows toggle, and the console opens on
+    // the Broker panel, so a click on that row would shut the panel this is about. By prefix,
+    // because the Broker row says what the link is doing as well as its name.
+    if (screen.queryByRole('region', { name: `${label} panel` }) === null) {
+      await userEvent.click(menu().getByRole('button', { name: new RegExp(`^${label}`) }));
+    }
+    await screen.findByRole('region', { name: `${label} panel` });
+
+    expect(screen.getByRole('log', { name: 'Notices' })).toBeInTheDocument();
+  });
+
+  it('stand in the console with every panel shut, where the traffic is', async () => {
+    renderApp();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Close Broker panel' }));
+
+    expect(screen.getByRole('log', { name: 'Notices' })).toBeInTheDocument();
   });
 });
 

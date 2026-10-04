@@ -19,10 +19,25 @@
   min-height: 0;
 }
 
-/* The toolbar, and under it the line that says a deploy did not go through. min-width, because a
-   grid item is otherwise as wide as its content, and the tabs are meant to scroll, not widen the
-   page. */
+/* The toolbar, and under it the line that says a save or a test did not go through — on the empty
+   page, which has no tabs, the line alone, over the way to start. min-width, because a grid item is
+   otherwise as wide as its content, and the tabs are meant to scroll, not widen the page. */
 .top { min-width: 0; }
+
+/* The tests going of flows the page has no tab for, under the line under the tabs: each flow's id
+   and its own Stop, side by side, as many to a row as fit. */
+.strays { margin-top: 10px; }
+.strays > p { margin: 0; }
+.strayList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.stray { display: inline-flex; align-items: center; gap: 8px; }
+.strayId { font-family: var(--mono); font-size: var(--t-small); }
 
 .body {
   display: grid;

@@ -8,12 +8,13 @@ import { catchUp, useFlowStatusStore } from '../stores/flowStatusStore';
 import { useHubStatusStore } from '../stores/hubStatusStore';
 import { useHealthStore } from '../stores/healthStore';
 import { MAX_LOG_ENTRIES, useLogStore } from '../stores/logStore';
+import { useNoticeStore } from '../stores/noticeStore';
 import { usePauseStore } from '../stores/pauseStore';
 import { useTopicTreeStore } from '../stores/topicTreeStore';
 import type { MqttMessage } from '../types/api';
 import { decodeIncoming } from './decodeIncoming';
 import type { Hub } from './hub';
-import { soundFor } from '../features/alerts/alertSound';
+import { soundFor, soundLevels } from '../features/alerts/alertSound';
 import { arrived } from '../features/connection/reconnectView';
 
 /**
@@ -194,6 +195,9 @@ export function useHubBridge(hub: Hub) {
       // events above give: what a flow's numbers mean is the page's business.
       flowStatus: (status) => useFlowStatusStore.getState().setStatus(status),
       flowDebug: (entries, dropped) => useFlowStatusStore.getState().addDebug(entries, dropped),
+      // A tone and a notice are moments for whoever has the console open, handed on as they come.
+      flowSound: (sounds) => void soundLevels(sounds.map((sound) => sound.level)),
+      flowNotice: (notices) => useNoticeStore.getState().add(notices),
       reconnecting: () => useHubStatusStore.getState().setStatus('reconnecting'),
       // Broker state may have moved on while the hub was down; refetch, don't trust the cache.
       reconnected: () => {

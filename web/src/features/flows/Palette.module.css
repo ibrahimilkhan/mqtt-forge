@@ -39,10 +39,14 @@
 }
 .item:active { cursor: grabbing; }
 
+/* The canvas's four colours (FlowCanvas.module.css), one to a group: what the flow takes in is the
+   console's blue, how it goes is grey, what it does is green, and the alarm with what is told of it
+   is the warning's amber. An item wears the colour its node will wear once it is down. */
 .icon { grid-row: 1 / 3; display: inline-flex; font-size: var(--t-body); }
-.item[data-group='Triggers'] .icon { color: var(--signal); }
-.item[data-group='Logic'] .icon { color: var(--muted); }
+.item[data-group='Input'] .icon { color: var(--signal); }
+.item[data-group='Control'] .icon { color: var(--muted); }
 .item[data-group='Actions'] .icon { color: var(--live); }
+.item[data-group='Alarm'] .icon { color: var(--warn); }
 
 .label { font-size: var(--t-small); font-weight: 600; color: var(--ink); }
 

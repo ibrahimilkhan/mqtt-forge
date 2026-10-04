@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { own } from '../../lib/own';
 import { leftOut, useFlowStatusStore, type DebugLine } from '../../stores/flowStatusStore';
 import type { FlowDto } from '../../types/api';
 import { specOf } from './nodeTypes';
@@ -32,7 +33,7 @@ const clock = (at: string) =>
  * console's, not as this flow's.
  */
 export function DebugStrip({ flow }: { flow: FlowDto }) {
-  const lines = useFlowStatusStore((state) => state.debug[flow.id] ?? NO_LINES);
+  const lines = useFlowStatusStore((state) => own(state.debug, flow.id) ?? NO_LINES);
   const dropped = useFlowStatusStore((state) => leftOut(state, flow.id));
   const clear = useFlowStatusStore((state) => state.clearDebug);
   const [open, setOpen] = useState(readOpen);
@@ -87,6 +88,13 @@ export function DebugStrip({ flow }: { flow: FlowDto }) {
                 <time className={styles.time} dateTime={entry.at}>
                   {clock(entry.at)}
                 </time>
+                {/* A test runs beside the flow at work, and both print here: a test's lines say so,
+                    or a reader could not tell what the test did from what the flow is doing. */}
+                {entry.test && (
+                  <span className={styles.test} title="From a test run">
+                    test
+                  </span>
+                )}
                 <span className={styles.node}>{labelOf(entry.nodeId)}</span>
                 {/* Said in a word as well as in the line's colour, which is all some readers would
                     have to tell an error from what a Debug node printed. */}

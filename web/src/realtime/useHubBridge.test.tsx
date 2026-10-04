@@ -5,10 +5,14 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { queryKeys } from '../api/queryKeys';
 import { server } from '../test/server';
+import { fakeAudio } from '../test/fakeAudio';
+import { forgetSound, TONES, turnSoundOn } from '../features/alerts/alertSound';
 import { emptyAlerts, useAlertStore } from '../stores/alertStore';
+import { useAppearanceStore } from '../stores/appearanceStore';
 import { useFlowStatusStore } from '../stores/flowStatusStore';
 import { MAX_LOG_ENTRIES, runFor, useLogStore } from '../stores/logStore';
 import { useHealthStore } from '../stores/healthStore';
+import { useNoticeStore } from '../stores/noticeStore';
 import { usePauseStore } from '../stores/pauseStore';
 import { useTopicTreeStore } from '../stores/topicTreeStore';
 import type { AlertDto, FlowStatusDto, MqttMessage } from '../types/api';
@@ -535,21 +539,68 @@ describe('flow events', () => {
 
     act(() => {
       hub.emit('flowStatus', {
-        flows: [{ id: 'watch', fault: null, nodes: [] }],
+        runs: [{
+          flowId: 'watch', kind: 'active', state: 'waiting', at: null, waiting: null, fault: null, variables: {},
+          nodes: [],
+        }],
       });
       hub.emit('flowDebug', [
-        { flowId: 'watch', nodeId: 'say', at: '2026-09-26T09:00:00Z', kind: 'message', topic: 'a', text: 'hello' },
+        { flowId: 'watch', nodeId: 'say', at: '2026-09-26T09:00:00Z', kind: 'message', topic: 'a', text: 'hello', test: false },
       ], 0);
     });
 
-    expect(Object.keys(useFlowStatusStore.getState().flows)).toEqual(['watch']);
+    expect(Object.keys(useFlowStatusStore.getState().runs)).toEqual(['watch']);
     expect(useFlowStatusStore.getState().debug.watch[0].text).toBe('hello');
+  });
+
+  describe('a notice and a tone', () => {
+    // Both outlive a test: the notices in a store, the sound as one context for the life of a page
+    // and a preference the browser keeps. What one test leaves must not reach the next.
+    const reset = () => {
+      useNoticeStore.setState(useNoticeStore.getInitialState());
+      forgetSound();
+      useAppearanceStore.getState().reset();
+      localStorage.clear();
+    };
+    beforeEach(reset);
+    afterEach(reset);
+
+    it('hands notices to the notice store', () => {
+      const hub = createFakeHub();
+      renderBridge(hub);
+
+      act(() => hub.emit('flowNotice', [{ flowId: 'watch', flowName: 'Watch', nodeId: 'tell', text: 'hot', level: 'warn', at: '2026-10-03T09:00:00Z', test: false }]));
+
+      expect(useNoticeStore.getState().notices.map((one) => one.text)).toEqual(['hot']);
+    });
+
+    // Heard rather than spied on: the tone the room gets is what this is about, and the bridge's
+    // part in it — the levels handed over, in whatever order — is only how it gets there.
+    it('plays one tone for a batch of tones, at the loudest level in it', async () => {
+      const audio = fakeAudio();
+      await turnSoundOn();
+      const hub = createFakeHub();
+      renderBridge(hub);
+
+      act(() => hub.emit('flowSound', [
+        { flowId: 'a', nodeId: 'beep', level: 'info', test: false },
+        { flowId: 'b', nodeId: 'beep', level: 'critical', test: false },
+      ]));
+
+      expect(audio.tones.map((tone) => tone.hz)).toEqual(
+        Array.from({ length: TONES.critical.beeps }, () => TONES.critical.hz),
+      );
+    });
   });
 
   describe('after a reconnect', () => {
     beforeEach(() => useFlowStatusStore.setState(useFlowStatusStore.getInitialState()));
 
-    const running = (...ids: string[]): FlowStatusDto => ({ flows: ids.map((id) => ({ id, fault: null, nodes: [] })) });
+    const running = (...ids: string[]): FlowStatusDto => ({
+      runs: ids.map((id) => ({
+        flowId: id, kind: 'active', state: 'waiting', at: null, waiting: null, fault: null, variables: {}, nodes: [],
+      })),
+    });
 
     // A push sent while the hub was down never arrives: a flow that stopped then would go on
     // standing as running until something else moved. The alarms are read again for the same reason.
@@ -561,7 +612,7 @@ describe('flow events', () => {
 
       act(() => hub.emit('reconnected'));
 
-      await waitFor(() => expect(Object.keys(useFlowStatusStore.getState().flows)).toEqual(['watch']));
+      await waitFor(() => expect(Object.keys(useFlowStatusStore.getState().runs)).toEqual(['watch']));
     });
 
     // Pushes carry nothing to put them in order by. One that lands while the read is out is newer
@@ -586,7 +637,7 @@ describe('flow events', () => {
       await waitFor(() => expect(answered).toBe(true));
       for (let turn = 0; turn < 5; turn++) await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
 
-      expect(Object.keys(useFlowStatusStore.getState().flows)).toEqual(['sim']);
+      expect(Object.keys(useFlowStatusStore.getState().runs)).toEqual(['sim']);
     });
   });
 });

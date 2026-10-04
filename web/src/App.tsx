@@ -33,6 +33,7 @@ import { useSoundStore } from './features/alerts/alertSound';
 import { useAlertStore } from './stores/alertStore';
 import { useLinkWatchStore } from './stores/linkWatchStore';
 import { FlowsPanel } from './features/flows/FlowsPanel';
+import { Notices } from './features/notices/Notices';
 
 /** The width the workspace stops being columns at, and the rail starts lying over it. */
 const NARROW = '(max-width: 760px)';
@@ -406,6 +407,10 @@ export function App({ hub }: { hub: Hub }) {
           alarm made no sound, which is a thing about the console rather than a thing on the
           wall. */}
       <SoundPrompt />
+
+      {/* The stack stands in the bottom corner, across from the sound prompt, over every page — and
+          outside the workspace for the same reason the prompt is. */}
+      <Notices />
     </>
   );
 }

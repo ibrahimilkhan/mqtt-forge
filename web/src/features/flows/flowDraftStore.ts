@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { own } from '../../lib/own';
 import type { FlowDto } from '../../types/api';
 import { fingerprint, sameFlow } from './flowDocument';
 
@@ -16,7 +17,7 @@ const CURRENT_KEY = 'mqttforge.flows.current';
 const VERSION = 1;
 
 type DraftState = {
-  /** Flows edited here and not yet deployed, by id — flows never deployed included. */
+  /** Flows edited here and not yet saved, by id — flows never saved included. */
   drafts: Record<string, FlowDto>;
   /**
    * The copy on the server each draft was started from, as flowDocument's fingerprint of it; null
@@ -29,8 +30,25 @@ type DraftState = {
   current: string | null;
   /** The node the inspector is showing. Null shows the flow's own settings. */
   selected: string | null;
-  /** What the server said about each flow's last refused deploy: flow id, then flow / node:{id} / edge:{id}. */
+  /**
+   * The one wire picked, when a wire and nothing else is: where the palette puts the node it adds.
+   * Not kept: like `selected`, it is about what is on screen now.
+   */
+  wire: string | null;
+  /**
+   * What the server said, the last time it refused a flow, of what it was sent: flow id, then flow /
+   * node:{id} / edge:{id}. What it was sent is the flow's draft, or — for a Test or an Activate of a
+   * flow with none — the server's own copy. A refusal of a draft goes with that draft, however the
+   * draft goes.
+   */
   refusals: Record<string, Record<string, string[]>>;
+  /**
+   * For a refusal of the server's own copy of a flow — tested, or activated, with no draft — that
+   * copy's fingerprint. Such a refusal is about the copy, not about anything drawn here, and has no
+   * draft to go with: it lapses once the server has another copy, or none. Only the page reads the
+   * list, so it is the page that tells the store, through lapse.
+   */
+  refusedCopies: Record<string, string>;
   /**
    * This browser would not keep a draft — its storage is full, or site data is blocked — so a
    * reload brings back older drafts than the ones on screen, or none. Set by the first draft it
@@ -56,15 +74,30 @@ type DraftState = {
   rebase: (flowId: string, base: string | null) => void;
   /**
    * Throws a flow's draft away: its edits, or the whole flow once it has been deleted. Clears the
-   * selection too, but only if this is the flow on screen.
+   * selection and the wire picked too, but only if this is the flow on screen.
    */
   discard: (id: string) => void;
   show: (id: string | null) => void;
-  select: (nodeId: string | null) => void;
-  refuse: (flowId: string, errors: Record<string, string[]>) => void;
   /**
-   * These flows have no draft any more. A refusal is the server's answer about one draft, not
-   * about a flow, and that draft is no longer there to be refused, so the refusals go.
+   * Shows a node in the inspector, or with null the flow's own settings. A node chosen is picked on
+   * the canvas, so no wire is picked alone any more.
+   */
+  select: (nodeId: string | null) => void;
+  /** The canvas says which wire is picked: its id when exactly one wire and no node is, or null. */
+  pickWire: (edgeId: string | null) => void;
+  /**
+   * Files what the server said when it refused `sent`: the flow's draft, when `drafted` says the
+   * flow had one as the request went, or else the server's own copy of a flow with none, which is
+   * filed against that copy (see refusedCopies). A draft let go while the request was out — on
+   * another tab, or taken back — has nothing left for the answer to be about, and nothing is filed:
+   * marked on the copy the page shows in its place, it would say the server refused a flow nobody
+   * sent. A test and every save of a drawing file theirs here, so the rule is kept in one place.
+   */
+  refuse: (sent: FlowDto, drafted: boolean, errors: Record<string, string[]>) => void;
+  /**
+   * What the server refused of these flows is no longer what is there: a test of each has started
+   * since, so the drawing it refused is not the one running now; or the server's copy it refused
+   * has since been replaced, or deleted. The drafts stay.
    */
   lapse: (flowIds: readonly string[]) => void;
 };
@@ -72,7 +105,7 @@ type DraftState = {
 /*
  * localStorage and sessionStorage when they can be had, and nothing when they cannot — a private
  * window, a browser set to block site data. Every access is caught: a page that cannot keep drafts
- * still edits and deploys, and its drafts live until the page is closed.
+ * still edits, tests and saves, and its drafts live until the page is closed.
  */
 
 type Area = () => Storage;
@@ -119,11 +152,16 @@ const isWholeNode = (node: unknown) =>
 const isWholeEdge = (edge: unknown) =>
   isRecord(edge) && [edge.id, edge.from, edge.fromPort, edge.to, edge.toPort].every(isText);
 
+const isWholeVariable = (variable: unknown) => isRecord(variable) && isText(variable.name) && isText(variable.value);
+
 /**
  * Whether what storage handed back is a whole flow: everything the page reads of one, each of the
  * kind the page reads it as. The page wrote it, but storage outlives the build that wrote it, and a
  * hand in the devtools can write anything there. One draft short of a name took the whole page
  * down, on every open, since the flow on screen is kept too.
+ *
+ * Variables are part of a whole flow. A draft kept before flows had them came from a build that was
+ * never released, so nothing makes it whole: it goes like any other draft that is not.
  */
 function isWholeFlow(value: unknown): value is FlowDto {
   return (
@@ -135,7 +173,9 @@ function isWholeFlow(value: unknown): value is FlowDto {
     Array.isArray(value.nodes) &&
     value.nodes.every(isWholeNode) &&
     Array.isArray(value.edges) &&
-    value.edges.every(isWholeEdge)
+    value.edges.every(isWholeEdge) &&
+    Array.isArray(value.variables) &&
+    value.variables.every(isWholeVariable)
   );
 }
 
@@ -169,34 +209,42 @@ function draftIn(key: string, text: string | null): Kept | 'later' | null {
   return { flow: value.flow, base: value.base };
 }
 
-/** Every draft storage holds, each under its own key. What no build can use is taken out on the way. */
+/**
+ * Every draft storage holds, each under its own key. What no build can use is taken out on the way.
+ * Made records whose every key is its own, as every record of the store is (see own).
+ */
 function draftsKept(): Pick<DraftState, 'drafts' | 'bases'> {
-  const drafts: Record<string, FlowDto> = {};
-  const bases: Record<string, string | null> = {};
+  const found: Kept[] = [];
 
   for (const key of keysOf(local)) {
     if (!key.startsWith(DRAFT_PREFIX)) continue;
 
     const draft = draftIn(key, read(local, key));
     if (draft === null) write(local, key, null);
-    else if (draft !== 'later') {
-      drafts[draft.flow.id] = draft.flow;
-      bases[draft.flow.id] = draft.base;
-    }
+    else if (draft !== 'later') found.push(draft);
   }
 
-  return { drafts, bases };
+  return {
+    drafts: Object.fromEntries(found.map(({ flow }) => [flow.id, flow])),
+    bases: Object.fromEntries(found.map(({ flow, base }) => [flow.id, base])),
+  };
 }
 
 const without = <T>(record: Record<string, T>, ...keys: readonly string[]): Record<string, T> =>
   Object.fromEntries(Object.entries(record).filter(([id]) => !keys.includes(id)));
 
+/** These flows' refusals gone, and with them which copies of the server's any of them was of. */
+const unrefused = (state: Pick<DraftState, 'refusals' | 'refusedCopies'>, flowIds: readonly string[]) => ({
+  refusals: without(state.refusals, ...flowIds),
+  refusedCopies: without(state.refusedCopies, ...flowIds),
+});
+
 /**
- * What the page has changed and not deployed.
+ * What the page has changed and not saved.
  *
- * The deployed flows are the server's, read through react-query; this holds only the difference.
- * A flow's draft is kept whole rather than as a list of changes, because Deploy sends a whole
- * flow and "Discard" means "back to what is running" — both are one assignment with whole flows.
+ * The saved flows are the server's, read through react-query; this holds only the difference.
+ * A flow's draft is kept whole rather than as a list of changes, because Test and Activate send a
+ * whole flow and "Discard" means "back to what is saved" — each is one assignment with whole flows.
  *
  * Each draft is kept under a key of its own, written the moment it changes — a reload or a closed
  * tab inside a pause would lose the edit that "a reload loses nothing" promises to keep — and only
@@ -205,6 +253,9 @@ const without = <T>(record: Record<string, T>, ...keys: readonly string[]): Reco
  * them away. Each tab also takes in what the other writes, flow by flow, as the browser tells it.
  * Which flow is on screen, and which node is picked, stay each tab's own: the flow on screen is
  * kept in the tab's sessionStorage, which a reload keeps and another tab does not see.
+ *
+ * Every record here is kept by flow id, and a flow can be called what every object answers to: each
+ * is read through own, and written by a computed key, a spread or Object.fromEntries (see own).
  *
  * A factory, so a test can open a second tab on the same storage.
  */
@@ -216,12 +267,14 @@ export function createFlowDraftStore() {
     bases: stored.bases,
     current: read(session, CURRENT_KEY),
     selected: null,
+    wire: null,
     refusals: {},
+    refusedCopies: {},
     unkept: false,
 
     edit: (base, change) =>
       set((state) => {
-        const draft = state.drafts[base.id];
+        const draft = own(state.drafts, base.id);
         return {
           drafts: { ...state.drafts, [base.id]: change(draft ?? base) },
           // A new draft is of the copy it was started from; one already here stays of the copy it was.
@@ -236,7 +289,7 @@ export function createFlowDraftStore() {
       set((state) => ({
         drafts: without(state.drafts, ...flowIds),
         bases: without(state.bases, ...flowIds),
-        refusals: without(state.refusals, ...flowIds),
+        ...unrefused(state, flowIds),
       })),
 
     rebase: (flowId, base) => set((state) => ({ bases: { ...state.bases, [flowId]: base } })),
@@ -245,19 +298,33 @@ export function createFlowDraftStore() {
       set((state) => ({
         drafts: without(state.drafts, id),
         bases: without(state.bases, id),
-        refusals: without(state.refusals, id),
+        ...unrefused(state, [id]),
         // A selection belongs to whatever canvas is open; discarding some other flow's draft
         // must not blank out what the reader is looking at right now.
         selected: state.current === id ? null : state.selected,
+        wire: state.current === id ? null : state.wire,
       })),
 
-    show: (id) => set({ current: id, selected: null }),
+    show: (id) => set({ current: id, selected: null, wire: null }),
 
-    select: (nodeId) => set({ selected: nodeId }),
+    select: (nodeId) => set(nodeId === null ? { selected: null } : { selected: nodeId, wire: null }),
 
-    refuse: (flowId, errors) => set((state) => ({ refusals: { ...state.refusals, [flowId]: errors } })),
+    pickWire: (wire) => set({ wire }),
 
-    lapse: (flowIds) => set((state) => ({ refusals: without(state.refusals, ...flowIds) })),
+    refuse: (sent, drafted, errors) =>
+      set((state) =>
+        drafted && !Object.hasOwn(state.drafts, sent.id)
+          ? state
+          : {
+              refusals: { ...state.refusals, [sent.id]: errors },
+              // Of the server's copy, it goes with that copy; of a draft, with the draft.
+              refusedCopies: drafted
+                ? without(state.refusedCopies, sent.id)
+                : { ...state.refusedCopies, [sent.id]: fingerprint(sent) },
+            },
+      ),
+
+    lapse: (flowIds) => set((state) => unrefused(state, flowIds)),
   }));
 
   // True while this store takes in another tab's write, which is already in storage.
@@ -269,9 +336,9 @@ export function createFlowDraftStore() {
     let refused = false;
     if (state.drafts !== before.drafts || state.bases !== before.bases)
       for (const id of new Set([...Object.keys(before.drafts), ...Object.keys(state.drafts)])) {
-        const draft = state.drafts[id];
-        const base = state.bases[id] ?? null;
-        if (draft === before.drafts[id] && base === (before.bases[id] ?? null)) continue;
+        const draft = own(state.drafts, id);
+        const base = own(state.bases, id) ?? null;
+        if (draft === own(before.drafts, id) && base === (own(before.bases, id) ?? null)) continue;
 
         if (!write(local, keyOf(id), draft ? kept(draft, base) : null)) refused = true;
       }
@@ -292,7 +359,7 @@ export function createFlowDraftStore() {
     }
     if (!ours || (event.key !== null && !event.key.startsWith(DRAFT_PREFIX))) return;
 
-    const { drafts, bases } = store.getState();
+    const { drafts, bases, refusals, refusedCopies } = store.getState();
     let next: Pick<DraftState, 'drafts' | 'bases'>;
 
     if (event.key === null) {
@@ -304,20 +371,24 @@ export function createFlowDraftStore() {
       if (draft === 'later') return;
 
       if (draft === null) {
-        if (!(id in drafts)) return;
+        if (!Object.hasOwn(drafts, id)) return;
         next = { drafts: without(drafts, id), bases: without(bases, id) };
       } else {
         // A draft this tab already has, word for word, stays the object it is: what the page has
         // worked out about a flow is kept against its object.
-        const same = sameFlow(draft.flow, drafts[id]);
-        if (same && draft.base === bases[id]) return;
+        const same = sameFlow(draft.flow, own(drafts, id));
+        if (same && draft.base === own(bases, id)) return;
         next = { drafts: same ? drafts : { ...drafts, [id]: draft.flow }, bases: { ...bases, [id]: draft.base } };
       }
     }
 
+    // A refusal of a draft the other tab let go has nothing left to be about, and goes with it, as it
+    // goes with a draft let go here. One of the server's copy of a flow with no draft had none to go.
+    const gone = Object.keys(drafts).filter((id) => !Object.hasOwn(next.drafts, id) && Object.hasOwn(refusals, id));
+
     hearing = true;
     try {
-      store.setState(next);
+      store.setState(gone.length > 0 ? { ...next, ...unrefused({ refusals, refusedCopies }, gone) } : next);
     } finally {
       hearing = false;
     }

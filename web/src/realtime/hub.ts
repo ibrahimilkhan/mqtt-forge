@@ -1,5 +1,14 @@
 import * as signalR from '@microsoft/signalr';
-import type { AlertDto, ConnectionStateResponse, FlowDebugDto, FlowStatusDto, MqttMessage, ReconnectStatus } from '../types/api';
+import type {
+  AlertDto,
+  ConnectionStateResponse,
+  FlowDebugDto,
+  FlowNoticeDto,
+  FlowSoundDto,
+  FlowStatusDto,
+  MqttMessage,
+  ReconnectStatus,
+} from '../types/api';
 
 export type HubEvents = {
   // Batched server-side: a busy broker outruns one frame per message.
@@ -28,10 +37,14 @@ export type HubEvents = {
   alertMuted: (ruleId: string, topic: string, until: string | null) => void;
   /** Running total of what the alert engine never judged, sent only when it moves. */
   alertsDropped: (total: number) => void;
-  /** What every running flow has done, at most four times a second and only when it moved. */
+  /** What every run has done, at most four times a second and only when it moved. */
   flowStatus: (status: FlowStatusDto) => void;
   /** Debug lines, oldest first, and how many the server left out since the last batch. */
   flowDebug: (entries: FlowDebugDto[], dropped: number) => void;
+  /** Tones Sound nodes asked for. Every open console plays them, as the reader's sound setting allows. */
+  flowSound: (sounds: FlowSoundDto[]) => void;
+  /** Notices Notify nodes asked for. Every open console shows them. */
+  flowNotice: (notices: FlowNoticeDto[]) => void;
   reconnecting: () => void;
   reconnected: () => void;
 };
@@ -98,7 +111,7 @@ export function createSignalRHub(url = '/hubs/mqtt'): Hub {
       /**
        * Binds one server-sent event, if this caller asked for it, and remembers how to unbind it.
        *
-       * Ten of these now, and each used to be the same four lines with the same name written in
+       * Twelve of these now, and each used to be the same four lines with the same name written in
        * three places — which is exactly the shape a new event gets added to by copying and then
        * forgetting one of the three. The lifecycle pair below cannot join it: signalR has no
        * removal API for onreconnecting and onreconnected, so those are kept in sets of our own.
@@ -121,6 +134,8 @@ export function createSignalRHub(url = '/hubs/mqtt'): Hub {
       bind('alertsDropped');
       bind('flowStatus');
       bind('flowDebug');
+      bind('flowSound');
+      bind('flowNotice');
 
       // signalR has no lifecycle-handler removal API; harmless since the connection outlives the app.
       if (handlers.reconnecting) {

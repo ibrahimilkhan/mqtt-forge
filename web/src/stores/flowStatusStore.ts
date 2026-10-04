@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { getFlowStatus } from '../api/flows';
+import { own } from '../lib/own';
 import type { FlowDebugDto, FlowNodeStatusDto, FlowRunStatusDto, FlowStatusDto } from '../types/api';
 
 /** How many debug lines the console keeps for each flow. The strip is for the last minute, not a log. */
@@ -11,10 +12,30 @@ export const nodeKey = (flowId: string, nodeId: string) => `${flowId}/${nodeId}`
 /** A debug line as the console keeps it: the server's line, and where it came in the order they arrived. */
 export type DebugLine = FlowDebugDto & { seq: number };
 
-type FlowStatusState = {
-  /** Running flows by id. A flow missing here is not running. */
-  flows: Record<string, FlowRunStatusDto>;
-  /** Every running node, by nodeKey, so one node on the canvas subscribes to one entry. */
+/** A flow's two runs: the flow at work, and a test of its draft. Either may be missing. */
+export type FlowRuns = { active?: FlowRunStatusDto; test?: FlowRunStatusDto };
+
+/** Going or waiting: not finished at an End and not stopped. */
+export const isLive = (run: FlowRunStatusDto | undefined) => run?.state === 'running' || run?.state === 'waiting';
+
+/**
+ * The run a flow's canvas shows: a test that is going, else the active run, else a test that has
+ * ended. A reader who pressed Test is looking at the test; one who did not is looking at the flow at
+ * work; and a test that has finished is still worth reading until something replaces it.
+ */
+export function shownRun(runs: FlowRuns | undefined): FlowRunStatusDto | undefined {
+  if (!runs) return undefined;
+  if (isLive(runs.test)) return runs.test;
+  return runs.active ?? runs.test;
+}
+
+export type FlowStatusState = {
+  /**
+   * Every flow's runs, by flow id. A flow missing here is not being tested, and is switched off — or
+   * switched on, but saved as the server can no longer compile it, which runs nothing either.
+   */
+  runs: Record<string, FlowRuns>;
+  /** The nodes of the run each flow's canvas shows (see shownRun), by nodeKey, so a node subscribes to one entry. */
   nodes: Record<string, FlowNodeStatusDto>;
   /** Each flow's debug lines, newest first, DEBUG_KEPT at most for each. */
   debug: Record<string, DebugLine[]>;
@@ -25,6 +46,8 @@ type FlowStatusState = {
   /**
    * The flows deleted since the console opened. A batch the server sent before a delete landed
    * can arrive after it, and its lines are dropped rather than kept under a flow with no strip.
+   * Until the numbers show a run of one again: it was saved again under its id, on another console,
+   * and what it prints is its own again.
    */
   deleted: Record<string, true>;
   setStatus: (status: FlowStatusDto) => void;
@@ -44,7 +67,7 @@ type FlowStatusState = {
  * server counts what it leaves out, not whose it was, so this is never one flow's own figure.
  */
 export const leftOut = (state: FlowStatusState, flowId: string) =>
-  state.debugDropped - (state.debugClearedAt[flowId] ?? 0);
+  state.debugDropped - (own(state.debugClearedAt, flowId) ?? 0);
 
 /**
  * The number the next debug line gets. Never reset, so no two lines in one console share one, and
@@ -57,45 +80,63 @@ const without = <T>(record: Record<string, T>, key: string): Record<string, T> =
   Object.fromEntries(Object.entries(record).filter(([id]) => id !== key));
 
 /**
- * What the running flows have done, as the server last said.
+ * What the runs have done, as the server last said.
  *
  * In the main chunk rather than with the page, because the hub bridge feeds it from the moment
  * the console opens: a page opened a minute later shows numbers straight away rather than zeroes
- * until the next push. Each push replaces the whole picture — the server sends every running flow
- * every time — so a flow that stopped simply disappears from it.
+ * until the next push. Each push replaces the whole picture — the server sends every run there is
+ * every time — so a run that went simply disappears from it.
  */
 export const useFlowStatusStore = create<FlowStatusState>()((set) => ({
-  flows: {},
+  runs: {},
   nodes: {},
   debug: {},
   debugDropped: 0,
   debugClearedAt: {},
   deleted: {},
 
-  setStatus: (status) => {
-    const flows: Record<string, FlowRunStatusDto> = {};
-    const nodes: Record<string, FlowNodeStatusDto> = {};
+  // Gathered by flow in a Map, and made a record whose every key is its own: see own. A flow deleted
+  // here that has a run is a flow again (see deleted).
+  setStatus: (status) =>
+    set((state) => {
+      const byFlow = new Map<string, FlowRuns>();
+      for (const run of status.runs) byFlow.set(run.flowId, { ...byFlow.get(run.flowId), [run.kind]: run });
+      const runs = Object.fromEntries(byFlow);
 
-    for (const flow of status.flows) {
-      flows[flow.id] = flow;
-      for (const node of flow.nodes) nodes[nodeKey(flow.id, node.id)] = node;
-    }
+      const nodes: Record<string, FlowNodeStatusDto> = Object.fromEntries(
+        [...byFlow].flatMap(([flowId, both]) => (shownRun(both)?.nodes ?? []).map((node) => [nodeKey(flowId, node.id), node])),
+      );
 
-    set({ flows, nodes });
-  },
+      const deleted = [...byFlow.keys()].some((id) => Object.hasOwn(state.deleted, id))
+        ? Object.fromEntries(Object.entries(state.deleted).filter(([id]) => !byFlow.has(id)))
+        : state.deleted;
+
+      return { runs, nodes, deleted };
+    }),
 
   // A batch arrives oldest first; the strip reads newest first. Each flow keeps its own last
   // DEBUG_KEPT, because the strip shows one flow at a time, and one that prints on every message
   // would otherwise push a quiet one's lines out before anybody switched to its tab.
   addDebug: (entries, dropped) =>
     set((state) => {
-      const added: Record<string, DebugLine[]> = {};
-      for (const entry of entries)
-        if (!(entry.flowId in state.deleted)) (added[entry.flowId] ??= []).push({ ...entry, seq: ++arrived });
+      const added = new Map<string, DebugLine[]>();
+      for (const entry of entries) {
+        if (Object.hasOwn(state.deleted, entry.flowId)) continue;
+        const line = { ...entry, seq: ++arrived };
+        const lines = added.get(entry.flowId);
+        if (lines) lines.push(line);
+        else added.set(entry.flowId, [line]);
+      }
 
-      const debug = Object.keys(added).length === 0 ? state.debug : { ...state.debug };
-      for (const [flowId, lines] of Object.entries(added))
-        debug[flowId] = [...lines.reverse(), ...(state.debug[flowId] ?? [])].slice(0, DEBUG_KEPT);
+      const debug =
+        added.size === 0
+          ? state.debug
+          : {
+              ...state.debug,
+              ...Object.fromEntries(
+                [...added].map(([flowId, lines]) => [flowId, [...lines.reverse(), ...(own(state.debug, flowId) ?? [])].slice(0, DEBUG_KEPT)]),
+              ),
+            };
 
       return { debug, debugDropped: state.debugDropped + dropped };
     }),
@@ -125,11 +166,11 @@ export const useFlowStatusStore = create<FlowStatusState>()((set) => ({
  */
 export function catchUp(): () => void {
   let wanted = true;
-  const asked = useFlowStatusStore.getState().flows;
+  const asked = useFlowStatusStore.getState().runs;
 
   getFlowStatus().then(
     (status) => {
-      if (wanted && useFlowStatusStore.getState().flows === asked) useFlowStatusStore.getState().setStatus(status);
+      if (wanted && useFlowStatusStore.getState().runs === asked) useFlowStatusStore.getState().setStatus(status);
     },
     () => {},
   );
