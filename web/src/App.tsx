@@ -148,8 +148,9 @@ export function App({ hub }: { hub: Hub }) {
    * panel that can do something about the state, so this is the row that wears it.
    *
    * Green connected, red for the two that are wrong, and the rail's ordinary grey for the two
-   * that are neither. Derived in `useLinkState`, which the broker panel's chip reads too: two
-   * readouts of one link deriving it separately would be free to disagree about it.
+   * that are neither. Derived in `useLinkState`, where the precedence between the three
+   * overlapping answers has a name and a test rather than being a ternary in the middle of this
+   * component.
    */
   const linkState = useLinkState();
 
@@ -288,7 +289,10 @@ export function App({ hub }: { hub: Hub }) {
                   {/* At the end of the row, so the name is still what the eye lands on and this
                       is what it finds next. A shape as well as a colour, because a colour on its
                       own says nothing to a reader who cannot tell these two apart. */}
-                  {panel.id === 'broker' &&
+                  {/* Open rail only: shut, the triangle sat on top of the icon. The row's
+                      colour and its name still carry the state. */}
+                  {menuOpen &&
+                    panel.id === 'broker' &&
                     (linkState === 'Faulted' ||
                       linkState === 'Reconnecting' ||
                       linkState === 'Retrying') && (

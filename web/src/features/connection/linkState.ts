@@ -16,10 +16,10 @@ import { useHubStatusStore } from '../../stores/hubStatusStore';
  *                  broker at all. Everything on screen is the last thing it heard.
  *   Disconnected — nobody has asked for a link yet. The console opens here.
  *
- * It lived in App.tsx, read by the rail and nowhere else, for as long as the rail was the only
- * place the state was said. The broker panel says it too now, and a second derivation of six
- * states would be two readouts of one link free to disagree about it — which is the bug the
- * single rail lamp was introduced to end.
+ * It lived in App.tsx as a ternary read by the rail and nowhere else. Out here it has a name, a
+ * place to be found and a test: the precedence below is three overlapping answers about one link,
+ * and which of them wins decides what the rail wears through an outage — which is the thing the
+ * single rail lamp was introduced to settle, and which nothing pinned while it was a ternary.
  */
 export type LinkState =
   | 'Connected'
@@ -51,31 +51,4 @@ export function useLinkState(): LinkState {
   if (state === 'Connecting') return 'Waiting';
 
   return state;
-}
-
-/**
- * Whether the link is in a state the reader is meant to do something about.
- *
- * Three tones rather than six states, because that is all any readout of this needs: the rail
- * tints a row with it and the broker panel's chip draws itself in it.
- *
- * 'none' for Disconnected is deliberate and is the oldest rule here: the console opens having
- * been asked to do nothing, and a red that is on at rest is a red nobody looks at when it
- * finally means something.
- */
-export type LinkTone = 'live' | 'working' | 'fault' | 'none';
-
-export function toneOf(state: LinkState): LinkTone {
-  switch (state) {
-    case 'Connected':
-      return 'live';
-    case 'Waiting':
-    case 'Retrying':
-      return 'working';
-    case 'Faulted':
-    case 'Reconnecting':
-      return 'fault';
-    case 'Disconnected':
-      return 'none';
-  }
 }

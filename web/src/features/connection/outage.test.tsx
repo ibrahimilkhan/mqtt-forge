@@ -340,8 +340,8 @@ describe('a link that drops while the reader is elsewhere', () => {
     await says('Faulted');
     await supervising({ active: true, attempt: 1, nextAttemptAt: '2026-09-02T21:00:08.000Z' });
 
-    // By its heading. The state chip at the top of the panel says the same word about the same
-    // outage, which is the point of it — so a query that only asks for the word finds two.
+    // By its heading rather than by the bare word: this is a test about the notice, and a query
+    // that matches any 'Reconnecting' on the panel is one that passes on somebody else's.
     await screen.findByRole('heading', { name: 'Reconnecting' });
     expect(screen.getAllByRole('checkbox', { name: /Reconnect automatically/ })).toHaveLength(1);
   });

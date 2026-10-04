@@ -6,16 +6,15 @@ import { queryKeys } from '../../api/queryKeys';
 import { useHubStatusStore } from '../../stores/hubStatusStore';
 import type { ConnectionState } from '../../types/api';
 import { arrived } from './reconnectView';
-import { toneOf, useLinkState, type LinkState } from './linkState';
+import { useLinkState, type LinkState } from './linkState';
 
 /**
  * The six states, and which of them wins when more than one is true at once.
  *
  * All three of the overlaps below are the ordinary shape of an outage rather than edge cases: a
  * ladder mid-climb IS a link that is Faulted or Connecting by turns, and a console that has lost
- * its own server still holds a cache saying the broker was up. Which answer comes out decides
- * what colour the rail wears and what word the broker panel's chip says, in the states a reader
- * most wants them to agree about.
+ * its own server still holds a cache saying the broker was up. Which answer comes out is what the
+ * Broker row wears through an outage, in the states a reader most wants it to be right about.
  */
 
 // The store outlives a test, so a case that loses the hub must not leave it lost for the next.
@@ -84,21 +83,5 @@ describe('the link state every readout reads', () => {
     expect(state('Connected')).toBe('Reconnecting');
     expect(state('Faulted', { active: true })).toBe('Reconnecting');
     expect(state('Disconnected')).toBe('Reconnecting');
-  });
-});
-
-describe('the tone a state is drawn in', () => {
-  it('gives each state one of three', () => {
-    expect(toneOf('Connected')).toBe('live');
-    expect(toneOf('Waiting')).toBe('working');
-    expect(toneOf('Retrying')).toBe('working');
-    expect(toneOf('Faulted')).toBe('fault');
-    expect(toneOf('Reconnecting')).toBe('fault');
-  });
-
-  /* The oldest rule in this file. The console opens having been asked to do nothing, and a red
-     that is on at rest is a red nobody looks at when it finally means something. */
-  it('leaves the state nobody asked about uncoloured', () => {
-    expect(toneOf('Disconnected')).toBe('none');
   });
 });

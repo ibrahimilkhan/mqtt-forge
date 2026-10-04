@@ -66,7 +66,23 @@ function used(): Array<{ file: string; sheet: string; name: string }> {
       /import\s+(\w+)\s+from\s+'([^']+\.module\.css)'/g,
     )) {
       const sheet = resolve(file, spec);
-      const reads = new RegExp(String.raw`\b${binding}\.([A-Za-z_]\w*)`, 'g');
+      /*
+       * `(?![\w.])` is the whole of what stops a stylesheet's own FILENAME reading as a class.
+       * `import panel from './panel.module.css'` contains the text `panel.module`, and so does
+       * every comment that names the file — 'see panel.module.css' is a sentence this codebase
+       * writes often. Each one looked like a use of a class called `module`, and it went unnoticed
+       * for as long as some stylesheet happened to mention a filename in a comment of its own,
+       * since `.module` is what that looks like to a selector scan too.
+       *
+       * It forbids a following dot AND a following word character, and it needs both: `(?!\.css)`
+       * alone is satisfied by backtracking the name to `modul`, whose next character is an `e`.
+       *
+       * Matched on the source rather than on a comment-stripped copy of it: stripping comments by
+       * regex is what broke this sweep silently the first time it was tried — one `/*` inside a
+       * string pairs with a `*` `/` hundreds of lines later and takes the markup between them with
+       * it, and a sweep that has stopped looking at anything passes.
+       */
+      const reads = new RegExp(String.raw`\b${binding}\.([A-Za-z_]\w*)(?![\w.])`, 'g');
       for (const [, name] of source.matchAll(reads)) all.push({ file, sheet, name });
     }
   }
