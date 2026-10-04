@@ -7,8 +7,8 @@ import { overlapsIn, randomSession, wrongWith } from './wireTestbed';
  * node has no one way out, as the page puts it — and now and then a node dragged off its row to
  * somewhere clear. After every step, as the canvas would draw it, nothing may stand on anything: no
  * node on another, no wire — drawn round or the curve — through a node but its own two or through a
- * port's name, and no two wires drawn round on one line, or closer than 16 beside each other, but
- * where they go into one port together (see wrongWith).
+ * port's name, no two wires drawn round on one line, or closer than 16 beside each other, but where
+ * they go into one port together, and no port's name on a node or on another name (see wrongWith).
  *
  * Drawings found one at a time each held, and the next one a reader clicked together did not: a
  * review clicking at random found one session in sixteen with a node on another, and one in eight

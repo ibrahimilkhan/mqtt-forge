@@ -615,11 +615,6 @@ function region(wiring: Wiring, loop: string, port: string): Set<string> {
   return walk(wiring.outs, first, away);
 }
 
-/** The nodes of a loop's body: everything its body's wire leads to, without passing through the loop again. */
-export function bodyOf(flow: FlowDto, loopId: string): ReadonlySet<string> {
-  return region(wiringOf(flow.nodes, flow.edges), loopId, 'body');
-}
-
 /**
  * The flow with the wire added — in place of the wire its way out had, since a way out has one — or
  * the same flow when the wire may not be drawn. The same flow, too, when the way out already has
@@ -705,6 +700,16 @@ export function noReturn(flow: FlowDto): ReadonlySet<string> {
     noReturnOf.set(flow, found);
   }
   return found;
+}
+
+/**
+ * The ports of a node of `flow` that want a wire, as the canvas marks them and the routes keep clear
+ * of the names it writes there: its ways out with none (see unwiredOuts), out of `outs`, the ways out
+ * it is drawn with; and its next, when it is a loop nothing comes back to (see noReturn).
+ */
+export function unwiredPorts(flow: FlowDto, node: FlowNodeDto, outs: readonly string[]): string[] {
+  const open = unwiredOuts(flow);
+  return [...outs.filter((port) => open.has(`${node.id}:${port}`)), ...(noReturn(flow).has(node.id) ? ['next'] : [])];
 }
 
 /*

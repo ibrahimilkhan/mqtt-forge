@@ -354,82 +354,58 @@ function plan(
   let owner = '';
   const others = (run: Run) => run.leg !== owner;
 
-  /** The lowest lane at `y` or above it, along lo..hi, clear of every node, name and lane there. */
-  const laneUp = (start: number, lo: number, hi: number) => {
-    let y = start;
+  /**
+   * The first place from `start` on, going `way` — 1 down or right, −1 up or left — where a lane along
+   * lo..hi (`level`), or a run up or down from lo to hi, lies clear of every node, name and other wire
+   * running the same way there, each with what it keeps clear round it: a lane runs OVER above a node
+   * and MARGIN under it, a run up or down MARGIN beside it. Whatever it lies in moves it past that,
+   * and since every move goes the one way, it comes to the same place whichever moves it first. A run
+   * up or down into `into` may lie on another one into it, as they come down to it and go in together.
+   */
+  const clearOf = (start: number, way: 1 | -1, level: boolean, lo: number, hi: number, into?: string) => {
+    let at = start;
     for (let moved = true, count = 0; moved && count < MOVES; count++) {
       moved = false;
-      for (const { box } of nodes)
-        if (overlap(lo, hi, box.x, box.x + box.width) && y > box.y - OVER && y < box.y + box.height + MARGIN) {
-          y = box.y - OVER;
+      for (const { box } of nodes) {
+        const across = level ? overlap(lo, hi, box.x, box.x + box.width) : overlap(lo, hi, box.y, box.y + box.height);
+        const from = level ? box.y - OVER : box.x - MARGIN;
+        const to = level ? box.y + box.height + MARGIN : box.x + box.width + MARGIN;
+        if (across && at > from && at < to) {
+          at = way > 0 ? to : from;
           moved = true;
         }
-      for (const name of names)
-        if (overlap(lo, hi, name.x, name.x + name.width) && y > name.y - NAME_ROOM && y < name.y + name.height + NAME_ROOM) {
-          y = name.y - NAME_ROOM;
+      }
+      for (const name of names) {
+        const across = level ? overlap(lo, hi, name.x, name.x + name.width) : overlap(lo, hi, name.y, name.y + name.height);
+        const from = (level ? name.y : name.x) - NAME_ROOM;
+        const to = (level ? name.y + name.height : name.x + name.width) + NAME_ROOM;
+        if (across && at > from && at < to) {
+          at = way > 0 ? to : from;
           moved = true;
         }
-      for (const run of levels)
-        if (others(run) && overlap(lo, hi, run.lo, run.hi) && beside(y, run.at)) {
-          y = run.at - STACK;
+      }
+      for (const run of level ? levels : uprights)
+        if (others(run) && !(run.approach && run.into === into) && overlap(lo, hi, run.lo, run.hi) && beside(at, run.at)) {
+          at = run.at + way * STACK;
           moved = true;
         }
     }
-    return y;
+    return at;
   };
 
+  /** The lowest lane at `y` or above it, along lo..hi, clear of every node, name and lane there. */
+  const laneUp = (start: number, lo: number, hi: number) => clearOf(start, -1, true, lo, hi);
+
   /** The highest lane at `y` or under it, along lo..hi, clear of every node, name and lane there. */
-  const laneDown = (start: number, lo: number, hi: number) => {
-    let y = start;
-    for (let moved = true, count = 0; moved && count < MOVES; count++) {
-      moved = false;
-      for (const { box } of nodes)
-        if (overlap(lo, hi, box.x, box.x + box.width) && y > box.y - OVER && y < box.y + box.height + MARGIN) {
-          y = box.y + box.height + MARGIN;
-          moved = true;
-        }
-      for (const name of names)
-        if (overlap(lo, hi, name.x, name.x + name.width) && y > name.y - NAME_ROOM && y < name.y + name.height + NAME_ROOM) {
-          y = name.y + name.height + NAME_ROOM;
-          moved = true;
-        }
-      for (const run of levels)
-        if (others(run) && overlap(lo, hi, run.lo, run.hi) && beside(y, run.at)) {
-          y = run.at + STACK;
-          moved = true;
-        }
-    }
-    return y;
-  };
+  const laneDown = (start: number, lo: number, hi: number) => clearOf(start, 1, true, lo, hi);
 
   /**
    * The first place at `x` or past it, going `way` — 1 right, −1 left — where a wire can run up or
    * down from `a` to `b` clear of every node, name and other wire running so. A wire into `into` may
    * come down where another one into it comes down.
    */
-  const column = (start: number, a: number, b: number, way: 1 | -1, into?: string) => {
-    const [lo, hi] = [Math.min(a, b), Math.max(a, b)];
-    let x = start;
-    for (let moved = true, count = 0; moved && count < MOVES; count++) {
-      moved = false;
-      for (const { box } of nodes)
-        if (overlap(lo, hi, box.y, box.y + box.height) && x > box.x - MARGIN && x < box.x + box.width + MARGIN) {
-          x = way > 0 ? box.x + box.width + MARGIN : box.x - MARGIN;
-          moved = true;
-        }
-      for (const name of names)
-        if (overlap(lo, hi, name.y, name.y + name.height) && x > name.x - NAME_ROOM && x < name.x + name.width + NAME_ROOM) {
-          x = way > 0 ? name.x + name.width + NAME_ROOM : name.x - NAME_ROOM;
-          moved = true;
-        }
-      for (const run of uprights)
-        if (others(run) && !(run.approach && run.into === into) && overlap(lo, hi, run.lo, run.hi) && beside(x, run.at)) {
-          x = run.at + way * STACK;
-          moved = true;
-        }
-    }
-    return x;
-  };
+  const column = (start: number, a: number, b: number, way: 1 | -1, into?: string) =>
+    clearOf(start, way, false, Math.min(a, b), Math.max(a, b), into);
 
   /**
    * What a wire may not run inside: every node with CLEAR round it, and every name with NAME_CLEAR.

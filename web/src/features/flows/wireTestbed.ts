@@ -2,7 +2,7 @@ import { getBezierPath } from '@xyflow/react';
 import type { FlowDto, FlowNodeDto, FlowNodeType } from '../../types/api';
 import { backPath, MARGIN, namesOf, POSITIONS, routes, type Box, type End, type Leg, type Placed, type Route } from './backWires';
 import { DECISION_HEIGHT, DECISION_WIDTH, MEASURE, NODE_WIDTH, STEP_HEIGHT } from './FlowCanvas';
-import { addNode, emptyFlow, freeSpot, insertAfter, insertOnWire, moveNodes, noReturn, placeAfter, unwiredOuts } from './flowDocument';
+import { addNode, emptyFlow, freeSpot, insertAfter, insertOnWire, moveNodes, placeAfter, unwiredPorts } from './flowDocument';
 import { NODE_SPECS, portsOf, sideOf, specOf } from './nodeTypes';
 
 /*
@@ -41,13 +41,10 @@ export function endAt(node: FlowNodeDto, port: string, out: boolean): End {
 
 /** A flow as the routes take it once it is drawn: each node's box with the names round it, and each wire's two ends. */
 export function drawnAs(flow: FlowDto): { nodes: Placed[]; legs: Leg[] } {
-  const open = unwiredOuts(flow);
-  const unreturned = noReturn(flow);
   const nodes = flow.nodes.map((node) => {
     const box = { x: node.x, y: node.y, ...drawnBox(node.type) };
     const ports = portsOf(node, flow.edges);
-    const unwired = [...ports.outs.filter((port) => open.has(`${node.id}:${port}`)), ...(unreturned.has(node.id) ? ['next'] : [])];
-    return { id: node.id, box, names: namesOf(box, node.type, ports, unwired) };
+    return { id: node.id, box, names: namesOf(box, node.type, ports, unwiredPorts(flow, node, ports.outs)) };
   });
   const byId = new Map(flow.nodes.map((node) => [node.id, node]));
   const legs = flow.edges.map((edge) => ({
@@ -152,6 +149,9 @@ function runsOf(d: string) {
 const inside = (box: Box, { x, y }: Point, inset = 1.5) =>
   x > box.x + inset && x < box.x + box.width - inset && y > box.y + inset && y < box.y + box.height - inset;
 
+/** Whether two boxes share more than an edge. */
+const covers = (a: Box, b: Box) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
 /** A wire drawn round, as the canvas draws it: its leg, its route and its path. */
 export type Drawn = { leg: Leg; route: Route; d: string };
 
@@ -194,12 +194,20 @@ export function routedIn(flow: FlowDto): { nodes: Placed[]; drawn: Drawn[] } {
  * - the stub of a curve — its first MARGIN out of its port, or its last into the other, which the
  *   routes hold for it — that a wire drawn round lies on or runs beside closer than 16, in the same way:
  *   out of an alarm's foot and up into the End level with it, a wire ran into the End along the start
- *   of the curve out of the alarm's side, and the two read as one line out of the side.
+ *   of the curve out of the alarm's side, and the two read as one line out of the side;
+ * - a port's name over a node, or over another name: written there, it is read with what it covers,
+ *   or not at all.
  */
 export function wrongWith(flow: FlowDto): string[] {
   const { nodes, wires } = wiresIn(flow);
   const drawn = wires.flatMap(({ leg, route, d }) => (route ? [{ leg, route, d }] : []));
   const wrong: string[] = [];
+
+  const names = nodes.flatMap(({ id, names }) => names.map((box) => ({ id, box })));
+  for (const [at, { id, box }] of names.entries()) {
+    for (const node of nodes) if (covers(box, node.box)) wrong.push(`a name of ${id} stands on ${node.id}`);
+    for (const other of names.slice(at + 1)) if (covers(box, other.box)) wrong.push(`a name of ${id} stands on a name of ${other.id}`);
+  }
 
   for (const { leg, route, d } of wires) {
     const points = sampled(d);

@@ -37,18 +37,31 @@ import { useShallow } from 'zustand/react/shallow';
 import { own } from '../../lib/own';
 import { isLive, nodeKey, shownRun, useFlowStatusStore, type FlowStatusState } from '../../stores/flowStatusStore';
 import type { FlowDto, FlowEdgeDto, FlowNodeDto } from '../../types/api';
-import { backPath, MARGIN, NAME_ROOM, namesOf, routes, Traces, type Box, type Drag, type End, type Leg, type Placed, type Route } from './backWires';
+import {
+  backPath,
+  MARGIN,
+  NAME_ROOM,
+  namesOf,
+  POSITIONS,
+  routes,
+  Traces,
+  type Box,
+  type Drag,
+  type End,
+  type Leg,
+  type Placed,
+  type Route,
+} from './backWires';
 import {
   addNode,
   canConnect,
   connect,
   moveNodes,
   newId,
-  noReturn,
   removeEdges,
   removeNodes,
   unreached,
-  unwiredOuts,
+  unwiredPorts,
   type Measure,
   type Problems,
   type Wire,
@@ -139,26 +152,21 @@ const ROOM = 56;
 const FACING = 48;
 
 /**
- * What a flow tells about each of its nodes' names: its ways out with no wire, its loops nothing comes
- * back to, and which nodes it has.
- */
-type Wired = { open: ReadonlySet<string>; back: ReadonlySet<string>; has: ReadonlySet<string> };
-
-/**
  * The names the canvas writes beside a node's ports, where the routes reckon them (namesOf), for the
- * flow it is in: its ways out with no wire say so, and a loop nothing comes back to says so at its
- * next. A node not in the flow yet is one being put down free: every way out it has wants a wire but
- * a loop's body, which comes back to the loop's own next (see addNode).
+ * flow it is in, which has the nodes `has` names: its ports that want a wire say so (unwiredPorts). A
+ * node not in the flow yet is one being put down free: every way out it has wants a wire but a loop's
+ * body, which comes back to the loop's own next (see addNode).
  */
-function namesBeside(flow: FlowDto, node: FlowNodeDto, { open, back, has }: Wired = wiredIn(flow)): Box[] {
+function namesBeside(flow: FlowDto, node: FlowNodeDto, has: ReadonlySet<string> = idsIn(flow)): Box[] {
   const ports = portsOf(node, flow.edges);
   const unwired = has.has(node.id)
-    ? [...ports.outs.filter((port) => open.has(`${node.id}:${port}`)), ...(back.has(node.id) ? ['next'] : [])]
+    ? unwiredPorts(flow, node, ports.outs)
     : ports.outs.filter((port) => !(isLoop(node.type) && port === 'body'));
   return namesOf(drawnAt(node), node.type, ports, unwired);
 }
 
-const wiredIn = (flow: FlowDto): Wired => ({ open: unwiredOuts(flow), back: noReturn(flow), has: new Set(flow.nodes.map((node) => node.id)) });
+/** The ids of a flow's nodes. */
+const idsIn = (flow: FlowDto): ReadonlySet<string> => new Set(flow.nodes.map((node) => node.id));
 
 /** Where a node stands and how big it is drawn. */
 const drawnAt = (node: FlowNodeDto): Box => ({ x: node.x, y: node.y, width: boxOf(node.type).width, height: heightOf(node.type) });
@@ -208,17 +216,17 @@ type Around = { box: Box; names: readonly Box[]; mouths: readonly Mouth[] };
  * for each two, what stands round both, and the flow's wiring with it, made a click in a flow of two
  * hundred nodes tens of milliseconds long.
  */
-const arounds = new WeakMap<FlowDto, { wired: Wired; nodes: WeakMap<FlowNodeDto, Around> }>();
+const arounds = new WeakMap<FlowDto, { has: ReadonlySet<string>; nodes: WeakMap<FlowNodeDto, Around> }>();
 
 function aroundOf(flow: FlowDto, node: FlowNodeDto): Around {
   let kept = arounds.get(flow);
   if (kept === undefined) {
-    kept = { wired: wiredIn(flow), nodes: new WeakMap() };
+    kept = { has: idsIn(flow), nodes: new WeakMap() };
     arounds.set(flow, kept);
   }
   let around = kept.nodes.get(node);
   if (around === undefined) {
-    around = { box: drawnAt(node), names: namesBeside(flow, node, kept.wired), mouths: mouthsOf(flow, node) };
+    around = { box: drawnAt(node), names: namesBeside(flow, node, kept.has), mouths: mouthsOf(flow, node) };
     kept.nodes.set(node, around);
   }
   return around;
@@ -311,13 +319,6 @@ const OUTLINES: Partial<Record<NodeShape, string>> = {
   input: '10,0 100,0 90,100 0,100',
   loop: '8,0 92,0 100,50 92,100 8,100 0,50',
   decision: '50,0 100,50 50,100 0,50',
-};
-
-const POSITIONS: Record<Side, Position> = {
-  left: Position.Left,
-  right: Position.Right,
-  top: Position.Top,
-  bottom: Position.Bottom,
 };
 
 /**
@@ -732,14 +733,12 @@ export function FlowCanvas({ flow, problems }: { flow: FlowDto; problems: Proble
   // for the same flow, and reads it there. A drag gets nothing from it: each frame of one is a new
   // flow, from moveNodes, and is asked afresh.
   const nodes = useMemo<CanvasNode[]>(() => {
-    const open = unwiredOuts(flow);
     const lost = unreached(flow);
-    const back = noReturn(flow);
 
     return flow.nodes.map((node) => {
       const ports = portsOf(node, flow.edges);
       // A loop nothing comes back to wants a wire into its next as much as a way out wants one out.
-      const unwired = [...ports.outs.filter((port) => open.has(`${node.id}:${port}`)), ...(back.has(node.id) ? ['next'] : [])];
+      const unwired = unwiredPorts(flow, node, ports.outs);
 
       return canvasNode(
         flow,

@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FlowDto, FlowNodeDto, FlowNodeType } from '../../types/api';
 import {
   addNode,
-  bodyOf,
   canConnect,
   connect,
   emptyFlow,
@@ -510,7 +509,6 @@ describe('a flowchart stays whole while it is built', () => {
     expect(canConnect(filled, { from: 'p', fromPort: 'out', to: 'l', toPort: 'next' })).toBe(true);
     expect(canConnect(filled, { from: 'a', fromPort: 'out', to: 'l', toPort: 'next' })).toBe(false);
     expect(canConnect(filled, { from: 'p', fromPort: 'out', to: 'a', toPort: 'in' })).toBe(false);
-    expect(bodyOf(filled, 'l')).toEqual(new Set(['p']));
   });
 
   it('names every way out that has no wire, and every node Start does not lead to', () => {
@@ -684,7 +682,8 @@ describe('where a palette click after a node puts it', () => {
    * A chain from the Start to the End by hand, steps 284 apart, and a row of two nodes laid under it,
    * `below` down from its top: Publishes wired one to the other, 40 under the steps' boxes at 120; or a
    * For each and a For with nothing wired, whose ways in at their tops face the chain and whose feet
-   * face the way down.
+   * face the way down. The two stand 360 apart, so that the For each's ways out, which want wires,
+   * have their names clear of the For: "body · wire me" ran onto a For 300 along.
    */
   const rows = (below = 120, lower: 'publishes' | 'loops' = 'publishes'): FlowDto => ({
     id: 'rows', name: 'Rows', enabled: false, variables: [],
@@ -695,7 +694,7 @@ describe('where a palette click after a node puts it', () => {
       { id: 'c', type: 'debug', x: 852, y: 0, config: {} },
       { id: 'end', type: 'end', x: 1136, y: 0, config: {} },
       { id: 'x', type: lower === 'loops' ? 'forEach' : 'publish', x: 600, y: below, config: {} },
-      { id: 'y', type: lower === 'loops' ? 'for' : 'publish', x: 900, y: below, config: {} },
+      { id: 'y', type: lower === 'loops' ? 'for' : 'publish', x: 960, y: below, config: {} },
     ],
     edges: [
       { id: 'e1', from: 'start', fromPort: 'out', to: 'a', toPort: 'in' },
@@ -735,7 +734,7 @@ describe('where a palette click after a node puts it', () => {
 
     expect(nodeOf(flow, 'say')).toMatchObject({ x: 568, y: 0 });
     expect(['b', 'c', 'end'].map((id) => nodeOf(flow, id).x)).toEqual([852, 1136, 1420]);
-    expect(['x', 'y'].map((id) => nodeOf(flow, id))).toMatchObject([{ x: 600, y: 120 }, { x: 900, y: 120 }]);
+    expect(['x', 'y'].map((id) => nodeOf(flow, id))).toMatchObject([{ x: 600, y: 120 }, { x: 960, y: 120 }]);
     expect([...overlapsIn(flow), ...wrongWith(flow)]).toEqual([]);
   });
 
@@ -749,7 +748,7 @@ describe('where a palette click after a node puts it', () => {
 
     expect(nodeOf(flow, 'loop')).toMatchObject({ x: 568, y: 0 });
     expect(['b', 'c', 'end'].map((id) => nodeOf(flow, id).x)).toEqual([852, 1136, 1420]);
-    expect(['x', 'y'].map((id) => nodeOf(flow, id))).toMatchObject([{ x: 600, y: 120 }, { x: 900, y: 120 }]);
+    expect(['x', 'y'].map((id) => nodeOf(flow, id))).toMatchObject([{ x: 600, y: 120 }, { x: 960, y: 120 }]);
     expect([...overlapsIn(flow), ...wrongWith(flow)]).toEqual([]);
   });
 
@@ -758,7 +757,7 @@ describe('where a palette click after a node puts it', () => {
 
     expect(nodeOf(flow, 'say')).toMatchObject({ x: 568, y: 0 });
     expect(['b', 'c', 'end'].map((id) => nodeOf(flow, id).x)).toEqual([852, 1136, 1420]);
-    expect(['x', 'y'].map((id) => nodeOf(flow, id))).toMatchObject([{ x: 600, y: 120 }, { x: 900, y: 120 }]);
+    expect(['x', 'y'].map((id) => nodeOf(flow, id))).toMatchObject([{ x: 600, y: 120 }, { x: 960, y: 120 }]);
     expect([...overlapsIn(flow), ...wrongWith(flow)]).toEqual([]);
   });
 
@@ -819,7 +818,7 @@ describe('where a palette click after a node puts it', () => {
     const flow = click(rows(), { node: 'start' }, 'debug', 'say');
 
     expect(['say', 'a', 'b', 'c', 'end'].map((id) => nodeOf(flow, id).x)).toEqual([284, 568, 852, 1136, 1420]);
-    expect(['x', 'y'].map((id) => nodeOf(flow, id))).toMatchObject([{ x: 600, y: 120 }, { x: 900, y: 120 }]);
+    expect(['x', 'y'].map((id) => nodeOf(flow, id))).toMatchObject([{ x: 600, y: 120 }, { x: 960, y: 120 }]);
     expect([...overlapsIn(flow), ...wrongWith(flow)]).toEqual([]);
   });
 
@@ -829,7 +828,7 @@ describe('where a palette click after a node puts it', () => {
     const flow = click(rows(120, 'loops'), { node: 'start' }, 'debug', 'say');
 
     expect(['say', 'a', 'b', 'c', 'end'].map((id) => nodeOf(flow, id).x)).toEqual([284, 568, 852, 1136, 1420]);
-    expect(['x', 'y'].map((id) => nodeOf(flow, id))).toMatchObject([{ x: 600, y: 120 }, { x: 900, y: 120 }]);
+    expect(['x', 'y'].map((id) => nodeOf(flow, id))).toMatchObject([{ x: 600, y: 120 }, { x: 960, y: 120 }]);
     expect([...overlapsIn(flow), ...wrongWith(flow)]).toEqual([]);
   });
 
@@ -841,8 +840,31 @@ describe('where a palette click after a node puts it', () => {
 
     expect(nodeOf(flow, 'test')).toMatchObject({ x: 568, y: -28 });
     expect(['b', 'c', 'end'].map((id) => nodeOf(flow, id).x)).toEqual([916, 1200, 1484]);
-    expect(['x', 'y'].map((id) => nodeOf(flow, id))).toMatchObject([{ x: 600, y: 150 }, { x: 900, y: 150 }]);
+    expect(['x', 'y'].map((id) => nodeOf(flow, id))).toMatchObject([{ x: 600, y: 150 }, { x: 960, y: 150 }]);
     expect([...overlapsIn(flow), ...wrongWith(flow)]).toEqual([]);
+  });
+});
+
+/**
+ * What the checks the palette's sessions are held to count as wrong (wrongWith), besides the wires: a
+ * port's name over a node, or over another name, which reads as part of what it covers.
+ */
+describe('a name where it cannot be read', () => {
+  const at = (id: string, type: FlowNodeType, x: number, y: number): FlowNodeDto => ({ id, type, x, y, config: {} });
+  const alone = (...nodes: FlowNodeDto[]): FlowDto => ({ id: 'f', name: 'F', enabled: false, variables: [], nodes, edges: [] });
+
+  it('is counted wrong over a node', () => {
+    // The For each's body wants a wire, and "body · wire me" runs on past its right edge onto the Debug.
+    expect(wrongWith(alone(at('each', 'forEach', 0, 0), at('say', 'debug', 300, 0)))).toContain('a name of each stands on say');
+  });
+
+  it('is counted wrong over another name', () => {
+    // The first's "done · wire me" under its foot, and the second's "next · wire me" over its top.
+    expect(wrongWith(alone(at('one', 'forEach', 0, 0), at('two', 'forEach', 40, 100)))).toContain('a name of one stands on a name of two');
+  });
+
+  it('is not counted where it stands clear', () => {
+    expect(wrongWith(alone(at('each', 'forEach', 0, 0), at('say', 'debug', 360, 0))).filter((one) => one.startsWith('a name'))).toEqual([]);
   });
 });
 
