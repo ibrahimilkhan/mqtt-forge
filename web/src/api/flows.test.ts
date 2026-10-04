@@ -1,5 +1,6 @@
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
+import { ApiError } from '../lib/problemDetails';
 import { server } from '../test/server';
 import type { FlowDto } from '../types/api';
 import { deleteFlow, isFlowInvalid, isTestUnknown, putFlow, stopTest, testFlow } from './flows';
@@ -118,7 +119,10 @@ describe('flows client', () => {
     for (const id of ['watch', 'sim', 'fan']) {
       const error = await stopTest(id).catch((caught: unknown) => caught);
 
-      expect(isTestUnknown(error)).toBe(false);
+      // A failure, and not a stop that went through: a stop that answered with nothing to throw would
+      // pass for one that was not taken for a test that had ended.
+      expect(error, id).toBeInstanceOf(ApiError);
+      expect(isTestUnknown(error), id).toBe(false);
     }
   });
 

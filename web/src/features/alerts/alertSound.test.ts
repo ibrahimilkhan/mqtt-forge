@@ -116,11 +116,22 @@ describe('the tone', () => {
     expect(audio.tones).toHaveLength(0);
   });
 
+  // Not counted either: a critical that asked only for the screen, in a batch with a warning that
+  // asked to be heard, made the warning sound like a critical.
+  it('sounds a batch at the worst level of the alerts that asked for a tone, not of every alert in it', async () => {
+    const audio = fakeAudio();
+    await turnSoundOn();
+
+    soundFor([alertWith('critical', ['screen']), alertWith('warn', ['sound'])]);
+
+    expect(audio.tones.map((tone) => tone.hz)).toEqual(Array.from({ length: TONES.warn.beeps }, () => TONES.warn.hz));
+  });
+
   // A Sound node's tones come in batches the way alerts do, and a room cannot tell two tones
   // played over each other apart: one tone, at the worst level in the batch, and none of the others.
-  // The loudest is neither first nor last in this batch, as in the batch of alerts that sounds once,
-  // two cases up: with it at either end, picking the level by its place would pass for picking the
-  // loudest.
+  // The loudest is neither first nor last in this batch, as in the batch of alerts further up that
+  // sounds once, at the worst severity in it: with it at either end, picking the level by its place
+  // would pass for picking the loudest.
   it('plays a batch of levels as one tone at the loudest', async () => {
     const audio = fakeAudio();
     await turnSoundOn();
