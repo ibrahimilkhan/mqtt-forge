@@ -2064,6 +2064,69 @@ describe('test and activate', () => {
 });
 
 /**
+ * A test can go on of a flow this page has no tab for: a draft this browser did not keep, and lost
+ * with a reload; a flow another console deleted before this one read the list again; a draft of
+ * another console's. With no tab there is no Stop on the toolbar, and its Sound and Notify reach every
+ * console. So the page lists each one going, with a Stop of its own.
+ */
+describe('tests of flows the page does not have', () => {
+  const strays = () => screen.queryByRole('region', { name: 'Tests with no tab' });
+  const testOf = (flowId: string, state: FlowRunStatusDto['state'] = 'running') => runOf(flowId, { kind: 'test', state });
+
+  it('lists a test going of a flow neither on the server nor drafted here, with a Stop that stops it', async () => {
+    let stopped: string | null = null;
+    server.use(
+      http.delete('/api/flows/:id/test', ({ params }) => {
+        stopped = String(params.id);
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    renderPage([watch]);
+    await screen.findByRole('tabpanel');
+
+    act(() => useFlowStatusStore.getState().setStatus({ runs: [testOf('flost1')] }));
+
+    const list = await screen.findByRole('region', { name: 'Tests with no tab' });
+    expect(within(list).getByText('flost1')).toBeInTheDocument();
+    // Out of the region the page says its lines in: the numbers bring this list, and a draft tested on
+    // another console would be read out with every push.
+    expect(list.closest('[aria-live]')).toBeNull();
+
+    await userEvent.click(within(list).getByRole('button', { name: 'Stop the test of flost1' }));
+    await waitFor(() => expect(stopped).toBe('flost1'));
+    expect(within(list).getByRole('button', { name: 'Stop the test of flost1' })).toHaveAttribute('aria-disabled', 'true');
+
+    act(() => useFlowStatusStore.getState().setStatus({ runs: [testOf('flost1', 'stopped')] }));
+    expect(strays()).toBeNull();
+  });
+
+  it('lists one on the empty page as well', async () => {
+    keeping();
+    render(<FlowsPage />);
+    await screen.findByRole('button', { name: 'Start from an example' });
+
+    act(() => useFlowStatusStore.getState().setStatus({ runs: [testOf('flost1', 'waiting')] }));
+
+    expect(within(await screen.findByRole('region', { name: 'Tests with no tab' })).getByText('flost1')).toBeInTheDocument();
+  });
+
+  it('lists no test of a flow the page has, the server\'s or a draft\'s, none that has ended, and no run that is not a test', async () => {
+    renderPage([watch]);
+    await screen.findByRole('tabpanel');
+    act(() => useFlowDraftStore.getState().put({ ...emptyFlow('Fresh'), id: 'fresh' }));
+
+    act(() =>
+      useFlowStatusStore.getState().setStatus({
+        runs: [testOf('watch'), testOf('fresh'), testOf('ended', 'finished'), testOf('halted', 'stopped'), runOf('worker')],
+      }),
+    );
+
+    expect(screen.getByRole('tab', { name: /^Fresh/ })).toBeInTheDocument();
+    expect(strays()).toBeNull();
+  });
+});
+
+/**
  * The spec's limits are two hundred nodes to a flow and pushes up to four times a second. A push
  * that moved nothing on screen draws nothing, and a drag that moves one flow's node checks that one
  * flow for changes, not every draft there is.

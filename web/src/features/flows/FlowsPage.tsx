@@ -180,6 +180,11 @@ function Page() {
   // The flows the server has switched on, whatever their drafts say: a draft never switches one.
   const activeIds = useMemo(() => new Set(deployed.filter((flow) => flow.enabled).map((flow) => flow.id)), [deployed]);
   const flows = useMemo(() => withDrafts(deployed, drafts), [deployed, drafts]);
+  // The tests going of flows this page has no tab for (see TestsWithNoTab).
+  const strays = useMemo(() => {
+    const known = new Set(flows.map((flow) => flow.id));
+    return testingIds.filter((id) => !known.has(id));
+  }, [flows, testingIds]);
 
   // How each draft stands against the server's copy of its flow — see standingOf. Worked out on
   // every frame of a drag, and cheap for all but the flow being dragged: what it asks is kept
@@ -479,6 +484,13 @@ function Page() {
               </p>
             )}
           </div>
+
+          <TestsWithNoTab
+            ids={strays}
+            stopping={test.stopping}
+            busy={save.isPending || test.start.isPending || test.stop.isPending}
+            onStop={test.halt}
+          />
         </div>
 
         {shown ? (
@@ -509,6 +521,58 @@ function Page() {
         )}
       </div>
     </Failures.Provider>
+  );
+}
+
+/**
+ * The tests the server is running of flows this page has no tab for — on neither the server's list
+ * nor among this browser's drafts — each with a Stop of its own, since nothing else on the page could
+ * stop one, and its Sound and Notify reach every console while its alarms lead nowhere. A draft this
+ * browser did not keep and lost with a reload is one; so is a flow another console deleted before
+ * this one read the list again, and a draft another console is testing. They are named by their ids:
+ * the numbers carry no names, and a flow with no tab has none here.
+ *
+ * Under the tabs, and on the empty page as well, but out of the polite region the page says its lines
+ * in: the numbers bring this list, and another console's test of its draft would be read out with
+ * every push. Stop is held off once pressed, as the toolbar's is (see useTest), and the test leaves
+ * the list once the numbers show it stopped.
+ */
+function TestsWithNoTab({
+  ids,
+  stopping,
+  busy,
+  onStop,
+}: {
+  ids: readonly string[];
+  stopping: ReadonlySet<string>;
+  busy: boolean;
+  onStop: (id: string) => void;
+}) {
+  if (ids.length === 0) return null;
+
+  return (
+    <section className={styles.strays} aria-label="Tests with no tab">
+      <p className={panel.note}>Tests running of flows this page does not have — a draft on another console, or one this browser lost:</p>
+      <ul className={styles.strayList}>
+        {ids.map((id) => {
+          const off = busy || stopping.has(id);
+          return (
+            <li key={id} className={styles.stray}>
+              <span className={styles.strayId}>{id}</span>
+              <button
+                type="button"
+                className="ghost"
+                aria-label={`Stop the test of ${id}`}
+                aria-disabled={off || undefined}
+                onClick={() => !off && onStop(id)}
+              >
+                <span aria-hidden="true">■</span> Stop
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 

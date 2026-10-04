@@ -24,6 +24,21 @@
    otherwise as wide as its content, and the tabs are meant to scroll, not widen the page. */
 .top { min-width: 0; }
 
+/* The tests going of flows the page has no tab for, under the line under the tabs: each flow's id
+   and its own Stop, side by side, as many to a row as fit. */
+.strays { margin-top: 10px; }
+.strays > p { margin: 0; }
+.strayList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.stray { display: inline-flex; align-items: center; gap: 8px; }
+.strayId { font-family: var(--mono); font-size: var(--t-small); }
+
 .body {
   display: grid;
   grid-template-columns: 172px minmax(0, 1fr) 300px;
