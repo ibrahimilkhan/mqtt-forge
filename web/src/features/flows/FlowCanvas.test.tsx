@@ -17,6 +17,7 @@ import {
 import * as backWires from './backWires';
 import { DRAG_TYPE, FlowCanvas } from './FlowCanvas';
 import sheet from './FlowCanvas.module.css?raw';
+import { exampleFlows } from './examples';
 import { connect, moveNodes, removeEdges, setConfig, type Problems } from './flowDocument';
 import { useFlowDraftStore } from './flowDraftStore';
 import { NODE_SPECS } from './nodeTypes';
@@ -159,7 +160,7 @@ describe('flow canvas', () => {
     expect(screen.getByText('not known to this build')).toBeInTheDocument();
     expect(port('fn', 'in')).not.toBeNull();
     expect(document.querySelectorAll('.react-flow__handle[data-nodeid="fn"]')).toHaveLength(1);
-    expect(screen.getByLabelText('Edge from test to fn')).toBeInTheDocument();
+    expect(screen.getByLabelText('If, yes, to function')).toBeInTheDocument();
   });
 
   // A node of a type this build does not know takes its ports from its wires, so it can have any
@@ -286,7 +287,7 @@ describe('flow canvas', () => {
 
     const refused = await screen.findByTitle('Pick a test.');
     expect(refused).toHaveAttribute('data-problem');
-    expect(screen.getByLabelText('Edge from start to test').querySelector('.react-flow__edge-path')).toHaveAttribute('data-problem');
+    expect(screen.getByLabelText('Start to If').querySelector('.react-flow__edge-path')).toHaveAttribute('data-problem');
     expect(screen.getByText('Start').closest('[data-group]')).not.toHaveAttribute('data-problem');
   });
 
@@ -378,7 +379,7 @@ describe('flow canvas', () => {
       };
       const [begin, test] = [start(), branch()];
       drawPage(odd);
-      await screen.findByLabelText('Edge from test to fn');
+      await screen.findByLabelText('If, yes, to function');
       await settled();
       begin.mockClear();
       test.mockClear();
@@ -394,7 +395,8 @@ describe('flow canvas', () => {
 
       expect(drawn).toEqual({ start: 0, branch: 0 });
       // The yes and the no, both to the End now.
-      expect(screen.getAllByLabelText('Edge from test to end')).toHaveLength(2);
+      expect(screen.getByLabelText('If, yes, to End')).toBeInTheDocument();
+      expect(screen.getByLabelText('If, no, to End')).toBeInTheDocument();
       // The node that takes its ports from its wires lost both the ones its wires met.
       expect(document.querySelectorAll('.react-flow__handle[data-nodeid="fn"]')).toHaveLength(0);
     });
@@ -411,7 +413,7 @@ describe('flow canvas', () => {
       };
       const [begin, test] = [start(), branch()];
       drawPage(said);
-      const wire = await screen.findByLabelText('Edge from say to end');
+      const wire = await screen.findByLabelText('Debug to End');
       await settled();
       fireEvent.click(wire);
       act(() => wire.focus());
@@ -465,22 +467,22 @@ describe('flow canvas', () => {
     };
     const status = (yes: number, no: number, count = yes + no) =>
       active([{ id: 'test', count, outs: { yes, no }, errors: 0, note: null, standing: [] }]);
-    const lit = (to: string) => screen.getByLabelText(`Edge from test to ${to}`).querySelector('[data-flash]') !== null;
+    const lit = (way: 'yes' | 'no') => screen.getByLabelText(`If, ${way}, to Debug`).querySelector('[data-flash]') !== null;
     useFlowStatusStore.getState().setStatus(status(1, 1));
     draw(branches);
     await screen.findAllByText('Debug');
 
     // What the If took in says nothing about which way it sent it.
     act(() => useFlowStatusStore.getState().setStatus(status(1, 1, 9)));
-    expect(lit('hot')).toBe(false);
-    expect(lit('cold')).toBe(false);
+    expect(lit('yes')).toBe(false);
+    expect(lit('no')).toBe(false);
 
     act(() => useFlowStatusStore.getState().setStatus(status(1, 2)));
-    expect(lit('cold')).toBe(true);
-    expect(lit('hot')).toBe(false);
+    expect(lit('no')).toBe(true);
+    expect(lit('yes')).toBe(false);
 
     act(() => useFlowStatusStore.getState().setStatus(status(2, 2)));
-    expect(lit('hot')).toBe(true);
+    expect(lit('yes')).toBe(true);
   });
 
   // The marks on a wire are one attribute each, at the same weight, so where two meet the one
@@ -527,7 +529,7 @@ describe('flow canvas', () => {
     draw();
     await screen.findByText('If');
     const node = () => screen.getByText('If').closest('[data-group]')!;
-    const wire = () => screen.getByLabelText('Edge from start to test');
+    const wire = () => screen.getByLabelText('Start to If');
     const line = () => wire().querySelector('.react-flow__edge-path')!;
 
     fireEvent.click(node());
@@ -551,9 +553,9 @@ describe('flow canvas', () => {
     draw({ ...button, edges: [{ ...button.edges[0], id: 'start' }] });
     await screen.findByText('If');
 
-    fireEvent.click(screen.getByLabelText('Edge from start to test'));
+    fireEvent.click(screen.getByLabelText('Start to If'));
 
-    expect(screen.getByLabelText('Edge from start to test').querySelector('.react-flow__edge-path')).toHaveAttribute('data-selected');
+    expect(screen.getByLabelText('Start to If').querySelector('.react-flow__edge-path')).toHaveAttribute('data-selected');
     expect(screen.getByText('Start').closest('[data-group]')).not.toHaveAttribute('data-selected');
   });
 
@@ -561,7 +563,7 @@ describe('flow canvas', () => {
   it('takes a picked wire out of the draft when Delete is pressed', async () => {
     draw();
     await screen.findByText('If');
-    const wire = screen.getByLabelText('Edge from start to test');
+    const wire = screen.getByLabelText('Start to If');
 
     fireEvent.click(wire);
     fireEvent.keyDown(wire, { key: 'Delete' });
@@ -652,12 +654,12 @@ describe('flow canvas', () => {
     drawPage();
     await screen.findByText('If');
 
-    fireEvent.click(screen.getByLabelText('Edge from start to test'));
+    fireEvent.click(screen.getByLabelText('Start to If'));
     // Not through the canvas: the flow simply stops having the wire, and then has it again.
     act(() => useFlowDraftStore.getState().edit(button, (flow) => removeEdges(flow, ['e1'])));
     act(() => useFlowDraftStore.getState().discard('button'));
 
-    const wire = screen.getByLabelText('Edge from start to test').querySelector('.react-flow__edge-path')!;
+    const wire = screen.getByLabelText('Start to If').querySelector('.react-flow__edge-path')!;
     expect(wire).not.toHaveAttribute('data-selected');
   });
 
@@ -800,6 +802,47 @@ function BoxThem() {
  * picked together. A browser hands the focus of an element taken out to the body, and the next key
  * would miss the canvas, so the keyboard stays in the canvas instead.
  */
+/**
+ * What the canvas tells a reader who cannot see it. React Flow named a wire by the ids of its nodes —
+ * "Edge from nsu7n6vkd to n1ka59sx9" — and a node not at all: every node was a group with no name.
+ */
+describe('what a reader who cannot see the canvas is told', () => {
+  it('names each wire by its nodes, and by its way out and its way in where the canvas names them', async () => {
+    draw();
+
+    expect(await screen.findByLabelText('Start to If')).toHaveAttribute('data-id', 'e1');
+    expect(screen.getByLabelText('If, yes, to End')).toHaveAttribute('data-id', 'e2');
+    expect(screen.getByLabelText('If, no, to End')).toHaveAttribute('data-id', 'e3');
+  });
+
+  // Both go back to the same For's next, and by their nodes alone read the same.
+  it('names the watch’s two Clear alarm returns apart', async () => {
+    const [, watch] = exampleFlows();
+    draw(watch);
+
+    expect(await screen.findByLabelText('Clear alarm, cleared, to For, next')).toHaveAttribute('data-id', 'e12');
+    expect(screen.getByLabelText("Clear alarm, wasn't up, to For, next")).toHaveAttribute('data-id', 'e13');
+  });
+
+  it('names each node by what it is and what it is set to', async () => {
+    draw();
+
+    expect(await screen.findByRole('group', { name: 'If, $.temp > 90' })).toHaveAttribute('data-id', 'test');
+    expect(screen.getByRole('group', { name: 'Start, every run begins here' })).toHaveAttribute('data-id', 'start');
+  });
+
+  it('names a node again when what it is set to changes', async () => {
+    drawPage();
+    await screen.findByRole('group', { name: 'If, $.temp > 90' });
+
+    act(() =>
+      useFlowDraftStore.getState().edit(button, (flow) => setConfig(flow, 'test', { field: '$.temp', test: 'gt', value: '95', value2: '' })),
+    );
+
+    expect(await screen.findByRole('group', { name: 'If, $.temp > 95' })).toHaveAttribute('data-id', 'test');
+  });
+});
+
 describe('where the keyboard goes when a key takes something away', () => {
   const canvas = () => document.getElementById('flow-canvas');
   const ids = () => useFlowDraftStore.getState().drafts.button?.nodes.map((node) => node.id);
@@ -820,7 +863,7 @@ describe('where the keyboard goes when a key takes something away', () => {
   it('stays in the canvas when Delete takes away the wire it was on', async () => {
     drawPage();
     await screen.findByText('If');
-    const wire = screen.getByLabelText('Edge from start to test');
+    const wire = screen.getByLabelText('Start to If');
 
     fireEvent.click(wire);
     act(() => wire.focus());
@@ -1080,7 +1123,7 @@ describe('a flowchart on the canvas', () => {
 
     fireEvent.click(await screen.findByText('Debug'));
     fireEvent.keyDown(window, { key: more });
-    fireEvent.click(screen.getByLabelText('Edge from say to end'));
+    fireEvent.click(screen.getByLabelText('Debug to End'));
     fireEvent.keyUp(window, { key: more });
     fireEvent.keyDown(document.getElementById('flow-canvas')!, { key: 'Delete' });
 
@@ -1706,7 +1749,7 @@ describe('the wire picked, as the canvas draws it and the store names it', () =>
     drawPage();
     // A change made a while ago, which Discard takes back: the End moved over.
     act(() => useFlowDraftStore.getState().edit(button, (flow) => moveNodes(flow, { end: { x: 640, y: 80 } })));
-    fireEvent.click(await screen.findByLabelText('Edge from start to test'));
+    fireEvent.click(await screen.findByLabelText('Start to If'));
     expect(useFlowDraftStore.getState().wire).toBe('e1');
 
     act(() => useFlowDraftStore.getState().discard('button'));
@@ -1718,7 +1761,7 @@ describe('the wire picked, as the canvas draws it and the store names it', () =>
   // A click on the tab of the flow on screen shows it again, with nothing picked.
   it('lets go of the wire picked alone when the flow on screen is shown again', async () => {
     drawPage();
-    fireEvent.click(await screen.findByLabelText('Edge from start to test'));
+    fireEvent.click(await screen.findByLabelText('Start to If'));
     expect(useFlowDraftStore.getState().wire).toBe('e1');
 
     act(() => useFlowDraftStore.getState().show('button'));
@@ -1731,7 +1774,7 @@ describe('the wire picked, as the canvas draws it and the store names it', () =>
   // wire — as it still names a node chosen, which comes back picked.
   it('picks the wire the store names when the canvas is drawn again', async () => {
     const { unmount } = drawPage();
-    fireEvent.click(await screen.findByLabelText('Edge from start to test'));
+    fireEvent.click(await screen.findByLabelText('Start to If'));
     unmount();
 
     drawAgain();
@@ -1742,7 +1785,7 @@ describe('the wire picked, as the canvas draws it and the store names it', () =>
 
   it('names no wire when the canvas is drawn again for a flow that lost it in the meantime', async () => {
     const { unmount } = drawPage();
-    fireEvent.click(await screen.findByLabelText('Edge from start to test'));
+    fireEvent.click(await screen.findByLabelText('Start to If'));
     unmount();
     // Taken out while the canvas was away: in another tab, whose draft this one takes in.
     act(() => useFlowDraftStore.getState().edit(button, (flow) => removeEdges(flow, ['e1'])));
@@ -1768,7 +1811,7 @@ describe('the wire picked, as the canvas draws it and the store names it', () =>
       </ReactFlowProvider>,
     );
 
-    await screen.findByLabelText('Edge from start to test');
+    await screen.findByLabelText('Start to If');
     expect(useFlowDraftStore.getState().wire).toBeNull();
     expect(wiresPicked()).toEqual([]);
   });
@@ -1777,7 +1820,7 @@ describe('the wire picked, as the canvas draws it and the store names it', () =>
     drawPage();
     const more = navigator.userAgent.includes('Mac') ? 'Meta' : 'Control';
 
-    fireEvent.click(await screen.findByLabelText('Edge from start to test'));
+    fireEvent.click(await screen.findByLabelText('Start to If'));
     fireEvent.keyDown(window, { key: more });
     fireEvent.click(document.querySelector('.react-flow__edge[data-id="e2"]')!);
     fireEvent.keyUp(window, { key: more });

@@ -2314,7 +2314,7 @@ describe('deleting a flow', () => {
     const { kept } = keeping([watch, sim]);
     useFlowDraftStore.getState().show('sim');
     const { queryClient } = render(<FlowsPage />);
-    fireEvent.click(await screen.findByLabelText('Edge from tick to loop'));
+    fireEvent.click(await screen.findByLabelText('Wait to For, next'));
     expect(useFlowDraftStore.getState().wire).toBe('e3');
 
     kept.splice(1, 1);
@@ -3476,7 +3476,7 @@ describe('what the server says is wrong with a flow in its file', () => {
 
     expect(await screen.findByText('The flow is not right.')).toBeInTheDocument();
     expect(await screen.findByTitle('Pick a test.')).toHaveAttribute('data-problem');
-    expect(screen.getByLabelText('Edge from in to test').querySelector('[data-problem]')).not.toBeNull();
+    expect(screen.getByLabelText('MQTT in to If').querySelector('[data-problem]')).not.toBeNull();
     expect(screen.getByRole('tab', { name: /Boiler watch/ })).toHaveAttribute('data-state', 'refused');
   });
 });
