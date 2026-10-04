@@ -1788,7 +1788,7 @@ describe('test and activate', () => {
   });
 
   // A push that never comes — the hub gone away — must not hold Stop off for good.
-  it('frees Stop three seconds after the press when no push says the test stopped', async () => {
+  it('frees Stop three seconds after the answer when no push says the test stopped', async () => {
     const server = testsOfTheWatch();
     renderPage([{ ...watch, enabled: false }]);
     await screen.findByRole('tabpanel');
@@ -1800,6 +1800,46 @@ describe('test and activate', () => {
       await waitFor(() => expect(server.sent.stops).toBe(1));
       await turns();
       expect(screen.getByRole('button', { name: 'Stop' })).toHaveAttribute('aria-disabled', 'true');
+
+      act(() => vi.advanceTimersByTime(3_000));
+
+      expect(screen.getByRole('button', { name: 'Stop' })).not.toHaveAttribute('aria-disabled');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // The hold is for the stretch between the 204 and the push that shows the test stopped, so the three
+  // seconds that end it are counted from the 204. Counted from the press, a stop the server took longer
+  // than that to answer was let go before its answer came, and found Stop pressable with the numbers
+  // still showing the test going: a second press then threw the stopped test away.
+  it('holds Stop for three seconds from the answer to a stop that took longer than that to answer', async () => {
+    let stops = 0;
+    const answer = held();
+    server.use(
+      http.delete('/api/flows/:id/test', async () => {
+        stops++;
+        await answer.until;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    renderPage([{ ...watch, enabled: false }]);
+    await screen.findByRole('tabpanel');
+    act(() => useFlowStatusStore.getState().setStatus(testRun('watch', 'running')));
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+      await waitFor(() => expect(stops).toBe(1));
+      act(() => vi.advanceTimersByTime(3_000));
+      answer.release();
+      await turns();
+
+      const stop = screen.getByRole('button', { name: 'Stop' });
+      expect(stop).toHaveAttribute('aria-disabled', 'true');
+      fireEvent.click(stop);
+      await turns();
+      expect(stops).toBe(1);
 
       act(() => vi.advanceTimersByTime(3_000));
 

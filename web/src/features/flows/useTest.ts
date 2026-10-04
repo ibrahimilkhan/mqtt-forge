@@ -25,13 +25,18 @@ type Holding = { since: FlowStatusState['runs'] | null; timer?: ReturnType<typeo
 
 /**
  * Flows whose button is held off, each from its press until a push of the numbers says that what was
- * pressed has come about (`done`), or for HOLD_MS at the most once a push can say so.
+ * pressed has come about (`done`), or until HOLD_MS after the press was answered at the most.
  *
- * Only a push from then on counts: one the server sent before it did what was asked says nothing
- * about it. A press whose answer is waited for counts none before the answer comes — the test it
- * starts is not on the server until then — and Stop counts them from the press, since the server may
- * stop the test at any moment after it. Every push builds a new picture of the runs, which is what
- * makes an identity check enough (see catchUp).
+ * Only a push after the answer counts: one the server sent before it did what was asked says nothing
+ * about it — the test it starts is not on the server until then, and the one it stops may be going
+ * still. Stop's is no different, though the server may stop the test at any moment after the press:
+ * the toolbar draws Test and not Stop once the numbers say the test is not going, so a push counted
+ * early would free a button nobody sees, and the next push frees it a quarter of a second on.
+ *
+ * The fallback is counted from the answer as well. Counted from the press, a request the server was
+ * slow to answer ran its three seconds out before the answer came, and the button was let go with the
+ * numbers still to catch up: the press the hold is for. Every push builds a new picture of the runs,
+ * which is what makes an identity check enough (see catchUp).
  *
  * Held as the press is made, in a ref as well as for the next render: a second click that comes
  * before the page has drawn the first one's finds the flow held already.
@@ -53,7 +58,7 @@ function useHeld(done: (runs: FlowRuns | undefined) => boolean) {
     [told],
   );
 
-  /** From now, a push can free the flow's button, and HOLD_MS will. */
+  /** The press was answered: from now, a push can free the flow's button, and HOLD_MS will. */
   const answered = useCallback(
     (id: string) => {
       clearTimeout(holding.current.get(id)?.timer);
@@ -64,20 +69,17 @@ function useHeld(done: (runs: FlowRuns | undefined) => boolean) {
   );
 
   /**
-   * Holds the flow's button off from now: false when it already was. A push from now on can free it,
-   * and HOLD_MS will — or, for a press whose answer is to be waited for (`waiting`), none until the
-   * answer comes (see answered).
+   * Holds the flow's button off from now: false when it already was. No push frees it, and no fallback
+   * does, until the press is answered (see answered).
    */
   const hold = useCallback(
-    (id: string, waiting = false) => {
+    (id: string) => {
       if (holding.current.has(id)) return false;
-      if (waiting) {
-        holding.current.set(id, { since: null });
-        told();
-      } else answered(id);
+      holding.current.set(id, { since: null });
+      told();
       return true;
     },
-    [answered, told],
+    [told],
   );
 
   useEffect(
@@ -128,9 +130,9 @@ const stopped = (runs: FlowRuns | undefined) => !isLive(runs?.test);
  * in between, Test is still Test and Stop still Stop, and pressed again, neither does what it says.
  * Test again started the test over, and sent its alarms, notices and tones again. Stop again found the
  * test stopped, and the server throws away a test that is not going: "Test · stopped" and its counters
- * went with it. So Stop is held from the press until a push shows the test no longer going, and Test
- * from the press until a push after the server took it shows the test — freed at once by a press that
- * did not go through, which can be made again.
+ * went with it. So each is held from its press: Stop until a push after the server answered shows the
+ * test no longer going, and Test until one shows the test — freed at once by a press that did not go
+ * through, which can be made again, and at the latest HOLD_MS after the answer.
  */
 export function useTest() {
   const starting = useHeld(tested);
@@ -165,6 +167,7 @@ export function useTest() {
       } catch (error) {
         if (!isTestUnknown(error)) throw error;
       }
+      stopping.answered(id);
     },
     onError: (error, id) => {
       stopping.free(id);
@@ -177,11 +180,11 @@ export function useTest() {
     stop,
     /** Flows whose Test is held off: pressed, and no push since the server took it shows the test yet. */
     starting: starting.held,
-    /** Flows whose Stop is held off: pressed, and the numbers still show the test going. */
+    /** Flows whose Stop is held off: pressed, and no push since the server answered shows the test stopped yet. */
     stopping: stopping.held,
     /** Test pressed: sends nothing while the flow's Test is held off. */
     run: (flow: FlowDto) => {
-      if (starting.hold(flow.id, true)) start.mutate(flow);
+      if (starting.hold(flow.id)) start.mutate(flow);
     },
     /** Stop pressed: sends nothing while the flow's Stop is held off. */
     halt: (id: string) => {
