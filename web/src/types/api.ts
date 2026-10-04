@@ -118,6 +118,19 @@ export type ConnectionStateResponse = {
   dial?: number;
 };
 
+/**
+ * A broker this console reached, kept or not — each one once, at its latest connection.
+ *
+ * No name, because nobody gave it one: the id is the API's own digest of the connection, and it
+ * is what a card is forgotten by.
+ */
+export type RecentBroker = {
+  id: string;
+  connection: SavedConnection;
+  /** ISO 8601, from the server's clock. */
+  lastConnectedAt: string;
+};
+
 /** A connection somebody kept, under the name they kept it under. */
 export type SavedProfile = { name: string; connection: SavedConnection };
 

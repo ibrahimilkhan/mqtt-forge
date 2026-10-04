@@ -4,6 +4,7 @@ export const queryKeys = {
   savedSettings: ['connection', 'settings'] as const,
   reconnect: ['connection', 'reconnect'] as const,
   savedProfiles: ['connection', 'profiles'] as const,
+  recentBrokers: ['connection', 'recent'] as const,
   subscriptions: ['subscriptions'] as const,
   colourRules: ['colour-rules'] as const,
   alertRules: ['alert-rules'] as const,

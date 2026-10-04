@@ -1,0 +1,84 @@
+/* The history's cards are the saved brokers' cards, so the plate, the hover, the active ring, the
+   address line and the × in its corner are all composed from SavedBrokers.module.css. What is here
+   is the inside of the card, which is where the two lists differ: a saved broker has a name and an
+   address, and one of these has an address, what kind of link it was, and when.
+
+   What this card is for is finding one broker among six, so the address is the only thing on it
+   meant to be read and everything under it is written to be skipped. Two lines at the saved card's
+   own measure: a card taller than the saved one would be the list the reader did not build
+   standing taller than the one they did. Every age fits at every width the grid draws. */
+
+/* How far in from the right the address has to stop so the × never lands on a character: the ×'s
+   box and its 3px off the edge, and a little air. The saved card keeps 30 for the same ×; the four
+   it gives back here are room for the port at the end of a long host. Owned by the card rather than
+   copied into the two rules that depend on it. */
+.card { --reach: 26px; }
+
+/* The saved card's own measure, top, bottom and left, so a card here is as tall as a card there
+   and the two lists keep one rhythm down the panel. */
+.pick { padding: 7px var(--reach) 8px 10px; }
+
+/* The second line: what kind of link this was, and when.
+
+   It starts under the address's first character and runs to 10px short of the card's right edge
+   rather than 26 — the × is on the line above, and stopping short for a mark that is not beside it
+   only cost the age room it needed. The negative margin gives that reserve back; justify-self
+   undoes the start the card body aligns its lines to, or the line would be as wide as its words
+   and the age would have no far end to go to.
+
+   Weight, case, face and ink stated once here for everything inside it. The global button rule
+   sets every word in a button in 600 capitals lettered in --surface, and the spans on this line
+   would take the weight from it without anyone noticing — a bold footnote under a regular address,
+   which is emphasis the wrong way up. The case matters beyond the eye: the spoken age is on this
+   line too, and a screen reader handed '3 HOURS AGO' may spell it out. */
+.foot {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  justify-self: stretch;
+  min-width: 0;
+  margin-right: calc(10px - var(--reach));
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  font-weight: 400;
+  text-transform: none;
+  color: var(--muted);
+}
+
+/* What kind of link, as a word with nothing drawn round it. A hairline rectangle round a word, on a
+   card that is a hairline rectangle, inside a hairline ring whenever the form is holding it, reads
+   as a second, smaller card — and its border is four pixels this card would stand taller than a
+   saved one. No tracking: it is a label set in the line's own mono, not a heading. */
+.scheme {
+  flex: 0 0 auto;
+  letter-spacing: 0;
+}
+
+/* How long ago, as a count and a unit: 9h, 13d, 40min. It orders the list and almost never decides
+   anything, and '23 hours ago' would be the longest thing on the line — twelve characters, which
+   is what falls off the end at 190px. The sentence is still there for anyone listening, in the
+   hidden span beside this one.
+
+   At the far end, so the ages down a column of cards are a column of their own. Truncation kept
+   as a floor for a reader who has turned the type up, since the grid's columns do not grow with
+   it; the scheme in front does not shrink, so it is the age that gives, which is the right order. */
+.when {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+/* Twenty-four pixels of target on a mark drawn at under thirteen, painted nowhere and taking no
+   room — the reach PanelShell's close takes — so nothing on the card moves for it.
+
+   Grown towards the corner it stands in and stopped at the inside of the plate's border, so it does
+   not hang into the gutter two pixels from the next card. It ends above the second line, since a
+   press on that line is a press on the card. */
+.forget::after {
+  content: '';
+  position: absolute;
+  inset: -3px -3px -1px -2px;
+}

@@ -1421,7 +1421,7 @@ describe('the brokers you keep', () => {
     renderPanel();
 
     await screen.findByRole('button', { name: 'Connect' });
-    expect(screen.queryByRole('group', { name: 'Saved brokers' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Saved' })).not.toBeInTheDocument();
   });
 
   /*
@@ -1434,7 +1434,7 @@ describe('the brokers you keep', () => {
     withProfiles(savedProfile('Lab broker'));
     renderPanel();
 
-    const kept = await screen.findByRole('group', { name: 'Saved brokers' });
+    const kept = await screen.findByRole('group', { name: 'Saved' });
     const side = screen.getByLabelText('Address').closest('div[class*="formSide"]');
 
     expect(side).not.toBeNull();
@@ -2012,26 +2012,86 @@ describe('offering to keep a broker', () => {
     expect(await screen.findByRole('button', { name: 'Save' })).toBeInTheDocument();
   });
 
-  it('says nothing about a form it already holds', async () => {
+  // A broker the console already holds is still offered: the same address under a second name or
+  // a second client ID is a second thing to keep, and the reader should not have to edit a field
+  // to be allowed to keep it.
+  it('offers it for a form the console already holds', async () => {
     withProfiles(kept);
     server.use(http.get('/api/connection/settings', () => HttpResponse.json(kept.connection)));
     renderPanel();
 
     await screen.findByRole('button', { name: 'Connect' });
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument());
-  });
-
-  // Change anything and it is a different thing to keep.
-  it('offers it again the moment the form stops being that broker', async () => {
-    withProfiles(kept);
-    server.use(http.get('/api/connection/settings', () => HttpResponse.json(kept.connection)));
-    renderPanel();
-
-    await screen.findByRole('button', { name: 'Connect' });
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument());
+    expect(await screen.findByRole('button', { name: 'Save' })).toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText('Client ID'), '-2');
 
     expect(await screen.findByRole('button', { name: 'Save' })).toBeInTheDocument();
+  });
+});
+
+// The brokers this console reached, in the panel rather than on their own.
+//
+// What is worth testing here is the seam between the two lists: that a saved broker is drawn in
+// both, and what pressing and forgetting a card do.
+describe('the history above the saved brokers', () => {
+  const recent = (over: Record<string, unknown> = {}) => ({
+    id: 'abc123',
+    connection: savedConnection({ subscriptions: ['#'] }),
+    lastConnectedAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+    ...over,
+  });
+
+  const withHistory = (...brokers: unknown[]) =>
+    server.use(http.get('/api/connection/recent', () => HttpResponse.json(brokers)));
+
+  const withProfiles = (...profiles: unknown[]) =>
+    server.use(http.get('/api/connection/profiles', () => HttpResponse.json(profiles)));
+
+  it('draws a broker that was reached and never kept', async () => {
+    withHistory(recent());
+    renderPanel();
+
+    expect(await screen.findByText('Recent')).toBeInTheDocument();
+    expect(await screen.findByText('broker.example:1883')).toBeInTheDocument();
+  });
+
+  // A record of where the console has been. Keeping a broker is no reason to leave it out of that.
+  it('draws a saved broker in both lists', async () => {
+    withHistory(recent());
+    withProfiles({ name: 'Lab', connection: savedConnection({ subscriptions: ['#'] }) });
+    renderPanel();
+
+    expect(await screen.findByText('Saved')).toBeInTheDocument();
+    expect(await screen.findByText('Recent')).toBeInTheDocument();
+
+    const history = screen.getByRole('group', { name: 'Recent' });
+    expect(within(history).getByText('broker.example:1883')).toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'Saved' })).getByText('Lab')).toBeInTheDocument();
+  });
+
+  it('fills the form from a card', async () => {
+    withHistory(recent({ connection: savedConnection({ host: 'reached.example', port: 8883, subscriptions: ['#'] }) }));
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^reached\.example/ }));
+
+    expect(screen.getByLabelText('Address')).toHaveValue('reached.example');
+    expect(screen.getByLabelText('Port')).toHaveValue(8883);
+  });
+
+  it('forgets one by its id', async () => {
+    const forgotten: string[] = [];
+    withHistory(recent());
+    server.use(
+      http.delete('/api/connection/recent/:id', ({ params }) => {
+        forgotten.push(String(params.id));
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Forget mqtt:\/\/broker\.example/ }));
+
+    await waitFor(() => expect(forgotten).toEqual(['abc123']));
   });
 });

@@ -32,7 +32,7 @@ export function SavedBrokers({ profiles, active, onPick, onForget }: Props) {
   if (profiles.length === 0) return null;
 
   return (
-    <div className={styles.chips} role="group" aria-label="Saved brokers">
+    <div className={styles.chips} role="group" aria-label="Saved">
       {profiles.map((profile) => (
         <div
           key={profile.name}

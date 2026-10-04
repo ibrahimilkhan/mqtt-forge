@@ -1,4 +1,4 @@
-import type { ConnectRequest, SavedConnection, SavedProfile, TlsOptions } from '../../types/api';
+import type { ConnectRequest, SavedConnection, TlsOptions } from '../../types/api';
 import { parseFilters } from '../subscribe/parseFilters';
 import { parseBrokerAddress } from './address';
 import { EVERYTHING } from './useConnectionActions';
@@ -178,26 +178,23 @@ export function formFromSaved(saved: SavedConnection): BrokerForm {
 }
 
 /**
- * Whether the console already holds this broker among its saved ones.
+ * Whether two forms hold exactly the same connection.
  *
- * Every field of the form but the two passwords. The API never sends a password back, so a saved
- * broker read into the form always comes back with those boxes empty — comparing them would say
- * 'not saved' about the very broker the reader has just picked off a card.
+ * Every field of the form but the two passwords. The API never sends a password back, so a
+ * connection read from the server always arrives with those boxes empty — comparing them would
+ * say a form filled from a card is not that card.
  *
- * Field by field against what each saved broker would fill in, rather than by address alone: two
- * entries on one broker under two client IDs are two different things to connect as, and a reader
- * writing the second one needs somewhere to put it. Written this way round — the profile turned
- * back into a form — so that a field added to the form is compared from the day it is added,
- * without anybody having to remember this function.
+ * This is "is the form holding this row", not "is this the same broker". The server's history keeps
+ * one row per endpoint, so a card for `broker.hivemq.com` may carry another client ID than the one
+ * in the form — and a card should only say it is what the form holds when it is, field for field.
+ *
+ * Written over the keys of one of the two, so a field added to the form is compared from the day
+ * it is added without anybody having to remember this function.
  */
-export function alreadySaved(form: BrokerForm, profiles: readonly SavedProfile[]): boolean {
-  return profiles.some((profile) => {
-    const kept = formFromSaved(profile.connection);
-
-    return (Object.keys(kept) as Array<keyof BrokerForm>).every(
-      (field) => SECRET.has(field) || kept[field] === form[field],
-    );
-  });
+export function sameConnection(a: BrokerForm, b: BrokerForm): boolean {
+  return (Object.keys(a) as Array<keyof BrokerForm>).every(
+    (field) => SECRET.has(field) || a[field] === b[field],
+  );
 }
 
 /** What the API will not hand back, and so cannot be compared. */

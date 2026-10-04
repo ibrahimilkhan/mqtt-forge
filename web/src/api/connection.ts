@@ -2,6 +2,7 @@ import type {
   ConnectRequest,
   ConnectionStateResponse,
   ReconnectStatus,
+  RecentBroker,
   SavedConnection,
   SavedProfile,
 } from '../types/api';
@@ -91,6 +92,16 @@ export const saveProfile = (name: string, connection: ConnectRequest) =>
 
 export const deleteProfile = (name: string) =>
   request<void>(`/api/connection/profiles/${encodeURIComponent(name)}`, { method: 'DELETE' });
+
+// ---- brokers this console reached, kept or not ----
+//
+// Written by connecting rather than by choosing, newest first. There is no call to add one: the
+// only way into this list is a connection the broker accepted, which the server notes for itself.
+
+export const getRecentBrokers = () => request<RecentBroker[]>('/api/connection/recent');
+
+export const forgetRecentBroker = (id: string) =>
+  request<void>(`/api/connection/recent/${encodeURIComponent(id)}`, { method: 'DELETE' });
 
 // ---- the three files an encrypted connection can be given ----
 //

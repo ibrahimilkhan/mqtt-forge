@@ -18,6 +18,7 @@ const defaultHandlers = [
     }),
   ),
   http.get('/api/connection/profiles', () => HttpResponse.json([])),
+  http.get('/api/connection/recent', () => HttpResponse.json([])),
   http.get('/api/subscriptions', () => HttpResponse.json([])),
   // The client ID a fresh form suggests, with this install's suffix — see InstallIdentity.
   http.get('/api/connection/defaults', () => HttpResponse.json({ clientId: 'mqttforge-console' })),

@@ -1,9 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatEndpoint } from './address';
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
-import type { MqttTransport, SavedProfile } from '../../types/api';
+import type { MqttTransport, RecentBroker, SavedProfile } from '../../types/api';
 import {
   deleteProfile,
+  forgetRecentBroker,
+  getRecentBrokers,
   getConnectionDefaults,
   getSavedProfiles,
   getSavedSettings,
@@ -31,11 +33,11 @@ import {
   wasAborted,
 } from './connectFailure';
 import { ConnectionSummary } from './ConnectionSummary';
-import { LinkChip } from './LinkChip';
 import { AutoReconnectSwitch } from './AutoReconnectSwitch';
 import { BrokerEvents } from './BrokerEvents';
 import { ReconnectNotice } from './ReconnectNotice';
 import { SavedBrokers } from './SavedBrokers';
+import { RecentBrokers } from './RecentBrokers';
 import { appendFilter, parseFilters, removeFilter } from '../subscribe/parseFilters';
 import { useCertificateFile } from './useCertificateFile';
 import { EVERYTHING, SYSTEM, useConnectionActions } from './useConnectionActions';
@@ -49,10 +51,10 @@ import {
   type Scheme,
 } from './scheme';
 import {
-  alreadySaved,
   applyAddress,
   buildConnectRequest,
   formFromSaved,
+  sameConnection,
   type BrokerForm,
 } from './brokerForm';
 
@@ -206,9 +208,21 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
     queryFn: getSavedProfiles,
   });
 
+  /* Every broker this console reached, kept or not.
+   *
+   * Written by connecting rather than by pressing anything, so it is refetched whenever the panel
+   * is shown again rather than trusted for the session: the link may have been put back by the
+   * supervisor, or made from the phone the QR code opened, with nothing on this side pressed. */
+  const { data: history } = useQuery({
+    queryKey: queryKeys.recentBrokers,
+    queryFn: getRecentBrokers,
+  });
+
   const queryClient = useQueryClient();
   const refreshProfiles = () =>
     void queryClient.invalidateQueries({ queryKey: queryKeys.savedProfiles });
+  const refreshHistory = () =>
+    void queryClient.invalidateQueries({ queryKey: queryKeys.recentBrokers });
 
   const keepMutation = useMutation({
     mutationFn: ({ name, form: kept }: { name: string; form: BrokerForm }) =>
@@ -219,6 +233,12 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
       refreshProfiles();
     },
     onError: (error) => logFault('Save failed', error),
+  });
+
+  const dropMutation = useMutation({
+    mutationFn: forgetRecentBroker,
+    onSuccess: refreshHistory,
+    onError: (error) => logFault('Forget failed', error),
   });
 
   const forgetMutation = useMutation({
@@ -327,6 +347,16 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
     setFrom(profile.name);
   };
 
+  /**
+   * One out of the history, into the form.
+   *
+   * The same fill as a saved broker's, and no name set: these cards have none. `settle` keeps a
+   * saved card's ring only if that saved broker is still at the address now in the form — so
+   * picking the history row of a broker that is also kept leaves the kept one marked as well, which
+   * is true. The history card says it is the one in the form by its own fields — see `heldFrom`.
+   */
+  const useReached = (broker: RecentBroker) => settle(formFromSaved(broker.connection));
+
 
   /**
    * The two answers, put back together into the one thing the API is told.
@@ -384,6 +414,14 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
     if (before === false && isOnline) setSettling(true);
     else if (!isOnline) setSettling(false);
   }, [answered, isOnline]);
+
+  /* A link that came up wrote a row in the history, whoever made it — this panel's Connect, the
+     desktop window's, or the supervisor putting one back after an outage. Watched on the state
+     rather than hung off this panel's own mutation for exactly that reason. */
+  useEffect(() => {
+    if (isOnline) refreshHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOnline]);
 
   // onClose is rebuilt on every render of the console, so the timer below cannot depend on it
   // without being restarted by renders that have nothing to do with the link — which is a timer
@@ -507,18 +545,21 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
    */
   const live = isOnline && !settling;
 
-  /* Whether what is on screen is a broker the console already holds.
+  /* Every broker this console has reached, the saved ones included.
    *
-   * Save is an offer to keep something, and a thing already kept is not one: the button stood
-   * over a form filled straight off a saved card, offering to save it again. Two entries on one
-   * broker under two client IDs are still two things, so this is field by field rather than by
-   * address — change anything and the offer comes back. See alreadySaved.
-   *
-   * The live link is asked the same question through the settings that made it, which is what
-   * the API calls the last connect that worked. */
-  const kept = profiles ?? [];
-  const formIsSaved = alreadySaved(form, kept);
-  const linkIsSaved = saved ? alreadySaved(formFromSaved(saved), kept) : false;
+   * A record of where the console has been, and a broker being kept is no reason to leave it out
+   * of that: the list underneath answers "which brokers did I name", this one "which did I use,
+   * and when". The server keeps each broker in it once, at its latest connection. */
+  const reached = history ?? [];
+
+  /* Which history card, if any, is what the form is holding. The saved list answers this with a
+     name it was filled from; these have no names, so it is asked of the fields themselves. */
+  const heldFrom = reached.find((broker) => sameConnection(form, formFromSaved(broker.connection)))?.id
+    ?? null;
+
+  /* A beat under the history's '3 hours ago', slow enough to be free and quick enough that a
+     panel left open does not go on saying 'just now' into the afternoon. */
+  const historyNow = useNow(reached.length > 0 ? 60_000 : null);
 
   const attempted = connectMutation.variables?.request;
 
@@ -720,10 +761,9 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
           <ConnectionSummary lead />
 
           <div className={styles.actions}>
-            {/* Not for a link the console already holds. Saving is most obviously worth offering
-                once a broker has connected — and least worth offering when the broker that
-                connected is the one the reader picked off a card to connect with. */}
-            {!linkIsSaved && (
+            {/* Always offered. A reader who wants a second entry for a broker the console
+                already holds — another client ID, another name — should not have to change a
+                field first to be allowed to keep it. */}
             <button
               type="button"
               className={`ghost keeps ${styles.iconButton}`}
@@ -739,7 +779,6 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
               <Save />
               Save
             </button>
-            )}
 
             {/* The same mark as Connect with the join taken out of it, which is the whole of
                 what this button does. */}
@@ -797,13 +836,6 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
       {/* The settings side of the split. It is two thirds of the page and the form does not want
           two thirds of a page, so the form sits in the middle of it — see `.formSide`. */}
       <div className={styles.formSide}>
-      {/* What the form is for, before the form. This face is the one somebody opens BECAUSE they
-          want to know, and it stated the connection nowhere at all: a dial in flight and a
-          console that had never been asked for a link drew the same page, distinguishable only
-          by which word the last button was wearing. */}
-      <div className={styles.stateRow}>
-        <LinkChip />
-      </div>
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <div className={styles.form} onKeyDown={onEnter}>
         <section className={styles.group}>
@@ -1234,7 +1266,7 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
             Every button on this row wears a mark now, which is the rule rather than a decoration:
             one marked button beside a bare one reads as the marked one being special, and none of
             these is. */}
-        {naming === null && !formIsSaved && (
+        {naming === null && (
           <button
             type="button"
             className={`ghost keeps ${styles.iconButton}`}
@@ -1344,9 +1376,29 @@ export function BrokerPanel({ onClose }: { onClose: () => void }) {
           record is a list and wants every line of height it can have, and these are chips that
           want width. They have the width here — the share is two thirds of the page — and the
           record has the height. */}
+      {/* Above the saved ones, and the order is the argument: this is the list a reader comes
+          looking for when they have lost something, and the one underneath is the list they
+          built on purpose. A kept broker is in both — the name is below, the last time it was
+          used is here. */}
+      {reached.length > 0 && (
+        <div className={styles.saved}>
+          {/* One word. The panel's own head says BROKER across the top of it, so 'Recent brokers'
+              and 'Saved brokers' said the panel's name twice more to make two headings out of
+              two words — the same reasoning that took 'Broker events' down to 'Events'. */}
+          <h3 className={styles.savedTitle}>Recent</h3>
+          <RecentBrokers
+            brokers={reached}
+            active={heldFrom}
+            onPick={useReached}
+            onForget={(id) => dropMutation.mutate(id)}
+            now={historyNow}
+          />
+        </div>
+      )}
+
       {profiles !== undefined && profiles.length > 0 && (
         <div className={styles.saved}>
-          <h3 className={styles.savedTitle}>Saved brokers</h3>
+          <h3 className={styles.savedTitle}>Saved</h3>
           <SavedBrokers
             profiles={profiles}
             active={from}
