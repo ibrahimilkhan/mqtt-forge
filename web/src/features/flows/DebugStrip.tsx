@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { own } from '../../lib/own';
 import { leftOut, useFlowStatusStore, type DebugLine } from '../../stores/flowStatusStore';
 import type { FlowDto } from '../../types/api';
 import { specOf } from './nodeTypes';
@@ -32,7 +33,7 @@ const clock = (at: string) =>
  * console's, not as this flow's.
  */
 export function DebugStrip({ flow }: { flow: FlowDto }) {
-  const lines = useFlowStatusStore((state) => state.debug[flow.id] ?? NO_LINES);
+  const lines = useFlowStatusStore((state) => own(state.debug, flow.id) ?? NO_LINES);
   const dropped = useFlowStatusStore((state) => leftOut(state, flow.id));
   const clear = useFlowStatusStore((state) => state.clearDebug);
   const [open, setOpen] = useState(readOpen);

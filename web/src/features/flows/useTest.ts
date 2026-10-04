@@ -25,7 +25,7 @@ export function useTest() {
   const start = useMutation({
     mutationFn: async (flow: FlowDto): Promise<Record<string, string[]> | null> => {
       // Whether what goes is a draft, as it goes: see refuse.
-      const drafted = flow.id in useFlowDraftStore.getState().drafts;
+      const drafted = Object.hasOwn(useFlowDraftStore.getState().drafts, flow.id);
 
       try {
         await testFlow(flow);

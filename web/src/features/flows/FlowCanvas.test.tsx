@@ -1786,3 +1786,55 @@ describe('the wire picked, as the canvas draws it and the store names it', () =>
     expect(useFlowDraftStore.getState().wire).toBeNull();
   });
 });
+
+/**
+ * Ids the server's pattern takes, ^[A-Za-z0-9_-]{1,40}$, that every object already answers to: what an
+ * object inherits from, the Object function, and a method. A node can be called any of them.
+ */
+describe('nodes called by a name every object answers to', () => {
+  const INHERITED = ['__proto__', 'constructor', 'toString'];
+  const called: FlowDto = {
+    ...button,
+    nodes: [...button.nodes, ...INHERITED.map((id, at) => ({ id, type: 'debug', x: 300 * at, y: 300, config: {} }))],
+  };
+  const drawn = (id: string) => document.querySelector<HTMLElement>(`.react-flow__node[data-id="${id}"]`);
+
+  it('draws each of them once it is measured, and leaves them where they stand while another node is dragged', async () => {
+    let drawing: ReturnType<typeof useStoreApi> | undefined;
+    function Peek() {
+      drawing = useStoreApi();
+      return null;
+    }
+    useFlowDraftStore.getState().show(called.id);
+    render(
+      <ReactFlowProvider>
+        <div style={{ width: 800, height: 600 }}>
+          <Page flow={called} />
+        </div>
+        <Peek />
+      </ReactFlowProvider>,
+    );
+
+    // React Flow hides a node until it is handed back the size it measured, with the node each time
+    // the node is handed over again — as it is when it is picked. jsdom measures every node a pixel
+    // square.
+    const handedBack = (id: string) => drawing!.getState().nodes.find((node) => node.id === id)?.measured;
+    await waitFor(() => {
+      for (const id of INHERITED) expect(handedBack(id)).toEqual({ width: 1, height: 1 });
+    });
+    for (const id of INHERITED) {
+      act(() => useFlowDraftStore.getState().select(id));
+      await waitFor(() => expect(drawn(id)).toHaveAttribute('class', expect.stringContaining('selected')));
+      expect(drawn(id)).toHaveStyle({ visibility: 'visible' });
+      expect(handedBack(id)).toEqual({ width: 1, height: 1 });
+    }
+
+    act(() => drawing!.getState().triggerNodeChanges([{ id: 'start', type: 'position', position: { x: 8, y: 80 }, dragging: true }]));
+
+    const draft = useFlowDraftStore.getState().drafts.button;
+    expect(draft.nodes.find((node) => node.id === 'start')).toMatchObject({ x: 8, y: 80 });
+    expect(draft.nodes.filter((node) => INHERITED.includes(node.id)).map(({ id, x, y }) => ({ id, x, y }))).toEqual(
+      INHERITED.map((id, at) => ({ id, x: 300 * at, y: 300 })),
+    );
+  });
+});

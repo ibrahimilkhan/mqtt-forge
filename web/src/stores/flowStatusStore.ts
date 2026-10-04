@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { getFlowStatus } from '../api/flows';
+import { own } from '../lib/own';
 import type { FlowDebugDto, FlowNodeStatusDto, FlowRunStatusDto, FlowStatusDto } from '../types/api';
 
 /** How many debug lines the console keeps for each flow. The strip is for the last minute, not a log. */
@@ -61,7 +62,7 @@ export type FlowStatusState = {
  * server counts what it leaves out, not whose it was, so this is never one flow's own figure.
  */
 export const leftOut = (state: FlowStatusState, flowId: string) =>
-  state.debugDropped - (state.debugClearedAt[flowId] ?? 0);
+  state.debugDropped - (own(state.debugClearedAt, flowId) ?? 0);
 
 /**
  * The number the next debug line gets. Never reset, so no two lines in one console share one, and
@@ -89,13 +90,15 @@ export const useFlowStatusStore = create<FlowStatusState>()((set) => ({
   debugClearedAt: {},
   deleted: {},
 
+  // Gathered by flow in a Map, and made a record whose every key is its own: see own.
   setStatus: (status) => {
-    const runs: Record<string, FlowRuns> = {};
-    for (const run of status.runs) (runs[run.flowId] ??= {})[run.kind] = run;
+    const byFlow = new Map<string, FlowRuns>();
+    for (const run of status.runs) byFlow.set(run.flowId, { ...byFlow.get(run.flowId), [run.kind]: run });
+    const runs = Object.fromEntries(byFlow);
 
-    const nodes: Record<string, FlowNodeStatusDto> = {};
-    for (const [flowId, both] of Object.entries(runs))
-      for (const node of shownRun(both)?.nodes ?? []) nodes[nodeKey(flowId, node.id)] = node;
+    const nodes: Record<string, FlowNodeStatusDto> = Object.fromEntries(
+      [...byFlow].flatMap(([flowId, both]) => (shownRun(both)?.nodes ?? []).map((node) => [nodeKey(flowId, node.id), node])),
+    );
 
     set({ runs, nodes });
   },
@@ -105,13 +108,24 @@ export const useFlowStatusStore = create<FlowStatusState>()((set) => ({
   // would otherwise push a quiet one's lines out before anybody switched to its tab.
   addDebug: (entries, dropped) =>
     set((state) => {
-      const added: Record<string, DebugLine[]> = {};
-      for (const entry of entries)
-        if (!(entry.flowId in state.deleted)) (added[entry.flowId] ??= []).push({ ...entry, seq: ++arrived });
+      const added = new Map<string, DebugLine[]>();
+      for (const entry of entries) {
+        if (Object.hasOwn(state.deleted, entry.flowId)) continue;
+        const line = { ...entry, seq: ++arrived };
+        const lines = added.get(entry.flowId);
+        if (lines) lines.push(line);
+        else added.set(entry.flowId, [line]);
+      }
 
-      const debug = Object.keys(added).length === 0 ? state.debug : { ...state.debug };
-      for (const [flowId, lines] of Object.entries(added))
-        debug[flowId] = [...lines.reverse(), ...(state.debug[flowId] ?? [])].slice(0, DEBUG_KEPT);
+      const debug =
+        added.size === 0
+          ? state.debug
+          : {
+              ...state.debug,
+              ...Object.fromEntries(
+                [...added].map(([flowId, lines]) => [flowId, [...lines.reverse(), ...(own(state.debug, flowId) ?? [])].slice(0, DEBUG_KEPT)]),
+              ),
+            };
 
       return { debug, debugDropped: state.debugDropped + dropped };
     }),

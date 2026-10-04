@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FlowDebugDto, FlowRunStatusDto, FlowStatusDto } from '../types/api';
 import { DEBUG_KEPT, isLive, leftOut, nodeKey, shownRun, useFlowStatusStore } from './flowStatusStore';
 
@@ -172,5 +172,62 @@ describe('flow status store', () => {
     expect(texts('busy')).toEqual(['b']);
     // What the server says it left out is still counted: it never says whose it was.
     expect(leftOut(state(), 'busy')).toBe(1);
+  });
+});
+
+/**
+ * Ids the server's pattern takes, ^[A-Za-z0-9_-]{1,40}$, that every object already answers to: what
+ * an object inherits from, the Object function, and a method. A flow can be called any of them.
+ */
+const INHERITED = ['__proto__', 'constructor', 'toString'];
+
+/** What every object, the Object function and an object's toString would carry, were a run filed on them. */
+const everywhere = () => [Object.prototype, Object, Object.prototype.toString] as unknown as Array<Record<string, unknown>>;
+
+describe('flows called by a name every object answers to', () => {
+  beforeEach(() => useFlowStatusStore.setState(useFlowStatusStore.getInitialState()));
+  // Should a case fail by putting a run on every object, the cases after it must not find it there.
+  afterEach(() => {
+    for (const each of everywhere()) for (const kind of ['active', 'test']) delete each[kind];
+  });
+
+  it('files their runs under their own ids, and puts nothing on every object', () => {
+    state().setStatus({ runs: INHERITED.flatMap((flowId) => [run({ flowId }), run({ flowId, kind: 'test', state: 'running' })]) });
+
+    for (const each of everywhere()) {
+      expect(each.active).toBeUndefined();
+      expect(each.test).toBeUndefined();
+    }
+    expect(Object.keys(state().runs).sort()).toEqual([...INHERITED].sort());
+    for (const flowId of INHERITED) {
+      expect(Object.hasOwn(state().runs, flowId)).toBe(true);
+      expect(shownRun(state().runs[flowId])?.kind).toBe('test');
+      expect(state().nodes[nodeKey(flowId, 'in')].count).toBe(412);
+    }
+  });
+
+  it('files their debug lines under their own ids, keeps them, and counts what was left out for each strip', () => {
+    state().addDebug(INHERITED.map((flowId) => line(`from ${flowId}`, flowId)), 3);
+
+    for (const flowId of INHERITED) {
+      expect(Object.hasOwn(state().debug, flowId)).toBe(true);
+      expect(texts(flowId)).toEqual([`from ${flowId}`]);
+      expect(leftOut(state(), flowId)).toBe(3);
+    }
+
+    state().clearDebug('constructor');
+    state().addDebug([], 2);
+    expect(leftOut(state(), 'constructor')).toBe(2);
+    expect(leftOut(state(), 'toString')).toBe(5);
+  });
+
+  it('drops the lines of one of them deleted here, and only that one\'s', () => {
+    state().forget('constructor');
+
+    state().addDebug(INHERITED.map((flowId) => line(`from ${flowId}`, flowId)), 0);
+
+    expect(Object.hasOwn(state().debug, 'constructor')).toBe(false);
+    expect(texts('toString')).toEqual(['from toString']);
+    expect(texts('__proto__')).toEqual(['from __proto__']);
   });
 });

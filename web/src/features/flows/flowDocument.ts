@@ -1,3 +1,4 @@
+import { own } from '../../lib/own';
 import type { FlowDto, FlowEdgeDto, FlowNodeDto, FlowNodeType, FlowProblemDto } from '../../types/api';
 import { isLoop, isNodeType, NODE_SPECS, sideOf, specOf } from './nodeTypes';
 
@@ -404,12 +405,17 @@ export function freeSpot(
   return first;
 }
 
-/** Where nodes now stand, rounded: a position is a place on a grid somebody looks at, not a measurement. */
-export const moveNodes = (flow: FlowDto, moved: Record<string, { x: number; y: number }>): FlowDto => ({
+/**
+ * Where nodes now stand, rounded: a position is a place on a grid somebody looks at, not a measurement.
+ * Only the nodes `moved` has of its own move: one called constructor or toString is not moved by what
+ * every object answers to by that name (see own).
+ */
+export const moveNodes = (flow: FlowDto, moved: Readonly<Record<string, { x: number; y: number }>>): FlowDto => ({
   ...flow,
-  nodes: flow.nodes.map((node) =>
-    moved[node.id] ? { ...node, x: Math.round(moved[node.id].x), y: Math.round(moved[node.id].y) } : node,
-  ),
+  nodes: flow.nodes.map((node) => {
+    const to = own(moved, node.id);
+    return to ? { ...node, x: Math.round(to.x), y: Math.round(to.y) } : node;
+  }),
 });
 
 /**
@@ -832,7 +838,7 @@ export function withDrafts(deployed: readonly FlowDto[], drafts: Readonly<Record
   const known = new Set(deployed.map((flow) => flow.id));
 
   return [
-    ...deployed.map((flow) => drafts[flow.id] ?? flow),
+    ...deployed.map((flow) => own(drafts, flow.id) ?? flow),
     ...Object.values(drafts).filter((draft) => !known.has(draft.id)),
   ];
 }
@@ -840,14 +846,18 @@ export function withDrafts(deployed: readonly FlowDto[], drafts: Readonly<Record
 /** What is wrong with one flow, as the server said it: keyed flow, node:{id} and edge:{id}. */
 export type Problems = Readonly<Record<string, readonly string[]>>;
 
-/** The server's problems, filed by flow and then by the key the page marks. */
+/**
+ * The server's problems, filed by flow and then by the key the page marks: gathered in Maps, and made
+ * records whose every key is its own (see own).
+ */
 export function problemsOf(problems: readonly FlowProblemDto[]): Record<string, Record<string, string[]>> {
-  const filed: Record<string, Record<string, string[]>> = {};
+  const filed = new Map<string, Map<string, string[]>>();
 
   for (const problem of problems) {
-    const flow = (filed[problem.flowId] ??= {});
-    (flow[problem.key] ??= []).push(problem.message);
+    const flow = filed.get(problem.flowId) ?? new Map<string, string[]>();
+    filed.set(problem.flowId, flow);
+    flow.set(problem.key, [...(flow.get(problem.key) ?? []), problem.message]);
   }
 
-  return filed;
+  return Object.fromEntries([...filed].map(([flowId, keys]) => [flowId, Object.fromEntries(keys)]));
 }

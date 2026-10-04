@@ -5,6 +5,7 @@ import { flushSync } from 'react-dom';
 import { useShallow } from 'zustand/react/shallow';
 import { getFlows } from '../../api/flows';
 import { queryKeys } from '../../api/queryKeys';
+import { own } from '../../lib/own';
 import { describeError } from '../../lib/problemDetails';
 import { alarmSource, useFlowAlarmStore } from '../../stores/flowAlarmStore';
 import { catchUp, isLive, shownRun, useFlowStatusStore } from '../../stores/flowStatusStore';
@@ -159,7 +160,7 @@ function Page() {
       trying: (attempt) => setFailed((was) => (was[attempt] === null ? was : { ...was, [attempt]: null })),
       failed: (attempt, flowId, error) => {
         const flow =
-          useFlowDraftStore.getState().drafts[flowId] ??
+          own(useFlowDraftStore.getState().drafts, flowId) ??
           queryClient.getQueryData<FlowsDto>(queryKeys.flows)?.flows.find((one) => one.id === flowId);
         const name = flow ? titleOf(flow) : flowId;
         setFailed((was) => ({ ...was, [attempt]: { name, reason: describeError(error) } }));
@@ -184,7 +185,7 @@ function Page() {
   // every frame of a drag, and cheap for all but the flow being dragged: what it asks is kept
   // against each flow object.
   const standings = useMemo(
-    () => Object.entries(drafts).map(([id, draft]) => [id, standingOf(draft, bases[id] ?? null, byId.get(id))] as const),
+    () => Object.entries(drafts).map(([id, draft]) => [id, standingOf(draft, own(bases, id) ?? null, byId.get(id))] as const),
     [bases, byId, drafts],
   );
   // What Activate and Update send, and what they hold back until the reader keeps it or lets it go.
@@ -302,7 +303,7 @@ function Page() {
     held === null || pressed === null
       ? false
       : held.held === 'overtaken'
-        ? overtaken.has(held.id) && bases[held.id] === held.base
+        ? overtaken.has(held.id) && own(bases, held.id) === held.base
         : held.held === 'off' && pressed !== 'deactivate'
           ? changed.has(held.id) && byId.get(held.id)?.enabled === false
           : true;
@@ -451,12 +452,12 @@ function Page() {
                 {save.variables.kind === 'deactivate' ? 'Not switched off.' : 'Not saved.'} {describeError(save.error)}
               </p>
             )}
-            {save.data && 'refused' in save.data && refusals[save.data.id] === save.data.refused && (
+            {save.data && 'refused' in save.data && own(refusals, save.data.id) === save.data.refused && (
               <p className={panel.fault}>The server refused {save.data.name}, so it was not saved. What it refused is marked on it.</p>
             )}
             {heldLine !== null && <p className={heldLine.fault ? panel.fault : panel.note}>{heldLine.text}</p>}
             {test.start.isError && <p className={panel.fault}>The test did not start. {describeError(test.start.error)}</p>}
-            {test.start.data && refusals[test.start.variables.id] === test.start.data && (
+            {test.start.data && own(refusals, test.start.variables.id) === test.start.data && (
               <p className={panel.fault}>
                 The server refused {titleOf(test.start.variables)}, so the test did not start. What it refused is marked on it.
               </p>
@@ -486,7 +487,7 @@ function Page() {
               <Palette onAdd={add} />
               {/* Keyed apart as well as by flow: siblings that share a key cannot be told apart, and
                   each tab shown would leave its canvas behind in the page. */}
-              <FlowCanvas key={`canvas-${shown.id}`} flow={shown} problems={problems[shown.id] ?? NOTHING_WRONG} />
+              <FlowCanvas key={`canvas-${shown.id}`} flow={shown} problems={own(problems, shown.id) ?? NOTHING_WRONG} />
               {/* One inspector per flow, like the canvas: what it holds — a delete it is asking about —
                   is about the flow it was opened on, and must not stand over the next one. */}
               <Inspector
@@ -494,7 +495,7 @@ function Page() {
                 flow={shown}
                 deployed={byId.get(shown.id)}
                 overtaken={overtaken.has(shown.id)}
-                problems={problems[shown.id] ?? NOTHING_WRONG}
+                problems={own(problems, shown.id) ?? NOTHING_WRONG}
                 facts={{ allowWebhooks: data.allowWebhooks }}
               />
             </div>

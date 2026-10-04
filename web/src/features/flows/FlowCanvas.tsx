@@ -34,6 +34,7 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { useShallow } from 'zustand/react/shallow';
+import { own } from '../../lib/own';
 import { isLive, nodeKey, shownRun, useFlowStatusStore, type FlowStatusState } from '../../stores/flowStatusStore';
 import type { FlowDto, FlowNodeDto } from '../../types/api';
 import { backPath, MARGIN, NAME_ROOM, namesOf, routes, Traces, type Box, type Drag, type End, type Leg, type Placed, type Route } from './backWires';
@@ -681,7 +682,7 @@ export function FlowCanvas({ flow, problems }: { flow: FlowDto; problems: Proble
         lost.has(node.id),
         problems[NODE + node.id],
         picked.has(NODE + node.id),
-        sizes[node.id],
+        own(sizes, node.id),
         dragged.has(node.id),
       );
     });
@@ -729,17 +730,21 @@ export function FlowCanvas({ flow, problems }: { flow: FlowDto; problems: Proble
   // A move says whether it is a frame of a drag: every frame of one says so, and the drop says it no
   // longer is, from where the last frame left the node — as does a move by the arrow keys. A drag
   // broken off says so too, so no node is left marked as dragged.
+  //
+  // What moved and what was measured is gathered by node in a Map, and handed on as a record whose
+  // every key is its own (see own): a node can be called __proto__, which assigned as a key changes
+  // what the record inherits from, and its size went nowhere.
   const onNodesChange = useCallback(
     (changes: NodeChange<CanvasNode>[]) => {
-      const moved: Record<string, { x: number; y: number }> = {};
-      const measured: Record<string, Size> = {};
+      const moved = new Map<string, { x: number; y: number }>();
+      const measured = new Map<string, Size>();
       const picks: Array<{ pick: string; selected: boolean }> = [];
       const drags: Array<[string, boolean]> = [];
 
       for (const change of changes) {
         if (change.type === 'position') drags.push([change.id, change.dragging === true]);
-        if (change.type === 'position' && change.position) moved[change.id] = change.position;
-        else if (change.type === 'dimensions' && change.dimensions) measured[change.id] = change.dimensions;
+        if (change.type === 'position' && change.position) moved.set(change.id, change.position);
+        else if (change.type === 'dimensions' && change.dimensions) measured.set(change.id, change.dimensions);
         else if (change.type === 'select') picks.push({ pick: NODE + change.id, selected: change.selected });
       }
 
@@ -752,8 +757,8 @@ export function FlowCanvas({ flow, problems }: { flow: FlowDto; problems: Proble
           }
           return now.size === was.size && [...now].every((id) => was.has(id)) ? was : now;
         });
-      if (Object.keys(moved).length > 0) edit(flow, (current) => moveNodes(current, moved));
-      if (Object.keys(measured).length > 0) setSizes((known) => ({ ...known, ...measured }));
+      if (moved.size > 0) edit(flow, (current) => moveNodes(current, Object.fromEntries(moved)));
+      if (measured.size > 0) setSizes((known) => ({ ...known, ...Object.fromEntries(measured) }));
       if (picks.length > 0) pick(picks);
     },
     [edit, flow, pick],
@@ -914,7 +919,7 @@ export function FlowCanvas({ flow, problems }: { flow: FlowDto; problems: Proble
  * is faded and titled for it too, but neither reaches the keyboard or a screen reader; the line does.
  */
 function drawnOf(spec: NodeSpec, flowId: string, nodeId: string, unreached: boolean, state: FlowStatusState) {
-  const run = shownRun(state.runs[flowId]);
+  const run = shownRun(own(state.runs, flowId));
   const status = state.nodes[nodeKey(flowId, nodeId)];
   const here = run !== undefined && isLive(run) && run.at === nodeId;
   const until = here ? (run.waiting?.until ?? null) : null;

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { own } from '../../lib/own';
 import type { FlowDto } from '../../types/api';
 import { fingerprint, sameFlow } from './flowDocument';
 
@@ -208,23 +209,25 @@ function draftIn(key: string, text: string | null): Kept | 'later' | null {
   return { flow: value.flow, base: value.base };
 }
 
-/** Every draft storage holds, each under its own key. What no build can use is taken out on the way. */
+/**
+ * Every draft storage holds, each under its own key. What no build can use is taken out on the way.
+ * Made records whose every key is its own, as every record of the store is (see own).
+ */
 function draftsKept(): Pick<DraftState, 'drafts' | 'bases'> {
-  const drafts: Record<string, FlowDto> = {};
-  const bases: Record<string, string | null> = {};
+  const found: Kept[] = [];
 
   for (const key of keysOf(local)) {
     if (!key.startsWith(DRAFT_PREFIX)) continue;
 
     const draft = draftIn(key, read(local, key));
     if (draft === null) write(local, key, null);
-    else if (draft !== 'later') {
-      drafts[draft.flow.id] = draft.flow;
-      bases[draft.flow.id] = draft.base;
-    }
+    else if (draft !== 'later') found.push(draft);
   }
 
-  return { drafts, bases };
+  return {
+    drafts: Object.fromEntries(found.map(({ flow }) => [flow.id, flow])),
+    bases: Object.fromEntries(found.map(({ flow, base }) => [flow.id, base])),
+  };
 }
 
 const without = <T>(record: Record<string, T>, ...keys: readonly string[]): Record<string, T> =>
@@ -251,6 +254,9 @@ const unrefused = (state: Pick<DraftState, 'refusals' | 'refusedCopies'>, flowId
  * Which flow is on screen, and which node is picked, stay each tab's own: the flow on screen is
  * kept in the tab's sessionStorage, which a reload keeps and another tab does not see.
  *
+ * Every record here is kept by flow id, and a flow can be called what every object answers to: each
+ * is read through own, and written by a computed key, a spread or Object.fromEntries (see own).
+ *
  * A factory, so a test can open a second tab on the same storage.
  */
 export function createFlowDraftStore() {
@@ -268,7 +274,7 @@ export function createFlowDraftStore() {
 
     edit: (base, change) =>
       set((state) => {
-        const draft = state.drafts[base.id];
+        const draft = own(state.drafts, base.id);
         return {
           drafts: { ...state.drafts, [base.id]: change(draft ?? base) },
           // A new draft is of the copy it was started from; one already here stays of the copy it was.
@@ -307,7 +313,7 @@ export function createFlowDraftStore() {
 
     refuse: (sent, drafted, errors) =>
       set((state) =>
-        drafted && !(sent.id in state.drafts)
+        drafted && !Object.hasOwn(state.drafts, sent.id)
           ? state
           : {
               refusals: { ...state.refusals, [sent.id]: errors },
@@ -330,9 +336,9 @@ export function createFlowDraftStore() {
     let refused = false;
     if (state.drafts !== before.drafts || state.bases !== before.bases)
       for (const id of new Set([...Object.keys(before.drafts), ...Object.keys(state.drafts)])) {
-        const draft = state.drafts[id];
-        const base = state.bases[id] ?? null;
-        if (draft === before.drafts[id] && base === (before.bases[id] ?? null)) continue;
+        const draft = own(state.drafts, id);
+        const base = own(state.bases, id) ?? null;
+        if (draft === own(before.drafts, id) && base === (own(before.bases, id) ?? null)) continue;
 
         if (!write(local, keyOf(id), draft ? kept(draft, base) : null)) refused = true;
       }
@@ -365,20 +371,20 @@ export function createFlowDraftStore() {
       if (draft === 'later') return;
 
       if (draft === null) {
-        if (!(id in drafts)) return;
+        if (!Object.hasOwn(drafts, id)) return;
         next = { drafts: without(drafts, id), bases: without(bases, id) };
       } else {
         // A draft this tab already has, word for word, stays the object it is: what the page has
         // worked out about a flow is kept against its object.
-        const same = sameFlow(draft.flow, drafts[id]);
-        if (same && draft.base === bases[id]) return;
+        const same = sameFlow(draft.flow, own(drafts, id));
+        if (same && draft.base === own(bases, id)) return;
         next = { drafts: same ? drafts : { ...drafts, [id]: draft.flow }, bases: { ...bases, [id]: draft.base } };
       }
     }
 
     // A refusal of a draft the other tab let go has nothing left to be about, and goes with it, as it
     // goes with a draft let go here. One of the server's copy of a flow with no draft had none to go.
-    const gone = Object.keys(drafts).filter((id) => !(id in next.drafts) && id in refusals);
+    const gone = Object.keys(drafts).filter((id) => !Object.hasOwn(next.drafts, id) && Object.hasOwn(refusals, id));
 
     hearing = true;
     try {

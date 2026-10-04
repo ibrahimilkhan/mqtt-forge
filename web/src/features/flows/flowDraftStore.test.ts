@@ -431,3 +431,61 @@ describe('two tabs', () => {
     expect(Object.keys(other.getState().refusals)).toEqual([copy.id]);
   });
 });
+
+/**
+ * Ids the server's pattern takes, ^[A-Za-z0-9_-]{1,40}$, that every object already answers to: what an
+ * object inherits from, the Object function, and a method. A flow can be called any of them.
+ */
+describe('flows called by a name every object answers to', () => {
+  const INHERITED = ['__proto__', 'constructor', 'toString'];
+  const called = (id: string) => ({ ...emptyFlow(`Flow ${id}`), id });
+
+  it('start their drafts from the copy edited, under their own ids, and keep them through a reload', async () => {
+    const flows = INHERITED.map(called);
+    for (const flow of flows) useFlowDraftStore.getState().edit(flow, (one) => ({ ...one, name: `${one.name}, renamed` }));
+
+    const { drafts, bases } = useFlowDraftStore.getState();
+    for (const flow of flows) {
+      expect(Object.hasOwn(drafts, flow.id)).toBe(true);
+      expect(drafts[flow.id]).toEqual({ ...flow, name: `${flow.name}, renamed` });
+      expect(Object.hasOwn(bases, flow.id) && bases[flow.id]).toBe(fingerprint(flow));
+    }
+
+    const reloaded = await reopened();
+    expect(Object.keys(reloaded.getState().drafts).sort()).toEqual([...INHERITED].sort());
+    expect(reloaded.getState().drafts.constructor).toEqual({ ...flows[1], name: 'Flow constructor, renamed' });
+  });
+
+  it('let a draft go from storage when it is discarded', () => {
+    const flow = called('constructor');
+    useFlowDraftStore.getState().put(flow);
+    expect(localStorage.getItem(DRAFT_PREFIX + flow.id)).not.toBeNull();
+
+    useFlowDraftStore.getState().discard(flow.id);
+
+    expect(localStorage.getItem(DRAFT_PREFIX + flow.id)).toBeNull();
+  });
+
+  it('file a refusal of a draft only while the draft is there', () => {
+    useFlowDraftStore.getState().refuse(called('toString'), true, { flow: ['Name the flow.'] });
+
+    expect(Object.hasOwn(useFlowDraftStore.getState().refusals, 'toString')).toBe(false);
+  });
+
+  it('let a refusal go with the draft another tab let go', () => {
+    const other = createFlowDraftStore();
+    const flow = called('toString');
+    let before = held();
+    useFlowDraftStore.getState().put(flow);
+    announce(before);
+    other.getState().refuse(flow, true, { flow: ['Name the flow.'] });
+    expect(Object.hasOwn(other.getState().refusals, 'toString')).toBe(true);
+
+    before = held();
+    useFlowDraftStore.getState().discard(flow.id);
+    announce(before);
+
+    expect(Object.hasOwn(other.getState().drafts, 'toString')).toBe(false);
+    expect(Object.hasOwn(other.getState().refusals, 'toString')).toBe(false);
+  });
+});

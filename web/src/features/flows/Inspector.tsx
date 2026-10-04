@@ -5,6 +5,7 @@ import { shallow } from 'zustand/shallow';
 import { deleteFlow, isFlowUnknown } from '../../api/flows';
 import { queryKeys } from '../../api/queryKeys';
 import { Field } from '../../components/Field';
+import { own } from '../../lib/own';
 import { describeError } from '../../lib/problemDetails';
 import { isLive, nodeKey, shownRun, useFlowStatusStore } from '../../stores/flowStatusStore';
 import { logFault, useLogStore } from '../../stores/logStore';
@@ -200,7 +201,7 @@ function useDrawnRun(flowId: string): FlowRunStatusDto | undefined {
   const drawn = useRef<FlowRunStatusDto | undefined>(undefined);
 
   return useFlowStatusStore((state) => {
-    const run = shownRun(state.runs[flowId]);
+    const run = shownRun(own(state.runs, flowId));
     if (!drawnAlike(drawn.current, run)) drawn.current = run;
     return drawn.current;
   });

@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { getFlows, isFlowInvalid, putFlow } from '../../api/flows';
 import { queryKeys } from '../../api/queryKeys';
+import { own } from '../../lib/own';
 import { ApiError, describeError } from '../../lib/problemDetails';
 import { logFault } from '../../stores/logStore';
 import type { FlowDto, FlowsDto } from '../../types/api';
@@ -145,8 +146,8 @@ export function useSave() {
       // What was pressed, as it was pressed: a draft, and the copy it was started from, or the
       // server's own copy of a flow with none.
       const { drafts, bases } = useFlowDraftStore.getState();
-      const drafted = flow.id in drafts;
-      const base = bases[flow.id] ?? null;
+      const drafted = Object.hasOwn(drafts, flow.id);
+      const base = own(bases, flow.id) ?? null;
 
       // Asked here rather than through the query's fetchQuery, whose read the page can cancel while
       // it is out — a delete's answer cancels the list's reads — and a cancelled fetchQuery hands
@@ -180,7 +181,7 @@ export function useSave() {
           // What was typed while the request was out is an edit of the copy just kept. What the
           // server refused of an earlier drawing goes with the draft it was about.
           const store = useFlowDraftStore.getState();
-          const since = store.drafts[flow.id];
+          const since = own(store.drafts, flow.id);
           store.settle([flow.id]);
           if (since !== undefined && !sameFlow(since, flow)) store.put(since, fingerprint(kept));
         }

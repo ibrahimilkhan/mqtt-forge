@@ -3259,3 +3259,65 @@ describe('a refusal', () => {
     expect(useFlowDraftStore.getState().refusals.watch).toBeUndefined();
   });
 });
+
+/**
+ * Ids the server's pattern takes, ^[A-Za-z0-9_-]{1,40}$, that every object already answers to: what an
+ * object inherits from, the Object function, and a method. Any PUT or test can name a flow so, and
+ * every console then reads it.
+ */
+describe('flows called by a name every object answers to', () => {
+  const INHERITED = ['__proto__', 'constructor', 'toString'];
+  const called = (id: string): FlowDto => ({ ...watch, id, name: `Flow ${id}`, enabled: false });
+
+  // Should a case fail by putting a run on every object, the cases after it must not find it there.
+  afterEach(() => {
+    for (const each of [Object.prototype, Object, Object.prototype.toString] as unknown as Array<Record<string, unknown>>)
+      for (const kind of ['active', 'test']) delete each[kind];
+  });
+
+  it('opens on them, says each one\'s run and prints its lines, and offers Stop only where a test runs', async () => {
+    renderPage([watch, ...INHERITED.map(called)]);
+    await screen.findByRole('tab', { name: /^Boiler watch/ });
+
+    act(() => {
+      useFlowStatusStore
+        .getState()
+        .setStatus({ runs: [watchRun(), ...INHERITED.map((flowId) => runOf(flowId, { kind: 'test', state: 'running' }))] });
+      useFlowStatusStore.getState().addDebug(INHERITED.map((flowId) => printed(flowId, `printed by ${flowId}`)), 0);
+    });
+
+    expect(({} as Record<string, unknown>).test).toBeUndefined();
+    expect(({} as Record<string, unknown>).active).toBeUndefined();
+    // The watch runs, and nothing tests it.
+    expect(screen.getByRole('button', { name: '▶ Test' })).toBeInTheDocument();
+
+    for (const flowId of INHERITED) {
+      await userEvent.click(screen.getByRole('tab', { name: new RegExp(`^Flow ${flowId}, running`) }));
+      expect(screen.getByRole('button', { name: '■ Stop' })).toBeInTheDocument();
+      expect(screen.getByText('Test · running')).toBeInTheDocument();
+      expect(within(debugStrip()).getByText(`printed by ${flowId}`)).toBeInTheDocument();
+    }
+
+    // Their runs go, and nothing of them stays behind on the flow on screen.
+    act(() => useFlowStatusStore.getState().setStatus({ runs: [] }));
+    expect(screen.getByRole('tab', { name: 'Flow toString, not running' })).toBeInTheDocument();
+    expect(screen.getByText('Off')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '▶ Test' })).toBeInTheDocument();
+  });
+
+  // A test of the server's copy of a flow with no draft is refused of that copy, and the refusal goes
+  // once another console saves another copy in its place.
+  it('files a refused test of one with no draft against the server\'s copy, which another console\'s save lets go', async () => {
+    const { kept } = keeping([called('toString')]);
+    server.use(http.post('/api/flows/:id/test', () => refusal({ 'node:test': ['Pick a test.'] })));
+    const { queryClient } = render(<FlowsPage />);
+    await userEvent.click(await screen.findByRole('button', { name: '▶ Test' }));
+    expect(await screen.findByTitle('Pick a test.')).toHaveAttribute('data-problem');
+
+    await elsewhere(queryClient, () => (kept[0] = { ...called('toString'), name: 'Flow toString, mended' }));
+
+    expect(screen.getByRole('tab', { name: 'Flow toString, mended, not running' })).toBeInTheDocument();
+    expect(Object.hasOwn(useFlowDraftStore.getState().refusals, 'toString')).toBe(false);
+    expect(document.querySelector('[data-problem]')).toBeNull();
+  });
+});

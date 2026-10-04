@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FlowDto, FlowNodeDto, FlowNodeType } from '../../types/api';
 import {
   addNode,
@@ -891,6 +891,91 @@ describe('the examples', () => {
       expect(routedIn(flow).drawn.map(({ leg }) => leg.id).sort(), flow.name).toEqual(
         flow.edges.filter((edge) => edge.toPort === 'next').map((edge) => edge.id).sort(),
       );
+    }
+  });
+});
+
+/**
+ * Ids the server's pattern takes, ^[A-Za-z0-9_-]{1,40}$, that every object already answers to: what an
+ * object inherits from, the Object function, and a method. A node can be called any of them, and so can
+ * a flow.
+ */
+describe('nodes and flows called by a name every object answers to', () => {
+  const INHERITED = ['__proto__', 'constructor', 'toString'];
+  const nodeOf = (flow: FlowDto, id: string) => flow.nodes.find((node) => node.id === id)!;
+  const where = (flow: FlowDto) => flow.nodes.map(({ id, x, y }) => ({ id, x, y }));
+
+  /**
+   * Start → __proto__ → End along a row, the steps 284 apart, and a constructor and a toString laid
+   * on a row of their own under it, wired to nothing.
+   */
+  const called = (): FlowDto => ({
+    id: 'called', name: 'Called', enabled: false, variables: [],
+    nodes: [
+      { id: 'start', type: 'start', x: 0, y: 0, config: {} },
+      { id: '__proto__', type: 'debug', x: 284, y: 0, config: {} },
+      { id: 'end', type: 'end', x: 568, y: 0, config: {} },
+      { id: 'constructor', type: 'debug', x: 600, y: 240, config: {} },
+      { id: 'toString', type: 'debug', x: 900, y: 240, config: {} },
+    ],
+    edges: [
+      { id: 'e1', from: 'start', fromPort: 'out', to: '__proto__', toPort: 'in' },
+      { id: 'e2', from: '__proto__', fromPort: 'out', to: 'end', toPort: 'in' },
+    ],
+  });
+
+  // What every object would carry, were something filed on them.
+  afterEach(() => {
+    for (const each of [Object.prototype, Object, Object.prototype.toString] as unknown as Array<Record<string, unknown>>)
+      for (const key of ['flow', 'node:n1']) delete each[key];
+  });
+
+  it('leaves the nodes it is not told to move where they stand, whatever they are called', () => {
+    const flow = called();
+
+    const moved = moveNodes(flow, { start: { x: 8, y: 16 } });
+
+    expect(where(moved)).toEqual([{ id: 'start', x: 8, y: 16 }, ...where(flow).slice(1)]);
+  });
+
+  it('moves a node called __proto__ when it is told to', () => {
+    const moved = moveNodes(called(), Object.fromEntries([['__proto__', { x: 300.4, y: 7.6 }]]));
+
+    expect(nodeOf(moved, '__proto__')).toMatchObject({ x: 300, y: 8 });
+    expect(nodeOf(moved, 'start')).toMatchObject({ x: 0, y: 0 });
+  });
+
+  // A click after the Start makes room on the row, and moves the step called __proto__ along with the
+  // End; the two laid under the row stay where they stand.
+  it('leaves the nodes a click does not move where they stand, and moves the ones it does', () => {
+    const flow = called();
+
+    const clickedIn = clicked(flow, { node: 'start' }, 'debug', 'say');
+
+    expect(nodeOf(clickedIn, 'say')).toMatchObject({ x: 284, y: 0 });
+    expect(['__proto__', 'end'].map((id) => nodeOf(clickedIn, id).x)).toEqual([568, 852]);
+    expect(['constructor', 'toString'].map((id) => nodeOf(clickedIn, id))).toMatchObject([{ x: 600, y: 240 }, { x: 900, y: 240 }]);
+  });
+
+  it('shows a flow with no draft as the server has it, whatever it is called', () => {
+    const flows = INHERITED.map((id) => ({ ...emptyFlow(id), id }));
+
+    expect(withDrafts(flows, {})).toEqual(flows);
+    expect(withDrafts(flows, Object.fromEntries([['toString', { ...flows[2], name: 'Renamed' }]])).map((flow) => flow.name)).toEqual([
+      '__proto__',
+      'constructor',
+      'Renamed',
+    ]);
+  });
+
+  it('files the server\'s problems under each flow\'s own id, and puts nothing on every object', () => {
+    const filed = problemsOf(INHERITED.flatMap((flowId) => [{ flowId, key: 'flow', message: `${flowId} is wrong.` }, { flowId, key: 'node:n1', message: 'Pick a test.' }]));
+
+    expect(({} as Record<string, unknown>).flow).toBeUndefined();
+    expect(Object.keys(filed).sort()).toEqual([...INHERITED].sort());
+    for (const flowId of INHERITED) {
+      expect(Object.hasOwn(filed, flowId)).toBe(true);
+      expect(filed[flowId]).toEqual({ flow: [`${flowId} is wrong.`], 'node:n1': ['Pick a test.'] });
     }
   });
 });
