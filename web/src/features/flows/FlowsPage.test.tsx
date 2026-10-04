@@ -3038,6 +3038,78 @@ function listen() {
  * said under the tabs, where a save or a test that did not go through is said — and in one polite
  * live region, so a reader who cannot see the marks it leaves is told as well.
  */
+/**
+ * What the server refused is marked on the nodes it refused, and the line under the tabs says so.
+ * A flow wider than the canvas opens at a zoom it can be read at, so most of it can be out of sight,
+ * and a refusal marked only there said "marked on it" of marks nobody could see.
+ */
+describe('a refusal of the flow on screen', () => {
+  let unsized = () => {};
+  let observer: unknown;
+  beforeEach(() => {
+    unsized = paneSized(800, 600);
+    observer = globalThis.ResizeObserver;
+    vi.stubGlobal('ResizeObserver', MeasuredTogether);
+  });
+  afterEach(() => {
+    unsized();
+    vi.stubGlobal('ResizeObserver', observer);
+  });
+
+  /** Start, a Debug in sight beside it, and one far along the row: too wide to read fitted, so it opens from its Start. */
+  const wide: FlowDto = {
+    id: 'wide', name: 'Wide', enabled: false, variables: [],
+    nodes: [
+      { id: 'start', type: 'start', x: 0, y: 0, config: {} },
+      { id: 'near', type: 'debug', x: 300, y: 0, config: {} },
+      { id: 'far', type: 'debug', x: 3000, y: 0, config: {} },
+      { id: 'end', type: 'end', x: 3300, y: 0, config: {} },
+    ],
+    edges: [
+      { id: 'e1', from: 'start', fromPort: 'out', to: 'near', toPort: 'in' },
+      { id: 'e2', from: 'near', fromPort: 'out', to: 'far', toPort: 'in' },
+      { id: 'e3', from: 'far', fromPort: 'out', to: 'end', toPort: 'in' },
+    ],
+  };
+
+  /** Whether a node of the wide flow is wholly on screen, a pixel square as jsdom measures it. */
+  const seen = (id: string) => {
+    const node = wide.nodes.find((one) => one.id === id)!;
+    const [x, y, zoom] = viewport();
+    return node.x * zoom + x >= 0 && node.y * zoom + y >= 0 && (node.x + 1) * zoom + x <= 800 && (node.y + 1) * zoom + y <= 600;
+  };
+
+  it('brings the first node it marks into view, at the zoom it had, when it marks none in sight', async () => {
+    server.use(http.post('/api/flows/:id/test', () => refusal({ 'node:far': ['Pick a level.'], 'node:end': ['Not this End.'] })));
+    renderPage([wide]);
+    await screen.findByRole('button', { name: '▶ Test' });
+    await waitFor(() => expect(viewport()[2]).toBe(0.6));
+    expect(seen('far')).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: '▶ Test' }));
+    await screen.findByText(/so the test did not start/);
+
+    await waitFor(() => expect(seen('far')).toBe(true));
+    expect(viewport()[2]).toBe(0.6);
+    expect(useFlowDraftStore.getState().selected).toBeNull();
+  });
+
+  it('leaves the view alone when a node it marks is in sight', async () => {
+    keeping([wide]);
+    server.use(http.put('/api/flows/wide', () => refusal({ 'node:far': ['Pick a level.'], 'node:near': ['Not this Debug.'] })));
+    render(<FlowsPage />);
+    await screen.findByRole('button', { name: 'Activate' });
+    await waitFor(() => expect(viewport()[2]).toBe(0.6));
+    const opened = viewport();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Activate' }));
+    await screen.findByText(/so it was not saved/);
+    await turns();
+
+    expect(viewport()).toEqual(opened);
+  });
+});
+
 describe('what did not go through', () => {
   it('says a save that failed in a live region of its own, not over the whole page', async () => {
     keeping([watch]);

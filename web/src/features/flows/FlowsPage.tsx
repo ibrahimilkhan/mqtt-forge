@@ -258,6 +258,44 @@ function Page() {
 
   const shown = flows.find((flow) => flow.id === current) ?? flows[0];
 
+  // A refusal of the flow on screen is marked on the nodes it refused, and the line under the tabs
+  // says so. But a flow wider than the canvas opens at a zoom it can be read at, and its marks can all
+  // be out of sight: five of the six a test of a watch clicked together had marked were. So when one
+  // lands and none of the nodes it marks is wholly in view, the first of them in the drawing is brought
+  // into the middle of the view, at the zoom it had, as a node the palette puts down out of sight is
+  // (see add). Brought into view, not picked: a refusal comes in its own time, maybe while the reader
+  // is typing in a pane, and picking a node would take the pane away from under them; and the node
+  // says on the canvas, under its name, the first thing refused of it. Only while the refusal stands —
+  // one of a draft let go while the request was out was never filed — and is of the flow on screen.
+  const reveal = (flowId: string, refused: Record<string, string[]>) => {
+    if (shown?.id !== flowId || own(useFlowDraftStore.getState().refusals, flowId) !== refused) return;
+
+    const { nodeLookup, width, height } = drawing.getState();
+    const marked = shown.nodes.flatMap((node) => {
+      if (!Object.hasOwn(refused, `node:${node.id}`)) return [];
+      const drawn = nodeLookup.get(node.id);
+      const { width: across, height: down } = drawn?.measured ?? {};
+      const box = across !== undefined && down !== undefined ? { width: across, height: down } : MEASURE.boxOf(node.type);
+      return [{ ...(drawn?.internals.positionAbsolute ?? { x: node.x, y: node.y }), ...box }];
+    });
+    const view = getViewport();
+    if (marked.length === 0 || marked.some((box) => inView(box, view, width, height))) return;
+
+    const [first] = marked;
+    void setCenter(first.x + first.width / 2, first.y + first.height / 2, { zoom: getZoom() });
+  };
+  const savedRefusal = save.data && 'refused' in save.data ? save.data : null;
+  useEffect(() => {
+    if (savedRefusal !== null) reveal(savedRefusal.id, savedRefusal.refused);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once for each refusal that lands, whatever else changed
+  }, [savedRefusal]);
+  const testRefusal = test.start.data ?? null;
+  const tested = test.start.variables?.id;
+  useEffect(() => {
+    if (testRefusal !== null && tested !== undefined) reveal(tested, testRefusal);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once for each refusal that lands, whatever else changed
+  }, [testRefusal]);
+
   // The flow on screen went — deleted here or on another console — or none was chosen yet, and the
   // page shows the first flow in its place. The store is told, through show, so what was picked goes
   // with the flow it was picked in: flows share ids — the examples' wires are e1 to e7 in both, and
