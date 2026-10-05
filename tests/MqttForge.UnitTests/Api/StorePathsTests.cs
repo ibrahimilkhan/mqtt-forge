@@ -10,6 +10,13 @@ public class StorePathsTests
             .AddInMemoryCollection(entries.ToDictionary(e => e.Key, e => (string?)e.Value))
             .Build();
 
+    // The directory of the settings path these tests configure, taken from GetDirectoryName as
+    // StorePaths takes it rather than written "/data". Windows hands it back as "\data", in its own
+    // separator, while Combine keeps a written "/data" as given, so the two would fail a string
+    // comparison over a difference the filesystem does not have. On Linux, where the Docker recipe
+    // runs, it is "/data" exactly.
+    private static readonly string SettingsDirectory = Path.GetDirectoryName("/data/connection-settings.json")!;
+
     [Fact]
     public void Connection_settings_default_to_the_base_directory()
     {
@@ -33,7 +40,7 @@ public class StorePathsTests
     {
         var path = StorePaths.ColourRules(Config(("MqttForge:SettingsPath", "/data/connection-settings.json")));
 
-        Assert.Equal(Path.Combine("/data", "colour-rules.json"), path);
+        Assert.Equal(Path.Combine(SettingsDirectory, "colour-rules.json"), path);
     }
 
     [Fact]
@@ -70,7 +77,7 @@ public class StorePathsTests
     {
         var path = StorePaths.AlertRules(Config(("MqttForge:SettingsPath", "/data/connection-settings.json")));
 
-        Assert.Equal(Path.Combine("/data", "alert-rules.json"), path);
+        Assert.Equal(Path.Combine(SettingsDirectory, "alert-rules.json"), path);
     }
 
     [Fact]
@@ -88,7 +95,7 @@ public class StorePathsTests
     {
         var path = StorePaths.AlertState(Config(("MqttForge:SettingsPath", "/data/connection-settings.json")));
 
-        Assert.Equal(Path.Combine("/data", "alert-state.json"), path);
+        Assert.Equal(Path.Combine(SettingsDirectory, "alert-state.json"), path);
     }
 
     // Two variables and not one, because the two files are not the same kind of thing: a
@@ -101,7 +108,7 @@ public class StorePathsTests
             ("MqttForge:SettingsPath", "/data/connection-settings.json"),
             ("MqttForge:AlertRulesPath", "/elsewhere/rules.json"));
 
-        Assert.Equal(Path.Combine("/data", "alert-state.json"), StorePaths.AlertState(config));
+        Assert.Equal(Path.Combine(SettingsDirectory, "alert-state.json"), StorePaths.AlertState(config));
     }
 
     [Fact]
@@ -145,7 +152,7 @@ public class StorePathsTests
             })
             .Build();
 
-        Assert.Equal(Path.Combine("/data", "flows.json"), StorePaths.Flows(beside));
+        Assert.Equal(Path.Combine(SettingsDirectory, "flows.json"), StorePaths.Flows(beside));
         Assert.Equal("/elsewhere/mine.json", StorePaths.Flows(named));
     }
 }
