@@ -24,6 +24,12 @@ public static class WindowThread
     // would hand back an AggregateException with the real one buried inside it.
     public static T Wait<T>(Task<T> startUp) => startUp.GetAwaiter().GetResult();
 
+    /// <summary>The same wait for work that answers with nothing.</summary>
+    // Shutdown's tail is all of this kind, and on Windows it matters as much as start-up: awaiting it
+    // would make the entry point async, and an async entry point is not the one [STAThread] is read
+    // from — the window would open black long before any of this ran.
+    public static void Wait(Task work) => work.GetAwaiter().GetResult();
+
     /// <summary>Refuses the window loop to a thread that cannot serve it.</summary>
     // Cheap, and it turns the hang above into a line of text naming both threads. Called with the
     // id read before any start-up work, so an await sneaking in ahead of the window is caught at

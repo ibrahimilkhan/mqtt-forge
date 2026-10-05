@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
+import { bootLockup } from './plugins/boot-lockup.ts';
 import { networkUrl } from './plugins/network-url.ts';
 
 // Phone testing needs HTTPS (secure-context APIs); cert is per-machine and gitignored, so HTTPS is opt-in.
@@ -14,7 +15,11 @@ const https =
     : undefined;
 
 export default defineConfig({
-  plugins: [react(), networkUrl()],
+  plugins: [
+    react(),
+    networkUrl(),
+    bootLockup(fileURLToPath(new URL('./public/favicon.svg', import.meta.url))),
+  ],
   server: {
     // Exposes the dev server on the LAN, not just localhost.
     host: true,

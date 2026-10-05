@@ -1,0 +1,9 @@
+/* The console held out of sight until its first frame is the right one — see ConsoleReveal.
+
+   Drawn, laid out and measured, and not yet shown: whatever is behind #root — the Windows window's
+   own lockup through a clear page, or the page's lockup beside #root — is what is on screen. A
+   clip rather than `visibility: hidden` or `display: none`, because it hides without stopping the
+   console being laid out, and it is being laid out that makes it ask for its faces. */
+html[data-reveal='covered'] #root {
+  clip-path: inset(0 100% 0 0);
+}
