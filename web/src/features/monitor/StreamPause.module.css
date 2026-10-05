@@ -20,17 +20,16 @@
   font-weight: 600;
   letter-spacing: 0.11em;
   text-transform: uppercase;
-  /* Coloured for the action it offers rather than for the state it is in, which is the way
-     every transport control anyone has used is coloured: red stops what is running, green
-     starts what is stopped. The glyph says the same thing a second time, for a reader who does
-     not separate the two.
+  /* Quiet while the stream runs, which is the ordinary state and the one the console spends
+     nearly all its time in: an outline in the rail's own ink, like any other way in.
 
-     Filled, and the loudest thing in the rail. A console that has stopped taking messages looks
-     exactly like one that is keeping up — same rows, same numbers, all of them merely old — and
-     this is the only thing on screen that says which of the two it is. */
-  color: var(--surface);
-  background: var(--fault);
-  border-color: var(--fault);
+     It used to be filled red all along, and red in this console means something is wrong — the
+     fault tone of a broken link, a failed rule, an alarm. A red block sitting at the foot of the
+     rail through every healthy minute taught the eye to skip red, and drew it away from the
+     Broker row, which is where the link's own red is worn when something is actually wrong. The
+     red is kept for the moment it is earned: under the pointer, as the action it offers. */
+  color: var(--ink);
+  background: var(--surface);
 }
 
 /* Shut, in a 52px rail: the glyph alone, in a box still big enough to hit. */
@@ -40,9 +39,8 @@
   padding: 0;
 }
 
-/* No broker, so nothing to stop. Drawn as the outline it would be if it were not the loudest
-   thing in the rail: the fill is what says the console is taking messages in, and it should not
-   be saying that when there is nothing to take. */
+/* No broker, so nothing to stop: the outline goes grey and the ink with it, so it does not read
+   as a control waiting to be used. */
 .stream:disabled {
   color: var(--muted);
   background: none;
@@ -50,13 +48,29 @@
   cursor: default;
 }
 
-.stream:hover:not(:disabled) { color: var(--surface); border-color: var(--ink); }
+/* About to be pressed: the action it offers, in the colour of stopping what is running. */
+.stream:hover:not(:disabled) {
+  color: var(--fault);
+  border-color: var(--fault);
+  background: color-mix(in srgb, var(--fault) 7%, var(--surface));
+}
 .stream:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
-/* Stopped, so what it offers is to start again. */
+/* Stopped, and filled: the loudest thing in the rail, because this is the state where being quiet
+   would be the wrong manner. A console that has stopped taking messages looks exactly like one
+   that is keeping up — same rows, same numbers, all of them merely old — and this is the only
+   thing on screen that says which of the two it is. Green, for what it offers: to start again.
+   The glyph says the same a second time, for a reader who does not separate the two colours. */
 .stream[aria-pressed='true'] {
+  color: var(--surface);
   background: var(--live);
   border-color: var(--live);
+}
+/* Held green under the pointer too: the red above is for stopping, and this offers the opposite. */
+.stream[aria-pressed='true']:hover:not(:disabled) {
+  color: var(--surface);
+  background: var(--live);
+  border-color: var(--ink);
 }
 
 /* What went past while it was stopped. Set apart from the word beside it — lighter, and tracked
