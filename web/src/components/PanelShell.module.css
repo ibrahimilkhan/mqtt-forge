@@ -12,7 +12,9 @@
   position: relative;
 }
 
-@media (max-width: 760px) {
+/* The stacked phone page scrolls as a whole, so the panel gives its scroll up to it. Under a mouse
+   nothing stacks and the panel keeps scrolling itself. See global.css. */
+@media (max-width: 760px) and (pointer: coarse) {
   .panel { overflow-y: visible; }
 }
 
@@ -231,17 +233,18 @@
    by the workspace grid and only ever by the broker panel, so the five panels that live in a
    column are unreachable from here.
 
-   Only above 1180px, because that is the only band where this pane is its own scrollport. From
-   1180 down the page scrolls instead (see global.css), so there is nothing for `sticky` to stick
-   to; at 760 and below `.panel` is `overflow-y: visible` and sticky would bind to the viewport
-   and float the × over the fields, which is worse than letting it scroll away.
+   Wherever this pane is its own scrollport, which is everywhere but the stacked phone page: there
+   `.panel` is `overflow-y: visible`, and sticky would bind to the viewport and float the × over
+   the fields, which is worse than letting it scroll away. This said "above 1180px" while the page
+   scrolled from 1180 down; it stopped doing that (see global.css), and the band where the × used
+   to scroll away with the form was a band where the form had its own scroll the whole time.
 
    The negative margin and the padding that answers it lift the row's box into the pane's own
    11px of top padding, so the × does not shift the moment it detaches. They are that padding's
    number — change one and change both. The background is the pane's own: what is under this row
    now reaches the width of the panel, and so passes under the corner the × sits in — a form
    scrolling up through a floating × is a × nobody can find. */
-@media (min-width: 1181px) {
+@media (min-width: 761px), (pointer: fine), (pointer: none) {
   [data-panel='full'] .panelHead {
     position: sticky;
     /* Matching the lift above, and not a rounding of zero. Chrome resolves `top` against the

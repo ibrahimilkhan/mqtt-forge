@@ -235,8 +235,17 @@
   [draggable="true"]:active { cursor: grabbing; }
   [draggable="true"]:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; }
 
-  /* Matches the layout's breakpoint: once columns stack, the page scrolls instead. */
-  @media (max-width: 1180px) {
+  /* Matches the layout's breakpoint: once columns stack, the page scrolls instead. That is 760px,
+     where Workspace.module.css puts the panes in one column. It was 1180 when the columns stacked
+     there too, and it stayed 1180 after they stopped — so between the two the console was columns
+     on a page of any height, and a log's opened history stretched every pane down the page under
+     a page-level scrollbar. scrollPanes.test.ts holds the two conditions together.
+
+     And only on a touch screen. The stacked, scrolling page is the phone's: a thumb scrolls a page
+     as readily as a pane, and there is no width for columns. A desktop window made that narrow has
+     a mouse, and the console stays one screen in it — the workspace keeps its laptop columns there
+     instead of stacking. */
+  @media (max-width: 760px) and (pointer: coarse) {
     body { height: auto; }
   }
 

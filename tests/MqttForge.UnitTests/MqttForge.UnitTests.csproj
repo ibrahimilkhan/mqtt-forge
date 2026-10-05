@@ -39,4 +39,12 @@
     <Content Include="..\fixtures\statistics\*.json" LinkBase="fixtures\statistics" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- The mark the desktop splash inlines, taken from the one file every copy of it is cut from.
+       Copied for the same reason as the vectors above, and so SplashTests checks the drawing that
+       actually ships rather than a copy pasted into a test, which would go on passing after the
+       favicon changed. -->
+  <ItemGroup>
+    <Content Include="..\..\web\public\favicon.svg" Link="fixtures\brand\favicon.svg" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

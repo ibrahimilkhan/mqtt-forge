@@ -19,9 +19,10 @@ type Props = {
  * the tree stops growing, the log stops filling, every chart holds still. The other pause, in the
  * log's foot, is the one that stops a single run from redrawing while everything else carries on.
  *
- * Coloured while it is on, and filled rather than outlined. A console showing numbers that are
- * no longer arriving is the one state where being quiet would be the wrong manner: it looks
- * exactly like a console showing numbers that are.
+ * Outlined while the stream runs, and filled green once it is stopped. A console showing numbers
+ * that are no longer arriving is the one state where being quiet would be the wrong manner: it
+ * looks exactly like a console showing numbers that are. Running is the ordinary state, and a
+ * control that shouted through all of it was teaching the eye to skip the rail's red.
  *
  * The figure beside the word is the queue: how many are waiting to be taken in while it is
  * stopped, and how many are still to land while the queue drains after it is let go. Nothing in
@@ -91,8 +92,8 @@ export function StreamPause({ compact = false, live = false }: Props) {
       onClick={toggle}
     >
       {paused ? <Play /> : <Pause />}
-      {/* Open, the control says what pressing it does. A red box with two bars in it is a pause
-          symbol to anyone who has used a transport control and a red box to everyone else. */}
+      {/* Open, the control says what pressing it does. A box with two bars in it is a pause symbol
+          to anyone who has used a transport control and a box to everyone else. */}
       {!compact && <span>{paused ? 'Resume' : 'Stop stream'}</span>}
       {waiting > 0 && !compact && <span className={styles.count}>{format(waiting)}</span>}
     </button>

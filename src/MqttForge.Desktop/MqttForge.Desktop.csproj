@@ -1,7 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <!-- WinExe, not Exe: the subsystem is stamped into the apphost at build time, and a console
+         one makes Windows open a console window before any managed code runs - so the app appears
+         as two windows, the console instantly and the real one seconds later. Nothing in the
+         program can take that back; by the time Main could call FreeConsole it has been seen.
+         Console output goes nowhere on Windows as a result, which costs this app nothing: Serilog
+         writes the log file, and a console session that wants the output runs `dotnet MQTTForge.dll`.
+         Ignored on macOS and Linux, which have no subsystem field and never opened a terminal. -->
+    <OutputType>WinExe</OutputType>
     <AssemblyName>MQTTForge</AssemblyName>
     <RootNamespace>MqttForge.Desktop</RootNamespace>
     <!-- Stamped into the executable, which is where Windows reads an icon from: the file in
@@ -24,6 +31,11 @@
 
   <ItemGroup>
     <PackageReference Include="Photino.NET" Version="4.0.16" />
+    <!-- Windows only, and only for the second and a half before the browser can draw: the window
+         paints the splash's lockup itself until then (NativeLockup). Plain GDI draws the mark's
+         diagonals and rounded corners without anti-aliasing, which would visibly sharpen into the
+         browser's rendering at the hand-off; GDI+ draws them the way the browser does. -->
+    <PackageReference Include="System.Drawing.Common" Version="10.0.12" />
   </ItemGroup>
 
   <ItemGroup>

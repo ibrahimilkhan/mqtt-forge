@@ -28,6 +28,7 @@
   "exclude": [
     "src/lib/sharedVectors.test.ts",
     "src/styles/typeScale.test.ts",
-    "src/styles/scrollPanes.test.ts"
+    "src/styles/scrollPanes.test.ts",
+    "src/styles/fontPreload.test.ts"
   ]
 }

@@ -8,6 +8,7 @@ import { ChartPanel } from './features/chart/ChartPanel';
 import { ColoursPanel } from './features/colours/ColoursPanel';
 import { BrokerPanel } from './features/connection/BrokerPanel';
 import { useLinkState } from './features/connection/linkState';
+import { useWindowTitle } from './features/connection/useWindowTitle';
 import { useLinkWatch } from './features/connection/useLinkWatch';
 import { MobilePanel } from './features/mobile/MobilePanel';
 import { useBrokerAddress, useConnectionState } from './api/useConnectionState';
@@ -84,7 +85,7 @@ export function App({ hub }: { hub: Hub }) {
   // Read once, on the first render — a reader who opens it should keep it open through a resize.
   const [menuOpen, setMenuOpen] = useState(() => !window.matchMedia?.(NARROW).matches);
 
-  const { state, failure } = useConnectionState();
+  const { state, failure, answered } = useConnectionState();
 
   const health = useAppearanceStore((state) => state.health);
   // What is alarming, read here rather than only in the panel: the panel is shut most of the
@@ -153,6 +154,10 @@ export function App({ hub }: { hub: Hub }) {
    * component.
    */
   const linkState = useLinkState();
+
+  // The title bar, the taskbar and Alt+Tab: where a reader looks for a window they are not
+  // looking at. See useWindowTitle.
+  useWindowTitle(linkState, pointedAt, answered);
 
   /** Said out loud on the row, since nothing else says it any more. */
   // 'Retrying' names the broker and 'Reconnecting' does not, because the second one is the
