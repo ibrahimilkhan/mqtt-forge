@@ -155,8 +155,14 @@
    This used to be where everything stacked, which was exactly backwards: a laptop at this width
    has plenty of room for the tree beside the traffic, and stacking spent all of it on one column
    and a scrollbar. What it does not have room for is a third column holding a form — and a form
-   is the one thing here that is opened, used and closed, so it is the one that overlays. */
-@media (max-width: 1180px) and (min-width: 761px) {
+   is the one thing here that is opened, used and closed, so it is the one that overlays.
+
+   And below 760 too, under a mouse — or with no pointer at all. That width stacks on a phone (see
+   below), but a desktop window made that narrow is still a desktop window: columns with their own
+   scrolls keep the console one screen, where stacking would hand the scrolling to the page. `none`
+   is here because the alternative is not stacking but the three wide columns squeezed into a
+   phone's width: nothing else claims a pointerless screen below 760. */
+@media (min-width: 761px) and (max-width: 1180px), (max-width: 760px) and (pointer: fine), (max-width: 760px) and (pointer: none) {
   .grid,
   .grid[data-panel='closed'] {
     grid-template-columns: minmax(0, var(--tree)) auto minmax(0, var(--right));
@@ -184,9 +190,9 @@
   .grid[data-panel='open'] > .pane:first-child + [role='separator'] { display: none; }
 }
 
-@media (max-width: 760px) {
-  /* No room for columns at all, so everything stacks in the order it sat in and the page
-     scrolls. The important is doing real work: the column writes its own row template inline
+@media (max-width: 760px) and (pointer: coarse) {
+  /* No room for columns at all on a phone, so everything stacks in the order it sat in and the
+     page scrolls. The important is doing real work: the column writes its own row template inline
      once the reader has dragged a seam or folded a region, and at this width there are no rows
      to divide — a fraction of a height that no longer exists would clip every pane at once. */
   .grid,

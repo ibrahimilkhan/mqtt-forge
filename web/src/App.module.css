@@ -454,8 +454,10 @@
   }
 }
 
-/* Once the columns stack, the page scrolls instead of each pane pinning its own row. */
-@media (max-width: 760px) {
+/* Once the columns stack, the page scrolls instead of each pane pinning its own row — on a touch
+   screen, which is the only place they stack. Under a mouse the columns stay, and so does each
+   pane's own scroll. See global.css. */
+@media (max-width: 760px) and (pointer: coarse) {
   .treePane,
   .wire,
   .chartPane { overflow-y: visible; }
