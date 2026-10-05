@@ -149,6 +149,25 @@ describe('before the API has said anything', () => {
     expect(chip()).not.toBeInTheDocument();
     expect(screen.queryByText('Disconnected')).not.toBeInTheDocument();
   });
+
+  /* Saying nothing used to mean drawing nothing, and the chip is the first thing in the panel:
+     when the answer arrived — forty milliseconds after the console's first frame, measured — the
+     chip appeared from zero height and the whole form, its buttons and the record beside it
+     dropped 25px under the reader's eye. The room is kept from the start instead, by a chip that
+     is drawn and not shown, so it is the chip's own height at whatever base size is chosen. */
+  it('keeps the room the chip will take, so nothing under it moves when it arrives', () => {
+    draw('unanswered');
+
+    const held = document.querySelector('[data-pending]');
+    expect(held).toBeInTheDocument();
+    expect(held).toHaveAttribute('aria-hidden', 'true');
+    // Room and nothing else: no word, so no state is claimed even to an inspector.
+    expect(held!.textContent!.trim()).toBe('');
+  });
+
+  it('keeps it out of sight', () => {
+    expect(chipCss).toMatch(/\.chip\[data-pending\]\s*\{[^}]*visibility:\s*hidden/);
+  });
 });
 
 /**

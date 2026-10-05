@@ -68,7 +68,21 @@ export function LinkChip() {
    * reconnect notice is under it saying so, and a chip that tried to special-case its way into
    * that beat would be guessing again.
    */
-  if (!answered) return null;
+  if (!answered) {
+    /*
+     * Saying nothing is not the same as taking no room. The chip heads the panel, so when it
+     * appeared from nothing — forty milliseconds after the console's first frame, measured — the
+     * form, its buttons and the record beside it all dropped 25px under the reader. This is the
+     * chip's own box, drawn and hidden: the same class, the lamp, a line of nothing, so it is the
+     * chip's height at any base size and claims no state to anyone, a screen reader included.
+     */
+    return (
+      <p className={styles.chip} data-pending="" aria-hidden="true">
+        <span className={styles.lamp} />
+        {' '}
+      </p>
+    );
+  }
 
   return (
     <p className={styles.chip} data-tone={toneOf(state)}>

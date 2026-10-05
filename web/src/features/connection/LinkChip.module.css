@@ -56,6 +56,9 @@
 
    The edge takes the ink rather than a colour of its own: `currentColor` is what makes this one
    decision per state instead of two that can drift. */
+/* The room the chip will take, held before the API has answered — see LinkChip. */
+.chip[data-pending] { visibility: hidden; }
+
 .chip[data-tone='live'] { color: var(--live); }
 .chip[data-tone='working'] { color: var(--warn); }
 .chip[data-tone='fault'] { color: var(--fault); }
