@@ -148,8 +148,8 @@ Following the existing Domain → Infrastructure → Application → API layerin
   - Validation with FluentValidation in `Api/Validation/`; errors as `ValidationProblemDetails`.
 - Model garbage collection runs after a scene delete or save, removing model files no scene references
   (DesignBox's `gcModels`, server-side).
-- `MqttForgeHost`: the static-file content-type provider gains `.glb`, `.gltf`, `.stl`, `.obj`, `.env`
-  mappings so the studio's own assets are not 404'd.
+- `MqttForgeHost`: the static-file content-type provider gains a `.env` mapping so the studio's
+  lighting file is not 404'd. Models are served by the controller, never as static files.
 - OriginGuard already covers the non-GET calls; nothing new is exposed to other origins.
 
 **Client saving**: autosave of the open scene, debounced (500 ms) after the document changes, with a
@@ -157,8 +157,8 @@ save-state indicator (Saved / Saving… / Not saved — retry). A failed save ke
 memory and says so; it is never silently dropped. Scene list, new, rename, duplicate and delete live
 in a scene menu in the studio toolbar (Forge dialogs, not `prompt()`/`confirm()`).
 "Import DesignBox scene…" reads a `sahne.json` file and runs the v1 → v2 migration, uploading its
-inline models. Phase 1 has no mesh loaders yet, so `model` objects are drawn as a labelled
-placeholder box at their transform (selectable, movable, saved with their `model.key` intact); Phase 2
+inline models. Phase 1 has no mesh loaders yet, so `model` objects are drawn as a translucent grey
+placeholder box at their transform, and the inspector says what it stands for (selectable, movable, saved with their `model.key` intact); Phase 2
 replaces the placeholder with the real mesh.
 
 ## Phase 1 feature detail
