@@ -98,6 +98,15 @@ public sealed class JsonStudioSceneStoreTests : IDisposable
     [InlineData("abc_DEF-123", true)]
     [InlineData("../x", false)]
     [InlineData(null, false)]
+    [InlineData("CON", false)]
+    [InlineData("nul", false)]
+    [InlineData("Aux", false)]
+    [InlineData("prn", false)]
+    [InlineData("COM1", false)]
+    [InlineData("lpt9", false)]
+    [InlineData("COM0", true)]
+    [InlineData("CONSOLE", true)]
+    [InlineData("com10", true)]
     public void Scene_ids_are_a_safe_file_name(string? id, bool expected) =>
         Assert.Equal(expected, StudioIds.IsSceneId(id));
 

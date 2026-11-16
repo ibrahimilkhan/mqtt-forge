@@ -22,7 +22,9 @@ public static partial class StudioIds
     public static readonly IReadOnlySet<string> ModelExtensions =
         new HashSet<string>(StringComparer.Ordinal) { ".glb", ".gltf", ".stl", ".obj", ".dbmesh", ".step", ".stp", ".iges", ".igs" };
 
-    public static bool IsSceneId(string? id) => id is not null && SceneId().IsMatch(id);
+    // Windows keeps a handful of names for devices in every folder: CON.json is the console, not a
+    // file, whatever the extension. The pattern alone lets them through, and the server may run there.
+    public static bool IsSceneId(string? id) => id is not null && SceneId().IsMatch(id) && !DeviceName().IsMatch(id);
 
     // The key is the file's SHA-256 and its extension, so it says what the file is and nothing a
     // caller could steer: no separators, no dots before the extension.
@@ -34,6 +36,9 @@ public static partial class StudioIds
 
     [GeneratedRegex("^[A-Za-z0-9_-]{1,64}$")]
     private static partial Regex SceneId();
+
+    [GeneratedRegex("^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$", RegexOptions.IgnoreCase)]
+    private static partial Regex DeviceName();
 
     [GeneratedRegex("^[0-9a-f]{64}\\.[a-z]{3,6}$")]
     private static partial Regex ModelKey();
