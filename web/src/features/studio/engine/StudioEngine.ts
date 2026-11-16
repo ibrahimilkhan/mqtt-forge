@@ -98,7 +98,9 @@ export class StudioEngine {
     }
 
     const follow = (state: StudioState, previous?: StudioState) => {
-      if (state.scene?.objects !== previous?.scene?.objects) this.registry.sync(state.scene?.objects ?? []);
+      const objectsChanged = state.scene?.objects !== previous?.scene?.objects;
+      if (objectsChanged) this.registry.sync(state.scene?.objects ?? []);
+      if (objectsChanged || state.selection !== previous?.selection) this.registry.outline(state.selection);
       gizmos?.update(state);
     };
     follow(store.getState());

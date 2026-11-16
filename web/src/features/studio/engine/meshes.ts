@@ -1,7 +1,14 @@
-import { PBRMaterial, Quaternion, type AbstractMesh, type Mesh, type Scene } from '@babylonjs/core';
+import { Color3, PBRMaterial, Quaternion, type AbstractMesh, type Mesh, type Scene } from '@babylonjs/core';
 import type { StudioObject } from '../model/document';
 import { applyMaterial } from './materials';
 import { createShape } from './primitives';
+
+/**
+ * Amber, not the console's petrol: that is lost on the view's near-black, and the gizmos already
+ * spend red, green and blue on their axes.
+ */
+const OUTLINE_COLOUR = Color3.FromHexString('#ffb020');
+const OUTLINE_WIDTH = 0.02;
 
 type Entry = { object: StudioObject; mesh: Mesh; material: PBRMaterial };
 
@@ -47,6 +54,25 @@ export class MeshRegistry {
 
   mesh(id: string) {
     return this.entries.get(id)?.mesh;
+  }
+
+  /**
+   * Outlines the meshes of `ids` and no others. Asked whenever the selection or the objects change
+   * rather than every frame: a mesh made again for a new shape starts with no outline of its own.
+   * The width is in the mesh's own units, before its scaling — thin enough not to swallow a small
+   * part, and the price of using Babylon's outline rather than a highlight layer and its extra pass.
+   */
+  outline(ids: readonly string[]) {
+    const wanted = new Set(ids);
+    for (const [id, { mesh }] of this.entries) {
+      const on = wanted.has(id);
+      if (mesh.renderOutline === on) continue;
+      mesh.renderOutline = on;
+      if (on) {
+        mesh.outlineColor = OUTLINE_COLOUR;
+        mesh.outlineWidth = OUTLINE_WIDTH;
+      }
+    }
   }
 
   /** The object a picked mesh draws, looking up through parents for a model's sub-meshes. */

@@ -39,6 +39,34 @@ describe('StudioEngine', () => {
     expect(studio.registry.size).toBe(0);
   });
 
+  it('outlines what is selected, and only that', () => {
+    const { store, studio } = opened();
+    const a = store.getState().addPrimitive('box', [0, 0, 0]);
+    const b = store.getState().addPrimitive('sphere', [2, 0, 0]);
+
+    store.getState().select([a, b]);
+    expect(studio.registry.mesh(a)!.renderOutline).toBe(true);
+    expect(studio.registry.mesh(b)!.renderOutline).toBe(true);
+
+    store.getState().select([b]);
+    expect(studio.registry.mesh(a)!.renderOutline).toBe(false);
+    expect(studio.registry.mesh(b)!.renderOutline).toBe(true);
+
+    store.getState().select([]);
+    expect(studio.registry.mesh(b)!.renderOutline).toBe(false);
+    studio.dispose();
+  });
+
+  it('outlines a selected object\'s new mesh when its shape is changed', () => {
+    const { store, studio } = opened();
+    const id = store.getState().addPrimitive('box', [0, 0, 0]);
+    store.getState().select([id]);
+
+    store.getState().updateObject(id, { type: 'sphere' });
+    expect(studio.registry.mesh(id)!.renderOutline).toBe(true);
+    studio.dispose();
+  });
+
   it('puts new shapes where the camera is looking, on the ground', () => {
     const { studio } = opened();
     expect(studio.viewCentre()).toEqual([0, 0, 0]);
