@@ -107,7 +107,9 @@ export function SceneMenu({ flush, settle }: Pick<Autosave, 'flush' | 'settle'>)
       const read = readSceneFile(raw, { id: newId(), name: file.name.replace(/\.json$/i, '') || UNTITLED });
       const imported = await uploadPending(read.scene, read.pending, uploadModel);
       await flush();
-      studioStore.getState().open(imported, false);
+      // Always a new scene: a version 2 file carries its own id, and keeping it would have the
+      // autosave write the import over whichever saved scene already has that id.
+      studioStore.getState().open({ ...imported, id: newId() }, false);
     }).finally(() => setMode('idle'));
   };
 

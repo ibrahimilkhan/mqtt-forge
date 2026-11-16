@@ -37,7 +37,13 @@ export function readSceneFile(raw: unknown, fallback: { id: string; name: string
   if (!isObject(raw)) throw new SceneFileError('This file is not a scene: it holds no JSON object.');
 
   const version = raw.version ?? 1;
-  if (version === SCENE_VERSION) return { scene: raw as StudioScene, pending: [] };
+  if (version === SCENE_VERSION) {
+    // Taken as it is, so only what everything after the read leans on is looked at: one of these
+    // missing would fail later and further from the file, with nothing to say which file it was.
+    if (!Array.isArray(raw.objects) || !isObject(raw.settings) || typeof raw.id !== 'string' || typeof raw.name !== 'string')
+      throw new SceneFileError('This file is not a scene: it says it is version 2 but is not shaped like one.');
+    return { scene: raw as StudioScene, pending: [] };
+  }
   if (typeof version !== 'number' || version > SCENE_VERSION)
     throw new SceneFileError('This scene was written by a newer version of the studio and cannot be opened here.');
   if (!Array.isArray(raw.objects)) throw new SceneFileError('This file is not a scene: it has no list of objects.');

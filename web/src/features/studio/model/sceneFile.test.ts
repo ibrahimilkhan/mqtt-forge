@@ -57,6 +57,17 @@ describe('reading a version 2 scene', () => {
   });
 });
 
+describe('a version 2 file in the wrong shape', () => {
+  it('is refused rather than opened half read', () => {
+    const saved = JSON.parse(JSON.stringify(blankScene('Cell')));
+    expect(() => readSceneFile({ ...saved, objects: {} }, fallback)).toThrow(SceneFileError);
+    expect(() => readSceneFile({ ...saved, settings: [] }, fallback)).toThrow(SceneFileError);
+    expect(() => readSceneFile({ ...saved, settings: undefined }, fallback)).toThrow(SceneFileError);
+    expect(() => readSceneFile({ ...saved, id: 5 }, fallback)).toThrow(SceneFileError);
+    expect(() => readSceneFile({ ...saved, name: null }, fallback)).toThrow(SceneFileError);
+  });
+});
+
 describe('a file that is not a scene', () => {
   it('says what is wrong with it', () => {
     expect(() => readSceneFile('hello', fallback)).toThrow(SceneFileError);

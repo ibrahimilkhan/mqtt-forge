@@ -186,6 +186,17 @@ describe('SceneMenu', () => {
     expect(studioStore.getState().scene?.objects[2].model?.key).toBe('a'.repeat(64) + '.stl');
   });
 
+  it('gives an imported studio scene an id of its own, so saving it cannot write over the scene it came from', async () => {
+    render(<SceneMenu flush={flush} settle={settle} />);
+
+    const file = new File([JSON.stringify({ ...other, name: 'Cell B again' })], 'cell-b.json', { type: 'application/json' });
+    await userEvent.upload(screen.getByLabelText('Import a DesignBox scene'), file);
+
+    await waitFor(() => expect(studioStore.getState().scene?.name).toBe('Cell B again'));
+    expect(studioStore.getState().scene?.id).not.toBe(other.id);
+    expect(isDirty(studioStore.getState())).toBe(true);
+  });
+
   it('says why a file could not be imported', async () => {
     render(<SceneMenu flush={flush} settle={settle} />);
     const file = new File(['{"version": 9, "objects": []}'], 'future.json', { type: 'application/json' });
