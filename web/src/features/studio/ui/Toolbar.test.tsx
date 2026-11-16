@@ -36,4 +36,11 @@ describe('Toolbar', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(onRetry).toHaveBeenCalled();
   });
+
+  it('writes the move steps in the display unit', () => {
+    studioStore.getState().updateSettings({ displayUnit: 'cm' });
+    render(<Toolbar onAdd={() => {}} saveState={{ kind: 'saved' }} onRetry={() => {}} sceneMenu={null} />);
+    expect(screen.getByRole('option', { name: '50 cm' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: '500 mm' })).not.toBeInTheDocument();
+  });
 });

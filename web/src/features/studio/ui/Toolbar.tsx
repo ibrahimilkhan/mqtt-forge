@@ -3,7 +3,7 @@ import { Segmented } from '../../../components/Segmented';
 import { PRIMITIVE_LABELS, PRIMITIVE_TYPES } from '../model/defaults';
 import type { PrimitiveType } from '../model/document';
 import { studioStore, useStudio, type Orientation, type Tool } from '../studioStore';
-import { DISPLAY_UNITS, type DisplayUnit } from '../units/units';
+import { DISPLAY_UNITS, formatLength, type DisplayUnit } from '../units/units';
 import styles from './Toolbar.module.css';
 
 export type SaveState = { kind: 'saved' } | { kind: 'saving' } | { kind: 'failed'; message: string };
@@ -18,7 +18,7 @@ const ORIENTATIONS: ReadonlyArray<{ value: Orientation; label: string }> = [
   { value: 'world', label: 'World' },
   { value: 'local', label: 'Local' },
 ];
-/** Metres. */
+/** Metres, shown in whichever unit the scene is shown in. */
 const MOVE_STEPS = [0.001, 0.01, 0.1, 0.5, 1];
 /** Degrees. */
 const ROTATE_STEPS = [1, 5, 15, 45, 90];
@@ -65,7 +65,7 @@ export function Toolbar({ onAdd, saveState, onRetry, sceneMenu }: Props) {
             <select value={settings.moveStep} onChange={(e) => updateSettings({ moveStep: Number(e.target.value) })}>
               {MOVE_STEPS.map((m) => (
                 <option key={m} value={m}>
-                  {m * 1000} mm
+                  {formatLength(m, settings.displayUnit)}
                 </option>
               ))}
             </select>
