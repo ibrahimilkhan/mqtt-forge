@@ -9,6 +9,7 @@ export const queryKeys = {
   colourRules: ['colour-rules'] as const,
   alertRules: ['alert-rules'] as const,
   flows: ['flows'] as const,
+  studioScenes: ['studio', 'scenes'] as const,
   exportFolder: ['export', 'folder'] as const,
   certificateDialog: ['connection', 'certificate-file'] as const,
 };
