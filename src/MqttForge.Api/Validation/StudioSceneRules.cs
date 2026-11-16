@@ -24,7 +24,10 @@ public static class StudioSceneRules
             return errors;
         }
 
-        if (!body.TryGetProperty("version", out var version) || !version.TryGetInt32(out var v) || v != Version)
+        // The kind is asked first throughout: the JsonElement getters throw on the wrong kind, and a
+        // body the client got wrong is a 400 that says where, not a 500 that says nothing.
+        if (!body.TryGetProperty("version", out var version) || version.ValueKind != JsonValueKind.Number
+            || !version.TryGetInt32(out var v) || v != Version)
             Add("version", $"Only version {Version} scenes are kept; an older file is imported by the console first.");
 
         if (!body.TryGetProperty("id", out var id) || id.ValueKind != JsonValueKind.String || id.GetString() != routeId)
@@ -47,7 +50,8 @@ public static class StudioSceneRules
                 || !item.TryGetProperty("id", out var objectId) || objectId.ValueKind != JsonValueKind.String)
                 Add($"objects[{index}]", "Every object needs a text id.");
             else if (item.TryGetProperty("model", out var model) && model.ValueKind == JsonValueKind.Object
-                && (!model.TryGetProperty("key", out var key) || !StudioIds.IsModelKey(key.GetString())))
+                && (!model.TryGetProperty("key", out var key) || key.ValueKind != JsonValueKind.String
+                    || !StudioIds.IsModelKey(key.GetString())))
                 Add($"objects[{index}].model", "A model has to name a file the studio stored.");
 
             index++;

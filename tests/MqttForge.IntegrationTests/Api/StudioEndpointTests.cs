@@ -72,6 +72,29 @@ public sealed class StudioEndpointTests : IClassFixture<MqttForgeApiFactory>
     }
 
     [Fact]
+    public async Task A_version_that_is_not_a_number_is_refused_rather_than_failing_the_server()
+    {
+        var put = await _client.PutAsJsonAsync("/api/studio/scenes/vtext", new { version = "2", id = "vtext", name = "Cell", objects = Array.Empty<object>() });
+
+        Assert.Equal(HttpStatusCode.BadRequest, put.StatusCode);
+        var problem = await Json(put);
+        Assert.Equal("sceneInvalid", problem.GetProperty("reason").GetString());
+        Assert.True(problem.GetProperty("errors").TryGetProperty("version", out _));
+    }
+
+    [Fact]
+    public async Task A_model_key_that_is_not_text_is_refused_rather_than_failing_the_server()
+    {
+        var put = await _client.PutAsJsonAsync("/api/studio/scenes/knum",
+            Scene("knum", objects: [new { id = "m1", type = "model", name = "Part", model = new { key = 5, ext = ".glb" } }]));
+
+        Assert.Equal(HttpStatusCode.BadRequest, put.StatusCode);
+        var problem = await Json(put);
+        Assert.Equal("sceneInvalid", problem.GetProperty("reason").GetString());
+        Assert.True(problem.GetProperty("errors").TryGetProperty("objects[0].model", out _));
+    }
+
+    [Fact]
     public async Task An_unknown_scene_is_a_404_that_says_so()
     {
         var get = await _client.GetAsync("/api/studio/scenes/missing");
