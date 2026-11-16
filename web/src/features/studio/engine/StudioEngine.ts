@@ -122,6 +122,9 @@ export class StudioEngine {
   }
 
   dispose() {
+    // A drag the panel closed on never gets its pointer-up: end it here, or the store keeps a
+    // gesture open that nothing will close, and refuses every undo after it.
+    this.store.getState().endGesture();
     // Last made, first undone: the store subscription goes before the meshes it would sync.
     for (const undo of this.teardown.reverse()) undo();
     this.teardown.length = 0;

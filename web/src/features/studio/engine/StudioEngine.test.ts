@@ -67,6 +67,19 @@ describe('StudioEngine', () => {
     studio.dispose();
   });
 
+  // A drag cut short by the panel closing would otherwise leave undo refused for good.
+  it('ends a gesture still under way when it is disposed, keeping it as one step', () => {
+    const { store, studio } = opened();
+    const id = store.getState().addPrimitive('box', [0, 0, 0]);
+    store.getState().beginGesture();
+    store.getState().updateObject(id, { position: [4, 0.5, 0] });
+
+    studio.dispose();
+    expect(store.getState().gestureBase).toBeNull();
+    store.getState().undo();
+    expect(store.getState().scene!.objects[0].position).toEqual([0, 0.5, 0]);
+  });
+
   it('puts new shapes where the camera is looking, on the ground', () => {
     const { studio } = opened();
     expect(studio.viewCentre()).toEqual([0, 0, 0]);
