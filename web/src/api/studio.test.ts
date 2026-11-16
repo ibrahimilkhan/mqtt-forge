@@ -26,16 +26,23 @@ describe('studio api', () => {
   });
 
   it('sends a model as raw bytes with its extension in the query', async () => {
-    let seen: { ext: string | null; type: string | null; body: string } | undefined;
+    let seen: { ext: string | null; type: string | null; bytes: Uint8Array } | undefined;
     server.use(
       http.post('/api/studio/models', async ({ request }) => {
-        seen = { ext: new URL(request.url).searchParams.get('ext'), type: request.headers.get('content-type'), body: await request.text() };
+        seen = {
+          ext: new URL(request.url).searchParams.get('ext'),
+          type: request.headers.get('content-type'),
+          bytes: new Uint8Array(await request.arrayBuffer()),
+        };
         return HttpResponse.json({ key: 'k.stl' });
       }),
     );
 
-    expect(await uploadModel(new Blob(['solid']), '.stl')).toEqual({ key: 'k.stl' });
-    expect(seen).toEqual({ ext: '.stl', type: 'application/octet-stream', body: 'solid' });
+    const bytes = new Uint8Array([0, 0xff, 0xfe, 0x80, 0x41]);
+    expect(await uploadModel(new Blob([bytes]), '.stl')).toEqual({ key: 'k.stl' });
+    expect(seen?.ext).toEqual('.stl');
+    expect(seen?.type).toEqual('application/octet-stream');
+    expect(seen?.bytes).toEqual(bytes);
   });
 
   it('tells a scene that is not there apart from other failures', async () => {

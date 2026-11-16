@@ -21,9 +21,11 @@ export const deleteScene = (id: string) => request<void>(scenePath(id), { method
 
 /** The bytes as the body, not a form: the server hashes the stream straight to disk. */
 export const uploadModel = async (blob: Blob, ext: string) =>
+  // read into a buffer rather than streaming the Blob itself: jsdom's Blob is not one Node's fetch
+  // can stream, and a buffer is the same bytes in every environment, unlike `blob.text()` above.
   request<{ key: string }>(
     `/api/studio/models?ext=${encodeURIComponent(ext)}`,
-    { method: 'POST', body: await blob.text(), headers: { 'Content-Type': 'application/octet-stream' } },
+    { method: 'POST', body: await blob.arrayBuffer(), headers: { 'Content-Type': 'application/octet-stream' } },
     UPLOAD_PATIENCE,
   );
 
