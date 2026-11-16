@@ -1,5 +1,6 @@
 import { ArcRotateCamera, Vector3, type AbstractMesh, type ArcRotateCameraMouseWheelInput, type Scene } from '@babylonjs/core';
 
+/** Starting pose and the limits `tuneCamera` and `createCamera` keep it within. */
 export const CAMERA = {
   alpha: -Math.PI / 4,
   beta: Math.PI / 3.2,

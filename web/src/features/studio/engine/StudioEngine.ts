@@ -50,7 +50,14 @@ export class StudioEngine {
       throw new WebGLUnavailable(error);
     }
 
-    return new StudioEngine(engine, store, { canvas, environmentUrl: '/studio/environment.env', onStatus });
+    try {
+      return new StudioEngine(engine, store, { canvas, environmentUrl: '/studio/environment.env', onStatus });
+    } catch (error) {
+      // The constructor failed partway through, after the engine was already made; nothing else
+      // owns it yet, so it must be disposed here or the WebGL context leaks.
+      engine.dispose();
+      throw error;
+    }
   }
 
   constructor(engine: AbstractEngine, store: StoreApi<StudioState>, options: Options = {}) {

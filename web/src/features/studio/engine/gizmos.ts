@@ -5,6 +5,16 @@ import type { StudioState } from '../studioStore';
 import type { MeshRegistry } from './meshes';
 import { transformFromMesh } from './transform';
 
+/** Scaling has no unit the user sets a step for, unlike move and rotate; a tenth is fine enough. */
+const SCALE_SNAP = 0.1;
+
+/** The drag observables a position, rotation or scale gizmo all expose, enough for `wire` to use. */
+type DragSource = {
+  onDragStartObservable: { add(fn: () => void): unknown };
+  onDragObservable: { add(fn: () => void): unknown };
+  onDragEndObservable: { add(fn: () => void): unknown };
+};
+
 /**
  * The move, rotate and scale handles on the selected object, and the way their drags reach the
  * store. A drag is a gesture: it opens one undo step when it starts and closes it when it ends, and
@@ -50,9 +60,14 @@ export class GizmoBridge {
       this.wire(gizmos.rotationGizmo);
     }
     if (gizmos.scaleGizmo) {
-      gizmos.scaleGizmo.snapDistance = settings?.snap ? 0.1 : 0;
+      gizmos.scaleGizmo.snapDistance = settings?.snap ? SCALE_SNAP : 0;
       this.wire(gizmos.scaleGizmo);
     }
+  }
+
+  // Exposed for tests, and for later focus/keyboard work, to drive or inspect the gizmos directly.
+  get gizmos() {
+    return this.manager.gizmos;
   }
 
   dispose() {
@@ -60,7 +75,7 @@ export class GizmoBridge {
   }
 
   // Each gizmo is made the first time its tool is chosen, so its drags are hooked up then, once.
-  private wire(gizmo: { onDragStartObservable: { add(fn: () => void): unknown }; onDragObservable: { add(fn: () => void): unknown }; onDragEndObservable: { add(fn: () => void): unknown } }) {
+  private wire(gizmo: DragSource) {
     if (this.wired.has(gizmo)) return;
     this.wired.add(gizmo);
 

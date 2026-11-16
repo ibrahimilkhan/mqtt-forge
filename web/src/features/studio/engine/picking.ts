@@ -8,6 +8,9 @@ const CLICK_SLOP_PX = 4;
 export function attachPicking(scene: Scene, registry: MeshRegistry, onPick: (id: string | null) => void) {
   let downX = 0;
   let downY = 0;
+  // A press that lands on a gizmo goes to the utility layer and never reaches this observer, so
+  // the matching release must not be measured against some earlier, unrelated press.
+  let pressed = false;
 
   const observer = scene.onPointerObservable.add((info) => {
     const event = info.event as PointerEvent;
@@ -16,9 +19,12 @@ export function attachPicking(scene: Scene, registry: MeshRegistry, onPick: (id:
     if (info.type === PointerEventTypes.POINTERDOWN) {
       downX = event.clientX;
       downY = event.clientY;
+      pressed = true;
       return;
     }
     if (info.type !== PointerEventTypes.POINTERUP) return;
+    if (!pressed) return;
+    pressed = false;
     if (Math.hypot(event.clientX - downX, event.clientY - downY) > CLICK_SLOP_PX) return;
 
     const hit = scene.pick(scene.pointerX, scene.pointerY, (mesh) => mesh.isPickable && registry.idOf(mesh) !== undefined);

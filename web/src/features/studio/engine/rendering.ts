@@ -61,12 +61,22 @@ export function setupRendering(scene: Scene, camera: ArcRotateCamera, options: {
   const up = Vector3.Cross(sunDir, right).normalize();
   const centre = new Vector3();
   const scratch = new Vector3();
-  let shadowKey = '';
+  // Compared with === against the previous frame's values instead of building a key string, so
+  // the common case (camera unchanged) allocates nothing: this runs every frame.
+  let lastHalf = Number.NaN;
+  let lastCr = Number.NaN;
+  let lastCu = Number.NaN;
   let gridShown = 0;
 
   const frame = scene.onBeforeRenderObservable.add(() => {
     const perPx = (2 * camera.radius * Math.tan(camera.fov / 2)) / Math.max(1, scene.getEngine().getRenderHeight());
-    const step = GRID_STEPS.find((g) => g / perPx >= GRID_MIN_PX) ?? GRID_STEPS[GRID_STEPS.length - 1];
+    let step = GRID_STEPS[GRID_STEPS.length - 1];
+    for (const g of GRID_STEPS) {
+      if (g / perPx >= GRID_MIN_PX) {
+        step = g;
+        break;
+      }
+    }
     if (step !== gridShown) grid.gridRatio = gridShown = step;
 
     const half = Math.min(GROUND_SIZE / 2, Math.max(4, camera.radius * 1.4));
@@ -74,9 +84,10 @@ export function setupRendering(scene: Scene, camera: ArcRotateCamera, options: {
     const t = camera.target;
     const cr = Math.round(Vector3.Dot(t, right) / texel) * texel;
     const cu = Math.round(Vector3.Dot(t, up) / texel) * texel;
-    const key = `${half}|${cr}|${cu}`;
-    if (key === shadowKey) return;
-    shadowKey = key;
+    if (half === lastHalf && cr === lastCr && cu === lastCu) return;
+    lastHalf = half;
+    lastCr = cr;
+    lastCu = cu;
 
     centre.copyFrom(right).scaleInPlace(cr);
     centre.addInPlace(scratch.copyFrom(up).scaleInPlace(cu));
@@ -85,6 +96,10 @@ export function setupRendering(scene: Scene, camera: ArcRotateCamera, options: {
     sun.orthoLeft = sun.orthoBottom = -half;
     sun.orthoRight = sun.orthoTop = half;
   });
+
+  // The texture loads asynchronously; dispose() may already have run by the time either callback
+  // fires, and touching the scene then would log a spurious warning or write to a dead object.
+  let disposed = false;
 
   let environment: CubeTexture | null = null;
   if (options.environmentUrl) {
@@ -95,11 +110,13 @@ export function setupRendering(scene: Scene, camera: ArcRotateCamera, options: {
       false,
       null,
       () => {
+        if (disposed) return;
         scene.environmentTexture = environment;
         scene.environmentIntensity = 0.75;
       },
       // Without reflections metal turns dark; the fill light makes up some of the difference.
       () => {
+        if (disposed) return;
         console.warn('The studio lighting file could not be loaded; drawing without reflections.');
         hemi.intensity = 0.8;
       },
@@ -111,6 +128,7 @@ export function setupRendering(scene: Scene, camera: ArcRotateCamera, options: {
   return {
     shadows,
     dispose: () => {
+      disposed = true;
       scene.onBeforeRenderObservable.remove(frame);
       environment?.dispose();
     },
