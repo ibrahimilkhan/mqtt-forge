@@ -95,9 +95,17 @@ export function useAutosave(): Autosave {
       if (now.scene?.id !== before.scene?.id) setState({ kind: 'saved' });
       if (now.revision !== before.revision || now.savedRevision !== before.savedRevision) schedule();
     });
+    // The pause is only there to gather a burst of changes into one write; a page on its way out,
+    // or a studio being closed, will not be there when it runs out, so whatever is waiting goes now.
+    const leave = () => {
+      if (isDirty(studioStore.getState())) saveQuietly();
+    };
+    window.addEventListener('pagehide', leave);
     return () => {
       unsubscribe();
+      window.removeEventListener('pagehide', leave);
       stopTimer();
+      leave();
     };
   }, [saveQuietly, stopTimer]);
 

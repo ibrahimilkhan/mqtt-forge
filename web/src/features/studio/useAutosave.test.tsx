@@ -145,6 +145,41 @@ describe('useAutosave', () => {
     expect(isDirty(studioStore.getState())).toBe(false);
   });
 
+  it('writes an edit made just before the studio closes, rather than dropping it with the timer', async () => {
+    const puts: unknown[] = [];
+    server.use(http.put('/api/studio/scenes/:id', async ({ request }) => {
+      puts.push(await request.json());
+      return new HttpResponse(null, { status: 204 });
+    }));
+    const { unmount } = renderHook(() => useAutosave(), { wrapper });
+
+    act(() => void studioStore.getState().addPrimitive('box', [0, 0, 0]));
+    unmount();
+
+    await waitFor(() => expect(puts).toHaveLength(1));
+    await waitFor(() => expect(isDirty(studioStore.getState())).toBe(false));
+  });
+
+  it('writes the scene when the page is going away while the studio is open', async () => {
+    let puts = 0;
+    server.use(http.put('/api/studio/scenes/:id', () => {
+      puts += 1;
+      return new HttpResponse(null, { status: 204 });
+    }));
+    renderHook(() => useAutosave(), { wrapper });
+
+    act(() => void studioStore.getState().addPrimitive('box', [0, 0, 0]));
+    act(() => void window.dispatchEvent(new Event('pagehide')));
+
+    // Well inside the pause: the write must not wait for a timer the page may not live to run.
+    await act(() => new Promise((resolve) => setTimeout(resolve, SAVE_DEBOUNCE_MS / 5)));
+    expect(puts).toBe(1);
+    await waitFor(() => expect(isDirty(studioStore.getState())).toBe(false));
+    // The timer's save finds nothing left to write.
+    await act(() => new Promise((resolve) => setTimeout(resolve, SAVE_DEBOUNCE_MS + 100)));
+    expect(puts).toBe(1);
+  });
+
   it('does not carry a failed save onto the next scene', async () => {
     server.use(http.put('/api/studio/scenes/:id', () =>
       HttpResponse.json({ status: 500, title: 'Could not save the studio', detail: 'Disk full', reason: 'studioNotSaved' }, { status: 500 })));
