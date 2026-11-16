@@ -1,0 +1,7 @@
+.menu { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px; }
+.pick { display: flex; flex-direction: column; }
+.label { font-size: 0.8em; color: var(--muted); }
+.confirm { display: inline-flex; gap: 4px; }
+.import { position: relative; display: inline-flex; align-items: center; padding: 4px 10px; border: 1px dashed var(--rule); border-radius: 6px; cursor: pointer; }
+.import input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.problem { flex-basis: 100%; margin: 0; color: var(--fault); }
