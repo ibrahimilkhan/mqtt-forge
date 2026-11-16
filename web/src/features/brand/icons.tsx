@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react';
 
 /**
- * The nine marks the panel menu wears, one per panel — and seventeen more that are not panels.
+ * The ten marks the panel menu wears, one per panel — and seventeen more that are not panels.
  *
- * Drawn here rather than pulled from an icon set. Twenty-six glyphs is not worth a dependency, and
+ * Drawn here rather than pulled from an icon set. Twenty-seven glyphs is not worth a dependency, and
  * a set drawn to its own rules would sit beside the mark in `marks.tsx` looking borrowed: the same
  * 24-unit square, one weight of stroke, round ends, no fill, current colour. That is the whole
  * drawing language of this console, and these follow it — the shapes are Lucide's `antenna`,
