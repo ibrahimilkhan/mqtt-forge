@@ -47,7 +47,7 @@ public sealed class JsonStudioSceneStore : IStudioSceneStore
 
         return await ReadAsync(path, ct)
             ?? throw new StudioSceneUnreadableException(
-                $"The scene file {path} could not be read. Repair it or move it aside; it will not be written over until then.");
+                $"The scene file {path} could not be read. Repair it or move it aside; a save to this scene would replace it.");
     }
 
     public async Task SaveAsync(string id, JsonElement document, CancellationToken ct)

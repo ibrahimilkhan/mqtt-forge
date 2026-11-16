@@ -19,7 +19,7 @@ export const CAMERA = {
 
 /**
  * The orbit camera. With a canvas it takes the pointer, zooms towards the cursor rather than the
- * middle of the screen, and leaves the arrow keys alone — they nudge the selection.
+ * middle of the screen, and leaves the arrow keys to the page rather than turning the view.
  */
 export function createCamera(scene: Scene, canvas: HTMLCanvasElement | null): ArcRotateCamera {
   const camera = new ArcRotateCamera('studio-camera', CAMERA.alpha, CAMERA.beta, CAMERA.radius, Vector3.Zero(), scene);
