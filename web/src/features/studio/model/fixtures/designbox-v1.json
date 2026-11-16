@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "objects": [
+    { "type": "box", "name": "Base", "pid": "p-base", "position": [0, 0.5, 0], "rotation": [0, 0, 0, 1], "euler": [0, 0, 0], "scaling": [2, 1, 2], "color": "#4f9cff", "mat": { "metal": 1, "rough": 0.35 } },
+    { "type": "cylinder", "name": "Arm", "pid": "p-arm", "position": [0, 1.5, 0], "rotation": [0, 0, 0, 1], "euler": [0, 0, 0], "scaling": [0.2, 1, 0.2], "color": "#ff6b6b", "link": 0, "joint": { "pivot": [0, -0.5, 0], "axis": [0, 1, 0], "zero": [0, 0, 0, 1], "min": -90, "max": 90 }, "groupId": "g1" },
+    { "type": "model", "name": "Bracket", "pid": "p-model", "position": [1, 0, 1], "rotation": [0, 0, 0, 1], "euler": [0, 0, 0], "scaling": [1, 1, 1], "model": "data:model/stl;base64,c29saWQgYnJhY2tldAplbmRzb2xpZCBicmFja2V0Cg==", "modelKey": "idb-123", "ext": ".stl", "pivot": "center", "importScale": 0.001 }
+  ],
+  "groups": [{ "id": "g1", "name": "Arm group", "collapsed": false }],
+  "poses": [{ "id": "pose1", "name": "Up", "angles": { "p-arm": 45 } }],
+  "annotations": [{ "id": "a1", "type": "gap", "A": "p-base", "B": "p-arm" }]
+}
