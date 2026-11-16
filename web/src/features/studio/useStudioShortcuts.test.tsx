@@ -9,6 +9,7 @@ function Host({ focus = () => {} }: { focus?: () => void }) {
   return (
     <div tabIndex={-1} data-testid="root" onKeyDown={onKeyDown}>
       <input aria-label="typing" />
+      <p data-testid="note">A placeholder note the reader might select.</p>
     </div>
   );
 }
@@ -57,5 +58,23 @@ describe('studio shortcuts', () => {
     fireEvent.keyDown(getByLabelText('typing'), { key: 'e' });
     expect(studioStore.getState().scene!.objects).toHaveLength(1);
     expect(studioStore.getState().tool).toBe('move');
+  });
+
+  // Selecting page text and pressing Ctrl+C is the reader reaching for the browser's own copy —
+  // it must not be swallowed into the object clipboard instead.
+  it('leaves Ctrl+C to the browser when the reader has text selected', () => {
+    const { getByTestId } = render(<Host />);
+    studioStore.getState().addPrimitive('box', [0, 0, 0]);
+
+    const range = document.createRange();
+    range.selectNodeContents(getByTestId('note'));
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+
+    fireEvent.keyDown(getByTestId('root'), { key: 'c', ctrlKey: true });
+    expect(studioStore.getState().clipboard).toHaveLength(0);
+
+    selection?.removeAllRanges();
   });
 });

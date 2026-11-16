@@ -18,9 +18,14 @@ export function useStudioShortcuts({ focus }: { focus: () => void }) {
       const key = event.key.toLowerCase();
       let handled = true;
 
+      // A reader who selected the placeholder note, or any other page text, is reaching for the
+      // browser's own copy — stealing Ctrl+C into the object clipboard would silently drop it.
+      const textSelected = !!window.getSelection()?.toString();
+
       if (mod && key === 'z' && !event.shiftKey) s.undo();
       else if (mod && (key === 'y' || (key === 'z' && event.shiftKey))) s.redo();
       else if (mod && key === 'd') s.duplicate(s.selection);
+      else if (mod && key === 'c' && textSelected) handled = false;
       else if (mod && key === 'c') s.copy(s.selection);
       else if (mod && key === 'v') s.paste();
       else if (mod) handled = false;
