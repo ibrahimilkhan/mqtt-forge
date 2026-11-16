@@ -12,6 +12,7 @@ public static class StorePaths
     public const string ReconnectOptionFileName = "reconnect.json";
     public const string InstallTokenFileName = "install-token.txt";
     public const string FlowsFileName = "flows.json";
+    public const string StudioDirectoryName = "studio";
 
     public static string ConnectionSettings(IConfiguration config) =>
         config["MqttForge:SettingsPath"]
@@ -62,6 +63,10 @@ public static class StorePaths
     /// </summary>
     public static string Flows(IConfiguration config) =>
         config["MqttForge:FlowsPath"] ?? Beside(config, FlowsFileName);
+
+    // A folder rather than a file: one JSON per scene and the model files they name.
+    public static string Studio(IConfiguration config) =>
+        config["MqttForge:StudioPath"] ?? Beside(config, StudioDirectoryName);
 
     /// <summary>
     /// Whether the broker link is supervised. Beside the rest, so one mounted volume still keeps

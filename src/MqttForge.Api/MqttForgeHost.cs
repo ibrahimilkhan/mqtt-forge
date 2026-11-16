@@ -140,7 +140,12 @@ public static class MqttForgeHost
         if (app.Environment.IsDevelopment()) app.UseCors();
 
         app.UseDefaultFiles();
-        app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = CacheByFilename });
+
+        // The studio's lighting ships as a Babylon .env file, which the default table does not know
+        // and would 404 — static files refuse what they cannot name rather than guess.
+        var contentTypes = new FileExtensionContentTypeProvider();
+        contentTypes.Mappings[".env"] = "application/octet-stream";
+        app.UseStaticFiles(new StaticFileOptions { ContentTypeProvider = contentTypes, OnPrepareResponse = CacheByFilename });
 
         app.MapControllers();
         app.MapHub<MqttHub>("/hubs/mqtt");

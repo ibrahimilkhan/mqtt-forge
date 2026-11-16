@@ -202,6 +202,14 @@ public static class DependencyInjection
                 : null));
         services.AddSingleton<FlowService>();
 
+        // The 3D Studio's scenes and model files, side by side in one folder beside the settings.
+        services.AddSingleton<IStudioSceneStore>(sp => new JsonStudioSceneStore(
+            StorePaths.Studio(sp.GetRequiredService<IConfiguration>()),
+            sp.GetRequiredService<ILogger<JsonStudioSceneStore>>()));
+        services.AddSingleton<IStudioModelStore>(sp =>
+            new FileStudioModelStore(StorePaths.Studio(sp.GetRequiredService<IConfiguration>())));
+        services.AddSingleton<StudioService>();
+
         // The message path forks here rather than inside MqttnetSubscriber, which goes on knowing
         // that it hands a message over and nothing about who to. Recording joins the same list.
         //

@@ -23,6 +23,7 @@ public sealed class MqttForgeApiFactory : WebApplicationFactory<Program>
     private readonly string _reconnectPath;
     private readonly string _flowsPath;
     private readonly string _installTokenPath;
+    private readonly string _studioPath;
 
     public MqttForgeApiFactory()
     {
@@ -54,6 +55,9 @@ public sealed class MqttForgeApiFactory : WebApplicationFactory<Program>
         _flowsPath = Own("api-flows.json");
         // And the install's own token, which is written the first time a client id is made up.
         _installTokenPath = Own("api-install-token.txt");
+        // The studio's scenes and model files, in a folder of their own for the same reason as
+        // every store above: a test must not find another test's parts.
+        _studioPath = Own("api-studio");
     }
 
     private MqttForgeApiFactory(
@@ -71,6 +75,7 @@ public sealed class MqttForgeApiFactory : WebApplicationFactory<Program>
         _reconnectPath = reconnectPath ?? Own("api-reconnect.json");
         _flowsPath = flowsPath ?? Own("api-flows.json");
         _installTokenPath = Own("api-install-token.txt");
+        _studioPath = Own("api-studio");
     }
 
     /// <summary>
@@ -101,6 +106,7 @@ public sealed class MqttForgeApiFactory : WebApplicationFactory<Program>
     public string AlertStatePath => _alertStatePath;
     public string ReconnectPath => _reconnectPath;
     public string FlowsPath => _flowsPath;
+    public string StudioPath => _studioPath;
 
     private string Own(string file) => Path.Combine(_directory, file);
 
@@ -117,6 +123,7 @@ public sealed class MqttForgeApiFactory : WebApplicationFactory<Program>
                 ["MqttForge:AlertStatePath"] = _alertStatePath,
                 ["MqttForge:ReconnectOptionPath"] = _reconnectPath,
                 ["MqttForge:FlowsPath"] = _flowsPath,
+                ["MqttForge:StudioPath"] = _studioPath,
                 ["MqttForge:InstallTokenPath"] = _installTokenPath,
 
                 // Off unless a test turns it back on. The product ships with webhooks enabled and
