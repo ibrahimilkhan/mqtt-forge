@@ -1,7 +1,7 @@
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import { evalExpr } from '../units/evalExpr';
 import { roundTo, type DisplayUnit } from '../units/units';
-import styles from './Inspector.module.css';
+import styles from './NumberField.module.css';
 
 type Props = {
   label: string;
@@ -12,6 +12,9 @@ type Props = {
   unit?: DisplayUnit;
   step?: number;
   digits?: number;
+  /** A number the field can read but the caller cannot use — e.g. a zero scale — goes back
+   * like text it cannot read. */
+  accepts?: (value: number) => boolean;
 };
 
 /**
@@ -19,7 +22,16 @@ type Props = {
  * '10cm' in a length field — worked out on Enter or on leaving the box, and stepped with the arrow
  * keys. Text it cannot read goes back to the value rather than becoming zero.
  */
-export function NumberField({ label, value, onCommit, length = false, unit = 'm', step = 1, digits = 4 }: Props) {
+export function NumberField({
+  label,
+  value,
+  onCommit,
+  length = false,
+  unit = 'm',
+  step = 1,
+  digits = 4,
+  accepts,
+}: Props) {
   const shown = String(roundTo(value, digits));
   const [text, setText] = useState(shown);
   useEffect(() => setText(shown), [shown]);
@@ -27,7 +39,7 @@ export function NumberField({ label, value, onCommit, length = false, unit = 'm'
   const commit = () => {
     if (text === shown) return;
     const result = evalExpr(text, { current: value, length, unit });
-    if (Number.isNaN(result)) setText(shown);
+    if (Number.isNaN(result) || (accepts && !accepts(result))) setText(shown);
     else onCommit(result);
   };
 
@@ -37,7 +49,9 @@ export function NumberField({ label, value, onCommit, length = false, unit = 'm'
     else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
       event.preventDefault();
       const by = step * (event.shiftKey ? 10 : 1) * (event.key === 'ArrowUp' ? 1 : -1);
-      onCommit(roundTo(value + by, 6));
+      const stepped = roundTo(value + by, 6);
+      if (accepts && !accepts(stepped)) return;
+      onCommit(stepped);
     }
   };
 

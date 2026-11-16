@@ -54,6 +54,7 @@ export function Inspector() {
             length
             unit={unit}
             step={toDisplay(settings.moveStep, unit)}
+            digits={DISPLAY_UNITS[unit].digits}
             onCommit={(v) => updateObject(object.id, { position: withAxis(object.position, i, fromDisplay(v, unit)) })}
           />
         ))}
@@ -81,7 +82,8 @@ export function Inspector() {
             label={`Scale ${axis}`}
             value={object.scaling[i]}
             step={0.1}
-            onCommit={(v) => v > 0 && updateObject(object.id, { scaling: withAxis(object.scaling, i, v) })}
+            accepts={(v) => v > 0}
+            onCommit={(v) => updateObject(object.id, { scaling: withAxis(object.scaling, i, v) })}
           />
         ))}
       </fieldset>

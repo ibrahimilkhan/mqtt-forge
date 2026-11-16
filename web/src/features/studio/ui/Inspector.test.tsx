@@ -56,4 +56,15 @@ describe('Inspector', () => {
     render(<Inspector />);
     expect(screen.getByText(/placeholder/i)).toBeInTheDocument();
   });
+
+  it('rejects a zero scale, staying at the current value', async () => {
+    render(<Inspector />);
+    const scaleX = screen.getByRole('textbox', { name: 'Scale X' });
+
+    await userEvent.clear(scaleX);
+    await userEvent.type(scaleX, '0{Enter}');
+
+    expect(box().scaling[0]).toBe(1);
+    expect(scaleX).toHaveValue('1');
+  });
 });

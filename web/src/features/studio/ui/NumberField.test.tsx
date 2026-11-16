@@ -37,4 +37,28 @@ describe('NumberField', () => {
     await userEvent.type(field, '{Shift>}{ArrowDown}{/Shift}');
     expect(onCommit).toHaveBeenLastCalledWith(0);
   });
+
+  it('rejects a value via accepts, going back to the field to what is there', async () => {
+    const onCommit = vi.fn();
+    render(<NumberField label="X" value={1} onCommit={onCommit} accepts={(v) => v > 0} />);
+    const field = screen.getByRole('textbox', { name: 'X' });
+
+    await userEvent.clear(field);
+    await userEvent.type(field, '-5{Enter}');
+
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(field).toHaveValue('1');
+  });
+
+  it('rejects a stepped value via accepts', async () => {
+    const onCommit = vi.fn();
+    render(<NumberField label="X" value={1} onCommit={onCommit} accepts={(v) => v > 0} step={1} />);
+    const field = screen.getByRole('textbox', { name: 'X' });
+
+    // Try to go down below the minimum
+    await userEvent.type(field, '{ArrowDown}{ArrowDown}');
+
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(field).toHaveValue('1');
+  });
 });
