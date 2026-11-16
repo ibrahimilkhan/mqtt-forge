@@ -64,20 +64,25 @@ export function SceneMenu({ flush, settle }: Pick<Autosave, 'flush' | 'settle'>)
     const { revision, savedRevision } = studioStore.getState();
     studioStore.getState().markSaved(revision);
     const resume = await settle(scene.id);
+    // Let go of the id only once another scene is open or the delete has failed: until then an
+    // edit to the scene on its way out must not write it back.
     try {
-      await deleteScene(scene.id);
-    } catch (error) {
-      // The scene stays, so its edits are as unsaved as they were before the delete was asked
-      // for: put that back, and the autosave writes them as it would have.
+      try {
+        await deleteScene(scene.id);
+      } catch (error) {
+        // The scene stays, so its edits are as unsaved as they were before the delete was asked
+        // for: put that back, and the autosave writes them as it would have.
+        studioStore.getState().markSaved(savedRevision);
+        throw error;
+      }
+      setMode('idle');
+      const rest = listed.filter((s) => s.id !== scene.id);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.studioScenes });
+      if (rest[0]) await openScene(rest[0].id);
+      else studioStore.getState().open(blankScene(UNTITLED), false);
+    } finally {
       resume();
-      studioStore.getState().markSaved(savedRevision);
-      throw error;
     }
-    setMode('idle');
-    const rest = listed.filter((s) => s.id !== scene.id);
-    await queryClient.invalidateQueries({ queryKey: queryKeys.studioScenes });
-    if (rest[0]) await openScene(rest[0].id);
-    else studioStore.getState().open(blankScene(UNTITLED), false);
   });
 
   const rename = () => {

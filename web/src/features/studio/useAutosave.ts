@@ -105,7 +105,7 @@ export function useAutosave(): Autosave {
     deleting.current.add(id);
     stopTimer();
     // How that last write went is not the reader's concern: the scene is about to be deleted, so
-    // a failure has nothing left to keep, and its `failed` state is the only trace it leaves.
+    // a failure has nothing left to keep. Its `failed` state shows until the next scene opens.
     while (inFlight.current) await inFlight.current;
     return () => {
       deleting.current.delete(id);

@@ -148,14 +148,18 @@ describe('SceneMenu', () => {
   });
 
   it('keeps the edits unsaved and says why when the server will not delete the scene', async () => {
-    const puts: string[] = [];
+    const order: string[] = [];
+    // Every save fails, so the edit is unsaved whether or not the timer's save gets in before the
+    // delete — the outcome does not hang on how fast the two clicks are.
     server.use(
       http.put('/api/studio/scenes/:id', ({ params }) => {
-        puts.push(String(params.id));
-        return new HttpResponse(null, { status: 204 });
+        order.push(`PUT ${String(params.id)}`);
+        return HttpResponse.json({ status: 500, title: 'Could not save the studio', detail: 'Disk full', reason: 'studioNotSaved' }, { status: 500 });
       }),
-      http.delete(`/api/studio/scenes/${current.id}`, () =>
-        HttpResponse.json({ status: 500, title: 'Could not delete the scene', detail: 'Disk locked', reason: 'studioNotSaved' }, { status: 500 })),
+      http.delete(`/api/studio/scenes/${current.id}`, () => {
+        order.push(`DELETE ${current.id}`);
+        return HttpResponse.json({ status: 500, title: 'Could not delete the scene', detail: 'Disk locked', reason: 'studioNotSaved' }, { status: 500 });
+      }),
     );
     render(<Saved />);
     act(() => void studioStore.getState().addPrimitive('box', [0, 0, 0]));
@@ -168,7 +172,7 @@ describe('SceneMenu', () => {
     expect(studioStore.getState().scene?.objects).toHaveLength(1);
     expect(isDirty(studioStore.getState())).toBe(true);
     // Still unsaved, so the autosave picks it up again.
-    await waitFor(() => expect(puts).toContain(current.id));
+    await waitFor(() => expect(order.slice(order.indexOf(`DELETE ${current.id}`))).toContain(`PUT ${current.id}`));
   });
 
   it('imports a DesignBox scene, uploading its models first', async () => {
