@@ -12,6 +12,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@babylonjs/core": "9.36.0",
+    "@babylonjs/materials": "9.36.0",
     "@microsoft/signalr": "^10.0.0",
     "@tanstack/react-query": "^5.101.4",
     "@xyflow/react": "^12.12.0",
