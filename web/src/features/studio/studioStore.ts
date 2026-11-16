@@ -60,6 +60,22 @@ export type StudioState = {
 /** True if the document has unsaved changes since the last save. */
 export const isDirty = (state: Pick<StudioState, 'revision' | 'savedRevision'>) => state.revision !== state.savedRevision;
 
+/** Equal by value: the document is plain JSON — numbers, text, flags, lists and records of them. */
+function same(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every((key) => same((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]));
+}
+
+/** `target` with `patch` laid over it, or `target` itself when the patch says only what it says. */
+function patched<T extends object>(target: T, patch: Partial<T>): T {
+  const changes = (Object.keys(patch) as (keyof T)[]).some((key) => !same(target[key], patch[key]));
+  return changes ? { ...target, ...patch } : target;
+}
+
 const plus = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 
 /** "Box 3": one more than the highest number already used for that kind. */
@@ -98,10 +114,11 @@ export function createStudioStore(): StoreApi<StudioState> {
       set({ scene: next.scene, history: next.history, revision: revision + 1, selection: selection.filter((id) => ids.has(id)) });
     };
 
-    const mapObjects = (ids: Set<string>, change: (o: StudioObject) => StudioObject) => (scene: StudioScene) => ({
-      ...scene,
-      objects: scene.objects.map((o) => (ids.has(o.id) ? change(o) : o)),
-    });
+    // The scene itself when no object changed, so `commit` sees there is nothing to record.
+    const mapObjects = (ids: Set<string>, change: (o: StudioObject) => StudioObject) => (scene: StudioScene) => {
+      const objects = scene.objects.map((o) => (ids.has(o.id) ? change(o) : o));
+      return objects.every((o, i) => o === scene.objects[i]) ? scene : { ...scene, objects };
+    };
 
     const copies = (sources: StudioObject[], suffix: string) =>
       sources.map((o) => ({ ...o, id: newId(), name: suffix ? `${o.name} ${suffix}` : o.name, position: plus(o.position, OFFSET) }));
@@ -137,16 +154,16 @@ export function createStudioStore(): StoreApi<StudioState> {
         return object.id;
       },
 
-      updateObject: (id, patch) => commit(mapObjects(new Set([id]), (o) => ({ ...o, ...patch }))),
+      updateObject: (id, patch) => commit(mapObjects(new Set([id]), (o) => patched(o, patch))),
 
       setEuler: (id, euler) => {
         const wrapped = wrapEuler(euler);
-        commit(mapObjects(new Set([id]), (o) => ({ ...o, euler: wrapped, rotation: quatFromEuler(wrapped) })));
+        commit(mapObjects(new Set([id]), (o) => patched(o, { euler: wrapped, rotation: quatFromEuler(wrapped) })));
       },
 
       rename: (id, name) => {
         const trimmed = name.trim();
-        if (trimmed) commit(mapObjects(new Set([id]), (o) => ({ ...o, name: trimmed })));
+        if (trimmed) commit(mapObjects(new Set([id]), (o) => patched(o, { name: trimmed })));
       },
 
       removeObjects: (ids) => {
@@ -177,11 +194,15 @@ export function createStudioStore(): StoreApi<StudioState> {
       setTool: (tool) => set({ tool }),
       setOrientation: (orientation) => set({ orientation }),
 
-      updateSettings: (patch) => commit((s) => ({ ...s, settings: { ...s.settings, ...patch } })),
+      updateSettings: (patch) =>
+        commit((s) => {
+          const settings = patched(s.settings, patch);
+          return settings === s.settings ? s : { ...s, settings };
+        }),
 
       renameScene: (name) => {
         const trimmed = name.trim();
-        if (trimmed) commit((s) => ({ ...s, name: trimmed }));
+        if (trimmed) commit((s) => patched(s, { name: trimmed }));
       },
 
       beginGesture: () => set({ gestureBase: get().scene }),
@@ -189,7 +210,10 @@ export function createStudioStore(): StoreApi<StudioState> {
       endGesture: () => {
         const { gestureBase, scene, history } = get();
         if (!gestureBase) return;
-        set({ gestureBase: null, history: scene && scene !== gestureBase ? record(history, gestureBase) : history });
+        // By value, not by reference: a drag that comes back to where it started has made new
+        // objects on every move, and is still no step.
+        const moved = scene !== null && !same(scene, gestureBase);
+        set({ gestureBase: null, history: moved ? record(history, gestureBase) : history });
       },
 
       undo: () => step(undo),

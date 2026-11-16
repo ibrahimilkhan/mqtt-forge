@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Vec3 } from '../geometry/euler';
 import { MATERIAL_PRESETS, type MaterialPreset } from '../model/defaults';
 import { studioStore, useStudio } from '../studioStore';
@@ -7,6 +7,29 @@ import { NumberField } from './NumberField';
 import styles from './Inspector.module.css';
 
 const AXES = ['X', 'Y', 'Z'] as const;
+
+/**
+ * A colour picker that is one change however long the reader drags across it. React's `onChange`
+ * is the DOM's `input` here, sent on every move; the DOM's own `change` comes once the choice is
+ * made, so that is what is written — the moves before it only show in the swatch.
+ */
+function ColourField({ value, onCommit }: { value: string; onCommit: (value: string) => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [shown, setShown] = useState(value);
+  useEffect(() => setShown(value), [value]);
+  const commit = useRef(onCommit);
+  useEffect(() => {
+    commit.current = onCommit;
+  }, [onCommit]);
+  useEffect(() => {
+    const element = input.current;
+    if (!element) return;
+    const done = () => commit.current(element.value);
+    element.addEventListener('change', done);
+    return () => element.removeEventListener('change', done);
+  }, []);
+  return <input ref={input} type="color" aria-label="Colour" value={shown} onChange={(e) => setShown(e.target.value)} />;
+}
 
 /** The selected object's name, transform and look, each change one undo step. */
 export function Inspector() {
@@ -93,7 +116,7 @@ export function Inspector() {
           <legend>Look</legend>
           <label className={styles.field}>
             <span>Colour</span>
-            <input type="color" aria-label="Colour" value={object.color ?? '#888888'} onChange={(e) => updateObject(object.id, { color: e.target.value })} />
+            <ColourField value={object.color ?? '#888888'} onCommit={(color) => updateObject(object.id, { color })} />
           </label>
           <label className={styles.field}>
             <span>Material</span>

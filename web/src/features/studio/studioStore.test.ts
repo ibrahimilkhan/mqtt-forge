@@ -123,4 +123,48 @@ describe('studio store', () => {
     s().undo();
     expect(s().scene!.objects[0].position).toEqual([0, 0.5, 0]);
   });
+
+  // Every step costs an undo the reader has to step through for nothing, and every revision a write.
+  describe('a change that changes nothing', () => {
+    const unchanged = (act: () => void) => {
+      const { history, revision } = s();
+      act();
+      expect(s().history.past).toHaveLength(history.past.length);
+      expect(s().revision).toBe(revision);
+    };
+
+    it('is no step when an object is given the values it already has', () => {
+      const id = s().addPrimitive('box', [1, 0, 2]);
+      const box = s().scene!.objects[0];
+      unchanged(() => s().updateObject(id, { position: [...box.position], color: box.color }));
+      s().updateObject(id, { mat: { metal: 1, rough: 0.2 } });
+      unchanged(() => s().updateObject(id, { mat: { metal: 1, rough: 0.2 } }));
+    });
+
+    it('is no step when an object is renamed to the name it has', () => {
+      const id = s().addPrimitive('box', [0, 0, 0]);
+      unchanged(() => s().rename(id, '  Box 1 '));
+    });
+
+    it('is no step when an object is turned to the angles it has', () => {
+      const id = s().addPrimitive('box', [0, 0, 0]);
+      s().setEuler(id, [0.5, 0, 0]);
+      unchanged(() => s().setEuler(id, [0.5, 0, 0]));
+    });
+
+    it('is no step when the scene keeps its name or its settings', () => {
+      unchanged(() => s().renameScene(' Cell '));
+      unchanged(() => s().updateSettings({ ...s().scene!.settings }));
+    });
+
+    it('is no step when a gesture ends where it began', () => {
+      const id = s().addPrimitive('box', [0, 0, 0]);
+      const before = s().history.past.length;
+      s().beginGesture();
+      s().updateObject(id, { position: [3, 0.5, 0] });
+      s().updateObject(id, { position: [0, 0.5, 0] });
+      s().endGesture();
+      expect(s().history.past).toHaveLength(before);
+    });
+  });
 });

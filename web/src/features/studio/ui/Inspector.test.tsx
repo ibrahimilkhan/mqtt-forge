@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { blankScene } from '../model/defaults';
@@ -48,6 +48,21 @@ describe('Inspector', () => {
     render(<Inspector />);
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Material' }), 'steel');
     expect(box().mat).toEqual({ metal: 1, rough: 0.35 });
+  });
+
+  // The picker sends a value on every move of the pointer across it; one choice is one undo step.
+  it('changes the colour as one step once the picker is done, not once per move across it', () => {
+    render(<Inspector />);
+    const colour = screen.getByLabelText('Colour');
+    const steps = studioStore.getState().history.past.length;
+
+    for (const value of ['#101010', '#202020', '#303030']) fireEvent.input(colour, { target: { value } });
+    expect(studioStore.getState().history.past).toHaveLength(steps);
+    expect(colour).toHaveValue('#303030');
+
+    fireEvent.change(colour, { target: { value: '#303030' } });
+    expect(box().color).toBe('#303030');
+    expect(studioStore.getState().history.past).toHaveLength(steps + 1);
   });
 
   it('says a model is a placeholder until model loading arrives', () => {
