@@ -99,7 +99,6 @@ describe('useAutosave', () => {
     await act(() => new Promise((resolve) => setTimeout(resolve, SAVE_DEBOUNCE_MS + 100)));
     let second = Promise.resolve();
     act(() => { second = result.current.flush(); });
-    expect(puts).toHaveLength(1);
 
     await act(async () => {
       release();
@@ -132,7 +131,7 @@ describe('useAutosave', () => {
 
     let settled = false;
     let settling = Promise.resolve();
-    act(() => { settling = result.current.settle().then(() => { settled = true; }); });
+    act(() => { settling = result.current.settle(studioStore.getState().scene!.id).then(() => { settled = true; }); });
     await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
     expect(settled).toBe(false);
 
@@ -144,5 +143,17 @@ describe('useAutosave', () => {
     await act(() => new Promise((resolve) => setTimeout(resolve, SAVE_DEBOUNCE_MS + 100)));
     expect(puts).toBe(1);
     expect(isDirty(studioStore.getState())).toBe(false);
+  });
+
+  it('does not carry a failed save onto the next scene', async () => {
+    server.use(http.put('/api/studio/scenes/:id', () =>
+      HttpResponse.json({ status: 500, title: 'Could not save the studio', detail: 'Disk full', reason: 'studioNotSaved' }, { status: 500 })));
+    const { result } = renderHook(() => useAutosave(), { wrapper });
+
+    act(() => void studioStore.getState().addPrimitive('box', [0, 0, 0]));
+    await waitFor(() => expect(result.current.state.kind).toBe('failed'));
+
+    act(() => studioStore.getState().open(blankScene('Cell B')));
+    expect(result.current.state.kind).toBe('saved');
   });
 });

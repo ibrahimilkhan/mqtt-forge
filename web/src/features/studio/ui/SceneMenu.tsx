@@ -61,9 +61,18 @@ export function SceneMenu({ flush, settle }: Pick<Autosave, 'flush' | 'settle'>)
   const remove = () => run(async () => {
     // Nothing in it is worth writing any more: marked saved, no change schedules another write,
     // and the one that may already be on its way is let finish before the delete goes.
-    studioStore.getState().markSaved(studioStore.getState().revision);
-    await settle();
-    await deleteScene(scene.id);
+    const { revision, savedRevision } = studioStore.getState();
+    studioStore.getState().markSaved(revision);
+    const resume = await settle(scene.id);
+    try {
+      await deleteScene(scene.id);
+    } catch (error) {
+      // The scene stays, so its edits are as unsaved as they were before the delete was asked
+      // for: put that back, and the autosave writes them as it would have.
+      resume();
+      studioStore.getState().markSaved(savedRevision);
+      throw error;
+    }
     setMode('idle');
     const rest = listed.filter((s) => s.id !== scene.id);
     await queryClient.invalidateQueries({ queryKey: queryKeys.studioScenes });

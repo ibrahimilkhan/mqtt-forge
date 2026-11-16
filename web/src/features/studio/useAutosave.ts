@@ -16,8 +16,11 @@ export type Autosave = {
   retry: () => void;
   /** Writes now, and rejects if the write fails — for whoever is about to open a different scene. */
   flush: () => Promise<void>;
-  /** Writes nothing more, and waits for a write already on its way — for deleting the open scene. */
-  settle: () => Promise<void>;
+  /**
+   * Writes nothing more of scene `id`, and waits for a write already on its way — for deleting it.
+   * Resolves with `resume`, which lets that scene be written again if the delete does not happen.
+   */
+  settle: (id: string) => Promise<() => void>;
 };
 
 /**
@@ -31,6 +34,8 @@ export function useAutosave(): Autosave {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Never rejects: it only says when the write on its way is over, however it went.
   const inFlight = useRef<Promise<void> | null>(null);
+  // Scenes on their way to being deleted: an edit made meanwhile must not write one back.
+  const deleting = useRef(new Set<string>());
 
   const stopTimer = useCallback(() => {
     if (timer.current) clearTimeout(timer.current);
@@ -46,7 +51,7 @@ export function useAutosave(): Autosave {
     while (inFlight.current) await inFlight.current;
 
     const { scene, revision } = studioStore.getState();
-    if (!scene || !isDirty(studioStore.getState())) return;
+    if (!scene || !isDirty(studioStore.getState()) || deleting.current.has(scene.id)) return;
 
     setState({ kind: 'saving' });
     const sent = putScene(scene).then(
@@ -85,6 +90,9 @@ export function useAutosave(): Autosave {
     };
     schedule();
     const unsubscribe = studioStore.subscribe((now, before) => {
+      // A failed save belongs to the scene it failed for: once another is open there is nothing
+      // to retry, and the warning would only say something untrue about the new one.
+      if (now.scene?.id !== before.scene?.id) setState({ kind: 'saved' });
       if (now.revision !== before.revision || now.savedRevision !== before.savedRevision) schedule();
     });
     return () => {
@@ -93,11 +101,15 @@ export function useAutosave(): Autosave {
     };
   }, [saveQuietly, stopTimer]);
 
-  const settle = useCallback(async () => {
+  const settle = useCallback(async (id: string) => {
+    deleting.current.add(id);
     stopTimer();
     // How that last write went is not the reader's concern: the scene is about to be deleted, so
     // a failure has nothing left to keep, and its `failed` state is the only trace it leaves.
     while (inFlight.current) await inFlight.current;
+    return () => {
+      deleting.current.delete(id);
+    };
   }, [stopTimer]);
 
   return { state, retry: saveQuietly, flush: save, settle };

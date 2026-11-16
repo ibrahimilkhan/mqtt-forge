@@ -1,17 +1,17 @@
 import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { delay, http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw';
 import { beforeEach, describe, expect, it } from 'vitest';
 import designbox from '../model/fixtures/designbox-v1.json';
 import { blankScene } from '../model/defaults';
 import { server } from '../../../test/server';
 import { renderWithClient as render } from '../../../test/renderWithClient';
-import { studioStore } from '../studioStore';
+import { isDirty, studioStore } from '../studioStore';
 import { SAVE_DEBOUNCE_MS, useAutosave } from '../useAutosave';
 import { SceneMenu } from './SceneMenu';
 
 const flush = () => Promise.resolve();
-const settle = () => Promise.resolve();
+const settle = () => Promise.resolve(() => {});
 
 /** The menu as the studio wires it: switching and deleting go through a real autosave. */
 function Saved() {
@@ -82,36 +82,93 @@ describe('SceneMenu', () => {
     await screen.findByRole('option', { name: 'Cell B' });
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Scene' }), other.id);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/Disk full|Could not save/);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Disk full');
     expect(studioStore.getState().scene?.id).toBe(current.id);
     expect(studioStore.getState().scene?.objects).toHaveLength(1);
   });
 
-  it('deleting the open scene straight after a change never writes it back', async () => {
+  it('lets a save already on its way finish before deleting, and writes nothing after', async () => {
     const order: string[] = [];
+    let release = () => {};
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    server.use(
+      http.put('/api/studio/scenes/:id', async ({ params }) => {
+        order.push(`PUT ${String(params.id)}`);
+        await held;
+        order.push(`PUT ${String(params.id)} done`);
+        return new HttpResponse(null, { status: 204 });
+      }),
+      http.delete(`/api/studio/scenes/${current.id}`, () => {
+        order.push(`DELETE ${current.id}`);
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    render(<Saved />);
+    act(() => void studioStore.getState().addPrimitive('box', [0, 0, 0]));
+    await waitFor(() => expect(order).toEqual([`PUT ${current.id}`]));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete Cell A' }));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    expect(order).toEqual([`PUT ${current.id}`]);
+
+    await act(async () => release());
+    await waitFor(() => expect(studioStore.getState().scene?.id).toBe(other.id));
+    await act(() => new Promise((resolve) => setTimeout(resolve, SAVE_DEBOUNCE_MS + 100)));
+    expect(order).toEqual([`PUT ${current.id}`, `PUT ${current.id} done`, `DELETE ${current.id}`]);
+  });
+
+  it('an edit made while the scene is being deleted never writes it back', async () => {
+    const order: string[] = [];
+    let release = () => {};
+    const held = new Promise<void>((resolve) => { release = resolve; });
     server.use(
       http.put('/api/studio/scenes/:id', ({ params }) => {
         order.push(`PUT ${String(params.id)}`);
         return new HttpResponse(null, { status: 204 });
       }),
-      // Slow enough that the pause after the change runs out while the delete is on its way.
       http.delete(`/api/studio/scenes/${current.id}`, async () => {
         order.push(`DELETE ${current.id}`);
-        await delay(SAVE_DEBOUNCE_MS + 200);
+        await held;
         return new HttpResponse(null, { status: 204 });
       }),
+    );
+    render(<Saved />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete Cell A' }));
+    await waitFor(() => expect(order).toEqual([`DELETE ${current.id}`]));
+    act(() => void studioStore.getState().addPrimitive('box', [0, 0, 0]));
+    // Long enough for the pause after that edit to run out while the delete is still held.
+    await act(() => new Promise((resolve) => setTimeout(resolve, SAVE_DEBOUNCE_MS + 100)));
+
+    await act(async () => release());
+    await waitFor(() => expect(studioStore.getState().scene?.id).toBe(other.id));
+    expect(order).toEqual([`DELETE ${current.id}`]);
+  });
+
+  it('keeps the edits unsaved and says why when the server will not delete the scene', async () => {
+    const puts: string[] = [];
+    server.use(
+      http.put('/api/studio/scenes/:id', ({ params }) => {
+        puts.push(String(params.id));
+        return new HttpResponse(null, { status: 204 });
+      }),
+      http.delete(`/api/studio/scenes/${current.id}`, () =>
+        HttpResponse.json({ status: 500, title: 'Could not delete the scene', detail: 'Disk locked', reason: 'studioNotSaved' }, { status: 500 })),
     );
     render(<Saved />);
     act(() => void studioStore.getState().addPrimitive('box', [0, 0, 0]));
 
     await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
     await userEvent.click(screen.getByRole('button', { name: 'Delete Cell A' }));
-    await waitFor(() => expect(studioStore.getState().scene?.id).toBe(other.id), { timeout: 3000 });
-    await act(() => new Promise((resolve) => setTimeout(resolve, SAVE_DEBOUNCE_MS + 100)));
 
-    const deletedAt = order.indexOf(`DELETE ${current.id}`);
-    expect(deletedAt).toBeGreaterThanOrEqual(0);
-    expect(order.slice(deletedAt)).not.toContain(`PUT ${current.id}`);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Disk locked');
+    expect(studioStore.getState().scene?.id).toBe(current.id);
+    expect(studioStore.getState().scene?.objects).toHaveLength(1);
+    expect(isDirty(studioStore.getState())).toBe(true);
+    // Still unsaved, so the autosave picks it up again.
+    await waitFor(() => expect(puts).toContain(current.id));
   });
 
   it('imports a DesignBox scene, uploading its models first', async () => {
