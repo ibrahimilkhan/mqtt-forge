@@ -89,6 +89,36 @@ describe('uploadPending', () => {
   });
 });
 
+describe('a v1 model that does not say its format', () => {
+  // DesignBox itself read a missing ext as GLB, and an empty one is an upload the server refuses.
+  it('is taken as GLB, as DesignBox took it', () => {
+    const dataUrl = 'data:application/octet-stream;base64,AAAA';
+    const { scene, pending } = readSceneFile({ version: 1, objects: [{ type: 'model', pid: 'm1', model: dataUrl }] }, fallback);
+
+    expect(pending).toEqual([{ objectId: 'm1', dataUrl, ext: '.glb' }]);
+    expect(scene.objects[0].model).toEqual({ key: '', ext: '.glb' });
+  });
+});
+
+describe('uploadPending with one model used by several objects', () => {
+  it('uploads it once and gives every object that uses it the key', async () => {
+    const dataUrl = 'data:model/stl;base64,AAAA';
+    const { scene, pending } = readSceneFile({
+      version: 1,
+      objects: [
+        { type: 'model', pid: 'm1', model: dataUrl, ext: '.stl' },
+        { type: 'model', pid: 'm2', model: dataUrl, ext: '.stl' },
+      ],
+    }, fallback);
+    const upload = vi.fn().mockResolvedValue({ key: 'b'.repeat(64) + '.stl' });
+
+    const done = await uploadPending(scene, pending, upload);
+
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(done.objects.map((o) => o.model?.key)).toEqual(['b'.repeat(64) + '.stl', 'b'.repeat(64) + '.stl']);
+  });
+});
+
 describe('importing a v1 model with no inline data', () => {
   it('leaves model undefined and records the ext in legacy.missingModel', () => {
     const v1 = {

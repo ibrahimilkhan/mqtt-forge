@@ -97,7 +97,9 @@ function fromVersion1(raw: Raw, items: unknown[], fallback: { id: string; name: 
 
     let missingModel: Record<string, unknown> | undefined;
     if (object.type === 'model') {
-      const ext = typeof item.ext === 'string' ? item.ext.toLowerCase() : '';
+      // DesignBox read a model that did not say its format as GLB; so does this, rather than send
+      // an upload with no extension, which the server refuses and the whole import with it.
+      const ext = typeof item.ext === 'string' && item.ext ? item.ext.toLowerCase() : '.glb';
       const scale = typeof item.importScale === 'number' ? { importScale: item.importScale } : {};
       if (typeof item.model === 'string' && item.model.startsWith('data:')) {
         object.model = { key: '', ext, ...scale };
@@ -139,8 +141,17 @@ export async function uploadPending(
   upload: (blob: Blob, ext: string) => Promise<{ key: string }>,
 ): Promise<StudioScene> {
   const keys = new Map<string, string>();
+  // DesignBox inlined the file again for every object that used it; one copy is uploaded, and
+  // every object it was inlined in gets the same key. The extension is part of what is the same:
+  // the key carries it, so the same bytes said to be two formats are two files.
+  const uploaded = new Map<string, string>();
   for (const model of pending) {
-    const { key } = await upload(dataUrlToBlob(model.dataUrl).blob, model.ext);
+    const same = `${model.ext} ${model.dataUrl}`;
+    let key = uploaded.get(same);
+    if (key === undefined) {
+      ({ key } = await upload(dataUrlToBlob(model.dataUrl).blob, model.ext));
+      uploaded.set(same, key);
+    }
     keys.set(model.objectId, key);
   }
 
