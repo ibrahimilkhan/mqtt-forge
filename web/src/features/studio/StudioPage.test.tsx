@@ -47,4 +47,20 @@ describe('StudioPage', () => {
     render(<StudioPage />);
     expect(await screen.findByText(/scene list could not be read/)).toBeInTheDocument();
   });
+
+  it('says inside the studio when the newest scene cannot be opened, and still lets the reader choose', async () => {
+    const older = { ...blankScene('Older'), updatedAt: '2026-01-01T00:00:00Z' };
+    const newer = { ...blankScene('Newer'), updatedAt: '2026-06-01T00:00:00Z' };
+    server.use(
+      http.get('/api/studio/scenes', () => HttpResponse.json([older, newer].map(({ id, name, updatedAt }) => ({ id, name, updatedAt })))),
+      http.get(`/api/studio/scenes/${newer.id}`, () => HttpResponse.json({ status: 500, title: 'Broken', detail: 'Bad sector' }, { status: 500 })),
+      http.get(`/api/studio/scenes/${older.id}`, () => HttpResponse.json(older)),
+    );
+
+    render(<StudioPage />);
+
+    expect(await screen.findByRole('combobox', { name: 'Scene' })).toHaveDisplayValue('Older');
+    expect(screen.getByText(/"Newer" could not be opened/)).toHaveAttribute('role', 'alert');
+    expect(screen.getByRole('button', { name: 'New scene' })).toBeInTheDocument();
+  });
 });

@@ -29,12 +29,15 @@ export default function StudioPage() {
   // Where the camera looks when there is a view; the origin when there is none to ask.
   const add = (type: PrimitiveType) => studioStore.getState().addPrimitive(type, engine.current?.viewCentre() ?? [0, 0, 0]);
 
+  // Only when there is no scene at all to show; a scene that could not be opened is said inside
+  // the studio, above the one opened in its place, so the reader can still switch or start anew.
   if (phase === 'failed') return <p className={panel.fault}>{error}</p>;
   if (phase === 'loading') return <p className={panel.note}>Opening the scene…</p>;
 
   return (
     <div className={styles.page} tabIndex={-1} onKeyDown={onKeyDown}>
       <Toolbar onAdd={add} saveState={save.state} onRetry={save.retry} sceneMenu={<SceneMenu flush={save.flush} settle={save.settle} />} />
+      {error && <p className={panel.fault} role="alert">{error}</p>}
       <div className={styles.body}>
         <Outliner />
         <Viewport onReady={onReady} />
