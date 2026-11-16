@@ -16,6 +16,9 @@ const vec3 = (value: unknown, fallback: Vec3): Vec3 =>
 const quat = (value: unknown, fallback: Quat): Quat =>
   Array.isArray(value) && value.length === 4 && value.every(Number.isFinite) ? (value as Quat) : fallback;
 
+/** The object types a scene can draw: primitives and models. */
+const OBJECT_TYPES: ReadonlySet<string> = new Set<ObjectType>([...PRIMITIVE_TYPES, 'model']);
+
 /** The fields a version 1 object carries that this reader turns into something else, or drops. */
 const CONSUMED = new Set([
   'type', 'name', 'pid', 'position', 'rotation', 'euler', 'scaling', 'color', 'mat', 'matOverride', 'model', 'modelKey',
@@ -52,12 +55,9 @@ function fromVersion1(raw: Raw, items: unknown[], fallback: { id: string; name: 
   const objects = sources.map((item, i): StudioObject => {
     const euler = vec3(item.euler, [0, 0, 0]);
 
-    // Type validation: only PRIMITIVE_TYPES or 'model' are valid; anything else becomes 'box'.
-    let type: ObjectType = 'box';
-    const rawType = typeof item.type === 'string' ? item.type : '';
-    if (rawType === 'model' || PRIMITIVE_TYPES.includes(rawType as any)) {
-      type = rawType as ObjectType;
-    }
+    const rawType = typeof item.type === 'string' ? item.type : 'box';
+    // A kind this studio does not draw becomes a box, with the original kept for whoever can.
+    const type = (OBJECT_TYPES.has(rawType) ? rawType : 'box') as ObjectType;
 
     const object: StudioObject = {
       id: ids[i],
@@ -89,32 +89,23 @@ function fromVersion1(raw: Raw, items: unknown[], fallback: { id: string; name: 
       object.joint = joint;
     }
 
+    let missingModel: Record<string, unknown> | undefined;
     if (object.type === 'model') {
       const ext = typeof item.ext === 'string' ? item.ext.toLowerCase() : '';
-      // Only set model if there is inline data to upload; otherwise leave it undefined and record what was lost.
+      const scale = typeof item.importScale === 'number' ? { importScale: item.importScale } : {};
       if (typeof item.model === 'string' && item.model.startsWith('data:')) {
-        object.model = { key: '', ext, ...(typeof item.importScale === 'number' ? { importScale: item.importScale } : {}) };
+        object.model = { key: '', ext, ...scale };
         pending.push({ objectId: object.id, dataUrl: item.model, ext });
-      } else if (ext) {
-        // The file carried no model data, so the object is kept as a placeholder rather than dropped or left unsaveable.
+      } else {
+        // The file carried no model data. An empty key would make the whole scene one the server
+        // refuses to save, so the object stays a placeholder and what it pointed at is kept aside.
+        missingModel = { ext, ...scale };
       }
     }
 
-    const legacy = Object.fromEntries(Object.entries(item).filter(([key]) => !CONSUMED.has(key)));
-
-    // Record unknown type in legacy.
-    if (rawType && rawType !== type && rawType !== 'model') {
-      legacy.type = rawType;
-    }
-
-    // Record missing model info in legacy.
-    if (object.type === 'model' && !object.model) {
-      const ext = typeof item.ext === 'string' ? item.ext.toLowerCase() : '';
-      if (ext) {
-        legacy.missingModel = { ext, ...(typeof item.importScale === 'number' ? { importScale: item.importScale } : {}) };
-      }
-    }
-
+    const legacy: Record<string, unknown> = Object.fromEntries(Object.entries(item).filter(([key]) => !CONSUMED.has(key)));
+    if (rawType !== type) legacy.type = rawType;
+    if (missingModel) legacy.missingModel = missingModel;
     if (Object.keys(legacy).length > 0) object.legacy = legacy;
 
     return object;
