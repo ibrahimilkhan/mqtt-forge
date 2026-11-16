@@ -31,7 +31,9 @@ export function useStudioScene(): { phase: 'loading' | 'ready' | 'failed'; error
     else studioStore.getState().open(blankScene(UNTITLED), false);
   }, [open, scenes.data]);
 
-  if (scenes.error) return { phase: 'failed', error: `The scene list could not be read: ${scenes.error.message}` };
+  // Only while there is nothing else to show: autosave refreshes the list after every write, and
+  // one refresh that fails must not take an open scene away from whoever is working on it.
+  if (!open && scenes.error) return { phase: 'failed', error: `The scene list could not be read: ${scenes.error.message}` };
   if (error) return { phase: 'failed', error };
   return { phase: open ? 'ready' : 'loading', error: null };
 }

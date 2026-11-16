@@ -6,6 +6,7 @@ import { blankScene } from '../model/defaults';
 import { newId } from '../model/ids';
 import { readSceneFile, SceneFileError, uploadPending } from '../model/sceneFile';
 import { studioStore, useStudio } from '../studioStore';
+import type { Autosave } from '../useAutosave';
 import { openScene, UNTITLED } from '../useStudioScene';
 import styles from './SceneMenu.module.css';
 
@@ -13,9 +14,11 @@ const messageOf = (error: unknown) => (error instanceof Error ? error.message : 
 
 /**
  * Which scene is open, and the things done to scenes as a whole. Every switch writes the current
- * scene first (`flush`), so moving away never loses the last half second of work.
+ * scene first (`flush`), so moving away never loses the last half second of work — and if that
+ * write fails, the switch does not happen and the menu says why. Deleting the open scene waits out
+ * its autosave instead (`settle`), so no late write can bring it back.
  */
-export function SceneMenu({ flush }: { flush: () => Promise<void> }) {
+export function SceneMenu({ flush, settle }: Pick<Autosave, 'flush' | 'settle'>) {
   const queryClient = useQueryClient();
   const scenes = useQuery({ queryKey: queryKeys.studioScenes, queryFn: listScenes });
   const scene = useStudio((s) => s.scene);
@@ -25,8 +28,11 @@ export function SceneMenu({ flush }: { flush: () => Promise<void> }) {
 
   if (!scene) return null;
 
-  const listed = scenes.data;
-  const options = listed && (listed.some((s) => s.id === scene.id) ? listed : [{ id: scene.id, name: scene.name, updatedAt: scene.updatedAt }, ...listed]);
+  const listed = scenes.data ?? [];
+  // A scene not saved yet, or the list not read yet, still has to be the one the picker shows.
+  const options = listed.some((s) => s.id === scene.id)
+    ? listed
+    : [{ id: scene.id, name: scene.name, updatedAt: scene.updatedAt }, ...listed];
 
   const run = async (work: () => Promise<void>) => {
     setProblem(null);
@@ -53,9 +59,13 @@ export function SceneMenu({ flush }: { flush: () => Promise<void> }) {
   });
 
   const remove = () => run(async () => {
+    // Nothing in it is worth writing any more: marked saved, no change schedules another write,
+    // and the one that may already be on its way is let finish before the delete goes.
+    studioStore.getState().markSaved(studioStore.getState().revision);
+    await settle();
     await deleteScene(scene.id);
     setMode('idle');
-    const rest = (listed ?? []).filter((s) => s.id !== scene.id);
+    const rest = listed.filter((s) => s.id !== scene.id);
     await queryClient.invalidateQueries({ queryKey: queryKeys.studioScenes });
     if (rest[0]) await openScene(rest[0].id);
     else studioStore.getState().open(blankScene(UNTITLED), false);
@@ -69,12 +79,14 @@ export function SceneMenu({ flush }: { flush: () => Promise<void> }) {
   const importFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
-    if (!file) return;
+    if (!file || mode === 'importing') return;
     setMode('importing');
     void run(async () => {
+      // Read before the parse: a file that cannot be read is not one that is not JSON.
+      const text = await file.text();
       let raw: unknown;
       try {
-        raw = JSON.parse(await file.text());
+        raw = JSON.parse(text);
       } catch {
         throw new SceneFileError('This file is not JSON, so it is not a scene.');
       }
@@ -100,7 +112,7 @@ export function SceneMenu({ flush }: { flush: () => Promise<void> }) {
           }}
           onBlur={rename}
         />
-      ) : options ? (
+      ) : (
         <label className={styles.pick}>
           <span className={styles.label}>Scene</span>
           <select aria-label="Scene" value={scene.id} onChange={(e) => void switchTo(e.target.value)}>
@@ -111,8 +123,6 @@ export function SceneMenu({ flush }: { flush: () => Promise<void> }) {
             ))}
           </select>
         </label>
-      ) : (
-        <span className={styles.pick}>{scene.name}</span>
       )}
 
       <button type="button" onClick={() => void startNew()} aria-label="New scene">
@@ -140,7 +150,13 @@ export function SceneMenu({ flush }: { flush: () => Promise<void> }) {
       )}
       <label className={styles.import}>
         <span>{mode === 'importing' ? 'Importing…' : 'Import DesignBox scene…'}</span>
-        <input type="file" accept=".json,application/json" aria-label="Import a DesignBox scene" onChange={importFile} />
+        <input
+          type="file"
+          accept=".json,application/json"
+          aria-label="Import a DesignBox scene"
+          disabled={mode === 'importing'}
+          onChange={importFile}
+        />
       </label>
       {problem && <p className={styles.problem} role="alert">{problem}</p>}
     </div>

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { server } from '../../test/server';
 import { blankScene } from './model/defaults';
 import { isDirty, studioStore } from './studioStore';
-import { useAutosave } from './useAutosave';
+import { SAVE_DEBOUNCE_MS, useAutosave } from './useAutosave';
 
 const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{children}</QueryClientProvider>
@@ -59,5 +59,90 @@ describe('useAutosave', () => {
     act(() => void studioStore.getState().addPrimitive('box', [0, 0, 0]));
     await act(() => result.current.flush());
     expect(saved).toBe(true);
+  });
+
+  it('flush says so when the save fails, so whoever was about to move on does not', async () => {
+    server.use(http.put('/api/studio/scenes/:id', () =>
+      HttpResponse.json({ status: 500, title: 'Could not save the studio', detail: 'Disk full', reason: 'studioNotSaved' }, { status: 500 })));
+    const { result } = renderHook(() => useAutosave(), { wrapper });
+
+    act(() => void studioStore.getState().addPrimitive('box', [0, 0, 0]));
+    await act(() => expect(result.current.flush()).rejects.toThrow());
+    expect(result.current.state.kind).toBe('failed');
+    expect(isDirty(studioStore.getState())).toBe(true);
+  });
+
+  it('sends a change made while a save is on its way only once that save is back, and only once', async () => {
+    const puts: number[] = [];
+    let sending = 0;
+    let overlapped = false;
+    let release = () => {};
+    const firstHeld = new Promise<void>((resolve) => { release = resolve; });
+    server.use(http.put('/api/studio/scenes/:id', async ({ request }) => {
+      const body = (await request.json()) as { objects: unknown[] };
+      sending += 1;
+      if (sending > 1) overlapped = true;
+      puts.push(body.objects.length);
+      if (puts.length === 1) await firstHeld;
+      sending -= 1;
+      return new HttpResponse(null, { status: 204 });
+    }));
+    const { result } = renderHook(() => useAutosave(), { wrapper });
+
+    act(() => void studioStore.getState().addPrimitive('box', [0, 0, 0]));
+    let first = Promise.resolve();
+    act(() => { first = result.current.flush(); });
+    await waitFor(() => expect(puts).toHaveLength(1));
+
+    act(() => void studioStore.getState().addPrimitive('box', [1, 0, 0]));
+    // Two callers waiting on the same save: the timer once its pause has run out, then a flush.
+    await act(() => new Promise((resolve) => setTimeout(resolve, SAVE_DEBOUNCE_MS + 100)));
+    let second = Promise.resolve();
+    act(() => { second = result.current.flush(); });
+    expect(puts).toHaveLength(1);
+
+    await act(async () => {
+      release();
+      await first;
+      await second;
+    });
+    expect(puts).toEqual([1, 2]);
+    expect(overlapped).toBe(false);
+    expect(isDirty(studioStore.getState())).toBe(false);
+  });
+
+  it('settle waits for the save on its way and starts no other', async () => {
+    let puts = 0;
+    let release = () => {};
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    server.use(http.put('/api/studio/scenes/:id', async () => {
+      puts += 1;
+      await held;
+      return new HttpResponse(null, { status: 204 });
+    }));
+    const { result } = renderHook(() => useAutosave(), { wrapper });
+
+    act(() => void studioStore.getState().addPrimitive('box', [0, 0, 0]));
+    let sent = Promise.resolve();
+    act(() => { sent = result.current.flush(); });
+    await waitFor(() => expect(puts).toBe(1));
+    act(() => void studioStore.getState().addPrimitive('box', [1, 0, 0]));
+    // What deleting the open scene does: nothing in it is worth writing any more.
+    act(() => studioStore.getState().markSaved(studioStore.getState().revision));
+
+    let settled = false;
+    let settling = Promise.resolve();
+    act(() => { settling = result.current.settle().then(() => { settled = true; }); });
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+    expect(settled).toBe(false);
+
+    await act(async () => {
+      release();
+      await sent;
+      await settling;
+    });
+    await act(() => new Promise((resolve) => setTimeout(resolve, SAVE_DEBOUNCE_MS + 100)));
+    expect(puts).toBe(1);
+    expect(isDirty(studioStore.getState())).toBe(false);
   });
 });
