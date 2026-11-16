@@ -143,9 +143,14 @@ Following the existing Domain → Infrastructure → Application → API layerin
   - `GET scenes` → `[{id, name, updatedAt}]`
   - `GET scenes/{id}` → scene · `PUT scenes/{id}` (validated, `RequestSizeLimit` 8 MB) → 204 ·
     `DELETE scenes/{id}` → 204 (then unused models are collected)
-  - `POST models` (multipart, `RequestSizeLimit` 200 MB, allowed extensions only) → `{key}`
+  - `POST models?ext=.glb` (the file's bytes as the raw request body, `application/octet-stream` —
+    not multipart, so the server hashes the stream straight to disk; `RequestSizeLimit` 200 MB,
+    allowed extensions only) → `{key}`
   - `GET models/{key}` → file with the right content type, `ETag`, immutable cache (content-addressed)
-  - Validation with FluentValidation in `Api/Validation/`; errors as `ValidationProblemDetails`.
+  - Validation by `StudioSceneRules` in `Api/Validation/` — a hand-written check of the scene's
+    envelope over the raw `JsonElement` (version, id, name, the objects list, model keys) rather
+    than FluentValidation, since the body is kept as JSON and never bound to a typed model; errors
+    as `ValidationProblemDetails` with reason `sceneInvalid`.
 - Model garbage collection runs after a scene delete or save, removing model files no scene references
   (DesignBox's `gcModels`, server-side).
 - `MqttForgeHost`: the static-file content-type provider gains a `.env` mapping so the studio's
@@ -164,7 +169,9 @@ replaces the placeholder with the real mesh.
 ## Phase 1 feature detail
 
 - **Viewport**: ArcRotate camera with zoom-to-cursor, orbit around the selection, target kept above
-  ground; lights, shadows fitted to the scene, adaptive grid, environment lighting, selection outline.
+  ground; lights, shadows fitted to the scene, adaptive grid, environment lighting, selection outline
+  (Babylon's public mesh outline — `renderOutline`, `outlineColor`, `outlineWidth` — set on each
+  selected mesh when the selection or the objects change, not per frame; no highlight layer).
   Babylon-private APIs DesignBox used (`cam._projectionMatrix`, shader string patching) are replaced
   with public ones; where no public equivalent exists, the effect is dropped and noted in the plan.
 - **Create**: palette of the eight primitives; click to add at the view centre on the ground.
