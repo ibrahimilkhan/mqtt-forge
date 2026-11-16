@@ -108,4 +108,19 @@ describe('studio store', () => {
     expect(s().history.past).toEqual([]);
     expect(s().selection).toEqual([]);
   });
+
+  it('prevents undo during a gesture and undoes to pre-gesture state after endGesture', () => {
+    const id = s().addPrimitive('box', [0, 0, 0]);
+    s().beginGesture();
+    s().updateObject(id, { position: [5, 0.5, 0] });
+    const beforeUndo = s().history.past.length;
+    s().undo();
+    // undo should do nothing while gesture is open
+    expect(s().scene!.objects[0].position).toEqual([5, 0.5, 0]);
+    expect(s().history.past.length).toBe(beforeUndo);
+    // after ending the gesture, undo should work
+    s().endGesture();
+    s().undo();
+    expect(s().scene!.objects[0].position).toEqual([0, 0.5, 0]);
+  });
 });

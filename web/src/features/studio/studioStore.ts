@@ -5,7 +5,9 @@ import { newPrimitive, PRIMITIVE_LABELS } from './model/defaults';
 import type { PrimitiveType, SceneSettings, StudioObject, StudioScene } from './model/document';
 import { newId } from './model/ids';
 
+/** The active gizmo the user may drag: select, or move/rotate/scale an object. */
 export type Tool = 'select' | 'move' | 'rotate' | 'scale';
+/** Which axis frame guides a gizmo: global space or the object's local frame. */
 export type Orientation = 'world' | 'local';
 
 /** Where a duplicate or a paste lands relative to its original: beside it, not inside it. */
@@ -55,6 +57,7 @@ export type StudioState = {
   markSaved: (revision: number) => void;
 };
 
+/** True if the document has unsaved changes since the last save. */
 export const isDirty = (state: Pick<StudioState, 'revision' | 'savedRevision'>) => state.revision !== state.savedRevision;
 
 const plus = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
@@ -66,6 +69,7 @@ function nextName(scene: StudioScene, label: string) {
   return `${label} ${Math.max(0, ...used) + 1}`;
 }
 
+/** Returns a fresh studio state and actions; tests create their own store, the console uses the singleton. */
 export function createStudioStore(): StoreApi<StudioState> {
   return createStore<StudioState>()((set, get) => {
     /** Replaces the document and records the step the change makes, unless a gesture is under way. */
@@ -80,6 +84,18 @@ export function createStudioStore(): StoreApi<StudioState> {
         history: gestureBase ? history : record(history, scene),
         revision: revision + 1,
       });
+    };
+
+    /** Puts a step from the history in place, keeping only the selection that still exists. */
+    const step = (move: typeof undo) => {
+      const { history, scene, revision, selection, gestureBase } = get();
+      // Mid-gesture the step the drag makes is not finished; going back past it would leave the
+      // gesture's base pointing at a scene that is no longer the one before it.
+      if (gestureBase || !scene) return;
+      const next = move(history, scene);
+      if (!next) return;
+      const ids = new Set(next.scene.objects.map((o) => o.id));
+      set({ scene: next.scene, history: next.history, revision: revision + 1, selection: selection.filter((id) => ids.has(id)) });
     };
 
     const mapObjects = (ids: Set<string>, change: (o: StudioObject) => StudioObject) => (scene: StudioScene) => ({
@@ -176,21 +192,8 @@ export function createStudioStore(): StoreApi<StudioState> {
         set({ gestureBase: null, history: scene && scene !== gestureBase ? record(history, gestureBase) : history });
       },
 
-      undo: () => {
-        const { history, scene, revision, selection } = get();
-        const step = scene && undo(history, scene);
-        if (!step) return;
-        const ids = new Set(step.scene.objects.map((o) => o.id));
-        set({ scene: step.scene, history: step.history, revision: revision + 1, selection: selection.filter((id) => ids.has(id)) });
-      },
-
-      redo: () => {
-        const { history, scene, revision, selection } = get();
-        const step = scene && redo(history, scene);
-        if (!step) return;
-        const ids = new Set(step.scene.objects.map((o) => o.id));
-        set({ scene: step.scene, history: step.history, revision: revision + 1, selection: selection.filter((id) => ids.has(id)) });
-      },
+      undo: () => step(undo),
+      redo: () => step(redo),
 
       markSaved: (revision) => set({ savedRevision: revision }),
     };
