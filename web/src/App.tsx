@@ -34,6 +34,7 @@ import { useSoundStore } from './features/alerts/alertSound';
 import { useAlertStore } from './stores/alertStore';
 import { useLinkWatchStore } from './stores/linkWatchStore';
 import { FlowsPanel } from './features/flows/FlowsPanel';
+import { StudioPanel } from './features/studio/StudioPanel';
 import { Notices } from './features/notices/Notices';
 
 /** The width the workspace stops being columns at, and the rail starts lying over it. */
@@ -59,6 +60,7 @@ const PANEL_VIEWS: Record<PanelId, (props: PanelProps) => ReactNode> = {
   mobile: MobilePanel,
   settings: AppearancePanel,
   flows: FlowsPanel,
+  studio: StudioPanel,
 };
 
 /**
@@ -339,7 +341,7 @@ export function App({ hub }: { hub: Hub }) {
 
       <Workspace
         panel={Panel ? <Panel onClose={close} open={setOpenPanel} /> : undefined}
-        // Four of the nine, for three different reasons; see Workspace's own note on each.
+        // Five of the ten, for three different reasons; see Workspace's own note on each.
         //
         // The broker's is unconditional. It used to shrink into a column once the link was up,
         // on the reasoning that a live panel is a report rather than a form — and the shape was
@@ -350,7 +352,7 @@ export function App({ hub }: { hub: Hub }) {
         wide={
           openPanel === 'broker'
             ? 'full'
-            : openPanel === 'alerts' || openPanel === 'colours' || openPanel === 'flows'
+            : openPanel === 'alerts' || openPanel === 'colours' || openPanel === 'flows' || openPanel === 'studio'
               ? 'fill'
               : undefined
         }

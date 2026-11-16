@@ -11,7 +11,7 @@ import type { ReactNode } from 'react';
  * weight.
  *
  * The counts in this paragraph had already fallen behind the file before the bell arrived; they
- * are put right here rather than left to drift further. Nine panels, one warning, sixteen marks
+ * are put right here rather than left to drift further. Ten panels, one warning, sixteen marks
  * that go inside buttons.
  *
  * 1.8 rather than Lucide's 1.5, because 1.8 is what the mark and every other line in here is
@@ -128,6 +128,17 @@ export const Nodes = () => (
       <rect x="9" y="15" width="6" height="5" rx="1" />
       <path d="M9 6.5h6" />
       <path d="M18 9v2.5a1.5 1.5 0 0 1-1.5 1.5H12v2" />
+    </>
+  </Glyph>
+);
+
+/** 3D Studio: a cube seen from a corner, its three visible faces. */
+export const Cube = () => (
+  <Glyph>
+    <>
+      <path d="M12 3 20 7.5v9L12 21l-8-4.5v-9L12 3Z" />
+      <path d="M4 7.5 12 12l8-4.5" />
+      <path d="M12 12v9" />
     </>
   </Glyph>
 );
