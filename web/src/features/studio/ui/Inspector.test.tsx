@@ -72,6 +72,14 @@ describe('Inspector', () => {
     expect(screen.getByText(/placeholder/i)).toBeInTheDocument();
   });
 
+  it('says a DesignBox model that came with no model data is only a placeholder, not a file kept', () => {
+    const id = box().id;
+    studioStore.getState().updateObject(id, { type: 'model', legacy: { missingModel: { ext: '.stl' } } });
+    render(<Inspector />);
+    expect(screen.getByText(/DesignBox file carried no model data/)).toBeInTheDocument();
+    expect(screen.queryByText(/keeps the file/)).not.toBeInTheDocument();
+  });
+
   it('rejects a zero scale, staying at the current value', async () => {
     render(<Inspector />);
     const scaleX = screen.getByRole('textbox', { name: 'Scale X' });

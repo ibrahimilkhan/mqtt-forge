@@ -61,11 +61,16 @@ export function Inspector() {
         />
       </label>
 
-      {object.type === 'model' && (
+      {/* An import that found no model inside the DesignBox file has nothing kept to draw later. */}
+      {object.type === 'model' && (object.model ? (
         <p className={styles.note}>
-          A placeholder for the model file {object.model?.ext}. The studio keeps the file and draws it once model loading arrives.
+          A placeholder for the model file {object.model.ext}. The studio keeps the file and draws it once model loading arrives.
         </p>
-      )}
+      ) : (
+        <p className={styles.note}>
+          The DesignBox file carried no model data for this object, so it stands here as a placeholder.
+        </p>
+      ))}
 
       <fieldset className={styles.group}>
         <legend>Position ({DISPLAY_UNITS[unit].label})</legend>
