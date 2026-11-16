@@ -49,15 +49,22 @@ public sealed class FileStudioModelStore : IStudioModelStore
             if (File.Exists(target))
             {
                 File.Delete(temp);
-                // Touched, so the grace in DeleteUnused counts from this upload and not the first:
-                // the scene about to name it again has not been saved yet.
-                File.SetLastWriteTimeUtc(target, _time.GetUtcNow().UtcDateTime);
             }
             else
             {
-                File.Move(temp, target);
-                File.SetLastWriteTimeUtc(target, _time.GetUtcNow().UtcDateTime);
+                try
+                {
+                    File.Move(temp, target);
+                }
+                catch (IOException) when (File.Exists(target))
+                {
+                    // Another request stored the same bytes first; content-addressed keys mean its file is ours.
+                    File.Delete(temp);
+                }
             }
+            // Touched, so the grace in DeleteUnused counts from this upload and not the first:
+            // the scene about to name it again has not been saved yet.
+            File.SetLastWriteTimeUtc(target, _time.GetUtcNow().UtcDateTime);
 
             return key;
         }
