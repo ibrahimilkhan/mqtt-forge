@@ -1,0 +1,9 @@
+.outliner { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow: auto; }
+.search { width: 100%; }
+.empty { color: var(--muted); font-size: 0.9em; }
+.list { list-style: none; margin: 0; padding: 0; }
+.row { display: flex; align-items: center; gap: 4px; border-radius: 4px; }
+.row[data-selected='true'] { background: var(--surface); outline: 1px solid var(--signal); }
+.row[data-hidden='true'] .name { color: var(--muted); }
+.name { all: unset; flex: 1; padding: 3px 6px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eye { font-size: 0.75em; padding: 1px 6px; }

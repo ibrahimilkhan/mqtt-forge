@@ -1,0 +1,10 @@
+.inspector { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: auto; }
+.empty, .note { color: var(--muted); font-size: 0.9em; margin: 0; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.check { display: flex; align-items: center; gap: 6px; }
+.group { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; border: 1px solid var(--rule); border-radius: 6px; padding: 8px; margin: 0; }
+.group > legend { padding: 0 4px; color: var(--muted); font-size: 0.85em; }
+.group > .field, .group > .check { grid-column: 1 / -1; }
+.number { display: flex; flex-direction: column; gap: 2px; }
+.number input { width: 100%; font-family: var(--mono, 'JetBrains Mono', monospace); }
+.numberLabel { font-size: 0.75em; color: var(--muted); }

@@ -1,0 +1,20 @@
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 18px;
+  padding: 0 0 12px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.shapes { display: flex; flex-wrap: wrap; gap: 4px; }
+.shape { font-size: 0.85em; }
+
+.steps { display: flex; align-items: flex-end; gap: 10px; }
+.stepLabel { display: block; font-size: 0.8em; color: var(--muted); }
+.check { display: flex; align-items: center; gap: 6px; }
+
+.history { display: flex; gap: 4px; }
+
+.save { margin: 0 0 0 auto; color: var(--muted); }
+.save[data-state='failed'] { color: var(--fault); }
