@@ -1,6 +1,6 @@
 import { quatFromEuler, type Quat, type Vec3 } from '../geometry/euler';
 import { dataUrlToBlob } from './dataUrl';
-import { DEFAULT_SETTINGS } from './defaults';
+import { DEFAULT_SETTINGS, PRIMITIVE_TYPES } from './defaults';
 import { SCENE_VERSION, type Annotation, type Group, type Joint, type ObjectType, type Pose, type StudioObject, type StudioScene } from './document';
 
 /** Why a file could not be read as a scene, in a sentence the reader is shown. */
@@ -51,9 +51,17 @@ function fromVersion1(raw: Raw, items: unknown[], fallback: { id: string; name: 
 
   const objects = sources.map((item, i): StudioObject => {
     const euler = vec3(item.euler, [0, 0, 0]);
+
+    // Type validation: only PRIMITIVE_TYPES or 'model' are valid; anything else becomes 'box'.
+    let type: ObjectType = 'box';
+    const rawType = typeof item.type === 'string' ? item.type : '';
+    if (rawType === 'model' || PRIMITIVE_TYPES.includes(rawType as any)) {
+      type = rawType as ObjectType;
+    }
+
     const object: StudioObject = {
       id: ids[i],
-      type: (typeof item.type === 'string' ? item.type : 'box') as ObjectType,
+      type,
       name: typeof item.name === 'string' ? item.name : `Object ${i + 1}`,
       position: vec3(item.position, [0, 0, 0]),
       rotation: quat(item.rotation, quatFromEuler(euler)),
@@ -83,11 +91,30 @@ function fromVersion1(raw: Raw, items: unknown[], fallback: { id: string; name: 
 
     if (object.type === 'model') {
       const ext = typeof item.ext === 'string' ? item.ext.toLowerCase() : '';
-      object.model = { key: '', ext, ...(typeof item.importScale === 'number' ? { importScale: item.importScale } : {}) };
-      if (typeof item.model === 'string' && item.model.startsWith('data:')) pending.push({ objectId: object.id, dataUrl: item.model, ext });
+      // Only set model if there is inline data to upload; otherwise leave it undefined and record what was lost.
+      if (typeof item.model === 'string' && item.model.startsWith('data:')) {
+        object.model = { key: '', ext, ...(typeof item.importScale === 'number' ? { importScale: item.importScale } : {}) };
+        pending.push({ objectId: object.id, dataUrl: item.model, ext });
+      } else if (ext) {
+        // The file carried no model data, so the object is kept as a placeholder rather than dropped or left unsaveable.
+      }
     }
 
     const legacy = Object.fromEntries(Object.entries(item).filter(([key]) => !CONSUMED.has(key)));
+
+    // Record unknown type in legacy.
+    if (rawType && rawType !== type && rawType !== 'model') {
+      legacy.type = rawType;
+    }
+
+    // Record missing model info in legacy.
+    if (object.type === 'model' && !object.model) {
+      const ext = typeof item.ext === 'string' ? item.ext.toLowerCase() : '';
+      if (ext) {
+        legacy.missingModel = { ext, ...(typeof item.importScale === 'number' ? { importScale: item.importScale } : {}) };
+      }
+    }
+
     if (Object.keys(legacy).length > 0) object.legacy = legacy;
 
     return object;

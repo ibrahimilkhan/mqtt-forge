@@ -77,3 +77,36 @@ describe('uploadPending', () => {
     expect(scene.objects[2].model?.key).toBe('');
   });
 });
+
+describe('importing a v1 model with no inline data', () => {
+  it('leaves model undefined and records the ext in legacy.missingModel', () => {
+    const v1 = {
+      version: 1,
+      objects: [
+        { type: 'model', pid: 'm1', ext: '.stl', importScale: 0.001 },
+      ],
+    };
+
+    const { scene, pending } = readSceneFile(v1, fallback);
+
+    expect(pending).toEqual([]);
+    expect(scene.objects[0].model).toBeUndefined();
+    expect(scene.objects[0].legacy?.missingModel).toEqual({ ext: '.stl', importScale: 0.001 });
+  });
+});
+
+describe('importing a v1 object with an unknown type', () => {
+  it('becomes a box and keeps the original type in legacy', () => {
+    const v1 = {
+      version: 1,
+      objects: [
+        { type: 'gear', pid: 'obj1', name: 'A gear' },
+      ],
+    };
+
+    const { scene } = readSceneFile(v1, fallback);
+
+    expect(scene.objects[0].type).toBe('box');
+    expect(scene.objects[0].legacy?.type).toBe('gear');
+  });
+});
