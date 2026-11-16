@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type ChangeEvent } from 'react';
-import { deleteScene, listScenes, uploadModel } from '../../../api/studio';
+import { deleteScene, isSceneUnknown, listScenes, uploadModel } from '../../../api/studio';
 import { queryKeys } from '../../../api/queryKeys';
 import { blankScene } from '../model/defaults';
 import { newId } from '../model/ids';
@@ -70,16 +70,27 @@ export function SceneMenu({ flush, settle }: Pick<Autosave, 'flush' | 'settle'>)
       try {
         await deleteScene(scene.id);
       } catch (error) {
-        // The scene stays, so its edits are as unsaved as they were before the delete was asked
-        // for: put that back, and the autosave writes them as it would have.
-        studioStore.getState().markSaved(savedRevision);
-        throw error;
+        // Already gone — another console deleted it — is what was asked for, not a failure: the
+        // edits it would put back as unsaved would only write the scene again.
+        if (!isSceneUnknown(error)) {
+          // The scene stays, so its edits are as unsaved as they were before the delete was asked
+          // for: put that back, and the autosave writes them as it would have.
+          studioStore.getState().markSaved(savedRevision);
+          throw error;
+        }
       }
       setMode('idle');
       const rest = listed.filter((s) => s.id !== scene.id);
       await queryClient.invalidateQueries({ queryKey: queryKeys.studioScenes });
-      if (rest[0]) await openScene(rest[0].id);
-      else studioStore.getState().open(blankScene(UNTITLED), false);
+      try {
+        if (rest[0]) await openScene(rest[0].id);
+        else studioStore.getState().open(blankScene(UNTITLED), false);
+      } catch (error) {
+        // The deleted scene must not stay open: once `resume` lets go of its id, the next edit
+        // would write it back. A new scene stands in, and the menu says which could not open.
+        studioStore.getState().open(blankScene(UNTITLED), false);
+        throw new Error(`The scene "${rest[0].name}" could not be opened: ${messageOf(error)}`);
+      }
     } finally {
       resume();
     }

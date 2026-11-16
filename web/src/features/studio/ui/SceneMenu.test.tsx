@@ -175,6 +175,36 @@ describe('SceneMenu', () => {
     await waitFor(() => expect(order.slice(order.indexOf(`DELETE ${current.id}`))).toContain(`PUT ${current.id}`));
   });
 
+  it('takes a scene another console already deleted as deleted, and opens what is left', async () => {
+    server.use(http.delete(`/api/studio/scenes/${current.id}`, () =>
+      HttpResponse.json({ status: 404, title: 'No such scene', reason: 'sceneUnknown' }, { status: 404 })));
+    render(<Saved />);
+    act(() => void studioStore.getState().addPrimitive('box', [0, 0, 0]));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete Cell A' }));
+
+    await waitFor(() => expect(studioStore.getState().scene?.id).toBe(other.id));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('starts a new scene, and says why, when the one left after a delete cannot be opened', async () => {
+    server.use(
+      http.delete(`/api/studio/scenes/${current.id}`, () => new HttpResponse(null, { status: 204 })),
+      http.get(`/api/studio/scenes/${other.id}`, () =>
+        HttpResponse.json({ status: 500, title: 'Could not read the scene', detail: 'Bad sector', reason: 'studioNotRead' }, { status: 500 })),
+    );
+    render(<SceneMenu flush={flush} settle={settle} />);
+    await screen.findByRole('option', { name: 'Cell B' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete Cell A' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/"Cell B" could not be opened: Bad sector/);
+    expect(studioStore.getState().scene?.name).toBe('Untitled scene');
+    expect([current.id, other.id]).not.toContain(studioStore.getState().scene?.id);
+  });
+
   it('imports a DesignBox scene, uploading its models first', async () => {
     server.use(http.post('/api/studio/models', () => HttpResponse.json({ key: 'a'.repeat(64) + '.stl' })));
     render(<SceneMenu flush={flush} settle={settle} />);
