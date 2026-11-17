@@ -20,4 +20,8 @@ public sealed record BrokerLink(
     // their own: with Auto doing the choosing, the version in the form is a request and this is
     // the answer, and a reader debugging a broker needs to know which one they actually got.
     MqttTransport Transport = MqttTransport.Tcp,
-    MqttProtocolLevel ProtocolVersion = MqttProtocolLevel.V500);
+    MqttProtocolLevel ProtocolVersion = MqttProtocolLevel.V500,
+
+    // The saved broker it was made from, by id, or null. What the console scopes its colour and
+    // alert rules by while this link is up.
+    string? ProfileId = null);

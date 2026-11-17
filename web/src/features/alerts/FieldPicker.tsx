@@ -106,7 +106,7 @@ export function FieldPicker({
           </div>
         )}
 
-        <button type="button" className="ghost" onClick={onClose}>
+        <button type="button" onClick={onClose}>
           Close
         </button>
       </div>

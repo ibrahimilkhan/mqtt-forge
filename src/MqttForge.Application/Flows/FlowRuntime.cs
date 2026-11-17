@@ -164,7 +164,7 @@ public sealed class FlowRuntime
         else if (!RoomForTest())
         {
             into.Debug.Add(new FlowDebugEntry(flow.Id, flow.Start.Id, now, FlowDebugEntry.Error, "",
-                $"At most {FlowLimits.Flows} tests can run at once, so this one was not started. Stop one first.", Test: true));
+                $"At most {FlowLimits.Flows} tests can run at once. Stop one first.", Test: true));
             return into.Outcome();
         }
 
@@ -429,7 +429,7 @@ public sealed class FlowRuntime
                 // else for any flow. No step is known to throw; this is for the one nobody has thought of.
                 // The fault gives the exception's type with its message, as EvaluateGuarded's does: of an
                 // exception nobody expected, the message alone seldom says what kind it was.
-                Stop(run, at.Id, $"This step failed, so the run was stopped: {ex.GetType().Name}: {ex.Message}", now, into);
+                Stop(run, at.Id, $"Step failed, run stopped: {ex.GetType().Name}: {ex.Message}", now, into);
             }
         }
 
@@ -614,7 +614,7 @@ public sealed class FlowRuntime
             var text = loop.Times.Render(run.Message, run.Variables, now, _random, 64, out _);
             if (FlowNumbers.Times(text) is not { } times)
             {
-                Fail(run, loop.Id, $"Times has to be a whole number from 0 to 1,000,000; it came out as '{Excerpt(text)}'.",
+                Fail(run, loop.Id, $"Times must be a whole number 0–1,000,000; got '{Excerpt(text)}'.",
                     now, into, run.Message.Topic);
                 Go(run, loop, "done");
                 return;
@@ -691,7 +691,7 @@ public sealed class FlowRuntime
         // A forever loop that came round without waiting would go round as fast as the server can.
         if (state.Total is null && run.Pauses == state.PausesAtTurn)
         {
-            Stop(run, loop.Id, "This loop ran a turn without waiting, so the run was stopped. Put a Wait in it.", now, into);
+            Stop(run, loop.Id, "This loop didn't wait, so the run stopped. Add a Wait.", now, into);
             return;
         }
 
@@ -734,7 +734,7 @@ public sealed class FlowRuntime
         var text = wait.Seconds.Render(run.Message, run.Variables, now, _random, 64, out _);
         if (FlowNumbers.Seconds(text) is not { } span)
         {
-            Fail(run, wait.Id, $"Wait needs a number of seconds from 0.1 to 86,400; it came out as '{Excerpt(text)}'.",
+            Fail(run, wait.Id, $"Wait needs 0.1–86,400 seconds; got '{Excerpt(text)}'.",
                 now, into, run.Message.Topic);
             Go(run, wait, "out");
             return;
@@ -780,7 +780,7 @@ public sealed class FlowRuntime
 
         if (!run.Bucket.TryTake(now))
         {
-            Fail(run, node.Id, $"More than {FlowLimits.PublishesPerSecond} publishes a second; this one was dropped.", now, into, arrived);
+            Fail(run, node.Id, $"Over {FlowLimits.PublishesPerSecond} publishes a second; dropped.", now, into, arrived);
             return;
         }
 
@@ -788,7 +788,7 @@ public sealed class FlowRuntime
 
         if (topicCut || Encoding.UTF8.GetByteCount(topic) > FlowLimits.TopicBytes)
         {
-            Fail(run, node.Id, "The topic came out longer than the 65,535 bytes MQTT allows, so nothing was published.", now, into, arrived);
+            Fail(run, node.Id, "Topic over MQTT's 65,535 bytes; nothing published.", now, into, arrived);
             return;
         }
 

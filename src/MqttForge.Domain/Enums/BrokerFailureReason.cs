@@ -70,6 +70,13 @@ public enum BrokerFailureReason
     NotPermitted,
     FilterRefused,
 
+    // The broker closed a link that was up a moment after one of our alert rules published on
+    // it. A broker that only lets readers read — Helsinki's open feed is one — answers a PUBLISH
+    // it will not take by hanging up, the same way it answers a filter it will not take, and with
+    // no reason code that names the publish. So this is read off the timing: which rule published
+    // where, and that the link went straight after. BrokerFailure carries the rule and the topic.
+    AlertPublishRefused,
+
     // A link that was up, and is not any more
     ConnectionLost,
     SessionTakenOver,

@@ -122,6 +122,34 @@ public class ColourRulesDtoValidatorTests
             new ColourRuleDto("sensors/#", "#1e40af")));
     }
 
+    // Only one of two brokers is ever up, and a rule for every broker beside one for a broker is the
+    // general colour and its exception — the broker's own wins while it is up.
+    [Fact]
+    public void Accepts_one_filter_once_for_each_broker()
+    {
+        Assert.True(IsValid(
+            new ColourRuleDto("sensors/#", "#b45309"),
+            new ColourRuleDto("sensors/#", "#1e40af", ProfileId: "lab-1"),
+            new ColourRuleDto("sensors/#", "#0c7460", ProfileId: "staging-1")));
+    }
+
+    [Fact]
+    public void Refuses_the_same_filter_twice_for_one_broker()
+    {
+        Assert.False(IsValid(
+            new ColourRuleDto("sensors/#", "#b45309", ProfileId: "lab-1"),
+            new ColourRuleDto("sensors/#", "#1e40af", ProfileId: "lab-1")));
+    }
+
+    // Blank and absent mean the same owner, every broker, so they cannot both carry a colour.
+    [Fact]
+    public void A_blank_broker_is_every_broker()
+    {
+        Assert.False(IsValid(
+            new ColourRuleDto("sensors/#", "#b45309"),
+            new ColourRuleDto("sensors/#", "#1e40af", ProfileId: " ")));
+    }
+
     [Fact]
     public void Two_rules_differing_only_in_colour_case_are_still_distinct_filters()
     {

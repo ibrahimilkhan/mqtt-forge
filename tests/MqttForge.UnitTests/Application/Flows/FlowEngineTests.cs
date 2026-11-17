@@ -453,7 +453,7 @@ public sealed class FlowEngineTests : IAsyncLifetime
         _publisher.Stall = false;
         _time.Advance(FlowEngine.PublishTimeout);
 
-        const string timedOut = "The broker did not take the publish within 5 seconds.";
+        const string timedOut = "The broker didn't take the publish within 5s.";
         await Eventually.Until(_time, () => _console.Debug.Any(entry => entry.NodeId == "fan" && entry.Text == timedOut),
             "the stalled publish to be given up");
         Assert.Equal(1, Errors(engine, "fan"));

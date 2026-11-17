@@ -15,6 +15,9 @@ public static class DependencyInjection
     {
         // Single MQTTnet client for all requests (one active connection)
         services.AddSingleton<MqttnetClientProvider>();
+        // One between the alert dispatcher and the connection manager: the first says where a
+        // rule is about to publish, the second asks when the link drops. See AlertPublishWitness.
+        services.AddSingleton<AlertPublishWitness>();
         services.AddSingleton<IMqttConnectionManager, MqttnetConnectionManager>();
         services.AddSingleton<IMqttPublisher, MqttnetPublisher>();
         // One instance wearing both hats: the notifier that queues, and the pump that drains it.

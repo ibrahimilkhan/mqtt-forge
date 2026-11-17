@@ -81,6 +81,24 @@ public class MqttAlertDispatcherTests : IDisposable
 
     // ---- a broker slow to take a publish ----
 
+    // ---- a broker that hangs up over the publish ----
+
+    // Said before the publish and not after: at QoS 0 the hang-up can land before the call that sent
+    // it has returned, and by then the connection manager has already asked.
+    [Fact]
+    public async Task Tells_the_witness_which_rule_is_publishing_where_before_it_publishes()
+    {
+        var witness = new AlertPublishWitness();
+        RefusedPublish? seenAtPublish = null;
+        _publisher.OnPublish = () => seenAtPublish = witness.Recent();
+        var sut = new MqttAlertDispatcher(_publisher, _options, _log, _lifetime, witness);
+
+        await sut.RaisedAsync([Fired()]);
+        await Settled(sut);
+
+        Assert.Equal(new RefusedPublish("Boiler temperature", Prefix + "r1/plant/boiler/temp"), seenAtPublish);
+    }
+
     // Both engines hand their alarms over on their pumps — the alert rules' and the flows' — so a
     // publish awaited here was every rule and every flow waiting with it: two seconds an alarm at
     // worst, and four for a retained one's end, which is the body and then the clear.
@@ -200,7 +218,7 @@ public class MqttAlertDispatcherTests : IDisposable
         Assert.Equal(
             ["mqttforge/alerts/r1/plant/stuck/temp", "mqttforge/alerts/r1/plant/standing/temp"],
             _publisher.Sent.Select(sent => sent.Topic));
-        Assert.Contains(_log.Lines, line => line.Message.StartsWith($"{flood} alarms went up and came down"));
+        Assert.Contains(_log.Lines, line => line.Message.StartsWith($"{flood} alarms rose and cleared"));
     }
 
     // Shutdown takes back every retained record this process left. A publication still waiting then
@@ -225,7 +243,7 @@ public class MqttAlertDispatcherTests : IDisposable
         var taken = Assert.Single(_publisher.Sent);
         Assert.Equal("mqttforge/alerts/r1/plant/boiler/temp", taken.Topic);
         Assert.Empty(taken.Payload);
-        Assert.Contains(_log.Lines, line => line.Message.Contains("still waiting when MQTTForge stopped"));
+        Assert.Contains(_log.Lines, line => line.Message.Contains("pending at shutdown"));
     }
 
     // Calling a publish off stops the waiting for the broker's answer and nothing else: a PUBLISH at
@@ -632,8 +650,13 @@ public class MqttAlertDispatcherTests : IDisposable
             lock (_gate) _sent.Clear();
         }
 
+        /// <summary>Run as each publish begins: what the rest of the world can see at that moment.</summary>
+        public Action? OnPublish { get; set; }
+
         public async Task PublishAsync(PublishRequest request, CancellationToken ct)
         {
+            OnPublish?.Invoke();
+
             if (Throw is not null) throw Throw();
 
             if (Hang) await Task.Delay(Timeout.Infinite, ct);

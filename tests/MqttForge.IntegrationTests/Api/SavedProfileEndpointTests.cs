@@ -2,7 +2,9 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.DependencyInjection;
 using MqttForge.Api.Contracts;
+using MqttForge.Domain.Abstractions;
 using MqttForge.Domain.Enums;
 using MqttForge.IntegrationTests.Support;
 using Xunit;
@@ -48,13 +50,59 @@ public class SavedProfileEndpointTests : IDisposable
         var client = _factory.CreateClient();
 
         var put = await client.PutAsJsonAsync("/api/connection/profiles", Profile("Lab broker"));
-        Assert.Equal(HttpStatusCode.NoContent, put.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, put.StatusCode);
 
         var one = Assert.Single(await ProfilesOf(client));
 
         Assert.Equal("Lab broker", one.Name);
         Assert.Equal("broker.example", one.Connection.Host);
         Assert.Equal("alice", one.Connection.Username);
+    }
+
+    // The save answers with the id, because a new profile's id exists only once it is kept — and
+    // the console needs it to say which broker a rule belongs to.
+    [Fact]
+    public async Task A_save_answers_with_the_id_the_profile_is_listed_under()
+    {
+        var client = _factory.CreateClient();
+
+        var put = await client.PutAsJsonAsync("/api/connection/profiles", Profile("Lab broker"));
+        var kept = await put.Content.ReadFromJsonAsync<SavedProfileDto>(AsSent);
+
+        Assert.False(string.IsNullOrEmpty(kept!.Id));
+        Assert.Equal(kept.Id, Assert.Single(await ProfilesOf(client)).Id);
+    }
+
+    // A saved broker is what a profile id points at. The form a connect was made from carries the
+    // id of the broker it was filled from, and keeping that form must not keep the id inside it.
+    [Fact]
+    public async Task A_saved_broker_keeps_no_other_broker_s_id_inside_it()
+    {
+        var client = _factory.CreateClient();
+        var sent = Profile("Copy of lab") with
+        {
+            Connection = Profile("x").Connection with { ProfileId = "lab-1" }
+        };
+
+        await client.PutAsJsonAsync("/api/connection/profiles", sent);
+
+        var kept = Assert.Single(await _factory.Services.GetRequiredService<ISavedProfileStore>()
+            .ListAsync(CancellationToken.None));
+        Assert.Null(kept.Settings.ProfileId);
+    }
+
+    [Fact]
+    public async Task Renaming_one_to_another_s_name_is_a_conflict()
+    {
+        var client = _factory.CreateClient();
+        var put = await client.PutAsJsonAsync("/api/connection/profiles", Profile("Lab broker"));
+        var lab = await put.Content.ReadFromJsonAsync<SavedProfileDto>(AsSent);
+        await client.PutAsJsonAsync("/api/connection/profiles", Profile("Staging"));
+
+        var clash = await client.PutAsJsonAsync("/api/connection/profiles", Profile("Staging") with { Id = lab!.Id });
+
+        Assert.Equal(HttpStatusCode.Conflict, clash.StatusCode);
+        Assert.Equal(["Lab broker", "Staging"], (await ProfilesOf(client)).Select(one => one.Name));
     }
 
     // The whole shape, not just the address: a profile that lost its transport would reconnect

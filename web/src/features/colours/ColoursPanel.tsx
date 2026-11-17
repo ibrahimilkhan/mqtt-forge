@@ -1,9 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { getColourRules, putColourRules } from '../../api/colourRules';
+import { getSavedProfiles } from '../../api/connection';
 import { queryKeys } from '../../api/queryKeys';
+import { useLinkProfile } from '../../api/useConnectionState';
 import { PanelShell } from '../../components/PanelShell';
-import type { ColourRule } from '../../lib/topicColour';
+import { rulesFor, type ColourRule } from '../../lib/topicColour';
 import { useGuardedMutate } from '../../lib/useGuardedMutate';
 import { logFault, useLogStore } from '../../stores/logStore';
 import { useSelectionStore } from '../../stores/selectionStore';
@@ -37,6 +39,9 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
   // Absent when nothing is picked, and when what is picked is not a topic — the broker row.
   const selectedTopic = useSelectionStore((state) => state.selected?.topic);
   const { data, isError } = useQuery({ queryKey: queryKeys.colourRules, queryFn: getColourRules });
+  // The broker whose rules are painting now, and every saved broker a rule can belong to.
+  const profileId = useLinkProfile();
+  const { data: profiles } = useQuery({ queryKey: queryKeys.savedProfiles, queryFn: getSavedProfiles });
 
   // The edits live here, not in the query cache. A half-typed filter is not a rule, and writing
   // one into the cache would recolour the tree behind the panel on every keystroke.
@@ -164,14 +169,56 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
    *
    * The key is the rows as a string, NUL-separated — a topic filter may hold anything else, and
    * two lists differing only in where one filter ends must not come out as the same key.
+   *
+   * Only the rules the tree is painting with: the broker's that is up, and the ones for every
+   * broker it has not overruled. A rule for another broker paints nothing here, and counting it
+   * against this broker's tree would claim topics it will never touch.
    */
-  const painted = rules.map(({ filter, colour }) => ({ filter, colour }));
+  const applying = rulesFor(rules, profileId);
+  const painted = applying.map(({ filter, colour }) => ({ filter, colour }));
   const key = painted.map((rule) => `${rule.filter}\u0000${rule.colour}`).join('\u0001');
   // `painted` is a fresh array every render and would defeat the memo; `key` is its contents.
   const painting = useMemo(() => paintedBy(root, painted), [root, key]);
+  const applies = new Set(applying.map((rule) => rule.id));
+
+  /** Another broker's rule: kept on the list, drawn faded, and painting nothing while this is up. */
+  const elsewhere = (rule: DraftRule) => rule.profileId !== null && rule.profileId !== profileId;
 
   return (
     <PanelShell title="Colours" named onClose={onClose}>
+      {/* At the top right, over the list rather than under it. Under it, New rule stood on a row
+          ruled off from the list — and over an empty list that rule ran across the middle of the
+          page, cutting a page that is only ever about its rules in two. Here it is where the eye
+          starts and the list hangs from it, however long or short the list is. */}
+      <div className={styles.toolbar}>
+        <button
+          type="button"
+          className={panel.iconButton}
+          disabled={draft === null || full}
+          title={
+            selectedTopic
+              ? `Add a rule for ${selectedTopic}`
+              : 'Add a rule — an unsaved one follows the tree'
+          }
+          onClick={() =>
+            setDraft((current) => [
+              ...current!,
+              {
+                // For the broker that is up, if it is a saved one: a rule is usually written about
+                // what is in front of the reader, and that is this broker's tree.
+                ...newDraftRule(nextColour(current!.map((rule) => rule.colour)), profileId),
+                // The topic last picked in the tree is the one a new rule is usually for. Only
+                // the new row: an edit in progress above it is not the selection's business.
+                filter: selectedTopic ?? '',
+              },
+            ])
+          }
+        >
+          <Plus />
+          New rule
+        </button>
+      </div>
+
       {/* Not an empty list: a save from a panel that never read the rules would replace them
           with whatever happened to be on screen. So it offers nothing until it has them. */}
       {isError && draft === null && (
@@ -199,12 +246,18 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
             <span>Topic</span>
             <span>Message</span>
             <span>Topic filter</span>
+            <span>Broker</span>
             <span>Painting</span>
             <span />
           </div>
 
           {rules.map((rule, index) => (
-            <div key={rule.id} className={styles.ruleRow} data-testid="colour-rule">
+            <div
+              key={rule.id}
+              className={styles.ruleRow}
+              data-testid="colour-rule"
+              data-elsewhere={elsewhere(rule) ? '' : undefined}
+            >
               {/* Its place in the list, for pointing at a row in a sentence somebody says out
                   loud. NOT precedence: which rule paints a topic is decided by which filter says
                   more about it, wherever the two happen to sit. The Painting column is where that
@@ -264,14 +317,46 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
                 </button>
               </span>
 
+              {/* Every broker, or one saved broker. One that has been deleted since is still named as
+                  gone rather than quietly turned into every broker: the rule was written for it. */}
+              <select
+                className={styles.broker}
+                value={rule.profileId ?? ''}
+                aria-label={`Broker for rule ${index + 1}`}
+                onChange={(event) => edit(rule.id, { profileId: event.target.value || null })}
+              >
+                <option value="">All brokers</option>
+                {profiles?.map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.name}
+                  </option>
+                ))}
+                {rule.profileId !== null &&
+                  profiles !== undefined &&
+                  !profiles.some((profile) => profile.id === rule.profileId) && (
+                    <option value={rule.profileId}>A deleted broker</option>
+                  )}
+              </select>
+
               <span
                 className={styles.painting}
                 /* A rule painting nothing is the point of the column, so it is not drawn in the
                    same grey as a rule painting forty. Not the fault colour either: it is not
                    wrong, it is idle — usually a filter another rule has taken every topic off. */
-                data-idle={rule.filter !== '' && (painting.get(rule.filter) ?? 0) === 0 ? '' : undefined}
+                data-idle={
+                  rule.filter !== '' && !elsewhere(rule) && (!applies.has(rule.id) || (painting.get(rule.filter) ?? 0) === 0)
+                    ? ''
+                    : undefined
+                }
               >
-                {paintingWords(rule.filter, painting)}
+                {elsewhere(rule)
+                  ? 'other broker'
+                  : applies.has(rule.id)
+                    ? paintingWords(rule.filter, painting)
+                    : // A rule for every broker that this broker's own rule on the same filter overrules.
+                      rule.filter === ''
+                      ? ''
+                      : 'none'}
               </span>
 
               <span className={styles.rowActions}>
@@ -322,57 +407,32 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
         </p>
       )}
 
-      {/* One row at the foot, and the two things on it are two different scales: Save answers for
-          the whole list and reads first, New rule adds one more to it and sits where a hand
-          reaching past the list goes. The heading they used to hang off is gone — a panel that
-          says COLOURS across the top of itself does not need a second word saying these are the
-          rules, when rules are the only thing in it.
+      {/* Save answers for the whole list, so it stands at the foot of it — with no rule over it:
+          the list ends where its last row does, and a line under that was a second ending.
 
-          Save is not drawn over an empty list nobody has touched: a rule across the panel with
-          one dead button under it is a floor under nothing. Emptying the list by hand is a
-          different thing — that is an edit, and it has to be saveable — so `unsaved` brings it
-          back. And so does a draft that was never read: there it is present and refuses, which is
-          the panel saying it will not overwrite rules it could not load. New rule is on the row
-          either way, because an empty list is exactly where a reader wants it. */}
-      <div className={`${panel.actions} ${styles.footer}`}>
-        {(draft === null || rules.length > 0 || unsaved) && (
+          Save is not drawn over an empty list nobody has touched: one dead button under nothing.
+          Emptying the list by hand is a different thing — that is an edit, and it has to be
+          saveable — so `unsaved` brings it back. And so does a draft that was never read: there
+          it is present and refuses, which is the panel saying it will not overwrite rules it
+          could not load. */}
+      {(draft === null || rules.length > 0 || unsaved) && (
+        <div className={`${panel.actions} ${styles.footer}`}>
           <button
             type="button"
-            className="keeps"
             disabled={!savable || save.isPending}
             onClick={() =>
-              guardedSave(rules.map(({ filter, colour, bodyColour }) => ({ filter, colour, bodyColour })))
+              guardedSave(
+                rules.map(({ filter, colour, bodyColour, profileId: owner }) =>
+                  // Left off for every broker, which is what a rule without one has always meant.
+                  owner === null ? { filter, colour, bodyColour } : { filter, colour, bodyColour, profileId: owner },
+                ),
+              )
             }
           >
             Save
           </button>
-        )}
-
-        <button
-          type="button"
-          className={`ghost ${panel.iconButton} ${panel.trailing}`}
-          disabled={draft === null || full}
-          title={
-            selectedTopic
-              ? `Add a rule for ${selectedTopic}`
-              : 'Add a rule — an unsaved one follows the tree'
-          }
-          onClick={() =>
-            setDraft((current) => [
-              ...current!,
-              {
-                ...newDraftRule(nextColour(current!.map((rule) => rule.colour))),
-                // The topic last picked in the tree is the one a new rule is usually for. Only
-                // the new row: an edit in progress above it is not the selection's business.
-                filter: selectedTopic ?? '',
-              },
-            ])
-          }
-        >
-          <Plus />
-          New rule
-        </button>
-      </div>
+        </div>
+      )}
     </PanelShell>
   );
 }
@@ -415,7 +475,8 @@ function differs(rows: readonly DraftRule[], stored: readonly ColourRule[]): boo
     (row, index) =>
       row.filter !== stored[index].filter ||
       row.colour !== stored[index].colour.toLowerCase() ||
-      row.bodyColour !== ink(stored[index].bodyColour),
+      row.bodyColour !== ink(stored[index].bodyColour) ||
+      row.profileId !== (stored[index].profileId || null),
   );
 }
 

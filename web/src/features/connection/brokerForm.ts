@@ -131,7 +131,7 @@ function tlsOptions(form: BrokerForm): TlsOptions {
 }
 
 /**
- * Whether anything under Encryption has been filled in.
+ * Whether anything under Security has been filled in.
  *
  * Two callers, one question. The request needs it to decide whether to send a TLS block at all,
  * and the panel needs it because filling any of these in is a statement that this connection is

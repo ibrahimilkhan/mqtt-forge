@@ -145,7 +145,7 @@ public partial class FlowCompilerTests
             .Then("start", "loop").Wire("loop", "body", "end").Wire("loop", "done", "end"));
 
         Assert.Equal("node:loop", problem.Key);
-        Assert.Contains("Nothing comes back", problem.Message);
+        Assert.Contains("Nothing returns", problem.Message);
     }
 
     [Fact]

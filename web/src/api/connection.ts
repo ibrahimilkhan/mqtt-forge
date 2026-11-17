@@ -85,10 +85,14 @@ export const stopReconnecting = () =>
 export const getSavedProfiles = () =>
   request<SavedProfile[]>('/api/connection/profiles');
 
-// PUT because the name is the identity: saving one that is already there replaces it, which is
-// what correcting a port on a broker you already keep means by pressing Save again.
-export const saveProfile = (name: string, connection: ConnectRequest) =>
-  request<void>('/api/connection/profiles', { method: 'PUT', ...json({ name, connection }) });
+// PUT because saving one that is already there replaces it, which is what correcting a port on a
+// broker you already keep means by pressing Save again. Named by its id when there is one, by its
+// name otherwise; answered with the profile as kept, which is where a new one's id comes from.
+export const saveProfile = (name: string, connection: ConnectRequest, id?: string) =>
+  request<SavedProfile>('/api/connection/profiles', {
+    method: 'PUT',
+    ...json(id === undefined ? { name, connection } : { name, connection, id }),
+  });
 
 export const deleteProfile = (name: string) =>
   request<void>(`/api/connection/profiles/${encodeURIComponent(name)}`, { method: 'DELETE' });

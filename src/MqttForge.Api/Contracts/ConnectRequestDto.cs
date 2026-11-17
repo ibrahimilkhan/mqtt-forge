@@ -21,7 +21,11 @@ public record ConnectRequestDto(
 
     // What the console will subscribe to once this is up. The server keeps it with the rest of
     // the settings and does nothing else with it; the subscribing is the console's own.
-    IReadOnlyList<string>? Subscriptions = null);
+    IReadOnlyList<string>? Subscriptions = null,
+
+    // Which saved broker the form was filled from, when it was; it decides which colour and alert
+    // rules apply once this is up. Left off by a console that has not heard of it.
+    string? ProfileId = null);
 
 // The parts of TLS that need a field. Sent as its own object rather than flattened, so a form
 // that shows none of this sends nothing at all rather than seven nulls.

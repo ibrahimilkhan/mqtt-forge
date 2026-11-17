@@ -13,6 +13,8 @@ export type DraftRule = {
   colour: string;
   /** The message's own colour, or null for the console's ink — which is what most rules want. */
   bodyColour: string | null;
+  /** The saved broker it belongs to, or null for every broker. */
+  profileId: string | null;
   saved: boolean;
 };
 
@@ -44,19 +46,27 @@ export function draftFrom(rules: readonly ColourRule[]): DraftRule[] {
     // than a stand-in. Repairing it would invent a colour nobody chose.
     const bodyColour = isColour(rule.bodyColour) ? rule.bodyColour.toLowerCase() : null;
 
-    usable.push({ id: nextId++, filter: rule.filter, colour, bodyColour, saved: true });
+    usable.push({
+      id: nextId++,
+      filter: rule.filter,
+      colour,
+      bodyColour,
+      profileId: rule.profileId || null,
+      saved: true,
+    });
   }
 
   return usable;
 }
 
-export const newDraftRule = (colour: string): DraftRule => ({
+export const newDraftRule = (colour: string, profileId: string | null = null): DraftRule => ({
   id: nextId++,
   filter: '',
   colour,
   // A new rule paints the topic only. Two colours on arrival would be the panel deciding that
   // every rule wants its payloads repainted too, which is the rarer of the two wishes.
   bodyColour: null,
+  profileId,
   saved: false,
 });
 
@@ -90,7 +100,9 @@ export function faultIn(rule: DraftRule, all: readonly DraftRule[]): string | nu
   // Compared against the rows above it, so the duplicate is reported on the one just typed
   // rather than on the rule that was already there.
   const earlier = all.slice(0, all.indexOf(rule));
-  if (earlier.some((other) => other.filter === rule.filter)) {
+  // For the same broker: one rule for every broker and one for a broker on the same filter are the
+  // general colour and its exception, and two brokers' rules are never up at once.
+  if (earlier.some((other) => other.filter === rule.filter && other.profileId === rule.profileId)) {
     return 'That filter already has a colour.';
   }
 

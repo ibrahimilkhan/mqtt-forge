@@ -116,7 +116,7 @@ function NodePane({ flow, node, problems, facts }: { flow: FlowDto; node: FlowNo
         <div className={panel.actions}>
           <button
             type="button"
-            className="ghost ends"
+            className="ends"
             onClick={() => {
               edit(flow, (current) => removeNodes(current, [node.id]));
               select(null);
@@ -334,7 +334,7 @@ function FlowPane({ flow, deployed, overtaken, problems }: FlowPaneProps) {
         useLogStore.getState().push({
           kind: 'fault',
           verb: 'Flow test may still run',
-          body: `${titleOf(flow)} was deleted here, but the server did not take the delete, so a test of it may still be running there. ${describeError(error)}`,
+          body: `${titleOf(flow)} was deleted here but not on the server; its test may still run. ${describeError(error)}`,
         });
       }
     },
@@ -379,10 +379,10 @@ function FlowPane({ flow, deployed, overtaken, problems }: FlowPaneProps) {
               : 'Deleted on the server since you started, so Activate holds your changes back. Keep yours to save the flow again, or discard them.'}
           </p>
           <div className={panel.actions}>
-            <button type="button" className="ghost" onClick={() => choose(() => rebase(flow.id, deployed ? fingerprint(deployed) : null))}>
+            <button type="button" onClick={() => choose(() => rebase(flow.id, deployed ? fingerprint(deployed) : null))}>
               Keep mine
             </button>
-            <button type="button" className="ghost ends" onClick={() => choose(() => discard(flow.id))}>
+            <button type="button" className="ends" onClick={() => choose(() => discard(flow.id))}>
               Discard
             </button>
           </div>
@@ -466,7 +466,6 @@ function FlowPane({ flow, deployed, overtaken, problems }: FlowPaneProps) {
         <button
           ref={adder}
           type="button"
-          className="ghost"
           onClick={() => editVariables((all) => [...all, { name: nextVariable(all), value: '' }])}
         >
           Add variable
@@ -482,7 +481,7 @@ function FlowPane({ flow, deployed, overtaken, problems }: FlowPaneProps) {
 
       {!asking ? (
         <div className={panel.actions}>
-          <button type="button" className="ghost ends" onClick={() => setAsking(true)}>
+          <button type="button" className="ends" onClick={() => setAsking(true)}>
             Delete flow
           </button>
         </div>
@@ -490,7 +489,7 @@ function FlowPane({ flow, deployed, overtaken, problems }: FlowPaneProps) {
         <div className={styles.confirm}>
           <p>{deleting(flow, deployed, overtaken, isLive(run) && run?.kind === 'test')}</p>
           <div className={panel.actions}>
-            <button type="button" className="ghost" onClick={() => setAsking(false)}>
+            <button type="button" onClick={() => setAsking(false)}>
               Keep it
             </button>
             {/* Off while the delete is out, but said rather than set, as Activate is: a button switched

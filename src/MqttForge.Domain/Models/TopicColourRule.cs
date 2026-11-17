@@ -12,4 +12,10 @@ namespace MqttForge.Domain.Models;
 /// scrolling log usually wants the path coloured and the payload left legible, and every rules
 /// file written before this existed means exactly that.
 /// </param>
-public record TopicColourRule(string Filter, string Colour, string? BodyColour = null);
+/// <param name="ProfileId">
+/// The saved broker this rule belongs to, by its id, or null for every broker. A rule for one
+/// broker applies only while a link made from that saved broker is up; one for every broker
+/// applies always, and gives way to one for the broker that is up on the same filter. Null is
+/// what every rules file written before this means.
+/// </param>
+public record TopicColourRule(string Filter, string Colour, string? BodyColour = null, string? ProfileId = null);

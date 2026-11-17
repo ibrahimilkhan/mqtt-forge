@@ -53,7 +53,7 @@ public sealed class UnansweredSubscribeTests : IClassFixture<MosquittoFixture>
                 .WaitAsync(TimeSpan.FromSeconds(20)));
 
             Assert.Contains("'plant/#'", thrown.Message);
-            Assert.Contains("within 10 seconds", thrown.Message);
+            Assert.Contains("within 10s", thrown.Message);
             Assert.Empty(subscriber.ActiveFilters);
             Assert.True(provider.Client.IsConnected, "the link should still be up: the broker only stopped answering");
         }

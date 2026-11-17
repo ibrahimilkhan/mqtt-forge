@@ -56,7 +56,7 @@ public sealed class CompositeAlertDispatcher : IAlertDispatcher
             {
                 Interlocked.Increment(ref _faults);
                 _log.LogError(ex,
-                    "{Dispatcher} threw on {Call}. The other alert channels were sent anyway.",
+                    "{Dispatcher} threw on {Call}; the other channels were still sent.",
                     target.GetType().Name, call);
             }
         }

@@ -257,7 +257,7 @@ public class WebhookDispatcherTests : IAsyncLifetime
 
         var line = Assert.Single(_log.Lines, l => l.Message.Contains("not delivered"));
         Assert.Equal(
-            $"The webhook for Boiler temperature on plant/boiler/temp was not delivered to {EndpointA} after 3 attempt(s): " +
+            $"Webhook for Boiler temperature on plant/boiler/temp not delivered to {EndpointA} after 3 attempt(s): " +
             "the receiver answered 500",
             line.Message);
         Assert.Equal("Boiler temperature", line.Values["RuleName"]);
@@ -609,7 +609,7 @@ public class WebhookDispatcherTests : IAsyncLifetime
         // alarm is named by its rule and its topic.
         var line = Assert.Single(_log.Lines, l => l.Message.Contains("not delivered"));
         Assert.Equal(
-            $"The webhook for flow f1's node hook was not delivered to {EndpointA} after 3 attempt(s): the receiver answered 500",
+            $"Webhook for flow f1 node hook not delivered to {EndpointA} after 3 attempt(s): the receiver answered 500",
             line.Message);
         Assert.Equal("f1", line.Values["Flow"]);
         Assert.Equal("hook", line.Values["Node"]);

@@ -55,8 +55,8 @@ public static class FrameAncestors
 
             if (!Page.IsMatch(source))
                 throw new InvalidOperationException(
-                    $"{Setting} names '{Shown(source)}', which is not a page that may frame the console. Name each page by its " +
-                    "origin — http://homeassistant.local:8123 — with a space or a comma between them.");
+                    $"{Setting} names '{Shown(source)}', which isn't an origin. Use e.g. http://homeassistant.local:8123, " +
+                    "separated by spaces or commas.");
 
             if (!sources.Contains(source, StringComparer.OrdinalIgnoreCase)) sources.Add(source);
         }

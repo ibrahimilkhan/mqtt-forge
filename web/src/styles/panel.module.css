@@ -265,20 +265,130 @@
   font-size: var(--t-small);
 }
 
-/* First on the panel, with nothing above it to be set apart from. A rule drawn across the top of
-   a panel's opening block reads as the bottom edge of something that is not there. It is the
-   status head above it that this block now stands under, so it keeps a rule — a short one, at the
-   list's own left edge rather than across the plate. */
+/* On the panel over a live link it is not a column of labels and values any more: it is a table
+   on a plate of its own, under a heading, and the rule across its top is the one between that
+   heading and the first row of cells. */
 .summary[data-lead] {
-  margin-top: 14px;
-  padding-top: 0;
-  border-top: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+  /* A table drawn with its own ground: the cells are --surface and the 1px between them is the
+     list's --rule showing through, so the lines are there at every count and every wrap without
+     a border that has to know whether it is at the end of a row. */
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  background: var(--rule);
+  /* The rows share whatever height the table's plate was given beyond what they need. */
+  flex: 1 1 auto;
+  align-content: stretch;
 }
 
 /* ---- the state a list of facts cannot state ---- */
 /* Only on the panel over a live link, which was the one face of the broker panel with no
    statement of state on it: nine rows of true facts and nothing saying what they added up to. */
-.linkHead { margin: 0 0 2px; }
+/* A plate in the mark's own blue, and the one dark thing on the panel. The state used to be a
+   line of small green capitals over a column of facts, which is the weight of a field label; it
+   is what somebody opened this panel to find out, so it is the first and the heaviest thing on
+   it now. The address and the count stand on it and nothing else does — every other fact is
+   said once, in the table underneath.
+
+   The three inks are this plate's and no other's, so they are stated here rather than in
+   tokens.css: the palette's own --live and --warn are tuned to be read on paper and fall under
+   3:1 on --signal. On it these are 6.1:1, 5.8:1 and 5.4:1.
+
+   A container in both directions, so the two readings are sized by the plate they stand on: the
+   panel takes the whole window, and a window can be a laptop's or a wall's. The plate takes
+   two parts in three of whatever height the column has to spare and the table under it takes
+   the rest, so a bigger window is a bigger plate rather than the same small block with paper
+   round it. The type on it does not grow with it: a reading is read at the size it is read at. A size container has no height of its own, which is why the
+   floor is stated: it is what the plate stands at where the column is only as tall as its
+   contents — under the break, and on a phone. */
+.linkHead {
+  --on-live: #6ad8b6;
+  --on-warn: #e8b866;
+  --on-quiet: #9fbccd;
+  container-type: size;
+  flex: 2 1 0;
+  min-height: 9rem;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  background: var(--signal);
+  color: var(--surface);
+  border-radius: var(--r-plate);
+}
+/* The sentence along its foot is a line more than the floor allows for. */
+.linkHead:has(.linkStale) { min-height: 12rem; }
+.linkBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  /* One stack down the middle of the plate: the state, the address, and the count under them.
+     They stood at the plate's two ends, which on a wide window is a reading at each edge of a
+     long blue field and nothing between; in the middle they are one statement at every width,
+     and the plate is the same either side of them. */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 20px clamp(20px, 3cqi, 48px);
+  text-align: center;
+}
+.linkMain {
+  flex: none;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+/* The label and the count on one line, on their baselines: a caption and its figure. */
+.linkUp {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px 10px;
+}
+.linkUpLabel {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--t-label);
+  font-weight: 600;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--on-quiet);
+}
+/* Lighter and smaller than the address beside it. They are not two headlines: the address is
+   what the link is, and the count is one reading about it. */
+.linkUpClock {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--t-title);
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  color: var(--surface);
+}
+/* One step down, and only on a plate the width of a phone, where the size above cannot hold an
+   address of ordinary length on a line. A step and not a slide: no window on a desk is this
+   narrow, so nothing a reader can drag ever changes the size of the type. */
+@container (max-width: 24rem) {
+  /* One class more than the rule it answers, which stands further down the sheet. */
+  .linkHead .linkBody .linkWhere { font-size: var(--t-lead); }
+  .linkUpClock { font-size: var(--t-body); }
+}
+/* The sentence along the foot wraps to three lines at a phone's width. This asks the panel's
+   own width (`.spread`), since a container cannot be asked about itself; under the break the
+   plate is as wide as the panel, so it is the same question. */
+@container (max-width: 32rem) {
+  .linkHead:has(.linkStale) { min-height: 14.5rem; }
+}
+/* Forced colours drop the fill this plate is told apart by. */
+@media (forced-colors: active) {
+  .linkHead { outline: 1px solid; outline-offset: -1px; }
+}
 
 .linkState {
   display: flex;
@@ -354,6 +464,162 @@
   color: var(--ink);
   overflow-wrap: anywhere;
 }
+
+/* ---- on the plate, and in the table under it ---- */
+.linkHead .linkState { color: var(--on-live); }
+.linkHead .linkState[data-stale] { color: var(--on-warn); }
+.linkHead .linkWhere {
+  margin: 0;
+  /* One size, stated, and nothing in it that follows the window. It was a clamp round a share of
+     the plate's width, and on a laptop the plate is narrower than the width that clamp topped out
+     at — so dragging the window's edge drew the address larger and smaller under the pointer. */
+  font-size: calc(var(--t-title) * 1.2);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--surface);
+}
+/* Along the foot of the plate, ruled off from the readings it makes doubtful. */
+.linkHead .linkStale {
+  margin: 0;
+  padding: 12px clamp(20px, 3cqi, 48px) 14px;
+  text-align: center;
+  border-top: 1px solid color-mix(in srgb, var(--surface) 18%, transparent);
+  color: var(--on-warn);
+}
+
+/* The table's own plate. A container for the same reason the one above is: how many cells go
+   across is decided by the width the table has, not the window's. */
+.facts {
+  container-type: inline-size;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  margin-top: 16px;
+  background: var(--surface);
+  border-radius: var(--r-plate);
+  overflow: hidden;
+}
+/* The voice `.savedTitle` and the record's own heading are set in, written out rather than
+   composed: that class is declared further down this sheet, and a class can only compose one
+   that already stands above it. */
+.factsTitle {
+  margin: 0;
+  padding: 16px clamp(20px, 3cqi, 48px) 14px;
+  font-family: var(--mono);
+  font-size: var(--t-label);
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* Four across, and every row filled: a cell grows into whatever the row has left, so a count
+   that does not divide never leaves a hole at the end. The half pixel off the basis is what
+   keeps the fourth cell on the line when the width does not divide evenly either. */
+.summary[data-lead] .summaryRow {
+  flex: 1 1 calc((100% - 3px) / 4 - 0.5px);
+  min-width: 0;
+  box-sizing: border-box;
+  flex-direction: column;
+  /* In the middle of the cell both ways. Down, because a cell is given more height than its two
+     lines need; across, because it is given more width too, and a label and a value ranged left
+     in a wide cell stand in its corner with the rest of it empty. */
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+  padding: 16px clamp(20px, 3cqi, 48px) 18px;
+  background: var(--surface);
+}
+.summary[data-lead][data-cols='3'] .summaryRow { flex-basis: calc((100% - 2px) / 3 - 0.5px); }
+.summary[data-lead] .summaryRow[data-wide] { flex-basis: 100%; }
+/* The label over its value rather than beside it, so it is no longer a column of its own and
+   takes the sans the panel's field labels are set in. */
+.summary[data-lead] .summaryRow dt {
+  flex: none;
+  font-family: var(--sans);
+  font-size: var(--t-label);
+  letter-spacing: 0;
+}
+/* Room for two lines whether the value takes one or two, and the value in the middle of it. A
+   client ID wraps at most widths and nothing else in its row does; with each cell centring its
+   own two or three lines, that one label stood half a line above its neighbours. Now every
+   label in a row is on one line and every value is centred on another. */
+.summary[data-lead] .summaryRow dd {
+  min-height: 2lh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+@container (max-width: 34rem) {
+  .summary[data-lead] .summaryRow,
+  .summary[data-lead][data-cols='3'] .summaryRow { flex-basis: calc((100% - 1px) / 2 - 0.5px); }
+  .summary[data-lead] .summaryRow[data-wide] { flex-basis: 100%; }
+}
+
+/* ---- the record beside a live link, as a line of marks ----
+
+   The same card and the same component the form has beside it; only over a live link — see
+   `data-face` in BrokerPanel — are the rows joined down one column instead of ruled apart. The
+   mark is the row's kind said in colour: green for what held, red for what failed, grey for a
+   note. It is a pseudo-element placed between the clock and the line by `order`, so the markup
+   is not asked to carry a thing that is only drawing. */
+[data-face='live'] .event {
+  position: relative;
+  grid-template-columns: 8ch 9px minmax(0, 1fr);
+  padding: 6px 0;
+  border-top: none;
+}
+[data-face='live'] .event:first-child { padding-top: 6px; }
+[data-face='live'] .eventAt { order: 0; }
+[data-face='live'] .eventBody { order: 2; }
+[data-face='live'] .event::before {
+  content: '';
+  order: 1;
+  justify-self: center;
+  width: 7px;
+  height: 7px;
+  margin-top: 0.45em;
+  border-radius: 50%;
+  background: var(--muted);
+}
+[data-face='live'] .event[data-kind='ok']::before { background: var(--live); }
+[data-face='live'] .event[data-kind='fault']::before { background: var(--fault); }
+/* From four pixels under this row's mark to four above the next one's. */
+[data-face='live'] .event::after {
+  content: '';
+  position: absolute;
+  left: calc(8ch + 14px);
+  top: calc(17px + 0.45em);
+  bottom: calc(-2px - 0.45em);
+  width: 1px;
+  background: var(--rule);
+}
+[data-face='live'] .event:last-child::after { display: none; }
+
+/* ---- the live face fills the share it is given ----
+
+   The form is held to a reading measure and centred in its share, because a form is type on
+   paper and a line of it has a right length. This face is two plates, and a plate has no measure:
+   held to forty-six rems it stood in the middle of a wide window with paper down both sides and
+   more under it. It takes the whole of its share instead, and is a column so the plate and the
+   table can divide the height between them — see `.linkHead`. */
+[data-face='live'] .live {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* The 22px above it set this block off from the form it used to stand under. It leads the
+     panel now, and that margin was the whole of the difference between where the plate started
+     and where the record beside it did. */
+  margin-top: 0;
+}
+
+
+/* Save and Disconnect end on the line Stop stream ends on, at the foot of the rail beside them.
+   The panel's own foot is its 24px of padding and 1px of border, the rail's is `.railFoot`'s
+   11px, and the 14px between the two is what this face gives back — the record beside it comes
+   down with it, so both columns still end together. Change either foot and change this. */
+[data-panel='full'] [data-face='live'] { margin-bottom: -14px; }
 
 /* The live link and the one button that ends it, at the foot of the panel. The gap above is the
    one the kept brokers take, so the two blocks that report rather than ask sit off the form by
@@ -589,42 +855,7 @@
   max-width: 46rem;
 }
 
-/* The settings side of the page that takes the window.
- *
- * The measure lives here now. It used to come off in this state and be imposed from outside — the
- * workspace held everything in the panel to 960px — and that answered 'how wide is the form' by
- * answering 'how wide is the page', which stopped being the same question the moment the page
- * had two shares in it. So: the form keeps the measure it keeps everywhere, and the page around
- * it is free to be as wide as the window.
- *
- * The three of them — the fields, the two switches and the buttons — are one thing, and it is the
- * whole thing that stands in the middle. Capping only the fields left the Connect button ranging
- * across a share of the page the form above it does not use.
- */
-.formSide {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-.formSide > * {
-  width: 100%;
-  max-width: 46rem;
-}
-/* Except the brokers the reader kept, which take the whole share. They are a row of chips, and a
-   row of chips wants width where a form wants a measure — the two are not the same kind of thing
-   and holding them to the same width only made the chips wrap sooner. */
-.formSide > .saved { max-width: none; }
 
-/* The same measure for the other face of this side. Connected, the settings are a report rather
-   than a form — the summary, and the two buttons under it — and a report of eight short rows
-   ranged across two thirds of a wide window is a column of labels with their values a hand's
-   width away from them. Top-aligned rather than centred: it is read from its first line down,
-   where the form is a thing to stand in the middle of and fill in. */
-[data-panel='full'] .spreadGrid > .live {
-  max-width: 46rem;
-  margin-inline: auto;
-  width: 100%;
-}
 
 /* ---- the broker panel, spread across the window it takes ----
 
@@ -643,97 +874,8 @@
    fill. Only ever tall inside the panel that takes the window; in a column the block above it
    is content-sized and this is content-sized with it. */
 [data-panel='full'] .spread { flex: 1 1 auto; display: flex; flex-direction: column; }
-.spreadGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  column-gap: 48px;
-  align-items: start;
-}
-.aside { min-width: 0; }
-@container (min-width: 900px) {
-  /* Two thirds and a third, and the two thirds is not a measure — it is a share of the page. The
-     form takes the reading measure it takes anywhere else and stands in the middle of its share;
-     the record takes the whole of its own, which is what a list of lines wants and a form does
-     not. The gap between them is nothing, because each side keeps its own air: the form by being
-     centred in a share wider than itself, the record by the 5px it is inset from its edges. */
-  .spreadGrid {
-    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-    column-gap: 0;
-    align-items: stretch;
-    /* The whole of what the spread was given, so the record fills its share top to bottom. */
-    flex: 1 1 auto;
-  }
 
-  /* The form is centred across its share and starts at the top of it.
-     
-     It stood in the middle of the share in both directions for a while, and vertically that was
-     wrong: a form is read from its first line down, and one floating in the middle of a tall
-     page starts wherever the page happens to end rather than where the reader's eye lands. The
-     record beside it starts at the top too, so the two now begin on the same line. Horizontal
-     centring is `align-items` on the side itself, outside this query, and holds at every width. */
-  /* Beside the form rather than under it, so the line that set the events apart from the form
-     above has nothing above it to be set apart from. The heading does that job on its own. */
-  /* First in the aside, so nothing stands above it to be spaced off — but the card keeps its
-     own frame; only the gap that would have pushed it below the form's top goes. */
-  .aside > .events:first-child { margin-top: 0; }
 
-  /* With room for two columns, the record takes the whole of its own.
-     
-     It used to be a card of about a dozen rows with the rest of the column empty under it, which
-     wasted the half of the page this layout exists to use and made an afternoon of events a
-     scroll inside a small box beside a tall form. Now the column is the box: the aside is only
-     as tall as the form beside it — the stack inside is taken out of the flow, so a thousand
-     events cannot make the row any taller — and the card fills it from top to bottom with the
-     list scrolling inside.
-     
-     The floor is what the card used to be capped at, so a short form does not make the record
-     smaller than it was before it could grow. */
-  .aside { position: relative; min-height: 21rem; }
-  /* One rule for all four sides: the card is flush with the pane on the three it faces the
-     window across, and keeps a full gutter on the one it faces the form across.
-
-     Outward there is nothing to stand off from — only the pane's own hairline and the three
-     pixels of channel, which is the slack every plate in this console shows. Inward there is a
-     column of type, and the two have to read as two columns. It was five pixels, which looked
-     like a decision at 1440 and was not one: the form is capped at its reading measure and
-     centred in a share wider than that, so above about 1280 the eye saw the centring slack and
-     below it the two columns closed to those five. Twenty is the pane's own gutter — the number
-     this console uses for 'a thing, and the thing next to it' — and it is the same at every
-     width. */
-  /* Lifted twelve pixels above the form's first line, and the card's top padding cut from 14 to
-     8, so that EVENTS lands on the same line as ADDRESS and PORT beside it. The two columns are
-     read across, and a head sitting eighteen pixels under the labels it stands beside made the
-     record look like a second thing starting late rather than the other half of one page.
-
-     The two numbers are one number. The card's head is centred in a row 24px tall — the Clear
-     button sets that — so the name's middle lands at `lift + 1 + padding + 12`, and the label's
-     at 9.4 below the form's top, which leaves -3.75 to share between the lift and the padding.
-     Shared this way round because a plate has to clear the rule above it: eight of those pixels
-     are the gap between the head band's line and the card's top edge, and taking them out of the
-     padding instead would hang the card off the rule. Checked in the renderer's
-     console-broker-form page, which is the one picture with both columns in it.
-
-     The whole of the gutter on the right and the whole of it at the foot, so the card ends
-     where the pane does on both. The gutter is the right number for the form, which is type on
-     paper and wants air around it, and the 24px under it is scroll-end room for a column that
-     is read to its last line; neither is the right number for a plate. A plate carries its own
-     edge and its own sixteen pixels inside it, and past that there is nothing on these two sides
-     but the pane's hairline and the three pixels of channel — four in all, which is the slack
-     every other plate in the console shows and all this one shows now. The head band's rule
-     already runs the full width above; the card runs to the same place, and the strips of paper
-     that stood down the right of the page and under it are gone.
-
-     The foot is exact rather than generous on purpose: -24px reaches the pane's padding box and
-     not a pixel past it, so a card that fills its column cannot give the pane a scrollbar it did
-     not have. */
-  .asideStack { position: absolute; inset: -12px -20px -24px 20px; }
-  .asideStack > .events { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-  .asideStack > .events:first-child { margin-top: 0; padding-top: 8px; }
-  .asideStack .eventList { max-height: none; flex: 1 1 auto; }
-}
-
-/* Under the break it is an ordinary column: the notice, then the card, under the form. */
-.asideStack { display: flex; flex-direction: column; min-height: 0; }
 
 /* ---- what the link has been doing ----
 
@@ -753,9 +895,12 @@
 /* The card's head: what this is, and the three things done with it. It wraps, because the column
    is five twelfths of the panel and the search box has a floor of its own — a strip that refused
    to wrap would push the buttons off the card at the narrow end of the range. */
+/* One line, always. The tools used to wrap under the title wherever the column was narrow;
+   the search box now stands in the title's place instead, so there is nothing to wrap. Relative
+   so the title, taken off screen while the box is open, is held to the card. */
 .eventsHead {
+  position: relative;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 6px 10px;
   margin-bottom: 10px;
@@ -791,7 +936,7 @@
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
-  flex: 1 1 12rem;
+  flex: 1 1 0;
   min-width: 0;
 }
 /* Same chip as the wire log's 'show all': small, quiet, and plainly a control rather than one of
@@ -976,3 +1121,716 @@
    to the heading. The headings say it themselves and the long form is behind the mark beside
    them, so the line is gone — and the rule with it, or the first note a CONDITION happens to
    write ('a duty is a share of the readings') would inherit a treatment meant for a caption. */
+
+/* ---- the broker form, as one bar and one plate ----
+
+   The address, the port and the button that uses them stand on one line, the way they are one
+   act: you say where, and you go. The way the link is carried is the box at the head of the
+   address, where a scheme stands in a URL. Under them, on a line of its own, what the console
+   does if the link goes; under that, the settings most connections never open, one to a line,
+   each saying what it holds.
+
+   Built from the parts the rest of the panel is built from — surface on paper, the hairline, the
+   control radius, mono for anything typed — so nothing here is a new voice. */
+
+.dialRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+.dialRow > .field { flex: 1 1 14rem; min-width: 0; margin-bottom: 0; }
+
+/* The bar is the frame; the three boxes inside it give theirs up, so it reads as one address
+   rather than three boxes that happen to touch. The ring goes on the bar for the same reason:
+   the reader is in the address, not in a third of it. */
+.dialBar {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+}
+.dialBar:focus-within { border-color: var(--signal); box-shadow: 0 0 0 1px var(--signal); }
+/* Named twice on purpose. The global rule that frames every text box is written with a :not()
+   list, which weighs as much as a class, and global.css is loaded after this sheet — so said
+   once, this lost the tie and the host and the port kept their own frames inside the bar's. */
+.dialBar.dialBar > input {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding-block: 10px;
+}
+.dialBar.dialBar > input:focus-visible { outline: none; }
+/* The way in, at the head of the bar: the four schemes in one box, in the signal blue on a shade
+   of the bar so it reads as part of the address rather than a field beside it. */
+.dialBar > select {
+  border: 0;
+  border-right: 1px solid var(--rule);
+  border-radius: var(--r-control) 0 0 var(--r-control);
+  padding-block: 10px;
+  color: var(--signal);
+  background-color: color-mix(in srgb, var(--paper) 55%, var(--surface));
+}
+.dialBar > select:focus-visible { outline: none; }
+.dialColon {
+  display: flex;
+  align-items: center;
+  font-family: var(--mono);
+  color: var(--muted);
+  user-select: none;
+}
+/* Wide enough for 65535 and no wider: a port is five digits, and a box that takes a share of the
+   bar takes it from the host, which is the part that runs long. The spinner goes for the same
+   reason — two arrows on a number nobody counts up to. */
+.dialBar > .dialPort {
+  flex: 0 0 auto;
+  width: 7ch;
+  box-sizing: content-box;
+  padding-left: 4px;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.dialPort::-webkit-inner-spin-button,
+.dialPort::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* The same height as the bar beside it, so the two read as one row and not a box and a button
+   that nearly agree. */
+.dialButton {
+  flex: 0 0 auto;
+  align-self: flex-end;
+  min-height: calc(var(--t-code) * 1.45 + 22px);
+  padding-inline: 22px;
+  justify-content: center;
+}
+
+.dialOptions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin-top: 12px;
+}
+
+.dialPath { display: inline-flex; align-items: center; gap: 8px; }
+.dialPath > label { margin: 0; white-space: nowrap; }
+.dialPath > input { width: 12ch; padding-block: 6px; }
+
+.sheetPanel { padding: 4px 14px 8px; max-width: 46rem; }
+/* The same step under the sheets as over them, so the plate stands in the middle of the space
+   between the address and the buttons rather than nearer the buttons. */
+.form + .actions { margin-top: 22px; }
+.sheetPanel[hidden] { display: none; }
+/* Whatever opens the sheet starts on its padding, so the air over the first line is the air beside
+   it. Only the checks were let off before, and the encryption sheet opens on a note: ten pixels
+   more at its head than at its sides. */
+.sheetPanel > :first-child { margin-top: 0; }
+
+
+.library > .saved { margin-top: 0; padding-top: 0; border-top: 0; }
+.library > .saved + .saved { margin-top: 16px; }
+/* One plate to a line in a column this narrow: the grid that set three across under the form
+   would set one and a half here. */
+.library [role='group'] { grid-template-columns: minmax(0, 1fr); }
+
+/* ---- the Broker page: three columns under three strips ----
+ *
+ * The brokers this console knows, the link, and the record of what the link has done — side by
+ * side, each the whole height of the page, each under a strip of one height so the three heads
+ * sit on one line. It was a form in the middle of two thirds of a page with a rail of two shut
+ * tabs beside it; the list a visit usually starts from and the record a failure is read against
+ * were both a press away, and nothing on the page lined up with anything else.
+ *
+ * `.spread` is still the container the widths are read from. Each column is a plate of its own
+ * with a gap between it and the next, so the three strips read as three heads rather than as one
+ * bar ruled into three.
+ */
+.linkPage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+  /* One over another on a narrow panel, each its own height, from the top. */
+  align-content: start;
+}
+
+[data-panel='full'] .spread:has(> .linkPage) { min-height: 0; }
+/* Never shorter than its columns where they stack: only the three-column page scrolls each
+   column by itself, so a page squeezed to the panel's height here clipped the open sheet and laid
+   the record over it, with nothing to scroll. The panel scrolls the whole page instead. */
+[data-panel='full'] .linkPage { flex: 1 0 auto; }
+
+.linkCol {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-plate);
+  overflow: hidden;
+}
+
+/* The strip at the head of a column. One height for all three, which is the whole of what makes
+   them read as one row: a title at the left in the band's own voice, and whatever the column
+   has to say or offer at the right. */
+.colHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink);
+}
+
+.colTitle {
+  margin: 0 auto 0 0;
+  font-family: var(--mono);
+  font-size: var(--t-label);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  line-height: 1;
+  color: var(--ink);
+}
+
+/* What the link is doing, at the right of its strip. */
+.colSays {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.colLamp {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--muted);
+  border-radius: 50%;
+}
+
+/* The strip takes the tone of what it reports, on a wash of the same colour: a dial in the
+   mark's blue, a failure in the colour failures are written in, a live link in the colour a
+   live link is. The lamp fills, so the state is not carried by hue alone. */
+.colHead[data-tone='dial'] { background: color-mix(in srgb, var(--signal) 8%, var(--surface)); }
+.colHead[data-tone='fault'] { background: color-mix(in srgb, var(--fault) 8%, var(--surface)); }
+.colHead[data-tone='live'] { background: color-mix(in srgb, var(--live) 9%, var(--surface)); }
+.colHead[data-tone='dial'] :is(.colSays, .colTitle) { color: var(--signal); }
+.colHead[data-tone='fault'] :is(.colSays, .colTitle) { color: var(--fault); }
+/* A failure is a sentence, not a state word, so it wraps rather than being cut to fit: the
+   strip grows by a line for as long as it is up. */
+.colHead[data-tone='fault'] .colSays {
+  white-space: normal;
+  padding-block: 8px;
+  line-height: 1.4;
+  text-align: right;
+}
+.colHead[data-tone='live'] :is(.colTitle, .colSays) { color: var(--live); }
+.colHead[data-tone='dial'] .colLamp { border-color: var(--signal); background: var(--signal); }
+.colHead[data-tone='fault'] .colLamp { border-color: var(--fault); background: var(--fault); }
+
+/* A button small enough to stand in a strip without making the strip taller than its
+   neighbours. */
+.colAction {
+  padding: 4px 9px;
+  font-size: var(--t-label);
+}
+
+.colBody {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  padding: 14px;
+}
+
+.colBody > * { margin-top: 0; }
+.colBody > .form { max-width: none; }
+
+/* The plate the address stands on, with the button that uses it. Its edge takes the strip's
+   tone while a dial runs, so the address being tried is ringed for as long as it is being tried. */
+.plate {
+  padding: 14px 16px 16px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-plate);
+}
+
+.plate[data-tone='dial'] { border-color: var(--signal); }
+.plate[data-tone='fault'] { border-color: var(--fault); }
+.plate > .note { margin: 12px 0 0; }
+
+/* What went wrong, as a block of its own at the head of the plate: the sentence, the reason an
+   offer makes sense, and the offer — one thing to read and one thing to press, in the failure's
+   own colour. The plate round it stays the plate; a whole plate washed red put the address and
+   the button that tries again on a red ground too, and they are the way out, not the fault. */
+.faultBlock {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 10px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border-radius: var(--r-control);
+  background: color-mix(in srgb, var(--fault) 7%, var(--surface));
+  box-shadow: inset 0 0 0 1px var(--fault);
+}
+.faultBlock > svg {
+  grid-row: 1 / span 3;
+  margin-top: 2px;
+  font-size: var(--t-lead);
+  color: var(--fault);
+}
+.faultBlock > :not(svg) { grid-column: 2; margin: 0; }
+.faultBlock > .fault { font-size: var(--t-body); font-weight: 600; line-height: 1.4; }
+.faultBlock > .note { color: var(--ink); }
+.faultBlock > .actions { margin-top: 6px; }
+
+/* ---- what the form is holding, said over it ----
+
+   A name and a word: which broker this is, and whether it is kept, changed or neither. The
+   buttons that act on that broker — keep it, keep what was changed, forget it — stand on the same
+   line, so the thing being saved or forgotten is the thing the reader has just read. */
+.subject {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.subjectName {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--t-title);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.subjectTag {
+  padding: 2px 7px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* Changed, in the middle colour: not a fault, and not nothing. */
+.subjectTag[data-tone='warn'] { border-color: var(--warn); color: var(--warn); }
+.subjectActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+.subjectActions > button { padding: 7px 12px; font-size: var(--t-label); }
+/* The one that destroys something is lettered in the colour of its edge, so it is not read as a
+   third way of saving. */
+.subjectActions > button.ends { color: var(--fault); }
+
+/* ---- the settings under the address, one to a line ----
+
+   They were three tabs across one plate. A tab says 'one of these at a time', which was never
+   true of them — a username and a certificate are both part of one connection — and three equal
+   widths cut what each one held to a few characters. One line each, the whole width of the
+   column: a chevron and the name, and the line opens where it stands. Any number can be open;
+   the column scrolls. */
+/* Apart by a clear step, so they read as three things to open rather than three rows of one
+   table. At a hair's gap the eye took them for a list and looked for the column of values. */
+.sheets {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+.sheet {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+}
+/* The line itself, which is a button and has to look like one. It was a name, a value and a
+   grey chevron at the far end, and read as a row of a report — nothing on it said it opened. Now
+   the chevron leads, in the signal blue, and the whole line darkens under the pointer. */
+.sheetHead {
+  --tone: transparent;
+  width: 100%;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 2px 10px;
+  min-height: 3.5rem;
+  padding: 8px 12px;
+  background: none;
+  border: 0;
+  border-radius: var(--r-control);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  text-align: left;
+  color: var(--ink);
+}
+.sheetHead:hover:not(:disabled) { background: var(--well, var(--paper)); border-color: transparent; }
+.sheetHead:focus-visible { outline-offset: -2px; }
+/* Pointing at the line while it is shut, and down into the sheet once it is open. */
+.sheetHead > svg {
+  font-size: var(--t-lead);
+  color: var(--signal);
+  rotate: -90deg;
+  transition: rotate 160ms ease;
+}
+.sheetHead[aria-expanded='true'] > svg { rotate: 0deg; }
+.sheetName {
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: var(--t-label);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.sheetHead[aria-expanded='true'] .sheetName { color: var(--signal); }
+/* The one thing to press inside a note: small, and set as the sentence beside it is. */
+.starter {
+  padding: 7px 12px;
+  font-size: var(--t-label);
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+/* What to listen to on connect, as things to press: the two answers nearly everybody wants as
+   ticks, and every other filter as a chip with its own way out. */
+.topics { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.topicToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 7px 11px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+  font-family: var(--mono);
+  font-size: var(--t-small);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
+  cursor: pointer;
+}
+.topicToggle input { margin: 0; accent-color: var(--signal); }
+.topicToggle:has(input:checked) {
+  background: var(--surface);
+  border-color: var(--signal);
+  box-shadow: inset 0 0 0 1px var(--signal);
+}
+.topicToggle .hint { font-family: var(--sans); font-size: var(--t-label); }
+.topicChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 6px 4px 11px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+  font-family: var(--mono);
+  font-size: var(--t-small);
+}
+.topicChip > button {
+  all: unset;
+  padding: 0 4px;
+  font-family: var(--mono);
+  font-size: var(--t-code);
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+}
+.topicChip > button:hover { color: var(--fault); }
+.topicChip > button:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+/* Whose word the console takes for the broker's certificate: three answers, and exactly one of
+   them is true of a connection. */
+.trust {
+  min-width: 0;
+  margin: 0 0 14px;
+  padding: 0;
+  border: 0;
+}
+.trust > legend {
+  margin-bottom: 4px;
+  padding: 0;
+  font-family: var(--mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1.35;
+  color: var(--muted);
+}
+.trustLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 10px;
+  padding: 5px 0;
+}
+.trustLine > label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-family: var(--sans);
+  font-size: var(--t-code);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
+  cursor: pointer;
+}
+.trustLine input { margin: 0; accent-color: var(--signal); }
+.trustWarn { font-size: var(--t-small); color: var(--warn); }
+/* The path the middle answer asks for, under the answer and in from it. */
+.trustPath { margin: 4px 0 6px 22px; }
+.trustPath > .row { margin-bottom: 0; }
+
+/* ---- a list with nothing in it yet ----
+
+   The one place on the panel that explains itself, and only until there is a broker to list:
+   what the list will hold, and the three things a first connection is made of. */
+.firstRun { display: flex; flex-direction: column; gap: 8px; }
+.firstRunLead {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--t-code);
+  color: var(--ink);
+}
+.firstRun > .note { margin: 0 0 10px; line-height: 1.5; }
+.steps {
+  list-style: none;
+  counter-reset: step;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  font-size: var(--t-code);
+  line-height: 1.5;
+}
+.steps > li {
+  counter-increment: step;
+  display: grid;
+  grid-template-columns: 1.5rem minmax(0, 1fr);
+  gap: 10px;
+}
+.steps > li::before {
+  content: counter(step);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  box-sizing: border-box;
+  border: 1px solid var(--signal);
+  border-radius: var(--r-control);
+  font-family: var(--mono);
+  font-size: var(--t-label);
+  font-weight: 600;
+  color: var(--signal);
+}
+.steps code { font-family: var(--mono); font-size: var(--t-small); overflow-wrap: anywhere; }
+
+/* How many, after the list's name and quieter than it. */
+.savedCount { letter-spacing: 0.04em; }
+
+/* The brokers' column: its lists one card to a row, which is what a narrow column suits. */
+.brokersCol .library [role='group'] { grid-template-columns: minmax(0, 1fr); }
+.brokersCol .row { margin: 0; }
+
+/* The record's column. The card BrokerEvents draws gives up its own edge and padding to the
+   column, and its head becomes the column's strip — the same height as the other two. */
+.eventsCol > .events {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.eventsCol .eventsHead {
+  min-height: 38px;
+  margin: 0;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.eventsCol .eventsName {
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--ink);
+}
+
+/* Find, copy and clear at one height and one edge. The opener is SearchBox's own 22px square
+   with no border and the other two were bordered boxes sized by their text, so the three sat
+   on one row at three sizes. */
+.eventsTools > button {
+  box-sizing: border-box;
+  height: 26px;
+  min-width: 26px;
+  padding-block: 0;
+  justify-content: center;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+}
+
+.eventsCol .eventsEmpty { padding: 14px; }
+.eventsCol .eventList { padding: 10px 10px 14px 14px; }
+
+/* ---- the record as a bar at the foot of the page ----
+
+   Under every column, across the whole width, and one strip high until it is pressed. The strip
+   is the same height as the columns' heads, so shut it reads as a fourth head with nothing under
+   it yet; open, it grows upwards by a fixed measure and the list scrolls inside that. */
+.eventsCol { grid-column: 1 / -1; }
+.eventsBody { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.eventsBody[hidden] { display: none; }
+.eventsCol:not(:has(.eventsToggle[aria-expanded='true'])) .eventsHead { border-bottom: 0; }
+
+/* The title is the handle: the whole word and its count press, with a caret that points the
+   way the bar will go.
+
+   And the bar is the handle too. The button's own box is only as wide as its word, which left
+   nine tenths of a bar that looks like one thing to press doing nothing when pressed; so the
+   button reaches across the whole strip, painted nowhere and taking no room. The tools that
+   stand on the strip once it is open are lifted over that reach, or they could not be pressed —
+   each tool by itself, and not the row they stand in: the row runs the width of the strip, and
+   lifted whole it would take the strip back from the handle. */
+.eventsCol .eventsToggle::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+}
+.eventsCol .eventsTools > * { position: relative; z-index: 1; }
+.eventsToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+.eventsToggle:hover:not(:disabled) { background: none; color: var(--signal); }
+.eventsToggle svg { width: 14px; height: 14px; transition: transform 160ms ease; }
+.eventsToggle[aria-expanded='true'] svg { transform: rotate(180deg); }
+
+/* The newest line, where the tools stand once it is open: a clock and what happened, in the
+   colour the list itself would draw it, and cut short rather than wrapped. */
+.eventsLatest {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: var(--t-small);
+  color: var(--muted);
+}
+.eventsLatest[data-kind='fault'] { color: var(--fault); }
+.eventsLatest > .eventAt { margin-right: 8px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .eventsToggle svg { transition: none; }
+}
+
+/* Two columns where there is room for two: the brokers beside the link, the record under both. */
+@container (min-width: 640px) {
+  /* The columns take the height and the record's bar keeps its own. Left to the grid's default,
+     a page stretched to the panel's height shared the spare between the two rows, and the shut
+     bar stood a third of the page tall with nothing in it. */
+  .linkPage {
+    grid-template-columns: 240px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  [data-face='live'] > .linkPage { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* And three where there is room for three. The outer two are fixed and the link takes what is
+   left, so the record is the same width whatever the window is. Each column scrolls by itself:
+   a long record does not carry the address off the top of the page. */
+@container (min-width: 900px) {
+  /* The record is the bar under both, so the row the columns stand in takes what the bar leaves
+     and the bar sits on the foot of the page whether it is open or shut. */
+  .linkPage {
+    grid-template-columns: 240px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  [data-face='live'] > .linkPage { grid-template-columns: minmax(0, 1fr); }
+  .eventsCol:has(.eventsToggle[aria-expanded='true']) { height: clamp(12rem, 38vh, 24rem); }
+  [data-panel='full'] .linkPage { flex-shrink: 1; }
+  .colBody { flex: 1 1 auto; overflow-y: auto; }
+  .eventsCol .eventList { flex: 1 1 auto; min-height: 0; max-height: none; }
+}
+
+/* ---- fewer lines on the Broker page ----
+
+   The page had a rule round every column, under every head, round the address plate, round each
+   switch, round the sheet and between its tabs, round every broker card and down the side of its
+   arrow — a dozen frames inside one another, and the eye read edges before it read anything in
+   them. Separation is carried by fill instead, in four steps that each read as a step: the page's
+   paper, the columns as white cards on it, each column's head in a blue wash across its top, and
+   what sits inside a column — the address, the sheets, the broker cards — sunk into a grey well.
+   A line is drawn only where it says something: round a box that takes typing, in the tone of a
+   failure or a dial, round the broker the form is holding. */
+.linkPage {
+  --well: var(--paper);
+  --well-soft: color-mix(in srgb, var(--paper) 45%, var(--surface));
+  --well-deep: color-mix(in srgb, var(--rule) 55%, var(--paper));
+  /* Deep enough to read as a band across the card rather than a shade of it. The quiet ink is
+     under 4.5:1 on a wash this deep, so what a head says is lettered in the signal blue instead
+     — see below. */
+  --head: color-mix(in srgb, var(--signal) 16%, var(--surface));
+}
+
+.linkPage .linkCol {
+  border: 0;
+  background: var(--surface);
+}
+.linkPage .colHead { border-bottom: 0; }
+.linkPage .colHead:not([data-tone]),
+.linkPage .colHead[data-tone=''],
+.linkPage .eventsCol .eventsHead { background: var(--head); }
+.linkPage .colHead:not([data-tone]) :is(.colTitle, .colSays),
+.linkPage .eventsCol :is(.eventsName, .eventsCount, .eventsLatest:not([data-kind='fault'])) {
+  color: var(--signal);
+}
+
+.linkPage .plate {
+  border: 0;
+  background: var(--well);
+}
+.linkPage .plate[data-tone='dial'] { box-shadow: inset 0 0 0 1px var(--signal); }
+
+/* Each setting's line is a well of its own, a shade lighter than the address's so the two read
+   as two things, and a hair of the column's white between one line and the next. */
+.linkPage .sheet {
+  border: 0;
+  background: var(--well-soft);
+}
+
+/* The record's bar: a card like the columns, its tools without boxes round them. */
+.linkPage .eventsCol .eventsHead { border-bottom: 0; }
+.linkPage .eventsTools > button { border-color: transparent; background: none; }
+.linkPage .eventsTools > button:hover:not(:disabled) { background: var(--well); }

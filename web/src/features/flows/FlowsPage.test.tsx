@@ -2399,7 +2399,7 @@ describe('deleting a flow', () => {
   // it, and the log is where that is said: under a label, as every command's verb is, with the
   // sentence in the entry's body ahead of what the server answered.
   const notStopped = 'Flow test may still run';
-  const deletedHere = 'Flow 1 was deleted here, but the server did not take the delete, so a test of it may still be running there.';
+  const deletedHere = 'Flow 1 was deleted here but not on the server; its test may still run.';
   it.each<[string, (() => Response) | null, object[]]>([
     ['that it has no such flow', null, []],
     [
@@ -3174,7 +3174,7 @@ describe('a draft and the server\'s copy', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Update' }));
 
-    const said = 'Not saved. The flows could not be read from the server first, so nothing was sent. The server is starting.';
+    const said = "Not saved. Couldn't read the flows, so nothing was sent. The server is starting.";
     expect(await screen.findByText(said)).toBeInTheDocument();
     expect(outcome(said)).not.toBeNull();
     expect(puts).toEqual([]);

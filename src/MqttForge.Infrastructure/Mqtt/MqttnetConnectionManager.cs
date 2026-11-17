@@ -2,6 +2,7 @@ using MqttForge.Domain.Abstractions;
 using MqttForge.Domain.Enums;
 using MqttForge.Domain.Exceptions;
 using MqttForge.Domain.Models;
+using MqttForge.Infrastructure.Alerts;
 using MQTTnet;
 
 namespace MqttForge.Infrastructure.Mqtt;
@@ -37,6 +38,13 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager, IDisposab
     // Why that offline state is a fault, when we know; same races, so gated the same way
     private BrokerFailureReason? _failureReason;
 
+    // The alert publish a drop was put down to; read only alongside AlertPublishRefused.
+    private RefusedPublish? _refusedPublish;
+
+    // Where the alert dispatcher says what it is about to publish. Null where nothing publishes
+    // alerts — the tests that build this class on its own.
+    private readonly AlertPublishWitness? _witness;
+
     // Which broker the fault is about. Kept for the whole life of a link, not just the attempt,
     // so a drop can name the endpoint it was connected to.
     private BrokerConnectionSettings? _attempted;
@@ -59,9 +67,11 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager, IDisposab
 
     public MqttnetConnectionManager(
         MqttnetClientProvider provider, IConnectionStateNotifier notifier,
-        TimeSpan? connectTimeout = null, TimeProvider? timeProvider = null)
+        TimeSpan? connectTimeout = null, TimeProvider? timeProvider = null,
+        AlertPublishWitness? witness = null)
     {
         _client = provider.Client;
+        _witness = witness;
         _gate = provider.Gate;
         _notifier = notifier;
         _connectTimeout = connectTimeout ?? DefaultConnectTimeout;
@@ -268,6 +278,8 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager, IDisposab
         // pool, so a handler landing between these two writes would see a fault with nothing
         // to say — and latch that. Written this way it sees a state that is not yet a fault.
         _failureReason = null;
+        // An alert published on the last link is not something this one can be dropped over.
+        _witness?.Forget();
         _link = LinkTo(settings, version, result);
         Keep(certificates.HandOver());
 
@@ -364,7 +376,18 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager, IDisposab
         // it carries there is a leftover, not an answer. Only a link that was genuinely up
         // has a drop to explain, which is exactly what ClientWasConnected says.
         if (e.ClientWasConnected && _offlineState == ConnectionState.Faulted)
-            _failureReason = BrokerFailureClassifier.Classify(e);
+        {
+            var reason = BrokerFailureClassifier.Classify(e);
+
+            // The broker hanging up a moment after an alert rule published is the broker refusing
+            // that publish, as far as anything here can tell — and saying so sends the reader to
+            // the rule rather than to their network. Only for the answers a hang-up arrives as: a
+            // client that took our ID or an administrator is a cause in its own right, whatever
+            // was published just before. The publish first, so the reason never names one that
+            // is not there yet.
+            _refusedPublish = HungUp(reason) ? _witness?.Recent() : null;
+            _failureReason = _refusedPublish is null ? reason : BrokerFailureReason.AlertPublishRefused;
+        }
 
         // A link that dropped is over, and MQTTnet has closed its channel before it says so. Not
         // while the client is connected, though: that is a newer link, still presenting its own.
@@ -444,8 +467,19 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager, IDisposab
 
     private BrokerFailure? Describe() =>
         _failureReason is { } reason && _attempted is { } at
-            ? new BrokerFailure(reason, at.Host, at.Port, at.ClientId, at.UseTls, at.Transport, at.ProtocolVersion)
+            ? new BrokerFailure(reason, at.Host, at.Port, at.ClientId, at.UseTls, at.Transport, at.ProtocolVersion,
+                reason == BrokerFailureReason.AlertPublishRefused ? _refusedPublish : null)
             : null;
+
+    // How a broker that will not take a publish ends the link: a DISCONNECT saying it was not
+    // allowed or was objected to, a bare close, or a socket that simply went. Measured against
+    // mqtt.hsl.fi it is the last two, depending on the version spoken.
+    private static bool HungUp(BrokerFailureReason reason) => reason is
+        BrokerFailureReason.NotPermitted
+        or BrokerFailureReason.BrokerRejected
+        or BrokerFailureReason.BrokerClosed
+        or BrokerFailureReason.ConnectionLost
+        or BrokerFailureReason.Unknown;
 
     private BrokerLink LinkTo(
         BrokerConnectionSettings settings, MqttProtocolLevel version, MqttClientConnectResult result) =>
@@ -462,5 +496,6 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager, IDisposab
             settings.Transport,
             // The version that was accepted, never the one that was asked for. With Auto doing
             // the choosing they are different things, and this is the half a reader cannot see.
-            version);
+            version,
+            settings.ProfileId);
 }

@@ -143,6 +143,34 @@
   margin-bottom: 20px;
 }
 
+/* The band in the console's own blue, lit from under the name: a glow rising from below its
+   centre, falling off to that blue itself at the edges. The light is where the name is, so the eye
+   lands on the page's name before anything else on the band — and the blue is the one the rail
+   marks the open page with, so the two still read as the same answer.
+
+   The glow is centred on the band, not on the page beneath it: an ellipse sized by the band's own
+   box, so a narrow column and the whole window get the same shape of light rather than one
+   stretched thin across 1600px. The rule under the band is transparent rather than gone, because
+   the band's height counts it — see `--head-band` — and the fill runs under it to the border box.
+   Three classes deep so the sticky head of the broker page, which paints the pane's own paper
+   behind itself further down this sheet, does not paint over it. */
+.panel .panelHead.band {
+  background: radial-gradient(
+      ellipse 60% 140% at 50% 120%,
+      /* As light as the centre can go with the name still at 4.9:1 in white on it; 55% of the
+         sky blue took it under 4.5. */
+      color-mix(in srgb, var(--signal), #4fb3d9 48%),
+      color-mix(in srgb, var(--signal), #4fb3d9 18%) 60%,
+      var(--signal)
+    )
+    border-box;
+  border-bottom-color: transparent;
+}
+.band .panelTitle { color: var(--surface); }
+.band .close { color: color-mix(in srgb, var(--surface) 75%, transparent); }
+.band .close:hover:not(:disabled) { color: var(--surface); background: color-mix(in srgb, var(--surface) 16%, transparent); }
+.band .close:focus-visible { outline-color: var(--surface); }
+
 /* Less the pane's own border, where the pane draws one.
 
    `--head-band` is measured from the rail's top edge and the rail has nothing above its band, so

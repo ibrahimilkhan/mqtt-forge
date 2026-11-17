@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -368,6 +368,13 @@ describe('a link that drops while the reader is elsewhere', () => {
     await says('Connected');
     await says('Faulted');
     await supervising({ active: true, attempt: 1, nextAttemptAt: '2026-09-02T21:00:08.000Z' });
+    // The record is a bar at the foot of the page, shut until it is pressed. Pressed until it
+    // holds, because the panel opening by itself can draw its page again under a first press.
+    await waitFor(() => {
+      const handle = screen.getByRole('button', { name: /^Events/ });
+      if (handle.getAttribute('aria-expanded') !== 'true') fireEvent.click(handle);
+      expect(screen.getByRole('button', { name: /^Events/ })).toHaveAttribute('aria-expanded', 'true');
+    });
 
     expect(await screen.findByText(/^Link dropped/)).toBeInTheDocument();
     expect(await screen.findByText('Try 1 failed')).toBeInTheDocument();

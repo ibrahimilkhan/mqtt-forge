@@ -23,14 +23,12 @@ describe('describeConnectFailure', () => {
     ['tlsFailed', "The encrypted connection to broker.local couldn't be set up."],
     [
       'tlsCertUntrusted',
-      "broker.local presented a certificate this machine doesn't trust — point Extra CA " +
-        'certificate at the CA that signed it, or accept any certificate if it is your own broker.',
+      "broker.local's certificate isn't trusted — set Extra CA certificate.",
     ],
     ['tlsCertExpired', 'The certificate for broker.local has expired.'],
     [
       'tlsCertNameMismatch',
-      'The certificate at broker.local:1883 was issued for a different name — set Server name ' +
-        'if the broker is reached by an address its certificate does not carry.',
+      "broker.local:1883's certificate is for another name — set Server name.",
     ],
 
     ['credentialsRequired', 'This broker needs a username and password.'],
@@ -46,13 +44,13 @@ describe('describeConnectFailure', () => {
   // Same cause, but the useful half of the advice depends on what the user already ticked.
   it('tells a plaintext attempt that the port might want TLS', () => {
     expect(describeConnectFailure(refusal('noMqttResponse'), FORM)).toBe(
-      'broker.local:1883 answered, but not as an MQTT broker — check the port number, and whether it needs TLS.',
+      "broker.local:1883 isn't an MQTT broker — check the port and TLS.",
     );
   });
 
   it('does not suggest TLS to someone who already ticked it', () => {
     expect(describeConnectFailure(refusal('noMqttResponse'), { ...FORM, useTls: true })).toBe(
-      'broker.local:1883 answered, but not as an MQTT broker — check the port number.',
+      "broker.local:1883 isn't an MQTT broker — check the port.",
     );
   });
 
@@ -98,11 +96,11 @@ describe('describeFailureReason', () => {
     ['timeout', "broker.local:1883 didn't respond in time."],
     [
       'notPermitted',
-      'The broker refused something this console asked for and closed the connection — most often a subscription to a filter it does not allow.',
+      'The broker refused a request and closed the connection — likely a subscription.',
     ],
     [
       'filterRefused',
-      "The broker refused the topic filter and closed the connection — it doesn't allow one covering this much of the tree.",
+      'The broker refused the topic filter and closed the connection.',
     ],
   ])('words %s as a sentence', (reason, expected) => {
     expect(describeFailureReason(reason, FORM)).toBe(expected);
@@ -121,7 +119,7 @@ describe('describeFailureReason', () => {
   // the rail with no sentence anywhere. Naming the broker is half of what a reader can act on.
   it('names the broker even when nothing could name the reason', () => {
     expect(describeFailureReason('unknown', FORM)).toBe(
-      'The connection to broker.local:1883 failed, and nothing said why.',
+      'The connection to broker.local:1883 failed.',
     );
   });
 
@@ -140,7 +138,7 @@ describe('describeFailureReason', () => {
 // trusting anyone to remember.
 describe('every reason the backend can send', () => {
   const REASONS = [
-    'banned', 'blockedLocally', 'brokerBusy', 'brokerClosed', 'brokerRejected',
+    'alertPublishRefused', 'banned', 'blockedLocally', 'brokerBusy', 'brokerClosed', 'brokerRejected',
     'brokerShuttingDown', 'certificateFileUnreadable', 'clientCertificateRejected',
     'authenticationMethodUnsupported', 'clientCertificateRequired', 'clientIdRejected',
     'closedWithoutAnswering',
@@ -178,9 +176,21 @@ describe('every reason the backend can send', () => {
     );
   });
 
-  it('covers all thirty-four of them', () => {
-    expect(REASONS).toHaveLength(34);
-    expect(new Set(REASONS).size).toBe(34);
+  // The rule is what the reader goes to change, so a drop put down to one names it — and where it
+  // published, which is what it has to stop publishing to.
+  it('names the alert rule and the topic a broker hung up over', () => {
+    const said = describeFailureReason('alertPublishRefused', {
+      ...FORM,
+      publish: { rule: 'Hot plant', topic: 'mqttforge/alerts/r1/plant/1' },
+    });
+
+    expect(said).toContain("alert rule 'Hot plant'");
+    expect(said).toContain('mqttforge/alerts/r1/plant/1');
+  });
+
+  it('covers all thirty-five of them', () => {
+    expect(REASONS).toHaveLength(35);
+    expect(new Set(REASONS).size).toBe(35);
   });
 });
 
@@ -193,8 +203,7 @@ describe('a failure that depends on how the connection was being made', () => {
   // port already answered — an upgrade completed — so what is left is the path.
   it('sends a WebSocket attempt to look at the path, not the port', () => {
     expect(describeConnectFailure(refusal('noMqttResponse'), overWs)).toBe(
-      "broker.local:1883 opened a WebSocket but didn't speak MQTT over it — check the path, " +
-        'and that this is the broker rather than something else on the same host.',
+      'broker.local:1883 opened a WebSocket but spoke no MQTT — check the path.',
     );
   });
 
@@ -203,8 +212,7 @@ describe('a failure that depends on how the connection was being made', () => {
   // surprised the sentence written for it.
   it('names both reasons an upgrade never opened', () => {
     expect(describeConnectFailure(refusal('webSocketUpgradeRejected'), overWs)).toBe(
-      'broker.local:1883 did not open a WebSocket — check the path, or whether that port ' +
-        'speaks WebSocket at all.',
+      "broker.local:1883 didn't open a WebSocket — check the path and port.",
     );
   });
 
@@ -217,16 +225,14 @@ describe('a failure that depends on how the connection was being made', () => {
         protocolVersion: 'v311',
       }),
     ).toBe(
-      "The broker at broker.local:1883 doesn't speak MQTT 3.1.1 — set the version to Auto and " +
-        'it will find one they both know.',
+      "broker.local:1883 doesn't speak MQTT 3.1.1 — try Auto.",
     );
   });
 
   // Auto already walked the whole ladder, so there is no version left to suggest.
   it('does not suggest Auto to an attempt that already was Auto', () => {
     expect(describeConnectFailure(refusal('noSupportedProtocolVersion'), FORM)).toBe(
-      'broker.local:1883 refused MQTT 5.0, 3.1.1 and 3.1 — whatever is on that port, it isn\'t ' +
-        'a broker this console can talk to.',
+      'broker.local:1883 refused MQTT 5.0, 3.1.1 and 3.1.',
     );
   });
 
@@ -245,9 +251,9 @@ describe('a failure that depends on how the connection was being made', () => {
 
   // Ours, not theirs, and each says which end to look at.
   it.each([
-    ['clientCertificateRequired', 'want a client certificate and none was sent'],
-    ['clientCertificateRejected', 'would not accept the client certificate'],
-    ['certificateFileUnreadable', 'A certificate file could not be read'],
+    ['clientCertificateRequired', 'may want a client certificate'],
+    ['clientCertificateRejected', 'rejected the client certificate'],
+    ['certificateFileUnreadable', "Couldn't read the certificate file"],
   ])('points %s at the right end of the connection', (reason, fragment) => {
     expect(describeConnectFailure(refusal(reason), FORM)).toContain(fragment);
   });

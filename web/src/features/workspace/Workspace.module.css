@@ -175,7 +175,9 @@
     position: absolute;
     inset-block: 0;
     left: 0;
-    width: min(380px, 62%);
+    /* Over the tree and exactly as wide as it, until the reader drags the seam below. It was a
+       fixed 380px, and nothing on a 1100px window could make it wider. */
+    width: var(--overlay);
     /* Over the chart windows and the chart thrown open: a panel is opened to be used. */
     z-index: 300;
     /* The scrim behind it, without which a form lying over a tree reads as part of the tree. Its
@@ -186,8 +188,19 @@
     border-radius: var(--r-plate);
     box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--ink) 12%, transparent);
   }
-  /* Its seam divides a column that is no longer in the row. */
-  .grid[data-panel='open'] > .pane:first-child + [role='separator'] { display: none; }
+  /* Its seam stands on the panel's own edge, over whatever is under it, and moves that edge.
+     Visible and reachable here even below 760, where ResizeHandle hides the seams of a stacked
+     page: a panel lying over a desktop window is not a stack. */
+  .grid[data-panel='open'] > .pane:first-child + [role='separator'] {
+    position: absolute;
+    inset-block: 0;
+    left: var(--overlay);
+    width: var(--channel);
+    height: auto;
+    z-index: 301;
+    visibility: visible;
+    pointer-events: auto;
+  }
 }
 
 @media (max-width: 760px) and (pointer: coarse) {

@@ -145,7 +145,7 @@ public static class TopicFilterMatch
             if (level == "#")
             {
                 if (i != levels.Length - 1)
-                    return "'#' can only be the last level. For one level in the middle, use '+', as in plant/+/temp.";
+                    return "'#' must be the last level; use '+' for one level, as in plant/+/temp.";
 
                 continue;
             }

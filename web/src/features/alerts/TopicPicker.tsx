@@ -99,7 +99,7 @@ export function TopicPicker({
           aria-label="Find a topic"
           onChange={(event) => setNeedle(event.target.value)}
         />
-        <button type="button" className="ghost" onClick={onClose}>
+        <button type="button" onClick={onClose}>
           Close
         </button>
       </div>

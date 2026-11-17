@@ -49,7 +49,14 @@ public record BrokerConnectionSettings(
     //
     // Null and empty are different: null is a settings file written before this existed, and the
     // console reads it as its old default of '#'. Empty is a reader who asked for nothing.
-    IReadOnlyList<string>? Subscriptions = null)
+    IReadOnlyList<string>? Subscriptions = null,
+
+    // The saved broker this connection was made from, by its id; null when it was typed in or
+    // picked from the history. Nothing about the link depends on it. It is here because colour
+    // and alert rules can belong to one saved broker, and which of them apply is decided by it —
+    // and because this record is what a redial and a connect at start-up are made from, so a link
+    // the supervisor brings back is still the broker it was.
+    string? ProfileId = null)
 {
     // Never null at the point of use, so nothing downstream has to check.
     public BrokerTlsSettings TlsSettings => Tls ?? BrokerTlsSettings.None;

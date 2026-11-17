@@ -3,11 +3,12 @@ import { isFilter } from '../../lib/topicColour';
 import { allSaved, draftFrom, faultIn, newDraftRule, type DraftRule } from './ruleDraft';
 import { nextColour, SUGGESTED } from './palette';
 
-const row = (filter: string, colour = '#b45309'): DraftRule => ({
+const row = (filter: string, colour = '#b45309', profileId: string | null = null): DraftRule => ({
   id: 0,
   filter,
   colour,
   bodyColour: null,
+  profileId,
   saved: true,
 });
 
@@ -42,6 +43,24 @@ describe('faultIn', () => {
     const second = { ...row('a/#'), id: 1 };
 
     expect(faultIn(first, [first, second])).toBeNull();
+    expect(faultIn(second, [first, second])).toMatch(/already has a colour/i);
+  });
+
+  // Only one of two brokers is ever up, and a rule for every broker beside one for a broker is the
+  // general colour and its exception.
+  it('lets one filter stand once for each broker', () => {
+    const everywhere = row('a/#');
+    const lab = { ...row('a/#', '#b45309', 'lab-1'), id: 1 };
+    const staging = { ...row('a/#', '#b45309', 'staging-1'), id: 2 };
+
+    expect(faultIn(lab, [everywhere, lab, staging])).toBeNull();
+    expect(faultIn(staging, [everywhere, lab, staging])).toBeNull();
+  });
+
+  it('still refuses one filter twice for the same broker', () => {
+    const first = row('a/#', '#b45309', 'lab-1');
+    const second = { ...row('a/#', '#b45309', 'lab-1'), id: 1 };
+
     expect(faultIn(second, [first, second])).toMatch(/already has a colour/i);
   });
 

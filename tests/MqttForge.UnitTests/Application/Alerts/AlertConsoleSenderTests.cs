@@ -95,7 +95,7 @@ public sealed class AlertConsoleSenderTests : IAsyncLifetime
 
         await Until(() => _console.Told.Count == 2, "what the console still needs to be told");
         Assert.Equal(["stuck", "standing"], _console.AlertIds);
-        Assert.Contains(_log.Lines, line => line.Message.StartsWith($"{flood} alerts went up and came down"));
+        Assert.Contains(_log.Lines, line => line.Message.StartsWith($"{flood} alerts rose and cleared"));
     }
 
     [Fact]

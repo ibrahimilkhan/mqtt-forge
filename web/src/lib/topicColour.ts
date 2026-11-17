@@ -8,7 +8,31 @@ import { matchesFilter } from './topicMatch';
  * a topic says nothing about the payload beneath it, and the console goes on drawing that in its
  * own ink; a rule that carries the second colour is one somebody deliberately gave two.
  */
-export type ColourRule = { filter: string; colour: string; bodyColour?: string | null };
+export type ColourRule = {
+  filter: string;
+  colour: string;
+  bodyColour?: string | null;
+  /** The saved broker this rule belongs to, or absent for every broker. */
+  profileId?: string | null;
+};
+
+/**
+ * The rules that paint while a link made from `profileId` is up — null for a link that was typed
+ * in, or none at all.
+ *
+ * A rule for every broker applies everywhere; a rule for a broker only while that broker is up.
+ * And where one of each covers the same filter, the broker's own wins: the one for every broker is
+ * the general colour and this is its exception, and two rules on one filter cannot both paint.
+ */
+export function rulesFor<T extends ColourRule>(rules: readonly T[], profileId: string | null): T[] {
+  const own = new Set(
+    rules.filter((rule) => profileId !== null && rule.profileId === profileId).map((rule) => rule.filter),
+  );
+
+  return rules.filter((rule) =>
+    rule.profileId ? rule.profileId === profileId : !own.has(rule.filter),
+  );
+}
 
 /**
  * A `#rrggbb` triple and nothing else.

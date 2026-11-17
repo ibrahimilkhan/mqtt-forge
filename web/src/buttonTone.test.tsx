@@ -7,11 +7,11 @@ import { createFakeHub } from './realtime/fakeHub';
 import { PANELS } from './features/panels';
 
 /**
- * What a press does, in three colours — checked as a vocabulary rather than as pixels.
+ * What a press does, in two colours — checked as a vocabulary rather than as pixels.
  *
  * Every button in this console was one colour, so the only thing its colour said was 'this is a
  * button': a reader scanning a panel for the way out of it, or for the one control that cannot be
- * undone, had to read every word on the row. The three tones are declared in global.css and
+ * undone, had to read every word on the row. The two tones are declared in global.css and
  * carried by one custom property, so the colour itself is one line of CSS. What is worth holding
  * is the classification — which word gets which — because that is the part that goes on being
  * decided, one button at a time, by whoever adds the next one.
@@ -20,14 +20,20 @@ import { PANELS } from './features/panels';
  * `all: unset` without CSS, and jsdom has none: the first version of this test filtered on
  * `borderStyle` and quietly judged nothing at all.
  */
-const TONES: ReadonlyArray<[name: RegExp, tone: 'acts' | 'ends' | 'keeps']> = [
-  // Something begins — the commonest case, and the one nobody has to remember to write.
+const TONES: ReadonlyArray<[name: RegExp, tone: 'acts' | 'ends']> = [
+  // Something begins or is kept — the commonest case, and the one nobody has to remember to write.
   [/^Connect$/, 'acts'],
   [/^Publish$/, 'acts'],
   [/^Subscribe$/, 'acts'],
   [/^New rule$/, 'acts'],
   [/^Add a condition$/, 'acts'],
   [/^Try again$/, 'acts'],
+  // Save was green once, a tone of its own; beside a live link green read as part of the report.
+  [/^Save$/, 'acts'],
+  // The form's own two ways of keeping a broker, and its one way of losing it.
+  [/^Save as…$/, 'acts'],
+  [/^Save changes$/, 'acts'],
+  [/^Forget /, 'ends'],
   // Something goes.
   [/^Disconnect$/, 'ends'],
   [/^Abort$/, 'ends'],
@@ -35,8 +41,6 @@ const TONES: ReadonlyArray<[name: RegExp, tone: 'acts' | 'ends' | 'keeps']> = [
   [/^Clear events$/, 'ends'],
   [/^Clear retained$/, 'ends'],
   [/^Discard it$/, 'ends'],
-  // What is on screen is written down, which is neither of those.
-  [/^Save$/, 'keeps'],
 ];
 
 const openConsole = async () => {
@@ -51,7 +55,7 @@ const openConsole = async () => {
 };
 
 const toneOf = (button: HTMLElement) =>
-  button.classList.contains('ends') ? 'ends' : button.classList.contains('keeps') ? 'keeps' : 'acts';
+  (button.classList.contains('ends') ? 'ends' : 'acts');
 
 /** Every classified button on screen right now, with the tone it is actually wearing. */
 const onScreen = () =>
@@ -80,16 +84,16 @@ describe('a button says what pressing it does', () => {
    * And it is not judging an empty room.
    *
    * The console opens on the broker panel, which takes the whole window — so what is on screen at
-   * that moment is Connect and Save, one of each of two tones, and that is the floor that proves
+   * that moment is Connect and Save as…, both blue, and that is the floor that proves
    * the selectors still find anything at all.
    */
-  it('finds the two the console opens with, each wearing its own tone', async () => {
+  it('finds the two the console opens with, both wearing the blue', async () => {
     await openConsole();
 
     const seen = onScreen();
-    expect(seen.map((one) => one.name).sort()).toEqual(['Connect', 'Save']);
+    expect(seen.map((one) => one.name).sort()).toEqual(['Connect', 'Save as…']);
     expect(seen.filter((one) => one.has !== one.want)).toEqual([]);
-    expect(new Set(seen.map((one) => one.want))).toEqual(new Set(['acts', 'keeps']));
+    expect(seen.every((one) => one.has === 'acts')).toBe(true);
   });
 
   // And with a panel that leaves the workspace up, the publish form comes with it.

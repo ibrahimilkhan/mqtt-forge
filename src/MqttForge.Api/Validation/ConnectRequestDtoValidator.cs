@@ -11,6 +11,9 @@ public sealed class ConnectRequestDtoValidator : AbstractValidator<ConnectReques
         RuleFor(x => x.Host).NotEmpty();
         RuleFor(x => x.Port).InclusiveBetween(1, 65535);
         RuleFor(x => x.ClientId).NotEmpty();
+        // An id the server minted is 32 characters. Anything far past that is not one of ours, and
+        // it would be written into the settings file and carried on every redial.
+        RuleFor(x => x.ProfileId).MaximumLength(64);
 
         // Nothing checks the WebSocket path, deliberately. There was a rule here that asked
         // Uri.TryCreate whether the path could be dialled, on the theory that a space or a
@@ -27,7 +30,7 @@ public sealed class ConnectRequestDtoValidator : AbstractValidator<ConnectReques
         RuleFor(x => x.SessionExpiryInterval)
             .Null()
             .When(x => x.ProtocolVersion is MqttProtocolLevel.V310 or MqttProtocolLevel.V311)
-            .WithMessage("Session expiry is an MQTT 5 field. On 3.1 and 3.1.1 use Clean session instead.");
+            .WithMessage("Session expiry needs MQTT 5; on 3.1 and 3.1.1 use Clean session.");
 
         RuleFor(x => x.Tls!.AlpnProtocol)
             .MaximumLength(255)

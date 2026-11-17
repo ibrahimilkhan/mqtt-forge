@@ -177,8 +177,7 @@ public sealed partial class FlowTemplate
             var name = inner[FlowVariables.Prefix.Length..];
             if (!FlowVariables.IsName(name))
             {
-                problem = $"{{{{{inner}}}}} does not name a variable: a variable's name is a letter or _, " +
-                          "then letters, digits or _.";
+                problem = $"{{{{{inner}}}}} isn't a variable name: a letter or _, then letters, digits or _.";
                 return false;
             }
 
@@ -199,7 +198,7 @@ public sealed partial class FlowTemplate
 
             if (low > high)
             {
-                problem = $"{{{{{inner}}}}} has its bounds the wrong way round: the lower one goes first.";
+                problem = $"{{{{{inner}}}}} has its bounds reversed: lower first.";
                 return false;
             }
 
@@ -207,8 +206,7 @@ public sealed partial class FlowTemplate
             return true;
         }
 
-        problem = $"{{{{{inner}}}}} is not something a template can fill in. Use topic, topic[1], " +
-                  "payload, $.field, var.name, index, now or random(a,b).";
+        problem = $"{{{{{inner}}}}} can't be filled in. Use topic, topic[1], payload, $.field, var.name, index, now or random(a,b).";
         return false;
     }
 

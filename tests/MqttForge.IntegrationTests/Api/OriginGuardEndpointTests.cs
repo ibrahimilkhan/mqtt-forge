@@ -324,7 +324,7 @@ public sealed class OriginGuardEndpointTests : IClassFixture<MqttForgeApiFactory
 
         var said = Assert.Single(log.Entries);
         Assert.Equal(LogLevel.Warning, said.Level);
-        Assert.StartsWith("Refused a request from the page at https://mqtt.example.com,", said.Message);
+        Assert.StartsWith("Refused https://mqtt.example.com: right address, wrong scheme", said.Message);
     }
 
     private static async Task<HttpResponseMessage> Send(

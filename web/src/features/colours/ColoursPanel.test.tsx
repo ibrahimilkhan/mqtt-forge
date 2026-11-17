@@ -227,26 +227,23 @@ describe('ColoursPanel', () => {
   });
 
   /**
-   * One row at the foot, and the two things on it are two different scales.
+   * New rule over the list, Save under it.
    *
-   * Save answers for the whole list and reads first; New rule adds one more to it and sits where
-   * a hand reaching past the list goes. They used to be a floor apart, with New rule hanging off
-   * a 'Rules' heading at the top — a second word saying these are the rules, on a panel that says
-   * COLOURS across the top of itself and holds nothing else.
+   * They used to share a row at the foot, ruled off from the list — and over an empty list that
+   * rule cut the page in half. New rule is where the page starts now; Save answers for the whole
+   * list, so it stays at its end.
    */
-  it('puts Save and New rule on one row, in that order', async () => {
+  it('puts New rule over the list and Save under it', async () => {
     stored({ filter: 'a/#', colour: '#b45309' });
     renderPanel();
 
     await waitFor(() => expect(rows()).toHaveLength(1));
 
-    const row = saveButton().parentElement!;
-    expect(within(row).getByRole('button', { name: 'New rule' })).toBeInTheDocument();
-    // Document order is the reading order, and `.trailing` is what puts the second at the far end.
-    expect([...row.querySelectorAll('button')].map((b) => b.textContent?.trim())).toEqual([
-      'Save',
-      'New rule',
-    ]);
+    // Document order is the reading order.
+    const [first] = rows();
+    expect(addButton().compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(saveButton().compareDocumentPosition(first) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    expect(within(saveButton().parentElement!).queryByRole('button', { name: 'New rule' })).toBeNull();
   });
 
   // The panel says COLOURS; a heading saying these are the rules said the only other thing it
@@ -1110,5 +1107,106 @@ describe('when the rules cannot be saved', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     expect(await screen.findByTestId('save-fault')).toHaveTextContent('Not saved.');
+  });
+});
+
+/**
+ * Rules that belong to one saved broker.
+ *
+ * Every rule is listed whichever broker is up, because this is where they are all managed; the
+ * ones for another broker are drawn faded and say they are painting nothing here.
+ */
+describe('ColoursPanel, with rules for one broker', () => {
+  // A topic picked in the tree by an earlier test would be written into the new row's filter.
+  beforeEach(() => useSelectionStore.getState().clear());
+
+  const link = (profileId: string | null) =>
+    server.use(
+      http.get('/api/connection', () =>
+        HttpResponse.json({
+          state: 'Connected',
+          connection: {
+            host: 'lab.example', port: 1883, clientId: 'console', username: null, useTls: false,
+            connectedAt: '2026-11-13T10:00:00Z', sessionPresent: false, assignedClientId: null,
+            serverKeepAlive: null, transport: 'tcp', protocolVersion: 'v500', profileId,
+          },
+        }),
+      ),
+      http.get('/api/connection/profiles', () =>
+        HttpResponse.json([
+          { id: 'lab-1', name: 'Lab', connection: {} },
+          { id: 'staging-1', name: 'Staging', connection: {} },
+        ]),
+      ),
+    );
+
+  const brokerOf = (row: HTMLElement) => within(row).getByRole('combobox', { name: /^Broker for rule/ });
+
+  it("names each rule's broker, and every broker for a rule that has none", async () => {
+    link('lab-1');
+    stored({ filter: 'plant/#', colour: '#b45309' }, { filter: 'lab/#', colour: '#ab3520', profileId: 'lab-1' } as Wire);
+    renderPanel();
+
+    await waitFor(() => expect(rows()).toHaveLength(2));
+    await waitFor(() => expect(brokerOf(rows()[1])).toHaveDisplayValue('Lab'));
+    expect(brokerOf(rows()[0])).toHaveDisplayValue('All brokers');
+  });
+
+  it("fades another broker's rule and says it is painting nothing here", async () => {
+    link('lab-1');
+    stored(
+      { filter: 'lab/#', colour: '#ab3520', profileId: 'lab-1' } as Wire,
+      { filter: 'stage/#', colour: '#1e40af', profileId: 'staging-1' } as Wire,
+    );
+    renderPanel();
+
+    await waitFor(() => expect(rows()).toHaveLength(2));
+    expect(rows()[0]).not.toHaveAttribute('data-elsewhere');
+    expect(rows()[1]).toHaveAttribute('data-elsewhere');
+    expect(within(rows()[1]).getByText('other broker')).toBeInTheDocument();
+  });
+
+  // A rule is usually written about what is in front of the reader, which is this broker's tree.
+  it('gives a new rule to the broker that is up, and saves it with it', async () => {
+    link('lab-1');
+    const sent = capturePut();
+    renderPanel();
+    await waitFor(() => expect(addButton()).toBeEnabled());
+
+    await userEvent.click(addButton());
+    await userEvent.type(filterBox(rows()[0]), 'lab/#');
+    await userEvent.click(saveButton());
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toEqual([{ filter: 'lab/#', colour: SUGGESTED[0], bodyColour: null, profileId: 'lab-1' }]);
+  });
+
+  it('gives a new rule to every broker over a link that is no saved broker', async () => {
+    link(null);
+    const sent = capturePut();
+    renderPanel();
+    await waitFor(() => expect(addButton()).toBeEnabled());
+
+    await userEvent.click(addButton());
+    await userEvent.type(filterBox(rows()[0]), 'plant/#');
+    await userEvent.click(saveButton());
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toEqual([{ filter: 'plant/#', colour: SUGGESTED[0], bodyColour: null }]);
+  });
+
+  it('moves a rule to every broker when that is picked', async () => {
+    link('lab-1');
+    stored({ filter: 'lab/#', colour: '#ab3520', profileId: 'lab-1' } as Wire);
+    const sent = capturePut();
+    renderPanel();
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    await waitFor(() => expect(brokerOf(rows()[0])).toHaveDisplayValue('Lab'));
+
+    await userEvent.selectOptions(brokerOf(rows()[0]), 'All brokers');
+    await userEvent.click(saveButton());
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toEqual([{ filter: 'lab/#', colour: '#ab3520', bodyColour: null }]);
   });
 });

@@ -18,6 +18,7 @@ export type Attempt = {
   useTls: boolean;
   transport?: MqttTransport;
   protocolVersion?: MqttProtocolLevel;
+  publish?: { rule: string; topic: string };
 };
 
 const overWebSocket = (attempt: Attempt) => attempt.transport === 'webSocket';
@@ -37,60 +38,50 @@ const SENTENCE: Record<string, (attempt: Attempt) => string> = {
   // what the user already picked, so these read the attempt rather than a fixed string.
   noMqttResponse: (attempt) =>
     overWebSocket(attempt)
-      ? `${formatEndpoint(attempt.host, attempt.port)} opened a WebSocket but didn't speak MQTT over it — ` +
-        'check the path, and that this is the broker rather than something else on the same host.'
-      : `${formatEndpoint(attempt.host, attempt.port)} answered, but not as an MQTT broker — check the port number` +
-        (attempt.useTls ? '.' : ', and whether it needs TLS.'),
+      ? `${formatEndpoint(attempt.host, attempt.port)} opened a WebSocket but spoke no MQTT — check the path.`
+      : `${formatEndpoint(attempt.host, attempt.port)} isn't an MQTT broker — check the port` +
+        (attempt.useTls ? '.' : ' and TLS.'),
   // Accepted the socket and then closed it without a word. A broker at its connection limit does
   // exactly this, and so does a proxy that shut the tunnel — so the reader is not sent to check a
   // port number that was right.
   closedWithoutAnswering: (attempt) =>
-    `${formatEndpoint(attempt.host, attempt.port)} accepted the connection and then closed it ` +
-    'without answering. A broker at its connection limit does this; so does something in front of ' +
-    'it that closed the tunnel' +
-    (attempt.useTls ? '.' : ', and so does a plain port that wanted TLS.'),
+    `${formatEndpoint(attempt.host, attempt.port)} closed the connection without answering — ` +
+    (attempt.useTls ? 'broker full, or a proxy.' : 'broker full, a proxy, or TLS needed.'),
 
   tlsNotOffered: ({ host, port }) =>
-    `${formatEndpoint(host, port)} doesn't accept encrypted connections — switch to mqtt://, or use the broker's TLS port.`,
+    `${formatEndpoint(host, port)} doesn't accept TLS — use mqtt:// or the TLS port.`,
 
   // The WebSocket half never completed. Two causes, and the sentence used to name only the
   // first: the path is wrong, or that port is not a WebSocket port at all — which is what
   // pointing a WebSocket at 1883 does, measured against the lab.
   webSocketUpgradeRejected: ({ host, port }) =>
-    `${formatEndpoint(host, port)} did not open a WebSocket — check the path, or whether that port speaks ` +
-    'WebSocket at all.',
+    `${formatEndpoint(host, port)} didn't open a WebSocket — check the path and port.`,
 
   // A version was asked for by name and refused. Worth naming the version: the reader chose it,
   // and Auto exists precisely so they do not have to.
   protocolVersionUnsupported: ({ host, port, protocolVersion }) =>
-    `The broker at ${formatEndpoint(host, port)} doesn't speak ${versionName(protocolVersion ?? 'v500')} — ` +
-    'set the version to Auto and it will find one they both know.',
+    `${formatEndpoint(host, port)} doesn't speak ${versionName(protocolVersion ?? 'v500')} — try Auto.`,
 
   // Auto already did that, and there was nothing left to find.
   noSupportedProtocolVersion: ({ host, port }) =>
-    `${formatEndpoint(host, port)} refused MQTT 5.0, 3.1.1 and 3.1 — whatever is on that port, it isn't a ` +
-    'broker this console can talk to.',
+    `${formatEndpoint(host, port)} refused MQTT 5.0, 3.1.1 and 3.1.`,
 
   // The encrypted channel could not be established
   tlsFailed: ({ host }) => `The encrypted connection to ${host} couldn't be set up.`,
   tlsCertUntrusted: ({ host }) =>
-    `${host} presented a certificate this machine doesn't trust — point Extra CA certificate at ` +
-    'the CA that signed it, or accept any certificate if it is your own broker.',
+    `${host}'s certificate isn't trusted — set Extra CA certificate.`,
   tlsCertExpired: ({ host }) => `The certificate for ${host} has expired.`,
   tlsCertNameMismatch: ({ host, port }) =>
-    `The certificate at ${formatEndpoint(host, port)} was issued for a different name — set Server name ` +
-    'if the broker is reached by an address its certificate does not carry.',
+    `${formatEndpoint(host, port)}'s certificate is for another name — set Server name.`,
 
   // Our certificate, not theirs. Both are qualified, because the broker did not say which of the
   // two happened: it ended the handshake, and what is known is what was sent to it.
   clientCertificateRequired: ({ host, port }) =>
-    `${formatEndpoint(host, port)} ended the encrypted handshake without accepting the connection. Brokers do ` +
-    'this when they want a client certificate and none was sent.',
+    `${formatEndpoint(host, port)} ended the TLS handshake — it may want a client certificate.`,
   clientCertificateRejected: ({ host }) =>
-    `${host} would not accept the client certificate — check it was issued by a CA the broker ` +
-    'knows, and that it has not expired.',
+    `${host} rejected the client certificate.`,
   certificateFileUnreadable: () =>
-    'A certificate file could not be read. Check the path, and the password if it is a .pfx.',
+    "Couldn't read the certificate file — check the path and password.",
 
   // A broker answered, and said no
   credentialsRequired: () => 'This broker needs a username and password.',
@@ -98,8 +89,7 @@ const SENTENCE: Record<string, (attempt: Attempt) => string> = {
   // Not a password to correct. The broker wants an AUTH exchange — SCRAM, or a cloud's own
   // scheme — and this console speaks the username-and-password one only.
   authenticationMethodUnsupported: () =>
-    'The broker asked for an authentication method this console cannot speak. It wants an MQTT 5 ' +
-    'AUTH exchange rather than a username and password.',
+    'The broker wants MQTT 5 enhanced auth, not a username and password.',
   banned: () => 'The broker has banned this client.',
   clientIdRejected: ({ clientId, protocolVersion }) =>
     `The broker rejected the client ID '${clientId}'.` +
@@ -111,16 +101,22 @@ const SENTENCE: Record<string, (attempt: Attempt) => string> = {
   // problem: by DISCONNECT time the broker has already accepted who we are, and the broker this
   // was found on asks for no credentials at all.
   notPermitted: () =>
-    'The broker refused something this console asked for and closed the connection — most often ' +
-    'a subscription to a filter it does not allow.',
+    'The broker refused a request and closed the connection — likely a subscription.',
   filterRefused: () =>
-    "The broker refused the topic filter and closed the connection — it doesn't allow one " +
-    'covering this much of the tree.',
+    'The broker refused the topic filter and closed the connection.',
+  // Read off the timing — the broker said nothing about a publish — so it says what happened in
+  // that order rather than claiming the broker named it. The rule is what the reader goes to
+  // change, so it is named; the topic is what to change it from.
+  alertPublishRefused: ({ publish }) =>
+    publish
+      ? `The broker closed the connection right after alert rule '${publish.rule}' published to ` +
+        `${publish.topic} — it doesn't accept publishing there. Change or remove the rule's publish action.`
+      : "The broker closed the connection right after an alert rule published — it doesn't accept publishing there.",
 
   // Nothing the backend could name. The connect path prefers the raw detail over this, that
   // being the only thing carrying any information at all; a link that dropped has no detail, and
   // this is better than the nothing it used to show.
-  unknown: ({ host, port }) => `The connection to ${formatEndpoint(host, port)} failed, and nothing said why.`,
+  unknown: ({ host, port }) => `The connection to ${formatEndpoint(host, port)} failed.`,
 
   // A link that was up, and is not any more
   connectionLost: ({ host, port }) => `The connection to ${formatEndpoint(host, port)} was lost.`,
@@ -156,8 +152,7 @@ export function alpnHint(attempt: Attempt, reason: string | null | undefined): s
   if (!silent || !attempt.useTls || attempt.port !== 443) return undefined;
 
   return (
-    'A broker reached over 443 usually wants an ALPN protocol: AWS IoT Core needs ' +
-    'x-amzn-mqtt-ca, set under Encryption.'
+    'On 443, AWS IoT Core needs ALPN x-amzn-mqtt-ca — set it under Security.'
   );
 }
 
@@ -165,8 +160,7 @@ export function containerHint(host: string, inContainer: boolean | undefined): s
   if (!inContainer || !LOOPBACK.has(host.trim().toLowerCase())) return undefined;
 
   return (
-    'MQTTForge is running in a container, where this address means the container itself. For a ' +
-    'broker on the machine running Docker use host.docker.internal.'
+    'In a container this is the container itself — use host.docker.internal.'
   );
 }
 
@@ -263,7 +257,7 @@ export function suggestScheme(
   if (SILENCE.has(reason) && !attempt.useTls && attempt.port === choiceOf(TWIN[scheme]).defaultPort) {
     return {
       scheme: TWIN[scheme],
-      why: `${attempt.port} is the port brokers listen for encrypted connections on.`,
+      why: `${attempt.port} is a TLS port.`,
     };
   }
 
@@ -274,7 +268,7 @@ export function suggestScheme(
   if (reason === 'webSocketUpgradeRejected' && TCP_PORTS.has(attempt.port)) {
     return {
       scheme: schemeOf('tcp', attempt.useTls),
-      why: `${attempt.port} is a port MQTT is spoken on directly, not through a WebSocket.`,
+      why: `${attempt.port} is a plain MQTT port, not a WebSocket one.`,
     };
   }
 

@@ -198,7 +198,7 @@ public class FlowRuntimeTests
 
         var run = Run();
         Assert.Equal(FlowRunState.Stopped, run.State);
-        Assert.Contains("without waiting", run.Fault);
+        Assert.Contains("didn't wait", run.Fault);
         Assert.Contains(outcome.Debug, line => line.Kind == FlowDebugEntry.Error && line.NodeId == "loop");
         Assert.Empty(_runtime.Filters());
     }
@@ -1393,7 +1393,7 @@ public class FlowRuntimeTests
         Assert.Equal(FlowLimits.Flows, _runtime.Testing().Count);
         var line = Assert.Single(outcome.Debug);
         Assert.Equal(("new", "start", FlowDebugEntry.Error, true), (line.FlowId, line.NodeId, line.Kind, line.Test));
-        Assert.Equal("At most 50 tests can run at once, so this one was not started. Stop one first.", line.Text);
+        Assert.Equal("At most 50 tests can run at once. Stop one first.", line.Text);
     }
 
     [Fact]
@@ -1792,11 +1792,11 @@ public class FlowRuntimeTests
 
         // The exception's type as well as its message, as the alert engine records a rule's fault. A note
         // has room for no more than the start of the message; the debug line keeps all of this one.
-        Assert.StartsWith("This step failed, so the run was stopped: InvalidOperationException: The dice", run.Fault);
+        Assert.StartsWith("Step failed, run stopped: InvalidOperationException: The dice", run.Fault);
         Assert.Equal(FlowLimits.NoteLength, run.Fault!.Length);
         Assert.Equal(1, run.Nodes.Single(node => node.Id == "keep").Errors);
         Assert.Contains(outcome.Debug, line => line.Kind == FlowDebugEntry.Error && line.NodeId == "keep" &&
-            line.Text.StartsWith("This step failed, so the run was stopped: InvalidOperationException: The dice are lost, ", StringComparison.Ordinal));
+            line.Text.StartsWith("Step failed, run stopped: InvalidOperationException: The dice are lost, ", StringComparison.Ordinal));
         Assert.Equal("f2", Assert.Single(outcome.Publishes).Run.FlowId);
         Assert.Null(runtime.NextDue);
     }
@@ -1850,7 +1850,7 @@ public class FlowRuntimeTests
         var run = Run();
         Assert.Equal(FlowRunState.Stopped, run.State);
         Assert.Equal("odd", run.At);
-        Assert.StartsWith("This step failed, so the run was stopped: ", run.Fault);
+        Assert.StartsWith("Step failed, run stopped: ", run.Fault);
         Assert.Contains(nameof(UnknownNode), Assert.Single(Errors(outcome)));
         Assert.Equal(1, Node("odd").Count);
         Assert.Equal(1, Node("odd").Errors);

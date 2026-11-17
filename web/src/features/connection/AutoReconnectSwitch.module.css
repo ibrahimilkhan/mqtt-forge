@@ -1,6 +1,6 @@
 /* A sentence, so it is set as one. The bare `label` in global.css is eleven-point mono capitals,
    which is right for the one or two words over a box and shouty for a whole sentence — the same
-   correction `.checks label` makes for 'Encrypted (TLS)' in the panel this usually stands in. */
+   correction `.checks label` makes for a tick box's own sentence in the panels beside it. */
 .option {
   display: flex;
   align-items: center;

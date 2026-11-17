@@ -154,7 +154,6 @@ export function ChartPanel({ onClose }: { onClose: () => void }) {
           {exporter.canChoose && (
             <button
               type="button"
-              className="ghost"
               /* Named for what pressing it does, and starting with the word on it: pointed at
                  the label alone it answered to 'Save folder', which is a noun with no verb in
                  it and does not contain the word a reader sees — so anyone driving by voice
@@ -170,7 +169,7 @@ export function ChartPanel({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className={panel.actions}>
-        <button type="button" className="ghost" onClick={resetReadings}>
+        <button type="button" onClick={resetReadings}>
           Restore every reading
         </button>
       </div>
