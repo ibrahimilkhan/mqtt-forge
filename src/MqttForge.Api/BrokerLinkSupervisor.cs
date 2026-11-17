@@ -191,7 +191,7 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
         if (!_options.ConnectOnStart)
         {
             _log.LogInformation(
-                "Connecting at start-up is off for this host, so the broker is left alone until somebody connects.");
+                "Connect on start-up is off; waiting for a manual connect.");
             return;
         }
 
@@ -217,15 +217,15 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
             if (document.Unreadable)
             {
                 _log.LogError(flowsWant
-                    ? "The alert rules could not be read, so no rules are running. A flow is enabled, so the broker is connected for the flows."
-                    : "The alert rules could not be read, so no rules are running and the broker is left alone.");
+                    ? "The alert rules could not be read; no rules are running, but connected for the flows."
+                    : "The alert rules could not be read; no rules are running. Not connecting.");
 
                 if (!flowsWant) return;
             }
             else if (!rulesWant && !flowsWant)
             {
                 _log.LogInformation(
-                    "No alert rules are enabled, so the broker is left alone until somebody connects.");
+                    "No alert rules enabled; waiting for a manual connect.");
                 return;
             }
             else if (flowsWant)
@@ -254,7 +254,7 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
         {
             // Nothing above is known to throw — each read and the dial keep their own faults — but
             // one that did would stop the host, which is BackgroundService's default.
-            _log.LogError(ex, "Could not work out whether the broker should be connected at start-up.");
+            _log.LogError(ex, "Couldn't decide whether to connect at start-up.");
         }
     }
 
@@ -272,7 +272,7 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _log.LogError(ex, "The alert rules could not be read to see whether they need a broker connection.");
+            _log.LogError(ex, "Couldn't read the alert rules to decide on a connection.");
             return new AlertRuleDocument([], Unreadable: true, []);
         }
     }
@@ -289,7 +289,7 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _log.LogError(ex, "Could not read the flows to see whether they need a broker connection.");
+            _log.LogError(ex, "Couldn't read the flows to decide on a connection.");
             return false;
         }
     }
@@ -414,7 +414,7 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
         {
             if (!_declined)
                 _log.LogInformation(
-                    "The link is down for a reason a redial would not change ({Reason}), so it is not retried.",
+                    "Link down for a reason a redial won't fix ({Reason}); not retrying.",
                     _connection.CurrentFailure?.Reason);
 
             _declined = true;
@@ -620,7 +620,11 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
         or BrokerFailureReason.SessionTakenOver
         or BrokerFailureReason.Kicked
         or BrokerFailureReason.NotPermitted
-        or BrokerFailureReason.FilterRefused;
+        or BrokerFailureReason.FilterRefused
+        // The same loop by another road: the rule that published is still there, and the next
+        // time it fires the broker hangs up again. Until the reader changes it, a redial only
+        // waits for that.
+        or BrokerFailureReason.AlertPublishRefused;
 
     private TimeSpan NextRung()
     {
@@ -687,7 +691,7 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
 
             if (settings is null)
             {
-                _log.LogWarning("A broker link is wanted, but no broker has been saved, so there is nothing to connect to.");
+                _log.LogWarning("A broker link is wanted, but no broker is saved.");
                 return;
             }
 
@@ -714,7 +718,7 @@ public sealed class BrokerLinkSupervisor : BackgroundService, ILinkForRules
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
-                    _log.LogWarning(ex, "The link is back, but not every filter the console held could be restored.");
+                    _log.LogWarning(ex, "Link is back, but some filters couldn't be restored.");
                 }
             }
         }
