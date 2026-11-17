@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ToolMenu } from './ToolMenu';
@@ -89,5 +89,39 @@ describe('ToolMenu', () => {
 
     await userEvent.click(trigger());
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  it('opens on a whole real press — pointer down, mouse down, pointer up, mouse up, click — and stays open', () => {
+    render(<Fixture />);
+    const inner = trigger().firstChild ?? trigger();
+    fireEvent.pointerDown(trigger(), { button: 0 });
+    fireEvent.mouseDown(trigger(), { button: 0 });
+    fireEvent.pointerUp(trigger(), { button: 0 });
+    fireEvent.mouseUp(trigger(), { button: 0 });
+    fireEvent.click(inner);
+    expect(trigger()).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+  });
+
+  it('is one toggle per press, even when something opens the popup while the button is held', () => {
+    render(<Fixture />);
+    fireEvent.pointerDown(trigger(), { button: 0 });
+    // Opened in the middle of the press — the click that ends it must not shut it again.
+    fireEvent.keyDown(trigger(), { key: 'ArrowDown' });
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+    fireEvent.pointerUp(trigger(), { button: 0 });
+    fireEvent.click(trigger());
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+  });
+
+  it('gives the keyboard to the item already in use rather than the first', async () => {
+    render(
+      <ToolMenu title="Pick" ariaLabel="Pick" kind="dialog" trigger="v">
+        <button type="button">First</button>
+        <button type="button" aria-current="true">Current</button>
+      </ToolMenu>,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Pick' }));
+    expect(screen.getByRole('button', { name: 'Current' })).toHaveFocus();
   });
 });

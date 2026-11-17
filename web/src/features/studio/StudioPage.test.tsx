@@ -1,4 +1,4 @@
-import { act, screen } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -111,5 +111,51 @@ describe('StudioPage', () => {
     // And with the menu shut, the same key is the studio's again.
     await userEvent.keyboard('{Escape}');
     expect(studioStore.getState().selection).toEqual([]);
+  });
+
+  /** The whole sequence a real mouse sends, pressed on the mark inside the button as a hand does. */
+  const press = (button: HTMLElement) => {
+    const on = (button.querySelector('span, svg') as HTMLElement | null) ?? button;
+    act(() => {
+      fireEvent.pointerDown(on, { button: 0 });
+      fireEvent.mouseDown(on, { button: 0 });
+      fireEvent.pointerUp(on, { button: 0 });
+      fireEvent.mouseUp(on, { button: 0 });
+      fireEvent.click(on);
+    });
+  };
+
+  it.each([
+    ['Scene', /^Scene:/, 'dialog'],
+    ['Add', /^Add a shape$/, 'menu'],
+    ['Steps', /^Snap steps$/, 'dialog'],
+  ] as const)('opens the %s menu on a whole real press and keeps it open', async (_, name, role) => {
+    render(<StudioPage />);
+    const trigger = await screen.findByRole('button', { name });
+
+    press(trigger);
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole(role)).toBeInTheDocument();
+  });
+
+  it('leaves the selection alone when the scene menu is opened, and when the open scene is picked from it', async () => {
+    render(<StudioPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Add a shape' }));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Box' }));
+    const before = studioStore.getState();
+    expect(before.selection).toHaveLength(1);
+
+    press(screen.getByRole('button', { name: /^Scene:/ }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    // The open scene has the keyboard, so an Enter here cannot switch to another one.
+    expect(screen.getByRole('button', { name: 'Untitled scene' })).toHaveFocus();
+    expect(studioStore.getState().selection).toEqual(before.selection);
+    expect(screen.getByRole('complementary', { name: 'Inspector' })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Untitled scene' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(studioStore.getState().scene).toBe(before.scene);
+    expect(studioStore.getState().selection).toEqual(before.selection);
   });
 });

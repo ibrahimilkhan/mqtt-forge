@@ -113,10 +113,27 @@ export function ToolMenu({ title, ariaLabel, trigger, kind, triggerClassName, op
   }, [setOpen]);
 
   // Only on opening: run again on every redraw, it would pull the keyboard back to the first item.
+  // The item already in use takes the keyboard if there is one — the open scene, not whichever
+  // happens to be listed first — so a stray Enter or press on it is a no-op rather than a switch
+  // to another scene that clears the selection and shuts the menu under the reader. Otherwise the
+  // first thing in it does, so a reader who opened it from the keys is in it.
   useEffect(() => {
-    // The first thing in it takes the keyboard, so a reader who opened it from the keys is in it.
-    if (open) popup.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
+    if (!open) return;
+    const body = popup.current;
+    (body?.querySelector<HTMLElement>('[aria-current="true"]') ?? body?.querySelector<HTMLElement>(FOCUSABLE))?.focus();
   }, [open]);
+
+  // What the popup was when the press on the trigger began. The click that ends the press toggles
+  // from that, not from whatever the popup has become in between: one press is one toggle however
+  // many things answer the events inside it, so nothing that opens or shuts the popup while the
+  // button is held down can have the click undo it. A click with no press before it — Enter or
+  // Space on the trigger — toggles from the popup as it is.
+  const pressedWhile = useRef<boolean | null>(null);
+  const toggle = () => {
+    const was = pressedWhile.current ?? open;
+    pressedWhile.current = null;
+    setOpen(!was);
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -190,7 +207,10 @@ export function ToolMenu({ title, ariaLabel, trigger, kind, triggerClassName, op
         aria-haspopup={kind}
         aria-expanded={open}
         aria-controls={open ? id : undefined}
-        onClick={() => setOpen(!open)}
+        onPointerDown={(event) => {
+          if (event.button === 0) pressedWhile.current = open;
+        }}
+        onClick={toggle}
         onKeyDown={onTriggerKeyDown}
       >
         {trigger}
