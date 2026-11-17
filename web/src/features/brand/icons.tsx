@@ -132,6 +132,19 @@ export const Nodes = () => (
   </Glyph>
 );
 
+/** Topics: a root and the levels hanging off it. */
+export const ListTree = () => (
+  <Glyph>
+    <>
+      <path d="M4 5h6" />
+      <path d="M7 5v12.5a1.5 1.5 0 0 0 1.5 1.5H12" />
+      <path d="M7 12h5" />
+      <path d="M15 12h5" />
+      <path d="M15 19h5" />
+    </>
+  </Glyph>
+);
+
 /** QR: the code itself, three corners and a scrap of payload. */
 export const QrCode = () => (
   <Glyph>
@@ -450,5 +463,17 @@ export const Plus = () => (
       <path d="M12 5.5v13" />
       <path d="M5.5 12h13" />
     </>
+  </Glyph>
+);
+
+/**
+ * There is more under this line.
+ *
+ * One chevron, pointing down. The stylesheet turns it over when the line it stands on is open,
+ * which is the same mark and the same turn the broker events' bar already uses.
+ */
+export const Chevron = () => (
+  <Glyph>
+    <path d="M8 10 12 14 16 10" />
   </Glyph>
 );

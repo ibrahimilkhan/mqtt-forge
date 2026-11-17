@@ -31,7 +31,7 @@ const broker = (over: Partial<RecentBroker> = {}): RecentBroker => ({
 }) as RecentBroker;
 
 const draw = (brokers: RecentBroker[], over: Record<string, unknown> = {}) => {
-  const handlers = { onPick: vi.fn(), onForget: vi.fn() };
+  const handlers = { onPick: vi.fn() };
   render(
     <RecentBrokers brokers={brokers} active={null} now={NOW} {...handlers} {...over} />,
   );
@@ -114,12 +114,13 @@ describe('the brokers this console reached', () => {
     expect(screen.queryByRole('button', { name: /save/i })).not.toBeInTheDocument();
   });
 
-  it('forgets one by its id', async () => {
-    const { onForget } = draw([broker()]);
+  // Nor a Forget. Dropping a row is asked at the head of the form, about the broker the form is
+  // holding: a cross on every card stood a few pixels from the mark that connects.
+  it('offers no Forget of its own', () => {
+    draw([broker()], { onConnect: vi.fn() });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Forget mqtt://broker.example:1883' }));
-
-    expect(onForget).toHaveBeenCalledWith('abc123');
+    expect(screen.queryByRole('button', { name: /forget/i })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button')).toHaveLength(2);
   });
 
   it('marks the one the form is holding', () => {
@@ -127,8 +128,7 @@ describe('the brokers this console reached', () => {
       active: 'two',
     });
 
-    // The card bodies alone: Forget names its broker too, and this is about the plate around the
-    // body.
+    // The card bodies alone: this is about the plate around the body.
     const cards = [
       screen.getByRole('button', { name: /^broker\.example/ }),
       screen.getByRole('button', { name: /^other\.example/ }),

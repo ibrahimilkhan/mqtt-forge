@@ -20,8 +20,10 @@
 .chip {
   position: relative;
   display: flex;
-  background: var(--surface);
-  border: 1px solid var(--rule);
+  /* A wash rather than a frame: a column of framed cards in a framed column was more edge than
+     card. The ring is kept for the one the form is holding, where an edge says something. */
+  background: var(--well, color-mix(in srgb, var(--paper) 70%, var(--surface)));
+  border: 1px solid transparent;
   border-radius: var(--r-control);
 }
 
@@ -30,7 +32,7 @@
    type on it — the address disappeared into it entirely. Written with the same `:not(:disabled)`
    the global rule carries, because without it this loses on specificity and reads as though it
    were never here. */
-.chip:hover { border-color: var(--muted); }
+.chip:hover { border-color: var(--rule); background: var(--well-deep, var(--paper)); }
 
 .pick:hover:not(:disabled) {
   background: none;
@@ -42,19 +44,24 @@
 .chip[data-active] {
   border-color: var(--signal);
   box-shadow: inset 0 0 0 1px var(--signal);
+  /* Lifted out of the well onto the column's white, so the one the form holds stands apart by
+     its ground as well as its ring. */
+  background: var(--surface);
 }
 
-/* The card body is the button, so the whole plate is the target and the × is the only part of it
-   that is not. Room kept at the end of the first line for that ×, or a long name runs under it. */
+/* The card body is the button, so the whole plate is the target and the link mark at its end is
+   the only part of it that is not. */
 .pick {
   flex: 1;
   min-width: 0;
   display: grid;
   gap: 3px;
   justify-items: start;
-  /* A shade more under the address than over the name: the second line is set smaller, so an
-     even measure leaves the card looking bottom-light. */
-  padding: 7px 30px 8px 10px;
+  /* Even over and under: a saved card is one line, and a recent one — which shares this rule —
+     sets its own second line. Tall enough between them to be pressed without aiming. */
+  align-content: center;
+  min-height: 2.5rem;
+  padding: 7px 10px 8px 10px;
   background: none;
   border: 0;
   border-radius: inherit;
@@ -78,45 +85,31 @@
   color: var(--ink);
 }
 
-/* Under it, and quieter: it is what the name means rather than a second name. Truncated from the
-   end, since a host that is too long to draw is still recognisable by how it starts. */
-.where {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--mono);
-  font-size: var(--t-micro);
-  letter-spacing: 0.02em;
-  text-transform: none;
-  color: var(--muted);
-}
+.pick:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
 
-/* In the corner rather than beside the name, and muted until it is pointed at: this one is
-   destructive and a mis-hit on it takes the only copy of something that was typed by hand, so the
-   eye going down the list reads names rather than a column of crosses. */
-.forget {
-  position: absolute;
-  top: 3px;
-  right: 3px;
-  padding: 3px 6px;
+/* The mark that dials the card it stands on. A strip down the card's right edge, the card's
+   whole height, so it is as easy to hit as the card and cannot be taken for part of it. Wide
+   enough to be pressed with a thumb: it is the commonest press on the panel. */
+.go {
+  --tone: transparent;
+  flex: 0 0 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   background: none;
   border: 0;
-  border-radius: var(--r-control);
+  border-radius: 0 var(--r-control) var(--r-control) 0;
   font-family: var(--mono);
-  font-size: var(--t-small);
-  line-height: 1.2;
-  color: var(--muted);
+  font-size: var(--t-lead);
+  line-height: 1;
+  color: var(--signal);
   cursor: pointer;
 }
 
-/* A ground under it on hover, so the thing being pointed at is a button rather than a character
-   that happens to have gone red. The same `:not(:disabled)` as above, and for the same reason. */
-.forget:hover:not(:disabled) {
-  color: var(--fault);
-  background: var(--paper);
+.go:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--signal) 12%, var(--surface));
   border-color: transparent;
 }
 
-.pick:focus-visible,
-.forget:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
+.go:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }

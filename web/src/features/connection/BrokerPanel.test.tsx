@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useBrokerEventsStore } from '../../stores/brokerEventsStore';
 import { useHubStatusStore } from '../../stores/hubStatusStore';
 import { useLogStore } from '../../stores/logStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
@@ -40,6 +41,29 @@ function renderPanel(queryClient = newQueryClient()) {
   const onClose = vi.fn();
   return { ...render(<BrokerPanel onClose={onClose} />, { wrapper }), onClose };
 }
+
+// The way in is one box of four at the head of the address. These choose one and read which is
+// chosen by the scheme each is written with — the form's own word for the same thing.
+type Way = 'mqtt' | 'mqtts' | 'ws' | 'wss';
+const protocol = () => screen.getByLabelText<HTMLSelectElement>('Protocol');
+const pickWay = (scheme: Way) => userEvent.selectOptions(protocol(), scheme);
+const chosenWay = () => protocol().value;
+
+// What the Topics on connect sheet says the list holds: the ticks that are on, then the chips,
+// in the order they are drawn. Read off the DOM rather than by role, because the sheet is shut
+// until somebody opens it and a shut sheet is not in the accessibility tree.
+const listed = () => {
+  const list = screen.getByLabelText('Subscribed on connect');
+
+  return [
+    ...[...list.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:checked')].map(
+      (box) => box.closest('label')!.querySelector('span')!.textContent,
+    ),
+    ...[...list.querySelectorAll('button')].map((drop) =>
+      drop.getAttribute('aria-label')!.replace(/^Remove /, ''),
+    ),
+  ];
+};
 
 beforeEach(() => {
   useLogStore.getState().clear();
@@ -106,9 +130,8 @@ describe('BrokerPanel', () => {
     expect(screen.getByLabelText('Port')).toHaveValue(8883);
     expect(screen.getByLabelText('Client ID')).toHaveValue('saved-client');
     expect(screen.getByLabelText('Username')).toHaveValue('alice');
-    // The way in comes back as the two controls it is asked in: this connection was over TLS.
-    expect(screen.getByLabelText('Transport')).toHaveValue('tcp');
-    expect(screen.getByLabelText('Encrypted (TLS)')).toBeChecked();
+    // The way in comes back as the one it was saved as: this connection was over TLS.
+    expect(chosenWay()).toBe('mqtts');
   });
 
   it('leaves the password box empty, whatever is stored', async () => {
@@ -596,7 +619,15 @@ describe('BrokerPanel', () => {
 // — were 98px of it. These say which parts are which, because a control inside a shut <details>
 // is still in the DOM and every other test here would pass either way.
 
-const fold = (name: string) => screen.getByText(name).closest('details') as HTMLDetailsElement;
+// The sheets under the address are lines that open and shut, and say which in aria-expanded.
+const fold = (name: string) => ({
+  get open() {
+    return (
+      screen.getByRole('button', { name: new RegExp(`^${name}`) }).getAttribute('aria-expanded') ===
+      'true'
+    );
+  },
+});
 
 describe('what the panel shows first', () => {
   const connected = () =>
@@ -634,11 +665,62 @@ describe('what the panel shows first', () => {
     renderPanel();
 
     await screen.findByRole('button', { name: 'Connect' });
-    expect(fold('Client').open).toBe(false);
-    expect(fold('Subscription').open).toBe(false);
-    expect(fold('Encryption').open).toBe(false);
+    expect(fold('Sign-in').open).toBe(false);
+    expect(fold('Topics on connect').open).toBe(false);
+    expect(fold('Security').open).toBe(false);
     expect(screen.getByLabelText('Address')).toBeVisible();
     expect(screen.queryByText('Client and session')).not.toBeInTheDocument();
+  });
+
+  // Lines down the column, each opening where it stands. Opening one leaves the others as they
+  // were — a username and a certificate are both part of one connection — and pressing an open
+  // one shuts it.
+  it('opens each sheet by itself, and shuts the open one when it is pressed again', async () => {
+    renderPanel();
+
+    await screen.findByRole('button', { name: 'Connect' });
+    await userEvent.click(screen.getByRole('button', { name: 'Sign-in' }));
+    expect(fold('Sign-in').open).toBe(true);
+    expect(screen.getByLabelText('Username')).toBeVisible();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Security' }));
+    expect(fold('Sign-in').open).toBe(true);
+    expect(fold('Security').open).toBe(true);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Security' }));
+    expect(fold('Security').open).toBe(false);
+    expect(fold('Sign-in').open).toBe(true);
+  });
+
+  // The line is its name alone, to the eye and to anything asking for it: what the sheet holds
+  // is the line's description and is not drawn beside the name.
+  it('draws each line as its name and nothing more', async () => {
+    renderPanel();
+
+    const signIn = await screen.findByRole('button', { name: 'Sign-in' });
+    expect(signIn).toHaveAccessibleName('Sign-in');
+    expect(signIn).toHaveAccessibleDescription(/^anonymous · /);
+    expect(within(signIn).getByText(/^anonymous · /)).not.toBeVisible();
+    expect(within(signIn).queryByText(/^(Edit|View|Close)$/)).not.toBeInTheDocument();
+  });
+
+  // What the console does if the link goes is one tick under the address, with its own words
+  // beside it — not a fourth line among the settings with a name over it.
+  it('keeps the reconnect tick under the address, with no heading of its own', async () => {
+    renderPanel();
+
+    const tick = await screen.findByRole('checkbox', { name: /Reconnect automatically/ });
+    expect(tick.closest('section')).toBe(screen.getByLabelText('Address').closest('section'));
+    expect(screen.queryByText('If the link drops')).not.toBeInTheDocument();
+  });
+
+  // The button the panel exists for stands on the address's own line.
+  it('puts Connect beside the address it uses', async () => {
+    renderPanel();
+
+    const connect = await screen.findByRole('button', { name: 'Connect' });
+    const row = screen.getByLabelText('Address').closest('div[class*="dialRow"]');
+    expect(row!.contains(connect)).toBe(true);
   });
 
   // Folding a section hides the sentence under the field it is about, and a client ID the server
@@ -656,7 +738,7 @@ describe('what the panel shows first', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
 
-    await waitFor(() => expect(fold('Client').open).toBe(true));
+    await waitFor(() => expect(fold('Sign-in').open).toBe(true));
     expect(screen.getByText('Client ID is already taken.')).toBeInTheDocument();
   });
 
@@ -765,8 +847,7 @@ describe('an address dropped into the Address box', () => {
 
     expect(address).toHaveValue('broker.emqx.io');
     expect(screen.getByLabelText('Port')).toHaveValue(8084);
-    expect(screen.getByLabelText('Transport')).toHaveValue('webSocket');
-    expect(screen.getByLabelText('Encrypted (TLS)')).toBeChecked();
+    expect(chosenWay()).toBe('wss');
     expect(screen.getByLabelText('WebSocket path')).toHaveValue('/mqtt');
   });
 
@@ -781,7 +862,7 @@ describe('an address dropped into the Address box', () => {
     await waitFor(() => expect(address).toHaveValue('broker.example'));
     expect(screen.getByLabelText('Port')).toHaveValue(8883);
     // The port it named answers the encryption question too, the same as one typed into the box.
-    expect(screen.getByLabelText('Encrypted (TLS)')).toBeChecked();
+    expect(chosenWay()).toBe('mqtts');
   });
 
   // A hostname is not an address to take apart, and nothing else about the connection moves.
@@ -795,7 +876,7 @@ describe('an address dropped into the Address box', () => {
 
     expect(address).toHaveValue('broker.example');
     expect(screen.getByLabelText('Port')).toHaveValue(1883);
-    expect(screen.getByLabelText('Encrypted (TLS)')).not.toBeChecked();
+    expect(chosenWay()).toBe('mqtt');
   });
 });
 
@@ -833,7 +914,6 @@ describe('the address the panel leads with', () => {
 // The half of the inference that was missing: portFor has moved the port with the scheme since
 // the picker was written, and nothing moved the scheme with the port.
 describe('a port that implies a scheme', () => {
-  const encrypted = () => screen.getByLabelText('Encrypted (TLS)');
   const port = () => screen.getByLabelText('Port');
 
   const typePort = async (value: string) => {
@@ -846,15 +926,15 @@ describe('a port that implies a scheme', () => {
     renderPanel();
     await typePort('8883');
 
-    await waitFor(() => expect(encrypted()).toBeChecked());
+    await waitFor(() => expect(chosenWay()).toBe('mqtts'));
   });
 
   it('turns it off again for the plain port', async () => {
     renderPanel();
-    await userEvent.click(encrypted());
+    await pickWay('mqtts');
     await typePort('1883');
 
-    await waitFor(() => expect(encrypted()).not.toBeChecked());
+    await waitFor(() => expect(chosenWay()).toBe('mqtt'));
   });
 
   // 8883 typed a digit at a time passes through 8, 88 and 888. A scheme moving on each of them
@@ -865,174 +945,55 @@ describe('a port that implies a scheme', () => {
     await userEvent.clear(port());
     await userEvent.type(port(), '8883');
 
-    expect(encrypted()).not.toBeChecked();
+    expect(chosenWay()).toBe('mqtt');
 
     fireEvent.blur(port());
-    await waitFor(() => expect(encrypted()).toBeChecked());
+    await waitFor(() => expect(chosenWay()).toBe('mqtts'));
   });
 
   it('leaves a lab broker on a strange port where it was put', async () => {
     renderPanel();
     await typePort('21883');
 
-    expect(encrypted()).not.toBeChecked();
+    expect(chosenWay()).toBe('mqtt');
   });
 
   // Somebody over a WebSocket picked it deliberately, and 8883 over wss is a real broker. The
-  // port may tick the box; it may never move the control above it.
+  // port may answer the encryption question; it may never move the link off the transport.
   it('never crosses the transport', async () => {
     renderPanel();
-    await userEvent.selectOptions(screen.getByLabelText('Transport'), 'webSocket');
-    await userEvent.click(encrypted());
+    await pickWay('wss');
     await typePort('8883');
 
-    expect(screen.getByLabelText('Transport')).toHaveValue('webSocket');
-    expect(encrypted()).toBeChecked();
+    expect(chosenWay()).toBe('wss');
   });
 });
 
-// The advice connectFailure.ts has written in prose since it was built, as a button. This is
-// where a reader who did not know which of the four to pick actually finds out.
-describe('a failure that names the scheme it should have been', () => {
-  const failWith = (reason: string) =>
-    server.use(
-      http.post('/api/connection', () =>
-        HttpResponse.json(
-          { title: 'Could not connect to broker', detail: 'raw backend detail', reason },
-          { status: 502 },
-        ),
-      ),
-    );
-
-  const connect = async () =>
-    userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
-
-  // The one route left to plain MQTT on the encrypted port, and the one people take: an address
-  // that names both. Typing 8883 into the Port box moves the scheme, and pressing mqtt back
-  // afterwards drags the port to 1883 with it — the panel resists this state everywhere except
-  // where the reader writes it down themselves.
-  const writeAddress = async (text: string) => {
-    const address = screen.getByLabelText('Address');
-    await userEvent.clear(address);
-    await userEvent.type(address, text);
-    fireEvent.blur(address);
-  };
-
-  it('offers the encrypted scheme when the encrypted port said nothing', async () => {
-    failWith('timeout');
+// Four names are two questions multiplied together. They were asked as two controls — a transport
+// and a tick box — and the trouble was that nothing said the two multiplied, or that either moved
+// the port. One box of four at the head of the address asks it once; the API is still sent the
+// two answers it has always kept apart.
+describe('the way in, as one box of four', () => {
+  it('offers the four ways in, written the way an address writes them', () => {
     renderPanel();
 
-    await writeAddress('mqtt://broker.example:8883');
-    await connect();
-
-    expect(await screen.findByRole('button', { name: 'Try mqtts:// instead' })).toBeInTheDocument();
-  });
-
-  // The offer used to arrive with nothing behind it: 'Nothing is listening at
-  // broker.example:8883' and then, out of nowhere, a button about a scheme nobody mentioned. The
-  // sentence explaining it was being built by suggestScheme and thrown away by the panel.
-  it('says why the other scheme is worth trying', async () => {
-    failWith('timeout');
-    renderPanel();
-
-    await writeAddress('mqtt://broker.example:8883');
-    await connect();
-
-    expect(
-      await screen.findByText('8883 is the port brokers listen for encrypted connections on.'),
-    ).toBeInTheDocument();
-  });
-
-  // The one case that needs no reason: the sentence above the button already carries it, and the
-  // console does not say one thing twice on one screen.
-  it('does not repeat a reason the failure already gave', async () => {
-    failWith('tlsNotOffered');
-    renderPanel();
-
-    await writeAddress('mqtts://broker.example:8883');
-    await connect();
-
-    await screen.findByRole('button', { name: 'Try mqtt:// instead' });
-    expect(screen.queryByText(/is the port brokers listen/)).not.toBeInTheDocument();
-    expect(
-      screen.getByText(/doesn't accept encrypted connections/),
-    ).toBeInTheDocument();
-  });
-
-  it('retries on the scheme it offered', async () => {
-    let sent: Record<string, unknown> | undefined;
-    server.use(
-      http.post('/api/connection', async ({ request }) => {
-        const body = (await request.json()) as Record<string, unknown>;
-        if (body.useTls) {
-          sent = body;
-          return HttpResponse.json({ state: 'Connected' });
-        }
-        return HttpResponse.json(
-          { title: 'Could not connect to broker', detail: 'raw', reason: 'timeout' },
-          { status: 502 },
-        );
-      }),
-    );
-    renderPanel();
-
-    await writeAddress('mqtt://broker.example:8883');
-    await connect();
-
-    await userEvent.click(await screen.findByRole('button', { name: 'Try mqtts:// instead' }));
-
-    await waitFor(() => expect(sent).toMatchObject({ useTls: true, port: 8883 }));
-  });
-
-  it('offers the plain scheme when the broker refuses encryption', async () => {
-    failWith('tlsNotOffered');
-    renderPanel();
-    await userEvent.click(screen.getByLabelText('Encrypted (TLS)'));
-    await connect();
-
-    expect(await screen.findByRole('button', { name: 'Try mqtt:// instead' })).toBeInTheDocument();
-  });
-
-  // A rejected password is about the password. An offer standing where the real answer should
-  // be is worse than no offer.
-  it('offers nothing for a failure that is not about the scheme', async () => {
-    failWith('credentialsRejected');
-    renderPanel();
-    await connect();
-
-    expect(
-      await screen.findByText('The broker rejected the username or password.'),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Try / })).not.toBeInTheDocument();
-  });
-});
-
-// Four names were two questions multiplied together, asked as one. The API has always kept them
-// apart — a transport and a TLS flag — and this is the panel finally asking them that way.
-describe('the way in, as two questions', () => {
-  const transport = () => screen.getByLabelText('Transport');
-  const encrypted = () => screen.getByLabelText('Encrypted (TLS)');
-
-  it('offers two ways in, not four', () => {
-    renderPanel();
-
-    expect([...transport().querySelectorAll('option')].map((o) => o.textContent)).toEqual([
+    expect([...protocol().querySelectorAll('option')].map((o) => o.textContent)).toEqual([
       'mqtt://',
+      'mqtts://',
       'ws://',
+      'wss://',
     ]);
   });
 
   it('starts on plain MQTT, which is what a broker of your own usually is', () => {
     renderPanel();
 
-    expect(transport()).toHaveValue('tcp');
-    expect(encrypted()).not.toBeChecked();
+    expect(chosenWay()).toBe('mqtt');
     expect(screen.getByLabelText('Port')).toHaveValue(1883);
   });
 
-  // The whole point: 'Encrypted' is a word everybody has, and the s in mqtts is the same
-  // question asked in a letter nobody can see.
-  it('sends the two answers as a transport and a TLS flag', async () => {
+  // The API has always kept the two apart, and still is sent them that way.
+  it('sends the one answer as a transport and a TLS flag', async () => {
     let sent: Record<string, unknown> | undefined;
     server.use(
       http.post('/api/connection', async ({ request }) => {
@@ -1042,19 +1003,18 @@ describe('the way in, as two questions', () => {
     );
 
     renderPanel();
-    await userEvent.selectOptions(transport(), 'webSocket');
-    await userEvent.click(encrypted());
+    await pickWay('wss');
     await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
 
     await waitFor(() => expect(sent).toMatchObject({ transport: 'webSocket', useTls: true }));
   });
 
-  it('moves the port with either answer, while the port is still a default', async () => {
+  it('moves the port with the way in, while the port is still a default', async () => {
     renderPanel();
-    await userEvent.click(encrypted());
+    await pickWay('mqtts');
     expect(screen.getByLabelText('Port')).toHaveValue(8883);
 
-    await userEvent.selectOptions(transport(), 'webSocket');
+    await pickWay('wss');
     expect(screen.getByLabelText('Port')).toHaveValue(8084);
   });
 
@@ -1063,7 +1023,7 @@ describe('the way in, as two questions', () => {
     const port = screen.getByLabelText('Port');
     await userEvent.clear(port);
     await userEvent.type(port, '21883');
-    await userEvent.click(encrypted());
+    await pickWay('mqtts');
 
     expect(port).toHaveValue(21883);
   });
@@ -1072,46 +1032,54 @@ describe('the way in, as two questions', () => {
     renderPanel();
     expect(screen.queryByLabelText('WebSocket path')).not.toBeInTheDocument();
 
-    await userEvent.selectOptions(transport(), 'webSocket');
+    await pickWay('ws');
     expect(screen.getByLabelText('WebSocket path')).toBeInTheDocument();
   });
 
-  // A pasted address still answers both, which is the point of taking it whole.
-  it('reads both answers off a pasted address', async () => {
+  // A pasted address still answers it, which is the point of taking it whole.
+  it('reads the way in off a pasted address', async () => {
     renderPanel();
     const address = screen.getByLabelText('Address');
     await userEvent.clear(address);
     await userEvent.paste('wss://broker.emqx.io:8084/mqtt');
 
-    expect(transport()).toHaveValue('webSocket');
-    expect(encrypted()).toBeChecked();
+    expect(chosenWay()).toBe('wss');
     expect(address).toHaveValue('broker.emqx.io');
+  });
+
+  // Where a scheme stands in a URL: at the head of the bar the host and the port are in.
+  it('stands at the head of the address it belongs to', () => {
+    renderPanel();
+
+    const bar = screen.getByLabelText('Address').parentElement!;
+    expect(bar.firstElementChild).toBe(protocol());
   });
 });
 
-// One rule for the whole of Encryption: its fields follow the box above them. Under a plain
-// scheme the server is never shown any of this — buildConnectRequest sends tls: null and
-// ConfigureTls is only reached when UseTls — so with encryption off these controls do nothing
-// whatever they hold, and now they say so.
-describe('the encryption fold, which follows the box above it', () => {
-  const encrypted = () => screen.getByLabelText('Encrypted (TLS)');
-  const encrypt = () => userEvent.click(encrypted());
-  const openFold = () => userEvent.click(screen.getByText('Encryption'));
+// One rule for the whole of Security: its fields follow the way in. Under a plain scheme the
+// server is never shown any of this — buildConnectRequest sends tls: null and ConfigureTls is
+// only reached when UseTls — so with encryption off these controls do nothing whatever they
+// hold, and they say so.
+describe('the security sheet, which follows the way in', () => {
+  const encrypt = () => pickWay('mqtts');
+  const plain = () => pickWay('mqtt');
+  const openFold = () => userEvent.click(screen.getByRole('button', { name: 'Security' }));
 
-  it('offers the fold whether or not encryption is on yet', () => {
+  it('offers the sheet whether or not encryption is on yet', () => {
     renderPanel();
 
-    expect(screen.getByText('Encryption')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Security' })).toBeInTheDocument();
   });
 
-  // Reading what a connection could be given is never blocked, only writing it. So the fold
+  // Reading what a connection could be given is never blocked, only writing it. So the sheet
   // opens, the fold inside it opens, and every field in both is held.
   it('opens with encryption off and holds every field in it', async () => {
     renderPanel();
     await openFold();
 
+    expect(screen.getByText('mqtt:// is not encrypted, so none of this is sent.')).toBeVisible();
     expect(screen.getByLabelText('Accept any certificate')).toBeDisabled();
-    expect(screen.getByLabelText('Extra CA certificate')).toBeDisabled();
+    expect(screen.getByLabelText('Also trust my own CA')).toBeDisabled();
     expect(screen.getByLabelText('Client certificate')).toBeDisabled();
 
     await userEvent.click(screen.getByText('Server name and ALPN'));
@@ -1119,27 +1087,35 @@ describe('the encryption fold, which follows the box above it', () => {
     expect(screen.getByLabelText('ALPN protocol')).toBeDisabled();
   });
 
-  it('gives every field back when the box goes on', async () => {
+  it('gives every field back when the way in is an encrypted one', async () => {
     renderPanel();
     await openFold();
     await encrypt();
 
     expect(screen.getByLabelText('Accept any certificate')).toBeEnabled();
-    expect(screen.getByLabelText('Extra CA certificate')).toBeEnabled();
+    expect(screen.getByLabelText('Also trust my own CA')).toBeEnabled();
     expect(screen.getByLabelText('Client certificate')).toBeEnabled();
   });
 
-  // The box is the way back on, so it is outside the rule it governs. It was inside once, held
-  // shut by the fields under it, and the dead end that made is what unlocked it.
-  it('never holds the box itself', async () => {
+  // The ways in are the way back on, so they are outside the rule they govern.
+  it('never holds the way in itself', async () => {
     renderPanel();
-    expect(encrypted()).toBeEnabled();
+    expect(protocol()).toBeEnabled();
 
     await encrypt();
-    expect(encrypted()).toBeEnabled();
+    expect(protocol()).toBeEnabled();
 
-    await encrypt();
-    expect(encrypted()).toBeEnabled();
+    await plain();
+    expect(protocol()).toBeEnabled();
+  });
+
+  // The whole line is the one thing to press: nothing stands beside it that does something else.
+  it('offers nothing beside the line but the line', async () => {
+    renderPanel();
+
+    const line = await screen.findByRole('button', { name: 'Security' });
+    expect(line.parentElement!.querySelectorAll(':scope > button')).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: /^Use / })).not.toBeInTheDocument();
   });
 
   it('sends the certificate it was given', async () => {
@@ -1180,7 +1156,7 @@ describe('the encryption fold, which follows the box above it', () => {
     renderPanel();
     await encrypt();
     await userEvent.type(screen.getByLabelText('Client certificate'), '/tmp/client.pem');
-    await encrypt();
+    await plain();
     await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
 
     await waitFor(() => expect(sent).toMatchObject({ useTls: false, tls: null }));
@@ -1207,9 +1183,12 @@ describe('a certificate pointed at rather than typed', () => {
     return asked;
   };
 
-  // The buttons stand beside the fields, inside the fold, so they follow the box above it like
+  // The buttons stand beside the fields, inside the sheet, so they follow the way in like
   // everything else in there.
-  const encrypt = async () => userEvent.click(await screen.findByLabelText('Encrypted (TLS)'));
+  const encrypt = async () => {
+    await userEvent.selectOptions(await screen.findByLabelText('Protocol'), 'mqtts');
+    await userEvent.click(screen.getByRole('button', { name: 'Security' }));
+  };
 
   it('offers nothing to press where the host has no dialog', async () => {
     renderPanel();
@@ -1230,13 +1209,15 @@ describe('a certificate pointed at rather than typed', () => {
     );
     // Naming a certificate is a statement that this connection is encrypted, whichever way it
     // was named.
-    expect(screen.getByLabelText('Encrypted (TLS)')).toBeChecked();
+    expect(chosenWay()).toBe('mqtts');
   });
 
   it('asks for the field the button stands beside', async () => {
     const asked = dialog(['/tmp/ca.crt']);
     renderPanel();
     await encrypt();
+    // The path is asked for by the one answer it belongs to.
+    await userEvent.click(screen.getByLabelText('Also trust my own CA'));
 
     await userEvent.click(await screen.findByRole('button', { name: 'Choose Extra CA certificate' }));
 
@@ -1284,6 +1265,7 @@ describe('a certificate pointed at rather than typed', () => {
     );
     renderPanel();
     await encrypt();
+    await userEvent.click(screen.getByLabelText('Also trust my own CA'));
 
     await userEvent.click(await screen.findByRole('button', { name: 'Choose Client certificate' }));
 
@@ -1318,8 +1300,8 @@ describe('a broker that will not give you everything', () => {
   it('asks for everything, and says so in the first line of the list', () => {
     renderPanel();
 
-    expect(screen.getByLabelText(/Subscribe #/)).toBeChecked();
-    expect(screen.getByLabelText('One per line')).toHaveValue('#');
+    expect(screen.getByLabelText(/^# all topics/)).toBeChecked();
+    expect(listed()).toEqual(['#']);
   });
 
   it('subscribes to # when the box is ticked', async () => {
@@ -1349,7 +1331,7 @@ describe('a broker that will not give you everything', () => {
     );
 
     renderPanel();
-    await userEvent.click(screen.getByLabelText(/Subscribe #/));
+    await userEvent.click(screen.getByLabelText(/^# all topics/));
     await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Connect' })).toBeEnabled());
@@ -1424,29 +1406,30 @@ describe('the brokers you keep', () => {
     expect(screen.queryByRole('group', { name: 'Saved' })).not.toBeInTheDocument();
   });
 
-  /*
-   * They stand under the form, inside the settings side of the page, rather than under both
-   * columns at the foot of it. That is what lets the record of the link beside them reach the
-   * bottom of the window: a list wants every line of height it can have, and these are chips
-   * that want width — which they have, the side being two thirds of the page.
-   */
-  it('stands under the form, inside the settings side of the page', async () => {
+  // In a column of their own down the left of the page, rather than under the form they fill: the
+  // form stays the length of its own questions however many brokers have been kept.
+  it('stands in a column of its own, beside the form', async () => {
     withProfiles(savedProfile('Lab broker'));
     renderPanel();
 
     const kept = await screen.findByRole('group', { name: 'Saved' });
-    const side = screen.getByLabelText('Address').closest('div[class*="formSide"]');
+    const form = screen.getByLabelText('Address').closest('div[class*="form"]');
 
-    expect(side).not.toBeNull();
-    expect(side!.contains(kept)).toBe(true);
+    expect(form).not.toBeNull();
+    expect(form!.contains(kept)).toBe(false);
+    expect(kept.closest('aside')).toBe(screen.getByRole('complementary', { name: 'Brokers' }));
   });
 
-  it('names each one, and offers to forget it', async () => {
+  it('names each one, and offers to dial it', async () => {
     withProfiles(savedProfile('Lab broker'), savedProfile('Staging'));
     renderPanel();
 
     expect(await screen.findByRole('button', { name: /^Lab broker/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Forget Staging' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Connect to Staging' })).toBeInTheDocument();
+    // Nothing on a card forgets it. That is asked at the head of the form, about the broker the
+    // form is holding — a cross a few pixels from the mark that connects took the only copy of
+    // something typed by hand.
+    expect(screen.queryByRole('button', { name: /^Forget/ })).not.toBeInTheDocument();
   });
 
   it('keeps what is on screen, under the name that was typed', async () => {
@@ -1462,7 +1445,7 @@ describe('the brokers you keep', () => {
     const address = await screen.findByLabelText('Address');
     await userEvent.clear(address);
     await userEvent.type(address, 'mqtts://lab.example:8883');
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save as…' }));
 
     const name = screen.getByLabelText('Save as');
     await userEvent.clear(name);
@@ -1480,7 +1463,7 @@ describe('the brokers you keep', () => {
   it('offers the address as the name', async () => {
     renderPanel();
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Save' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Save as…' }));
 
     expect(screen.getByLabelText('Save as')).toHaveValue('localhost:1883');
   });
@@ -1488,17 +1471,17 @@ describe('the brokers you keep', () => {
   it('gives up on Cancel without asking anything', async () => {
     renderPanel();
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Save' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Save as…' }));
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
     expect(screen.queryByLabelText('Save as')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save as…' })).toBeInTheDocument();
   });
 
   it('will not keep one under no name at all', async () => {
     renderPanel();
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Save' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Save as…' }));
     await userEvent.clear(screen.getByLabelText('Save as'));
 
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
@@ -1512,7 +1495,7 @@ describe('the brokers you keep', () => {
 
     expect(screen.getByLabelText('Address')).toHaveValue('lab.example');
     expect(screen.getByLabelText('Port')).toHaveValue(8883);
-    expect(screen.getByLabelText('Encrypted (TLS)')).toBeChecked();
+    expect(chosenWay()).toBe('mqtts');
   });
 
   // Derived, not remembered: type over the address and the chip goes out by itself.
@@ -1532,7 +1515,7 @@ describe('the brokers you keep', () => {
     await waitFor(() => expect(chip.closest('div[class*="chip"]')).not.toHaveAttribute('data-active'));
   });
 
-  it('forgets one when its cross is pressed', async () => {
+  it('forgets the one the form is holding', async () => {
     let deleted: string | undefined;
     withProfiles(savedProfile('Lab broker'));
     server.use(
@@ -1543,7 +1526,8 @@ describe('the brokers you keep', () => {
     );
     renderPanel();
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Forget Lab broker' }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Lab broker/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Forget Lab broker' }));
 
     await waitFor(() => expect(deleted).toBe('Lab broker'));
   });
@@ -1552,12 +1536,12 @@ describe('the brokers you keep', () => {
 // Seven fields, but not seven at once: a key and a password are for a certificate, and a
 // certificate in a .pfx carries its own key.
 describe('the encryption fields, as far as they apply', () => {
-  // With the box on: the fold's fields follow it, and a field that cannot be typed into cannot
-  // show what typing into it reveals.
+  // Over an encrypted way in: the sheet's fields follow it, and a field that cannot be typed
+  // into cannot show what typing into it reveals.
   const openEncryption = async () => {
     renderPanel();
-    await userEvent.click(await screen.findByLabelText('Encrypted (TLS)'));
-    await userEvent.click(screen.getByText('Encryption'));
+    await userEvent.selectOptions(await screen.findByLabelText('Protocol'), 'mqtts');
+    await userEvent.click(screen.getByRole('button', { name: 'Security' }));
   };
 
   it('asks for a certificate before asking anything about one', async () => {
@@ -1596,16 +1580,18 @@ describe('the encryption fields, as far as they apply', () => {
 });
 
 /**
- * The Subscription section: two boxes and the list they are the first two lines of.
+ * The Topics on connect sheet: one list, drawn as the things in it.
  *
- * The pair is one fact deliberately — a box says whether its filter is in the list, and pressing
- * it puts the filter in or takes it out — so there is nothing to keep in step and no way for the
- * two controls to disagree about the one answer they both describe.
+ * The two answers nearly everybody wants are ticks and every other filter is a chip. A tick says
+ * whether its filter is in the list, and pressing it puts the filter in or takes it out — so
+ * there is nothing to keep in step and no way for two controls to disagree about the one answer
+ * they both describe.
  */
 describe('what to listen to the moment the link is up', () => {
-  const list = () => screen.getByLabelText('One per line');
-  const everything = () => screen.getByLabelText(/Subscribe #/);
-  const system = () => screen.getByLabelText(/Subscribe \$SYS/);
+  const everything = () => screen.getByLabelText(/^# all topics/);
+  const system = () => screen.getByLabelText(/^\$SYS\/# broker statistics/);
+  const box = () => screen.getByLabelText('Add a topic filter');
+  const add = (filters: string) => userEvent.type(box(), `${filters}{enter}`);
 
   /** Every filter the panel asked the server for, in the order it asked. */
   function watchAsks() {
@@ -1626,40 +1612,88 @@ describe('what to listen to the moment the link is up', () => {
 
     expect(everything()).toBeChecked();
     expect(system()).not.toBeChecked();
-    expect(list()).toHaveValue('#');
+    expect(listed()).toEqual(['#']);
   });
 
-  it('puts a filter into the list when its box is pressed, and takes it out again', async () => {
+  it('puts a filter into the list when its tick is pressed, and takes it out again', async () => {
     renderPanel();
 
     await userEvent.click(system());
-    expect(list()).toHaveValue('#\n$SYS/#');
+    expect(listed()).toEqual(['#', '$SYS/#']);
 
     await userEvent.click(system());
-    expect(list()).toHaveValue('#');
+    expect(listed()).toEqual(['#']);
   });
 
-  // The rule the boxes exist under: they report the list rather than holding an opinion of their
-  // own, so a filter deleted by hand unticks the box that put it there.
-  it('unticks a box when its filter is deleted from the list', async () => {
+  // A filter of the reader's own is a chip: there to be read, and with its own way out.
+  it('draws a filter the reader wrote as a chip, and drops it from its cross', async () => {
     renderPanel();
-    await userEvent.click(system());
-    expect(everything()).toBeChecked();
-    expect(system()).toBeChecked();
 
-    await userEvent.clear(list());
-    await userEvent.type(list(), 'plant/+/temp');
+    await add('plant/+/temp');
+    expect(listed()).toEqual(['#', 'plant/+/temp']);
+    // The box is ready for the next one rather than still holding the last.
+    expect(box()).toHaveValue('');
 
-    expect(everything()).not.toBeChecked();
+    await userEvent.click(screen.getByLabelText('Remove plant/+/temp'));
+    expect(listed()).toEqual(['#']);
+  });
+
+  // The rule the ticks exist under: they report the list rather than holding an opinion of their
+  // own, so one of the two written into the box by hand ticks the box that stands for it.
+  it('ticks a box when its filter is written into the list by hand', async () => {
+    renderPanel();
     expect(system()).not.toBeChecked();
+
+    await add('$SYS/#');
+
+    expect(system()).toBeChecked();
+    expect(listed()).toEqual(['#', '$SYS/#']);
+  });
+
+  // Enter in this box means 'that one, and another' — the form's own Enter is Connect, and a
+  // reader halfway through a list has not finished saying what to connect with.
+  it('adds on Enter without dialling', async () => {
+    let dialled = false;
+    server.use(
+      http.post('/api/connection', () => {
+        dialled = true;
+        return HttpResponse.json({ state: 'Connected' });
+      }),
+    );
+    renderPanel();
+
+    await add('lab/oven/#');
+
+    expect(listed()).toEqual(['#', 'lab/oven/#']);
+    expect(dialled).toBe(false);
+  });
+
+  // Separated the way the Filters panel's own box separates them.
+  it('takes several at once', async () => {
+    renderPanel();
+
+    await add('plant/+/temp, lab/oven/#');
+
+    expect(listed()).toEqual(['#', 'plant/+/temp', 'lab/oven/#']);
+  });
+
+  it('offers nothing to add while the box is empty', async () => {
+    renderPanel();
+    await userEvent.click(screen.getByRole('button', { name: 'Topics on connect' }));
+
+    expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled();
+
+    await userEvent.type(box(), 'a/b');
+    expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled();
   });
 
   it('asks for what the reader wrote, in the order they wrote it', async () => {
     const asked = watchAsks();
     renderPanel();
 
-    await userEvent.clear(list());
-    await userEvent.type(list(), 'plant/+/temp{enter}lab/oven/#');
+    await userEvent.click(everything());
+    await add('plant/+/temp');
+    await add('lab/oven/#');
     await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
 
     await waitFor(() => expect(asked).toEqual(['plant/+/temp', 'lab/oven/#']));
@@ -1669,7 +1703,7 @@ describe('what to listen to the moment the link is up', () => {
     const asked = watchAsks();
     renderPanel();
 
-    await userEvent.clear(list());
+    await userEvent.click(everything());
     expect(screen.getByText('No filters — nothing is subscribed on connect.')).toBeInTheDocument();
 
     await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
@@ -1683,8 +1717,8 @@ describe('what to listen to the moment the link is up', () => {
     const asked = watchAsks();
     renderPanel();
 
-    await userEvent.clear(list());
-    await userEvent.type(list(), '#{enter}#');
+    await add('#');
+    expect(listed()).toEqual(['#']);
     await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
 
     await waitFor(() => expect(asked).toEqual(['#']));
@@ -1724,20 +1758,21 @@ describe('the subscription list, remembered', () => {
     saved(['plant/+/temp', '$SYS/#']);
     renderPanel();
 
-    await waitFor(() =>
-      expect(screen.getByLabelText('One per line')).toHaveValue('plant/+/temp\n$SYS/#'),
-    );
-    expect(screen.getByLabelText(/Subscribe \$SYS/)).toBeChecked();
-    expect(screen.getByLabelText(/Subscribe #/)).not.toBeChecked();
+    // The tick first and the chip after it: that is the order they are drawn in, not the order
+    // they are asked for in, which is the order they were written.
+    await waitFor(() => expect(listed()).toEqual(['$SYS/#', 'plant/+/temp']));
+    expect(screen.getByLabelText(/^\$SYS\/# broker statistics/)).toBeChecked();
+    expect(screen.getByLabelText(/^# all topics/)).not.toBeChecked();
   });
 
   // Settings written before the list existed. The console asked for '#' then, so that is what
-  // they meant — an empty box would silently stop a saved broker listening to anything.
+  // they meant — an empty list would silently stop a saved broker listening to anything.
   it('reads a settings file that predates it as the old default', async () => {
     saved(null);
     renderPanel();
 
-    await waitFor(() => expect(screen.getByLabelText('One per line')).toHaveValue('#'));
+    await waitFor(() => expect(screen.getByLabelText('Address')).toHaveValue('broker.example'));
+    expect(listed()).toEqual(['#']);
   });
 
   // And empty is a real answer, kept as one.
@@ -1745,7 +1780,7 @@ describe('the subscription list, remembered', () => {
     saved([]);
     renderPanel();
 
-    await waitFor(() => expect(screen.getByLabelText('One per line')).toHaveValue(''));
+    await waitFor(() => expect(listed()).toEqual([]));
   });
 
   it('sends the list with the connect, so the server keeps it', async () => {
@@ -1759,9 +1794,8 @@ describe('the subscription list, remembered', () => {
     );
     renderPanel();
 
-    const list = await screen.findByLabelText('One per line');
-    await userEvent.clear(list);
-    await userEvent.type(list, 'lab/oven/#');
+    await userEvent.click(await screen.findByLabelText(/^# all topics/));
+    await userEvent.type(screen.getByLabelText('Add a topic filter'), 'lab/oven/#{enter}');
     await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
 
     await waitFor(() => expect(sent?.subscriptions).toEqual(['lab/oven/#']));
@@ -1778,23 +1812,26 @@ describe('what a saved broker shows', () => {
   const withProfiles = (...profiles: unknown[]) =>
     server.use(http.get('/api/connection/profiles', () => HttpResponse.json(profiles)));
 
-  it('writes the address under the name, the way the log writes one', async () => {
+  // The card is the name and nothing else; where it points is there for a pointer, written the
+  // way the log writes one, so it can be found out without pressing the card.
+  it('draws the name alone, and keeps the address for the pointer', async () => {
     withProfiles({
       name: 'Lab broker',
       connection: savedConnection({ host: 'lab.example', port: 8883, useTls: true }),
     });
     renderPanel();
 
-    const card = await screen.findByRole('button', { name: /^Lab broker/ });
-    expect(within(card).getByText('mqtts://lab.example:8883')).toBeInTheDocument();
+    const card = await screen.findByRole('button', { name: 'Lab broker' });
+    expect(card).toHaveTextContent(/^Lab broker$/);
+    expect(card).toHaveAttribute('title', 'mqtts://lab.example:8883');
   });
 
   it('brackets an IPv6 host, so the port can still be found', async () => {
     withProfiles({ name: 'Six', connection: savedConnection({ host: '::1', port: 1883 }) });
     renderPanel();
 
-    const card = await screen.findByRole('button', { name: /^Six/ });
-    expect(within(card).getByText('mqtt://[::1]:1883')).toBeInTheDocument();
+    const card = await screen.findByRole('button', { name: 'Six' });
+    expect(card).toHaveAttribute('title', 'mqtt://[::1]:1883');
   });
 });
 
@@ -1872,24 +1909,130 @@ describe('while an attempt is running', () => {
     return { answer };
   };
 
-  it('names what it is dialling, and counts, once it has run long enough', async () => {
+  // The connect runs on past the broker's yes while the subscriptions go out. The strip and the
+  // button follow the link, not the request: it said 'Connecting to …' and offered Abort over a
+  // link that was already up, until the subscriptions were done.
+  it('says Connected the moment the link is up, while the connect is still finishing', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const up = {
+      state: 'Connected',
+      connection: {
+        host: 'localhost',
+        port: 1883,
+        clientId: 'mqttforge-console',
+        username: null,
+        useTls: false,
+        connectedAt: new Date().toISOString(),
+        sessionPresent: false,
+        assignedClientId: null,
+        serverKeepAlive: null,
+        transport: 'tcp',
+        protocolVersion: 'v500',
+      },
+    };
+    let answered: Record<string, unknown> = { state: 'Disconnected' };
+    server.use(
+      http.get('/api/connection', () => HttpResponse.json(answered)),
+      // Never answers: the subscriptions are still going out.
+      http.post('/api/connection', () => new Promise<never>(() => {})),
+    );
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    renderPanel(queryClient);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+    expect(await screen.findByRole('button', { name: 'Abort' })).toBeInTheDocument();
+
+    // As the hub would write it: the broker has said yes, the POST has not come back.
+    answered = up;
+    act(() => queryClient.setQueryData(queryKeys.connection, up));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SAY_AFTER + 100);
+    });
+
+    expect(screen.getByRole('status')).toHaveTextContent('Connected to localhost:1883');
+    expect(screen.queryByTestId('dialling')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Abort' })).not.toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  // A failed dial is Connecting then Faulted over the hub. Miss the second and the strip went on
+  // counting 'Connecting to … 35s' under the sentence saying nothing was listening.
+  it('lets go of Connecting when the dial fails, even if the hub never says so', async () => {
+    let answered: Record<string, unknown> = { state: 'Disconnected' };
+    let refuse: () => void = () => {};
+    const refused = new Promise<void>((resolve) => {
+      refuse = resolve;
+    });
+    server.use(
+      http.get('/api/connection', () => HttpResponse.json(answered)),
+      http.post('/api/connection', async () => {
+        await refused;
+        return HttpResponse.json(
+          { title: 'Could not connect to broker', detail: 'Refused.', reason: 'refused' },
+          { status: 502 },
+        );
+      }),
+    );
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    renderPanel(queryClient);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
+    // The hub's first message lands; its second never does.
+    act(() => queryClient.setQueryData(queryKeys.connection, { state: 'Connecting' }));
+    answered = {
+      state: 'Faulted',
+      failure: { reason: 'refused', host: 'localhost', port: 1883 },
+    };
+    refuse();
+
+    expect(await screen.findByRole('button', { name: 'Connect' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByTestId('dialling')).not.toBeInTheDocument());
+    // The failure takes the strip's place of 'Not connected', in the same step.
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
+
+  it('names what it is dialling on the press, and counts once it has run long enough', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     dialling();
     renderPanel();
 
     await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
 
-    // Nothing yet: a broker on this machine answers inside ten milliseconds and a line that came
-    // and went in that time would be a flicker on a panel where nothing went wrong.
-    expect(screen.queryByTestId('dialling')).not.toBeInTheDocument();
+    // At once: the press has taken, and the strip says so. The count waits, since under a
+    // second it could only say 0s.
+    const said = await screen.findByTestId('dialling');
+    expect(said).toHaveTextContent('Connecting to localhost:1883');
+    expect(said).not.toHaveTextContent(/· \d+s/);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(SAY_AFTER + 100);
     });
 
-    const said = await screen.findByTestId('dialling');
-    expect(said).toHaveTextContent('Connecting to localhost:1883');
-    expect(said).toHaveTextContent(/· \d+s/);
+    expect(screen.getByTestId('dialling')).toHaveTextContent(/· \d+s/);
+    vi.useRealTimers();
+  });
+
+  // Slow is not stuck, and over TLS a healthy dial can be slow: the certificate chain is fetched
+  // and checked before the CONNECT goes. Said about a dial it is true of, once it has run long
+  // enough for somebody to wonder — and never about a plain one.
+  it.each([
+    ['mqtts', true],
+    ['mqtt', false],
+  ] as const)('says a slow dial over %s is %s the certificate being checked', async (scheme, said) => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    dialling();
+    renderPanel();
+
+    await userEvent.selectOptions(await screen.findByLabelText('Protocol'), scheme);
+    await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    expect(screen.queryByText(/certificate is checked/)).not.toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SAY_AFTER + 100);
+    });
+    await screen.findByTestId('dialling');
+
+    expect(screen.queryAllByText(/certificate is checked/)).toHaveLength(said ? 1 : 0);
     vi.useRealTimers();
   });
 
@@ -2009,7 +2152,7 @@ describe('offering to keep a broker', () => {
     withProfiles();
     renderPanel();
 
-    expect(await screen.findByRole('button', { name: 'Save' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Save as…' })).toBeInTheDocument();
   });
 
   // A broker the console already holds is still offered: the same address under a second name or
@@ -2021,11 +2164,11 @@ describe('offering to keep a broker', () => {
     renderPanel();
 
     await screen.findByRole('button', { name: 'Connect' });
-    expect(await screen.findByRole('button', { name: 'Save' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Save as…' })).toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText('Client ID'), '-2');
 
-    expect(await screen.findByRole('button', { name: 'Save' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Save as…' })).toBeInTheDocument();
   });
 });
 
@@ -2047,11 +2190,158 @@ describe('the history above the saved brokers', () => {
   const withProfiles = (...profiles: unknown[]) =>
     server.use(http.get('/api/connection/profiles', () => HttpResponse.json(profiles)));
 
+  // In columns of their own beside the form, and there without being asked for.
+  it('shows the brokers and the record without a tab to press', async () => {
+    withHistory(recent());
+    renderPanel();
+
+    expect(await screen.findByRole('group', { name: 'Recent' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Broker events' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Recent/ })).not.toBeInTheDocument();
+  });
+
+  // A bar at the foot, shut until it is pressed: the count and the newest line, then the rest.
+  it('keeps the record to one line at the foot until it is opened', async () => {
+    useBrokerEventsStore.getState().clear();
+    useBrokerEventsStore.getState().push({ kind: 'ok', what: 'Connected' });
+    useBrokerEventsStore.getState().push({ kind: 'fault', what: 'Link dropped' });
+    renderPanel();
+
+    const handle = await screen.findByRole('button', { name: /^Events/ });
+    expect(handle).toHaveAttribute('aria-expanded', 'false');
+    // Within the record: the brokers' column has a list of its own while it is empty.
+    const record = within(screen.getByRole('region', { name: 'Broker events' }));
+    expect(screen.getByText('Link dropped')).toBeInTheDocument();
+    expect(record.queryByRole('listitem')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Clear the broker events' })).not.toBeInTheDocument();
+
+    await userEvent.click(handle);
+
+    expect(handle).toHaveAttribute('aria-expanded', 'true');
+    expect(record.getAllByRole('listitem')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Clear the broker events' })).toBeInTheDocument();
+  });
+
+  // Shut every time the panel is opened. It used to be remembered past the panel, so a record
+  // opened once was open on every visit after it.
+  it('starts with the record shut again when the panel is opened again', async () => {
+    useBrokerEventsStore.getState().clear();
+    useBrokerEventsStore.getState().push({ kind: 'ok', what: 'Connected' });
+    const first = renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Events/ }));
+    expect(screen.getByRole('button', { name: /^Events/ })).toHaveAttribute('aria-expanded', 'true');
+
+    first.unmount();
+    renderPanel();
+
+    expect(await screen.findByRole('button', { name: /^Events/ })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+  });
+
+  // The arrow on a card is the card and Connect in one press: the form is filled and dialled.
+  it('dials a card from its arrow', async () => {
+    let sent: Record<string, unknown> | undefined;
+    withHistory(
+      recent({ connection: savedConnection({ host: 'reached.example', port: 8883, subscriptions: ['#'] }) }),
+    );
+    server.use(
+      http.post('/api/connection', async ({ request }) => {
+        sent = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ state: 'Connected' });
+      }),
+      http.post('/api/subscriptions', () => new HttpResponse(null, { status: 202 })),
+    );
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Connect to .*reached\.example:8883/ }));
+
+    await waitFor(() => expect(sent).toMatchObject({ host: 'reached.example', port: 8883 }));
+    expect(screen.getByLabelText('Address')).toHaveValue('reached.example');
+  });
+
+  // Which saved broker a link was made from decides which colour and alert rules apply to it, so a
+  // saved card says so in its connect; one reached and never kept is no saved broker at all.
+  describe('which saved broker a connect is made from', () => {
+    const capture = () => {
+      const box: { sent?: Record<string, unknown> } = {};
+      server.use(
+        http.post('/api/connection', async ({ request }) => {
+          box.sent = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ state: 'Connected' });
+        }),
+        http.post('/api/subscriptions', () => new HttpResponse(null, { status: 202 })),
+      );
+      return box;
+    };
+
+    it('sends the saved broker a card dials', async () => {
+      withProfiles({ id: 'lab-1', name: 'Lab', connection: savedConnection({ host: 'lab.example', subscriptions: [] }) });
+      const box = capture();
+      renderPanel();
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Connect to Lab' }));
+
+      await waitFor(() => expect(box.sent).toMatchObject({ host: 'lab.example', profileId: 'lab-1' }));
+    });
+
+    it('sends none for a broker that was only reached', async () => {
+      withHistory(recent({ connection: savedConnection({ host: 'reached.example', port: 8883, subscriptions: [] }) }));
+      const box = capture();
+      renderPanel();
+
+      await userEvent.click(await screen.findByRole('button', { name: /^Connect to .*reached\.example:8883/ }));
+
+      await waitFor(() => expect(box.sent).toMatchObject({ host: 'reached.example' }));
+      expect(box.sent).not.toHaveProperty('profileId');
+    });
+
+    it('sends the saved broker the form was filled from', async () => {
+      withProfiles({ id: 'lab-1', name: 'Lab', connection: savedConnection({ host: 'lab.example', subscriptions: [] }) });
+      const box = capture();
+      renderPanel();
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Lab' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
+
+      await waitFor(() => expect(box.sent).toMatchObject({ host: 'lab.example', profileId: 'lab-1' }));
+    });
+
+    // Another address typed over a saved broker's is another broker, and that one's rules are not
+    // this one's — even though the name over the form only lets go of it once the press is over.
+    it('sends none once the address is not the saved broker any more', async () => {
+      withProfiles({ id: 'lab-1', name: 'Lab', connection: savedConnection({ host: 'lab.example', subscriptions: [] }) });
+      const box = capture();
+      renderPanel();
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Lab' }));
+      const address = screen.getByLabelText('Address');
+      await userEvent.clear(address);
+      await userEvent.type(address, 'elsewhere.example');
+      await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
+
+      await waitFor(() => expect(box.sent).toMatchObject({ host: 'elsewhere.example' }));
+      expect(box.sent).not.toHaveProperty('profileId');
+    });
+  });
+
+  // What a sheet holds is the line's description: read out after its name, and not drawn.
+  it('describes each line by what its sheet holds', async () => {
+    renderPanel();
+
+    const client = await screen.findByRole('button', { name: 'Sign-in' });
+    expect(client).toHaveAccessibleDescription(/^anonymous · /);
+    expect(screen.getByRole('button', { name: 'Topics on connect' })).toHaveAccessibleDescription('#');
+    expect(screen.getByRole('button', { name: 'Security' })).toHaveAccessibleDescription('off');
+  });
+
   it('draws a broker that was reached and never kept', async () => {
     withHistory(recent());
     renderPanel();
 
-    expect(await screen.findByText('Recent')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Recent' })).toBeInTheDocument();
     expect(await screen.findByText('broker.example:1883')).toBeInTheDocument();
   });
 
@@ -2062,7 +2352,7 @@ describe('the history above the saved brokers', () => {
     renderPanel();
 
     expect(await screen.findByText('Saved')).toBeInTheDocument();
-    expect(await screen.findByText('Recent')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Recent' })).toBeInTheDocument();
 
     const history = screen.getByRole('group', { name: 'Recent' });
     expect(within(history).getByText('broker.example:1883')).toBeInTheDocument();
@@ -2090,8 +2380,298 @@ describe('the history above the saved brokers', () => {
     );
     renderPanel();
 
-    await userEvent.click(await screen.findByRole('button', { name: /^Forget mqtt:\/\/broker\.example/ }));
+    // The card first: Forget is about the broker the form is holding.
+    await userEvent.click(await screen.findByRole('button', { name: /^broker\.example:1883/ }));
+    await userEvent.click(screen.getByRole('button', { name: /^Forget mqtt:\/\/broker\.example/ }));
 
     await waitFor(() => expect(forgotten).toEqual(['abc123']));
+  });
+});
+
+/**
+ * What the form is holding, said over it — and the three things that can be done to it as a
+ * thing: keep what was changed, keep it under a name, forget it.
+ *
+ * They stood in the list: a Save at its head, a column away from what was being saved, and a
+ * cross on every card a few pixels from the mark that connects.
+ */
+describe('the broker the form is holding', () => {
+  const profile = (name: string, over: Record<string, unknown> = {}) => ({
+    name,
+    connection: savedConnection({ subscriptions: ['#'], ...over }),
+  });
+
+  const withProfiles = (...profiles: unknown[]) =>
+    server.use(http.get('/api/connection/profiles', () => HttpResponse.json(profiles)));
+
+  const subject = () => screen.getByRole('heading', { level: 4 });
+  const tag = () => subject().nextElementSibling;
+
+  const savesTo = () => {
+    const sent: Array<{ name: string; connection: Record<string, unknown> }> = [];
+    server.use(
+      http.put('/api/connection/profiles', async ({ request }) => {
+        sent.push((await request.json()) as (typeof sent)[number]);
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+
+    return sent;
+  };
+
+  it('calls a form nobody has kept a new connection', async () => {
+    renderPanel();
+
+    await screen.findByRole('button', { name: 'Connect' });
+    expect(subject()).toHaveTextContent('New connection');
+    expect(tag()).toHaveTextContent('Not saved');
+    // Nothing to forget and nothing changed: the one offer is to keep it.
+    expect(screen.queryByRole('button', { name: /^Forget/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save as…' })).toBeInTheDocument();
+  });
+
+  it('names a saved broker once its card is pressed', async () => {
+    withProfiles(profile('Lab', { host: 'lab.example' }));
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Lab/ }));
+
+    expect(subject()).toHaveTextContent('Lab');
+    expect(tag()).toHaveTextContent('Saved');
+    // Kept exactly as it stands, so there is nothing to save again.
+    expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument();
+  });
+
+  it('names one out of the history by its address, which is the only name it has', async () => {
+    server.use(
+      http.get('/api/connection/recent', () =>
+        HttpResponse.json([
+          {
+            id: 'abc123',
+            connection: savedConnection({ host: 'reached.example', subscriptions: ['#'] }),
+            lastConnectedAt: new Date().toISOString(),
+          },
+        ]),
+      ),
+    );
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^reached\.example/ }));
+
+    expect(subject()).toHaveTextContent('reached.example:1883');
+    expect(tag()).toHaveTextContent('Recent');
+  });
+
+  // The name is not in question, so it is not asked for again.
+  it('keeps what was changed under the name it already has, in one press', async () => {
+    const sent = savesTo();
+    withProfiles(profile('Lab', { host: 'lab.example' }));
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Lab/ }));
+    await userEvent.type(screen.getByLabelText('Client ID'), '-2');
+
+    expect(tag()).toHaveTextContent('Edited');
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({
+      name: 'Lab',
+      connection: expect.objectContaining({ host: 'lab.example', clientId: 'mqttforge-console-2' }),
+    });
+    expect(screen.queryByLabelText('Save as')).not.toBeInTheDocument();
+  });
+
+  // A changed list of filters is a change like any other.
+  it('counts a filter added as a change', async () => {
+    withProfiles(profile('Lab', { host: 'lab.example' }));
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Lab/ }));
+    await userEvent.type(screen.getByLabelText('Add a topic filter'), 'plant/+/temp{enter}');
+
+    expect(tag()).toHaveTextContent('Edited');
+  });
+
+  // The API never sends a password back, and a profile is saved as exactly what the form holds —
+  // so saving a form filled from a card over that card would write it back without the password
+  // it was kept with. The one-press save waits for the box to be filled in again.
+  it('will not save over a broker whose password it cannot send back', async () => {
+    const sent = savesTo();
+    withProfiles(profile('Lab', { host: 'lab.example', username: 'alice', hasPassword: true }));
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Lab/ }));
+    await userEvent.type(screen.getByLabelText('Client ID'), '-2');
+
+    const save = screen.getByRole('button', { name: 'Save changes' });
+    expect(save).toBeDisabled();
+    expect(save).toHaveAttribute('title', expect.stringMatching(/password/));
+
+    await userEvent.type(screen.getByLabelText('Password'), 'hunter2');
+    expect(save).toBeEnabled();
+
+    await userEvent.click(save);
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0].connection).toMatchObject({ username: 'alice', password: 'hunter2' });
+  });
+
+  // The way out of a card somebody pressed to look at.
+  it('starts a blank form from New, with the cursor in the address', async () => {
+    withProfiles(profile('Lab', { host: 'lab.example', username: 'alice' }));
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Lab/ }));
+    expect(screen.getByLabelText('Username')).toHaveValue('alice');
+
+    await userEvent.click(screen.getByRole('button', { name: 'New' }));
+
+    expect(subject()).toHaveTextContent('New connection');
+    expect(screen.getByLabelText('Address')).toHaveValue('localhost');
+    expect(screen.getByLabelText('Address')).toHaveFocus();
+    // Nothing of the card comes along to whatever is typed next.
+    expect(screen.getByLabelText('Username')).toHaveValue('');
+  });
+});
+
+/**
+ * The brokers' column: a list to pick from and — once, while it is empty — to be told about.
+ */
+describe('the brokers this console knows', () => {
+  const withProfiles = (...profiles: unknown[]) =>
+    server.use(http.get('/api/connection/profiles', () => HttpResponse.json(profiles)));
+
+  const lab = { name: 'Lab', connection: savedConnection({ host: 'lab.example' }) };
+
+  // The one state in which the panel explains itself: nothing kept and nothing reached.
+  it('says what the list is for while there is nothing in it', async () => {
+    renderPanel();
+
+    expect(await screen.findByText('No brokers yet')).toBeInTheDocument();
+    const brokers = within(screen.getByRole('complementary', { name: 'Brokers' }));
+    expect(brokers.getAllByRole('listitem')).toHaveLength(3);
+    // And nothing to start over from.
+    expect(screen.queryByRole('button', { name: 'New' })).not.toBeInTheDocument();
+  });
+
+  it('stops saying it the moment there is a broker to list', async () => {
+    withProfiles(lab);
+    renderPanel();
+
+    await screen.findByRole('button', { name: /^Lab/ });
+    expect(screen.queryByText('No brokers yet')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New' })).toBeInTheDocument();
+  });
+
+  // Inside a container 'localhost' is the container. Said before the attempt to a reader with no
+  // broker yet, and with the fix as something to press.
+  it('offers the host a container should dial, before the first attempt fails', async () => {
+    server.use(
+      http.get('/api/connection/defaults', () =>
+        HttpResponse.json({ clientId: 'mqttforge-console', inContainer: true }),
+      ),
+    );
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Use host.docker.internal' }));
+
+    expect(screen.getByLabelText('Address')).toHaveValue('host.docker.internal');
+    expect(screen.queryByRole('button', { name: 'Use host.docker.internal' })).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Whose word is taken for the broker's certificate: three answers, and exactly one is true of a
+ * connection. They were a tick box and a path that could both be filled in at once.
+ */
+describe('whose word is taken for the broker’s certificate', () => {
+  const system = () => screen.getByLabelText('Trust the system’s certificate authorities');
+  const own = () => screen.getByLabelText('Also trust my own CA');
+  const any = () => screen.getByLabelText('Accept any certificate');
+
+  const open = async () => {
+    renderPanel();
+    await userEvent.selectOptions(await screen.findByLabelText('Protocol'), 'mqtts');
+    await userEvent.click(screen.getByRole('button', { name: 'Security' }));
+  };
+
+  const watchConnect = () => {
+    const seen: { tls?: Record<string, unknown> | null } = {};
+    server.use(
+      http.post('/api/connection', async ({ request }) => {
+        seen.tls = ((await request.json()) as { tls: Record<string, unknown> | null }).tls;
+        return HttpResponse.json({ state: 'Connected' });
+      }),
+      http.post('/api/subscriptions', () => new HttpResponse(null, { status: 202 })),
+    );
+
+    return seen;
+  };
+
+  it('starts on the system’s authorities, and asks for no path', async () => {
+    await open();
+
+    expect(system()).toBeChecked();
+    expect(screen.queryByLabelText('Extra CA certificate')).not.toBeInTheDocument();
+  });
+
+  it('asks for the path under the one answer that needs one', async () => {
+    await open();
+    await userEvent.click(own());
+
+    expect(own()).toBeChecked();
+    expect(screen.getByLabelText('Extra CA certificate')).toBeVisible();
+  });
+
+  // The path is the longest thing typed on the panel. Looking at another answer does not cost it.
+  it('keeps the path while another answer is looked at', async () => {
+    const seen = watchConnect();
+    await open();
+    await userEvent.click(own());
+    await userEvent.type(screen.getByLabelText('Extra CA certificate'), '/etc/mqtt/lab-ca.crt');
+
+    await userEvent.click(system());
+    expect(screen.queryByLabelText('Extra CA certificate')).not.toBeInTheDocument();
+
+    await userEvent.click(own());
+    expect(screen.getByLabelText('Extra CA certificate')).toHaveValue('/etc/mqtt/lab-ca.crt');
+
+    // And the first answer means it: nothing is sent while it is the one chosen.
+    await userEvent.click(system());
+    await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await waitFor(() => expect(seen.tls).toBeNull());
+  });
+
+  it('says what accepting anything gives up, on the line that does it', async () => {
+    await open();
+
+    expect(any()).toHaveAccessibleDescription('Not checked. For test brokers only.');
+  });
+
+  it('comes back on the middle answer for a saved broker that carries a CA', async () => {
+    server.use(
+      http.get('/api/connection/settings', () =>
+        HttpResponse.json(
+          savedConnection({
+            port: 8883,
+            useTls: true,
+            tls: {
+              allowUntrustedCertificates: false,
+              certificateAuthorityPath: '/etc/mqtt/lab-ca.crt',
+              clientCertificatePath: null,
+              clientCertificateKeyPath: null,
+              hasClientCertificatePassword: false,
+              sniHost: null,
+              alpnProtocol: null,
+            },
+          }),
+        ),
+      ),
+    );
+    renderPanel();
+
+    await waitFor(() => expect(own()).toBeChecked());
+    expect(screen.getByLabelText('Extra CA certificate')).toHaveValue('/etc/mqtt/lab-ca.crt');
   });
 });
