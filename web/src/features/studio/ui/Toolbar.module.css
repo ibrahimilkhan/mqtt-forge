@@ -36,7 +36,9 @@
   border: 1px solid transparent;
   border-radius: var(--r-control);
   color: var(--ink);
-  font-size: 17px;
+  /* The marks are drawn at 1em, so their size is a type size; a token, so the appearance panel's
+     root size scales the toolbar with every other line of the console. */
+  font-size: var(--t-lead);
   line-height: 1;
 }
 .icon { width: 28px; }
@@ -53,7 +55,7 @@
   border-color: color-mix(in srgb, var(--signal) 45%, transparent);
   color: var(--signal);
 }
-.chevron { display: inline-flex; font-size: 11px; color: var(--muted); }
+.chevron { display: inline-flex; font-size: var(--t-label); color: var(--muted); }
 
 /* A labelled select in the Steps popup. */
 .field { display: flex; flex-direction: column; gap: 3px; padding: 4px 6px; color: var(--muted); }
@@ -71,5 +73,5 @@
   font-size: var(--t-small);
   white-space: nowrap;
 }
-.save > svg { font-size: 15px; }
+.save > svg { font-size: var(--t-body); }
 .save[data-state='failed'] { color: var(--fault); }

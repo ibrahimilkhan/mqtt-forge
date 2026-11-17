@@ -44,7 +44,7 @@
   background: color-mix(in srgb, var(--signal) 10%, var(--surface));
   border-color: transparent;
 }
-.item > svg { flex: none; font-size: 16px; color: var(--muted); }
+.item > svg { flex: none; font-size: var(--t-body); color: var(--muted); }
 .item[aria-current='true'] { font-weight: 600; }
 /* A row that takes something away keeps the console's ends tone (global.css) as its lettering. */
 .item:global(.ends), .item:global(.ends) > svg { color: var(--fault); }
