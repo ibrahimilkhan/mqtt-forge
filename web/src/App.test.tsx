@@ -287,8 +287,8 @@ describe('App', () => {
    * And it does not claim to be a disclosure.
    *
    * It carried `aria-expanded` over `aria-controls="panel-menu"`, which says the menu is
-   * collapsed — and nothing is. The nav holds the same ten buttons at both widths, every one
-   * focusable, named and reachable; narrowing the rail costs the reader the words, not the way
+   * collapsed — and nothing is. The nav holds the same eleven buttons at both widths, the ten
+   * panels and the Topics row, every one focusable, named and reachable; narrowing the rail costs the reader the words, not the way
    * to any panel. A listener told 'collapsed' would open a menu that was never shut.
    */
   it('says the rail is narrowed rather than that the menu is closed', async () => {
@@ -302,7 +302,7 @@ describe('App', () => {
 
     // The proof of the claim: every panel is still one press away.
     const rows = menu().getAllByRole('button');
-    expect(rows).toHaveLength(10);
+    expect(rows).toHaveLength(11);
     rows.forEach((row) => expect(row).toBeEnabled());
   });
 
@@ -313,7 +313,7 @@ describe('App', () => {
     renderApp();
     await userEvent.click(screen.getByRole('button', { name: /the rail$/ }));
 
-    expect(menu().getAllByRole('button')).toHaveLength(10);
+    expect(menu().getAllByRole('button')).toHaveLength(11);
 
     await userEvent.click(menu().getByRole('button', { name: 'Filters' }));
 
@@ -331,7 +331,7 @@ describe('App', () => {
     expect(menu().queryByRole('heading', { name: 'Link' })).not.toBeInTheDocument();
   });
 
-  // Six flat buttons was a list to read through, and ten is more so. The headings are the
+  // Six flat buttons was a list to read through, and eleven is more so. The headings are the
   // questions a reader actually arrives with, and Chart leads Reading because that is where a
   // topic is read. Alerts closes it: a rule is written about a run already being watched. Flows
   // leads Tools, and 3D Studio follows it, each marked with its own β as the two least settled
@@ -413,6 +413,12 @@ describe('App', () => {
 
     await userEvent.click(row);
     expect(await screen.findByRole('region', { name: '3D Studio panel' })).toBeInTheDocument();
+    // The panel column now opens as wide as the tree, and narrower windows lay it over the tree
+    // with a seam of its own; neither is room for a scene, so the studio still takes the row.
+    expect(screen.getByTestId('layout')).toHaveAttribute('data-panel', 'fill');
+    expect(
+      screen.queryByRole('separator', { name: 'Panel and topics boundary' }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -610,14 +616,15 @@ describe('the rail on a narrow screen', () => {
     );
   });
 
-  // Narrow or not, every panel is one press away — which is the promise the shut rail makes.
-  it('keeps all ten panels reachable while it is narrowed', async () => {
+  // Narrow or not, every panel is one press away — which is the promise the shut rail makes. The
+  // Topics row stands among them, so the rail holds the ten panels and that one way back to the tree.
+  it('keeps all ten panels and the Topics row reachable while it is narrowed', async () => {
     atWidth(true);
     renderApp();
 
     await screen.findByRole('button', { name: 'Open the rail' });
     const rows = menu().getAllByRole('button');
-    expect(rows).toHaveLength(10);
+    expect(rows).toHaveLength(11);
     rows.forEach((row) => expect(row).toBeEnabled());
 
     await userEvent.click(menu().getByRole('button', { name: /^Chart/ }));
