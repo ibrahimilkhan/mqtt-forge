@@ -103,7 +103,7 @@ export function AppearancePanel({ onClose }: { onClose: () => void }) {
       <p className={panel.note}>Stored in this browser only.</p>
 
       <div className={panel.actions}>
-        <button type="button" className="ghost" onClick={reset}>
+        <button type="button" onClick={reset}>
           Restore defaults
         </button>
       </div>

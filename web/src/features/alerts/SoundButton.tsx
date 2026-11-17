@@ -26,7 +26,6 @@ export function SoundButton() {
     <div className={styles.sound}>
       <button
         type="button"
-        className="ghost"
         aria-pressed={on}
         title={
           ready

@@ -147,7 +147,7 @@ export function ReconnectNotice() {
             {/* Stops this outage, not the option. The switch on the form is the standing answer,
                 and keeping them apart is what lets 'stop, I am looking at it' mean that and
                 nothing more — the next connection that works puts the supervisor back to work. */}
-            <button type="button" className="ghost" onClick={() => stop.mutate()} disabled={busy}>
+            <button type="button" onClick={() => stop.mutate()} disabled={busy}>
               Stop trying
             </button>
           </div>
@@ -212,7 +212,6 @@ export function ReconnectNotice() {
           <div className={styles.actions}>
             <button
               type="button"
-              className="ghost"
               onClick={() => useLinkWatchStore.getState().dismiss()}
             >
               Dismiss

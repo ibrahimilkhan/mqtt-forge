@@ -261,7 +261,6 @@ export function PublishPanel() {
         {mode === 'json' && (
           <button
             type="button"
-            className="ghost"
             onClick={() => setPayload(formatJson(payload))}
             disabled={!encoded.ok}
           >

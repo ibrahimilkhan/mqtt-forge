@@ -33,7 +33,7 @@ export function MobilePanel({ onClose }: { onClose: () => void }) {
           <p className={styles.address}>{target.url}</p>
 
           <div className={panel.actions}>
-            <button type="button" className="ghost" onClick={copy}>
+            <button type="button" onClick={copy}>
               {label}
             </button>
           </div>
