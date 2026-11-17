@@ -2,7 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { getColourRules } from '../api/colourRules';
 import { queryKeys } from '../api/queryKeys';
-import { createRuleLookup } from './topicColour';
+import { useLinkProfile } from '../api/useConnectionState';
+import { createRuleLookup, rulesFor } from './topicColour';
 
 /**
  * The colour rule covering a topic, for the panes that draw one row per topic.
@@ -12,6 +13,8 @@ import { createRuleLookup } from './topicColour';
  */
 export function useRuleLookup() {
   const { data } = useQuery({ queryKey: queryKeys.colourRules, queryFn: getColourRules });
+  // Only the rules that belong to the broker up now, and the ones for every broker.
+  const profileId = useLinkProfile();
 
-  return useMemo(() => createRuleLookup(data ?? []), [data]);
+  return useMemo(() => createRuleLookup(rulesFor(data ?? [], profileId)), [data, profileId]);
 }

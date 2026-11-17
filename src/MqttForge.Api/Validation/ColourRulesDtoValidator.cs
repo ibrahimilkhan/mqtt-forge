@@ -19,12 +19,14 @@ public sealed partial class ColourRulesDtoValidator : AbstractValidator<ColourRu
             .Must(rules => rules.Count <= MaxRules)
             .WithMessage($"No more than {MaxRules} colour rules.");
 
-        // Two rules on one filter cannot both win, and quietly dropping one leaves the user
-        // unable to explain why the rule they typed does nothing.
+        // Two rules on one filter for one broker cannot both win, and quietly dropping one leaves
+        // the user unable to explain why the rule they typed does nothing. For two brokers they can
+        // — only one of the two is ever up — and one for every broker beside one for a broker is
+        // the general colour and its exception: the broker's own wins while that broker is up.
         RuleFor(x => x.Rules)
-            .Must(rules => rules.Select(rule => rule.Filter).Distinct(StringComparer.Ordinal).Count() == rules.Count)
+            .Must(rules => rules.Select(rule => (rule.Filter, Owner(rule))).Distinct().Count() == rules.Count)
             .When(x => x.Rules is not null)
-            .WithMessage("Each topic filter can carry only one colour.");
+            .WithMessage("Each topic filter can carry only one colour for each broker.");
 
         RuleForEach(x => x.Rules).ChildRules(rule =>
         {
@@ -45,6 +47,13 @@ public sealed partial class ColourRulesDtoValidator : AbstractValidator<ColourRu
             rule.RuleFor(x => x.BodyColour)
                 .Must(colour => colour is null || HexTriple.IsMatch(colour))
                 .WithMessage("'{PropertyValue}' is not a #rrggbb colour.");
+
+            // An id the server minted is 32 characters; anything far past that is not one of ours.
+            rule.RuleFor(x => x.ProfileId).MaximumLength(64);
         });
     }
+
+    // Blank and absent are one owner: every broker.
+    private static string Owner(ColourRuleDto rule) =>
+        string.IsNullOrWhiteSpace(rule.ProfileId) ? "" : rule.ProfileId;
 }

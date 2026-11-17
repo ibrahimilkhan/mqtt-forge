@@ -35,6 +35,29 @@ public class ColourRulePersistenceTests : IDisposable
         Assert.Equal([new ColourRuleDto("sensors/+/temp", "#b45309")], rules!.Rules);
     }
 
+    // A rule for one broker is still that broker's after a restart, and one for every broker is
+    // still that — the two kinds side by side on one filter.
+    [Fact]
+    public async Task A_rule_keeps_the_broker_it_belongs_to()
+    {
+        ColourRuleDto[] sent =
+        [
+            new("sensors/#", "#b45309"),
+            new("sensors/#", "#1e40af", ProfileId: "lab-1"),
+        ];
+
+        using (var first = Host())
+        {
+            (await first.CreateClient().PutAsJsonAsync("/api/colour-rules", new ColourRulesDto(sent)))
+                .EnsureSuccessStatusCode();
+        }
+
+        using var second = Host();
+        var rules = await second.CreateClient().GetFromJsonAsync<ColourRulesDto>("/api/colour-rules");
+
+        Assert.Equal(sent, rules!.Rules);
+    }
+
     [Fact]
     public async Task A_file_that_is_not_json_reads_as_no_rules_rather_than_failing()
     {

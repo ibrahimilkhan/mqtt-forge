@@ -19,7 +19,10 @@ public sealed record BrokerLinkDto(
 
     // The version the broker agreed to, never the one that was asked for. With Auto choosing,
     // those are different questions, and this is the one the console cannot answer for itself.
-    MqttProtocolLevel ProtocolVersion)
+    MqttProtocolLevel ProtocolVersion,
+
+    // The saved broker this link was made from, or null: which colour and alert rules apply.
+    string? ProfileId = null)
 {
     public static BrokerLinkDto? Of(BrokerLink? link) =>
         link is null
@@ -27,5 +30,5 @@ public sealed record BrokerLinkDto(
             : new BrokerLinkDto(
                 link.Host, link.Port, link.ClientId, link.Username, link.UseTls,
                 link.ConnectedAt, link.SessionPresent, link.AssignedClientId, link.ServerKeepAlive,
-                link.Transport, link.ProtocolVersion);
+                link.Transport, link.ProtocolVersion, link.ProfileId);
 }

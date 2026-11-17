@@ -19,7 +19,9 @@
 
    The last column holds one mark now. The glass that used to stand beside the × moved into the
    filter cell, where the field it fills in is. */
-.rules { --rule-cols: 26px 52px 68px minmax(190px, 2fr) minmax(94px, 0.6fr) 34px; }
+/* The broker sits between the filter and the count: it is part of what the rule is — which topics,
+   on which broker — and the count is what that comes to. */
+.rules { --rule-cols: 26px 52px 68px minmax(190px, 2fr) minmax(120px, 0.8fr) minmax(94px, 0.6fr) 34px; }
 
 .rulesHead,
 .ruleRow {
@@ -36,6 +38,21 @@
   border-bottom: 1px solid color-mix(in srgb, var(--rule) 55%, transparent);
 }
 .ruleRow:hover { background: var(--paper); }
+
+/* Another broker's rule. Kept on the list, because this is where every rule is managed and one that
+   vanished whenever its broker was down would read as lost; faded, because it is not painting
+   anything in the tree behind this panel. The controls stay full strength under the pointer and
+   in focus, so editing one does not mean editing something half-visible. */
+.ruleRow[data-elsewhere] { opacity: 0.5; }
+.ruleRow[data-elsewhere]:hover,
+.ruleRow[data-elsewhere]:focus-within { opacity: 1; }
+
+/* Which broker it belongs to: a select the height of the filter box beside it. */
+.broker {
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: var(--t-small);
+}
 
 /* The filter and the glass that fills it in, as one cell: the field takes the slack and the mark
    sits at its right-hand end, which is where a control that writes into a box belongs. */
@@ -108,12 +125,16 @@
   margin-top: 8px;
 }
 
-/* The one thing you do to the whole list, under it. */
-.footer {
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid var(--rule);
+/* New rule, at the top right of the page, over the list it adds to. */
+.toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
 }
+
+/* The one thing you do to the whole list, under it — and no rule over it: the list's own last
+   row already ends it. */
+.footer { margin-top: 16px; }
 
 /* One row to a line under about 640px: five columns of a table is not a thing a narrow panel can
    hold, and the count is the first to go — it is the column you read when comparing rules, which
@@ -121,6 +142,12 @@
 @media (max-width: 640px) {
   .rulesHead { display: none; }
   .ruleRow { grid-template-columns: 26px 34px 34px minmax(0, 1fr) 30px; }
+  /* Its own line under the row, for the same reason the count is on one: five columns is all a
+     phone's width can hold, and the broker is read with the filter rather than beside it. */
+  .broker {
+    grid-column: 2 / -1;
+    grid-row: 3;
+  }
   /* Pinned to the second row, not merely told to span: an item given a column but no row is
      placed by the auto cursor, and the cursor then carries on from there — which put the × on a
      third line of its own, at the far left, under a row it belongs to the end of. Definite in
