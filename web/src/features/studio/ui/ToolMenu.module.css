@@ -1,0 +1,52 @@
+/* Above the studio's floating panels and the panel column, and under the console's notices and
+   the sound prompt (398 and 399), which speak for the whole console and should not be covered by
+   one tool's popup. Fixed: see ToolMenu.tsx for why it is placed against the window. */
+.popup {
+  position: fixed;
+  z-index: 250;
+  min-width: 200px;
+  max-width: min(320px, calc(100vw - 16px));
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-plate);
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--ink) 18%, transparent);
+  font-family: var(--sans);
+  font-size: var(--t-small);
+}
+
+/* One row of a popup: a mark and a few words, read like a list rather than pressed like a
+   button. Every button in the console is a filled block of capitals by default (global.css), and
+   a list of eight of those is a wall; so a row gives up the fill, the capitals and the mono, and
+   takes a wash of the signal blue under the pointer, as a ghost does. */
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: var(--t-small);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  text-align: left;
+}
+.item:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--signal) 10%, var(--surface));
+  border-color: transparent;
+}
+.item > svg { flex: none; font-size: 16px; color: var(--muted); }
+.item[aria-current='true'] { font-weight: 600; }
+.item[aria-current='true'] > svg { color: var(--signal); }
+
+/* Where a popup's list stops and its actions start. */
+.rule { height: 1px; margin: 3px 0; background: var(--rule); border: 0; }
