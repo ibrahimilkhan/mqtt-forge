@@ -35,10 +35,21 @@ function ColourField({ value, onCommit }: { value: string; onCommit: (value: str
 export function Inspector() {
   const object = useStudio((s) => (s.selection.length === 1 ? s.scene?.objects.find((o) => o.id === s.selection[0]) : undefined));
   const settings = useStudio((s) => s.scene?.settings);
+  const several = useStudio((s) => s.selection.length > 1);
   const [name, setName] = useState(object?.name ?? '');
   useEffect(() => setName(object?.name ?? ''), [object?.name]);
 
-  if (!object || !settings) return <aside className={styles.inspector} aria-label="Inspector"><p className={styles.empty}>Select an object to see and change it here.</p></aside>;
+  // The studio draws the inspector only while something is selected, so the first of these is for
+  // whoever renders it alone; the second is the one a reader meets, having picked more than one.
+  if (!object || !settings) {
+    return (
+      <aside className={styles.inspector} aria-label="Inspector">
+        <p className={styles.empty}>
+          {several ? 'Several objects are selected. Pick one to see and change it here.' : 'Select an object to see and change it here.'}
+        </p>
+      </aside>
+    );
+  }
 
   const { updateObject, setEuler, rename } = studioStore.getState();
   const unit = settings.displayUnit;

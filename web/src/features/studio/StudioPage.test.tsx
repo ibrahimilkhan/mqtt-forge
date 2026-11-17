@@ -1,23 +1,28 @@
-import { screen } from '@testing-library/react';
+import { act, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { server } from '../../test/server';
 import { renderWithClient as render } from '../../test/renderWithClient';
 import { blankScene } from './model/defaults';
+import { LAYOUT_DEFAULTS, LAYOUT_KEY, useStudioLayout } from './layoutStore';
 import { studioStore } from './studioStore';
 import StudioPage from './StudioPage';
 
-beforeEach(() => studioStore.getState().close());
+beforeEach(() => {
+  studioStore.getState().close();
+  useStudioLayout.setState(LAYOUT_DEFAULTS);
+});
 
 describe('StudioPage', () => {
   it('starts a new scene when there are none, and lays out the studio around it', async () => {
     render(<StudioPage />);
 
-    expect(await screen.findByRole('combobox', { name: 'Scene' })).toHaveDisplayValue('Untitled scene');
+    expect(await screen.findByRole('button', { name: 'Scene: Untitled scene' })).toBeInTheDocument();
     expect(screen.getByRole('toolbar', { name: 'Studio tools' })).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Objects' })).toBeInTheDocument();
-    expect(screen.getByRole('complementary', { name: 'Inspector' })).toBeInTheDocument();
+    // Nothing is selected in a new scene, so there is no inspector to float over the view.
+    expect(screen.queryByRole('complementary', { name: 'Inspector' })).not.toBeInTheDocument();
   });
 
   it('opens the most recently saved scene', async () => {
@@ -30,7 +35,7 @@ describe('StudioPage', () => {
 
     render(<StudioPage />);
 
-    expect(await screen.findByRole('combobox', { name: 'Scene' })).toHaveDisplayValue('Newer');
+    expect(await screen.findByRole('button', { name: 'Scene: Newer' })).toBeInTheDocument();
   });
 
   // jsdom has no WebGL — the same as a browser with it switched off.
@@ -38,7 +43,8 @@ describe('StudioPage', () => {
     render(<StudioPage />);
     expect(await screen.findByText(/cannot draw 3D/)).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: 'Add Box' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Add a shape' }));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Box' }));
     expect(screen.getByRole('button', { name: 'Box 1' })).toBeInTheDocument();
   });
 
@@ -59,8 +65,51 @@ describe('StudioPage', () => {
 
     render(<StudioPage />);
 
-    expect(await screen.findByRole('combobox', { name: 'Scene' })).toHaveDisplayValue('Older');
+    expect(await screen.findByRole('button', { name: 'Scene: Older' })).toBeInTheDocument();
     expect(screen.getByText(/"Newer" could not be opened/)).toHaveAttribute('role', 'alert');
+    await userEvent.click(screen.getByRole('button', { name: 'Scene: Older' }));
     expect(screen.getByRole('button', { name: 'New scene' })).toBeInTheDocument();
+  });
+
+  it('draws the inspector only while something is selected and its switch is on', async () => {
+    render(<StudioPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Add a shape' }));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Box' }));
+    expect(screen.getByRole('complementary', { name: 'Inspector' })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Inspector' }));
+    expect(screen.queryByRole('complementary', { name: 'Inspector' })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Inspector' }));
+    expect(screen.getByRole('complementary', { name: 'Inspector' })).toBeInTheDocument();
+    act(() => studioStore.getState().select([]));
+    expect(screen.queryByRole('complementary', { name: 'Inspector' })).not.toBeInTheDocument();
+  });
+
+  it('shuts and opens the object tree, and keeps the choice for the next visit', async () => {
+    render(<StudioPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Object tree' }));
+    expect(screen.queryByRole('navigation', { name: 'Objects' })).not.toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? '{}').state).toMatchObject({ treeOpen: false });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Object tree' }));
+    expect(screen.getByRole('navigation', { name: 'Objects' })).toBeInTheDocument();
+  });
+
+  it('shuts an open menu on Escape without clearing the selection behind it', async () => {
+    render(<StudioPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Add a shape' }));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Box' }));
+    const selected = studioStore.getState().selection;
+    expect(selected).toHaveLength(1);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Add a shape' }));
+    await userEvent.keyboard('{Escape}');
+
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(studioStore.getState().selection).toEqual(selected);
+    // And with the menu shut, the same key is the studio's again.
+    await userEvent.keyboard('{Escape}');
+    expect(studioStore.getState().selection).toEqual([]);
   });
 });

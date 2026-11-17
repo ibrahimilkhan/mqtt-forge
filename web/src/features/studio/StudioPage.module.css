@@ -1,6 +1,30 @@
-.page { display: flex; flex-direction: column; gap: 12px; height: 100%; min-height: 480px; outline: none; }
-.body { flex: 1; display: grid; grid-template-columns: minmax(160px, 220px) minmax(0, 1fr) minmax(220px, 280px); gap: 12px; min-height: 0; }
+/* A column: the one toolbar row, any fault line, and the stage taking every pixel left. */
+.page { display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 480px; outline: none; }
 
-@media (max-width: 760px) {
-  .body { grid-template-columns: 1fr; grid-template-rows: auto minmax(320px, 1fr) auto; }
+/* The scene has the whole of the stage; the tree and the inspector float over its edges rather
+   than taking columns from it, so opening or shutting either never resizes the canvas (and never
+   makes the engine redraw at a new size). `isolation` keeps their stacking inside the stage, so
+   the panel's own band and the toolbar's popups are never fighting them for the top. */
+.stage { position: relative; flex: 1; min-height: 0; isolation: isolate; }
+
+/* The two floating panels: the surface a shade see-through, so the scene still reads behind
+   them, each scrolling itself and never taller than the stage it floats in. */
+.float {
+  position: absolute;
+  top: 8px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100% - 16px);
+  padding: 8px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-plate);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--ink) 14%, transparent);
+}
+.tree { composes: float; left: 8px; width: min(220px, calc(50% - 12px)); }
+.inspector { composes: float; right: 8px; width: min(260px, calc(50% - 12px)); }
+
+@media (forced-colors: active) {
+  .float { background: Canvas; }
 }
