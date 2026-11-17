@@ -221,3 +221,24 @@ replaces the placeholder with the real mesh.
 
 Model import/export, joints, collision, measuring tools and live MQTT binding (Phases 2–5). No
 multi-user editing or conflict resolution: last write wins per scene.
+
+## Layout revision (2026-11-17, after Phase 1 review)
+
+The first layout gave the scene a third of the panel and spent a wrapped two-row toolbar on labelled
+buttons. Revised, at the user's request:
+
+- **The 3D view fills the panel body.** A single toolbar row sits above it; nothing else takes room
+  from the scene.
+- **Object tree** floats over the scene's left edge, opened and closed from the toolbar. It never
+  narrows the view.
+- **Inspector** floats over the right edge, the same way. It shows while an object is selected and its
+  toggle is on; with nothing selected it is not drawn.
+- Which of the two floating panels are open is a per-viewer preference kept in local storage.
+- **Toolbar: one row of small icon buttons**, each with a tooltip naming it and its shortcut, in groups
+  divided by thin rules. Whatever can fold into a dropdown does:
+  `Scene ▾` (scene list; New, Rename, Duplicate, Delete, Import DesignBox) · `Add ▾` (the eight
+  shapes) · Tool (Select Q / Move W / Rotate E / Scale R) · Axes (World/Local) · Snap toggle +
+  `Steps ▾` (move step, turn step, display unit) · Undo / Redo · View (tree, inspector, focus F) · save
+  state at the far end. Below the narrow breakpoint the row scrolls sideways rather than wrapping.
+- Icons are drawn in the console's own glyph language (`brand/icons.tsx`'s `Glyph`: 24-unit square,
+  one stroke weight, round ends, no fill, current colour).
