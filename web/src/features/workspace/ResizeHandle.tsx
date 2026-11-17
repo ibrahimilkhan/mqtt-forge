@@ -31,6 +31,12 @@ type Props = {
    * its own — a column of topics is as wide as it is given, and no wider.
    */
   fit?: { title: string; share: () => number | null };
+  /**
+   * The near pane lies over the row rather than beside it — the panel on a window too narrow for a
+   * third column. There is no far pane to measure then, only the row under both, so the seam
+   * travels the whole of its parent and the value is the near pane's share of that.
+   */
+  over?: boolean;
 };
 
 /**
@@ -59,7 +65,7 @@ function reach(from: Element | null | undefined, step: 'previousElementSibling' 
 // column, because a folded region takes a header's worth of it and gives up the rest. The pair
 // either side of a seam is always laid out, so their own rects answer where the seam is without
 // anyone having to know what else is in the column, or what it is doing.
-export function ResizeHandle({ axis, label, value, min, max, onChange, off = false, fit }: Props) {
+export function ResizeHandle({ axis, label, value, min, max, onChange, off = false, fit, over = false }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   // Where in the gap between the two panes the drag began, measured from the near pane's edge.
@@ -90,7 +96,13 @@ export function ResizeHandle({ axis, label, value, min, max, onChange, off = fal
   const span = (event: PointerEvent<HTMLDivElement>) => {
     const bar = ref.current;
     const near = reach(bar?.previousElementSibling, 'previousElementSibling');
-    const far = reach(bar?.nextElementSibling, 'nextElementSibling');
+    // Overlaid, nothing lies between the near pane's edge and the rest of the row: the far side is
+    // the row's own end, and the gap is nothing.
+    const row = over ? bar?.parentElement?.getBoundingClientRect() : null;
+    const far =
+      row && near
+        ? { left: near.right, right: row.right, top: near.bottom, bottom: row.bottom }
+        : reach(bar?.nextElementSibling, 'nextElementSibling');
     if (!near || !far) return null;
 
     return axis === 'x'

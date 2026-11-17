@@ -179,12 +179,13 @@ describe('App', () => {
     expect(screen.getByRole('region', { name: 'Settings panel' })).toBeInTheDocument();
   });
 
-  // A deep tree indents every level, so topics start widest; the panel column holds a form.
-  it('starts with the topics column the widest of the three', () => {
+  // The panels in the column hold rows of topics as long as the tree's own, so a panel opens as
+  // wide as the tree beside it.
+  it('opens the panel column as wide as the topics column', () => {
     renderApp();
 
-    expect(share('panel')).toBe('24.00fr');
-    expect(share('tree')).toBe('44.00fr');
+    expect(share('panel')).toBe('34.00fr');
+    expect(share('tree')).toBe('34.00fr');
     expect(share('right')).toBe('32.00fr');
   });
 
@@ -195,8 +196,8 @@ describe('App', () => {
 
     expect(screen.getByTestId('layout')).toHaveAttribute('data-panel', 'closed');
     expect(share('panel')).toBe('0.00fr');
-    expect(share('tree')).toBe('56.00fr');
-    expect(share('right')).toBe('44.00fr');
+    expect(share('tree')).toBe('51.00fr');
+    expect(share('right')).toBe('49.00fr');
   });
 
   // A step is two percent of the pair the seam divides, not of the whole row — the same
@@ -208,12 +209,12 @@ describe('App', () => {
     const seam = screen.getByRole('separator', { name: 'Panel and topics boundary' });
     seam.focus();
     await userEvent.keyboard('{ArrowLeft}');
-    expect(share('panel')).toBe('22.64fr');
+    expect(share('panel')).toBe('32.64fr');
 
     await intoColumns();
     await intoColumns();
 
-    expect(share('panel')).toBe('22.64fr');
+    expect(share('panel')).toBe('32.64fr');
   });
 
   it('moves the topics boundary with the arrow keys', async () => {
@@ -224,8 +225,8 @@ describe('App', () => {
     seam.focus();
     await userEvent.keyboard('{ArrowRight}');
 
-    expect(share('tree')).toBe('45.52fr');
-    expect(share('right')).toBe('30.48fr');
+    expect(share('tree')).toBe('35.32fr');
+    expect(share('right')).toBe('30.68fr');
   });
 
   // Unmeasured in jsdom, so the column opens content-sized: the entries and the publish form
@@ -301,7 +302,7 @@ describe('App', () => {
 
     // The proof of the claim: every panel is still one press away.
     const rows = menu().getAllByRole('button');
-    expect(rows).toHaveLength(9);
+    expect(rows).toHaveLength(10);
     rows.forEach((row) => expect(row).toBeEnabled());
   });
 
@@ -312,7 +313,7 @@ describe('App', () => {
     renderApp();
     await userEvent.click(screen.getByRole('button', { name: /the rail$/ }));
 
-    expect(menu().getAllByRole('button')).toHaveLength(9);
+    expect(menu().getAllByRole('button')).toHaveLength(10);
 
     await userEvent.click(menu().getByRole('button', { name: 'Filters' }));
 
@@ -345,6 +346,7 @@ describe('App', () => {
     expect(menu().getAllByRole('button').map((button) => button.textContent)).toEqual([
       'Broker',
       'Filters',
+      'Topics',
       'Chart',
       'Colours',
       'Alerts',
@@ -604,7 +606,7 @@ describe('the rail on a narrow screen', () => {
 
     await screen.findByRole('button', { name: 'Open the rail' });
     const rows = menu().getAllByRole('button');
-    expect(rows).toHaveLength(9);
+    expect(rows).toHaveLength(10);
     rows.forEach((row) => expect(row).toBeEnabled());
 
     await userEvent.click(menu().getByRole('button', { name: /^Chart/ }));

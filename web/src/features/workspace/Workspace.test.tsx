@@ -385,6 +385,37 @@ describe('Workspace', () => {
     expect(screen.getByTestId('layout')).toHaveAttribute('data-panel', 'closed');
     expect(screen.queryByLabelText('Panel and topics boundary')).not.toBeInTheDocument();
   });
+
+  describe('on a window too narrow for a third column', () => {
+    // jsdom has no matchMedia; this one answers yes to the overlay's query and nothing else.
+    afterEach(() => vi.unstubAllGlobals());
+    const overlaid = () =>
+      vi.stubGlobal('matchMedia', (query: string) => ({
+        matches: query.includes('max-width: 1180px'),
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }));
+    const overlay = () => screen.getByTestId('layout').style.getPropertyValue('--overlay');
+
+    it('lays the panel over the tree exactly as wide as the tree', () => {
+      overlaid();
+      render(<Workspace {...parts} panel={<div>panel</div>} />);
+
+      // The tree's share of the two columns the panel lies across.
+      expect(overlay()).toBe(`${((0.34 / 0.66) * 100).toFixed(2)}%`);
+    });
+
+    it('moves the panel edge across the whole row', async () => {
+      overlaid();
+      render(<Workspace {...parts} panel={<div>panel</div>} />);
+
+      const seam = screen.getByRole('separator', { name: 'Panel and topics boundary' });
+      seam.focus();
+      await userEvent.keyboard('{ArrowRight}');
+
+      expect(overlay()).toBe(`${((0.34 / 0.66 + 0.02) * 100).toFixed(2)}%`);
+    });
+  });
 });
 
 /**

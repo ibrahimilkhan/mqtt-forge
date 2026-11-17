@@ -18,9 +18,10 @@ import { HealthStrip } from './features/health/HealthStrip';
 import { useAppearanceStore } from './stores/appearanceStore';
 import { TrafficPane } from './features/monitor/TrafficPane';
 import { useZoomStore } from './features/monitor/useZoom';
+import { useWindows } from './features/monitor/useWindows';
 import { LogCount, LogTools, WireLog } from './features/monitor/WireLog';
 import { TopicTree } from './features/topics/TopicTree';
-import { Warning } from './features/brand/icons';
+import { ListTree, Warning } from './features/brand/icons';
 import { PANELS, type PanelId } from './features/panels';
 import { useProseSelection } from './lib/useProseSelection';
 import { PublishPanel } from './features/publish/PublishPanel';
@@ -132,6 +133,34 @@ export function App({ hub }: { hub: Hub }) {
    * the top of the console and had to walk the whole rail to get back. Every panel did it.
    */
   const rows = useRef<Partial<Record<PanelId, HTMLButtonElement | null>>>({});
+
+  const treePane = useRef<HTMLElement>(null);
+
+  /**
+   * The rail's Topics row: everything over the tree goes, and the focus lands in it.
+   *
+   * The open panel, a chart thrown open and the floating windows are all shut, because each of
+   * them can stand over the tree — the broker panel takes the whole workspace — and a row that
+   * focused a tree nobody could see would be no way to it. On a narrow screen the rail lies over
+   * the workspace too, so it shuts as well.
+   */
+  const showTopics = () => {
+    if (openPanel === 'broker') useLinkWatchStore.getState().released();
+    setOpenPanel(null);
+    useZoomStore.getState().close();
+    for (const one of useWindows.getState().windows) useWindows.getState().close(one.id);
+    if (window.matchMedia?.(NARROW).matches) setMenuOpen(false);
+
+    // After the render that takes the panel away, or the tree is not laid out yet. The picked row
+    // if there is one, so the reader is back where they were; the broker's row otherwise.
+    requestAnimationFrame(() => {
+      const pane = treePane.current;
+      const row =
+        pane?.querySelector<HTMLElement>('[data-pick][aria-pressed="true"]') ??
+        pane?.querySelector<HTMLElement>('[data-pick]');
+      (row ?? pane)?.focus();
+    });
+  };
 
   const close = () => {
     const shutting = openPanel;
@@ -263,6 +292,20 @@ export function App({ hub }: { hub: Hub }) {
                        back, not to hunt for Colours again. */
                     <span className={styles.menuSplit} aria-hidden="true" />
                   ))}
+                {/* First in Reading, which is where reading starts. Not a panel, so not in PANELS:
+                    it opens nothing and shuts what is open, and it has no expanded state to say. */}
+                {opens && panel.group === 'Reading' && (
+                  <button
+                    type="button"
+                    className={styles.menuBtn}
+                    aria-label={menuOpen ? undefined : 'Topics'}
+                    title={menuOpen ? 'Close what is open and go to the topic tree' : 'Topics'}
+                    onClick={showTopics}
+                  >
+                    <ListTree />
+                    {menuOpen && <span>Topics</span>}
+                  </button>
+                )}
                 <button
                   type="button"
                   className={styles.menuBtn}
@@ -355,7 +398,7 @@ export function App({ hub }: { hub: Hub }) {
               : undefined
         }
         tree={
-          <section className={styles.treePane}>
+          <section className={styles.treePane} ref={treePane} tabIndex={-1}>
             {/* The live link, so every topic hangs off the broker it actually came from. */}
             <TopicTree broker={where} />
           </section>

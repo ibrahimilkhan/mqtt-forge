@@ -112,6 +112,8 @@ export const TreeNode = memo(function TreeNode({
       <button
         type="button"
         className={styles.pick}
+        // What the rail's Topics row puts the focus on. See App.
+        data-pick=""
         aria-pressed={selected}
         // One click opens a shut branch; two fold an open one.
         //
