@@ -1,20 +1,75 @@
+/* One row, always. On a window too narrow for it the row scrolls sideways rather than wrapping
+   onto a second — a second row would take height from the scene, which is the one thing the
+   studio is laid out to give room to. The dropdowns' popups are drawn outside it (ToolMenu.tsx),
+   so the scroll cannot clip them. 36px: the 28px marks and 4px either side, which is also the room
+   a focused mark's ring needs inside a box that scrolls. */
 .toolbar {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 12px 18px;
-  padding: 0 0 12px;
+  flex-wrap: nowrap;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 2px;
+  overflow-x: auto;
+  overflow-y: hidden;
   border-bottom: 1px solid var(--rule);
+  scrollbar-width: thin;
 }
 
-.shapes { display: flex; flex-wrap: wrap; gap: 4px; }
-.shape { font-size: 0.85em; }
+/* A group of marks, divided from the next by a thin upright rule. */
+.group { flex: none; display: flex; align-items: center; gap: 2px; padding: 0 6px; }
+.group + .group { border-left: 1px solid var(--rule); }
 
-.steps { display: flex; align-items: flex-end; gap: 10px; }
-.stepLabel { display: block; font-size: 0.8em; color: var(--muted); }
-.check { display: flex; align-items: center; gap: 6px; }
+/* A mark-only button: square, unfilled, the ink's colour, and a wash of the signal blue under the
+   pointer — the ghost's manner from global.css at toolbar size. A mark that is on (a tool chosen,
+   the snap or a panel switched on) keeps the wash and takes the blue, so on and off are told
+   apart by more than the outline. The hover rule names `:not(:disabled)` as global.css does,
+   since anything weaker loses to that one. */
+.icon,
+.opens {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-control);
+  color: var(--ink);
+  font-size: 17px;
+  line-height: 1;
+}
+.icon { width: 28px; }
+.opens { gap: 1px; padding: 0 3px 0 5px; }
+.icon:hover:not(:disabled),
+.opens:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--signal) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--signal) 30%, transparent);
+}
+.icon[aria-pressed='true'],
+.icon[aria-checked='true'],
+.opens[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--signal) 14%, var(--surface));
+  border-color: color-mix(in srgb, var(--signal) 45%, transparent);
+  color: var(--signal);
+}
+.chevron { display: inline-flex; font-size: 11px; color: var(--muted); }
 
-.history { display: flex; gap: 4px; }
+/* A labelled select in the Steps popup. */
+.field { display: flex; flex-direction: column; gap: 3px; padding: 4px 6px; color: var(--muted); }
+.field > select { color: var(--ink); }
 
-.save { margin: 0 0 0 auto; color: var(--muted); }
+/* At the far end, in the console's quiet ink; a failure in its own colour. */
+.save {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 0 auto;
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: var(--t-small);
+  white-space: nowrap;
+}
+.save > svg { font-size: 15px; }
 .save[data-state='failed'] { color: var(--fault); }

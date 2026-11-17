@@ -1,7 +1,21 @@
-.menu { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px; }
-.pick { display: flex; flex-direction: column; }
-.label { font-size: 0.8em; color: var(--muted); }
-.confirm { display: inline-flex; gap: 4px; }
-.import { position: relative; display: inline-flex; align-items: center; padding: 4px 10px; border: 1px dashed var(--rule); border-radius: 6px; cursor: pointer; }
-.import input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-.problem { flex-basis: 100%; margin: 0; color: var(--fault); }
+/* The scene button carries the open scene's name, cut short with an ellipsis rather than letting a
+   long name push the rest of the row off the end of the toolbar. In the sans and the case it was
+   typed in: it is a name, not a command, and the global button's mono capitals would rewrite it. */
+.trigger { max-width: 200px; gap: 5px; font-family: var(--sans); font-size: var(--t-small); font-weight: 600; letter-spacing: 0; text-transform: none; }
+.name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; max-height: 40vh; overflow: auto; }
+.label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The room the current scene's tick takes, so every name in the list starts on the same line. */
+.blank { flex: none; width: 16px; }
+
+.field { margin: 2px 0; }
+.confirm { display: flex; gap: 4px; padding: 2px 0; }
+.confirm > button { flex: 1; padding: 5px 10px; }
+
+/* The file input is the whole row, unseen, so a press anywhere on the row opens the picker. */
+.import { position: relative; cursor: pointer; }
+.import[data-busy='true'] { cursor: progress; color: var(--muted); }
+.import input { position: absolute; inset: 0; opacity: 0; cursor: inherit; }
+
+.problem { margin: 0 0 4px; padding: 6px 8px; color: var(--fault); border-left: 2px solid var(--fault); }

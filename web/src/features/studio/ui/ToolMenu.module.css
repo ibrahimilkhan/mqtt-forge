@@ -46,6 +46,8 @@
 }
 .item > svg { flex: none; font-size: 16px; color: var(--muted); }
 .item[aria-current='true'] { font-weight: 600; }
+/* A row that takes something away keeps the console's ends tone (global.css) as its lettering. */
+.item:global(.ends), .item:global(.ends) > svg { color: var(--fault); }
 .item[aria-current='true'] > svg { color: var(--signal); }
 
 /* Where a popup's list stops and its actions start. */

@@ -37,7 +37,7 @@ type Props = {
   /** Held by the caller when something other than a press has to open it — a failure to show. */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
-  /** Handed `close`, which shuts the popup and puts the keyboard back on the trigger. */
+  /** Handed `close`, which shuts the popup; a keyboard that was in it goes back to the trigger. */
   children: ReactNode | ((close: () => void) => ReactNode);
 };
 
@@ -75,10 +75,19 @@ export function ToolMenu({ title, ariaLabel, trigger, kind, triggerClassName, op
     [held, onOpenChange],
   );
 
-  const close = useCallback(() => {
-    setOpen(false);
-    button.current?.focus();
-  }, [setOpen]);
+  const close = useCallback(() => setOpen(false), [setOpen]);
+
+  // Whether the keyboard is in the popup. When the popup goes — Escape, an item chosen, or some
+  // slow work that shut it once done — a keyboard that was in it would otherwise fall to the
+  // document's body and the next Tab would start from the top of the console; it comes back to
+  // the trigger instead. Only then: a reader who has gone somewhere else since is left there.
+  const holds = useRef(false);
+  useEffect(() => {
+    if (open || !holds.current) return;
+    holds.current = false;
+    const active = document.activeElement;
+    if (!active || active === document.body) button.current?.focus();
+  }, [open]);
 
   // Measured before paint, so the popup is never seen at the top of the window for a frame first.
   // Kept to the window: a trigger at the far right of the row opens its popup leftwards instead.
@@ -114,6 +123,8 @@ export function ToolMenu({ title, ariaLabel, trigger, kind, triggerClassName, op
     const outside = (event: PointerEvent) => {
       const target = event.target as Node;
       if (popup.current?.contains(target) || button.current?.contains(target)) return;
+      // The reader has put the pointer somewhere else, and the keyboard follows it there.
+      holds.current = false;
       latest.current(false);
     };
     // Any scroll can move the trigger out from over the popup — the toolbar's own sideways scroll
@@ -153,6 +164,7 @@ export function ToolMenu({ title, ariaLabel, trigger, kind, triggerClassName, op
   const onPopupBlur = (event: FocusEvent<HTMLDivElement>) => {
     const to = event.relatedTarget as Node | null;
     if (!to || popup.current?.contains(to) || button.current?.contains(to)) return;
+    holds.current = false;
     setOpen(false);
   };
 
@@ -193,6 +205,9 @@ export function ToolMenu({ title, ariaLabel, trigger, kind, triggerClassName, op
             className={styles.popup}
             style={place}
             onKeyDown={onPopupKeyDown}
+            onFocus={() => {
+              holds.current = true;
+            }}
             onBlur={onPopupBlur}
           >
             {typeof children === 'function' ? children(close) : children}

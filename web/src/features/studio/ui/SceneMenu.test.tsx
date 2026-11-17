@@ -18,6 +18,8 @@ function Saved() {
   const save = useAutosave();
   return <SceneMenu flush={save.flush} settle={save.settle} />;
 }
+/** The menu is the toolbar's first dropdown; everything in it is there only while it is open. */
+const openMenu = () => userEvent.click(screen.getByRole('button', { name: /^Scene:/ }));
 const current = blankScene('Cell A');
 const other = blankScene('Cell B');
 
@@ -36,13 +38,14 @@ beforeEach(() => {
 describe('SceneMenu', () => {
   it('opens another scene from the list', async () => {
     render(<SceneMenu flush={flush} settle={settle} />);
-    await screen.findByRole('option', { name: 'Cell B' });
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Scene' }), other.id);
+    await openMenu();
+    await userEvent.click(await screen.findByRole('button', { name: 'Cell B' }));
     await waitFor(() => expect(studioStore.getState().scene?.name).toBe('Cell B'));
   });
 
   it('starts a new, unsaved scene', async () => {
     render(<SceneMenu flush={flush} settle={settle} />);
+    await openMenu();
     await userEvent.click(screen.getByRole('button', { name: 'New scene' }));
     expect(studioStore.getState().scene?.name).toBe('Untitled scene');
     expect(studioStore.getState().scene?.id).not.toBe(current.id);
@@ -50,6 +53,7 @@ describe('SceneMenu', () => {
 
   it('renames the scene', async () => {
     render(<SceneMenu flush={flush} settle={settle} />);
+    await openMenu();
     await userEvent.click(screen.getByRole('button', { name: 'Rename' }));
     const field = screen.getByRole('textbox', { name: 'Scene name' });
     await userEvent.clear(field);
@@ -65,6 +69,7 @@ describe('SceneMenu', () => {
     }));
     render(<SceneMenu flush={flush} settle={settle} />);
 
+    await openMenu();
     await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
     expect(deleted).toBe(false);
     await userEvent.click(screen.getByRole('button', { name: 'Delete Cell A' }));
@@ -79,8 +84,8 @@ describe('SceneMenu', () => {
     render(<Saved />);
     act(() => void studioStore.getState().addPrimitive('box', [0, 0, 0]));
 
-    await screen.findByRole('option', { name: 'Cell B' });
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Scene' }), other.id);
+    await openMenu();
+    await userEvent.click(await screen.findByRole('button', { name: 'Cell B' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Disk full');
     expect(studioStore.getState().scene?.id).toBe(current.id);
@@ -107,6 +112,7 @@ describe('SceneMenu', () => {
     act(() => void studioStore.getState().addPrimitive('box', [0, 0, 0]));
     await waitFor(() => expect(order).toEqual([`PUT ${current.id}`]));
 
+    await openMenu();
     await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
     await userEvent.click(screen.getByRole('button', { name: 'Delete Cell A' }));
     await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
@@ -135,6 +141,7 @@ describe('SceneMenu', () => {
     );
     render(<Saved />);
 
+    await openMenu();
     await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
     await userEvent.click(screen.getByRole('button', { name: 'Delete Cell A' }));
     await waitFor(() => expect(order).toEqual([`DELETE ${current.id}`]));
@@ -164,6 +171,7 @@ describe('SceneMenu', () => {
     render(<Saved />);
     act(() => void studioStore.getState().addPrimitive('box', [0, 0, 0]));
 
+    await openMenu();
     await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
     await userEvent.click(screen.getByRole('button', { name: 'Delete Cell A' }));
 
@@ -181,6 +189,7 @@ describe('SceneMenu', () => {
     render(<Saved />);
     act(() => void studioStore.getState().addPrimitive('box', [0, 0, 0]));
 
+    await openMenu();
     await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
     await userEvent.click(screen.getByRole('button', { name: 'Delete Cell A' }));
 
@@ -195,8 +204,9 @@ describe('SceneMenu', () => {
         HttpResponse.json({ status: 500, title: 'Could not read the scene', detail: 'Bad sector', reason: 'studioNotRead' }, { status: 500 })),
     );
     render(<SceneMenu flush={flush} settle={settle} />);
-    await screen.findByRole('option', { name: 'Cell B' });
 
+    await openMenu();
+    await screen.findByRole('button', { name: 'Cell B' });
     await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
     await userEvent.click(screen.getByRole('button', { name: 'Delete Cell A' }));
 
@@ -210,6 +220,7 @@ describe('SceneMenu', () => {
     render(<SceneMenu flush={flush} settle={settle} />);
 
     const file = new File([JSON.stringify(designbox)], 'robot-cell.json', { type: 'application/json' });
+    await openMenu();
     await userEvent.upload(screen.getByLabelText('Import a DesignBox scene'), file);
 
     await waitFor(() => expect(studioStore.getState().scene?.name).toBe('robot-cell'));
@@ -220,6 +231,7 @@ describe('SceneMenu', () => {
     render(<SceneMenu flush={flush} settle={settle} />);
 
     const file = new File([JSON.stringify({ ...other, name: 'Cell B again' })], 'cell-b.json', { type: 'application/json' });
+    await openMenu();
     await userEvent.upload(screen.getByLabelText('Import a DesignBox scene'), file);
 
     await waitFor(() => expect(studioStore.getState().scene?.name).toBe('Cell B again'));
@@ -230,7 +242,72 @@ describe('SceneMenu', () => {
   it('says why a file could not be imported', async () => {
     render(<SceneMenu flush={flush} settle={settle} />);
     const file = new File(['{"version": 9, "objects": []}'], 'future.json', { type: 'application/json' });
+    await openMenu();
     await userEvent.upload(screen.getByLabelText('Import a DesignBox scene'), file);
     expect(await screen.findByText(/newer version/)).toBeInTheDocument();
+  });
+
+  it('names the open scene on its button, marks it in the list, and shuts once another is opened', async () => {
+    render(<SceneMenu flush={flush} settle={settle} />);
+    const trigger = screen.getByRole('button', { name: 'Scene: Cell A' });
+    expect(trigger).toHaveAttribute('aria-haspopup', 'dialog');
+
+    await openMenu();
+    expect(screen.getByRole('button', { name: 'Cell A' })).toHaveAttribute('aria-current', 'true');
+    expect(await screen.findByRole('button', { name: 'Cell B' })).toHaveAttribute('aria-current', 'false');
+    await userEvent.click(screen.getByRole('button', { name: 'Cell B' }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Scene: Cell B' })).toBeInTheDocument());
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('renames in one undo step, and Escape in the name field keeps the menu and the old name', async () => {
+    render(<SceneMenu flush={flush} settle={settle} />);
+    const steps = studioStore.getState().history.past.length;
+    await openMenu();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Rename' }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Scene name' }), ' wide{Escape}');
+    expect(studioStore.getState().scene?.name).toBe('Cell A');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Rename' }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Scene name' }), ' wide{Enter}');
+    expect(studioStore.getState().scene?.name).toBe('Cell A wide');
+    expect(studioStore.getState().history.past).toHaveLength(steps + 1);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('marks both deletes as something going, and Keep backs out of it', async () => {
+    render(<SceneMenu flush={flush} settle={settle} />);
+    await openMenu();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(screen.getByRole('button', { name: 'Delete Cell A' })).toHaveClass('ends');
+    await userEvent.click(screen.getByRole('button', { name: 'Keep' }));
+
+    expect(screen.getByRole('button', { name: 'Delete' })).toHaveClass('ends');
+    expect(studioStore.getState().scene?.id).toBe(current.id);
+  });
+
+  it('opens the menu again to say why, when work it shut on has failed', async () => {
+    let release = () => {};
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    server.use(http.put('/api/studio/scenes/:id', async () => {
+      await held;
+      return HttpResponse.json({ status: 500, title: 'Could not save the studio', detail: 'Disk full', reason: 'studioNotSaved' }, { status: 500 });
+    }));
+    render(<Saved />);
+    act(() => void studioStore.getState().addPrimitive('box', [0, 0, 0]));
+
+    await openMenu();
+    await userEvent.click(await screen.findByRole('button', { name: 'Cell B' }));
+    // Shut before the write has come back — the failure still has to be said somewhere.
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await act(async () => release());
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Disk full');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 });
