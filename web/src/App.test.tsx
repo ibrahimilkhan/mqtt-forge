@@ -74,9 +74,34 @@ describe('App', () => {
   });
 
   it('keeps the window while a link the reader is making comes up', async () => {
+    // What the broker hands back once the dial lands. The strip reads it off `connection`, so a
+    // fixture with a bare state and no link draws nothing the strip would ever actually say — the
+    // real API answers with a BrokerLinkDto shaped like this one once a link is up.
+    const link = {
+      host: 'broker.example',
+      port: 8883,
+      clientId: 'console',
+      username: 'alice',
+      useTls: true,
+      connectedAt: '2026-08-08T12:00:00Z',
+      sessionPresent: false,
+      assignedClientId: null,
+      serverKeepAlive: null,
+      transport: 'tcp',
+      protocolVersion: 'v500',
+    };
+    // Read off a variable the POST sets, rather than re-registering the GET after the click: the
+    // connect mutation's own invalidate can refetch before a handler swapped in afterwards is the
+    // one in force, and a GET that already knows what the POST did cannot lose that race.
+    let state: 'Disconnected' | 'Connected' = 'Disconnected';
     server.use(
-      http.get('/api/connection', () => HttpResponse.json({ state: 'Disconnected' })),
-      http.post('/api/connection', () => HttpResponse.json({ state: 'Connected' })),
+      http.get('/api/connection', () =>
+        HttpResponse.json(state === 'Connected' ? { state, connection: link } : { state }),
+      ),
+      http.post('/api/connection', () => {
+        state = 'Connected';
+        return HttpResponse.json({ state, connection: link });
+      }),
       http.post('/api/subscriptions', () => new HttpResponse(null, { status: 202 })),
     );
     renderApp();
@@ -84,10 +109,10 @@ describe('App', () => {
     expect(screen.getByTestId('layout')).toHaveAttribute('data-panel', 'full');
 
     await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
-    server.use(http.get('/api/connection', () => HttpResponse.json({ state: 'Connected' })));
 
-    // The link is up, on screen — and the panel is still the window it was.
-    await screen.findByText('Connected', { selector: 'p' });
+    // The link is up, on screen — named by the strip, with the address a real link carries — and
+    // the panel is still the window it was.
+    await screen.findByText(/^Connected to /, { selector: 'p' });
     expect(screen.getByTestId('layout')).toHaveAttribute('data-panel', 'full');
   });
 
