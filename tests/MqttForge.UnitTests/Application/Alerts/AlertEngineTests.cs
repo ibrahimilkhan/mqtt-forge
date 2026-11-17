@@ -81,7 +81,7 @@ public class AlertEngineTests
             return Time.GetUtcNow();
         }
 
-        private int Moves() => Log.Lines.Count(line => line.Message.StartsWith("The link moved", StringComparison.Ordinal));
+        private int Moves() => Log.Lines.Count(line => line.Message.StartsWith("Link moved", StringComparison.Ordinal));
 
         /// <summary>Moves the clock through whole ticks the pump is meant to notice nothing in.</summary>
         public async Task TickAsync(int seconds)

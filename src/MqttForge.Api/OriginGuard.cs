@@ -154,10 +154,8 @@ public sealed class OriginGuardLog(ILogger<OriginGuardLog> log)
         if (_said.Count >= Origins || !_said.TryAdd(origin, 0)) return;
 
         log.LogWarning(
-            "Refused a request from the page at {Origin}, which is this app's own address but for the scheme: " +
-            "the app sees {Scheme}. Behind a proxy that ends TLS, keep the Host header and tell the app the scheme " +
-            "(ASPNETCORE_FORWARDEDHEADERS_ENABLED=true), or the console's live channel is refused its WebSocket " +
-            "and falls back to a stream the proxy may hold back.",
+            "Refused {Origin}: right address, wrong scheme (app sees {Scheme}). Behind a TLS proxy, set " +
+            "ASPNETCORE_FORWARDEDHEADERS_ENABLED=true and keep the Host header.",
             origin, request.Scheme);
     }
 }

@@ -90,7 +90,7 @@ public static partial class FlowCompiler
             if (Settings.TryRead(node.Config, out var settings))
                 compiled = Node(node, settings, alertTopicPrefix, declared, out problem);
             else
-                problem = "This node's settings hold text that cannot be read. Retype what you can, or delete the node and draw it again.";
+                problem = "This node's settings can't be read. Retype them, or redraw the node.";
 
             if (problem is not null) problems.Add(new(node.Id, null, problem));
             else if (compiled is not null) nodes.Add(node.Id, compiled);
@@ -191,7 +191,7 @@ public static partial class FlowCompiler
 
             if (!FlowVariables.IsName(variable.Name))
                 problems.Add(new(null, null,
-                    $"'{FlowTemplate.Clip(variable.Name, 40)}' is not a variable's name: a letter or _, then letters, digits or _, 40 at most."));
+                    $"'{FlowTemplate.Clip(variable.Name, 40)}' isn't a variable name: a letter or _, then letters, digits or _ (40 max)."));
             else if (!names.Add(variable.Name))
                 problems.Add(new(null, null, $"Two variables are called {variable.Name}."));
 
@@ -222,7 +222,7 @@ public static partial class FlowCompiler
                 if (TopicFilterMatch.FilterProblem(filter) is { } wrong)
                     problem = wrong;
                 else if (AlertTopicPrefix.Covers(filter, prefix))
-                    problem = $"This filter reaches into {prefix}, where alarms are published. A flow may not listen there.";
+                    problem = $"This filter reaches into {prefix}, where alarms go; flows can't listen there.";
 
                 return new MqttInNode(node.Id, filter, settings.Bool("replay"));
             }
@@ -366,8 +366,7 @@ public static partial class FlowCompiler
 
                 if (text.Length > FlowLimits.TextTemplateLength)
                 {
-                    problem = $"Write the notice in at most {FlowLimits.TextTemplateLength} characters; " +
-                              $"only the first {FlowLimits.NoticeLength} are shown.";
+                    problem = $"At most {FlowLimits.TextTemplateLength} characters; {FlowLimits.NoticeLength} are shown.";
                     return null;
                 }
 
@@ -532,8 +531,7 @@ public static partial class FlowCompiler
         var reasonText = settings.Text("reason").Trim();
         if (reasonText.Length > FlowLimits.ReasonTemplateLength)
         {
-            problem = $"Write the reason in at most {FlowLimits.ReasonTemplateLength} characters; " +
-                      $"only the first {FlowLimits.ReasonLength} are shown.";
+            problem = $"At most {FlowLimits.ReasonTemplateLength} characters; {FlowLimits.ReasonLength} are shown.";
             return null;
         }
 
@@ -624,7 +622,7 @@ public static partial class FlowCompiler
                 if (count == 0)
                     problems.Add(new(id, null, $"{which} goes nowhere. Wire it on, or to an End."));
                 else if (count > 1)
-                    problems.Add(new(id, null, $"{which} has {count} wires. A flow does one thing at a time, so it can have one."));
+                    problems.Add(new(id, null, $"{which} has {count} wires; it can have one."));
             }
         }
 
@@ -643,7 +641,7 @@ public static partial class FlowCompiler
         var forward = wires.Where(wire => !(wire.ToPort == FlowPorts.Next && FlowPorts.IsLoop(types[wire.To]))).ToList();
         if (GoesRound(order, forward))
             problems.Add(new(null, null,
-                "The wires go round in a circle. Loops are drawn with For or For each: wire the last step of the body back to the loop's next."));
+                "The wires form a circle. Draw loops with For or For each."));
 
         foreach (var loop in order.Where(id => FlowPorts.IsLoop(types[id])))
         {
@@ -654,7 +652,7 @@ public static partial class FlowCompiler
             var lastSteps = new List<string>();
 
             if (returns.Count == 0)
-                problems.Add(new(loop, null, "Nothing comes back to this loop. Wire the last step of its body to its next."));
+                problems.Add(new(loop, null, "Nothing returns to this loop. Wire its body's last step to its next."));
 
             // A turn ends when the run comes back to next, so only a node a turn can be at may wire
             // there: one in the body, that nothing before the loop and nothing after it also reaches.
@@ -681,7 +679,7 @@ public static partial class FlowCompiler
             if (lastSteps.Count > 0 && nodes.GetValueOrDefault(loop) is ForNode { Forever: true } &&
                 !Turn(wires, body, lastSteps).Any(id => types[id] is FlowPorts.Wait or FlowPorts.MqttIn))
                 problems.Add(new(loop, null,
-                    "A forever loop must wait. Put a Wait or an MQTT in in its body, on the way back to its next."));
+                    "A forever loop must wait: add a Wait or an MQTT in to its body."));
         }
 
         return start;

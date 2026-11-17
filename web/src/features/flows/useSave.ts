@@ -73,7 +73,7 @@ export type Unsaved =
 const unread = (error: unknown) =>
   new ApiError(
     error instanceof ApiError ? error.status : 0,
-    `The flows could not be read from the server first, so nothing was sent. ${describeError(error)}`,
+    `Couldn't read the flows, so nothing was sent. ${describeError(error)}`,
   );
 
 /**

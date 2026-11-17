@@ -97,7 +97,7 @@ public class SubscriptionEndpointTests : IClassFixture<MqttForgeApiFactory>, ICl
         subscriber
             .SubscribeAsync(Arg.Any<IReadOnlyList<SubscriptionRequest>>(), Arg.Any<CancellationToken>(), Arg.Any<SubscriptionOwner>())
             .ThrowsAsync(new BrokerDidNotAnswerException(
-                "The broker did not answer the SUBSCRIBE for 'sensors/#' within 10 seconds."));
+                "The broker didn't answer the SUBSCRIBE for 'sensors/#' within 10s."));
 
         using var factory = new MqttForgeApiFactory();
         var client = factory

@@ -39,8 +39,7 @@ public sealed class MqttnetPublisher : IMqttPublisher
             // answer for anything else asking — a second console, or a script against the API.
             if (Speaking() != MqttProtocolVersion.V500)
                 throw new MessageRejectedException(
-                    "Content type, response topic, correlation data, expiry and user properties need MQTT 5. "
-                    + "This link is speaking 3.1.1.");
+                    "Content type, response topic, correlation data, expiry and user properties need MQTT 5; this link is 3.1.1.");
 
             if (properties.ContentType is { } type) builder.WithContentType(type);
             if (properties.ResponseTopic is { } reply) builder.WithResponseTopic(reply);

@@ -91,16 +91,13 @@ public sealed class AlertRuleService
         // build, or by hand, that this reader could not bind. It is not in what the panel is
         // sending back, because the panel never received it, so writing this list deletes it.
         if (current.SkippedIds.Count > 0)
-            return $"The alert rules file holds {current.SkippedIds.Count} rule(s) this build " +
-                   $"cannot read ({string.Join(", ", current.SkippedIds)}). They are not in what " +
-                   "you are saving, so saving would delete them. Save again asking for them to " +
-                   "be discarded if that is what you mean.";
+            return $"{current.SkippedIds.Count} rule(s) this build can't read ({string.Join(", ", current.SkippedIds)}) " +
+                   "would be deleted. Save with discard to confirm.";
 
         // Nothing could be read, so nothing can be compared: whatever is in that file, this save
         // is not an edit of it. Overwriting is how a corrupt-file incident becomes a lost rule set.
         if (current.Unreadable)
-            return "The alert rules file could not be read, so saving over it would throw away " +
-                   "whatever it holds. Repair the file, or save again asking for it to be discarded.";
+            return "The alert rules file can't be read; saving would erase it. Repair it, or save with discard.";
 
         // An empty list is not a refusal. Deleting the last rule is a thing people do, and the
         // empty file that results reads back as an empty rule set rather than as a fault.

@@ -218,10 +218,8 @@ public class OriginGuardTests
         var said = Assert.Single(log.Entries);
         Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Warning, said.Level);
         Assert.Equal(
-            "Refused a request from the page at https://mqtt.example.com, which is this app's own address but for the scheme: " +
-            "the app sees http. Behind a proxy that ends TLS, keep the Host header and tell the app the scheme " +
-            "(ASPNETCORE_FORWARDEDHEADERS_ENABLED=true), or the console's live channel is refused its WebSocket " +
-            "and falls back to a stream the proxy may hold back.",
+            "Refused https://mqtt.example.com: right address, wrong scheme (app sees http). Behind a TLS proxy, set " +
+            "ASPNETCORE_FORWARDEDHEADERS_ENABLED=true and keep the Host header.",
             said.Message);
     }
 

@@ -44,7 +44,7 @@ describe('a $SYS subscription that produces nothing', () => {
 
     expect(noted()).toHaveLength(1);
     expect(noted()[0]).toMatchObject({ kind: 'fault', topic: '$SYS/#' });
-    expect(noted()[0].body).toMatch(/does not publish/);
+    expect(noted()[0].body).toMatch(/doesn't publish/);
   });
 
   it('is not said when something under $SYS arrived', async () => {

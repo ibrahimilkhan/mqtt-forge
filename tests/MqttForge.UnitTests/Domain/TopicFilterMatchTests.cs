@@ -117,7 +117,7 @@ public class TopicFilterMatchTests
     [Theory]
     [InlineData("", "Write a topic filter, like plant/+/temp.")]
     [InlineData(null, "Write a topic filter, like plant/+/temp.")]
-    [InlineData("plant/#/temp", "'#' can only be the last level. For one level in the middle, use '+', as in plant/+/temp.")]
+    [InlineData("plant/#/temp", "'#' must be the last level; use '+' for one level, as in plant/+/temp.")]
     [InlineData("plant/te#", "'#' has to be a level of its own, as in plant/#.")]
     [InlineData("plant/te+mp", "'+' has to be a level of its own, as in plant/+/temp.")]
     [InlineData("plant/\0", "A topic filter cannot contain a NUL character.")]

@@ -144,8 +144,7 @@ internal static class Program
                     // Nothing bindable; the window says why instead of holding the splash up for good
                     boot.HostFailed(Splash.Failure(
                         "MQTTForge could not start",
-                        "The OS refused to bind its local server on any address, including loopback. " +
-                        "Check firewall or network-filtering settings, then relaunch."));
+                        "The OS refused to bind the local server, even on loopback. Check firewall settings, then relaunch."));
                 }
                 else
                 {

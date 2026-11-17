@@ -100,8 +100,7 @@ public sealed partial class AlertRulesDtoValidator : AbstractValidator<AlertRule
             rule.RuleFor(x => x.Id)
                 .Must(id => id is not null && WellFormedId.IsMatch(id))
                 .When(x => !string.IsNullOrEmpty(x.Id))
-                .WithMessage("A rule id may hold only letters, digits, '-' and '_', and at most " +
-                             $"{MaxIdLength} of them: it is a level of the topic the rule publishes to.");
+                .WithMessage($"A rule id may hold only letters, digits, '-' and '_', at most {MaxIdLength}.");
 
             rule.RuleFor(x => x.Name).NotEmpty().MaximumLength(MaxNameLength);
 
@@ -142,9 +141,7 @@ public sealed partial class AlertRulesDtoValidator : AbstractValidator<AlertRule
             rule.RuleFor(x => x.For)
                 .Must((x, _) => !AlreadyADuration(x.Condition))
                 .When(x => x.For is not null && x.Condition is not null)
-                .WithMessage("'for' cannot be given with a silence, a distribution shift or a shape " +
-                             "change: a silence is already a duration, and the other two are moments " +
-                             "rather than states that can hold.");
+                .WithMessage("'for' can't be used with a silence, a distribution shift or a shape change.");
 
             rule.RuleFor(x => x.For).GreaterThanOrEqualTo(0).When(x => x.For is not null);
             rule.RuleFor(x => x.Cooldown).GreaterThanOrEqualTo(0).When(x => x.Cooldown is not null);
@@ -387,9 +384,7 @@ public sealed partial class AlertRulesDtoValidator : AbstractValidator<AlertRule
             && TopicFilterMatch.HasWildcard(rule.Filter)
             && !topic.Contains(AlertTopicPrefix.Placeholder, StringComparison.Ordinal))
         {
-            yield return $"A retained publish from a wildcard filter has to carry " +
-                         $"'{AlertTopicPrefix.Placeholder}' in its topic, or every topic the rule " +
-                         "watches overwrites the last one's retained alarm.";
+            yield return $"A retained publish from a wildcard filter needs '{AlertTopicPrefix.Placeholder}' in its topic.";
         }
     }
 
@@ -402,9 +397,7 @@ public sealed partial class AlertRulesDtoValidator : AbstractValidator<AlertRule
     // four conditions unsaveable.
     private string? OutsideTheWindow(int window)
         => window != 0 && (window < _minWindow || window > _maxWindow)
-            ? $"A statistical window is between {_minWindow} and {_maxWindow} readings, or absent " +
-              "for this server's default: below that range there is not enough of a run to say " +
-              "anything, and above it one topic is holding more history than the panel can explain."
+            ? $"A statistical window is {_minWindow}–{_maxWindow} readings, or empty for the default."
             : null;
 }
 

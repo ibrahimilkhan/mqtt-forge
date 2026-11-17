@@ -107,12 +107,10 @@ public sealed class AlertConsoleSender
     private void Say(AlertBacklog.Taken taken)
     {
         if (taken.Untold > 0)
-            _log.LogWarning("{Count} alerts went up and came down while the console was not taking what it was sent. " +
-                            "It was not told of them; the log was.", taken.Untold);
+            _log.LogWarning("{Count} alerts rose and cleared while the console lagged; logged only.", taken.Untold);
 
         if (taken.Lost > 0)
-            _log.LogWarning("The console fell {Count} alert events behind, and the oldest were let go. " +
-                            "It shows the alerts as they stand the next time it reads them.", taken.Lost);
+            _log.LogWarning("The console fell {Count} alert events behind; the oldest were dropped.", taken.Lost);
     }
 
     // AlertEngine's rule for every channel: a cancellation is let through only when it is the engine

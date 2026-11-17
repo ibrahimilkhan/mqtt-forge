@@ -209,7 +209,7 @@ export function useLinkWatch() {
             kind: 'note',
             what: `New session · ${endpoint}`,
             detail:
-              'The link was made again while this console was not watching; what arrived before it is drawn faded.',
+              'Reconnected while this console was away; older data is faded.',
           });
         }
       }

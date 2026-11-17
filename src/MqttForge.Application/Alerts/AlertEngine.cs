@@ -538,7 +538,7 @@ public sealed class AlertEngine
         var endpoint = EndpointOf(to);
 
         _log.LogInformation(
-            "The link moved from {Was} to {Now}, so the rules start again: their alarms there have ended, and what they had learned was the other broker's.",
+            "Link moved from {Was} to {Now}; rules restart and their alarms end.",
             _learnedFrom, endpoint);
 
         _learnedFrom = endpoint;
@@ -648,12 +648,10 @@ public sealed class AlertEngine
 
             if (document.Unreadable)
                 _log.LogError(
-                    "The alert rules file could not be read. The engine is running with no rules " +
-                    "at all until the file is repaired or deliberately overwritten.");
+                    "Alert rules file unreadable; running with no rules until it is repaired or overwritten.");
             else if (document.SkippedIds.Count > 0)
                 _log.LogError(
-                    "The alert rules file holds {Count} rule(s) this build cannot read ({Ids}). " +
-                    "They are not running.",
+                    "{Count} alert rule(s) this build can't read ({Ids}); they are not running.",
                     document.SkippedIds.Count, string.Join(", ", document.SkippedIds));
 
             return document;
@@ -664,7 +662,7 @@ public sealed class AlertEngine
             // instead — so this is the fault it makes no promise about: a directory where the file
             // should be, a permission the container does not have. Starting deaf and saying so
             // beats failing to start, because a host that will not start takes the console with it.
-            _log.LogError(ex, "The alert rules could not be loaded. The engine is starting with no rules.");
+            _log.LogError(ex, "Alert rules couldn't be loaded; starting with no rules.");
 
             return new AlertRuleDocument([], Unreadable: true, []);
         }
@@ -741,7 +739,7 @@ public sealed class AlertEngine
             // alert that was meant to leave the machine and did not is the failure this whole
             // feature exists to prevent, and the spec's own measure is that a channel which fails
             // silently is worse than one that does not exist.
-            _log.LogError(ex, "An alert dispatcher threw. The alerts it was given were not delivered.");
+            _log.LogError(ex, "An alert dispatcher threw; its alerts were not delivered.");
         }
     }
 

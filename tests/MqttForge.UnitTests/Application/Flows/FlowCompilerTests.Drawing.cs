@@ -227,7 +227,7 @@ public partial class FlowCompilerTests
             .Then("start", "loop").Wire("loop", "body", "end").Wire("loop", "done", "end"));
 
         Assert.Equal("node:loop", problem.Key);
-        Assert.Contains("Nothing comes back", problem.Message);
+        Assert.Contains("Nothing returns", problem.Message);
     }
 
     [Fact]
@@ -300,7 +300,7 @@ public partial class FlowCompilerTests
             .Then("start", "loop").Wire("loop", "body", "pause").Then("pause", "end").Wire("loop", "done", "end"));
 
         Assert.Equal("node:loop", problem.Key);
-        Assert.StartsWith("Nothing comes back", problem.Message);
+        Assert.StartsWith("Nothing returns", problem.Message);
     }
 
     // A break leaves the turn, so a Wait it goes on to is one the run reaches only once the turn is over:
@@ -320,7 +320,7 @@ public partial class FlowCompilerTests
 
         var problem = Only(chart);
         Assert.Equal("node:loop", problem.Key);
-        Assert.Equal("A forever loop must wait. Put a Wait or an MQTT in in its body, on the way back to its next.", problem.Message);
+        Assert.Equal("A forever loop must wait: add a Wait or an MQTT in to its body.", problem.Message);
     }
 
     // Nor is a Wait after the loop around it, which the run reaches by breaking out into that loop's next
