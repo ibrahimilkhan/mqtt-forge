@@ -121,6 +121,92 @@ public class JsonSavedProfileStoreTests : IDisposable
         Assert.Empty(await new JsonSavedProfileStore(_path).ListAsync(CancellationToken.None));
     }
 
+    // ---- the id rules hold a broker by ----
+
+    [Fact]
+    public async Task A_new_profile_is_given_an_id_and_answered_with_it()
+    {
+        var store = new JsonSavedProfileStore(_path);
+
+        var kept = await store.SaveAsync(Profile("Lab broker"), CancellationToken.None);
+
+        Assert.False(string.IsNullOrEmpty(kept.Id));
+        Assert.Equal(kept.Id, Assert.Single(await store.ListAsync(CancellationToken.None)).Id);
+    }
+
+    // Correcting a port is the same broker, and a rule that belonged to it still does.
+    [Fact]
+    public async Task Saving_over_a_name_keeps_the_id_it_had()
+    {
+        var store = new JsonSavedProfileStore(_path);
+        var first = await store.SaveAsync(Profile("Lab broker", port: 1883), CancellationToken.None);
+
+        var again = await store.SaveAsync(Profile("Lab broker", port: 21883), CancellationToken.None);
+
+        Assert.Equal(first.Id, again.Id);
+    }
+
+    [Fact]
+    public async Task Two_profiles_have_two_ids()
+    {
+        var store = new JsonSavedProfileStore(_path);
+
+        var lab = await store.SaveAsync(Profile("Lab broker"), CancellationToken.None);
+        var staging = await store.SaveAsync(Profile("Staging"), CancellationToken.None);
+
+        Assert.NotEqual(lab.Id, staging.Id);
+    }
+
+    // The id says which profile this is, so a new name on it is that profile renamed rather than a
+    // second one beside it.
+    [Fact]
+    public async Task Saving_by_id_under_a_new_name_renames_it_in_place()
+    {
+        var store = new JsonSavedProfileStore(_path);
+        var lab = await store.SaveAsync(Profile("Lab broker"), CancellationToken.None);
+        await store.SaveAsync(Profile("Staging"), CancellationToken.None);
+
+        await store.SaveAsync(Profile("Plant floor") with { Id = lab.Id }, CancellationToken.None);
+
+        var profiles = await store.ListAsync(CancellationToken.None);
+        Assert.Equal(["Plant floor", "Staging"], profiles.Select(one => one.Name));
+        Assert.Equal(lab.Id, profiles[0].Id);
+    }
+
+    [Fact]
+    public async Task Renaming_one_to_another_s_name_overwrites_neither()
+    {
+        var store = new JsonSavedProfileStore(_path);
+        var lab = await store.SaveAsync(Profile("Lab broker"), CancellationToken.None);
+        await store.SaveAsync(Profile("Staging"), CancellationToken.None);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => store.SaveAsync(Profile("staging") with { Id = lab.Id }, CancellationToken.None));
+
+        Assert.Equal(["Lab broker", "Staging"],
+            (await store.ListAsync(CancellationToken.None)).Select(one => one.Name));
+    }
+
+    // A file written before ids. Each profile is given one, and the file is written back with them,
+    // so the next read — another console, the next start — finds the same ones.
+    [Fact]
+    public async Task Profiles_from_a_file_written_before_ids_are_given_ids_that_stay()
+    {
+        await File.WriteAllTextAsync(_path, """
+            [
+              { "Name": "Lab broker", "Settings": { "Host": "broker.example", "Port": 1883, "ClientId": "console", "UseTls": false } },
+              { "Name": "Staging", "Settings": { "Host": "mqtt.staging", "Port": 8883, "ClientId": "console", "UseTls": true } }
+            ]
+            """);
+
+        var first = await new JsonSavedProfileStore(_path).ListAsync(CancellationToken.None);
+        var second = await new JsonSavedProfileStore(_path).ListAsync(CancellationToken.None);
+
+        Assert.All(first, one => Assert.False(string.IsNullOrEmpty(one.Id)));
+        Assert.NotEqual(first[0].Id, first[1].Id);
+        Assert.Equal(first.Select(one => one.Id), second.Select(one => one.Id));
+    }
+
     public void Dispose()
     {
         if (File.Exists(_path)) File.Delete(_path);

@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react';
 
 /**
- * The nine marks the panel menu wears, one per panel — and seventeen more that are not panels.
+ * The ten marks the panel menu wears, one per panel — and nineteen more that are not panels.
  *
- * Drawn here rather than pulled from an icon set. Twenty-six glyphs is not worth a dependency, and
+ * Drawn here rather than pulled from an icon set. Twenty-nine glyphs is not worth a dependency, and
  * a set drawn to its own rules would sit beside the mark in `marks.tsx` looking borrowed: the same
  * 24-unit square, one weight of stroke, round ends, no fill, current colour. That is the whole
  * drawing language of this console, and these follow it — the shapes are Lucide's `antenna`,
@@ -11,8 +11,8 @@ import type { ReactNode } from 'react';
  * weight.
  *
  * The counts in this paragraph had already fallen behind the file before the bell arrived; they
- * are put right here rather than left to drift further. Nine panels, one warning, sixteen marks
- * that go inside buttons.
+ * are put right here rather than left to drift further. Ten panels, one rail row that opens none,
+ * one warning, seventeen marks that go inside buttons.
  *
  * 1.8 rather than Lucide's 1.5, because 1.8 is what the mark and every other line in here is
  * drawn at. The one exception is the cog, which has enough going on at sixteen pixels that the
@@ -21,7 +21,11 @@ import type { ReactNode } from 'react';
  * `Warning` wears no panel: it stands on the Broker row beside `Antenna`, and a triangle
  * borrowed from somewhere else would look stuck on rather than part of the rail.
  *
- * The last sixteen wear no panel either — they go inside buttons, in the same mono the button is
+ * `ListTree` wears no panel either: it is the rail's Topics row, which shuts whatever stands over
+ * the tree rather than opening anything, and it is drawn here so that row is lettered in the same
+ * hand as the panels above it.
+ *
+ * The last seventeen wear no panel either — they go inside buttons, in the same mono the button is
  * lettered in, at the size of one line of that type. Which is what they are drawn for: a mark in
  * a button has one line of type's worth of room and has to be recognised in it, so each of them
  * is the simplest shape that survives thirteen pixels.
@@ -128,6 +132,30 @@ export const Nodes = () => (
       <rect x="9" y="15" width="6" height="5" rx="1" />
       <path d="M9 6.5h6" />
       <path d="M18 9v2.5a1.5 1.5 0 0 1-1.5 1.5H12v2" />
+    </>
+  </Glyph>
+);
+
+/** 3D Studio: a cube seen from a corner, its three visible faces. */
+export const Cube = () => (
+  <Glyph>
+    <>
+      <path d="M12 3 20 7.5v9L12 21l-8-4.5v-9L12 3Z" />
+      <path d="M4 7.5 12 12l8-4.5" />
+      <path d="M12 12v9" />
+    </>
+  </Glyph>
+);
+
+/** Topics: a root and the levels hanging off it. */
+export const ListTree = () => (
+  <Glyph>
+    <>
+      <path d="M4 5h6" />
+      <path d="M7 5v12.5a1.5 1.5 0 0 0 1.5 1.5H12" />
+      <path d="M7 12h5" />
+      <path d="M15 12h5" />
+      <path d="M15 19h5" />
     </>
   </Glyph>
 );
@@ -450,5 +478,17 @@ export const Plus = () => (
       <path d="M12 5.5v13" />
       <path d="M5.5 12h13" />
     </>
+  </Glyph>
+);
+
+/**
+ * There is more under this line.
+ *
+ * One chevron, pointing down. The stylesheet turns it over when the line it stands on is open,
+ * which is the same mark and the same turn the broker events' bar already uses.
+ */
+export const Chevron = () => (
+  <Glyph>
+    <path d="M8 10 12 14 16 10" />
   </Glyph>
 );

@@ -211,12 +211,10 @@ public sealed class FlowConsoleSender
         // and not the alert history, which keeps the last hundred to end: past the bound these are
         // thousands, and most of them are gone from it by now.
         if (taken.Untold > 0)
-            _log.LogWarning("{Count} flow alarms went up and came down while the console was not taking what it was sent. " +
-                            "It was not told of them; the log was.", taken.Untold);
+            _log.LogWarning("{Count} flow alarms rose and cleared while the console lagged; logged only.", taken.Untold);
 
         if (taken.Lost > 0)
-            _log.LogWarning("The console fell {Count} flow alarm events behind, and the oldest were let go. " +
-                            "It shows the alarms as they stand the next time it reads them.", taken.Lost);
+            _log.LogWarning("The console fell {Count} flow alarm events behind; the oldest were dropped.", taken.Lost);
 
         return taken.Events.Count > 0 ? taken.Events : null;
     }

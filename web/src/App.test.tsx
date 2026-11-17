@@ -74,9 +74,34 @@ describe('App', () => {
   });
 
   it('keeps the window while a link the reader is making comes up', async () => {
+    // What the broker hands back once the dial lands. The strip reads it off `connection`, so a
+    // fixture with a bare state and no link draws nothing the strip would ever actually say — the
+    // real API answers with a BrokerLinkDto shaped like this one once a link is up.
+    const link = {
+      host: 'broker.example',
+      port: 8883,
+      clientId: 'console',
+      username: 'alice',
+      useTls: true,
+      connectedAt: '2026-08-08T12:00:00Z',
+      sessionPresent: false,
+      assignedClientId: null,
+      serverKeepAlive: null,
+      transport: 'tcp',
+      protocolVersion: 'v500',
+    };
+    // Read off a variable the POST sets, rather than re-registering the GET after the click: the
+    // connect mutation's own invalidate can refetch before a handler swapped in afterwards is the
+    // one in force, and a GET that already knows what the POST did cannot lose that race.
+    let state: 'Disconnected' | 'Connected' = 'Disconnected';
     server.use(
-      http.get('/api/connection', () => HttpResponse.json({ state: 'Disconnected' })),
-      http.post('/api/connection', () => HttpResponse.json({ state: 'Connected' })),
+      http.get('/api/connection', () =>
+        HttpResponse.json(state === 'Connected' ? { state, connection: link } : { state }),
+      ),
+      http.post('/api/connection', () => {
+        state = 'Connected';
+        return HttpResponse.json({ state, connection: link });
+      }),
       http.post('/api/subscriptions', () => new HttpResponse(null, { status: 202 })),
     );
     renderApp();
@@ -84,10 +109,10 @@ describe('App', () => {
     expect(screen.getByTestId('layout')).toHaveAttribute('data-panel', 'full');
 
     await userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
-    server.use(http.get('/api/connection', () => HttpResponse.json({ state: 'Connected' })));
 
-    // The link is up, on screen — and the panel is still the window it was.
-    await screen.findByText('Connected', { selector: 'p' });
+    // The link is up, on screen — named by the strip, with the address a real link carries — and
+    // the panel is still the window it was.
+    await screen.findByText(/^Connected to /, { selector: 'p' });
     expect(screen.getByTestId('layout')).toHaveAttribute('data-panel', 'full');
   });
 
@@ -179,12 +204,13 @@ describe('App', () => {
     expect(screen.getByRole('region', { name: 'Settings panel' })).toBeInTheDocument();
   });
 
-  // A deep tree indents every level, so topics start widest; the panel column holds a form.
-  it('starts with the topics column the widest of the three', () => {
+  // The panels in the column hold rows of topics as long as the tree's own, so a panel opens as
+  // wide as the tree beside it.
+  it('opens the panel column as wide as the topics column', () => {
     renderApp();
 
-    expect(share('panel')).toBe('24.00fr');
-    expect(share('tree')).toBe('44.00fr');
+    expect(share('panel')).toBe('34.00fr');
+    expect(share('tree')).toBe('34.00fr');
     expect(share('right')).toBe('32.00fr');
   });
 
@@ -195,8 +221,8 @@ describe('App', () => {
 
     expect(screen.getByTestId('layout')).toHaveAttribute('data-panel', 'closed');
     expect(share('panel')).toBe('0.00fr');
-    expect(share('tree')).toBe('56.00fr');
-    expect(share('right')).toBe('44.00fr');
+    expect(share('tree')).toBe('51.00fr');
+    expect(share('right')).toBe('49.00fr');
   });
 
   // A step is two percent of the pair the seam divides, not of the whole row — the same
@@ -208,12 +234,12 @@ describe('App', () => {
     const seam = screen.getByRole('separator', { name: 'Panel and topics boundary' });
     seam.focus();
     await userEvent.keyboard('{ArrowLeft}');
-    expect(share('panel')).toBe('22.64fr');
+    expect(share('panel')).toBe('32.64fr');
 
     await intoColumns();
     await intoColumns();
 
-    expect(share('panel')).toBe('22.64fr');
+    expect(share('panel')).toBe('32.64fr');
   });
 
   it('moves the topics boundary with the arrow keys', async () => {
@@ -224,8 +250,8 @@ describe('App', () => {
     seam.focus();
     await userEvent.keyboard('{ArrowRight}');
 
-    expect(share('tree')).toBe('45.52fr');
-    expect(share('right')).toBe('30.48fr');
+    expect(share('tree')).toBe('35.32fr');
+    expect(share('right')).toBe('30.68fr');
   });
 
   // Unmeasured in jsdom, so the column opens content-sized: the entries and the publish form
@@ -286,8 +312,8 @@ describe('App', () => {
    * And it does not claim to be a disclosure.
    *
    * It carried `aria-expanded` over `aria-controls="panel-menu"`, which says the menu is
-   * collapsed — and nothing is. The nav holds the same nine buttons at both widths, every one
-   * focusable, named and reachable; narrowing the rail costs the reader the words, not the way
+   * collapsed — and nothing is. The nav holds the same eleven buttons at both widths, the ten
+   * panels and the Topics row, every one focusable, named and reachable; narrowing the rail costs the reader the words, not the way
    * to any panel. A listener told 'collapsed' would open a menu that was never shut.
    */
   it('says the rail is narrowed rather than that the menu is closed', async () => {
@@ -301,7 +327,7 @@ describe('App', () => {
 
     // The proof of the claim: every panel is still one press away.
     const rows = menu().getAllByRole('button');
-    expect(rows).toHaveLength(9);
+    expect(rows).toHaveLength(11);
     rows.forEach((row) => expect(row).toBeEnabled());
   });
 
@@ -312,7 +338,7 @@ describe('App', () => {
     renderApp();
     await userEvent.click(screen.getByRole('button', { name: /the rail$/ }));
 
-    expect(menu().getAllByRole('button')).toHaveLength(9);
+    expect(menu().getAllByRole('button')).toHaveLength(11);
 
     await userEvent.click(menu().getByRole('button', { name: 'Filters' }));
 
@@ -330,10 +356,11 @@ describe('App', () => {
     expect(menu().queryByRole('heading', { name: 'Link' })).not.toBeInTheDocument();
   });
 
-  // Six flat buttons was a list to read through, and nine is more so. The headings are the
+  // Six flat buttons was a list to read through, and eleven is more so. The headings are the
   // questions a reader actually arrives with, and Chart leads Reading because that is where a
   // topic is read. Alerts closes it: a rule is written about a run already being watched. Flows
-  // leads Tools, marked with its own β, since it is the newest and least settled of the three.
+  // leads Tools, and 3D Studio follows it, each marked with its own β as the two least settled
+  // of the group.
   it('groups the panels under headings, in the order they are worked through', () => {
     renderApp();
 
@@ -345,10 +372,12 @@ describe('App', () => {
     expect(menu().getAllByRole('button').map((button) => button.textContent)).toEqual([
       'Broker',
       'Filters',
+      'Topics',
       'Chart',
       'Colours',
       'Alerts',
       'Flowsβ',
+      '3D Studioβ',
       'Manage',
       'QR',
       'Settings',
@@ -400,6 +429,21 @@ describe('App', () => {
     expect(screen.getByTestId('layout')).toHaveAttribute('data-panel', 'fill');
     // jsdom has no ResizeObserver, so the page says so instead of drawing a canvas it cannot size.
     expect(await screen.findByText(/needs a browser that can measure/)).toBeInTheDocument();
+  });
+
+  it('offers 3D Studio in the rail, marked as experimental, across the whole workspace', async () => {
+    renderApp();
+    const row = menu().getByRole('button', { name: '3D Studio' });
+    expect(row).toHaveAttribute('title', '3D Studio (experimental)');
+
+    await userEvent.click(row);
+    expect(await screen.findByRole('region', { name: '3D Studio panel' })).toBeInTheDocument();
+    // The panel column now opens as wide as the tree, and narrower windows lay it over the tree
+    // with a seam of its own; neither is room for a scene, so the studio still takes the row.
+    expect(screen.getByTestId('layout')).toHaveAttribute('data-panel', 'fill');
+    expect(
+      screen.queryByRole('separator', { name: 'Panel and topics boundary' }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -597,14 +641,15 @@ describe('the rail on a narrow screen', () => {
     );
   });
 
-  // Narrow or not, every panel is one press away — which is the promise the shut rail makes.
-  it('keeps all nine panels reachable while it is narrowed', async () => {
+  // Narrow or not, every panel is one press away — which is the promise the shut rail makes. The
+  // Topics row stands among them, so the rail holds the ten panels and that one way back to the tree.
+  it('keeps all ten panels and the Topics row reachable while it is narrowed', async () => {
     atWidth(true);
     renderApp();
 
     await screen.findByRole('button', { name: 'Open the rail' });
     const rows = menu().getAllByRole('button');
-    expect(rows).toHaveLength(9);
+    expect(rows).toHaveLength(11);
     rows.forEach((row) => expect(row).toBeEnabled());
 
     await userEvent.click(menu().getByRole('button', { name: /^Chart/ }));

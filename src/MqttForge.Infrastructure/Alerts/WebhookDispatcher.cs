@@ -366,8 +366,7 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
         if (Interlocked.Exchange(ref _saidWebhooksAreOff, 1) != 0) return;
 
         _log.LogWarning(
-            "A rule asked for a webhook, but MqttForge:AllowWebhooks is false. No webhook will " +
-            "be sent while it stays false, and this is said once.");
+            "A rule wants a webhook, but MqttForge:AllowWebhooks is false; none will be sent.");
     }
 
     // Called by the queue itself, on the writer's thread and before the write returns, and only for a
@@ -656,15 +655,13 @@ public sealed class WebhookDispatcher : IAlertDispatcher, IFlowWebhook, IHostedS
         {
             case AlertDelivery alert:
                 _log.LogWarning(
-                    "The webhook for {RuleName} on {Topic} was not delivered to {Url} after " +
-                    "{Attempts} attempt(s): {Reason}",
+                    "Webhook for {RuleName} on {Topic} not delivered to {Url} after {Attempts} attempt(s): {Reason}",
                     alert.Alert.RuleName, alert.Alert.Topic, Redacted(job.Url), attempts, reason);
                 break;
 
             case FlowDelivery flow:
                 _log.LogWarning(
-                    "The webhook for flow {Flow}'s node {Node} was not delivered to {Url} after " +
-                    "{Attempts} attempt(s): {Reason}",
+                    "Webhook for flow {Flow} node {Node} not delivered to {Url} after {Attempts} attempt(s): {Reason}",
                     flow.Post.Run.FlowId, flow.Post.NodeId, Redacted(job.Url), attempts, reason);
 
                 // The node's sentence is read by a person and not filtered on, so it says one attempt or

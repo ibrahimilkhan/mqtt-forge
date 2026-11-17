@@ -185,8 +185,7 @@ public sealed class MqttnetSubscriber : IMqttSubscriber, ISubscriptionRestorer
             // Every filter in the packet is named: the broker closed the session rather than
             // answering per filter, so which of them it objected to is not knowable from here.
             throw new MessageRejectedException(
-                $"The broker refused '{named}' and closed the connection. " +
-                "A filter covering more of the topic tree than the broker allows is the usual cause.",
+                $"The broker refused '{named}' and closed the connection — likely too broad a filter.",
                 [.. requests.Select(r => r.TopicFilter)],
                 ex);
         }
@@ -205,8 +204,7 @@ public sealed class MqttnetSubscriber : IMqttSubscriber, ISubscriptionRestorer
         catch (MqttCommunicationException ex) when (ex is not MqttClientUnexpectedDisconnectReceivedException)
         {
             throw new MessageRejectedException(
-                $"The broker closed the connection while '{named}' was being asked for. " +
-                "A filter covering more of the topic tree than the broker allows is the usual cause.",
+                $"The broker closed the connection while subscribing to '{named}' — likely too broad a filter.",
                 [.. requests.Select(r => r.TopicFilter)],
                 ex);
         }
@@ -483,7 +481,7 @@ public sealed class MqttnetSubscriber : IMqttSubscriber, ISubscriptionRestorer
                                    ex is OperationCanceledException or MqttCommunicationTimedOutException)
         {
             throw new BrokerDidNotAnswerException(
-                $"The broker did not answer {asked} within {SubscriptionTimeout.TotalSeconds:0} seconds.", ex);
+                $"The broker didn't answer {asked} within {SubscriptionTimeout.TotalSeconds:0}s.", ex);
         }
         catch (Exception ex) when (ex is OperationCanceledException or MqttClientDisconnectedException
                                        or MqttClientNotConnectedException)

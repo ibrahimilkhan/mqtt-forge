@@ -233,7 +233,7 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
                 the workspace — its two answers thrown to opposite edges of 1400px would be two
                 buttons that do not look like they are about the same thing. */}
             <div className={panel.actions}>
-              <button type="button" className="ghost" onClick={() => setLeaving(false)}>
+              <button type="button" onClick={() => setLeaving(false)}>
                 Keep writing
               </button>
               <button type="button" className="ends" onClick={leave}>
@@ -275,7 +275,7 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
 
         <button
           type="button"
-          className={`ghost ${panel.iconButton}`}
+          className={panel.iconButton}
           onClick={() => edit()}
         >
           <Plus />

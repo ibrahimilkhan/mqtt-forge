@@ -73,10 +73,36 @@ const REGIONS: ReadonlyArray<{ id: RegionId; label: string }> = [
   { id: 'publish', label: 'Publish' },
 ];
 
-// The topics column is the one that has to hold a shape rather than a line of text: a deep tree
-// indents every level, so it starts as the widest of the three. The panel column holds a form
-// and reads fine narrow; the log wraps a long topic onto a second line and carries on.
-const START: Widths = { panel: 0.24, tree: 0.44, right: 0.32 };
+// The panel opens as wide as the tree beside it. It used to open at a quarter of the row, on the
+// reasoning that a form reads fine narrow — but the panels in this column are not all forms: a
+// filter list, a chart's series and the manage tables are rows of topics, and a topic is as long
+// as the tree's own. The log wraps a long topic onto a second line and carries on.
+const START: Widths = { panel: 0.34, tree: 0.34, right: 0.32 };
+
+/**
+ * Where the row has no room for a third column and the panel lies over the other two instead.
+ *
+ * The same bands as the stylesheet's overlay rule, and kept in step with it by hand: the seam has
+ * to know which of the two it is dividing, and only the stylesheet knows that on its own.
+ */
+const OVERLAID =
+  '(min-width: 761px) and (max-width: 1180px), (max-width: 760px) and (pointer: fine), (max-width: 760px) and (pointer: none)';
+
+function useOverlaid() {
+  const [overlaid, setOverlaid] = useState(() => window.matchMedia?.(OVERLAID).matches ?? false);
+
+  useLayoutEffect(() => {
+    const query = window.matchMedia?.(OVERLAID);
+    if (!query) return;
+
+    const follow = () => setOverlaid(query.matches);
+    follow();
+    query.addEventListener('change', follow);
+    return () => query.removeEventListener('change', follow);
+  }, []);
+
+  return overlaid;
+}
 
 /**
  * Where to put the two boundaries in the right column so the log and the publish form each open
@@ -122,6 +148,9 @@ export function Workspace({ panel, wide, tree, log, logCount, logTools, chart, p
   // reading is already at the top of the log's own pane, and the publish form is not being
   // filled in while a run is being read.
   const [shut, setShut] = useState<ReadonlyArray<RegionId>>([]);
+
+  // Whether the panel is a column of the row or a sheet lying over it; see the stylesheet.
+  const overlaid = useOverlaid();
 
   const columnRef = useRef<HTMLDivElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
@@ -216,7 +245,12 @@ export function Workspace({ panel, wide, tree, log, logCount, logTools, chart, p
   const weight = (id: RegionId) => (open(id) ? split[id] : 0);
   const spread = weight('log') + weight('chart') + weight('publish');
 
+  // Lying over the row, the panel is a share of the two columns it covers rather than a third
+  // column beside them — so it opens exactly over the tree, as wide as the tree is.
+  const overlay = widths.panel / (widths.tree + widths.right);
+
   const tracks = {
+    '--overlay': `${(overlay * 100).toFixed(2)}%`,
     '--panel': `${(shown.panel * 100).toFixed(2)}fr`,
     '--tree': `${(shown.tree * 100).toFixed(2)}fr`,
     '--right': `${(shown.right * 100).toFixed(2)}fr`,
@@ -241,6 +275,15 @@ export function Workspace({ panel, wide, tree, log, logCount, logTools, chart, p
   const movePanelEdge = (share: number) => {
     const pair = widths.panel + widths.tree;
     setWidths({ ...widths, panel: share * pair, tree: (1 - share) * pair });
+  };
+
+  // Overlaid, the seam reports the panel's share of the whole row it lies across. The widths stay
+  // shares of one, so the panel is taken out of the other two in the proportion they stand in, and
+  // the row the reader goes back to on a wider window is the one they arranged here.
+  const moveOverlayEdge = (share: number) => {
+    const panelShare = share / (1 + share);
+    const rest = (1 - panelShare) / (widths.tree + widths.right);
+    setWidths({ panel: panelShare, tree: widths.tree * rest, right: widths.right * rest });
   };
 
   // Held as the row looks with a panel open, so what the reader dragged has the width a closed
@@ -419,14 +462,25 @@ export function Workspace({ panel, wide, tree, log, logCount, logTools, chart, p
         <>
           <div className={styles.pane}>{panel}</div>
           {/* No boundary to drag when the panel is the whole of it. */}
-          {!wide && (
-            <ResizeHandle
-              axis="x"
-              label="Panel and topics boundary"
-              {...between(widths.panel, widths.tree)}
-              onChange={movePanelEdge}
-            />
-          )}
+          {!wide &&
+            (overlaid ? (
+              <ResizeHandle
+                axis="x"
+                label="Panel and topics boundary"
+                over
+                value={overlay}
+                min={MIN_SHARE}
+                max={1 - MIN_SHARE}
+                onChange={moveOverlayEdge}
+              />
+            ) : (
+              <ResizeHandle
+                axis="x"
+                label="Panel and topics boundary"
+                {...between(widths.panel, widths.tree)}
+                onChange={movePanelEdge}
+              />
+            ))}
         </>
       )}
 

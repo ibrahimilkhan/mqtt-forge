@@ -416,6 +416,7 @@ describe('the record of what the link has done', () => {
     await goTo('Broker');
     const broker = panelNamed('Broker panel');
     expect(broker.getByRole('heading', { name: /^Events/ })).toHaveTextContent('(3)');
+    await userEvent.click(broker.getByRole('button', { name: /^Events/ }));
 
     await userEvent.click(broker.getByRole('button', { name: 'Find in the record' }));
     await userEvent.type(broker.getByLabelText('Search broker events'), 'dropped');

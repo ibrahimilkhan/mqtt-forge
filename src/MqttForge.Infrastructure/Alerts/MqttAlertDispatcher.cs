@@ -51,6 +51,7 @@ public sealed class MqttAlertDispatcher : IAlertDispatcher
     private static readonly TimeSpan ClearBudget = TimeSpan.FromSeconds(2);
 
     private readonly IMqttPublisher _publisher;
+    private readonly AlertPublishWitness? _witness;
     private readonly AlertEngineOptions _options;
     private readonly ILogger<MqttAlertDispatcher> _log;
 
@@ -87,9 +88,11 @@ public sealed class MqttAlertDispatcher : IAlertDispatcher
 
     public MqttAlertDispatcher(IMqttPublisher publisher, AlertEngineOptions options,
                               ILogger<MqttAlertDispatcher> log,
-                              IHostApplicationLifetime? lifetime = null)
+                              IHostApplicationLifetime? lifetime = null,
+                              AlertPublishWitness? witness = null)
     {
         _publisher = publisher;
+        _witness = witness;
         _options = options;
         _log = log;
 
@@ -205,11 +208,10 @@ public sealed class MqttAlertDispatcher : IAlertDispatcher
     private void Say(AlertBacklog.Taken taken)
     {
         if (taken.Untold > 0)
-            _log.LogWarning("{Count} alarms went up and came down while the broker was slow to take their publications. " +
-                            "They were not published; the log has them.", taken.Untold);
+            _log.LogWarning("{Count} alarms rose and cleared while the broker lagged; logged, not published.", taken.Untold);
 
         if (taken.Lost > 0)
-            _log.LogWarning("The broker fell {Count} alarm publications behind, and the oldest were let go.", taken.Lost);
+            _log.LogWarning("The broker fell {Count} alarm publications behind; the oldest were dropped.", taken.Lost);
     }
 
     /// <summary>Stops the loop before the sweep, and says what was still waiting.</summary>
@@ -228,8 +230,7 @@ public sealed class MqttAlertDispatcher : IAlertDispatcher
             _log.LogWarning("The broker's alarm channel did not stop within {Seconds} seconds.", ClearBudget.TotalSeconds);
 
         if (Pending > 0)
-            _log.LogWarning("{Count} alarm publication(s) were still waiting when MQTTForge stopped. " +
-                            "The retained records are taken back all the same.", Pending);
+            _log.LogWarning("{Count} alarm publication(s) pending at shutdown; retained records are cleared anyway.", Pending);
     }
 
     private async Task SendAsync(AlertEvent one, CancellationToken ct)
@@ -251,6 +252,9 @@ public sealed class MqttAlertDispatcher : IAlertDispatcher
             // topic that holds nothing costs one empty publish; one it missed says "critical" on
             // the broker for ever.
             if (one.Raised && publish.Retain) _retained[topic] = publish.Qos;
+
+            // So a link that goes straight after this can be put down to it. See the witness.
+            _witness?.Saw(alert.RuleName, topic);
 
             // A body that never left leaves the list as it was: the topic stays on it so the
             // shutdown clear tries it again when the link may be up.
@@ -307,8 +311,7 @@ public sealed class MqttAlertDispatcher : IAlertDispatcher
         Interlocked.Increment(ref _refused);
 
         _log.LogWarning(
-            "The rule {RuleName} publishes to '{Topic}', which is outside the alert prefix " +
-            "'{Prefix}'. Nothing was published: the engine would be listening to itself.",
+            "Rule {RuleName} publishes to '{Topic}', outside the alert prefix '{Prefix}'; not published.",
             alert.RuleName, expanded, _options.TopicPrefix);
 
         return null;
@@ -340,7 +343,7 @@ public sealed class MqttAlertDispatcher : IAlertDispatcher
             Interlocked.Increment(ref _undelivered);
 
             _log.LogWarning(
-                "{What} for {Topic} was not published: MQTTForge is not connected to a broker.",
+                "{What} for {Topic} not published: not connected to a broker.",
                 what, topic);
 
             return false;

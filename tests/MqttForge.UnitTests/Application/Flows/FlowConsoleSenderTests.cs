@@ -123,8 +123,8 @@ public sealed class FlowConsoleSenderTests : IAsyncLifetime
 
         // The log, and not the alert history: that keeps the last hundred to end, and a flood this
         // size is thousands.
-        Assert.Contains($"{flood} flow alarms went up and came down while the console was not taking what it was sent. " +
-                        "It was not told of them; the log was.", _log.Lines.Select(line => line.Message));
+        Assert.Contains($"{flood} flow alarms rose and cleared while the console lagged; logged only.",
+                        _log.Lines.Select(line => line.Message));
     }
 
     // A bound that holds whatever it is handed. The runtime's own ceiling on standing alarms keeps it

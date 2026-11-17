@@ -15,6 +15,9 @@ public static class DependencyInjection
     {
         // Single MQTTnet client for all requests (one active connection)
         services.AddSingleton<MqttnetClientProvider>();
+        // One between the alert dispatcher and the connection manager: the first says where a
+        // rule is about to publish, the second asks when the link drops. See AlertPublishWitness.
+        services.AddSingleton<AlertPublishWitness>();
         services.AddSingleton<IMqttConnectionManager, MqttnetConnectionManager>();
         services.AddSingleton<IMqttPublisher, MqttnetPublisher>();
         // One instance wearing both hats: the notifier that queues, and the pump that drains it.
@@ -201,6 +204,14 @@ public static class DependencyInjection
                 ? sp.GetRequiredService<WebhookDispatcher>()
                 : null));
         services.AddSingleton<FlowService>();
+
+        // The 3D Studio's scenes and model files, side by side in one folder beside the settings.
+        services.AddSingleton<IStudioSceneStore>(sp => new JsonStudioSceneStore(
+            StorePaths.Studio(sp.GetRequiredService<IConfiguration>()),
+            sp.GetRequiredService<ILogger<JsonStudioSceneStore>>()));
+        services.AddSingleton<IStudioModelStore>(sp =>
+            new FileStudioModelStore(StorePaths.Studio(sp.GetRequiredService<IConfiguration>())));
+        services.AddSingleton<StudioService>();
 
         // The message path forks here rather than inside MqttnetSubscriber, which goes on knowing
         // that it hands a message over and nothing about who to. Recording joins the same list.

@@ -1128,7 +1128,7 @@ public sealed class AlertEngineCore
         if (_faults.ContainsKey(ruleId) && !_refusedRules.Contains(ruleId)) return;
 
         _faults[ruleId] =
-            $"The broker refused this rule's filter '{filter}', so nothing is being watched for it.";
+            $"The broker refused this rule's filter '{filter}'; nothing is watched.";
         _refusedRules.Add(ruleId);
     }
 

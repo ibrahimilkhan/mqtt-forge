@@ -15,7 +15,7 @@ public sealed class SavedProfileService
 
     public Task<IReadOnlyList<SavedBrokerProfile>> GetAsync(CancellationToken ct) => _store.ListAsync(ct);
 
-    public Task SaveAsync(SavedBrokerProfile profile, CancellationToken ct) => _store.SaveAsync(profile, ct);
+    public Task<SavedBrokerProfile> SaveAsync(SavedBrokerProfile profile, CancellationToken ct) => _store.SaveAsync(profile, ct);
 
     public Task<bool> DeleteAsync(string name, CancellationToken ct) => _store.DeleteAsync(name, ct);
 }

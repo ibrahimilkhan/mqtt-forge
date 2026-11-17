@@ -163,8 +163,7 @@ public sealed class JsonFlowStore : IFlowStore
     }
 
     private FlowsUnreadableException Unreadable() => new(
-        $"The flows file {_path} could not be read, so no flows are running. Repair it or move it " +
-        "aside; nothing will be written over it until then.");
+        $"The flows file {_path} can't be read; no flows are running. Repair or move it — it won't be overwritten.");
 
     // The envelope as a type, so the version is a property of the document rather than something
     // the writer has to remember to put in front of the array.

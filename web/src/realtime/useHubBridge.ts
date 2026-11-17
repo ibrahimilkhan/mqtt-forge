@@ -175,8 +175,7 @@ export function useHubBridge(hub: Hub) {
           kind: 'fault',
           verb: 'Messages dropped',
           body:
-            `${total} message${total === 1 ? '' : 's'} never left the server: its queue filled ` +
-            'while this console was behind. The tree and the log are short of what they show.',
+            `${total} message${total === 1 ? '' : 's'} lost in the server's queue — the tree and log are incomplete.`,
         });
       },      // The four the alert engine sends. Each is a one-line hand-off to the store, deliberately:
       // what an alarm means is the panel's business, and a bridge that decided anything about one

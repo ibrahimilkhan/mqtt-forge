@@ -139,7 +139,7 @@ public class MqttnetSubscriberTests
 
         var thrown = await Assert.ThrowsAsync<BrokerDidNotAnswerException>(() => asking.WaitAsync(TimeSpan.FromSeconds(5)));
         Assert.Equal(TimeSpan.FromSeconds(10), MqttnetSubscriber.SubscriptionTimeout);
-        Assert.Equal("The broker did not answer the SUBSCRIBE for 'plant/#' within 10 seconds.", thrown.Message);
+        Assert.Equal("The broker didn't answer the SUBSCRIBE for 'plant/#' within 10s.", thrown.Message);
         Assert.Empty(sut.ActiveFilters);
     }
 

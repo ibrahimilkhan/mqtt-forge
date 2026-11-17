@@ -1,6 +1,7 @@
 import styles from './SavedBrokers.module.css';
 import own from './RecentBrokers.module.css';
 import type { RecentBroker, SavedConnection } from '../../types/api';
+import { Link } from '../brand/icons';
 import { formatBrokerAddress } from './address';
 import { schemeOf } from './scheme';
 
@@ -9,7 +10,8 @@ type Props = {
   /** The one the form currently holds, so a card can say "this is what you are looking at". */
   active: string | null;
   onPick: (broker: RecentBroker) => void;
-  onForget: (id: string) => void;
+  /** Fill the form from this one and dial, in one press. No link mark is drawn without it. */
+  onConnect?: (broker: RecentBroker) => void;
   /** Now, in milliseconds, so "3 hours ago" is as old as the panel around it. */
   now: number;
 };
@@ -27,13 +29,14 @@ type Props = {
  * the address is the heading — host and port, the way it is typed into the form — and the line
  * under it carries what kind of link it was and how long ago.
  *
- * The same two controls as a saved card: pressing the body fills the form, and the × drops the
- * row. Keeping one for good is the form's own Save, pressed after the card has filled it — one way
- * to save a broker rather than a second, smaller one on every card. A kept broker stays here as well
+ * The same two controls as a saved card: pressing the body fills the form, and the link mark
+ * dials it. Dropping the row is the form's own Forget and keeping one for good is the form's own
+ * Save, each pressed after the card has filled it — one way to do either rather than a second,
+ * smaller one on every card. A kept broker stays here as well
  * as underneath — the list below is the brokers somebody named, this one is where the console has
  * been — and each broker is in it once, at the latest connection made to it.
  */
-export function RecentBrokers({ brokers, active, onPick, onForget, now }: Props) {
+export function RecentBrokers({ brokers, active, onPick, onConnect, now }: Props) {
   if (brokers.length === 0) return null;
 
   return (
@@ -46,8 +49,9 @@ export function RecentBrokers({ brokers, active, onPick, onForget, now }: Props)
         return (
           <div
             key={broker.id}
-            className={`${styles.chip} ${own.card}`}
+            className={styles.chip}
             data-active={broker.id === active ? '' : undefined}
+            data-go={onConnect ? '' : undefined}
           >
             {/* The whole endpoint, for the pointer. At the narrowest column a long address is cut,
                 and this is where it comes back without anybody pressing the card, which would
@@ -55,7 +59,7 @@ export function RecentBrokers({ brokers, active, onPick, onForget, now }: Props)
                 title only names a button that has none of its own. */}
             <button
               type="button"
-              className={`${styles.pick} ${own.pick}`}
+              className={styles.pick}
               title={endpoint}
               onClick={() => onPick(broker)}
             >
@@ -87,14 +91,20 @@ export function RecentBrokers({ brokers, active, onPick, onForget, now }: Props)
               </span>
             </button>
 
-            <button
-              type="button"
-              className={`${styles.forget} ${own.forget}`}
-              aria-label={`Forget ${endpoint}`}
-              onClick={() => onForget(broker.id)}
-            >
-              ×
-            </button>
+            {/* The mark at the end of the card: this broker, now. The card itself only fills the
+                form, which is the right thing for a broker somebody means to look at first; this is
+                for the one they connect to every morning. */}
+            {onConnect && (
+              <button
+                type="button"
+                className={styles.go}
+                aria-label={`Connect to ${endpoint}`}
+                title="Connect"
+                onClick={() => onConnect(broker)}
+              >
+                <Link />
+              </button>
+            )}
           </div>
         );
       })}

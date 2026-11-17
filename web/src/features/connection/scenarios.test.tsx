@@ -65,18 +65,23 @@ const connect = async () =>
   userEvent.click(await screen.findByRole('button', { name: 'Connect' }));
 
 /**
- * Opens the fold, with the box above it on.
+ * Opens the Security sheet, over an encrypted way in.
  *
- * The fold's fields follow that box — they are inert while encryption is off, which is the one
+ * The sheet's fields follow the way in — they are inert while encryption is off, which is the one
  * rule that block has — so filling any of them starts by saying the connection is encrypted.
  * Which is what a reader with a certificate is doing anyway: every broker whose documentation
  * hands you one hands you `mqtts://` in the same paragraph.
  */
 const openEncryption = async () => {
-  const box = screen.getByLabelText('Encrypted (TLS)') as HTMLInputElement;
-  if (!box.checked) await userEvent.click(box);
-  await userEvent.click(screen.getByText('Encryption'));
+  const protocol = screen.getByLabelText<HTMLSelectElement>('Protocol');
+  if (protocol.value === 'mqtt') await userEvent.selectOptions(protocol, 'mqtts');
+  if (protocol.value === 'ws') await userEvent.selectOptions(protocol, 'wss');
+  await userEvent.click(screen.getByRole('button', { name: 'Security' }));
 };
+
+/** Chooses one of the four ways in, by the scheme it is written with. */
+const pickWay = (scheme: 'mqtt' | 'mqtts' | 'ws' | 'wss') =>
+  userEvent.selectOptions(screen.getByLabelText('Protocol'), scheme);
 
 beforeEach(() => {
   useLogStore.getState().clear();
@@ -172,7 +177,7 @@ describe('a cloud broker, from the string its console gave you', () => {
         port: 8883,
         useTls: true,
         transport: 'tcp',
-        // Nothing under Encryption was touched: a publicly trusted certificate needs none of it.
+        // Nothing under Security was touched: a publicly trusted certificate needs none of it.
         tls: null,
       }),
     );
@@ -235,6 +240,7 @@ describe('a broker that knows you by certificate', () => {
     await openEncryption();
     await userEvent.type(screen.getByLabelText('Client certificate'), '/etc/mqtt/client.pem.crt');
     await userEvent.type(screen.getByLabelText('Private key'), '/etc/mqtt/client.pem.key');
+    await userEvent.click(screen.getByLabelText('Also trust my own CA'));
     await userEvent.type(screen.getByLabelText('Extra CA certificate'), '/etc/mqtt/AmazonRootCA1.pem');
     await connect();
 
@@ -267,20 +273,20 @@ describe('a broker that knows you by certificate', () => {
     );
   });
 
-  // Encryption is asked for before a certificate is, not by it. The fold's fields are inert while
-  // the box above them is off — which is the rule — so ticking it is the first move, and the port
-  // follows the tick without anyone typing one.
+  // Encryption is asked for before a certificate is, not by it. The sheet's fields are inert while
+  // the way in is a plain one — which is the rule — so choosing an encrypted one is the first
+  // move, and the port follows it without anyone typing one.
   it('asks for encryption before it asks for a certificate', async () => {
     const seen = watchConnect();
     renderPanel();
 
     await type(address(), 'broker.example');
-    await userEvent.click(screen.getByText('Encryption'));
+    await userEvent.click(screen.getByRole('button', { name: 'Security' }));
 
-    // Nothing in the fold can be filled in yet.
+    // Nothing in the sheet can be filled in yet.
     expect(screen.getByLabelText('Client certificate')).toBeDisabled();
 
-    await userEvent.click(screen.getByLabelText('Encrypted (TLS)'));
+    await pickWay('mqtts');
     await userEvent.type(screen.getByLabelText('Client certificate'), '/etc/client.pfx');
     await connect();
 
@@ -295,6 +301,7 @@ describe('a broker with a certificate it signed itself', () => {
 
     await type(port(), '8883');
     await openEncryption();
+    await userEvent.click(screen.getByLabelText('Also trust my own CA'));
     await userEvent.type(screen.getByLabelText('Extra CA certificate'), '/etc/mqtt/lab-ca.crt');
     await connect();
 
@@ -306,7 +313,7 @@ describe('a broker with a certificate it signed itself', () => {
     );
   });
 
-  it('turns verification off when the box is ticked instead', async () => {
+  it('turns verification off when that is the answer chosen instead', async () => {
     const seen = watchConnect();
     renderPanel();
 
@@ -329,14 +336,14 @@ describe('what one answer does to the next', () => {
   it('moves the port when the way in changes, and leaves a typed one alone', async () => {
     renderPanel();
 
-    await userEvent.click(screen.getByLabelText('Encrypted (TLS)'));
+    await pickWay('mqtts');
     expect(port()).toHaveValue(8883);
 
-    await userEvent.selectOptions(screen.getByLabelText('Transport'), 'webSocket');
+    await pickWay('wss');
     expect(port()).toHaveValue(8084);
 
     await type(port(), '9001');
-    await userEvent.click(screen.getByLabelText('Encrypted (TLS)'));
+    await pickWay('ws');
     expect(port()).toHaveValue(9001);
   });
 
@@ -344,9 +351,9 @@ describe('what one answer does to the next', () => {
     const seen = watchConnect();
     renderPanel();
 
-    await userEvent.selectOptions(screen.getByLabelText('Transport'), 'webSocket');
+    await pickWay('ws');
     await userEvent.type(screen.getByLabelText('WebSocket path'), '/ws');
-    await userEvent.selectOptions(screen.getByLabelText('Transport'), 'tcp');
+    await pickWay('mqtt');
     await connect();
 
     await waitFor(() => expect(seen.request).toMatchObject({ webSocketPath: null }));
@@ -377,7 +384,7 @@ describe('what one answer does to the next', () => {
 
     expect(screen.queryByLabelText('Session expiry')).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByLabelText('Clean session'));
+    await userEvent.click(screen.getByLabelText('Keep session'));
     await userEvent.type(screen.getByLabelText('Session expiry'), '600');
     await connect();
 
@@ -464,7 +471,7 @@ describe('a connection that does not come up', () => {
       const asked = watchSubscribes();
       renderPanel();
 
-      await userEvent.click(await screen.findByLabelText(/Subscribe \$SYS/));
+      await userEvent.click(await screen.findByLabelText(/^\$SYS\/# broker statistics/));
       await connect();
 
       await waitFor(() => expect(asked).toEqual(['#', '$SYS/#']));
@@ -485,7 +492,7 @@ describe('a connection that does not come up', () => {
       );
       renderPanel();
 
-      await userEvent.click(await screen.findByLabelText(/Subscribe \$SYS/));
+      await userEvent.click(await screen.findByLabelText(/^\$SYS\/# broker statistics/));
       await connect();
 
       await waitFor(() =>
@@ -503,8 +510,8 @@ describe('a connection that does not come up', () => {
       const asked = watchSubscribes();
       renderPanel();
 
-      await userEvent.click(await screen.findByLabelText(/Subscribe #/));
-      await userEvent.click(await screen.findByLabelText(/Subscribe \$SYS/));
+      await userEvent.click(await screen.findByLabelText(/^# all topics/));
+      await userEvent.click(await screen.findByLabelText(/^\$SYS\/# broker statistics/));
       await connect();
 
       await waitFor(() => expect(asked).toEqual(['$SYS/#']));
@@ -532,7 +539,7 @@ describe('a connection that does not come up', () => {
     renderPanel();
 
     expect(
-      await screen.findByText('The connection to broker.example:1883 failed, and nothing said why.'),
+      await screen.findByText('The connection to broker.example:1883 failed.'),
     ).toBeInTheDocument();
   });
 
@@ -592,7 +599,7 @@ describe('the keyboard, which is what most of this is filled in with', () => {
     );
     renderPanel();
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Save' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Save as…' }));
     await userEvent.type(screen.getByLabelText('Save as'), '{Enter}');
 
     await waitFor(() => expect(saved).toMatchObject({ name: 'localhost:1883' }));

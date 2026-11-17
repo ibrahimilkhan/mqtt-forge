@@ -639,7 +639,6 @@ function TestsWithNoTab({
               <button
                 ref={going}
                 type="button"
-                className="ghost"
                 data-flow={id}
                 aria-label={`Stop the test of ${id}`}
                 aria-disabled={off || undefined}
@@ -680,7 +679,7 @@ function Start() {
         <button id={START} type="button" onClick={() => begin(exampleFlows())}>
           Start from an example
         </button>
-        <button type="button" className="ghost" onClick={() => begin([emptyFlow('Flow 1')])}>
+        <button type="button" onClick={() => begin([emptyFlow('Flow 1')])}>
           New flow
         </button>
       </div>

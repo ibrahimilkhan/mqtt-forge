@@ -1,7 +1,30 @@
 import { describe, expect, it } from 'vitest';
-import { createRuleLookup, isColour, sortRules, type ColourRule } from './topicColour';
+import { createRuleLookup, isColour, rulesFor, sortRules, type ColourRule } from './topicColour';
 
 const rule = (filter: string, colour = '#b45309'): ColourRule => ({ filter, colour });
+
+describe('rulesFor', () => {
+  const everywhere: ColourRule = { filter: 'plant/#', colour: '#111111' };
+  const lab: ColourRule = { filter: 'lab/#', colour: '#222222', profileId: 'lab-1' };
+  const staging: ColourRule = { filter: 'stage/#', colour: '#333333', profileId: 'staging-1' };
+
+  it('applies the rules for every broker, and the broker that is up', () => {
+    expect(rulesFor([everywhere, lab, staging], 'lab-1')).toEqual([everywhere, lab]);
+  });
+
+  // A link typed in, or none: no saved broker, so no broker's own rules.
+  it('applies only the rules for every broker to a link that is no saved broker', () => {
+    expect(rulesFor([everywhere, lab, staging], null)).toEqual([everywhere]);
+  });
+
+  // Two rules on one filter cannot both paint: the broker's own is the exception to the general.
+  it("lets the broker's own rule overrule one for every broker on the same filter", () => {
+    const own: ColourRule = { filter: 'plant/#', colour: '#444444', profileId: 'lab-1' };
+
+    expect(rulesFor([everywhere, own], 'lab-1')).toEqual([own]);
+    expect(rulesFor([everywhere, own], 'staging-1')).toEqual([everywhere]);
+  });
+});
 
 describe('isColour', () => {
   it.each(['#b45309', '#B45309', '#000000', '#ffffff'])('accepts %s', (value) => {

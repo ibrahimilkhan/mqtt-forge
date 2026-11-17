@@ -42,6 +42,9 @@ public sealed class MqttExceptionHandler : IExceptionHandler
             // The flows' twins of the two alert-rule arms above, for the same two reasons.
             FlowsUnreadableException => (StatusCodes.Status409Conflict, "The flows file could not be read"),
             FlowsNotSavedException => (StatusCodes.Status500InternalServerError, "Could not save the flows"),
+            // The studio's twins of the flows' two arms, for the same two reasons.
+            StudioSceneUnreadableException => (StatusCodes.Status409Conflict, "The scene file could not be read"),
+            StudioNotSavedException => (StatusCodes.Status500InternalServerError, "Could not save the studio"),
             // A request the server refused while it was being read — a body past its endpoint's
             // limit, which is Kestrel's 413 — keeps the status it was refused with. Left to the
             // default it would be a 500, which says the server failed at something it did on purpose.
@@ -75,6 +78,8 @@ public sealed class MqttExceptionHandler : IExceptionHandler
             AlertRulesNotSavedException => "alertRulesNotSaved",
             FlowsUnreadableException => "flowsUnreadable",
             FlowsNotSavedException => "flowsNotSaved",
+            StudioSceneUnreadableException => "sceneUnreadable",
+            StudioNotSavedException => "studioNotSaved",
             _ => null
         };
 

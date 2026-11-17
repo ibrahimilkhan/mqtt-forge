@@ -265,7 +265,7 @@ export function Toolbar(props: Props) {
         <button
           ref={going}
           type="button"
-          className="ghost ends"
+          className="ends"
           aria-disabled={busy || undefined}
           onClick={() => {
             if (busy) return;
@@ -285,7 +285,6 @@ export function Toolbar(props: Props) {
           key="stop"
           ref={going}
           type="button"
-          className="ghost"
           aria-disabled={busy || stopping.has(current) || undefined}
           onClick={() => !busy && !stopping.has(current) && onStop()}
         >
@@ -296,7 +295,6 @@ export function Toolbar(props: Props) {
           key="test"
           ref={going}
           type="button"
-          className="ghost"
           aria-disabled={busy || starting.has(current) || undefined}
           onClick={() => !busy && !starting.has(current) && onTest()}
         >
@@ -308,7 +306,6 @@ export function Toolbar(props: Props) {
           key="activate"
           ref={going}
           type="button"
-          className={styles.activate}
           aria-disabled={busy || held || undefined}
           data-held={held ? '' : undefined}
           title={held ? heldWhy : undefined}
@@ -323,7 +320,6 @@ export function Toolbar(props: Props) {
               key="update"
               ref={going}
               type="button"
-              className={styles.activate}
               aria-disabled={busy || held || undefined}
               data-held={held ? '' : undefined}
               title={held ? heldWhy : undefined}
@@ -337,7 +333,7 @@ export function Toolbar(props: Props) {
               key="deactivate"
               ref={going}
               type="button"
-              className="ghost ends"
+              className="ends"
               aria-disabled={busy || undefined}
               onClick={() => !busy && onDeactivate()}
             >

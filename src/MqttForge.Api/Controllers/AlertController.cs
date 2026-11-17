@@ -69,8 +69,7 @@ public sealed class AlertController : ControllerBase
         // 409: one status, one reason word, one place to change either.
         if (document.Unreadable && document.SkippedIds.Count == 0)
             throw new AlertRulesUnreadableException(
-                "The alert rules file could not be read. No rules are running. Repair the file, or " +
-                "save a rule set asking for what is there to be discarded.");
+                "The alert rules file can't be read; no rules are running. Repair it, or save with discard.");
 
         return Ok(AlertRulesResponseDto.Of(document, _options));
     }
@@ -199,8 +198,7 @@ public sealed class AlertController : ControllerBase
             {
                 Status = StatusCodes.Status404NotFound,
                 Title = "No such alert",
-                Detail = $"No alert on this engine belongs to rule '{dto.RuleId}' and topic " +
-                         $"'{dto.Topic}'. The rule may have been edited, or the alarm may have gone."
+                Detail = $"No alert for rule '{dto.RuleId}' on '{dto.Topic}' — it was edited or has cleared."
             };
 
             problem.Extensions["reason"] = "alertUnknown";

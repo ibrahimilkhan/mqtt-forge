@@ -10,7 +10,7 @@ public interface IFlowWebhook
     // Said by the engine, which is handed no channel when the switch is off, and by the channel, which
     // refuses a post of its own accord as well. One sentence for the one fact, whichever lock held: two
     // copies would be a node that reads differently depending on which of them a change remembered.
-    const string TurnedOff = "Webhooks are turned off on this host (MqttForge:AllowWebhooks), so nothing was sent.";
+    const string TurnedOff = "Webhooks are off on this host (MqttForge:AllowWebhooks); nothing sent.";
 
     /// <summary>
     /// Queues a post and answers at once: true, or false when too many of the flows' posts are waiting

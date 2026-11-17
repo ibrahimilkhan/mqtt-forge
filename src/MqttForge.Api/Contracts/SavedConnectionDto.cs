@@ -39,8 +39,13 @@ public record SavedConnectionDto(
             settings.Subscriptions);
 }
 
-/// <summary>A saved connection, under the name it was saved with.</summary>
-public sealed record SavedProfileDto(string Name, SavedConnectionDto Connection);
+/// <summary>A saved connection, under the name it was saved with, and the id rules hold it by.</summary>
+public sealed record SavedProfileDto(string Name, SavedConnectionDto Connection, string Id)
+{
+    // A profile out of the store always has an id; the store gives one to any that lacks it.
+    public static SavedProfileDto Of(SavedBrokerProfile profile) =>
+        new(profile.Name, SavedConnectionDto.Of(profile.Settings), profile.Id ?? "");
+}
 
 /// <summary>
 /// A broker this console reached, kept or not, with when it was last reached.
@@ -49,8 +54,11 @@ public sealed record SavedProfileDto(string Name, SavedConnectionDto Connection)
 // that a card can be forgotten without inventing a label for it.
 public sealed record RecentBrokerDto(string Id, SavedConnectionDto Connection, DateTimeOffset LastConnectedAt);
 
-/// <summary>What the console sends to keep one. The connection half is a connect request.</summary>
-public sealed record SaveProfileRequestDto(string Name, ConnectRequestDto Connection);
+/// <summary>
+/// What the console sends to keep one. The connection half is a connect request; the id, when
+/// it is sent, says which saved broker this is, so a new name on it renames that one.
+/// </summary>
+public sealed record SaveProfileRequestDto(string Name, ConnectRequestDto Connection, string? Id = null);
 
 public sealed record SavedTlsOptionsDto(
     bool AllowUntrustedCertificates,

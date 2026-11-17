@@ -29,7 +29,7 @@ public partial class FlowCompilerTests
 
     [Fact]
     public void An_mqtt_in_says_what_is_wrong_with_its_filter() =>
-        Assert.Contains("'#' can only be the last level", Only(Step("mqttIn", new { filter = "plant/#/temp" })).Message);
+        Assert.Contains("'#' must be the last level", Only(Step("mqttIn", new { filter = "plant/#/temp" })).Message);
 
     [Theory]
     [InlineData("gt", "91", "90", true)]
@@ -380,7 +380,7 @@ public partial class FlowCompilerTests
 
         var tooLong = Only(Alarm(new { name = "Hot", level = "warn", reason = new string('r', 1025) }));
         Assert.Equal("node:raise", tooLong.Key);
-        Assert.Equal("Write the reason in at most 1024 characters; only the first 200 are shown.", tooLong.Message);
+        Assert.Equal("At most 1024 characters; 200 are shown.", tooLong.Message);
 
         var blank = Assert.IsType<AlarmRaiseNode>(Alarm(new { name = "Hot", level = "warn", reason = "   " }).Compile().Nodes["raise"]);
         Assert.Equal("Hot", Rendered(blank.Reason));
@@ -436,7 +436,7 @@ public partial class FlowCompilerTests
 
         var tooLong = Only(Step("notify", new { text = new string('t', 1025), level = "info" }));
         Assert.Equal("node:x", tooLong.Key);
-        Assert.Equal("Write the notice in at most 1024 characters; only the first 200 are shown.", tooLong.Message);
+        Assert.Equal("At most 1024 characters; 200 are shown.", tooLong.Message);
 
         var notify = Assert.IsType<NotifyNode>(Step("notify", new { text = "  {{topic}} is hot  ", level = "info" }).Compile().Nodes["x"]);
         Assert.Equal("plant/k1 is hot", Rendered(notify.Text, new FlowMessage("plant/k1", "", 0)));
@@ -579,7 +579,7 @@ public partial class FlowCompilerTests
     // Said of the node and not of one setting: the text can be in a name, in a box the pane hides, or on a
     // node that shows no settings at all, and the way out has to be one the reader can take from there.
     private const string Unreadable =
-        "This node's settings hold text that cannot be read. Retype what you can, or delete the node and draw it again.";
+        "This node's settings can't be read. Retype them, or redraw the node.";
 
     /// <summary>Start → x → End, as <see cref="Step"/>, for settings written as the JSON text they arrive in.</summary>
     private static ChartBuilder RawStep(string type, string settings) =>
@@ -640,7 +640,7 @@ public partial class FlowCompilerTests
             .Node("end", "end").Node("say", "debug")
             .Then("start", "x", "end"));
 
-        Assert.Contains(problems, problem => problem.Key == "node:x" && problem.Message.Contains("cannot be read"));
+        Assert.Contains(problems, problem => problem.Key == "node:x" && problem.Message.Contains("can't be read"));
         Assert.Contains(problems, problem => problem.Key == "node:say" && problem.Message.Contains("goes nowhere"));
         Assert.DoesNotContain(problems, problem => problem.EdgeId is not null);
     }

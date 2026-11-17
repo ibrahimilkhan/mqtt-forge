@@ -66,7 +66,7 @@ export function DebugStrip({ flow }: { flow: FlowDto }) {
         {open && (lines.length > 0 || dropped > 0) && (
           <button
             type="button"
-            className="ghost ends"
+            className="ends"
             onClick={() => {
               // Clear goes with what it cleared, and the keyboard with it; the fold stays.
               clear(flow.id);

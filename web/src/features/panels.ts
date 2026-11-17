@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Antenna, Bell, Blend, Broom, ChartLine, Funnel, Nodes, QrCode, Settings } from './brand/icons';
+import { Antenna, Bell, Blend, Broom, ChartLine, Cube, Funnel, Nodes, QrCode, Settings } from './brand/icons';
 
 export type PanelId =
   | 'broker'
@@ -10,7 +10,8 @@ export type PanelId =
   | 'manage'
   | 'mobile'
   | 'settings'
-  | 'flows';
+  | 'flows'
+  | 'studio';
 
 /**
  * What the panel is for, rather than what it is called.
@@ -50,6 +51,9 @@ export const PANELS: ReadonlyArray<Panel> = [
   // console is told what to do on its own — raise an alarm, publish — and that is a tool. Marked
   // beta because it is an experiment, and a reader should know that before building on it.
   { id: 'flows', label: 'Flows', group: 'Tools', icon: Nodes, beta: true },
+  // Beside Flows and for the same reason: an experiment, and a tool rather than a way of reading.
+  // It is where a machine is drawn so its joints can later follow its topics.
+  { id: 'studio', label: '3D Studio', group: 'Tools', icon: Cube, beta: true },
   // What the console and the broker are holding, and what the reader has paused, on one screen.
   // Under Tools rather than Reading: none of it is about watching a topic, all of it is about
   // the state the console has got itself into after an afternoon of watching several.

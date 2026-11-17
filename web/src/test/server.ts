@@ -66,6 +66,10 @@ const defaultHandlers = [
     }),
   ),
   http.get('/api/flows/status', () => HttpResponse.json({ runs: [] })),
+  http.get('/api/studio/scenes', () => HttpResponse.json([])),
+  // A studio that finds no scenes starts one and saves it at once; every sweep that opens the
+  // panel would otherwise fail on an unhandled request.
+  http.put('/api/studio/scenes/:id', () => new HttpResponse(null, { status: 204 })),
 ];
 
 export const server = setupServer(...defaultHandlers);

@@ -25,7 +25,7 @@ public sealed class FlowEngineHost : BackgroundService
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _log.LogError(ex, "The flow engine could not start its flows. It will run what it is given from now on.");
+            _log.LogError(ex, "The flow engine couldn't start its flows; it runs new deploys from now on.");
         }
 
         await base.StartAsync(cancellationToken);

@@ -20,4 +20,11 @@ public sealed record BrokerFailure(
 
     // What was asked for, not what was agreed: a failure means nothing was agreed. Auto here
     // says the ladder was walked and every rung refused.
-    MqttProtocolLevel ProtocolVersion = MqttProtocolLevel.Auto);
+    MqttProtocolLevel ProtocolVersion = MqttProtocolLevel.Auto,
+
+    // Only with AlertPublishRefused: the publish the broker hung up on, so the reader is sent to
+    // the rule rather than to the link.
+    RefusedPublish? RefusedPublish = null);
+
+/// <summary>An alert rule's publish, by the rule's name and the topic it went to.</summary>
+public sealed record RefusedPublish(string Rule, string Topic);

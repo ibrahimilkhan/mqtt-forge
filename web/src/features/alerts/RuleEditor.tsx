@@ -526,7 +526,6 @@ export function RuleEditor({
                 </Field>
                 <button
                   type="button"
-                  className="ghost"
                   onClick={() =>
                     edit({
                       webhook: {
@@ -543,7 +542,6 @@ export function RuleEditor({
 
             <button
               type="button"
-              className="ghost"
               onClick={() =>
                 edit({
                   webhook: {
@@ -634,12 +632,12 @@ export function RuleEditor({
       )}
 
       <div className={`${panel.actions} ${styles.footer}`}>
-        <button type="button" className="ghost" onClick={onBack}>
+        <button type="button" onClick={onBack}>
           &larr; Back
         </button>
         <button
           type="button"
-          className={`keeps ${panel.trailing}`}
+          className={panel.trailing}
           disabled={!savable(faults) || save.isPending}
           // One rule goes in; the list it joins is fetched inside the mutation, at the moment of
           // the write rather than at the moment of the render. See the note on `save`.

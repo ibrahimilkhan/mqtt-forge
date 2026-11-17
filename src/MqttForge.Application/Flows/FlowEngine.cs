@@ -230,8 +230,7 @@ public sealed class FlowEngine
         }
         catch (TimeoutException)
         {
-            _log.LogWarning("The flow engine was busy for {Seconds} seconds, so a deploy was answered before it ran. " +
-                            "It runs as soon as the engine is free.", DeployPatience.TotalSeconds);
+            _log.LogWarning("Flow engine busy for {Seconds}s; the deploy runs once it is free.", DeployPatience.TotalSeconds);
             return false;
         }
     }
@@ -760,7 +759,7 @@ public sealed class FlowEngine
         }
         catch (Exception ex)
         {
-            _log.LogError(ex, "The webhook channel threw. A post of flow {Flow}'s node {Node} was not sent.",
+            _log.LogError(ex, "The webhook channel threw; flow {Flow} node {Node} was not posted.",
                 post.Run.FlowId, post.NodeId);
 
             return $"Webhook failed: {ex.Message}";
@@ -783,7 +782,7 @@ public sealed class FlowEngine
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
-            _log.LogError(ex, "An alert notifier threw. The flow alarms it was given were not delivered.");
+            _log.LogError(ex, "An alert notifier threw; its flow alarms were not delivered.");
         }
 
         // The console's half, handed to the loop that sends the pushes and never waited for here: an
@@ -864,7 +863,7 @@ public sealed class FlowEngine
     // MQTTnet failing what was in flight when it tore its own link down.
     private static string Why(Exception ex, bool timedOut) => ex switch
     {
-        _ when timedOut => $"The broker did not take the publish within {PublishTimeout.TotalSeconds:0} seconds.",
+        _ when timedOut => $"The broker didn't take the publish within {PublishTimeout.TotalSeconds:0}s.",
         NotConnectedException => "No broker link, so nothing was published.",
         OperationCanceledException => "The link went before the broker took the publish.",
         MessageRejectedException rejected => rejected.Message,

@@ -37,7 +37,7 @@ public sealed class FlowValue
             FlowVariables.IsName(trimmed[FlowVariables.Prefix.Length..]))
             return new FlowValue(trimmed, null, trimmed[FlowVariables.Prefix.Length..]);
 
-        problem = "Write $.field for a field of the message, var.name for a variable, or leave it empty for the whole payload.";
+        problem = "Use $.field, var.name, or leave it empty for the whole payload.";
         return Payload;
     }
 

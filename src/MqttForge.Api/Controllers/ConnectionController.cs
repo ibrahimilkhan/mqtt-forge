@@ -116,11 +116,12 @@ public sealed class ConnectionController : ControllerBase
     {
         var profiles = await _profiles.GetAsync(ct);
 
-        return Ok(profiles.Select(one => new SavedProfileDto(one.Name, SavedConnectionDto.Of(one.Settings))));
+        return Ok(profiles.Select(SavedProfileDto.Of));
     }
 
-    // PUT rather than POST: the name is the identity, and saving one that is already here
-    // replaces it — which is what somebody correcting a port presses Save to do.
+    // PUT rather than POST: saving one that is already here — by its id, or failing that by its
+    // name — replaces it, which is what somebody correcting a port presses Save to do. Answered
+    // with the profile as stored, because a new one's id is only known once it has been kept.
     [HttpPut("profiles")]
     public async Task<IActionResult> SaveProfile(SaveProfileRequestDto dto, CancellationToken ct)
     {
@@ -131,9 +132,20 @@ public sealed class ConnectionController : ControllerBase
         if (name.Length > NameLimit)
             return ValidationProblem($"A name may be at most {NameLimit} characters.");
 
-        await _profiles.SaveAsync(new SavedBrokerProfile(name, Settings(dto.Connection)), ct);
+        try
+        {
+            var kept = await _profiles.SaveAsync(
+                // Without a profile id inside it: a saved broker is what a profile id points at, and
+                // one carrying another's would say it belonged to that one.
+                new SavedBrokerProfile(name, Settings(dto.Connection) with { ProfileId = null }, dto.Id), ct);
 
-        return NoContent();
+            return Ok(SavedProfileDto.Of(kept));
+        }
+        catch (InvalidOperationException ex)
+        {
+            // One profile renamed to another's name. Neither is overwritten.
+            return Problem(ex.Message, statusCode: StatusCodes.Status409Conflict);
+        }
     }
 
     [HttpDelete("profiles/{name}")]
@@ -187,7 +199,8 @@ public sealed class ConnectionController : ControllerBase
     private static BrokerConnectionSettings Settings(ConnectRequestDto dto) =>
         new(dto.Host, dto.Port, dto.ClientId, dto.Username, dto.Password, dto.UseTls,
             dto.Transport, dto.ProtocolVersion, dto.WebSocketPath,
-            dto.CleanSession, dto.SessionExpiryInterval, Tls(dto.Tls), dto.Subscriptions);
+            dto.CleanSession, dto.SessionExpiryInterval, Tls(dto.Tls), dto.Subscriptions,
+            string.IsNullOrWhiteSpace(dto.ProfileId) ? null : dto.ProfileId.Trim());
 
     private static BrokerTlsSettings? Tls(TlsOptionsDto? dto)
     {

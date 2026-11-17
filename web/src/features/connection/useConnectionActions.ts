@@ -82,6 +82,11 @@ export function useConnectionActions() {
     // request that actually ended.
     onError: (error) => {
       ours.current = undefined;
+      // Asked again on a failure as on a success. The state the panel draws comes over the hub,
+      // and a dial that fails is two messages there — Connecting, then Faulted — of which the
+      // console only has to miss the second for the strip to say 'Connecting to … 35s' under the
+      // sentence saying nothing was listening, counting for as long as the panel stays open.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.connection });
 
       useLogStore
         .getState()
@@ -222,9 +227,7 @@ export function watchForSystem(queryClient: QueryClient, after = SYSTEM_QUIET_AF
       verb: 'No $SYS statistics',
       topic: SYSTEM,
       body:
-        `Nothing arrived under $SYS/ in ${Math.round(after / 1000)}s. The broker took the ` +
-        'subscription but does not publish its statistics — HiveMQ CE has no $SYS tree; ' +
-        'Mosquitto and EMQX have one.',
+        `Nothing under $SYS/ in ${Math.round(after / 1000)}s — this broker doesn't publish statistics.`,
     });
   }, after);
 }

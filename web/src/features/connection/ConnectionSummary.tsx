@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { formatEndpoint } from './address';
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import { queryKeys } from '../../api/queryKeys';
 import { getSavedSettings } from '../../api/connection';
 import { getSubscriptions } from '../../api/subscriptions';
@@ -8,7 +8,7 @@ import { useConnectionState } from '../../api/useConnectionState';
 import { useHubStatusStore } from '../../stores/hubStatusStore';
 import styles from '../../styles/panel.module.css';
 import type { BrokerLink } from '../../types/api';
-import { ConnectedFor } from './ConnectedFor';
+import { ConnectedFor, UpFor } from './ConnectedFor';
 import { schemeOf, versionName } from './scheme';
 
 // Stands for a field the broker was asked about and said nothing to. The row stays either way,
@@ -54,6 +54,7 @@ export function ConnectionSummary({ lead = false }: { lead?: boolean } = {}) {
     queryFn: getSubscriptions,
     enabled: Boolean(link),
   });
+  const titleId = useId();
 
   if (!link) return null;
 
@@ -71,11 +72,23 @@ export function ConnectionSummary({ lead = false }: { lead?: boolean } = {}) {
    */
   const head = lead && (
     <div className={styles.linkHead}>
-      <p className={styles.linkState} data-stale={lost ? '' : undefined}>
-        <span className={styles.lamp} aria-hidden="true" />
-        {lost ? 'Last heard: connected' : 'Connected'}
-      </p>
-      <p className={styles.linkWhere}>{formatEndpoint(link.host, link.port)}</p>
+      {/* One plate, and two readings on it: where the link is to, and how long it has held. The
+          rest of what is known about it is the table underneath, each fact once. */}
+      <div className={styles.linkBody}>
+        <div className={styles.linkMain}>
+          <p className={styles.linkState} data-stale={lost ? '' : undefined}>
+            <span className={styles.lamp} aria-hidden="true" />
+            {lost ? 'Last heard: connected' : 'Connected'}
+          </p>
+          <p className={styles.linkWhere}>{formatEndpoint(link.host, link.port)}</p>
+        </div>
+        <div className={styles.linkUp}>
+          <p className={styles.linkUpLabel}>Up for</p>
+          <p className={styles.linkUpClock}>
+            <UpFor since={link.connectedAt} />
+          </p>
+        </div>
+      </div>
       {/* Said in the head rather than beside the rows it makes doubtful, because it is doubtful
           about all of them: the keep-alive, the session, the count of filters and the stopwatch
           are each the last thing this console was told. */}
@@ -88,13 +101,23 @@ export function ConnectionSummary({ lead = false }: { lead?: boolean } = {}) {
     </div>
   );
 
-  return (
-    <>
-      {head}
+  /**
+   * How many across, on the panel over a live link.
+   *
+   * The facts are a table there, and a table with an empty cell at the end of it reads as a fact
+   * that failed to arrive. Eight of them stand four across; the ninth — an ID the broker assigned,
+   * which most never do — makes three rows of three instead. The row about a setting that could
+   * not be sent is a sentence and takes a line of its own, so it is not counted.
+   */
+  const across = link.assignedClientId ? '3' : '4';
+
+  const list = (
       <dl
         className={styles.summary}
         data-lead={lead ? '' : undefined}
-        aria-label="Connection details"
+        data-cols={lead ? across : undefined}
+        aria-label={lead ? undefined : 'Connection details'}
+        aria-labelledby={lead ? titleId : undefined}
       >
         {!lead && <Row label="Broker" value={formatEndpoint(link.host, link.port)} />}
         {/* How, and in what. Both are answers rather than settings: with the version left on Auto
@@ -112,7 +135,7 @@ export function ConnectionSummary({ lead = false }: { lead?: boolean } = {}) {
         {/* 'Connected' until the status head above started saying that word about the state. Two
             lines apart, one meant 'there is a link' and the other meant 'at 23:59:26', which is
             the same word doing two jobs on one block. 'Since' is what the value actually is. */}
-        <Row label="Since" value={<ConnectedFor since={link.connectedAt} />} />
+        <Row label="Since" value={<ConnectedFor since={link.connectedAt} clockOnly={lead} />} />
         <Row label="Session" value={link.sessionPresent ? 'resumed' : 'fresh'} />
         <Row label="Keep-alive" value={keepAlive(link)} />
         <Row label="Subscriptions" value={filters ? String(filters.length) : NOTHING} />
@@ -123,18 +146,34 @@ export function ConnectionSummary({ lead = false }: { lead?: boolean } = {}) {
             place the version that was actually agreed is on screen. */}
         {saved?.sessionExpiryInterval != null && link.protocolVersion !== 'v500' && (
           <Row
+            wide
             label="Session expiry"
             value={`not sent — ${versionName(link.protocolVersion)} has no such field`}
           />
         )}
       </dl>
+  );
+
+  return (
+    <>
+      {head}
+      {lead ? (
+        <div className={styles.facts}>
+          <h3 id={titleId} className={styles.factsTitle}>
+            Connection details
+          </h3>
+          {list}
+        </div>
+      ) : (
+        list
+      )}
     </>
   );
 }
 
-function Row({ label, value }: { label: string; value: ReactNode }) {
+function Row({ label, value, wide = false }: { label: string; value: ReactNode; wide?: boolean }) {
   return (
-    <div className={styles.summaryRow}>
+    <div className={styles.summaryRow} data-wide={wide ? '' : undefined}>
       <dt>{label}</dt>
       <dd>{value}</dd>
     </div>

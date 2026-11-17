@@ -1,0 +1,9 @@
+/* #14171c rather than a token: no token in styles/tokens.css is a dark backdrop — every ground
+   there is the paper the rest of the console is drawn on. The 3D view is its own lit space, not a
+   panel body, so it keeps a colour no other surface shares.
+   It fills whatever box it is put in, and the canvas fills it in turn, absolutely — so its size is
+   the stage's and nothing laid over it (the floating tree and inspector) can push it about. */
+.viewport { position: absolute; inset: 0; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; background: #14171c; }
+.canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; outline: none; touch-action: none; }
+/* Over the floating panels too: a view that cannot draw is the first thing worth reading. */
+.notice { position: absolute; z-index: 2; inset: auto 12px 12px 12px; margin: 0; padding: 8px 10px; background: var(--paper); color: var(--ink); border: 1px solid var(--rule); border-radius: 6px; }

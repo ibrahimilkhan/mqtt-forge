@@ -118,7 +118,7 @@ public sealed class FilterSync(
             foreach (var filter in refused) _refused.Add(filter);
 
             log.LogWarning(refusal,
-                "The broker refused {Count} {Whose} filter(s); they will not be asked for again on this link.",
+                "The broker refused {Count} {Whose} filter(s); not retrying on this link.",
                 refused.Count, whose);
 
             return new Outcome(false, refused);
@@ -130,7 +130,7 @@ public sealed class FilterSync(
             var pause = _noAnswer.NotAnswered(time.GetUtcNow());
 
             log.LogWarning(silence,
-                "The broker did not answer for the {Whose} subscriptions. They will be asked for again in {Seconds} seconds.",
+                "No answer for the {Whose} subscriptions; retrying in {Seconds}s.",
                 whose, pause.TotalSeconds);
 
             return new Outcome(false, []);
@@ -145,7 +145,7 @@ public sealed class FilterSync(
             // SUBSCRIBE that was waiting when its keep-alive gave up on the link with the
             // cancellation of its own receive loop, which is the link going and not the pump
             // stopping — and letting that through would also lose everything else the turn decided.
-            log.LogWarning(ex, "Could not apply the {Whose} subscriptions. They will be asked for again.", whose);
+            log.LogWarning(ex, "Couldn't apply the {Whose} subscriptions; will retry.", whose);
 
             return new Outcome(false, []);
         }

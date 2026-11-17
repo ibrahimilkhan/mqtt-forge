@@ -121,43 +121,45 @@
   }
 
 
-  /* ---- what a press does, in three colours ----
+  /* ---- what a press does, in two colours ----
    *
    * Every button in this console was one colour, so the only thing its colour said was 'this is a
    * button'. A reader scanning a panel for the way out of it, or for the one control that cannot
    * be undone, had to read every word on the row.
    *
-   * Three, and they answer one question — what happens when this is pressed:
+   * Two, and they answer one question — what happens when this is pressed:
    *
-   *   (default)  something begins. Connect, Publish, Subscribe, New rule, Add a condition, Try
+   *   (default)  something begins or is kept. Connect, Publish, Subscribe, New rule, Save, Try
    *              again. --signal, the mark's own blue, because these are what the console is for
-   *              and the commonest case should be the one nobody has to remember to write.
-   *   `.keeps`   what is on screen is written down. Save, and only Save — a different kind of
-   *              act from the ones above: it changes nothing out there, it records what is here.
-   *              --live, the console's green, which is what it already says of a thing that held.
+   *              and the commonest case should be the one nobody has to remember to write. Save
+   *              was green for a while, as a different kind of act; but green is what the console
+   *              writes a live link and a held state in, and a green Save beside a live link read
+   *              as part of that report rather than as something to press.
    *   `.ends`    something goes. Disconnect, Clear, Forget, Remove, Discard, Abort. --fault,
    *              which is already the colour a failure and a dropped link are written in.
    *
    * The colour is carried by one custom property, so it reaches the fill, the border and both
-   * hovers from one place — and a ghost, which gives up the fill and keeps the edge, says the
-   * same thing at a quieter weight without a second set of rules. Weight is a separate question
-   * from meaning: a filled Clear and an outlined Clear are both red, and the icon × on a row was
-   * already going red under the pointer before any of this. */
+   * hovers from one place. Every button that says something in words wears it as a fill; the
+   * icon × on a row was already going red under the pointer before any of this. */
+  /* Sized as a control on a row rather than as the row: 28px tall where it was 36. At 36 a filled
+     block of colour outweighed the fields it answers for, and a panel with three of them read as
+     three buttons with a form round them. The type steps down to the label's size with it — the
+     same lettering the field labels and column heads are set in — so a button reads as the label
+     of an act, not as a heading. */
   button {
     --tone: var(--signal);
     font-family: var(--mono);
-    font-size: var(--t-small);
+    font-size: var(--t-label);
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    padding: 10px 16px;
+    padding: 6px 12px;
     border-radius: var(--r-control);
     border: 1px solid var(--tone);
     background: var(--tone);
     color: var(--surface);
     cursor: pointer;
   }
-  button.keeps { --tone: var(--live); }
   button.ends { --tone: var(--fault); }
   /* ---- what can be selected, and what cannot ----
 
@@ -197,6 +199,10 @@
     background: color-mix(in srgb, var(--tone) 86%, var(--ink));
     border-color: color-mix(in srgb, var(--tone) 86%, var(--ink));
   }
+  /* Every button that says something in words is filled: a frame with ink in it read as a word
+     on the paper rather than as something to press. A ghost is left only to the controls that are
+     a mark on a row — the palette's nodes, a notice's ×, the toolbar's + — where a block of
+     colour would outweigh the row it sits in. */
   button.ghost { background: transparent; color: var(--ink); }
   button.ghost:hover:not(:disabled) {
     background: color-mix(in srgb, var(--tone) 12%, var(--surface));

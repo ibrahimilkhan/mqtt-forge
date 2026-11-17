@@ -47,7 +47,7 @@ public static class CertificateFiles
             // Nearly always the password, and saying so first saves the reader checking the path
             // they can see is right. The library's own wording follows it.
             throw new CertificateFileException(
-                $"Could not read the client certificate at {path} — check the password and the file's format. {ex.Message}", ex);
+                $"Can't read the client certificate at {path} — check its password and format. {ex.Message}", ex);
         }
     }
 
@@ -74,7 +74,7 @@ public static class CertificateFiles
         catch (Exception ex) when (ex is CryptographicException or IOException or UnauthorizedAccessException)
         {
             throw new CertificateFileException(
-                $"Could not read the CA certificate at {path} — it is not a PEM or DER certificate. {ex.Message}", ex);
+                $"Can't read the CA certificate at {path} — not PEM or DER. {ex.Message}", ex);
         }
 
         if (collection.Count == 0)

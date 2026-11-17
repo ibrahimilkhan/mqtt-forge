@@ -22,6 +22,8 @@ export type BrokerFailure = {
   transport: MqttTransport;
   /** What was asked for. 'auto' means every version was offered and none taken. */
   protocolVersion: MqttProtocolLevel;
+  /** Only on 'alertPublishRefused': the alert rule that published just before, and where. */
+  publish?: { rule: string; topic: string };
 };
 
 // Set only alongside Connected: which broker is up, and what it said when it accepted. The
@@ -39,6 +41,11 @@ export type BrokerLink = {
   transport: MqttTransport;
   /** The version the broker agreed to — never 'auto', which is a request and not an answer. */
   protocolVersion: Exclude<MqttProtocolLevel, 'auto'>;
+  /**
+   * The saved broker this link was made from, or null when it was typed in or picked from the
+   * history. The colour and alert rules that belong to a broker apply while its link is up.
+   */
+  profileId?: string | null;
 };
 
 /**
@@ -131,8 +138,11 @@ export type RecentBroker = {
   lastConnectedAt: string;
 };
 
-/** A connection somebody kept, under the name they kept it under. */
-export type SavedProfile = { name: string; connection: SavedConnection };
+/**
+ * A connection somebody kept, under the name they kept it under. The id is what colour and alert
+ * rules hold it by, so a rule keeps its broker whatever the broker is later called.
+ */
+export type SavedProfile = { id: string; name: string; connection: SavedConnection };
 
 export type SavedConnection = {
   host: string;
@@ -186,6 +196,8 @@ export type ConnectRequest = {
   tls?: TlsOptions | null;
   /** Kept with the settings so a reload, and a saved broker, remember what to listen to. */
   subscriptions?: string[];
+  /** The saved broker the form was filled from. Decides which colour and alert rules apply. */
+  profileId?: string;
 };
 
 /** The parts of TLS that need a field. Sent whole or not at all. */

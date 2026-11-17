@@ -115,3 +115,19 @@ public sealed class FlowsUnreadableException : MqttOperationException
     public FlowsUnreadableException(string message, Exception? inner = null)
         : base(message, inner) { }
 }
+
+// A studio scene or model could not be written down. Its own type for the reason the flows have
+// theirs: the sentence the reader is shown names the thing they were editing.
+public sealed class StudioNotSavedException : MqttOperationException
+{
+    public StudioNotSavedException(string message, Exception? inner = null)
+        : base(message, inner) { }
+}
+
+// A scene file is there and will not parse. A 409 like the flows' twin: nothing failed on the way
+// in, the state of the file is what is in the way, and saving over it would lose whatever it held.
+public sealed class StudioSceneUnreadableException : MqttOperationException
+{
+    public StudioSceneUnreadableException(string message, Exception? inner = null)
+        : base(message, inner) { }
+}
