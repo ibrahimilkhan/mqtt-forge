@@ -22,7 +22,10 @@ public sealed record BrokerLinkDto(
     MqttProtocolLevel ProtocolVersion,
 
     // The saved broker this link was made from, or null: which colour and alert rules apply.
-    string? ProfileId = null)
+    string? ProfileId = null,
+
+    // The keep-alive this client asked for, which is the one in force when ServerKeepAlive is null.
+    ushort? ClientKeepAlive = null)
 {
     public static BrokerLinkDto? Of(BrokerLink? link) =>
         link is null
@@ -30,5 +33,5 @@ public sealed record BrokerLinkDto(
             : new BrokerLinkDto(
                 link.Host, link.Port, link.ClientId, link.Username, link.UseTls,
                 link.ConnectedAt, link.SessionPresent, link.AssignedClientId, link.ServerKeepAlive,
-                link.Transport, link.ProtocolVersion, link.ProfileId);
+                link.Transport, link.ProtocolVersion, link.ProfileId, link.ClientKeepAlive);
 }

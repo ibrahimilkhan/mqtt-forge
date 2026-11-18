@@ -41,7 +41,8 @@ public class MqttnetConnectionManagerLinkTests
             new BrokerLink(
                 "broker.example", 8883, "console", "alice", UseTls: true,
                 ConnectedAt: Noon, SessionPresent: false,
-                AssignedClientId: null, ServerKeepAlive: null),
+                AssignedClientId: null, ServerKeepAlive: null,
+                ClientKeepAlive: (ushort)MqttClientOptionsFactory.KeepAlive.TotalSeconds),
             sut.Link);
     }
 
@@ -101,6 +102,18 @@ public class MqttnetConnectionManagerLinkTests
         await sut.ConnectAsync(_settings, CancellationToken.None);
 
         Assert.Null(sut.Link!.ServerKeepAlive);
+    }
+
+    // What the link runs on when the broker imposes none, so the console has a figure to show.
+    [Fact]
+    public async Task Link_carries_the_keep_alive_this_client_asked_for()
+    {
+        GivenConnectSucceeds(serverKeepAlive: 0);
+        var sut = CreateSut();
+
+        await sut.ConnectAsync(_settings, CancellationToken.None);
+
+        Assert.Equal((ushort)MqttClientOptionsFactory.KeepAlive.TotalSeconds, sut.Link!.ClientKeepAlive);
     }
 
     [Fact]

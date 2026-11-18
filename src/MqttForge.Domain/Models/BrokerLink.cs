@@ -24,4 +24,9 @@ public sealed record BrokerLink(
 
     // The saved broker it was made from, by id, or null. What the console scopes its colour and
     // alert rules by while this link is up.
-    string? ProfileId = null);
+    string? ProfileId = null,
+
+    // The keep-alive this client asked for, in seconds. What the link runs on whenever the broker
+    // imposes none of its own — the usual case — so without it the console had only a dash to
+    // show for a link that was pinging every minute.
+    ushort? ClientKeepAlive = null);

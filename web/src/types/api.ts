@@ -40,6 +40,11 @@ export type BrokerLink = {
   sessionPresent: boolean;
   assignedClientId: string | null;
   serverKeepAlive: number | null;
+  /**
+   * The keep-alive this client asked for, in seconds — the one in force whenever
+   * `serverKeepAlive` is null. Optional for an API from before it was sent.
+   */
+  clientKeepAlive?: number | null;
   transport: MqttTransport;
   /** The version the broker agreed to — never 'auto', which is a request and not an answer. */
   protocolVersion: Exclude<MqttProtocolLevel, 'auto'>;
