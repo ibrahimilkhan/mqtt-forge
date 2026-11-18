@@ -10,6 +10,7 @@ import { useHealthStore } from '../stores/healthStore';
 import { MAX_LOG_ENTRIES, useLogStore } from '../stores/logStore';
 import { useNoticeStore } from '../stores/noticeStore';
 import { usePauseStore } from '../stores/pauseStore';
+import { RATE_EVERY_MS, useStreamRateStore } from '../stores/streamRateStore';
 import { useTopicTreeStore } from '../stores/topicTreeStore';
 import type { MqttMessage } from '../types/api';
 import { decodeIncoming } from './decodeIncoming';
@@ -118,9 +119,15 @@ export function useHubBridge(hub: Hub) {
 
       usePauseStore.getState().lose(buffer.forget());
       usePauseStore.getState().track(0);
+      useStreamRateStore.getState().reset();
       // Fires inside reset(), so the 'Connected' line pushed after it survives.
       useLogStore.getState().clear();
     });
+
+    // The rail's line, a reading a second. Here rather than in the line itself, so a minute is
+    // kept whether or not anything is drawing it: the rail shut and opened again shows the same
+    // minute rather than a fresh one.
+    const rateTimer = setInterval(() => useStreamRateStore.getState().tick(), RATE_EVERY_MS);
 
     // When the log last said something about drops. Held across batches, reset with the bridge.
     let saidAt = -DROPS_REPORTED_EVERY;
@@ -141,6 +148,7 @@ export function useHubBridge(hub: Hub) {
 
         buffer.pushAll(messages);
         usePauseStore.getState().track(buffer.waiting());
+        useStreamRateStore.getState().arrived(messages.length);
       },
       // Dated here, the way a message is above: on the same clock, and at the same point on the
       // way in. A link coming back is marked with this moment, and a row is faded when nothing
@@ -224,6 +232,7 @@ export function useHubBridge(hub: Hub) {
     return () => {
       stopWatching();
       stopWatchingTree();
+      clearInterval(rateTimer);
       unsubscribe();
       stopCatchingUp();
       buffer.cancel();

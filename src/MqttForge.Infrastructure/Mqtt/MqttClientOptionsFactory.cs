@@ -20,6 +20,13 @@ public static class MqttClientOptionsFactory
     // that actually breaks is reported immediately either way; this only covers silent stalls.
     public static readonly TimeSpan KeepAlive = TimeSpan.FromSeconds(60);
 
+    // MQTTnet sets the socket's receive buffer to 8 KB, and on Windows an explicit size turns off
+    // the window's autotuning, so a link can carry no more than 8 KB per round trip. Measured
+    // against mqtt.hsl.fi from Turkey: ~220 messages a second of a tram feed that sends ~450.
+    // The rest queued at the broker, the PINGRESP queued behind it, and every minute and a half
+    // the client gave up on a broker that had answered. A megabyte keeps up with it.
+    public const int SocketBufferSize = 1024 * 1024;
+
     // The ladder Auto walks, newest first. Ordered by preference rather than by number: 5.0 is
     // what the console can say the most about, and 3.1 exists for the handful of brokers that
     // never moved on.
@@ -65,7 +72,11 @@ public static class MqttClientOptionsFactory
         if (settings.UseTls)
             builder = builder.WithTlsOptions(o => ConfigureTls(o, settings, inspector, certificates));
 
-        return builder.Build();
+        var options = builder.Build();
+        if (options.ChannelOptions is MqttClientTcpOptions tcp)
+            tcp.BufferSize = SocketBufferSize;
+
+        return options;
     }
 
     /// <summary>Where a WebSocket connection is dialled, as MQTTnet wants it written.</summary>

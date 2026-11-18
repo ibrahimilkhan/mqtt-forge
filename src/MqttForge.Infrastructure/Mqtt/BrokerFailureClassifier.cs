@@ -2,6 +2,7 @@ using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Security.Authentication;
 using MqttForge.Domain.Enums;
+using MqttForge.Domain.Models;
 using MQTTnet;
 using MQTTnet.Exceptions;
 
@@ -126,6 +127,26 @@ public static class BrokerFailureClassifier
         // Everything else is the broker objecting to the CONNECT itself
         _ => BrokerFailureReason.BrokerRejected
     };
+
+    // A link still being fed this recently when it went was not silent: a dead one has had no
+    // message for the half keep-alive its last ping was given, thirty seconds here.
+    public static readonly TimeSpan StillArriving = TimeSpan.FromSeconds(2);
+
+    // Below this the last message being recent proves nothing — a sensor every few seconds is
+    // still arriving when a broker restarts — and a broker that a console cannot keep up with is
+    // sending a good deal more. mqtt.hsl.fi's tram feed alone is 450 a second.
+    public const double BusyRate = 20;
+
+    // The drops a broker gives no reason for, which are the only ones worth a second look: a ping
+    // that went unanswered, a close with no DISCONNECT, a socket that went. When those come while
+    // the broker is still pouring messages in, it was answering, and the console was reading
+    // behind it — measured, every drop of a too-narrow socket window against mqtt.hsl.fi.
+    public static bool FellBehind(BrokerFailureReason reason, LinkTraffic traffic) =>
+        reason is BrokerFailureReason.Timeout
+            or BrokerFailureReason.BrokerClosed
+            or BrokerFailureReason.ConnectionLost
+        && traffic.SinceLastMessage is { } quiet && quiet <= StillArriving
+        && traffic.MessagesPerSecond >= BusyRate;
 
     // A link that was up and is now down. The reason code only carries meaning when the broker
     // sent a DISCONNECT; when MQTTnet lost the socket itself the exception says more.

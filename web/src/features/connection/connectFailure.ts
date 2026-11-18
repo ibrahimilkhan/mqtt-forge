@@ -19,6 +19,7 @@ export type Attempt = {
   transport?: MqttTransport;
   protocolVersion?: MqttProtocolLevel;
   publish?: { rule: string; topic: string };
+  traffic?: { messagesPerSecond: number; kilobytesPerSecond: number };
 };
 
 const overWebSocket = (attempt: Attempt) => attempt.transport === 'webSocket';
@@ -124,6 +125,13 @@ const SENTENCE: Record<string, (attempt: Attempt) => string> = {
   brokerClosed: () => 'The broker closed the connection.',
   brokerShuttingDown: () => 'The broker is shutting down.',
   kicked: () => 'An administrator disconnected this client.',
+
+  // Not the broker's doing, though it used to be put down as such: it was still sending when the
+  // link went, and what ended it was this console not reading fast enough.
+  fellBehind: ({ host, port, traffic }) =>
+    `The console fell behind ${formatEndpoint(host, port)}` +
+    (traffic ? `, which was sending about ${traffic.messagesPerSecond} messages a second,` : '') +
+    ' and the link dropped with messages still arriving. A narrower filter keeps up.',
 };
 
 /**

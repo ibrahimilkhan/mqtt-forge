@@ -1,6 +1,8 @@
 import { useEffect, useReducer } from 'react';
 import { usePauseStore } from '../../stores/pauseStore';
+import { useStreamRateStore } from '../../stores/streamRateStore';
 import { Play, Pause } from './PauseGlyphs';
+import { StreamPulse } from './StreamPulse';
 import styles from './StreamPause.module.css';
 
 /** How often the size of the queue is re-read while there is a queue. */
@@ -31,6 +33,11 @@ type Props = {
 export function StreamPause({ compact = false, live = false }: Props) {
   const paused = usePauseStore((state) => state.paused);
   const toggle = usePauseStore((state) => state.toggle);
+
+  // The last minute of the stream, as it arrives from the server. Only with a broker on the
+  // other end: without one the line would be a minute of zeros under a control that is greyed out.
+  const readings = useStreamRateStore((state) => state.readings);
+  const rate = live ? readings.at(-1) : undefined;
 
   // Nothing is arriving with no broker on the other end, so there is nothing to stop: the
   // control is out of reach rather than offering an act with no effect. Stopped, it stays
@@ -79,7 +86,7 @@ export function StreamPause({ compact = false, live = false }: Props) {
             : 'Stop stream'
       }
       title={
-        idle
+        (idle
           ? 'Not connected'
           : paused
             ? waiting > 0
@@ -87,15 +94,24 @@ export function StreamPause({ compact = false, live = false }: Props) {
               : 'Stopped — click to start again'
             : waiting > 0
               ? `${waiting} still coming in`
-              : 'Stop taking messages — what arrives is queued'
+              : 'Stop taking messages — what arrives is queued') +
+        (rate === undefined ? '' : ` — ${Math.round(rate).toLocaleString('en-GB')} messages/s`)
       }
       onClick={toggle}
     >
-      {paused ? <Play /> : <Pause />}
-      {/* Open, the control says what pressing it does. A box with two bars in it is a pause symbol
-          to anyone who has used a transport control and a box to everyone else. */}
-      {!compact && <span>{paused ? 'Resume' : 'Stop stream'}</span>}
-      {waiting > 0 && !compact && <span className={styles.count}>{format(waiting)}</span>}
+      <span className={styles.row}>
+        {paused ? <Play /> : <Pause />}
+        {/* Open, the control says what pressing it does. A box with two bars in it is a pause
+            symbol to anyone who has used a transport control and a box to everyone else. */}
+        {!compact && <span>{paused ? 'Resume' : 'Stop stream'}</span>}
+        {waiting > 0 && !compact && <span className={styles.count}>{format(waiting)}</span>}
+        {/* The rate only while nothing is queued: stopped or draining, the figure worth reading is
+            what is waiting, and the line underneath still says the broker is sending. */}
+        {rate !== undefined && waiting === 0 && !compact && (
+          <span className={styles.rate}>{format(Math.round(rate))}/s</span>
+        )}
+      </span>
+      {live && <StreamPulse readings={readings} />}
     </button>
   );
 }

@@ -142,7 +142,7 @@ describe('every reason the backend can send', () => {
     'brokerShuttingDown', 'certificateFileUnreadable', 'clientCertificateRejected',
     'authenticationMethodUnsupported', 'clientCertificateRequired', 'clientIdRejected',
     'closedWithoutAnswering',
-    'connectionLost', 'credentialsRejected',
+    'connectionLost', 'credentialsRejected', 'fellBehind',
     'credentialsRequired', 'filterRefused', 'hostNotFound', 'nameLookupFailed', 'noMqttResponse',
     'noSupportedProtocolVersion', 'notPermitted', 'protocolVersionUnsupported', 'refused',
     'kicked', 'sessionTakenOver', 'timeout', 'tlsCertExpired', 'tlsCertNameMismatch',
@@ -188,9 +188,28 @@ describe('every reason the backend can send', () => {
     expect(said).toContain('mqttforge/alerts/r1/plant/1');
   });
 
-  it('covers all thirty-five of them', () => {
-    expect(REASONS).toHaveLength(35);
-    expect(new Set(REASONS).size).toBe(35);
+  // Measured against mqtt.hsl.fi: the link went every minute and a half with messages still
+  // arriving, and the console called it 'The broker closed the connection.' The broker had been
+  // answering all along; the figure is what a reader narrows their filter against.
+  it('says the console fell behind, and how fast the broker was sending', () => {
+    const said = describeFailureReason('fellBehind', {
+      ...FORM,
+      traffic: { messagesPerSecond: 452, kilobytesPerSecond: 291 },
+    });
+
+    expect(said).toContain('broker.local:1883');
+    expect(said).toContain('452 messages a second');
+    expect(said).toMatch(/fell behind/);
+    expect(said).not.toMatch(/broker closed/i);
+  });
+
+  it('still says it without the figure', () => {
+    expect(describeFailureReason('fellBehind', FORM)).toMatch(/fell behind/);
+  });
+
+  it('covers all thirty-six of them', () => {
+    expect(REASONS).toHaveLength(36);
+    expect(new Set(REASONS).size).toBe(36);
   });
 });
 

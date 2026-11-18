@@ -24,6 +24,8 @@ export type BrokerFailure = {
   protocolVersion: MqttProtocolLevel;
   /** Only on 'alertPublishRefused': the alert rule that published just before, and where. */
   publish?: { rule: string; topic: string };
+  /** Only on 'fellBehind': how fast the broker was sending when the link went. */
+  traffic?: { messagesPerSecond: number; kilobytesPerSecond: number };
 };
 
 // Set only alongside Connected: which broker is up, and what it said when it accepted. The

@@ -82,5 +82,12 @@ public enum BrokerFailureReason
     SessionTakenOver,
     BrokerClosed,
     BrokerShuttingDown,
-    Kicked
+    Kicked,
+
+    // A link that ended with no DISCONNECT while the broker was still sending to it, fast: the
+    // ping went unanswered, or the broker closed the socket on a client it could not hand the
+    // traffic to. Measured against mqtt.hsl.fi, a dead link's last message is half a minute old
+    // when it is called dead, and this one's is milliseconds — the broker was answering, and the
+    // console was reading behind it.
+    FellBehind
 }

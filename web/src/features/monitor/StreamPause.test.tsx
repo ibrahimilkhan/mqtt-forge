@@ -3,9 +3,13 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithClient as render } from '../../test/renderWithClient';
 import { usePauseStore } from '../../stores/pauseStore';
+import { useStreamRateStore } from '../../stores/streamRateStore';
 import { StreamPause } from './StreamPause';
 
-beforeEach(() => usePauseStore.setState({ paused: false, waiting: 0, lost: 0 }));
+beforeEach(() => {
+  usePauseStore.setState({ paused: false, waiting: 0, lost: 0 });
+  useStreamRateStore.getState().reset();
+});
 
 describe('stopping the console taking messages', () => {
   // Nothing is arriving without a broker, so there is nothing for this to stop.
@@ -139,5 +143,81 @@ describe('stopping the console taking messages', () => {
         'Stop stream',
       );
     });
+  });
+});
+
+// The last minute of the stream, drawn under the control that stops it.
+describe('the stream it stops', () => {
+  const streaming = (...perSecond: number[]) => useStreamRateStore.setState({ readings: perSecond });
+
+  it('draws the last minute under the control', () => {
+    streaming(400, 450, 1_812);
+    render(<StreamPause live />);
+
+    expect(screen.getByTestId('stream-pulse')).toBeInTheDocument();
+  });
+
+  it('says how fast it is arriving', () => {
+    streaming(400, 450, 1_812);
+    render(<StreamPause live />);
+
+    expect(screen.getByRole('button', { name: 'Stop stream' })).toHaveTextContent('1.8k/s');
+    expect(screen.getByRole('button')).toHaveAttribute(
+      'title',
+      expect.stringContaining('1,812 messages/s'),
+    );
+  });
+
+  // The name is what a voice user says to press it, and a figure that changes every second would
+  // make it a different control every second.
+  it('leaves the rate out of the name', () => {
+    streaming(400, 450);
+    render(<StreamPause live />);
+
+    expect(screen.getByRole('button')).toHaveAccessibleName('Stop stream');
+  });
+
+  it('keeps the line and drops the figure with the rail', () => {
+    streaming(400, 450);
+    render(<StreamPause compact live />);
+
+    expect(screen.getByTestId('stream-pulse')).toBeInTheDocument();
+    expect(screen.getByRole('button').textContent).toBe('');
+  });
+
+  // Stopped, the broker is still sending and the queue is filling: that is what the line under a
+  // green Resume says, and the figure beside the word is the queue's.
+  it('goes on drawing the stream while it is stopped, with the queue as the figure', () => {
+    usePauseStore.setState({ paused: true, waiting: 1_234 });
+    streaming(400, 450);
+    render(<StreamPause live />);
+
+    expect(screen.getByTestId('stream-pulse')).toBeInTheDocument();
+    expect(screen.getByRole('button')).toHaveTextContent('1.2k');
+    expect(screen.getByRole('button')).not.toHaveTextContent('/s');
+  });
+
+  it('draws nothing with no broker on the other end', () => {
+    streaming(400, 450);
+    render(<StreamPause />);
+
+    expect(screen.queryByTestId('stream-pulse')).not.toBeInTheDocument();
+    expect(screen.getByRole('button')).not.toHaveTextContent('/s');
+  });
+
+  it('waits for a second reading before drawing a line', () => {
+    streaming(400);
+    render(<StreamPause live />);
+
+    expect(screen.queryByTestId('stream-pulse')).not.toBeInTheDocument();
+  });
+
+  it('moves with the stream', () => {
+    streaming(400, 450);
+    render(<StreamPause live />);
+
+    act(() => streaming(400, 450, 9_000));
+
+    expect(screen.getByRole('button')).toHaveTextContent('9.0k/s');
   });
 });

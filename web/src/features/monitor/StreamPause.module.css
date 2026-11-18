@@ -5,9 +5,10 @@
 .stream {
   all: unset;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   justify-content: center;
-  gap: 7px;
+  gap: 4px;
   width: 100%;
   box-sizing: border-box;
   cursor: pointer;
@@ -32,11 +33,59 @@
   background: var(--surface);
 }
 
+/* The glyph, the word and the figures, on one line above the stream's own. */
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+/* The last minute of the stream, the width of the button. In the button's own ink, so it turns
+   with it: quiet on the outline while the stream runs, and white on the green once it is stopped,
+   where it goes on moving because the broker goes on sending. */
+.pulse {
+  display: block;
+  width: 100%;
+  height: 14px;
+  overflow: visible;
+}
+.pulseLine {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.25;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.pulseArea {
+  fill: currentColor;
+  opacity: 0.14;
+}
+
+/* Shut, under the glyph and no wider than it. */
+.stream[data-compact] .pulse {
+  height: 8px;
+}
+
+/* The rate, set like the queue's figure beside it: a reading, not part of the verb. Beside the
+   word rather than pushed to the edge, so the line stays centred whether there is a rate or not —
+   pushed out, the word jumped left the moment a stream began. */
+.rate {
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+  text-transform: none;
+}
+
 /* Shut, in a 52px rail: the glyph alone, in a box still big enough to hit. */
 .stream[data-compact] {
   width: 32px;
   min-height: 28px;
   padding: 0;
+}
+/* A little room under the line, so it does not sit on the border. */
+.stream[data-compact]:has(.pulse) {
+  padding: 4px 3px 3px;
 }
 
 /* No broker, so nothing to stop: the outline goes grey and the ink with it, so it does not read
