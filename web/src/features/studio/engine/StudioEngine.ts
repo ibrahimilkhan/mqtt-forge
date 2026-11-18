@@ -6,6 +6,7 @@ import { createCamera, focusOn, tuneCamera } from './camera';
 import { GizmoBridge } from './gizmos';
 import { MeshRegistry } from './meshes';
 import { attachPicking } from './picking';
+import { createRenderGate } from './renderGate';
 import { setupRendering } from './rendering';
 
 /** Thrown when the browser cannot give the studio a WebGL context, so the panel can say so. */
@@ -38,6 +39,8 @@ export class StudioEngine {
   private readonly store: StoreApi<StudioState>;
   private readonly camera: ArcRotateCamera;
   private readonly teardown: Array<() => void> = [];
+  /** Asks for the next frames to be drawn. Nothing to ask without a canvas, where nothing loops. */
+  private wake = () => {};
 
   static open(canvas: HTMLCanvasElement, store: StoreApi<StudioState>, onStatus?: Options['onStatus']) {
     if (!hasWebGL()) throw new WebGLUnavailable();
@@ -67,7 +70,12 @@ export class StudioEngine {
     this.scene = new Scene(engine);
     this.camera = createCamera(this.scene, canvas ?? null);
 
-    const rendering = setupRendering(this.scene, this.camera, { environmentUrl: options.environmentUrl, shadows: !!canvas });
+    const rendering = setupRendering(this.scene, this.camera, {
+      environmentUrl: options.environmentUrl,
+      shadows: !!canvas,
+      // Read when the file arrives rather than now: the gate is made further down.
+      onLoaded: () => this.wake(),
+    });
     this.teardown.push(rendering.dispose);
 
     this.registry = new MeshRegistry(this.scene, (mesh) => rendering.shadows?.addShadowCaster(mesh));
@@ -82,18 +90,41 @@ export class StudioEngine {
     if (canvas) {
       this.teardown.push(attachPicking(this.scene, this.registry, (id) => store.getState().select(id ? [id] : [])));
 
-      const resize = new ResizeObserver(() => engine.resize());
+      // Drawn when something has changed, not every frame; see renderGate. What can change the
+      // picture: the pointer (the camera, the gizmos' hover and drags), the camera still gliding
+      // on its inertia, the store, the canvas's size, and the lighting file arriving.
+      const gate = createRenderGate();
+      this.wake = gate.wake;
+
+      const pointer = ['pointerdown', 'pointermove', 'pointerup', 'pointerleave', 'wheel'] as const;
+      for (const type of pointer) canvas.addEventListener(type, this.wake, { passive: true });
+      this.teardown.push(() => {
+        for (const type of pointer) canvas.removeEventListener(type, this.wake);
+      });
+
+      const moved = this.camera.onViewMatrixChangedObservable.add(this.wake);
+      this.teardown.push(() => this.camera.onViewMatrixChangedObservable.remove(moved));
+
+      const resize = new ResizeObserver(() => {
+        engine.resize();
+        this.wake();
+      });
       resize.observe(canvas);
       this.teardown.push(() => resize.disconnect());
 
       const lost = engine.onContextLostObservable.add(() => options.onStatus?.('lost'));
-      const restored = engine.onContextRestoredObservable.add(() => options.onStatus?.('ready'));
+      const restored = engine.onContextRestoredObservable.add(() => {
+        options.onStatus?.('ready');
+        this.wake();
+      });
       this.teardown.push(() => {
         engine.onContextLostObservable.remove(lost);
         engine.onContextRestoredObservable.remove(restored);
       });
 
-      engine.runRenderLoop(() => this.scene.render());
+      engine.runRenderLoop(() => {
+        if (gate.due(!this.scene.isReady())) this.scene.render();
+      });
       this.teardown.push(() => engine.stopRenderLoop());
     }
 
@@ -102,6 +133,7 @@ export class StudioEngine {
       if (objectsChanged) this.registry.sync(state.scene?.objects ?? []);
       if (objectsChanged || state.selection !== previous?.selection) this.registry.outline(state.selection);
       gizmos?.update(state);
+      this.wake();
     };
     follow(store.getState());
     this.teardown.push(store.subscribe(follow));
@@ -118,7 +150,9 @@ export class StudioEngine {
   focusSelection() {
     const [id] = this.store.getState().selection;
     const mesh = id ? this.registry.mesh(id) : undefined;
-    if (mesh) focusOn(this.camera, mesh);
+    if (!mesh) return;
+    focusOn(this.camera, mesh);
+    this.wake();
   }
 
   dispose() {

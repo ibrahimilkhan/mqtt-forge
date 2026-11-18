@@ -14,7 +14,7 @@ const GRID_MIN_PX = 10;
  * map. The shadow area follows the camera's target rather than covering the whole floor, so shadows
  * stay sharp up close; its centre snaps to the shadow map's texel so they do not shimmer in a pan.
  */
-export function setupRendering(scene: Scene, camera: ArcRotateCamera, options: { environmentUrl?: string; shadows: boolean }) {
+export function setupRendering(scene: Scene, camera: ArcRotateCamera, options: { environmentUrl?: string; shadows: boolean; onLoaded?: () => void }) {
   scene.clearColor = new Color4(0.08, 0.09, 0.11, 1);
 
   const hemi = new HemisphericLight('studio-hemi', new Vector3(0, 1, 0), scene);
@@ -113,12 +113,14 @@ export function setupRendering(scene: Scene, camera: ArcRotateCamera, options: {
         if (disposed) return;
         scene.environmentTexture = environment;
         scene.environmentIntensity = 0.75;
+        options.onLoaded?.();
       },
       // Without reflections metal turns dark; the fill light makes up some of the difference.
       () => {
         if (disposed) return;
         console.warn('The studio lighting file could not be loaded; drawing without reflections.');
         hemi.intensity = 0.8;
+        options.onLoaded?.();
       },
       undefined,
       true,
