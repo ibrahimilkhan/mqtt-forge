@@ -4,6 +4,7 @@ import {
   emptyTree,
   evictQuietestTopics,
   MAX_TREE_PAYLOAD,
+  pruneTopics,
   quietestTopics,
   type TopicNode,
 } from './topicTree';
@@ -111,6 +112,71 @@ describe('the topics a tree gives up', () => {
 
     expect(after.children.get('plant')?.children.has('a')).toBe(false);
     expect(after.subTopics).toBe(1);
+  });
+
+  /*
+   * The eviction used to rebuild the tree through pruneTopics, which visits every node to ask
+   * whether it goes — near a second at the ceiling, every few seconds on a broker whose topics
+   * churn. It now rebuilds only the way down to what it took. These hold it to the tree the old
+   * way gave, over the shapes that make a prune hard: a topic that is also a branch, two topics
+   * quiet for exactly as long, the reader's own selection, the empty first level and '$'.
+   */
+  describe('rebuilding only what it took from', () => {
+    const mixed = () => {
+      const at = [
+        ['plant/a', 1000],
+        ['plant/a/temp', 1001],
+        ['plant/a/flow', 1001],
+        ['plant/b/temp', 1002],
+        ['plant/b/deep/x/y', 1003],
+        ['/hfp/v2/bus/1', 1004],
+        ['/hfp/v2/bus/2', 1004],
+        ['/hfp/v2/tram/9', 1005],
+        ['$SYS/broker/load', 1006],
+        ['site/gw', 9000],
+        ['site/gw/rssi', 9001],
+        ['solo', 9002],
+      ] as const;
+      let root = emptyTree();
+      for (const [topic, when] of at) root = applyMessages(root, [message(topic, when)], when);
+      return root;
+    };
+
+    // The old way: the same topics, taken by a walk of the whole tree.
+    const theOldWay = (root: TopicNode, forgotten: readonly string[]) => {
+      const gone = new Set(forgotten);
+      return pruneTopics(root, (topic) => gone.has(topic));
+    };
+
+    it.each([
+      [11, undefined],
+      [8, undefined],
+      [5, undefined],
+      [3, undefined],
+      [1, undefined],
+      [5, 'plant/a'],
+      [5, '/hfp/v2/bus/1'],
+    ] as const)('down to %i, keeping %s, gives the tree the old way gave', (ceiling, keep) => {
+      const root = mixed();
+
+      const { root: after, forgotten } = evictQuietestTopics(root, ceiling, keep);
+
+      expect(forgotten.length).toBeGreaterThan(0);
+      expect(forgotten).toEqual(quietestTopics(root, forgotten.length, keep));
+      expect(after).toEqual(theOldWay(root, forgotten));
+    });
+
+    it('leaves the branches it took nothing from as the very same nodes', () => {
+      const root = mixed();
+
+      const { root: after, forgotten } = evictQuietestTopics(root, 11);
+
+      // One over, and a tenth of the ceiling further: both the oldest, both under plant/a.
+      expect(forgotten).toEqual(['plant/a', 'plant/a/temp']);
+      expect(after.children.get('site')).toBe(root.children.get('site'));
+      expect(after.children.get('')).toBe(root.children.get(''));
+      expect(after.children.get('plant')!.children.get('b')).toBe(root.children.get('plant')!.children.get('b'));
+    });
   });
 });
 
