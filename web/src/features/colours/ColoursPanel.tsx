@@ -18,6 +18,7 @@ import { ColourPicker } from './ColourPicker';
 import styles from './ColoursPanel.module.css';
 import { paintedBy } from './painted';
 import { nextColour } from './palette';
+import { useTopicSet } from './useTopicSet';
 import { allSaved, draftFrom, faultIn, MAX_RULES, newDraftRule, type DraftRule } from './ruleDraft';
 
 /**
@@ -153,10 +154,11 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
    * What each rule has actually taken, counted off the tree the panel is covering.
    *
    * Off the DRAFT rather than off what the server holds, so the number answers the filter being
-   * typed rather than the one that was saved an hour ago. Memoised on the filters alone: a
-   * colour is not a thing a topic can be matched by, and the tree changes on every message.
+   * typed rather than the one that was saved an hour ago. Memoised on the filters and on the SET
+   * of topics, not on the tree itself: the tree is new on every message, and counting forty
+   * thousand topics on every frame of traffic is what made this panel stutter. See useTopicSet.
    */
-  const root = useTopicTreeStore((state) => state.root);
+  const topicSet = useTopicSet();
   /*
    * The rules as the painter would see them — colours and all.
    *
@@ -177,8 +179,12 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
   const applying = rulesFor(rules, profileId);
   const painted = applying.map(({ filter, colour }) => ({ filter, colour }));
   const key = painted.map((rule) => `${rule.filter}\u0000${rule.colour}`).join('\u0001');
-  // `painted` is a fresh array every render and would defeat the memo; `key` is its contents.
-  const painting = useMemo(() => paintedBy(root, painted), [root, key]);
+  // `painted` is a fresh array every render and would defeat the memo; `key` is its contents. The
+  // tree is read as it stands when either moves, rather than subscribed to.
+  const painting = useMemo(
+    () => paintedBy(useTopicTreeStore.getState().root, painted),
+    [topicSet, key],
+  );
   const applies = new Set(applying.map((rule) => rule.id));
 
   /** Another broker's rule: kept on the list, drawn faded, and painting nothing while this is up. */

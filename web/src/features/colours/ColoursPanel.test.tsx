@@ -9,7 +9,14 @@ import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import { renderWithClient as render } from '../../test/renderWithClient';
 import { server } from '../../test/server';
 import { ColoursPanel } from './ColoursPanel';
+import { paintedBy } from './painted';
 import { PALETTE, SUGGESTED } from './palette';
+
+// The real count, watched: how often it is taken is what the panel's cost under traffic is.
+vi.mock('./painted', async (actual) => {
+  const real = await actual<typeof import('./painted')>();
+  return { ...real, paintedBy: vi.fn(real.paintedBy) };
+});
 
 type Wire = { filter: string; colour: string; bodyColour?: string | null };
 
@@ -338,6 +345,34 @@ describe('what each rule is painting', () => {
     await userEvent.click(addButton());
 
     expect(within(rows()[0]).queryByText('none')).not.toBeInTheDocument();
+  });
+
+  // The count walks every topic on the broker, and the tree is new on every frame of traffic.
+  // Walked on every frame, the panel was what a busy broker stuttered on while it was open.
+  it('does not count again while only the readings on the topics move', async () => {
+    stored({ filter: 'plant/#', colour: '#ab3520' });
+    renderPanel();
+    await screen.findByText('3 topics');
+    const counted = vi.mocked(paintedBy).mock.calls.length;
+
+    for (let reading = 0; reading < 5; reading++) {
+      act(() =>
+        useTopicTreeStore.getState().apply([{ topic: 'plant/boiler/temp', payload: String(reading) }] as never),
+      );
+    }
+    await new Promise((settle) => setTimeout(settle, 50));
+
+    expect(vi.mocked(paintedBy).mock.calls.length).toBe(counted);
+  });
+
+  it('counts again once a new topic has arrived', async () => {
+    stored({ filter: 'plant/#', colour: '#ab3520' });
+    renderPanel();
+    await screen.findByText('3 topics');
+
+    act(() => useTopicTreeStore.getState().apply([{ topic: 'plant/kiln/flow', payload: '5' }] as never));
+
+    expect(await screen.findByText('4 topics')).toBeInTheDocument();
   });
 });
 
