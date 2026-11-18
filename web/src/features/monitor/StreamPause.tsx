@@ -76,8 +76,8 @@ export function StreamPause({ compact = false, live = false }: Props) {
         paused
           ? waiting > 0
             ? compact
-              ? `Take messages again, ${waiting} waiting`
-              : `Resume, ${waiting} waiting`
+              ? `Take messages again, ${exact(waiting)} waiting`
+              : `Resume, ${exact(waiting)} waiting`
             : compact
               ? 'Take messages again'
               : 'Resume'
@@ -90,12 +90,12 @@ export function StreamPause({ compact = false, live = false }: Props) {
           ? 'Not connected'
           : paused
             ? waiting > 0
-              ? `Stopped — ${waiting} waiting${lost > 0 ? `, ${lost} dropped` : ''}`
+              ? `Stopped — ${exact(waiting)} waiting${lost > 0 ? `, ${exact(lost)} dropped` : ''}`
               : 'Stopped — click to start again'
             : waiting > 0
-              ? `${waiting} still coming in`
+              ? `${exact(waiting)} still coming in`
               : 'Stop taking messages — what arrives is queued') +
-        (rate === undefined ? '' : ` — ${Math.round(rate).toLocaleString('en-GB')} messages/s`)
+        (rate === undefined ? '' : ` — ${exact(Math.round(rate))} messages/s`)
       }
       onClick={toggle}
     >
@@ -118,3 +118,9 @@ export function StreamPause({ compact = false, live = false }: Props) {
 
 /** Thousands as k: this is read at a glance, and the exact figure is in the tooltip. */
 const format = (n: number): string => (n < 1000 ? String(n) : `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`);
+
+/**
+ * The exact figure, for the tooltip and the name. Grouped the way the rate beside it always was:
+ * '16287 waiting — 1,478 messages/s' was two numbers in two styles in one sentence.
+ */
+const exact = (n: number): string => n.toLocaleString('en-GB');
