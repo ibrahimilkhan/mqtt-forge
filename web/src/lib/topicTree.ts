@@ -361,9 +361,18 @@ const EVICTION_SHARE = 0.1;
  * what the reader is looking at — a selection they would find empty is worse than a node kept.
  */
 export function quietestTopics(root: TopicNode, count: number, keep?: string): string[] {
+  return quietest(root, count, keep).map((one) => one.topic);
+}
+
+/** The walk behind quietestTopics, keeping the nodes so a caller can ask more of what it picked. */
+function quietest(
+  root: TopicNode,
+  count: number,
+  keep?: string,
+): { topic: string; node: TopicNode }[] {
   if (count <= 0) return [];
 
-  const found: { topic: string; at: number }[] = [];
+  const found: { topic: string; node: TopicNode }[] = [];
   const stack: { node: TopicNode; path: string; isRoot: boolean }[] = [
     { node: root, path: '', isRoot: true },
   ];
@@ -372,7 +381,7 @@ export function quietestTopics(root: TopicNode, count: number, keep?: string): s
     const { node, path, isRoot } = stack.pop()!;
 
     // A node with hits is a topic in its own right; one without is only a folder on the way.
-    if (!isRoot && node.hits > 0 && path !== keep) found.push({ topic: path, at: node.lastHitAt });
+    if (!isRoot && node.hits > 0 && path !== keep) found.push({ topic: path, node });
 
     for (const name of node.order) {
       stack.push({
@@ -383,9 +392,9 @@ export function quietestTopics(root: TopicNode, count: number, keep?: string): s
     }
   }
 
-  found.sort((a, b) => a.at - b.at);
+  found.sort((a, b) => a.node.lastHitAt - b.node.lastHitAt);
 
-  return found.slice(0, count).map((one) => one.topic);
+  return found.slice(0, count);
 }
 
 /**
@@ -393,24 +402,42 @@ export function quietestTopics(root: TopicNode, count: number, keep?: string): s
  *
  * Returns the topics that went as well, because they have to leave the log with them: a row whose
  * click shows nothing, or a run of readings with no row to reach it from, is worse than either
- * being gone.
+ * being gone. And how many of them the broker was holding retained, by the same reading
+ * retainedTopics makes — the one figure that says how short the panel's retained count now is.
+ * A broker whose topics churn live, Helsinki's with a geohash in every name, gives up tens of
+ * thousands to the ceiling and not one of them retained, and the panel said the broker was
+ * holding every one.
  */
 export function evictQuietestTopics(
   root: TopicNode,
   ceiling: number = MAX_TREE_TOPICS,
   keep?: string,
-): { root: TopicNode; forgotten: string[] } {
-  if (root.subTopics <= ceiling) return { root, forgotten: [] };
+): { root: TopicNode; forgotten: string[]; retained: number } {
+  if (root.subTopics <= ceiling) return { root, forgotten: [], retained: 0 };
 
   // Down to the ceiling, and a tenth further, so the next arrival does not walk the tree again.
   const over = root.subTopics - ceiling;
-  const victims = new Set(
-    quietestTopics(root, over + Math.floor(ceiling * EVICTION_SHARE), keep),
-  );
+  const picked = quietest(root, over + Math.floor(ceiling * EVICTION_SHARE), keep);
 
-  if (victims.size === 0) return { root, forgotten: [] };
+  if (picked.length === 0) return { root, forgotten: [], retained: 0 };
 
-  return { root: pruneTopics(root, (topic) => victims.has(topic)), forgotten: [...victims] };
+  const victims = new Set(picked.map((one) => one.topic));
+  const retained = picked.filter((one) => heldRetained(one.topic, one.node)).length;
+
+  return {
+    root: pruneTopics(root, (topic) => victims.has(topic)),
+    forgotten: [...victims],
+    retained,
+  };
+}
+
+/**
+ * Whether the broker is holding this topic retained, as far as a console can tell — the test
+ * retainedTopics counts by, so a topic the ceiling took is short of that figure exactly when it
+ * would have been in it. The `$` trees are the broker's own and never counted; see there.
+ */
+function heldRetained(topic: string, node: TopicNode): boolean {
+  return !topic.startsWith('$') && node.latestRetain && !!node.latestPayload;
 }
 
 // Flattens the visible part of the tree so rendering never walks a closed subtree.
@@ -508,7 +535,7 @@ export function retainedTopics(root: TopicNode): string[] {
       // Joined by depth, not by the parent's path being '': the empty first level's children
       // begin with a slash, and a retained message cleared at 'hfp/…' is cleared nowhere.
       const here = path === null ? name : `${path}/${name}`;
-      if (child.hits > 0 && child.latestRetain && child.latestPayload) found.push(here);
+      if (child.hits > 0 && heldRetained(here, child)) found.push(here);
       walk(child, here);
     }
   };

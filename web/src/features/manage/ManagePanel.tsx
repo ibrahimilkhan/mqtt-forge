@@ -41,10 +41,11 @@ export function ManagePanel({ onClose }: { onClose: () => void }) {
   const events = useBrokerEventsStore((state) => state.events);
   const clearEvents = useBrokerEventsStore((state) => state.clear);
   const loadMb = useAppearanceStore((state) => state.loadMb);
-  // How many topics the tree has given up to its ceiling this connection. Read here because the
-  // retained figure below is counted off that tree, and a tree that has forgotten is a figure
-  // that is short. See the note beside it.
-  const forgotten = useTopicTreeStore((state) => state.forgotten);
+  // How many retained topics the tree has given up to its ceiling this connection. Read here
+  // because the retained figure below is counted off that tree, and a tree that has forgotten one
+  // is a figure that is short. Only the retained ones: a live topic the ceiling took was never in
+  // the figure, so it leaves nothing short. See the note beside it.
+  const forgottenRetained = useTopicTreeStore((state) => state.forgottenRetained);
   const broker = useBrokerAddress();
 
   // Worked out on a timer rather than from a subscription: every number here walks a run or a
@@ -270,12 +271,12 @@ export function ManagePanel({ onClose }: { onClose: () => void }) {
             broker is holding them the shortfall would be read as the broker's, and the button
             below would then report clearing a broker it had only partly cleared. Said here, once,
             rather than in the counts: what is wrong is not the number but what it is a number of. */}
-        {forgotten > 0 && (
+        {forgottenRetained > 0 && (
           <p className={panel.note} data-testid="retained-short">
             This is what this console has seen. The tree gave up{' '}
-            {forgotten.toLocaleString('en-GB')} quiet{' '}
-            {forgotten === 1 ? 'topic' : 'topics'} to its ceiling, so the broker is holding at
-            least that many more, and clearing from here would leave them.
+            {forgottenRetained.toLocaleString('en-GB')} quiet retained{' '}
+            {forgottenRetained === 1 ? 'topic' : 'topics'} to its ceiling, so the broker is
+            holding at least that many more, and clearing from here would leave them.
           </p>
         )}
 
