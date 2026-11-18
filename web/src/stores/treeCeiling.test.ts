@@ -58,6 +58,26 @@ describe('a tree at its ceiling', () => {
     expect(useLogStore.getState().byTopic.size).toBe(useTopicTreeStore.getState().root.subTopics);
   });
 
+  it('counts the retained topics it has forgotten apart from the rest', () => {
+    // Two batches, the retained one first and so the quieter: within a batch every topic is as
+    // quiet as every other, and which of them goes would be anyone's guess.
+    const kept = (i: number) => ({ ...message(`cfg/${i}`, 1000), retain: true, arrivedAt: 1000 });
+    const live = (i: number) => ({ ...message(`req/${i}`, 2000), arrivedAt: 2000 });
+    useTopicTreeStore.getState().apply(Array.from({ length: 100 }, (_, i) => kept(i)));
+    useTopicTreeStore
+      .getState()
+      .apply(Array.from({ length: MAX_TREE_TOPICS + 2000 }, (_, i) => live(i)));
+
+    const { forgotten, forgottenRetained } = useTopicTreeStore.getState();
+
+    expect(forgotten).toBeGreaterThan(100);
+    expect(forgottenRetained).toBe(100);
+
+    useTopicTreeStore.getState().reset();
+
+    expect(useTopicTreeStore.getState().forgottenRetained).toBe(0);
+  });
+
   it('starts the count again with the tree', () => {
     useTopicTreeStore
       .getState()

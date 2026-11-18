@@ -336,13 +336,25 @@ describe('the screen for what is being held', () => {
 describe('when the tree has given topics up to its ceiling', () => {
   it('says the retained figure is only what this console has seen', async () => {
     landed(message('plant/boiler/temp', '81', true));
-    act(() => useTopicTreeStore.setState({ forgotten: 11_006 }));
+    act(() => useTopicTreeStore.setState({ forgotten: 11_006, forgottenRetained: 1_204 }));
 
     render(<ManagePanel onClose={() => {}} />);
 
     const note = await screen.findByTestId('retained-short');
     expect(note).toHaveTextContent(/what this console has seen/);
-    expect(note).toHaveTextContent(/11,006 quiet topics/);
+    expect(note).toHaveTextContent(/1,204 quiet retained topics/);
+  });
+
+  // Helsinki's feed: tens of thousands given up, none of them retained. The note said the broker
+  // was holding every one of them, under a retained figure of nought.
+  it('says nothing of the sort when none of what it gave up was retained', async () => {
+    landed(message('plant/boiler/temp', '81', true));
+    act(() => useTopicTreeStore.setState({ forgotten: 88_227, forgottenRetained: 0 }));
+
+    render(<ManagePanel onClose={() => {}} />);
+
+    await screen.findByText('Retained');
+    expect(screen.queryByTestId('retained-short')).not.toBeInTheDocument();
   });
 
   it('says nothing of the sort while the tree has kept everything', async () => {

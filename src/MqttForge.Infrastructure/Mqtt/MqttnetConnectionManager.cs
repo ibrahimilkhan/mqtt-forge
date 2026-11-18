@@ -553,5 +553,6 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager, IDisposab
             // The version that was accepted, never the one that was asked for. With Auto doing
             // the choosing they are different things, and this is the half a reader cannot see.
             version,
-            settings.ProfileId);
+            settings.ProfileId,
+            (ushort)MqttClientOptionsFactory.KeepAlive.TotalSeconds);
 }

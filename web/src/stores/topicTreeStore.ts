@@ -22,6 +22,8 @@ type TreeState = {
   brokerOpen: boolean;
   /** Topics given up to the ceiling since this tree started. */
   forgotten: number;
+  /** How many of those the broker was holding retained — what the retained figure is short by. */
+  forgottenRetained: number;
   apply: (messages: DecodedMessage[]) => void;
   /** Drops every topic the test says yes to — what Clear and an unsubscribe take from the tree. */
   dropTopics: (remove: (topic: string) => boolean) => void;
@@ -67,13 +69,15 @@ export const useTopicTreeStore = create<TreeState>((set, get) => ({
    */
   forgotten: 0,
 
+  forgottenRetained: 0,
+
   apply: (messages) =>
     set((state) => {
       const grown = applyMessages(state.root, messages, Date.now());
 
       // The ceiling, checked here rather than inside the insert: a batch is one walk of the tree
       // at most, where a check per message would be one per arrival.
-      const { root, forgotten } = evictQuietestTopics(
+      const { root, forgotten, retained } = evictQuietestTopics(
         grown,
         MAX_TREE_TOPICS,
         useSelectionStore.getState().selected?.topic,
@@ -84,7 +88,11 @@ export const useTopicTreeStore = create<TreeState>((set, get) => ({
       // The readings go with the rows. See logStore.forgetTopics.
       useLogStore.getState().forgetTopics(forgotten);
 
-      return { root, forgotten: state.forgotten + forgotten.length };
+      return {
+        root,
+        forgotten: state.forgotten + forgotten.length,
+        forgottenRetained: state.forgottenRetained + retained,
+      };
     }),
 
   dropTopics: (remove) =>
@@ -155,6 +163,7 @@ export const useTopicTreeStore = create<TreeState>((set, get) => ({
       brokerOpen: true,
       // A new tree has given nothing up yet; the count belongs to the connection it was about.
       forgotten: 0,
+      forgottenRetained: 0,
       generation: get().generation + 1,
       returnedAt: null,
     }),

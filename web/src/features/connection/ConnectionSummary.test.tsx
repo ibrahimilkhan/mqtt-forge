@@ -150,7 +150,22 @@ describe('ConnectionSummary', () => {
     renderSummary({ ...LINK, assignedClientId: 'auto-4417', serverKeepAlive: 30 });
 
     expect(await readValue('Assigned ID')).toHaveTextContent('auto-4417');
-    expect(await readValue('Keep-alive')).toHaveTextContent('30 sec');
+    expect(await readValue('Keep-alive')).toHaveTextContent('30 sec, set by the broker');
+  });
+
+  // The usual case: the broker says nothing and the link runs on the client's own keep-alive.
+  // Dashed, it read as a link with no keep-alive at all.
+  it("shows the client's own keep-alive when the broker imposed none", async () => {
+    renderSummary({ ...LINK, serverKeepAlive: null, clientKeepAlive: 60 });
+
+    expect(await readValue('Keep-alive')).toHaveTextContent('60 sec');
+    expect(await readValue('Keep-alive')).not.toHaveTextContent('broker');
+  });
+
+  it("puts the broker's keep-alive before the client's, since the broker's is in force", async () => {
+    renderSummary({ ...LINK, serverKeepAlive: 30, clientKeepAlive: 60 });
+
+    expect(await readValue('Keep-alive')).toHaveTextContent('30 sec, set by the broker');
   });
 
   // A zero here means MQTT keep-alive was turned off, not a keep-alive of no seconds, so it

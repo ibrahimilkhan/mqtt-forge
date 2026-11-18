@@ -75,6 +75,31 @@ describe('the topics a tree gives up', () => {
     expect(after.subTopics).toBeLessThan(root.subTopics);
   });
 
+  // What the Manage panel's retained figure is short by. A broker whose topics churn live —
+  // Helsinki's carries a geohash in every name — gives up thousands and not one of them retained.
+  it('says how many of what it gave up the broker was holding retained', () => {
+    let root = emptyTree();
+    root = applyMessages(root, [{ ...message('cfg/a', 1000), retain: true }], 1000);
+    root = applyMessages(root, [{ ...message('cfg/b', 1001), retain: true, payload: '' }], 1001);
+    root = applyMessages(root, [{ ...message('$SYS/up', 1002), retain: true }], 1002);
+    root = applyMessages(root, [message('live/a', 1003)], 1003);
+    root = applyMessages(root, [message('live/b', 5000)], 5000);
+
+    const { forgotten, retained } = evictQuietestTopics(root, 1);
+
+    // Four went; only cfg/a is one the broker holds — an empty retained body is a clearing, and
+    // $SYS is the broker's own, the same two exceptions retainedTopics makes.
+    expect(forgotten).toHaveLength(4);
+    expect(retained).toBe(1);
+  });
+
+  it('counts none retained when nothing it gave up was', () => {
+    const { forgotten, retained } = evictQuietestTopics(grown(120), 100);
+
+    expect(forgotten).toHaveLength(30);
+    expect(retained).toBe(0);
+  });
+
   // A branch left with no message of its own and no surviving child goes too, which pruneTopics
   // already does — this is the tree not keeping empty folders after an eviction.
   it('leaves no empty branches behind', () => {

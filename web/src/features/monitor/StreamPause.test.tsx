@@ -96,8 +96,21 @@ describe('stopping the console taking messages', () => {
       act(() => void vi.advanceTimersByTime(500));
 
       expect(
-        screen.getByRole('button', { name: 'Resume, 1200 waiting' }),
+        screen.getByRole('button', { name: 'Resume, 1,200 waiting' }),
       ).toHaveTextContent('1.2k');
+    });
+
+    // Grouped like the rate beside it in the tooltip, so one sentence does not hold two styles.
+    it('writes the exact figures with separators', () => {
+      render(<StreamPause live />);
+      act(() => usePauseStore.setState({ paused: true, lost: 3_500 }));
+      act(() => usePauseStore.getState().track(16_287));
+      act(() => void vi.advanceTimersByTime(500));
+
+      expect(screen.getByRole('button')).toHaveAttribute(
+        'title',
+        'Stopped — 16,287 waiting, 3,500 dropped',
+      );
     });
 
     it('is left off while nothing is waiting, leaving the control saying only what it does', () => {
