@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createRuleLookup, type ColourRule } from '../../lib/topicColour';
 import { applyMessage, emptyTree } from '../../lib/topicTree';
 import { paintedBy } from './painted';
 
@@ -72,5 +73,63 @@ describe('paintedBy', () => {
 
   it('has nothing to count on a broker that has not spoken', () => {
     expect(paintedBy(emptyTree(), [{ filter: '#', colour: '#111111' }]).get('#')).toBe(0);
+  });
+
+  /*
+   * The count no longer asks the painter about every topic one at a time — at fifty thousand
+   * topics that took most of a second — but it must still give the painter's answer. So it is
+   * held to that answer here, topic by topic, over the corners a filter has: a '#' that covers
+   * its own parent, a '+', a '$' topic no leading wildcard may reach, a topic that opens with '/',
+   * and rules that overlap so only the more specific one wins.
+   */
+  describe('agrees with the painter, topic by topic', () => {
+    const topics = [
+      'plant/boiler/temp',
+      'plant/boiler/flow',
+      'plant/boiler',
+      'plant/kiln/temp',
+      'plant/kiln/zone/1/temp',
+      'plant',
+      'site/gateway/rssi',
+      '$SYS/broker/load',
+      '$SYS/broker/clients',
+      '/hfp/v2/bus/1',
+      '/hfp/v2/tram/2',
+      'a/b/c/d/e',
+    ];
+    let root = emptyTree();
+    topics.forEach((topic, at) => (root = applyMessage(root, topic, '1', at + 1)));
+
+    // The painter's own answer, asked of every topic.
+    const byThePainter = (rules: ColourRule[]) => {
+      const winner = createRuleLookup(rules);
+      const counts = new Map(rules.map((rule) => [rule.filter, 0]));
+      for (const topic of topics) {
+        const rule = winner(topic);
+        if (rule) counts.set(rule.filter, counts.get(rule.filter)! + 1);
+      }
+      return counts;
+    };
+
+    const sets: string[][] = [
+      ['#'],
+      ['+/#'],
+      ['plant/#'],
+      ['plant/boiler/#'],
+      ['plant/+'],
+      ['plant/+/temp'],
+      ['plant/+/#', 'plant/boiler/temp'],
+      ['#', 'plant/#', 'plant/boiler/+', 'plant/kiln/zone/1/temp'],
+      ['$SYS/#', '+/broker/#'],
+      ['/hfp/#', '/+/v2/+/1', '+/+/+'],
+      ['+/+/+/+/+', 'a/#', 'a/b/c/d/e'],
+      ['nowhere/#', 'plant/kiln'],
+    ];
+
+    it.each(sets.map((filters) => [filters.join('  ')] as const))('%s', (joined) => {
+      const rules = joined.split('  ').map((filter, at) => ({ filter, colour: `#00000${at}` }));
+
+      expect(paintedBy(root, rules)).toEqual(byThePainter(rules));
+    });
   });
 });

@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { create } from 'zustand';
 import { fitRows, Workspace } from './Workspace';
 import { MIN_SHARE } from './ResizeHandle';
 
@@ -384,6 +385,59 @@ describe('Workspace', () => {
 
     expect(screen.getByTestId('layout')).toHaveAttribute('data-panel', 'closed');
     expect(screen.queryByLabelText('Panel and topics boundary')).not.toBeInTheDocument();
+  });
+
+  describe('under a panel that takes the whole workspace', () => {
+    // A stand-in for the traffic: a store the panes read, as the tree and the log read theirs.
+    const traffic = create<{ count: number }>(() => ({ count: 0 }));
+    let drawn = 0;
+    function Reading() {
+      drawn += 1;
+      return <div>{traffic((state) => state.count)} messages</div>;
+    }
+    const covered = (wide?: 'full' | 'fill') => (
+      <Workspace
+        {...parts}
+        panel={<div>studio</div>}
+        wide={wide}
+        tree={<Reading />}
+        publish={<input aria-label="Payload" />}
+      />
+    );
+
+    afterEach(() => {
+      traffic.setState({ count: 0 });
+      drawn = 0;
+    });
+
+    it.each(['full', 'fill'] as const)('does not draw the panes it covers as traffic arrives (%s)', (wide) => {
+      render(covered(wide));
+      const before = drawn;
+
+      act(() => traffic.setState({ count: 1 }));
+      act(() => traffic.setState({ count: 2 }));
+
+      expect(drawn).toBe(before);
+    });
+
+    it('shows them as they now stand when it closes', () => {
+      const { rerender } = render(covered('fill'));
+
+      act(() => traffic.setState({ count: 5 }));
+      rerender(covered());
+
+      expect(screen.getByText('5 messages')).toBeVisible();
+    });
+
+    it('keeps what was in them while they were covered', async () => {
+      const { rerender } = render(covered());
+      await userEvent.type(screen.getByRole('textbox', { name: 'Payload' }), '23.5');
+
+      rerender(covered('fill'));
+      rerender(covered());
+
+      expect(screen.getByRole('textbox', { name: 'Payload' })).toHaveValue('23.5');
+    });
   });
 
   describe('on a window too narrow for a third column', () => {

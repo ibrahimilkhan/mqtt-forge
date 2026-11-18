@@ -568,8 +568,9 @@ describe('a link that drops while the reader is elsewhere', () => {
     /**
      * A topic's row, by its own segment.
      *
-     * By test id rather than by role: the drop opened the Broker panel, and that panel takes the
-     * whole workspace — the tree is still drawn behind it, but out of the accessibility tree.
+     * By test id rather than by role, and only once the reader is back at the tree: the drop opened
+     * the Broker panel, which takes the whole workspace, and the tree behind it is kept but not
+     * drawn until the panel closes.
      */
     const rowOf = (segment: string): HTMLElement => {
       const found = screen.getAllByTestId('segment').find((one) => one.textContent === segment);
@@ -577,6 +578,9 @@ describe('a link that drops while the reader is elsewhere', () => {
 
       return found.closest<HTMLElement>('[data-testid="tree-row"]')!;
     };
+
+    /** Shuts the panel the drop opened, which is when the tree is drawn again. */
+    const backToTheTree = () => userEvent.click(screen.getByRole('button', { name: 'Close Broker panel' }));
 
     /** The rail's own Stop, by either of the names it goes by. */
     const stop = () => screen.getByRole('button', { name: /^(Stop stream|Resume)/ });
@@ -616,6 +620,7 @@ describe('a link that drops while the reader is elsewhere', () => {
         vi.setSystemTime(4_002);
       });
       act(() => runFrames());
+      await backToTheTree();
 
       // The door was not sent again, so it is faded — which is also what says the return is drawn.
       await waitFor(() => expect(rowOf('door')).toHaveAttribute('data-stale'));
@@ -668,6 +673,7 @@ describe('a link that drops while the reader is elsewhere', () => {
       await waitFor(() => expect(brokerRow()).toHaveAttribute('data-link', 'Faulted'));
       vi.setSystemTime(4_000);
       await resumes('2026-09-02T21:05:00.000Z');
+      await backToTheTree();
       await waitFor(() => expect(rowOf('oven')).toHaveAttribute('data-stale'));
 
       vi.setSystemTime(5_000);

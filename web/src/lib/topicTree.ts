@@ -364,37 +364,56 @@ export function quietestTopics(root: TopicNode, count: number, keep?: string): s
   return quietest(root, count, keep).map((one) => one.topic);
 }
 
+/**
+ * A node met on the walk, and the way back up to the root from it.
+ *
+ * The walk used to carry each node's full name as a string, built as it went down: on a broker as
+ * deep as Helsinki's, over half a million strings at the ceiling, to give up five thousand topics.
+ * The names are made now only for the ones picked — see `nameOf` — and the chain is what the
+ * eviction follows back down to rebuild just those branches.
+ */
+type Met = { node: TopicNode; name: string; up: Met | null };
+
+/** A picked node's topic, read back up its chain. */
+function nameOf(met: Met): string {
+  const names: string[] = [];
+  for (let at: Met | null = met; at !== null; at = at.up) names.push(at.name);
+  return names.reverse().join('/');
+}
+
 /** The walk behind quietestTopics, keeping the nodes so a caller can ask more of what it picked. */
-function quietest(
-  root: TopicNode,
-  count: number,
-  keep?: string,
-): { topic: string; node: TopicNode }[] {
+function quietest(root: TopicNode, count: number, keep?: string): { topic: string; met: Met }[] {
   if (count <= 0) return [];
 
-  const found: { topic: string; node: TopicNode }[] = [];
-  const stack: { node: TopicNode; path: string; isRoot: boolean }[] = [
-    { node: root, path: '', isRoot: true },
-  ];
+  const found: Met[] = [];
+  // The root is not a topic and has no name in one, so the walk starts from its children —
+  // pushed in the order the walk always took, so that two topics quiet for exactly as long are
+  // still picked in the same order as before.
+  const stack: Met[] = [];
+  for (const name of root.order) stack.push({ node: root.children.get(name)!, name, up: null });
 
   while (stack.length > 0) {
-    const { node, path, isRoot } = stack.pop()!;
+    const met = stack.pop()!;
 
     // A node with hits is a topic in its own right; one without is only a folder on the way.
-    if (!isRoot && node.hits > 0 && path !== keep) found.push({ topic: path, node });
+    if (met.node.hits > 0) found.push(met);
 
-    for (const name of node.order) {
-      stack.push({
-        node: node.children.get(name)!,
-        path: isRoot ? name : `${path}/${name}`,
-        isRoot: false,
-      });
+    for (const name of met.node.order) {
+      stack.push({ node: met.node.children.get(name)!, name, up: met });
     }
   }
 
+  // Stable, so equal quiet keeps the walk's order.
   found.sort((a, b) => a.node.lastHitAt - b.node.lastHitAt);
 
-  return found.slice(0, count);
+  const picked: { topic: string; met: Met }[] = [];
+  for (const met of found) {
+    if (picked.length === count) break;
+    const topic = nameOf(met);
+    if (topic !== keep) picked.push({ topic, met });
+  }
+
+  return picked;
 }
 
 /**
@@ -407,6 +426,12 @@ function quietest(
  * A broker whose topics churn live, Helsinki's with a geohash in every name, gives up tens of
  * thousands to the ceiling and not one of them retained, and the panel said the broker was
  * holding every one.
+ *
+ * Only the way down to what went is rebuilt. It used to go through pruneTopics, which visits
+ * every node in the tree to ask whether it goes — near a second at the ceiling, on the thread
+ * that draws, every few seconds on a broker whose topics churn. Each node on the way is rebuilt
+ * exactly as pruneTopics would rebuild it, by the same `rebuild`; everything else is the very
+ * same node it was.
  */
 export function evictQuietestTopics(
   root: TopicNode,
@@ -421,14 +446,106 @@ export function evictQuietestTopics(
 
   if (picked.length === 0) return { root, forgotten: [], retained: 0 };
 
-  const victims = new Set(picked.map((one) => one.topic));
-  const retained = picked.filter((one) => heldRetained(one.topic, one.node)).length;
+  const retained = picked.filter((one) => heldRetained(one.topic, one.met.node)).length;
 
   return {
-    root: pruneTopics(root, (topic) => victims.has(topic)),
-    forgotten: [...victims],
+    root: cutAway(root, picked.map((one) => one.met)),
+    forgotten: picked.map((one) => one.topic),
     retained,
   };
+}
+
+/**
+ * The tree without the picked topics, rebuilt along their chains and nowhere else.
+ *
+ * The chains the walk left behind are the map of where to go: each picked node is linked into
+ * its parent's list of what to visit, and so on up until a chain meets one already linked. What
+ * is visited is those chains and nothing beside them.
+ *
+ * Iterative post-order, as pruneTopics is: a deep topic must not overflow the stack.
+ */
+function cutAway(root: TopicNode, gone: readonly Met[]): TopicNode {
+  const dropped = new Set<Met>(gone);
+  /** For each node on the way down, the children of it that are on the way too. */
+  const reach = new Map<Met | null, Met[]>();
+  const linked = new Set<Met>();
+  for (const met of gone) {
+    for (let at: Met | null = met; at !== null; at = at.up) {
+      // Already on the way: it and everything above it are linked.
+      if (linked.has(at)) break;
+      linked.add(at);
+      const siblings = reach.get(at.up);
+      if (siblings) siblings.push(at);
+      else reach.set(at.up, [at]);
+    }
+  }
+
+  type Frame = {
+    node: TopicNode;
+    met: Met | null;
+    next: Met[];
+    index: number;
+    /** A copy of the children, made the first time one of them changes. */
+    kept: Map<string, TopicNode> | null;
+  };
+  const frame = (node: TopicNode, met: Met | null): Frame => ({
+    node,
+    met,
+    next: reach.get(met) ?? [],
+    index: 0,
+    kept: null,
+  });
+
+  const stack: Frame[] = [frame(root, null)];
+  // undefined means 'no child has just finished'; null means the child that did is gone.
+  let finished: TopicNode | null | undefined = undefined;
+
+  while (stack.length > 0) {
+    const current = stack[stack.length - 1];
+
+    if (finished !== undefined) {
+      const child = current.next[current.index];
+      if (finished !== child.node) {
+        current.kept ??= new Map(current.node.children);
+        if (finished === null) current.kept.delete(child.name);
+        else current.kept.set(child.name, finished);
+      }
+      current.index++;
+      finished = undefined;
+    }
+
+    if (current.index < current.next.length) {
+      const child = current.next[current.index];
+      stack.push(frame(child.node, child));
+      continue;
+    }
+
+    stack.pop();
+    const { node, met, kept } = current;
+    const drop = met !== null && dropped.has(met);
+    if (kept === null && !drop) {
+      finished = node;
+      continue;
+    }
+    // Emptied: the folders under a topic that went are most of what a cut visits, and each would
+    // otherwise be copied only to be thrown away. Gone by the rule `rebuild` goes by.
+    const children = kept ?? node.children;
+    if (met !== null && children.size === 0 && (drop || node.hits === 0)) {
+      finished = null;
+      continue;
+    }
+    finished = rebuild(
+      node,
+      '',
+      met === null,
+      kept ?? new Map(children),
+      node.order.filter((name) => children.has(name)),
+      () => drop,
+    );
+  }
+
+  // The root is never a topic, so it survives whatever happens beneath it.
+  return finished ?? emptyTree();
 }
 
 /**

@@ -295,11 +295,14 @@ export function App({ hub }: { hub: Hub }) {
                     <span className={styles.menuSplit} aria-hidden="true" />
                   ))}
                 {/* First in Reading, which is where reading starts. Not a panel, so not in PANELS:
-                    it opens nothing and shuts what is open, and it has no expanded state to say. */}
+                    it opens nothing and shuts what is open, and it has no expanded state to say.
+                    What it has is a place: with no panel open the tree is the page, and the row
+                    is lit as an open panel's is, so the rail always says where the reader is. */}
                 {opens && panel.group === 'Reading' && (
                   <button
                     type="button"
                     className={styles.menuBtn}
+                    aria-current={openPanel === null ? 'page' : undefined}
                     aria-label={menuOpen ? undefined : 'Topics'}
                     title={menuOpen ? 'Close what is open and go to the topic tree' : 'Topics'}
                     onClick={showTopics}
