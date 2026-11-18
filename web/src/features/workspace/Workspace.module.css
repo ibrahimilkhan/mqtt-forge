@@ -217,7 +217,8 @@
 /* One panel, the whole workspace. The rest stays mounted and goes out of the grid's way: a tree
    unmounted is a tree rebuilt from nothing the next time the panel shuts, and the log's history
    would go with it. `display: none` takes them out of the flow, so the single track is the whole
-   of the row rather than a first column with four empty ones after it. */
+   of the row rather than a first column with four empty ones after it. What stops them drawing
+   behind it is the Activity in Workspace; this only gets them out of the way. */
 .grid[data-panel='full'],
 .grid[data-panel='fill'] { grid-template-columns: minmax(0, 1fr); }
 .grid[data-panel='full'] > *:not(:first-child),

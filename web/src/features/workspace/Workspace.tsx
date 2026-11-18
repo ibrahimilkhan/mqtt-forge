@@ -1,4 +1,5 @@
 import {
+  Activity,
   useLayoutEffect,
   useRef,
   useState,
@@ -39,7 +40,8 @@ type Props = {
    * what they get is a page that says which of their rules is painting nothing.
    *
    * The other panes stay mounted underneath either way. A tree unmounted is a tree rebuilt from
-   * nothing the next time the panel shuts, and the log would lose its history with it.
+   * nothing the next time the panel shuts, and the log would lose its history with it. Mounted is
+   * not drawn, though: they sit in a hidden Activity, and catch up in one render when it shows.
    */
   wide?: 'full' | 'fill';
   tree: ReactNode;
@@ -484,83 +486,91 @@ export function Workspace({ panel, wide, tree, log, logCount, logTools, chart, p
         </>
       )}
 
-      <div className={styles.pane}>{tree}</div>
+      {/* Covered by a panel that takes the workspace, the rest is kept but no longer drawn. Hidden
+          rather than unmounted, so the tree's open branches and a half-written payload are there
+          when the panel closes; hidden from React rather than only from CSS, because a pane under
+          `display: none` still re-rendered on every frame of traffic — and the 3D studio, which
+          draws on the same thread, dropped to a frame a second under a busy broker. Hidden, the
+          panes let go of their stores and read them afresh when they come back. */}
+      <Activity mode={wide ? 'hidden' : 'visible'}>
+        <div className={styles.pane}>{tree}</div>
 
-      {/* No fit on this boundary, nor on the panel's. A width would have to snap to the widest row
-          the tree is holding, which is whichever topic arrived last and is gone again when that
-          one is retired — a gesture that answers differently every minute is not one a reader can
-          learn. The regions below have heights their contents actually settle at. */}
-      <ResizeHandle
-        axis="x"
-        label="Topics and log boundary"
-        {...between(shown.tree, shown.right)}
-        onChange={moveTreeEdge}
-      />
+        {/* No fit on this boundary, nor on the panel's. A width would have to snap to the widest row
+            the tree is holding, which is whichever topic arrived last and is gone again when that
+            one is retired — a gesture that answers differently every minute is not one a reader can
+            learn. The regions below have heights their contents actually settle at. */}
+        <ResizeHandle
+          axis="x"
+          label="Topics and log boundary"
+          {...between(shown.tree, shown.right)}
+          onChange={moveTreeEdge}
+        />
 
-      {/* Three fixed places, top to bottom: what arrived last, the shape of the run behind it,
-          and the form that answers back. Only the boundaries move — and each region folds to its
-          own header when a reader wants the column spent on one of the other two. */}
-      <div
-        ref={columnRef}
-        className={styles.right}
-        data-testid="right-column"
-        data-fit={rows === null ? 'content' : 'split'}
-        style={column}
-      >
-        <Region
-          id="log"
-          label="Log"
-          count={logCount}
-          tools={logTools}
-          open={open('log')}
-          alone={alone}
-          onFold={fold}
-          innerRef={logRef}
+        {/* Three fixed places, top to bottom: what arrived last, the shape of the run behind it,
+            and the form that answers back. Only the boundaries move — and each region folds to its
+            own header when a reader wants the column spent on one of the other two. */}
+        <div
+          ref={columnRef}
+          className={styles.right}
+          data-testid="right-column"
+          data-fit={rows === null ? 'content' : 'split'}
+          style={column}
         >
-          {log}
-        </Region>
-        {/* Named for its place in the column rather than for what it divides at this moment: the
-            places are fixed and what they divide is not, and two boundaries that renamed
-            themselves to the same pair when the chart folded would be two controls a reader
-            cannot tell apart. What they divide right now is in the values. */}
-        <ResizeHandle
-          axis="y"
-          label="Log and chart boundary"
-          {...seam(logChart.above, logChart.below)}
-          onChange={move(logChart.above, logChart.below)}
-          fit={{ title: 'Fit the log', share: fitting('log')(logChart.above, logChart.below) }}
-        />
-        <Region
-          id="chart"
-          label="Chart"
-          open={open('chart')}
-          alone={alone}
-          onFold={fold}
-          innerRef={chartRef}
-        >
-          {chart}
-        </Region>
-        <ResizeHandle
-          axis="y"
-          label="Chart and publish boundary"
-          {...seam(chartPublish.above, chartPublish.below)}
-          onChange={move(chartPublish.above, chartPublish.below)}
-          fit={{
-            title: 'Fit the publish form',
-            share: fitting('publish')(chartPublish.above, chartPublish.below),
-          }}
-        />
-        <Region
-          id="publish"
-          label="Publish"
-          open={open('publish')}
-          alone={alone}
-          onFold={fold}
-          innerRef={publishRef}
-        >
-          {publish}
-        </Region>
-      </div>
+          <Region
+            id="log"
+            label="Log"
+            count={logCount}
+            tools={logTools}
+            open={open('log')}
+            alone={alone}
+            onFold={fold}
+            innerRef={logRef}
+          >
+            {log}
+          </Region>
+          {/* Named for its place in the column rather than for what it divides at this moment: the
+              places are fixed and what they divide is not, and two boundaries that renamed
+              themselves to the same pair when the chart folded would be two controls a reader
+              cannot tell apart. What they divide right now is in the values. */}
+          <ResizeHandle
+            axis="y"
+            label="Log and chart boundary"
+            {...seam(logChart.above, logChart.below)}
+            onChange={move(logChart.above, logChart.below)}
+            fit={{ title: 'Fit the log', share: fitting('log')(logChart.above, logChart.below) }}
+          />
+          <Region
+            id="chart"
+            label="Chart"
+            open={open('chart')}
+            alone={alone}
+            onFold={fold}
+            innerRef={chartRef}
+          >
+            {chart}
+          </Region>
+          <ResizeHandle
+            axis="y"
+            label="Chart and publish boundary"
+            {...seam(chartPublish.above, chartPublish.below)}
+            onChange={move(chartPublish.above, chartPublish.below)}
+            fit={{
+              title: 'Fit the publish form',
+              share: fitting('publish')(chartPublish.above, chartPublish.below),
+            }}
+          />
+          <Region
+            id="publish"
+            label="Publish"
+            open={open('publish')}
+            alone={alone}
+            onFold={fold}
+            innerRef={publishRef}
+          >
+            {publish}
+          </Region>
+        </div>
+      </Activity>
     </div>
   );
 }
