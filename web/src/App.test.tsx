@@ -420,6 +420,23 @@ describe('App', () => {
     expect(row).toHaveTextContent('β');
   });
 
+  // With nothing open the tree is the page, and the rail should say so as it says which panel is
+  // open — a rail with no row lit read as a console showing nothing in particular.
+  it('marks Topics as where the reader is whenever no panel stands over the tree', async () => {
+    renderApp();
+    const topics = () => menu().getByRole('button', { name: 'Topics' });
+    expect(topics()).not.toHaveAttribute('aria-current');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Close Broker panel' }));
+    expect(topics()).toHaveAttribute('aria-current', 'page');
+
+    await userEvent.click(menu().getByRole('button', { name: 'Colours' }));
+    expect(topics()).not.toHaveAttribute('aria-current');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Close Colours panel' }));
+    expect(topics()).toHaveAttribute('aria-current', 'page');
+  });
+
   it('opens Flows across the whole workspace', async () => {
     renderApp();
 

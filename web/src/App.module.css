@@ -278,7 +278,8 @@
    question, in a console with one accent. Hovered it goes grey, which is what everything else
    here does when it is already on: a pressed control under the pointer should say 'yes, this
    one' and not offer a second colour to think about. */
-.menuBtn[aria-expanded="true"] {
+.menuBtn[aria-expanded="true"],
+.menuBtn[aria-current="page"] {
   color: var(--surface);
   background: var(--signal);
   border-color: var(--signal);
@@ -288,7 +289,8 @@
    working: the label is drawn in --surface, which needs a dark ground, and the glyph is drawn in
    the link's own colour, which on that grey is a green nobody can see. A darker blue says the
    same 'yes, this one' and leaves both of them legible. */
-.menuBtn[aria-expanded="true"]:hover:not(:disabled) {
+.menuBtn[aria-expanded="true"]:hover:not(:disabled),
+.menuBtn[aria-current="page"]:hover:not(:disabled) {
   /* The label with it. `.menuBtn:hover` sets `color: var(--ink)` and outranks the open row's own
      `color: var(--surface)` by a pseudo-class, so pointing at the panel you already have open
      put near-black type on deep blue: 1.5:1, which is a row with nothing readable on it. Said
