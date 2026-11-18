@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using MqttForge.Domain.Abstractions;
 using MqttForge.Domain.Enums;
 using MqttForge.Domain.Exceptions;
@@ -62,13 +64,22 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager, IDisposab
     // Set when the host stops, so an attempt still out then lets its certificates go on its way back.
     private bool _disposed;
 
+    // What the link that is up has been carrying, so a drop can tell a broker that went quiet from
+    // one the console could not keep up with. See InboundTraffic.
+    private readonly InboundTraffic _traffic = new();
+
+    // Read when the link dropped; kept only alongside FellBehind, the one reason it explains.
+    private LinkTraffic? _dropTraffic;
+
+    private readonly ILogger<MqttnetConnectionManager> _log;
+
     // Last payload announced, to avoid duplicate notifications
     private string _announced = $"{ConnectionState.Disconnected}/";
 
     public MqttnetConnectionManager(
         MqttnetClientProvider provider, IConnectionStateNotifier notifier,
         TimeSpan? connectTimeout = null, TimeProvider? timeProvider = null,
-        AlertPublishWitness? witness = null)
+        AlertPublishWitness? witness = null, ILogger<MqttnetConnectionManager>? logger = null)
     {
         _client = provider.Client;
         _witness = witness;
@@ -76,8 +87,10 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager, IDisposab
         _notifier = notifier;
         _connectTimeout = connectTimeout ?? DefaultConnectTimeout;
         _time = timeProvider ?? TimeProvider.System;
+        _log = logger ?? NullLogger<MqttnetConnectionManager>.Instance;
 
         _client.DisconnectedAsync += OnDisconnectedAsync;
+        _client.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
     }
 
     public ConnectionState State =>
@@ -233,6 +246,10 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager, IDisposab
         try
         {
             var options = MqttClientOptionsFactory.Build(settings, version, _tls, certificates);
+
+            // Before the CONNECT rather than after it, so a session the broker resumes is counted
+            // from its first message and nothing the last link carried is counted for this one.
+            _traffic.Restart(_time.GetUtcNow());
             result = await _client.ConnectAsync(options, attempt.Token);
         }
         catch (Exception) when (ct.IsCancellationRequested)
@@ -378,6 +395,7 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager, IDisposab
         if (e.ClientWasConnected && _offlineState == ConnectionState.Faulted)
         {
             var reason = BrokerFailureClassifier.Classify(e);
+            var traffic = _traffic.Read(_time.GetUtcNow());
 
             // The broker hanging up a moment after an alert rule published is the broker refusing
             // that publish, as far as anything here can tell — and saying so sends the reader to
@@ -386,7 +404,12 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager, IDisposab
             // was published just before. The publish first, so the reason never names one that
             // is not there yet.
             _refusedPublish = HungUp(reason) ? _witness?.Recent() : null;
-            _failureReason = _refusedPublish is null ? reason : BrokerFailureReason.AlertPublishRefused;
+            _failureReason = _refusedPublish is not null ? BrokerFailureReason.AlertPublishRefused
+                : BrokerFailureClassifier.FellBehind(reason, traffic) ? BrokerFailureReason.FellBehind
+                : reason;
+            _dropTraffic = _failureReason == BrokerFailureReason.FellBehind ? traffic : null;
+
+            LogDrop(e, traffic);
         }
 
         // A link that dropped is over, and MQTTnet has closed its channel before it says so. Not
@@ -468,8 +491,41 @@ public sealed class MqttnetConnectionManager : IMqttConnectionManager, IDisposab
     private BrokerFailure? Describe() =>
         _failureReason is { } reason && _attempted is { } at
             ? new BrokerFailure(reason, at.Host, at.Port, at.ClientId, at.UseTls, at.Transport, at.ProtocolVersion,
-                reason == BrokerFailureReason.AlertPublishRefused ? _refusedPublish : null)
+                reason == BrokerFailureReason.AlertPublishRefused ? _refusedPublish : null,
+                reason == BrokerFailureReason.FellBehind ? _dropTraffic : null)
             : null;
+
+    // Counted for every message, whoever else is listening: the subscriber hands them on, and this
+    // only needs to know that they came and how big they were.
+    private Task OnMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs e)
+    {
+        _traffic.Record(_time.GetUtcNow(), e.ApplicationMessage.Topic.Length + (int)e.ApplicationMessage.Payload.Length);
+        return Task.CompletedTask;
+    }
+
+    // One line for every link that went by itself. There used to be none: the server log went from
+    // the link being up to the supervisor's next 'Connecting', and said nothing about why between.
+    private void LogDrop(MqttClientDisconnectedEventArgs e, LinkTraffic traffic)
+    {
+        var endpoint = _attempted?.Endpoint ?? "the broker";
+        var last = traffic.SinceLastMessage is { } quiet
+            ? $"last message {quiet.TotalMilliseconds:0} ms before"
+            : "no message received";
+        var said = e.Exception is { } ex ? $"{e.Reason}, {ex.GetType().Name}" : $"{e.Reason}";
+
+        if (_failureReason == BrokerFailureReason.FellBehind)
+        {
+            _log.LogWarning(
+                "Link to {Endpoint} dropped while the broker was still sending ({Rate:0} msg/s, {Kilobytes:0} KB/s, {Last}); "
+                + "the console was most likely reading slower than the broker sends. MQTTnet: {Said}.",
+                endpoint, traffic.MessagesPerSecond, traffic.KilobytesPerSecond, last, said);
+            return;
+        }
+
+        _log.LogWarning(
+            "Link to {Endpoint} dropped: {Reason} ({Rate:0} msg/s over the last {Window:0} s, {Last}). MQTTnet: {Said}.",
+            endpoint, _failureReason, traffic.MessagesPerSecond, InboundTraffic.Window.TotalSeconds, last, said);
+    }
 
     // How a broker that will not take a publish ends the link: a DISCONNECT saying it was not
     // allowed or was objected to, a bare close, or a socket that simply went. Measured against

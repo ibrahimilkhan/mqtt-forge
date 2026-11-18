@@ -24,7 +24,17 @@ public sealed record BrokerFailure(
 
     // Only with AlertPublishRefused: the publish the broker hung up on, so the reader is sent to
     // the rule rather than to the link.
-    RefusedPublish? RefusedPublish = null);
+    RefusedPublish? RefusedPublish = null,
+
+    // Only with FellBehind: how fast the broker was sending when the link went, which is the
+    // figure a reader narrows their filter against.
+    LinkTraffic? Traffic = null);
 
 /// <summary>An alert rule's publish, by the rule's name and the topic it went to.</summary>
 public sealed record RefusedPublish(string Rule, string Topic);
+
+/// <summary>
+/// What a link was carrying in its last seconds: the rate, and how long before the moment it
+/// was read the last message came in — null when none had.
+/// </summary>
+public sealed record LinkTraffic(double MessagesPerSecond, double KilobytesPerSecond, TimeSpan? SinceLastMessage);

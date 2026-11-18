@@ -126,6 +126,20 @@ public class MqttClientOptionsFactoryTests
         Assert.IsType<MqttClientTcpOptions>(options.ChannelOptions);
     }
 
+    // MQTTnet sizes the socket's buffers at 8 KB unless told otherwise, which on Windows pins the
+    // TCP window there: about 135 KB/s from a broker 60 ms away. mqtt.hsl.fi sends a tram feed
+    // twice that fast, the link fell further behind every second, and the PINGRESP queued after
+    // the backlog arrived too late — the client hung up on a broker that had answered.
+    [Fact]
+    public void A_TCP_connection_reads_through_a_window_wide_enough_for_a_busy_distant_broker()
+    {
+        var options = MqttClientOptionsFactory.Build(Settings(), MqttProtocolLevel.V500, Inspector, NoFiles);
+
+        var channel = Assert.IsType<MqttClientTcpOptions>(options.ChannelOptions);
+        Assert.Equal(MqttClientOptionsFactory.SocketBufferSize, channel.BufferSize);
+        Assert.True(channel.BufferSize >= 1024 * 1024);
+    }
+
     [Fact]
     public void A_WebSocket_connection_is_built_on_a_WebSocket_channel()
     {
