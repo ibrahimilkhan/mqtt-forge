@@ -1,7 +1,7 @@
 # Alerts: a grouped rule library and a pattern builder
 
 Date: 2026-11-19
-Status: agreed, not yet planned
+Status: agreed, planned in docs/superpowers/plans/2026-11-19-alerts-library-groups-pattern-builder.md
 
 ## Why
 
@@ -35,7 +35,7 @@ validator and the engine do not change.
 
 ```ts
 export type RuleExample = {
-  /** The scenario's name on the card, e.g. 'Upper limit'. Unique within its group. */
+  /** The scenario's name on the card, e.g. 'Upper limit'. Unique across the library. */
   title: string;
   /** One or two sentences: the scenario as something that happens in a building. */
   story: string;
@@ -67,7 +67,7 @@ UI text stays English, as the rest of the app. Topics follow the existing `senso
 | | Lower limit — `sensors/garage/temp` < 13 |
 | | Equals — `devices/pump/state` = 0 (pump stopped) |
 | | Not equal — `devices/hvac/mode` ≠ 1 |
-| | From a JSON field — `devices/+/status`, field `battery`, < 20 |
+| | Battery from a JSON field — `devices/+/status`, field `battery`, < 20 |
 | | Only if it lasts — `servers/+/cpu` > 90, For 120 s |
 | band | Leaves its range — `sensors/line/current` outside 4–20 (4-20 mA break) |
 | | Enters a range — `sensors/cellar/humidity` inside 70–100 (mould zone) |
@@ -77,10 +77,10 @@ UI text stays English, as the rest of the app. Topics follow the existing `senso
 | | Ends with — `gateway/+/event` ends with `timeout` |
 | | Is exactly — `devices/+/status` is exactly `OFFLINE` |
 | | Does not match — `devices/+/firmware` does not start with `2.` (old firmware) |
-| | Regex on a field — `devices/+/event`, field `msg`, regex `timeout\|refused` |
+| | Regular expression on a field — `devices/+/event`, field `msg`, regex `timeout\|refused` |
 | oneOf | Deny-list — `devices/lamp/+/state` is `fault` or `offline` |
 | | Allow-list — `devices/door/+/state` is NOT `open` / `closed` (anything unexpected) |
-| | From a JSON field — `devices/+/status`, field `status`, is `error` or `fault` |
+| | Status from a JSON field — `devices/+/status`, field `status`, is `error` or `fault` |
 | silence | Battery died — `sensors/loft/temp`, 900 s, info |
 | | Heartbeat — `plc/main/heartbeat`, 30 s, critical |
 | | Every device on its own — `devices/+/heartbeat`, 120 s |
@@ -91,10 +91,10 @@ UI text stays English, as the rest of the app. Topics follow the existing `senso
 | | Slow drift — `sensors/tank/level`, window 1000 (calibration drift) |
 | shapeChange | Quantity became a switch — `devices/fan/speed`, window 200 |
 | | Sensor stuck — `sensors/door/contact`, window 200 (a switch went flat) |
-| pulse | Count — `alerts/door/front`, count > 5 |
-| | Duty — `devices/compressor/run`, duty > 0.8 |
-| | Period — `devices/beacon/led`, period > 2000 ms |
-| | Width — `devices/valve/open`, width > 5000 ms |
+| pulse | Pulse count — `alerts/door/front`, count > 5 |
+| | Pulse share — `devices/pump/run`, duty > 0.3 (duty is the share of the rarer state, never above 0.5) |
+| | Pulse interval — `devices/beacon/led`, period > 2000 ms |
+| | Pulse duration — `devices/valve/open`, width > 5000 ms |
 | all | Cold and abnormal — `sensors/garage/temp`: < 13 AND sigma-3 outlier |
 | | Out of range and chattering — `sensors/line/current`: outside 4–20 AND pulse count > 10 |
 | any | Cold or silent — `sensors/garage/temp`: < 5 OR silent 600 s |
@@ -197,11 +197,11 @@ Shown under the pattern fields in the rule editor (top-level condition and insid
 - **Your own text.** One input under the list; its verdict is shown beside it. Not saved.
 - **Empty state.** No filter, or no messages yet: "No messages on this topic yet — type one
   below." The own-text input still works.
-- **Errors.** The regex is compiled with `new RegExp(regex)`. If that throws, the tester shows the
-  browser's message in place of the verdicts. The server's .NET engine accepts a few constructs
-  the browser does not (a leading `(?i)`, for example); when compilation fails the note reads
-  "The browser cannot preview this expression; the server will still check it when you save." —
-  the save path and its validator are unchanged and remain the authority.
+- **Errors.** The regex is compiled with `new RegExp(regex)`. If that throws, the tester shows
+  "Not a valid expression: <the browser's message>" in place of the verdicts. The editor's own
+  validator (`faultsIn`) already refuses an expression the browser cannot compile, so a .NET-only
+  construct such as a leading `(?i)` cannot be saved from this form either; the tester and the
+  validator agree.
 - Live: recomputed on every keystroke; the message list is read once when the tester mounts and on
   a "Refresh" button, so arriving traffic does not move rows under the reader.
 
