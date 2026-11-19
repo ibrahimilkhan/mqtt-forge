@@ -1,4 +1,5 @@
 import { Field } from '../../components/Field';
+import { Example } from '../../components/InfoTip';
 import panel from '../../styles/panel.module.css';
 import type { OutlierMethod, PulseMetric, ThresholdOp } from '../../types/api';
 import {
@@ -39,12 +40,67 @@ const OPS: ReadonlyArray<{ value: ThresholdOp; label: string }> = [
   { value: 'neq', label: '≠' },
 ];
 
-const METRICS: ReadonlyArray<{ value: PulseMetric; label: string }> = [
-  { value: 'count', label: 'excursions in the window' },
-  { value: 'duty', label: 'share of readings past the line' },
-  { value: 'period', label: 'milliseconds between excursions' },
-  { value: 'width', label: 'milliseconds an excursion lasts' },
+/**
+ * The four numbers a pulse rule can compare, under the names a signal's are usually given.
+ *
+ * They were sentences once — 'share of readings past the line' — and a sentence in a list has to
+ * be worked out before it can be chosen. The name is now the term with its unit, and the sentence
+ * stands under the list for whichever one is picked.
+ */
+const METRICS: ReadonlyArray<{ value: PulseMetric; label: string; says: string }> = [
+  { value: 'count', label: 'Pulse count', says: 'Number of separate pulses in the sample.' },
+  {
+    value: 'duty',
+    // Not 'duty cycle': that is a share of time, and of the ON state, everywhere else the term
+    // is used. This is a share of readings, and of whichever state is the rarer one — the engine
+    // calls the minority side the pulse, so the number never passes one half. The name and the
+    // line under it say both, because a rule written as 'on more than 0.8' can never fire.
+    label: 'Pulse share (0–0.5)',
+    says:
+      'Fraction of the readings that are in the less common state. 0.25 means 1 reading in 4. ' +
+      'Never above 0.5, and it counts readings, not seconds.',
+  },
+  {
+    value: 'period',
+    label: 'Pulse interval (ms)',
+    says: 'Typical time from the start of one pulse to the start of the next. 60000 is one minute.',
+  },
+  {
+    value: 'width',
+    label: 'Pulse duration (ms)',
+    says: 'Typical time a single pulse lasts. 5000 is five seconds.',
+  },
 ];
+
+/** What a pulse is here, for whoever presses the mark beside Metric. */
+function PulseHelp() {
+  return (
+    <>
+      <p>
+        The engine decides what a pulse is; it is not typed in. It draws a line between the level
+        the signal usually sits at and the level it jumps to, and whichever side the readings are
+        on <b>less often</b> is the pulse. A door that is shut all day and open twice has two
+        pulses. A pump that runs all day and stops twice also has two: the stops.
+      </p>
+      <p>
+        When the two sides are exactly even, as in 0 1 0 1, the higher value is the pulse.
+      </p>
+      <Example
+        rows={[
+          ['Pulse count > 5', 'a door opened more than 5 times in the sample'],
+          ['Pulse share > 0.3', 'a door is open in more than 3 of every 10 readings'],
+          ['Pulse interval < 120000', 'a compressor starts more often than every 2 minutes'],
+          ['Pulse duration > 30000', 'a valve stays open longer than 30 seconds'],
+        ]}
+      />
+      <p>
+        Because the pulse is always the rarer state, pulse share cannot tell &ldquo;on 80% of the
+        readings&rdquo; from &ldquo;on 20%&rdquo;: both read 0.2. Interval needs two pulses and
+        duration needs one that has ended; until then the rule does not fire.
+      </p>
+    </>
+  );
+}
 
 type Props = {
   condition: DraftCondition;
@@ -284,7 +340,7 @@ export function ConditionFields({ condition, onChange, id }: Props) {
     case 'pulse':
       return (
         <>
-          <Field label="Metric" htmlFor={id('metric')}>
+          <Field label="Metric" htmlFor={id('metric')} help={<PulseHelp />}>
             <select
               id={id('metric')}
               value={condition.metric}
@@ -299,6 +355,9 @@ export function ConditionFields({ condition, onChange, id }: Props) {
               ))}
             </select>
           </Field>
+          <p className={panel.pickNote} data-testid="metric-says">
+            {METRICS.find((metric) => metric.value === condition.metric)?.says}
+          </p>
           <div className={panel.row}>
             <Field label="Operator" htmlFor={id('op')} narrow>
               <select
@@ -329,9 +388,6 @@ export function ConditionFields({ condition, onChange, id }: Props) {
               onChange={(window) => onChange({ ...condition, window })}
             />
           </div>
-          {condition.metric === 'duty' && (
-            <p className={panel.note}>A duty is a share of the readings, from 0 to 1.</p>
-          )}
         </>
       );
 
@@ -428,7 +484,37 @@ export function ConditionFields({ condition, onChange, id }: Props) {
   }
 }
 
-/** The one field three conditions share, worded once. */
+/** What the sample size is for, behind the mark beside it. */
+function SampleHelp() {
+  return (
+    <>
+      <p>
+        How many of the most recent readings the engine keeps for each topic. This condition is
+        judged on those readings and nothing older.
+      </p>
+      <p>
+        It is a number of readings, not a length of time. At one reading every 10 seconds, 200
+        readings cover about 33 minutes; at one a second, about 3 minutes.
+      </p>
+      <p>
+        A smaller sample reacts sooner and is easier to mislead. A larger one is steadier and
+        slower to notice a change. From 20 to 2000; leave it empty for the server&rsquo;s default.
+      </p>
+    </>
+  );
+}
+
+/**
+ * The one field four conditions share, worded once.
+ *
+ * It was 'Readings in the window', and 'window' is the engine's word for it: a reader who has not
+ * met a sliding window has no way to tell from the label that this is how much history the test
+ * looks at, or that it is a count and not a duration. The label now says what the number is, the
+ * placeholder says what leaving it empty does, and the reason it matters is behind the mark.
+ *
+ * No longer `narrow`: the explanation opens inside the field, and a 96px column is not somewhere
+ * three sentences can be read.
+ */
 function WindowField({
   window,
   id,
@@ -439,14 +525,14 @@ function WindowField({
   onChange: (window: string) => void;
 }) {
   return (
-    <Field label="Readings in the window" htmlFor={id('window')} narrow>
+    <Field label="Sample size (readings)" htmlFor={id('window')} help={<SampleHelp />}>
       <input
         id={id('window')}
         value={window}
         inputMode="numeric"
         // The server's own default, and saying so is what makes the empty box a choice rather
         // than a field somebody forgot.
-        placeholder="200"
+        placeholder="default: 200"
         onChange={(event) => onChange(event.target.value)}
       />
     </Field>

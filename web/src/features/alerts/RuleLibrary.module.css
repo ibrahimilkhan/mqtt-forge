@@ -1,0 +1,96 @@
+/* Back and Blank rule, together at the end of the line the section is named on. */
+.ways { display: flex; gap: 8px; }
+
+.cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+/* A fixed height, not a minimum: eleven cards with one-line and three-line examples would
+   otherwise be eleven different sizes, and a card whose mark is pressed would push the row
+   under it down the page. */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 16.5rem;
+  min-width: 0;
+  padding: 14px 16px 16px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-plate);
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.kind {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--t-small);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.says {
+  margin: 0;
+  font-size: var(--t-small);
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+/* The rule the card would make, as the table will say it: topic over condition. */
+.example {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  background: var(--paper);
+  border-radius: var(--r-control);
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.exampleTopic { color: var(--muted); }
+
+/* The story takes the room the description and the example had. It scrolls rather than
+   stretches if a narrow card cannot hold it. */
+.story {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.story p {
+  margin: 0;
+  font-size: var(--t-small);
+  line-height: 1.5;
+  color: var(--ink);
+}
+.storyLabel {
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Held to the foot of the card whatever stands above it. */
+.use {
+  margin-top: auto;
+  align-self: flex-start;
+  padding: 6px 12px;
+}

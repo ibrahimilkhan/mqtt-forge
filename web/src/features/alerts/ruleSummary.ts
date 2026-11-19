@@ -1,5 +1,5 @@
 import { duration } from '../../lib/format';
-import type { AlertCondition, AlertRuleDto, ThresholdOp } from '../../types/api';
+import type { AlertCondition, AlertRuleDto, PulseMetric, ThresholdOp } from '../../types/api';
 
 /** The comparison as its sign. A word here would be as long as the rest of the line. */
 const SIGN: Record<ThresholdOp, string> = {
@@ -29,6 +29,19 @@ export function firesOn(rule: AlertRuleDto): string {
 
   return say(rule.condition, field);
 }
+
+/**
+ * A pulse metric as the table says it: the term, and the unit where there is one.
+ *
+ * The wire's own words are 'count' and 'width', and 'count > 5' in a column of conditions does
+ * not say what is being counted.
+ */
+const METRIC: Record<PulseMetric, string> = {
+  count: 'pulse count',
+  duty: 'pulse share',
+  period: 'pulse interval',
+  width: 'pulse duration',
+};
 
 function say(condition: AlertCondition, field: string): string {
   switch (condition.type) {
@@ -67,7 +80,9 @@ function say(condition: AlertCondition, field: string): string {
       return 'shape changes';
 
     case 'pulse':
-      return `${condition.metric} ${SIGN[condition.op]} ${condition.value}`;
+      return `${METRIC[condition.metric]} ${SIGN[condition.op]} ${condition.value}${
+        condition.metric === 'period' || condition.metric === 'width' ? ' ms' : ''
+      }`;
   }
 }
 

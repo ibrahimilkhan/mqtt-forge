@@ -222,22 +222,6 @@ describe('picking a field out of a message', () => {
 });
 
 describe('the marks that explain the form', () => {
-  it.each([
-    ['What it watches', /Topic filter/],
-    ['When it fires', /neither true nor false/],
-    ['Everything else', /Cooldown/],
-  ])('opens the help behind %s', async (heading, inside) => {
-    editor();
-
-    const mark = screen.getByRole('button', { name: `What ${heading} means` });
-    expect(mark).toHaveAttribute('aria-expanded', 'false');
-
-    await userEvent.click(mark);
-
-    expect(screen.getByRole('button', { name: `Hide what ${heading} means` })).toBeInTheDocument();
-    expect(within(screen.getByRole('note')).getByText(inside)).toBeInTheDocument();
-  });
-
   it('shows the path syntax with a worked example behind the Field mark', async () => {
     editor();
 

@@ -75,22 +75,19 @@ beforeEach(() => {
 });
 
 describe('the rule editor', () => {
-  // The corner stack faded a warning after six seconds and held a critical until somebody
-  // dismissed it, and the note under the level said so. Nothing fades or is dismissed any more:
-  // a standing alarm stands whatever its level, and what the level decides is where in the
-  // Alerts panel it stands.
-  it('says what the level decides, which is no longer how long anything survives', async () => {
+  // The form ends by reading the rule back the way the table will say it, so what is about to
+  // be saved can be checked in one line.
+  it('reads the rule back in one line, and keeps up with the form', async () => {
     openEditor(boiler);
 
-    expect(
-      screen.getByText('Criticals stand at the top of the Alerts panel.'),
-    ).toBeInTheDocument();
+    const said = screen.getByTestId('rule-said');
+    expect(said).toHaveTextContent(new RegExp(`^${boiler.severity} when `));
+    expect(said).toHaveTextContent(`on ${boiler.filter} → `);
 
-    await userEvent.click(screen.getByRole('radio', { name: 'warn' }));
+    await userEvent.click(screen.getByRole('radio', { name: 'info' }));
 
-    expect(
-      screen.getByText('Below the criticals in the Alerts panel.'),
-    ).toBeInTheDocument();
+    expect(said).toHaveTextContent(/^info when /);
+    expect(said).toHaveAttribute('data-severity', 'info');
   });
 
   it('takes the picked topic as the filter of a new rule, once, at the moment it opens', async () => {
@@ -149,25 +146,34 @@ function api(...rules: AlertRuleDto[]) {
 
 const save = () => screen.getByRole('button', { name: 'Save' });
 
-  /*
-   * The button row is not one of the columns, and that is load bearing.
-   *
-   * The three sections are laid out with `auto-fit`, which fits as many tracks as the width
-   * allows and then collapses the ones nothing landed in. A footer spanning `1 / -1` lands in all
-   * of them — so the empty ones stayed open, and the panel drew four tracks at 1400px with the
-   * sections in three of them and 326 pixels of nothing against the right-hand edge. At 2560 it
-   * was eight tracks and five of them empty.
-   */
-  it('keeps the button row out of the grid the three sections are laid out in', () => {
+  // One column now, and what a first rule does not need is folded under one line: the path
+  // into the body, the two timings and a clear rule of its own.
+  it('folds what a first rule does not need under Advanced, and nothing else', () => {
     openEditor(boiler);
 
-    const parts = [...document.querySelectorAll('fieldset')];
-    const footer = screen.getByRole('button', { name: 'Save' }).parentElement!;
+    const more = screen.getByText('Advanced').closest('details')!;
 
-    expect(parts).toHaveLength(3);
-    // One parent for all three, and it is not the footer's.
-    expect(new Set(parts.map((one) => one.parentElement))).toHaveProperty('size', 1);
-    expect(footer.parentElement).not.toBe(parts[0].parentElement);
+    for (const label of ['Field', 'For, seconds', 'Cooldown, seconds']) {
+      expect(more).toContainElement(screen.getByLabelText(label));
+    }
+    expect(more).toContainElement(screen.getByRole('checkbox', { name: 'Its own clear rule' }));
+
+    for (const label of ['Topic filter', 'Condition', 'Name']) {
+      expect(more).not.toContainElement(screen.getByLabelText(label));
+    }
+    expect(document.querySelectorAll('fieldset')).toHaveLength(0);
+  });
+
+  // A fault folded out of sight is a Save button that is off for no reason on screen.
+  it('opens Advanced by itself when what is in it is what stops the save', async () => {
+    openEditor();
+
+    const more = screen.getByText('Advanced').closest('details')!;
+    expect(more).not.toHaveAttribute('open');
+
+    await userEvent.type(screen.getByLabelText('Cooldown, seconds'), 'soon');
+
+    expect(more).toHaveAttribute('open');
   });
 
   /*
@@ -290,7 +296,7 @@ describe('what the editor refuses before the request', () => {
     openEditor(boiler);
 
     await userEvent.selectOptions(screen.getByLabelText('Condition'), 'distributionShift');
-    await userEvent.type(screen.getByLabelText('Readings in the window'), '10');
+    await userEvent.type(screen.getByLabelText('Sample size (readings)'), '10');
 
     expect(screen.getByText(/between 20 and 2000 readings/i)).toBeInTheDocument();
     expect(save()).toBeDisabled();

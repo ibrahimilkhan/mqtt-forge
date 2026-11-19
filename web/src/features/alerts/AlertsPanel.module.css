@@ -111,7 +111,7 @@
    topic filter and a diagnostic sentence both grow with the window, and neither may squeeze the
    other out of existence when it does. */
 .rules {
-  --rule-cols: 26px 30px minmax(190px, 1.5fr) 64px minmax(140px, 1fr) minmax(92px, 0.6fr) minmax(150px, 1.1fr) 76px;
+  --rule-cols: 30px minmax(190px, 1.6fr) 72px minmax(140px, 1fr) minmax(150px, 1.1fr) 76px;
   /* It measures itself. The stack below used to be keyed to the window, and the constraint is
      this table's own width: the panel is always narrower than the window by the rail, the two
      channels and the pane's gutters, so there was a band — a 1024px laptop is in it — where the
@@ -130,7 +130,7 @@
 .ruleRow {
   display: grid;
   grid-template-columns: var(--rule-cols);
-  gap: 10px;
+  gap: 14px;
   /* First lines together, whatever a cell holds under them: the RULE cell is a name with a filter
      beneath it, and the rest are one line each. Aligning on the box would drop the single lines
      to the middle of a two-line row and the eye would read a zigzag. */
@@ -141,7 +141,7 @@
    says it in a word, which is the first. Transparent rather than absent, so a row does not move
    three pixels sideways when a level is set. */
 .ruleRow {
-  padding: 7px 8px 8px;
+  padding: 10px 8px 11px;
   border-left: 3px solid transparent;
   border-bottom: 1px solid color-mix(in srgb, var(--rule) 55%, transparent);
 }
@@ -149,6 +149,9 @@
 .ruleRow[data-severity='warn'] { border-left-color: var(--warn); }
 .ruleRow[data-severity='info'] { border-left-color: var(--signal); }
 .ruleRow:hover { background: var(--paper); }
+/* The rule that is ringing stands on the lighter ground, so it is found before it is read. After
+   :hover on purpose: a pointer resting on the row must not put it back among the quiet ones. */
+.ruleRow[data-firing] { background: var(--surface); }
 
 /* Off is faded rather than hidden: a rule somebody switched off is still a rule they wrote, and
    the switch that turns it back on is in the row.
@@ -160,8 +163,7 @@
 .ruleRow[data-off] .cellRule,
 .ruleRow[data-off] .level,
 .ruleRow[data-off] .fires,
-.ruleRow[data-off] .marks,
-.ruleRow[data-off] .seen { opacity: 0.5; }
+.ruleRow[data-off] .state { opacity: 0.5; }
 
 .ruleRow input[type='checkbox'] { accent-color: var(--signal); justify-self: center; }
 
@@ -185,16 +187,23 @@
   overflow-wrap: anywhere;
 }
 
-/* The sentence that says what the rule can see, which is the answer to 'why has this never
-   fired'. Quiet, but not the bottom of the scale: it is a sentence rather than a mark, and at a
-   13px base --t-nano is 8.7px of monospace prose. Quieter than the row it belongs to is the job;
-   unreadable is not. */
-.seen {
+/* What the rule is doing now. One short line; the tone says whether it wants reading. */
+.state {
   font-family: var(--mono);
   font-size: var(--t-micro);
-  color: var(--muted);
+  color: var(--ink);
   overflow-wrap: anywhere;
 }
+.state[data-tone='quiet'] { color: var(--muted); }
+.state[data-tone='firing'] { color: var(--fault); font-weight: 600; }
+.state[data-tone='fault'] { color: var(--fault); }
+
+/* The count of ringing rules, on the line the section is named on. */
+.ringing { color: var(--fault); }
+
+/* Library and New rule, together at the end of that line. */
+.ways { display: flex; gap: 8px; }
+.ways > button { padding: 7px 12px; }
 
 /* Held to the end of the row, together, because they are one pair: change this rule, or drop it. */
 .rowActions { display: flex; justify-content: flex-end; gap: 2px; }
@@ -205,19 +214,14 @@
 @container (max-width: 860px) {
   .rulesHead { display: none; }
   .ruleRow {
-    grid-template-columns: 26px 30px minmax(0, 1fr) auto;
+    grid-template-columns: 30px minmax(0, 1fr) auto;
     row-gap: 3px;
   }
-  /* `.marks` with them: the narrow grid re-places every other cell and never mentioned the row
-     of delivery chips, so auto-placement dropped it into track 1 — the 26px rule-number gutter —
-     where it sat under the number, 26px wide and scrolling. Document order already puts it
-     between the two, so it needs no `order` of its own. */
   .cellRule,
   .fires,
-  .marks,
-  .seen { grid-column: 3 / -1; }
-  .level { grid-column: 3 / -1; order: -1; }
-  .rowActions { grid-row: 1; grid-column: 4; }
+  .state { grid-column: 2 / -1; }
+  .level { grid-column: 2 / -1; order: -1; }
+  .rowActions { grid-row: 1; grid-column: 3; }
 }
 
 /* A word-sized button standing inside a row rather than at the foot of the panel. */
@@ -276,3 +280,7 @@
 /* Red for the four that are faults and quiet grey for the two that are only news — a suppressed
    firing and a window still filling are the engine working, not the engine failing. */
 .engineRow[data-severity='critical'] { color: var(--fault); }
+
+/* The shared head sets its first cell against the right, for the number column the colours table
+   opens with. This table opens with the switch, which is centred in its track. */
+.rules .rulesHead > :first-child { text-align: center; margin-right: 0; }

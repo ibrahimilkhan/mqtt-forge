@@ -214,7 +214,9 @@ describe('every aria-controls names something that is there', () => {
     await userEvent.click(await alerts.findByRole('button', { name: /New rule/i }));
 
     const marks = await screen.findAllByRole('button', { name: /means$/ });
-    expect(marks.length).toBeGreaterThanOrEqual(3);
+    // Two since the form became one column: the Field's and the clear rule's. The three that
+    // stood on the section headings went with the sections.
+    expect(marks.length).toBeGreaterThanOrEqual(2);
     expect(dangling()).toEqual([]);
 
     await userEvent.click(marks[0]);

@@ -67,7 +67,13 @@ describe('what fires a rule, in one line', () => {
 
   it('reads a pulse as the measurement it compares', () => {
     expect(firesOn(rule({ type: 'pulse', metric: 'period', op: 'gt', value: 5 }))).toBe(
-      'period > 5',
+      'pulse interval > 5 ms',
+    );
+    expect(firesOn(rule({ type: 'pulse', metric: 'count', op: 'gt', value: 5 }))).toBe(
+      'pulse count > 5',
+    );
+    expect(firesOn(rule({ type: 'pulse', metric: 'duty', op: 'lt', value: 0.2 }))).toBe(
+      'pulse share < 0.2',
     );
   });
 
