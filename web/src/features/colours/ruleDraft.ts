@@ -108,3 +108,34 @@ export function faultIn(rule: DraftRule, all: readonly DraftRule[]): string | nu
 
   return null;
 }
+
+/**
+ * Whether the rows on screen still say what the server holds.
+ *
+ * A repaired colour counts as a difference, and should: a rules file edited by hand into
+ * something the panel had to fix arrives already needing a save.
+ *
+ * The message's colour is compared through `ink`, which reads absent and null as the one thing
+ * they both mean — no colour. Without that, a rule the server sends with no second colour at all
+ * would differ from the same rule on screen carrying null, and the panel would announce unsaved
+ * edits to a panel nobody had touched.
+ *
+ * A stored value the panel could not use is NOT read as none, though the row shows none: it is a
+ * difference, and saying so is what offers to write the repair back — the same answer the topic's
+ * colour gives to the same hand-edited file.
+ */
+export function differs(rows: readonly DraftRule[], stored: readonly ColourRule[]): boolean {
+  if (rows.length !== stored.length) return true;
+
+  return rows.some(
+    (row, index) =>
+      row.filter !== stored[index].filter ||
+      row.colour !== stored[index].colour.toLowerCase() ||
+      row.bodyColour !== ink(stored[index].bodyColour) ||
+      row.profileId !== (stored[index].profileId || null),
+  );
+}
+
+/** A stored message colour, with absent and null said the same way. */
+const ink = (colour: string | null | undefined): string | null =>
+  colour == null ? null : colour.toLowerCase();

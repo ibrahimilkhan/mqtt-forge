@@ -1,3 +1,23 @@
+/* The Colours panel: the bar over the list, the rules as a table, and the colour control a row
+   opens. In that order, which is the order they stand in on the page.
+
+   The shared furniture of a panel that is a list of rules — the table head's lettering, the row
+   number, the empty state — is in styles/panel.module.css, because the alerts panel is the same
+   page. What is here is what is particular to colour rules. */
+
+/* ---- over and under the list ---- */
+
+/* New rule, at the top right of the page, over the list it adds to. */
+.toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+/* The one thing you do to the whole list, under it — and no rule over it: the list's own last
+   row already ends it. */
+.footer { margin-top: 16px; }
+
 /* ---- the rules, as a table ----
 
    They were a column of rows: a swatch, a box and an × to a line, in the panel beside the tree.
@@ -5,23 +25,29 @@
    itself, because there was nowhere on a 320px line to say it. A filter with a typo in it and a
    filter painting forty topics were the same row.
 
-   Four columns and a heading now, the same arrangement the alerts panel uses for the same reason:
+   A table with a heading now, the same arrangement the alerts panel uses for the same reason:
    this is a list somebody keeps, and telling two entries in it apart should not mean opening
-   both. The shared furniture — the heading row, the empty state, the head's lettering, the row
-   number — is in styles/panel.module.css; what is here is which columns this table has.
+   both. Seven columns, in reading order:
 
-   The filter takes two shares of the slack because it is the long thing and the thing that is
-   read. Painting takes a floor rather than a fraction: it is 'none' or '12 topics' and never
-   needs more, but it must not be squeezed to nothing when the window narrows. */
-/* The two swatch columns are 34px of control and a header wider than it: a head cell that does
-   not fit does not clip — it runs into the cell beside it, which read as one word, 'TOPICMESSAGE'.
-   Each column is the wider of the two things standing in it, so the headings set them.
-
-   The last column holds one mark now. The glass that used to stand beside the × moved into the
-   filter cell, where the field it fills in is. */
-/* The broker sits between the filter and the count: it is part of what the rule is — which topics,
-   on which broker — and the count is what that comes to. */
-.rules { --rule-cols: 26px 52px 68px minmax(190px, 2fr) minmax(120px, 0.8fr) minmax(94px, 0.6fr) 34px; }
+     #        its place in the list, for pointing at a row out loud
+     Topic    34px of swatch under a header wider than it. A head cell that does not fit does not
+     Message  clip — it runs into the cell beside it, which read as one word, 'TOPICMESSAGE' — so
+              each of the two is as wide as its heading
+     Filter   two shares of the slack: it is the long thing and the thing that is read
+     Broker   between the filter and the count, because it is part of what the rule is — which
+              topics, on which broker — and the count is what that comes to
+     Painting a floor rather than a fraction: it is 'none' or '12 topics' and never needs more,
+              but it must not be squeezed to nothing when the panel narrows
+     ×        one mark. The glass that used to stand beside it is in the filter cell, where the
+              field it fills in is */
+.rules {
+  --rule-cols: 26px 52px 68px minmax(190px, 2fr) minmax(120px, 0.8fr) minmax(94px, 0.6fr) 34px;
+  /* It measures itself, as the alerts table does and for the reason written there: the panel is
+     always narrower than the window by the rail and the pane's gutters. Keyed to the window, the
+     stack below did not start until 640px while these seven columns need 660 of the panel's own
+     width — so on every window in between the × was drawn past the row's right edge. */
+  container-type: inline-size;
+}
 
 .rulesHead,
 .ruleRow {
@@ -47,12 +73,7 @@
 .ruleRow[data-elsewhere]:hover,
 .ruleRow[data-elsewhere]:focus-within { opacity: 1; }
 
-/* Which broker it belongs to: a select the height of the filter box beside it. */
-.broker {
-  min-width: 0;
-  font-family: var(--mono);
-  font-size: var(--t-small);
-}
+/* -- the cells, in column order -- */
 
 /* The filter and the glass that fills it in, as one cell: the field takes the slack and the mark
    sits at its right-hand end, which is where a control that writes into a box belongs. */
@@ -70,23 +91,6 @@
   font-family: var(--mono);
 }
 .filter[aria-invalid='true'] { border-color: var(--fault); }
-
-/* What the rule has actually taken, counted off the tree this panel is now covering. */
-.painting {
-  font-family: var(--mono);
-  font-size: var(--t-small);
-  color: var(--ink);
-  overflow-wrap: anywhere;
-}
-.painting[data-idle] { color: var(--warn); }
-
-/* The two marks at the end of a row, held together and away from the count. */
-.rowActions {
-  display: flex;
-  align-items: center;
-  justify-content: end;
-  gap: 2px;
-}
 
 /* Opens the broker's tree under this row. Drawn as the alert editor's own glass, because it is
    the same offer on the same kind of field. */
@@ -112,50 +116,29 @@
 }
 .rowMark:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
-/* Both of these are about the row rather than about one cell of it. Dropped into a grid track
-   they would be a paragraph three words wide under the swatch. */
-.rowFault {
-  grid-column: 1 / -1;
-  margin: 4px 0 2px;
+/* Which broker it belongs to: a select the height of the filter box beside it. */
+.broker {
+  min-width: 0;
+  font-family: var(--mono);
   font-size: var(--t-small);
-  color: var(--fault);
-}
-.rowPicker {
-  grid-column: 1 / -1;
-  margin-top: 8px;
 }
 
-/* New rule, at the top right of the page, over the list it adds to. */
-.toolbar {
+/* What the rule has actually taken, counted off the tree this panel is now covering. Figures of
+   one width, so 9 topics and 12 topics end their numbers in the same place down the column. */
+.painting {
+  font-family: var(--mono);
+  font-size: var(--t-small);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.painting[data-idle] { color: var(--warn); }
+
+/* The × at the end of a row, held to the row's right edge and away from the count. */
+.rowActions {
   display: flex;
-  justify-content: flex-end;
-  margin-bottom: 12px;
-}
-
-/* The one thing you do to the whole list, under it — and no rule over it: the list's own last
-   row already ends it. */
-.footer { margin-top: 16px; }
-
-/* One row to a line under about 640px: five columns of a table is not a thing a narrow panel can
-   hold, and the count is the first to go — it is the column you read when comparing rules, which
-   is not what anybody is doing on a phone. */
-@media (max-width: 640px) {
-  .rulesHead { display: none; }
-  .ruleRow { grid-template-columns: 26px 34px 34px minmax(0, 1fr) 30px; }
-  /* Its own line under the row, for the same reason the count is on one: five columns is all a
-     phone's width can hold, and the broker is read with the filter rather than beside it. */
-  .broker {
-    grid-column: 2 / -1;
-    grid-row: 3;
-  }
-  /* Pinned to the second row, not merely told to span: an item given a column but no row is
-     placed by the auto cursor, and the cursor then carries on from there — which put the × on a
-     third line of its own, at the far left, under a row it belongs to the end of. Definite in
-     both axes, it is placed before the auto items and leaves their cursor where it was. */
-  .painting {
-    grid-column: 2 / -1;
-    grid-row: 2;
-  }
+  align-items: center;
+  justify-content: end;
 }
 
 /* Quiet until reached for, like the × on a subscription chip: removing a rule is a small aside,
@@ -174,6 +157,60 @@
 /* all: unset misses the global button:hover fill; :not(:disabled) matches its specificity so this wins. */
 .remove:hover:not(:disabled) { color: var(--fault); background: var(--surface); }
 .remove:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+/* -- what a row can carry under itself -- */
+
+/* Why the row cannot be saved, under the box it is about. It is the filter that is wrong, every
+   time: started at the row's left edge the sentence stood under the row number, a swatch's width
+   and more away from the red box it explains. From the filter's column to the end of the row. */
+.rowFault {
+  grid-column: 4 / -1;
+  margin: -2px 0 2px;
+  font-size: var(--t-small);
+  color: var(--fault);
+}
+
+/* The broker's tree, opened from the glass. About the row rather than about one cell of it, so
+   it spans them all: dropped into a grid track it would be a tree three words wide. */
+.rowPicker {
+  grid-column: 1 / -1;
+  margin-top: 8px;
+}
+
+/* -- where seven columns stop being seven columns --
+
+   One rule to a short stack: the row number, the two swatches, the filter and the × on the first
+   line, and the rest under the filter's left edge. The header has nothing left to head, so it
+   goes. Asked of the table's own width; see `.rules`. */
+@container (max-width: 680px) {
+  .rulesHead { display: none; }
+  .ruleRow {
+    grid-template-columns: 26px 34px 34px minmax(0, 1fr) 30px;
+    row-gap: 6px;
+  }
+  /* The broker first and the count under it: which topics, on which broker, and then what that
+     comes to — the order the columns say it in.
+
+     Each pinned to its row, not merely told to span: an item given a column but no row is placed
+     by the auto cursor, and the cursor then carries on from there — which put the × on a line of
+     its own, at the far left, under a row it belongs to the end of. Definite in both axes, they
+     are placed before the auto items and leave their cursor where it was. */
+  .broker {
+    grid-column: 2 / -1;
+    grid-row: 2;
+  }
+  .painting {
+    grid-column: 2 / -1;
+    grid-row: 3;
+  }
+  /* A row with no filter has no count, and an empty line still spends its gap. The count used to
+     stand between the filter and the broker, so a new rule opened with a hole in the middle. */
+  .painting:empty { display: none; }
+  .rowFault {
+    grid-column: 2 / -1;
+    margin-top: 0;
+  }
+}
 
 /* ---- the colour control ---- */
 
@@ -214,32 +251,6 @@
   box-shadow: inset 0 0 0 1px var(--rule);
 }
 
-/* The way back out of a message colour, under the shortlist rather than in it: it is not a ninth
-   colour, it is the answer every rule gives until somebody says otherwise. */
-.noColour {
-  all: unset;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  box-sizing: border-box;
-  margin-top: 8px;
-  padding: 5px 4px;
-  border-top: 1px solid var(--rule);
-  font-family: var(--mono);
-  font-size: var(--t-micro);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted);
-  white-space: nowrap;
-  cursor: pointer;
-}
-/* :not(:disabled) to beat the global button:hover fill, which would put this on a grey block in
-   the middle of a popover of colours. */
-.noColour:hover:not(:disabled) { color: var(--ink); background: none; }
-.noColour[aria-pressed='true'] { color: var(--ink); }
-.noColour:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
-
 .popover {
   position: absolute;
   z-index: 2;
@@ -271,6 +282,32 @@
 .suggestion:hover { box-shadow: inset 0 0 0 1px rgb(19 26 36 / 0.45); }
 .suggestion[aria-pressed='true'] { box-shadow: inset 0 0 0 2px var(--signal); }
 .suggestion:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+/* The way back out of a message colour, under the shortlist rather than in it: it is not a ninth
+   colour, it is the answer every rule gives until somebody says otherwise. */
+.noColour {
+  all: unset;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 8px;
+  padding: 5px 4px;
+  border-top: 1px solid var(--rule);
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+/* :not(:disabled) to beat the global button:hover fill, which would put this on a grey block in
+   the middle of a popover of colours. */
+.noColour:hover:not(:disabled) { color: var(--ink); background: none; }
+.noColour[aria-pressed='true'] { color: var(--ink); }
+.noColour:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
 
 .custom {
   display: flex;

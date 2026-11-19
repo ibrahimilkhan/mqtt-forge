@@ -269,7 +269,7 @@ describe('ColoursPanel', () => {
     renderPanel();
 
     await waitFor(() => expect(addButton()).toBeEnabled());
-    expect(screen.getByText('No colour rules yet.')).toBeInTheDocument();
+    expect(screen.getByText(/No colour rules yet/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
   });
 

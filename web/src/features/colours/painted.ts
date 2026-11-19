@@ -96,3 +96,52 @@ export function paintedBy(
 
   return painted;
 }
+
+/** What the Painting cell of one row says, and how it says it. */
+export type PaintingCell = {
+  words: string;
+  /** Painting nothing though it could be: drawn as a caution rather than in the ink of a count. */
+  idle: boolean;
+  /** The longer answer, for the pointer: why a cell that is not a count is not one. */
+  hint?: string;
+};
+
+/**
+ * What the Painting cell says.
+ *
+ * A count, or the reason there is not one. 'none' is the answer the column exists for: no topic
+ * on this broker is wearing the rule's colour, which is either a filter nothing has matched yet
+ * — a typo looks exactly like this — or one whose every topic a more specific rule has taken,
+ * which is otherwise invisible and is the commonest way a colour rule does nothing. The cell has
+ * one word for both, so the hint under the pointer says the two things it can mean.
+ *
+ * A row with no filter yet says nothing at all: it is not a rule, and 'none' beside an empty box
+ * would be a verdict on something nobody has written.
+ */
+export function paintingCell(row: {
+  filter: string;
+  /** Another broker's rule, which paints nothing while this broker is up. */
+  elsewhere: boolean;
+  /** Whether the painter is using it — false for a rule this broker's own rule overrules. */
+  applies: boolean;
+  /** The topics it has taken, off `paintedBy`. */
+  count: number;
+}): PaintingCell {
+  if (row.elsewhere) {
+    return { words: 'other broker', idle: false, hint: 'Paints only while its own broker is connected.' };
+  }
+  if (row.filter === '') return { words: '', idle: false };
+
+  if (!row.applies) {
+    return { words: 'none', idle: true, hint: 'This broker has a rule of its own on the same filter.' };
+  }
+  if (row.count === 0) {
+    return {
+      words: 'none',
+      idle: true,
+      hint: 'No topic is wearing this colour: nothing matches the filter yet, or a more specific rule has taken every topic it covers.',
+    };
+  }
+
+  return { words: `${row.count} ${row.count === 1 ? 'topic' : 'topics'}`, idle: false };
+}

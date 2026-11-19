@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createRuleLookup, type ColourRule } from '../../lib/topicColour';
 import { applyMessage, emptyTree } from '../../lib/topicTree';
-import { paintedBy } from './painted';
+import { paintedBy, paintingCell } from './painted';
 
 const tree = () => {
   let root = emptyTree();
@@ -131,5 +131,40 @@ describe('paintedBy', () => {
 
       expect(paintedBy(root, rules)).toEqual(byThePainter(rules));
     });
+  });
+});
+
+describe('what the Painting cell says', () => {
+  const row = { filter: 'plant/#', elsewhere: false, applies: true, count: 3 };
+
+  it('counts, and in the singular for one', () => {
+    expect(paintingCell(row)).toEqual({ words: '3 topics', idle: false });
+    expect(paintingCell({ ...row, count: 1 }).words).toBe('1 topic');
+  });
+
+  it('says none as a caution, and why under the pointer', () => {
+    const cell = paintingCell({ ...row, count: 0 });
+
+    expect(cell).toMatchObject({ words: 'none', idle: true });
+    expect(cell.hint).toMatch(/more specific rule/);
+  });
+
+  // Whatever the count comes to: the painter is not using this rule at all.
+  it("says none for a rule this broker's own rule overrules", () => {
+    const cell = paintingCell({ ...row, applies: false });
+
+    expect(cell).toMatchObject({ words: 'none', idle: true });
+    expect(cell.hint).toMatch(/rule of its own/);
+  });
+
+  it("names another broker's rule rather than cautioning about it", () => {
+    expect(paintingCell({ ...row, elsewhere: true, applies: false, count: 0 })).toMatchObject({
+      words: 'other broker',
+      idle: false,
+    });
+  });
+
+  it('says nothing about a row with no filter in it yet', () => {
+    expect(paintingCell({ ...row, filter: '', count: 0 })).toEqual({ words: '', idle: false });
   });
 });

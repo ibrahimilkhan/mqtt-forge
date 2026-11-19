@@ -12,14 +12,13 @@ import { useSelectionStore } from '../../stores/selectionStore';
 import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import { describeError } from '../../lib/problemDetails';
 import panel from '../../styles/panel.module.css';
-import { Plus, Search } from '../brand/icons';
-import { TopicPicker } from '../alerts/TopicPicker';
-import { ColourPicker } from './ColourPicker';
+import { Plus } from '../brand/icons';
 import styles from './ColoursPanel.module.css';
-import { paintedBy } from './painted';
+import { paintedBy, paintingCell } from './painted';
 import { nextColour } from './palette';
+import { RuleRow } from './RuleRow';
+import { allSaved, differs, draftFrom, faultIn, MAX_RULES, newDraftRule, type DraftRule } from './ruleDraft';
 import { useTopicSet } from './useTopicSet';
-import { allSaved, draftFrom, faultIn, MAX_RULES, newDraftRule, type DraftRule } from './ruleDraft';
 
 /**
  * Every colour rule, and what each of them is painting.
@@ -235,9 +234,10 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
 
       {draft !== null && rules.length === 0 && (
         <div className={panel.nothingYet}>
-          <p>
-            No colour rules yet.
-          </p>
+          {/* What the panel is for, and the one control that starts it — the sentence the alerts
+              panel says over its own empty list. 'No colour rules yet.' on its own told a first
+              reader what was missing and nothing about what a rule is. */}
+          <p>No colour rules yet. Press <b>New rule</b> and give a topic filter a colour.</p>
         </div>
       )}
 
@@ -258,144 +258,34 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
           </div>
 
           {rules.map((rule, index) => (
-            <div
+            <RuleRow
               key={rule.id}
-              className={styles.ruleRow}
-              data-testid="colour-rule"
-              data-elsewhere={elsewhere(rule) ? '' : undefined}
-            >
-              {/* Its place in the list, for pointing at a row in a sentence somebody says out
-                  loud. NOT precedence: which rule paints a topic is decided by which filter says
-                  more about it, wherever the two happen to sit. The Painting column is where that
-                  is answered — a general rule under a specific one reads 'none'. */}
-              <span className={panel.ruleNumber}>{index + 1}</span>
-
-              <ColourPicker
-                colour={rule.colour}
-                filter={rule.filter}
-                what="topic"
-                // Never null: the topic's picker offers no way to clear one, because a topic drawn
-                // in no colour is a topic with no rule. The guard is what says so in the types.
-                onChange={(colour) => colour && edit(rule.id, { colour })}
-              />
-
-              {/* The message's own colour, and it may be none — which is what it is until
-                  somebody says otherwise. A topic told apart by colour usually wants its payload
-                  left in the console's ink; a rule watching one device's telemetry among forty
-                  wants both, and until now could only have the first. */}
-              <ColourPicker
-                colour={rule.bodyColour}
-                filter={rule.filter}
-                what="message"
-                clearable
-                fallback={rule.colour}
-                onChange={(bodyColour) => edit(rule.id, { bodyColour })}
-              />
-
-              {/* The box and the way to fill it in, on one line. The glass used to stand at the
-                  far end of the row, past the count — two columns away from the only field it
-                  writes into, and reading as a third thing you can do to a rule rather than as
-                  the field's own control. */}
-              <span className={styles.filterCell}>
-                <input
-                  className={styles.filter}
-                  value={rule.filter}
-                  spellCheck={false}
-                  placeholder="sensors/+/temp"
-                  aria-label={`Topic filter for rule ${index + 1}`}
-                  aria-invalid={faults[index] !== null}
-                  onChange={(event) => edit(rule.id, { filter: event.target.value })}
-                />
-
-                <button
-                  type="button"
-                  className={styles.rowMark}
-                  aria-expanded={picking === rule.id}
-                  aria-label={
-                    picking === rule.id
-                      ? `Hide topics on the broker for rule ${index + 1}`
-                      : `Show topics on the broker for rule ${index + 1}`
-                  }
-                  title="Pick a topic off the broker"
-                  onClick={() => setPicking((open) => (open === rule.id ? null : rule.id))}
-                >
-                  <Search />
-                </button>
-              </span>
-
-              {/* Every broker, or one saved broker. One that has been deleted since is still named as
-                  gone rather than quietly turned into every broker: the rule was written for it. */}
-              <select
-                className={styles.broker}
-                value={rule.profileId ?? ''}
-                aria-label={`Broker for rule ${index + 1}`}
-                onChange={(event) => edit(rule.id, { profileId: event.target.value || null })}
-              >
-                <option value="">All brokers</option>
-                {profiles?.map((profile) => (
-                  <option key={profile.id} value={profile.id}>
-                    {profile.name}
-                  </option>
-                ))}
-                {rule.profileId !== null &&
-                  profiles !== undefined &&
-                  !profiles.some((profile) => profile.id === rule.profileId) && (
-                    <option value={rule.profileId}>A deleted broker</option>
-                  )}
-              </select>
-
-              <span
-                className={styles.painting}
-                /* A rule painting nothing is the point of the column, so it is not drawn in the
-                   same grey as a rule painting forty. Not the fault colour either: it is not
-                   wrong, it is idle — usually a filter another rule has taken every topic off. */
-                data-idle={
-                  rule.filter !== '' && !elsewhere(rule) && (!applies.has(rule.id) || (painting.get(rule.filter) ?? 0) === 0)
-                    ? ''
-                    : undefined
-                }
-              >
-                {elsewhere(rule)
-                  ? 'other broker'
-                  : applies.has(rule.id)
-                    ? paintingWords(rule.filter, painting)
-                    : // A rule for every broker that this broker's own rule on the same filter overrules.
-                      rule.filter === ''
-                      ? ''
-                      : 'none'}
-              </span>
-
-              <span className={styles.rowActions}>
-                <button
-                  type="button"
-                  className={styles.remove}
-                  aria-label={`Remove the rule for ${rule.filter || 'this filter'}`}
-                  onClick={() => {
-                    setDraft((current) => current!.filter((other) => other.id !== rule.id));
-                    setPicking((open) => (open === rule.id ? null : open));
-                  }}
-                >
-                  ×
-                </button>
-              </span>
-
-              {/* Both of these span the row's columns. They are about the row rather than about
-                  one cell of it, and dropped into a grid track they would be a paragraph three
-                  words wide under the swatch. */}
-              {faults[index] && <p className={styles.rowFault}>{faults[index]}</p>}
-
-              {picking === rule.id && (
-                <div className={styles.rowPicker}>
-                  <TopicPicker
-                    onPick={(filter) => {
-                      edit(rule.id, { filter });
-                      setPicking(null);
-                    }}
-                    onClose={() => setPicking(null)}
-                  />
-                </div>
-              )}
-            </div>
+              rule={rule}
+              index={index}
+              fault={faults[index]}
+              profiles={profiles}
+              elsewhere={elsewhere(rule)}
+              painting={paintingCell({
+                filter: rule.filter,
+                elsewhere: elsewhere(rule),
+                // Not applying: a rule for every broker that this broker's own rule on the same
+                // filter overrules.
+                applies: applies.has(rule.id),
+                count: painting.get(rule.filter) ?? 0,
+              })}
+              picking={picking === rule.id}
+              onEdit={(change) => edit(rule.id, change)}
+              onRemove={() => {
+                setDraft((current) => current!.filter((other) => other.id !== rule.id));
+                setPicking((open) => (open === rule.id ? null : open));
+              }}
+              onTogglePicker={() => setPicking((open) => (open === rule.id ? null : rule.id))}
+              onPick={(filter) => {
+                edit(rule.id, { filter });
+                setPicking(null);
+              }}
+              onClosePicker={() => setPicking(null)}
+            />
           ))}
         </div>
       )}
@@ -442,50 +332,3 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
     </PanelShell>
   );
 }
-
-/**
- * What the Painting cell says.
- *
- * A count, or the reason there is not one. 'Nothing yet' and 'none' are different answers and the
- * difference is the whole value of the column: nothing yet means the broker has not sent anything
- * this rule covers, and none means it has and another rule took it — a filter shadowed by a more
- * specific one, which is otherwise invisible and is the commonest way a colour rule does nothing.
- */
-function paintingWords(filter: string, painted: ReadonlyMap<string, number>): string {
-  if (filter === '') return '';
-
-  const count = painted.get(filter) ?? 0;
-
-  return count === 0 ? 'none' : `${count} ${count === 1 ? 'topic' : 'topics'}`;
-}
-
-/**
- * Whether the rows on screen still say what the server holds.
- *
- * A repaired colour counts as a difference, and should: a rules file edited by hand into
- * something the panel had to fix arrives already needing a save.
- *
- * The message's colour is compared through `ink`, which reads absent and null as the one thing
- * they both mean — no colour. Without that, a rule the server sends with no second colour at all
- * would differ from the same rule on screen carrying null, and the panel would announce unsaved
- * edits to a panel nobody had touched.
- *
- * A stored value the panel could not use is NOT read as none, though the row shows none: it is a
- * difference, and saying so is what offers to write the repair back — the same answer the topic's
- * colour gives to the same hand-edited file.
- */
-function differs(rows: readonly DraftRule[], stored: readonly ColourRule[]): boolean {
-  if (rows.length !== stored.length) return true;
-
-  return rows.some(
-    (row, index) =>
-      row.filter !== stored[index].filter ||
-      row.colour !== stored[index].colour.toLowerCase() ||
-      row.bodyColour !== ink(stored[index].bodyColour) ||
-      row.profileId !== (stored[index].profileId || null),
-  );
-}
-
-/** A stored message colour, with absent and null said the same way. */
-const ink = (colour: string | null | undefined): string | null =>
-  colour == null ? null : colour.toLowerCase();
