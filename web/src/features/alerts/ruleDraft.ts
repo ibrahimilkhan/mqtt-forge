@@ -569,6 +569,20 @@ export function startRuleDraft(rule?: AlertRuleDto): string {
  * serialise alike. A comparison written out by hand would be a second copy of DraftRule's shape,
  * and the field somebody forgot to add to it is exactly the field they were editing.
  */
+/**
+ * Starts a new rule from a draft somebody else filled in — a template out of the library.
+ *
+ * Always a new draft and never a resumed one: a template is an example, and pressing it twice is
+ * asking for the example twice, not for whatever was typed over it the first time.
+ */
+export function startDraftFrom(draft: DraftRule): string {
+  const draftId = draftIdOf();
+
+  drafts.set(draftId, draft);
+
+  return draftId;
+}
+
 export const sameDraft = (one: DraftRule, other: DraftRule): boolean =>
   JSON.stringify(one) === JSON.stringify(other);
 
@@ -779,10 +793,10 @@ function conditionFault(condition: DraftCondition): string | null {
       const value = Number(condition.value);
 
       if (condition.metric === 'duty' && (value < 0 || value > 1)) {
-        return 'A duty is the share of the readings spent past the line, from 0 to 1.';
+        return 'Pulse share is a fraction from 0 to 1. For 25%, write 0.25.';
       }
       if (condition.metric !== 'duty' && value < 0) {
-        return 'A pulse count, period or width is never negative.';
+        return 'A pulse count, interval or duration is never negative.';
       }
 
       return null;
@@ -811,7 +825,7 @@ const windowFault = (text: string): string | null => {
 
   return Number.isInteger(window) && window >= MIN_WINDOW && window <= MAX_WINDOW
     ? null
-    : `A statistical window is between ${MIN_WINDOW} and ${MAX_WINDOW} readings, or empty for ` +
+    : `A sample size is between ${MIN_WINDOW} and ${MAX_WINDOW} readings, or empty for ` +
         "this server's default: below that range there is not enough of a run to say anything.";
 };
 

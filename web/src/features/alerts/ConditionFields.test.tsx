@@ -20,7 +20,7 @@ const EVERY_FIELD = [
   'One value to a line',
   'Seconds of silence',
   'k',
-  'Readings in the window',
+  'Sample size (readings)',
   'Metric',
 ];
 
@@ -61,23 +61,23 @@ describe('one form per condition', () => {
 
   it('draws an outlier as a method, a k and a window', () => {
     draw(blankCondition('outlier'));
-    only('k', 'Readings in the window');
+    only('k', 'Sample size (readings)');
     expect(screen.getByLabelText('Method')).toBeInTheDocument();
   });
 
   it('draws a distribution shift as a window alone', () => {
     draw(blankCondition('distributionShift'));
-    only('Readings in the window');
+    only('Sample size (readings)');
   });
 
   it('draws a shape change as a window alone', () => {
     draw(blankCondition('shapeChange'));
-    only('Readings in the window');
+    only('Sample size (readings)');
   });
 
   it('draws a pulse as a metric, an operator, a value and a window', () => {
     draw(blankCondition('pulse'));
-    only('Metric', 'Value', 'Readings in the window');
+    only('Metric', 'Value', 'Sample size (readings)');
   });
 });
 

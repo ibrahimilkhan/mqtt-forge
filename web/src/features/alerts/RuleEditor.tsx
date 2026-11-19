@@ -16,6 +16,7 @@ import type { AlertRuleDto, AlertRulesResponseDto, AlertSeverity } from '../../t
 import { ConditionFields, ConditionSummary } from './ConditionFields';
 import { FieldPicker } from './FieldPicker';
 import { TopicPicker } from './TopicPicker';
+import { firesOn } from './ruleSummary';
 import {
   blankCondition,
   CONDITION_LABELS,
@@ -159,309 +160,147 @@ export function RuleEditor({
     setPicking((open) => (open === which ? null : which));
 
   // The one switch on this form whose name cannot say what leaving it off does.
+  /**
+   * Whether the folded part is open. It starts open on a rule that already uses what is in it.
+   */
+  const [more, setMore] = useState(
+    () => draft.field !== '' || draft.for !== '' || draft.cooldown !== '' || draft.clear !== null,
+  );
+  const advancedFault =
+    faults.for !== undefined || faults.cooldown !== undefined || faults.clear !== undefined;
+
+  /** The draft as the rule it would be saved as, for the line that reads it back. */
+  const said = ruleOf(draft);
+
   const [clearHelp, setClearHelp] = useState(false);
   const clearHelpId = useId();
 
   return (
     <form className={styles.form} onSubmit={(event) => event.preventDefault()}>
-      {/* The three panels are a grid of their own, and the button row is NOT in it. That is not
-          tidiness — it is the whole reason the form used to leave a quarter of the panel empty.
-          See the note in RuleEditor.module.css. */}
-      <div className={styles.columns}>
-      <Part
-        title="What it watches"
-        help={<WatchesHelp />}
-      >
-        <div className={panel.row}>
-          <Field label="Name" htmlFor={id('name')}>
-            <input
-              id={id('name')}
-              value={draft.name}
-              maxLength={80}
-              placeholder="Boiler temperature"
-              aria-invalid={faults.name !== undefined}
-              onChange={(event) => edit({ name: event.target.value })}
-            />
-          </Field>
+      <h3 className={panel.sectionTitle}>{draft.id === null ? 'New rule' : 'Edit rule'}</h3>
 
-          <Field
-            label="Topic filter"
-            htmlFor={id('filter')}
-            /* The one field on this form the console already knows the answer to. */
-            aside={
-              <PickMark
-                label="topics on the broker"
-                open={picking === 'topic'}
-                onToggle={() => toggle('topic')}
-              >
-                <Search />
-              </PickMark>
-            }
+      {/* One column, read downwards in the order a rule is said aloud: what it watches, what
+          sets it off, how loud it is, what it does about it, and only then what to call it. */}
+      <Field
+        label="Topic filter"
+        htmlFor={id('filter')}
+        /* The one field on this form the console already knows the answer to. */
+        aside={
+          <PickMark
+            label="topics on the broker"
+            open={picking === 'topic'}
+            onToggle={() => toggle('topic')}
           >
-            <input
-              id={id('filter')}
-              value={draft.filter}
-              spellCheck={false}
-              placeholder="plant/+/temp"
-              aria-invalid={faults.filter !== undefined}
-              onChange={(event) => edit({ filter: event.target.value })}
-            />
-          </Field>
-        </div>
-
-        {picking === 'topic' && (
-          <TopicPicker
-            onPick={(filter) => {
-              edit({ filter });
-              setPicking(null);
-            }}
-            onClose={() => setPicking(null)}
-          />
-        )}
-
-        {faults.name && <p className={panel.fault}>{faults.name}</p>}
-        {faults.filter && <p className={panel.fault}>{faults.filter}</p>}
-
-        <Field
-          label="Field"
-          htmlFor={id('field')}
-          aside={
-            <PickMark
-              label="fields in a message"
-              open={picking === 'field'}
-              onToggle={() => toggle('field')}
-            >
-              <Braces />
-            </PickMark>
-          }
-          help={<FieldHelp />}
-        >
-          <input
-            id={id('field')}
-            value={draft.field}
-            spellCheck={false}
-            placeholder="the whole message body"
-            onChange={(event) => edit({ field: event.target.value })}
-          />
-        </Field>
-
-        {picking === 'field' && (
-          <FieldPicker
-            filter={draft.filter}
-            onPick={(field) => {
-              edit({ field });
-              setPicking(null);
-            }}
-            onClose={() => setPicking(null)}
-          />
-        )}
-
-        <div className={styles.severity}>
-          <Segmented
-            label="Severity"
-            name={id('severity')}
-            value={draft.severity}
-            options={[
-              { value: 'info', label: 'info' },
-              { value: 'warn', label: 'warn' },
-              { value: 'critical', label: 'critical' },
-            ]}
-            onChange={(severity) => edit({ severity: severity as AlertSeverity })}
-            /* The level used to decide how long a notice survived in the corner — six seconds for
-               a warning, until dismissed for a critical. Nothing fades and nothing is dismissed
-               any more, so what is left for the level to decide is where the alarm stands in the
-               panel, and which level the rail's count wears while it is up. */
-            note={
-              draft.severity === 'critical'
-                ? 'Criticals stand at the top of the Alerts panel.'
-                : 'Below the criticals in the Alerts panel.'
-            }
-          />
-        </div>
-      </Part>
-
-      <Part
-        title="When it fires"
-        help={<FiresHelp />}
+            <Search />
+          </PickMark>
+        }
       >
-        <Field label="Condition" htmlFor={id('condition')}>
-          <select
-            id={id('condition')}
-            value={draft.condition.type === 'opaque' ? '' : draft.condition.type}
-            onChange={(event) =>
-              edit({
-                condition: retypeCondition(draft.condition, event.target.value as ConditionType),
-              })
-            }
-          >
-            {/* A condition this form cannot draw is a real state and it needs a place in the
-                picker to sit, or the select would silently show whatever option happens to be
-                first and read as a rule that says something it does not. */}
-            {draft.condition.type === 'opaque' && <option value="">As the file has it</option>}
-            {CONDITION_TYPES.map((type) => (
-              <option key={type} value={type}>
-                {CONDITION_LABELS[type]}
-              </option>
-            ))}
-          </select>
-        </Field>
-
-        <ConditionSummary type={draft.condition.type} />
-
-        <ConditionFields
-          condition={draft.condition}
-          id={(name) => id(`condition-${name}`)}
-          onChange={(condition) => edit({ condition })}
+        <input
+          id={id('filter')}
+          value={draft.filter}
+          spellCheck={false}
+          placeholder="plant/+/temp"
+          aria-invalid={faults.filter !== undefined}
+          onChange={(event) => edit({ filter: event.target.value })}
         />
-        {faults.condition && <p className={panel.fault}>{faults.condition}</p>}
+      </Field>
 
-        {/* 'Clear on a condition of its own' was a nine-word instruction sitting where a switch's
-            name goes, and it still did not say the thing worth saying — which is what happens
-            when it is left off. Three words and a mark: the sentence moved behind the mark, where
-            a reader who needs it can find it and a reader who does not is looking at a switch. */}
-        <div className={panel.checks}>
-          <span className={styles.checkWithInfo}>
-            <label>
-              <input
-                type="checkbox"
-                checked={draft.clear !== null}
-                onChange={(event) =>
-                  edit({ clear: event.target.checked ? blankCondition('threshold') : null })
-                }
-              />
-              Its own clear rule
-            </label>
-            {/* Outside the label on purpose: inside it, a press on the mark would toggle the
-                checkbox — a control that changes the rule when you ask it what it does. */}
-            <InfoMark
-              label="its own clear rule"
-              open={clearHelp}
-              controls={clearHelp ? clearHelpId : undefined}
-              onToggle={() => setClearHelp((shown) => !shown)}
-            />
-          </span>
-        </div>
+      {picking === 'topic' && (
+        <TopicPicker
+          onPick={(filter) => {
+            edit({ filter });
+            setPicking(null);
+          }}
+          onClose={() => setPicking(null)}
+        />
+      )}
+      {faults.filter && <p className={panel.fault}>{faults.filter}</p>}
 
-        {/* Under the row rather than inside it. `.checks` is a flex line of switches, and a
-            paragraph handed to it is laid out as a switch: two words wide and thirty lines tall. */}
-        {clearHelp && (
-          <InfoBody id={clearHelpId}>
-            <ClearHelp />
-          </InfoBody>
-        )}
+      <Field label="Condition" htmlFor={id('condition')}>
+        <select
+          id={id('condition')}
+          value={draft.condition.type === 'opaque' ? '' : draft.condition.type}
+          onChange={(event) =>
+            edit({
+              condition: retypeCondition(draft.condition, event.target.value as ConditionType),
+            })
+          }
+        >
+          {/* A condition this form cannot draw is a real state and it needs a place in the
+              picker to sit, or the select would silently show whatever option happens to be
+              first and read as a rule that says something it does not. */}
+          {draft.condition.type === 'opaque' && <option value="">As the file has it</option>}
+          {CONDITION_TYPES.map((type) => (
+            <option key={type} value={type}>
+              {CONDITION_LABELS[type]}
+            </option>
+          ))}
+        </select>
+      </Field>
 
-        {draft.clear && (
-          <>
-            <Field label="Clear when" htmlFor={id('clear')}>
-              <select
-                id={id('clear')}
-                value={draft.clear.type === 'opaque' ? '' : draft.clear.type}
-                onChange={(event) =>
-                  edit({ clear: retypeCondition(draft.clear!, event.target.value as ConditionType) })
-                }
-              >
-                {draft.clear.type === 'opaque' && <option value="">As the file has it</option>}
-                {CONDITION_TYPES.map((type) => (
-                  <option key={type} value={type}>
-                    {CONDITION_LABELS[type]}
-                  </option>
-                ))}
-              </select>
-            </Field>
+      <ConditionSummary type={draft.condition.type} />
 
-            <ConditionSummary type={draft.clear.type} />
+      <ConditionFields
+        condition={draft.condition}
+        id={(name) => id(`condition-${name}`)}
+        onChange={(condition) => edit({ condition })}
+      />
+      {faults.condition && <p className={panel.fault}>{faults.condition}</p>}
 
-            <ConditionFields
-              condition={draft.clear}
-              id={(name) => id(`clear-${name}`)}
-              onChange={(clear) => edit({ clear })}
-            />
-            {faults.clear && <p className={panel.fault}>{faults.clear}</p>}
-          </>
-        )}
-      </Part>
-
-      <Part
-        title="Everything else"
-        help={<ElseHelp />}
-      >
-      <div className={`${panel.row} ${styles.timing}`}>
-        <Field label="For, seconds" htmlFor={id('for')} narrow>
-          {/* Text rather than a number box, in every one of these. A number input silently throws
-              away what it cannot parse, so a typo would vanish from under the reader's hand and the
-              box would look like one they had cleared on purpose. And an empty box is a real
-              answer here — 'the moment it is true' — which has to survive being typed into and
-              emptied again. */}
-          <input
-            id={id('for')}
-            value={draft.for}
-            inputMode="numeric"
-            placeholder="at once"
-            aria-invalid={faults.for !== undefined}
-            onChange={(event) => edit({ for: event.target.value })}
-          />
-        </Field>
-        <Field label="Cooldown, seconds" htmlFor={id('cooldown')} narrow>
-          <input
-            id={id('cooldown')}
-            value={draft.cooldown}
-            inputMode="numeric"
-            placeholder="1"
-            aria-invalid={faults.cooldown !== undefined}
-            onChange={(event) => edit({ cooldown: event.target.value })}
-          />
-        </Field>
+      <div className={styles.severity}>
+        <Segmented
+          label="Severity"
+          name={id('severity')}
+          value={draft.severity}
+          options={[
+            { value: 'info', label: 'info' },
+            { value: 'warn', label: 'warn' },
+            { value: 'critical', label: 'critical' },
+          ]}
+          onChange={(severity) => edit({ severity: severity as AlertSeverity })}
+        />
       </div>
 
-      {faults.for && <p className={panel.fault}>{faults.for}</p>}
-      {faults.cooldown && <p className={panel.fault}>{faults.cooldown}</p>}
-
-
-      <div className={panel.checks}>
-        <label>
-          <input
-            type="checkbox"
-            checked={draft.enabled}
-            onChange={(event) => edit({ enabled: event.target.checked })}
-          />
-          Enabled
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={draft.screen}
-            onChange={(event) => edit({ screen: event.target.checked })}
-          />
-          Notice on screen
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={draft.sound}
-            onChange={(event) => edit({ sound: event.target.checked })}
-          />
-          Sound
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={draft.webhook !== null}
-            onChange={(event) =>
-              edit({ webhook: event.target.checked ? { url: '', headers: [] } : null })
-            }
-          />
-          Webhook
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={draft.publish !== null}
-            onChange={(event) =>
-              edit({ publish: event.target.checked ? { topic: '', qos: 0, retain: false } : null })
-            }
-          />
-          Publish
-        </label>
+      <div role="group" aria-label="Actions">
+        <span className={styles.groupLabel}>Actions</span>
+        <div className={panel.checks}>
+          <label>
+            <input
+              type="checkbox"
+              checked={draft.screen}
+              onChange={(event) => edit({ screen: event.target.checked })}
+            />
+            Screen
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={draft.sound}
+              onChange={(event) => edit({ sound: event.target.checked })}
+            />
+            Sound
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={draft.webhook !== null}
+              onChange={(event) =>
+                edit({ webhook: event.target.checked ? { url: '', headers: [] } : null })
+              }
+            />
+            Webhook
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={draft.publish !== null}
+              onChange={(event) =>
+                edit({ publish: event.target.checked ? { topic: '', qos: 0, retain: false } : null })
+              }
+            />
+            Publish
+          </label>
+        </div>
       </div>
 
       {draft.webhook && (
@@ -606,8 +445,167 @@ export function RuleEditor({
         </>
       )}
 
-      </Part>
-      </div>
+      <Field label="Name" htmlFor={id('name')}>
+        <input
+          id={id('name')}
+          value={draft.name}
+          maxLength={80}
+          placeholder="Boiler temperature"
+          aria-invalid={faults.name !== undefined}
+          onChange={(event) => edit({ name: event.target.value })}
+        />
+      </Field>
+
+      {faults.name && <p className={panel.fault}>{faults.name}</p>}
+
+      {/* Everything a first rule does not need. Open by itself when the rule being edited
+          already uses one of these, or when one of them is what is stopping the save: a fault
+          folded out of sight is a Save button that is off for no reason on screen. */}
+      <details
+        className={styles.more}
+        open={more || advancedFault}
+        onToggle={(event) => setMore(event.currentTarget.open)}
+      >
+        <summary>Advanced</summary>
+
+        <Field
+          label="Field"
+          htmlFor={id('field')}
+          aside={
+            <PickMark
+              label="fields in a message"
+              open={picking === 'field'}
+              onToggle={() => toggle('field')}
+            >
+              <Braces />
+            </PickMark>
+          }
+          help={<FieldHelp />}
+        >
+          <input
+            id={id('field')}
+            value={draft.field}
+            spellCheck={false}
+            placeholder="the whole message body"
+            onChange={(event) => edit({ field: event.target.value })}
+          />
+        </Field>
+
+        {picking === 'field' && (
+          <FieldPicker
+            filter={draft.filter}
+            onPick={(field) => {
+              edit({ field });
+              setPicking(null);
+            }}
+            onClose={() => setPicking(null)}
+          />
+        )}
+
+        <div className={`${panel.row} ${styles.timing}`}>
+          <Field label="For, seconds" htmlFor={id('for')} narrow>
+            {/* Text rather than a number box, in every one of these. A number input silently throws
+                away what it cannot parse, so a typo would vanish from under the reader's hand and the
+                box would look like one they had cleared on purpose. And an empty box is a real
+                answer here — 'the moment it is true' — which has to survive being typed into and
+                emptied again. */}
+            <input
+              id={id('for')}
+              value={draft.for}
+              inputMode="numeric"
+              placeholder="at once"
+              aria-invalid={faults.for !== undefined}
+              onChange={(event) => edit({ for: event.target.value })}
+            />
+          </Field>
+          <Field label="Cooldown, seconds" htmlFor={id('cooldown')} narrow>
+            <input
+              id={id('cooldown')}
+              value={draft.cooldown}
+              inputMode="numeric"
+              placeholder="1"
+              aria-invalid={faults.cooldown !== undefined}
+              onChange={(event) => edit({ cooldown: event.target.value })}
+            />
+          </Field>
+        </div>
+  
+        {faults.for && <p className={panel.fault}>{faults.for}</p>}
+        {faults.cooldown && <p className={panel.fault}>{faults.cooldown}</p>}
+
+        {/* 'Clear on a condition of its own' was a nine-word instruction sitting where a switch's
+            name goes, and it still did not say the thing worth saying — which is what happens
+            when it is left off. Three words and a mark: the sentence moved behind the mark, where
+            a reader who needs it can find it and a reader who does not is looking at a switch. */}
+        <div className={panel.checks}>
+          <span className={styles.checkWithInfo}>
+            <label>
+              <input
+                type="checkbox"
+                checked={draft.clear !== null}
+                onChange={(event) =>
+                  edit({ clear: event.target.checked ? blankCondition('threshold') : null })
+                }
+              />
+              Its own clear rule
+            </label>
+            {/* Outside the label on purpose: inside it, a press on the mark would toggle the
+                checkbox — a control that changes the rule when you ask it what it does. */}
+            <InfoMark
+              label="its own clear rule"
+              open={clearHelp}
+              controls={clearHelp ? clearHelpId : undefined}
+              onToggle={() => setClearHelp((shown) => !shown)}
+            />
+          </span>
+        </div>
+
+        {/* Under the row rather than inside it. `.checks` is a flex line of switches, and a
+            paragraph handed to it is laid out as a switch: two words wide and thirty lines tall. */}
+        {clearHelp && (
+          <InfoBody id={clearHelpId}>
+            <ClearHelp />
+          </InfoBody>
+        )}
+
+        {draft.clear && (
+          <>
+            <Field label="Clear when" htmlFor={id('clear')}>
+              <select
+                id={id('clear')}
+                value={draft.clear.type === 'opaque' ? '' : draft.clear.type}
+                onChange={(event) =>
+                  edit({ clear: retypeCondition(draft.clear!, event.target.value as ConditionType) })
+                }
+              >
+                {draft.clear.type === 'opaque' && <option value="">As the file has it</option>}
+                {CONDITION_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {CONDITION_LABELS[type]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <ConditionSummary type={draft.clear.type} />
+
+            <ConditionFields
+              condition={draft.clear}
+              id={(name) => id(`clear-${name}`)}
+              onChange={(clear) => edit({ clear })}
+            />
+            {faults.clear && <p className={panel.fault}>{faults.clear}</p>}
+          </>
+        )}
+      </details>
+
+      {/* The rule as the list will say it, so what is about to be saved can be read back in
+          one line before it is. */}
+      <p className={styles.said} data-severity={draft.severity} data-testid="rule-said">
+        <b>{draft.severity}</b> when {firesOn(said)} on {said.filter || '…'}
+        {' → '}
+        {said.actions.map((action) => action.type).join(' · ') || 'nothing'}
+      </p>
 
       {/* The two ways out of a form, on the form's own last row.
  
@@ -650,53 +648,6 @@ export function RuleEditor({
   );
 }
 
-/**
- * One of the three parts a rule is written in, with its own explanation folded behind a mark.
- *
- * The fieldset and legend are the point and not decoration: a screen reader announces the legend
- * with every control inside it, so 'Topic filter' is heard as 'What it watches, Topic filter' and
- * a reader who tabbed into the middle of a long form still knows which third of it they are in.
- *
- * The help hangs off the heading rather than off the fields. Twelve fields with a paragraph each
- * is a form nobody can find anything in — that is what this one was becoming — and the questions
- * a reader actually has are about the group ('what is a clear rule for?', 'what does For do?'),
- * not about the box. One mark per part answers them where they are asked, and the form underneath
- * stays a form.
- *
- * There was a summary line under each heading too — 'the rule's name, the topics it covers, and
- * how loudly it speaks' — and it went for the same reason the field prose went. Three headings
- * over three columns of labelled boxes say what the columns hold; a sentence restating it is a
- * caption on a form, spent before the reader has been asked anything. What it was really for is
- * behind the mark, at the length it needs, for whoever wants it.
- */
-function Part({
-  title,
-  help,
-  children,
-}: {
-  title: string;
-  /** The paragraphs behind the mark, built only when the mark is pressed. */
-  help: ReactNode;
-  children: ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
-  const id = useId();
-
-  return (
-    <fieldset className={panel.part}>
-      <legend>
-        <span className={panel.partHead}>
-          {title}
-          <InfoMark label={title} open={open} controls={open ? id : undefined} onToggle={() => setOpen(!open)} />
-        </span>
-      </legend>
-
-      {open && <InfoBody id={id}>{help}</InfoBody>}
-
-      {children}
-    </fieldset>
-  );
-}
 
 /**
  * The mark that opens a picker, on the label of the field the picker fills in.
@@ -732,66 +683,6 @@ function PickMark({
   );
 }
 
-/* ---- what is behind the four marks ----
-
-   Written as components rather than as constants so none of it is built until a mark is pressed,
-   and kept at the foot of the file rather than beside the fields: this is the prose that used to
-   be in the form, and the whole point of the change is that the form is now readable without it.
-
-   The voice is the console's own — say the thing, say why, and say what happens when it is left
-   off, which is the question a form can never answer by having a box for it. */
-
-function WatchesHelp() {
-  return (
-    <>
-      <p>
-        <b>Name</b> is what the alarm is called in the panel, in the corner and in the log. It is
-        for whoever reads it at three in the morning, so name the plant and not the rule.
-      </p>
-      <p>
-        <b>Topic filter</b> decides whose messages this rule reads. <code>+</code> stands for one
-        level and <code>#</code> for the rest of the tree, so <code>plant/+/temp</code> is every
-        room's temperature and <code>plant/#</code> is the whole plant. Press the glass to
-        pick one out of what the broker has actually sent.
-      </p>
-      <p>
-        <b>Field</b> narrows it further, to one value inside a JSON body. Leave it empty and the
-        rule is about the whole message, which is what a topic publishing a bare{' '}
-        <code>23.5</code> sends.
-      </p>
-      <p>
-        <b>Severity</b> decides where a standing alarm sits in the panel and which colour the
-        rail's count wears. It changes nothing about when the rule fires.
-      </p>
-    </>
-  );
-}
-
-function FiresHelp() {
-  return (
-    <>
-      <p>
-        <b>Condition</b> is one test against whatever the Field points at — over a line, inside a
-        band, matching an expression, or one of the shapes that watch a run of readings rather
-        than a single one.
-      </p>
-      <p>
-        <b>all</b> and <b>any</b> hold other conditions instead of a value of their own:{' '}
-        <b>all</b> fires when every one of them is true, <b>any</b> when one of them is. That is
-        how &ldquo;hot <i>and</i> the pump is off&rdquo; is written.
-      </p>
-      <p>
-        A message that does not carry the Field at all is neither true nor false — it is skipped.
-        A rule reading <code>&lt; 10</code> does not fire because a topic went quiet.
-      </p>
-      <p>
-        Without a clear rule of its own, the alarm stands until its own condition stops being
-        true, and then it clears.
-      </p>
-    </>
-  );
-}
-
 function ClearHelp() {
   return (
     <>
@@ -803,27 +694,6 @@ function ClearHelp() {
         What that buys is a reading sitting on the line. Fire above 80 and clear below 70, and a
         boiler wobbling between 79.9 and 80.1 rings once; without the gap it rings, clears and
         rings again on every message.
-      </p>
-    </>
-  );
-}
-
-function ElseHelp() {
-  return (
-    <>
-      <p>
-        <b>For</b> is how long the condition has to stay true before it counts as an alarm. Empty
-        means the moment it is true. It is what stops one stray reading from waking anybody.
-      </p>
-      <p>
-        <b>Cooldown</b> is how long this rule stays quiet after it has fired, whatever the
-        readings do. It is counted from the firing, not from the clearing.
-      </p>
-      <p>
-        The rest is who is told: a row in the <b>Alerts panel</b> and on the wall down the side, a{' '}
-        <b>sound</b>, a <b>webhook</b> posted to an address of your own, and a <b>publish</b> back
-        to the broker so other things on the plant can act on it. <b>Enabled</b> turned off keeps
-        the rule and stops the engine reading it.
       </p>
     </>
   );

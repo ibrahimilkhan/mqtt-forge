@@ -17,7 +17,16 @@ import type {
 } from '../../types/api';
 import styles from './AlertsPanel.module.css';
 import { RuleEditor } from './RuleEditor';
-import { forgetDraft, readDraft, removeRule, sameDraft, saveRule, startRuleDraft } from './ruleDraft';
+import { RuleLibrary } from './RuleLibrary';
+import {
+  forgetDraft,
+  readDraft,
+  removeRule,
+  sameDraft,
+  saveRule,
+  startDraftFrom,
+  startRuleDraft,
+} from './ruleDraft';
 import { firesOn } from './ruleSummary';
 import type { DraftRule } from './ruleDraft';
 
@@ -54,6 +63,7 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
   const { data, isError } = useQuery({ queryKey: queryKeys.alertRules, queryFn: getAlertRules });
 
   const diagnostics = useAlertStore((state) => state.rules);
+  const active = useAlertStore((state) => state.active);
   const warming = useAlertStore((state) => state.warming);
   const dropped = useAlertStore((state) => state.dropped);
   const blindSeconds = useAlertStore((state) => state.blindSeconds);
@@ -169,6 +179,24 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
     setLeaving(false);
   };
 
+  /**
+   * Whether the library of examples is what the panel is showing.
+   *
+   * It stands where the list stands, like the editor does, and for the same reason: it is the
+   * panel's whole job while it is open. It is reached from its own button and never from New
+   * rule — a reader who knows what they want is not made to walk past eleven cards to get it.
+   */
+  const [browsing, setBrowsing] = useState(false);
+
+  /** The editor, on a copy of an example. Leaving it untouched is leaving nothing behind. */
+  const editFrom = (draft: DraftRule) => {
+    const draftId = startDraftFrom(draft);
+
+    setBrowsing(false);
+    setEditing({ draftId, opened: structuredClone(draft) });
+    setLeaving(false);
+  };
+
   /** Back to the list, and the draft goes with it: leaving is abandoning. */
   const leave = () => {
     if (editing) forgetDraft(editing.draftId);
@@ -196,10 +224,13 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
   // Escape is the console's one rule about Escape — it shuts the thing in front of you — and the
   // editor is what is in front. Through `back`, so it cannot throw work away either.
   useEffect(() => {
-    if (editing === null) return;
+    if (editing === null && !browsing) return;
 
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') back();
+      if (event.key !== 'Escape') return;
+
+      if (editing !== null) back();
+      else setBrowsing(false);
     };
 
     window.addEventListener('keydown', onKey);
@@ -246,6 +277,27 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
     );
   }
 
+  if (browsing) {
+    return (
+      <PanelShell title="Alerts" named onClose={onClose}>
+        <RuleLibrary
+          onUse={editFrom}
+          onBlank={() => {
+            setBrowsing(false);
+            edit();
+          }}
+          onBack={() => setBrowsing(false)}
+        />
+      </PanelShell>
+    );
+  }
+
+  // How many rules are ringing, for the line the section is named on. Counted in rules rather
+  // than in alarms: one rule over a wildcard can hold a dozen alarms and is still one thing to
+  // look at in this table.
+  const firingRules = new Set(active.map((alert) => alert.ruleId));
+  const ringing = rules.filter((rule) => rule.id !== null && firingRules.has(rule.id)).length;
+
   return (
     <PanelShell title="Alerts" named onClose={onClose}>
       {/* 'Alerting now' stood here, above the rules: every standing alarm, how long it had been
@@ -271,16 +323,27 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
           end of the line the section is named on. On an empty panel it also stops being a control
           stranded under a sentence about there being nothing here. */}
       <div className={panel.sectionTop}>
-        <h3 className={panel.sectionTitle}>Rules</h3>
+        <h3 className={panel.sectionTitle}>
+          Rules
+          {rules.length > 0 && ` · ${rules.length}`}
+          {ringing > 0 && (
+            <span className={styles.ringing} data-testid="rules-firing">{` · ${ringing} firing`}</span>
+          )}
+        </h3>
 
-        <button
-          type="button"
-          className={panel.iconButton}
-          onClick={() => edit()}
-        >
-          <Plus />
-          New rule
-        </button>
+        <div className={styles.ways}>
+          <button type="button" onClick={() => setBrowsing(true)}>
+            Library
+          </button>
+          <button
+            type="button"
+            className={panel.iconButton}
+            onClick={() => edit()}
+          >
+            <Plus />
+            New rule
+          </button>
+        </div>
       </div>
 
       {isError && (
@@ -309,7 +372,7 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
               makes each of its inline children an item and drops the whitespace-only text nodes
               between them, so 'Press New rule and' came out with the spaces around the bold words
               closed up. One item, laid out as text inside it. */}
-          <p>No alert rules yet. Press <b>New rule</b> and say what should be watched for.</p>
+          <p>No rules yet. Create one with <b>New rule</b> or start from the <b>Library</b>.</p>
         </div>
       )}
 
@@ -319,20 +382,23 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
       {!isError && rules.length > 0 && (
         <div className={styles.rules}>
           <div className={`${styles.rulesHead} ${panel.rulesHead}`} aria-hidden="true">
-            <span>#</span>
             <span>On</span>
             <span>Rule</span>
             <span>Level</span>
-            <span>Fires on</span>
-            <span>Does</span>
-            <span>Seeing</span>
+            <span>Condition</span>
+            <span>State</span>
             <span />
           </div>
 
-          {rules.map((rule, at) => {
+          {rules.map((rule) => {
             // A rule the server holds always has an id; the null is for a rule being written,
             // which never reaches this list.
             const diagnostic = rule.id === null ? undefined : seen.get(rule.id);
+            const state = standing(
+              rule,
+              diagnostic,
+              active.filter((alert) => alert.ruleId === rule.id),
+            );
 
             return (
               <div
@@ -341,15 +407,8 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
                 data-testid="alert-rule"
                 data-severity={rule.severity}
                 data-off={rule.enabled ? undefined : ''}
+                data-firing={state.tone === 'firing' ? '' : undefined}
               >
-                {/* Its place in the list, so a rule can be pointed at in a sentence somebody says
-                    out loud. The order is the file's — the order they were written in — and not
-                    the name's: a list that reorders itself when a rule is renamed is a list whose
-                    numbers mean nothing twice running. */}
-                <span className={panel.ruleNumber} data-testid="rule-number">
-                  {at + 1}
-                </span>
-
                 <input
                   type="checkbox"
                   checked={rule.enabled}
@@ -370,22 +429,12 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
 
                 <span className={styles.fires}>{firesOn(rule)}</span>
 
-                {/* The same chips an alarm wears when it fires, so the row and the alarm it
-                    produces are plainly about the same channels. */}
-                <span className={styles.marks}>
-                  {rule.actions.map((action) => (
-                    <span key={action.type} className={styles.mark}>
-                      {action.type}
-                    </span>
-                  ))}
-                </span>
-
-                {/* What the rule can actually see, which is the answer to 'why has this never
-                    fired'. Without it the only way to tell a rule that is watching nothing from
-                    one that is watching everything and finding nothing wrong is to go and look at
-                    the broker. */}
-                <span className={styles.seen}>
-                  {diagnostic ? sighting(diagnostic) : 'not yet running'}
+                {/* One short answer to 'what is this rule doing right now'. The counts that used
+                    to stand here — topics, readings — answered a question nobody asks of a table;
+                    the three states that need acting on (matched nothing, could read nothing,
+                    faulted) are still said, in words, in the same place. */}
+                <span className={styles.state} data-tone={state.tone} data-testid="rule-state">
+                  {state.says}
                 </span>
 
                 <span className={styles.rowActions}>
@@ -485,24 +534,47 @@ export function AlertsPanel({ onClose }: { onClose: () => void }) {
 }
 
 /**
- * What a rule has seen, in one line.
+ * What a rule is doing right now, in a few words.
  *
- * Three sentences, and the order they are asked in matters. 'Matched no topic' comes first
- * because a rule watching nothing has no readings to report and the counts would say '0
- * readings' as though the broker were quiet. 'No message could be read' is guarded on there
- * having been something to read at all: a rule that has seen nothing yet has evaluated 0 and
- * skipped 0, which are equal, and reading that as unreadable would accuse a broker that has
- * simply not sent anything.
+ * The order is the order of what a reader most needs to be told. Off first, because nothing else
+ * is true of a rule that is not being read. Firing next, because it is the reason the panel was
+ * opened. Then the three ways a rule can be on and useless — the engine gave up on it, it watches
+ * nothing, or it can read nothing it watches — and only then the ordinary case.
+ *
+ * 'No readable message' is guarded on there having been something to read at all: a rule that has
+ * seen nothing yet has evaluated 0 and skipped 0, which are equal, and reading that as unreadable
+ * would accuse a broker that has simply not sent anything.
  */
-function sighting(rule: RuleDiagnosticDto): string {
-  if (rule.topics === 0) return 'matched no topic';
-  if (rule.evaluated > 0 && rule.evaluated === rule.skipped) return 'no message could be read';
+export function standing(
+  rule: AlertRuleDto,
+  diagnostic: RuleDiagnosticDto | undefined,
+  firing: readonly AlertDto[],
+): { says: string; tone: 'firing' | 'fault' | 'quiet' | 'plain' } {
+  if (!rule.enabled) return { says: 'Disabled', tone: 'quiet' };
 
-  const fired = rule.lastFiredAt ? `last fired ${clock(rule.lastFiredAt)}` : 'never fired';
+  if (firing.length > 0) {
+    // The oldest alarm standing: 'since' is when the rule started ringing, not when its
+    // latest topic joined in.
+    const since = firing.reduce((first, alert) =>
+      Date.parse(alert.firedAt) < Date.parse(first.firedAt) ? alert : first,
+    );
 
-  return `${rule.topics} topic${rule.topics === 1 ? '' : 's'} · ${count(rule.evaluated)} reading${
-    rule.evaluated === 1 ? '' : 's'
-  } · ${fired}`;
+    return { says: `Firing · ${clock(since.firedAt)}`, tone: 'firing' };
+  }
+
+  if (!diagnostic) return { says: 'Not running', tone: 'quiet' };
+  if (diagnostic.faulted) return { says: 'Faulted', tone: 'fault' };
+  if (diagnostic.topics === 0) return { says: 'No matching topic', tone: 'plain' };
+  if (diagnostic.evaluated > 0 && diagnostic.evaluated === diagnostic.skipped) {
+    return { says: 'No readable message', tone: 'plain' };
+  }
+
+  return {
+    says: diagnostic.lastFiredAt
+      ? `Active · last ${clock(diagnostic.lastFiredAt)}`
+      : 'Active · never fired',
+    tone: 'quiet',
+  };
 }
 
 /** The rule's name if the console still holds it, and its id if the engine is ahead of us. */
@@ -514,20 +586,6 @@ export const clock = (at: string | null) =>
   at === null
     ? '—'
     : new Date(at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
-
-/**
- * Thousands as k, millions as M.
- *
- * The same rule the health line counts by, written out again rather than shared: that one is a
- * private helper inside a line with its own reasons, and a reading count in a sentence is not
- * the same job as a cell measured in `ch`.
- */
-function count(n: number): string {
-  if (n < 1000) return String(n);
-  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`;
-
-  return `${(n / 1_000_000).toFixed(1)}M`;
-}
 
 /** How long the engine has been blind, in the roundest words that are still true. */
 function blindFor(seconds: number): string {

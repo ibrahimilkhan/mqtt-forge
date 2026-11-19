@@ -218,9 +218,11 @@ describe('AlertsPanel', () => {
     renderPanel();
 
     const make = await screen.findByRole('button', { name: 'New rule' });
-    const heading = screen.getByRole('heading', { name: 'Rules' });
+    // The heading also carries the count now, so it is found by how it begins.
+    const heading = screen.getByRole('heading', { name: /^Rules/ });
 
-    expect(make.parentElement).toBe(heading.parentElement);
+    // New rule shares its end of the line with Library; the pair is the heading's sibling.
+    expect(make.parentElement!.parentElement).toBe(heading.parentElement);
     // The name reads first; the button is at the other end of the row.
     expect(heading.compareDocumentPosition(make) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // And the mark inside it is a mark, not part of the name a listener hears.
@@ -258,13 +260,36 @@ describe('AlertsPanel', () => {
     expect(screen.getByRole('alertdialog', { name: 'Leave without saving?' })).toBeInTheDocument();
   });
 
-  it('says what a rule has actually seen', async () => {
+  it('says when a rule that is watching last fired', async () => {
     holding(RULE);
     answers({ rules: [SEEING] });
     renderPanel();
 
-    // The time is the reader's own; the shape of the sentence is what is being pinned.
-    expect(await screen.findByText(/^3 topics · 1\.2k readings · last fired \d\d:\d\d$/)).toBeInTheDocument();
+    // The time is the reader's own; the shape of the line is what is being pinned.
+    expect(await screen.findByText(/^Active · last \d\d:\d\d$/)).toBeInTheDocument();
+  });
+
+  // The state column answers 'what is this rule doing right now', and ringing is the first
+  // thing it can be doing. The heading counts ringing rules, not alarms.
+  it('says a rule is firing, since when, and counts it on the heading', async () => {
+    holding(RULE, OTHER);
+    answers({ active: [ALERT, { ...ALERT, id: 'a2', topic: 'sensors/kiln/two' }], rules: [SEEING] });
+    renderPanel();
+
+    const listed = await screen.findAllByTestId('alert-rule');
+
+    expect(await within(listed[0]).findByText(/^Firing · \d\d:\d\d$/)).toBeInTheDocument();
+    expect(listed[0]).toHaveAttribute('data-firing');
+    expect(listed[1]).not.toHaveAttribute('data-firing');
+    expect(screen.getByRole('heading', { name: /^Rules · 2\s*· 1 firing$/ })).toBeInTheDocument();
+  });
+
+  it('says a rule that is switched off is disabled, whatever the engine last saw of it', async () => {
+    holding({ ...RULE, enabled: false });
+    answers({ rules: [SEEING] });
+    renderPanel();
+
+    expect(await screen.findByTestId('rule-state')).toHaveTextContent('Disabled');
   });
 
   // The panel used to read the engine's report once, when it opened. So a reader who opened it
@@ -277,12 +302,12 @@ describe('AlertsPanel', () => {
     answers({ rules: [{ ...SEEING, topics: 0, evaluated: 0, lastFiredAt: null }] });
     renderPanel();
 
-    expect(await screen.findByText('matched no topic')).toBeInTheDocument();
+    expect(await screen.findByText('No matching topic')).toBeInTheDocument();
 
     answers({ rules: [{ ...SEEING, topics: 1, evaluated: 4, lastFiredAt: null }] });
     await vi.advanceTimersByTimeAsync(3100);
 
-    expect(await screen.findByText('1 topic · 4 readings · never fired')).toBeInTheDocument();
+    expect(await screen.findByText('Active · never fired')).toBeInTheDocument();
     vi.useRealTimers();
   });
 
@@ -291,7 +316,7 @@ describe('AlertsPanel', () => {
     answers({ rules: [{ ...SEEING, topics: 0, evaluated: 0, lastFiredAt: null }] });
     renderPanel();
 
-    expect(await screen.findByText('matched no topic')).toBeInTheDocument();
+    expect(await screen.findByText('No matching topic')).toBeInTheDocument();
   });
 
   it('says so when every message a rule saw was unreadable', async () => {
@@ -299,7 +324,7 @@ describe('AlertsPanel', () => {
     answers({ rules: [{ ...SEEING, evaluated: 400, skipped: 400, lastFiredAt: null }] });
     renderPanel();
 
-    expect(await screen.findByText('no message could be read')).toBeInTheDocument();
+    expect(await screen.findByText('No readable message')).toBeInTheDocument();
   });
 
   // The guard the sentence above needs: a rule that has seen nothing yet has evaluated === 0
@@ -310,8 +335,8 @@ describe('AlertsPanel', () => {
     answers({ rules: [{ ...SEEING, evaluated: 0, skipped: 0, lastFiredAt: null }] });
     renderPanel();
 
-    expect(await screen.findByText('3 topics · 0 readings · never fired')).toBeInTheDocument();
-    expect(screen.queryByText('no message could be read')).not.toBeInTheDocument();
+    expect(await screen.findByText('Active · never fired')).toBeInTheDocument();
+    expect(screen.queryByText('No readable message')).not.toBeInTheDocument();
   });
 
   it('keeps the engine rows off the panel while every number is nought', async () => {
@@ -408,24 +433,57 @@ describe('AlertsPanel', () => {
     // The panel is what is alarming now and the rules behind it. A log of what has already gone
     // out was a third thing on the same page, growing forever and answering nothing a reader
     // opens this panel to ask. The store still holds it — see alertStore — and nothing draws it.
-    expect(await screen.findByText(/No alert rules yet/)).toBeInTheDocument();
+    expect(await screen.findByText(/No rules yet/)).toBeInTheDocument();
     expect(screen.queryByTestId('alert-past')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Clear history' })).not.toBeInTheDocument();
   });
 
-  // Numbered so a rule can be pointed at in a sentence — 'rule 3 is the one that never fires' —
-  // and in the order the file holds them, which is the order they were written in. Not by name:
-  // a list that reorders itself when a rule is renamed is a list whose numbers mean nothing.
-  it('numbers the rules in the order they are saved in', async () => {
+  // In the order the file holds them, which is the order they were written in. Not by name: a
+  // list that reorders itself when a rule is renamed is a list nobody can find their place in.
+  it('lists the rules in the order they are saved in', async () => {
     holding(OTHER, RULE);
     answers({});
     renderPanel();
 
     const listed = await screen.findAllByTestId('alert-rule');
-    expect(within(listed[0]).getByTestId('rule-number')).toHaveTextContent('1');
     expect(within(listed[0]).getByText('Room silent')).toBeInTheDocument();
-    expect(within(listed[1]).getByTestId('rule-number')).toHaveTextContent('2');
     expect(within(listed[1]).getByText('Kiln too hot')).toBeInTheDocument();
+  });
+
+  // The library stands where the list stands, and is reached from its own button: New rule
+  // still opens an empty form in one press.
+  it('opens the library beside New rule, and starts the editor on the example that is used', async () => {
+    holding(RULE);
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Library' }));
+
+    expect(screen.getByRole('heading', { name: 'Rule library' })).toBeInTheDocument();
+    expect(screen.queryByTestId('alert-rule')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Use the Silence template' }));
+
+    expect(screen.getByLabelText('Topic filter')).toHaveValue('sensors/loft/temp');
+    expect(screen.getByLabelText('Name')).toHaveValue('Loft sensor silent');
+
+    // An example nobody changed is nothing to lose: Back does not ask.
+    await userEvent.click(screen.getByRole('button', { name: /Back/ }));
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(await screen.findByTestId('alert-rule')).toBeInTheDocument();
+  });
+
+  it('goes back from the library to the list, by its button and by Escape', async () => {
+    holding(RULE);
+    renderPanel();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Library' }));
+    await userEvent.click(screen.getByRole('button', { name: /Back/ }));
+    expect(await screen.findByTestId('alert-rule')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Library' }));
+    await userEvent.keyboard('{Escape}');
+    expect(await screen.findByTestId('alert-rule')).toBeInTheDocument();
   });
 
   // Rule 2: three writers, one owner. The switch sends the list the cache holds with one rule
@@ -469,7 +527,7 @@ describe('AlertsPanel', () => {
     answers({});
     renderPanel();
 
-    expect(await screen.findByText(/No alert rules yet/)).toBeInTheDocument();
+    expect(await screen.findByText(/No rules yet/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Sound/ })).not.toBeInTheDocument();
   });
 });
