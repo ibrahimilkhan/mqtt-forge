@@ -37,7 +37,7 @@ type Props = {
    * rule is read against the branch it will paint, and giving that up is a real cost — so it is
    * paid back inside the panel instead: every row carries the glass that opens the same tree, the
    * one the alert editor wears. What a reader loses is the tree being on screen at the same time;
-   * what they get is a page that says which of their rules is painting nothing.
+   * what they get is a page with room to say which broker each of their rules is for.
    *
    * And for the chart's settings, which were in the first group too, read against the plot they
    * change. Two dozen readings each with a line saying what it means did not fit a column: it was

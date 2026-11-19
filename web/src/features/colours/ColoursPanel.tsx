@@ -1,36 +1,37 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { getColourRules, putColourRules } from '../../api/colourRules';
 import { getSavedProfiles } from '../../api/connection';
 import { queryKeys } from '../../api/queryKeys';
-import { useLinkProfile } from '../../api/useConnectionState';
 import { PanelShell } from '../../components/PanelShell';
 import { rulesFor, type ColourRule } from '../../lib/topicColour';
+import { useLinkScope } from '../../lib/useLinkScope';
 import { useGuardedMutate } from '../../lib/useGuardedMutate';
 import { logFault, useLogStore } from '../../stores/logStore';
 import { useSelectionStore } from '../../stores/selectionStore';
-import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import { describeError } from '../../lib/problemDetails';
 import panel from '../../styles/panel.module.css';
 import { Plus } from '../brand/icons';
 import styles from './ColoursPanel.module.css';
-import { paintedBy, paintingCell } from './painted';
 import { nextColour } from './palette';
 import { RuleRow } from './RuleRow';
 import { allSaved, differs, draftFrom, faultIn, MAX_RULES, newDraftRule, type DraftRule } from './ruleDraft';
-import { useTopicSet } from './useTopicSet';
+
+type View = 'all' | 'broker';
+
+const RULES_PANEL = 'colour-rules';
 
 /**
- * Every colour rule, and what each of them is painting.
+ * Every colour rule, and which broker each of them is for.
  *
  * It was a column: a swatch, a filter box and an × to a line, in the panel beside the tree, read
  * against the branch it would paint. That reading is the reason it stood there, and it is also
- * why it never said anything about itself — a filter with a typo in it and a filter painting
- * forty topics were the same row.
+ * why there was nowhere on the line to say which broker a rule was for.
  *
- * It is the workspace now, drawn as the alerts panel draws its rules: a table with a heading, a
- * count of what each rule has actually taken, and one way to make another at the end of the line
- * the section is named on. What it gives up is the tree beside it, and it is given back inside
+ * It is the workspace now, drawn as the alerts panel draws its rules: a table with a heading, the
+ * broker each rule belongs to, and one way to make another at the end of the line the section is
+ * named on. How many topics a rule has taken is not on it: the tree says what is painted, and a
+ * count beside every rule was a column of numbers nobody was asking for. What it gives up is the tree beside it, and it is given back inside
  * the panel — the same glass the alert editor wears, opening the same broker's tree.
  */
 
@@ -39,8 +40,9 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
   // Absent when nothing is picked, and when what is picked is not a topic — the broker row.
   const selectedTopic = useSelectionStore((state) => state.selected?.topic);
   const { data, isError } = useQuery({ queryKey: queryKeys.colourRules, queryFn: getColourRules });
-  // The broker whose rules are painting now, and every saved broker a rule can belong to.
-  const profileId = useLinkProfile();
+  // The broker whose rules are painting now — saved or not, known by its address either way —
+  // and every saved broker a rule can belong to.
+  const scope = useLinkScope();
   const { data: profiles } = useQuery({ queryKey: queryKeys.savedProfiles, queryFn: getSavedProfiles });
 
   // The edits live here, not in the query cache. A half-typed filter is not a rule, and writing
@@ -149,45 +151,52 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
    */
   const [picking, setPicking] = useState<number | null>(null);
 
-  /**
-   * What each rule has actually taken, counted off the tree the panel is covering.
-   *
-   * Off the DRAFT rather than off what the server holds, so the number answers the filter being
-   * typed rather than the one that was saved an hour ago. Memoised on the filters and on the SET
-   * of topics, not on the tree itself: the tree is new on every message, and counting forty
-   * thousand topics on every frame of traffic is what made this panel stutter. See useTopicSet.
-   */
-  const topicSet = useTopicSet();
   /*
-   * The rules as the painter would see them — colours and all.
-   *
-   * The colour looks like something a count of topics could not possibly need, and passing a
-   * placeholder for it is exactly what this did at first: every count came back nought, because
-   * the lookup the tree paints with throws away any rule whose colour is not a usable triple, and
-   * an empty string is not one. That is not a quirk to work around. It is the invariant worth
-   * keeping: this column says what the tree is doing, so it has to be asked the same question the
-   * tree asks, in the same words.
-   *
-   * The key is the rows as a string, NUL-separated — a topic filter may hold anything else, and
-   * two lists differing only in where one filter ends must not come out as the same key.
-   *
-   * Only the rules the tree is painting with: the broker's that is up, and the ones for every
-   * broker it has not overruled. A rule for another broker paints nothing here, and counting it
-   * against this broker's tree would claim topics it will never touch.
+   * The rules the tree is painting with: the broker's that is up, and the ones for every broker it
+   * has not overruled. What this broker's tab lists, and what a row is told it is not when it is
+   * another broker's.
    */
-  const applying = rulesFor(rules, profileId);
-  const painted = applying.map(({ filter, colour }) => ({ filter, colour }));
-  const key = painted.map((rule) => `${rule.filter}\u0000${rule.colour}`).join('\u0001');
-  // `painted` is a fresh array every render and would defeat the memo; `key` is its contents. The
-  // tree is read as it stands when either moves, rather than subscribed to.
-  const painting = useMemo(
-    () => paintedBy(useTopicTreeStore.getState().root, painted),
-    [topicSet, key],
-  );
+  const applying = rulesFor(rules, scope?.keys ?? []);
   const applies = new Set(applying.map((rule) => rule.id));
 
   /** Another broker's rule: kept on the list, drawn faded, and painting nothing while this is up. */
-  const elsewhere = (rule: DraftRule) => rule.profileId !== null && rule.profileId !== profileId;
+  const elsewhere = (rule: DraftRule) => rule.profileId !== null && !scope?.keys.includes(rule.profileId);
+
+  /**
+   * Which list is on screen: every rule, or only the ones painting the broker that is up.
+   *
+   * The second is the question a reader with a tree in front of them is usually asking — why is
+   * this topic that colour — and with rules for several brokers on one list the answer was mixed
+   * in with rows drawn faded because they paint nothing here. It is the rules the tree is drawn
+   * with: the broker's own, and the ones for every broker it has not overruled.
+   *
+   * Saved or not: a broker that was never saved is known by its address. Disabled only before any
+   * link has come up, when there is no 'this broker' to narrow to.
+   */
+  // On this broker's list when there is a broker: it is the one the tree behind the panel is drawn
+  // with, so it comes first and is where the panel opens.
+  const [view, setView] = useState<View>('broker');
+  const shown: View = scope === null ? 'all' : view;
+  const brokerName = scope?.name;
+  // An unsaved row stays on either list. One whose broker is being changed would otherwise vanish
+  // from under the reader at the first pick of the select, before they had decided anything.
+  const onBroker = (rule: DraftRule) => applies.has(rule.id) || !rule.saved;
+  const visible = shown === 'broker' ? rules.filter(onBroker) : rules;
+  const tabs = useRef<Record<View, HTMLButtonElement | null>>({ all: null, broker: null });
+
+  const onTabKey = (event: KeyboardEvent) => {
+    // A modified arrow is the browser's — Alt and Left is Back — not the list's.
+    if (event.altKey || event.ctrlKey || event.metaKey || scope === null) return;
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+
+    event.preventDefault();
+    // Two tabs, so every key that moves at all lands on the other one — except Home and End,
+    // which say which.
+    const to: View =
+      event.key === 'Home' ? 'broker' : event.key === 'End' ? 'all' : shown === 'all' ? 'broker' : 'all';
+    setView(to);
+    tabs.current[to]?.focus();
+  };
 
   return (
     <PanelShell title="Colours" named onClose={onClose}>
@@ -196,6 +205,41 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
           page, cutting a page that is only ever about its rules in two. Here it is where the eye
           starts and the list hangs from it, however long or short the list is. */}
       <div className={styles.toolbar}>
+        <div className={styles.tabs} role="tablist" aria-label="Which rules" onKeyDown={onTabKey}>
+          {(['broker', 'all'] as const).map((tab) => (
+            <button
+              key={tab}
+              ref={(element) => {
+                tabs.current[tab] = element;
+              }}
+              id={`colours-tab-${tab}`}
+              type="button"
+              role="tab"
+              aria-selected={shown === tab}
+              aria-controls={RULES_PANEL}
+              tabIndex={shown === tab ? 0 : -1}
+              className={styles.tab}
+              disabled={tab === 'broker' && scope === null}
+              title={
+                tab === 'broker'
+                  ? scope === null
+                    ? 'Connect a broker to see only the rules painting it.'
+                    : `The rules painting ${brokerName ?? 'this broker'}.`
+                  : undefined
+              }
+              onClick={() => setView(tab)}
+            >
+              {/* The broker by name — its saved one, or its address — rather than 'This broker' and
+                  the name after it: the address is the answer to which broker, and the words in
+                  front of it only pushed it towards the cut. */}
+              {tab === 'all' ? 'All' : <span className={styles.tabName}>{brokerName ?? 'No broker'}</span>}
+              <span className={styles.tabCount}>
+                {tab === 'all' ? rules.length : scope === null ? '–' : rules.filter(onBroker).length}
+              </span>
+            </button>
+          ))}
+        </div>
+
         <button
           type="button"
           className={panel.iconButton}
@@ -209,9 +253,9 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
             setDraft((current) => [
               ...current!,
               {
-                // For the broker that is up, if it is a saved one: a rule is usually written about
-                // what is in front of the reader, and that is this broker's tree.
-                ...newDraftRule(nextColour(current!.map((rule) => rule.colour)), profileId),
+                // For the broker that is up, by its saved id or else its address: a rule is usually
+                // written about what is in front of the reader, and that is this broker's tree.
+                ...newDraftRule(nextColour(current!.map((rule) => rule.colour)), scope?.own ?? null),
                 // The topic last picked in the tree is the one a new rule is usually for. Only
                 // the new row: an edit in progress above it is not the selection's business.
                 filter: selectedTopic ?? '',
@@ -232,63 +276,71 @@ export function ColoursPanel({ onClose }: { onClose: () => void }) {
         </p>
       )}
 
-      {draft !== null && rules.length === 0 && (
-        <div className={panel.nothingYet}>
-          {/* What the panel is for, and the one control that starts it — the sentence the alerts
-              panel says over its own empty list. 'No colour rules yet.' on its own told a first
-              reader what was missing and nothing about what a rule is. */}
-          <p>No colour rules yet. Press <b>New rule</b> and give a topic filter a colour.</p>
-        </div>
-      )}
-
-      {rules.length > 0 && (
-        <div className={styles.rules}>
-          <div className={`${styles.rulesHead} ${panel.rulesHead}`} aria-hidden="true">
-            <span>#</span>
-            {/* Two colours, two columns, in the order the reader sees them on a log row: the
-                topic on top and the message under it. Heading each is what makes a bare pair of
-                swatches readable — side by side and unlabelled they are two colours and no
-                question. */}
-            <span>Topic</span>
-            <span>Message</span>
-            <span>Topic filter</span>
-            <span>Broker</span>
-            <span>Painting</span>
-            <span />
+      <div role="tabpanel" id={RULES_PANEL} aria-labelledby={`colours-tab-${shown}`}>
+        {draft !== null && rules.length === 0 && (
+          <div className={panel.nothingYet}>
+            {/* What the panel is for, and the one control that starts it — the sentence the alerts
+                panel says over its own empty list. 'No colour rules yet.' on its own told a first
+                reader what was missing and nothing about what a rule is. */}
+            <p>No colour rules yet. Press <b>New rule</b> and give a topic filter a colour.</p>
           </div>
+        )}
 
-          {rules.map((rule, index) => (
-            <RuleRow
-              key={rule.id}
-              rule={rule}
-              index={index}
-              fault={faults[index]}
-              profiles={profiles}
-              elsewhere={elsewhere(rule)}
-              painting={paintingCell({
-                filter: rule.filter,
-                elsewhere: elsewhere(rule),
-                // Not applying: a rule for every broker that this broker's own rule on the same
-                // filter overrules.
-                applies: applies.has(rule.id),
-                count: painting.get(rule.filter) ?? 0,
-              })}
-              picking={picking === rule.id}
-              onEdit={(change) => edit(rule.id, change)}
-              onRemove={() => {
-                setDraft((current) => current!.filter((other) => other.id !== rule.id));
-                setPicking((open) => (open === rule.id ? null : open));
-              }}
-              onTogglePicker={() => setPicking((open) => (open === rule.id ? null : rule.id))}
-              onPick={(filter) => {
-                edit(rule.id, { filter });
-                setPicking(null);
-              }}
-              onClosePicker={() => setPicking(null)}
-            />
-          ))}
-        </div>
-      )}
+        {/* Rules there are, none of them on this broker: the list is not empty, and saying so with
+            the sentence for an empty one would read as the rules having gone. */}
+        {shown === 'broker' && rules.length > 0 && visible.length === 0 && (
+          <div className={panel.nothingYet}>
+            <p>
+              No rule paints this broker. Its topics take the default colours — the rules for other
+              brokers are under <b>All</b>.
+            </p>
+          </div>
+        )}
+
+        {visible.length > 0 && (
+          <div className={styles.rules}>
+            <div className={`${styles.rulesHead} ${panel.rulesHead}`} aria-hidden="true">
+              <span>#</span>
+              {/* Two colours, two columns, in the order the reader sees them on a log row: the
+                  topic on top and the message under it. Heading each is what makes a bare pair of
+                  swatches readable — side by side and unlabelled they are two colours and no
+                  question. */}
+              <span>Topic</span>
+              <span>Message</span>
+              <span>Topic filter</span>
+              <span>Broker</span>
+              <span />
+            </div>
+
+            {visible.map((rule) => (
+              <RuleRow
+                key={rule.id}
+                rule={rule}
+                // Its place in the whole list, not in the one on screen: the number is how the row
+                // is named to a screen reader, and a rule that changed name with the tab would be
+                // two rules to anyone who heard both.
+                index={rules.indexOf(rule)}
+                fault={faults[rules.indexOf(rule)]}
+                profiles={profiles}
+                current={scope}
+                elsewhere={elsewhere(rule)}
+                picking={picking === rule.id}
+                onEdit={(change) => edit(rule.id, change)}
+                onRemove={() => {
+                  setDraft((current) => current!.filter((other) => other.id !== rule.id));
+                  setPicking((open) => (open === rule.id ? null : open));
+                }}
+                onTogglePicker={() => setPicking((open) => (open === rule.id ? null : rule.id))}
+                onPick={(filter) => {
+                  edit(rule.id, { filter });
+                  setPicking(null);
+                }}
+                onClosePicker={() => setPicking(null)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
       {full && <p className={panel.note}>That is a hundred colour rules, which is all the API keeps.</p>}
 

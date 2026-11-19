@@ -12,26 +12,23 @@ export type ColourRule = {
   filter: string;
   colour: string;
   bodyColour?: string | null;
-  /** The saved broker this rule belongs to, or absent for every broker. */
+  /** The broker this rule belongs to — a saved one's id, or an address — or absent for every broker. */
   profileId?: string | null;
 };
 
 /**
- * The rules that paint while a link made from `profileId` is up — null for a link that was typed
- * in, or none at all.
+ * The rules that paint while a link answering to `keys` is up — its saved id, the ids of the other
+ * saved entries at its address, and the address itself (see brokerScope). Empty before any link.
  *
  * A rule for every broker applies everywhere; a rule for a broker only while that broker is up.
  * And where one of each covers the same filter, the broker's own wins: the one for every broker is
  * the general colour and this is its exception, and two rules on one filter cannot both paint.
  */
-export function rulesFor<T extends ColourRule>(rules: readonly T[], profileId: string | null): T[] {
-  const own = new Set(
-    rules.filter((rule) => profileId !== null && rule.profileId === profileId).map((rule) => rule.filter),
-  );
+export function rulesFor<T extends ColourRule>(rules: readonly T[], keys: readonly string[]): T[] {
+  const mine = (rule: T) => !!rule.profileId && keys.includes(rule.profileId);
+  const own = new Set(rules.filter(mine).map((rule) => rule.filter));
 
-  return rules.filter((rule) =>
-    rule.profileId ? rule.profileId === profileId : !own.has(rule.filter),
-  );
+  return rules.filter((rule) => (rule.profileId ? mine(rule) : !own.has(rule.filter)));
 }
 
 /**
@@ -97,6 +94,13 @@ function compareSpecificity(a: readonly string[], b: readonly string[]): number 
 /**
  * The rules in the order they should be consulted, with anything malformed dropped.
  *
+ * The broker's own rules first, then the ones for every broker, and the most specific first within
+ * each. Handed the rules `rulesFor` kept, a rule that names a broker is the broker's that is up —
+ * and a rule written for this broker is the reader saying how THIS tree should look, so it is not
+ * outranked by a general rule that happens to name more of the topic. `plant/a/#` for every
+ * broker under `plant/#` for this one used to take `plant/a/x` off it; now this broker's colour is
+ * the colour of everything its rule covers.
+ *
  * Sorting is a property of the rules alone, not of the topic being looked up, so it happens once
  * per rule list rather than once per row on screen.
  */
@@ -110,8 +114,14 @@ export function sortRules(rules: readonly ColourRule[]): ColourRule[] {
       // it: the second colour is an addition to a rule, so a nonsense one costs the payload its
       // colour and leaves the topic still painted. Absent stays absent.
       ...(isColour(rule.bodyColour) ? { bodyColour: rule.bodyColour.toLowerCase() } : {}),
+      // Kept for the order below, and for a row that wants to say whose rule painted it.
+      ...(rule.profileId ? { profileId: rule.profileId } : {}),
     }))
-    .sort((a, b) => compareSpecificity(a.filter.split('/'), b.filter.split('/')));
+    .sort(
+      (a, b) =>
+        Number(!!b.profileId) - Number(!!a.profileId) ||
+        compareSpecificity(a.filter.split('/'), b.filter.split('/')),
+    );
 }
 
 /**

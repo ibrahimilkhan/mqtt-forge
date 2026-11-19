@@ -2,8 +2,11 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { getColourRules } from '../api/colourRules';
 import { queryKeys } from '../api/queryKeys';
-import { useLinkProfile } from '../api/useConnectionState';
 import { createRuleLookup, rulesFor } from './topicColour';
+import { useLinkScope } from './useLinkScope';
+
+// One array for 'no link yet', so the memo below is not undone by a fresh empty one each render.
+const NONE: readonly string[] = [];
 
 /**
  * The colour rule covering a topic, for the panes that draw one row per topic.
@@ -14,7 +17,7 @@ import { createRuleLookup, rulesFor } from './topicColour';
 export function useRuleLookup() {
   const { data } = useQuery({ queryKey: queryKeys.colourRules, queryFn: getColourRules });
   // Only the rules that belong to the broker up now, and the ones for every broker.
-  const profileId = useLinkProfile();
+  const keys = useLinkScope()?.keys ?? NONE;
 
-  return useMemo(() => createRuleLookup(rulesFor(data ?? [], profileId)), [data, profileId]);
+  return useMemo(() => createRuleLookup(rulesFor(data ?? [], keys)), [data, keys]);
 }

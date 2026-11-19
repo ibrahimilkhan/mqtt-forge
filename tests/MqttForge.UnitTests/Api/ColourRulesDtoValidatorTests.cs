@@ -141,6 +141,25 @@ public class ColourRulesDtoValidatorTests
             new ColourRuleDto("sensors/#", "#1e40af", ProfileId: "lab-1")));
     }
 
+    // A broker that was never saved is known by its address, and the longest host DNS allows has to
+    // fit — a name the console can connect to and then cannot give a rule would be a broker without
+    // colours for no reason the reader could see.
+    [Fact]
+    public void Accepts_a_broker_named_by_its_address_however_long_its_host()
+    {
+        var host = string.Join('.', Enumerable.Repeat(new string('a', 63), 4)).Substring(0, 253);
+
+        Assert.True(IsValid(
+            new ColourRuleDto("sensors/#", "#1e40af", ProfileId: "mqtts://mqtt.hsl.fi:8883"),
+            new ColourRuleDto("alerts/#", "#1e40af", ProfileId: $"wss://[{host}]:65535")));
+    }
+
+    [Fact]
+    public void Refuses_an_owner_too_long_to_be_any_broker()
+    {
+        Assert.False(IsValid(new ColourRuleDto("sensors/#", "#1e40af", ProfileId: new string('a', 301))));
+    }
+
     // Blank and absent mean the same owner, every broker, so they cannot both carry a colour.
     [Fact]
     public void A_blank_broker_is_every_broker()

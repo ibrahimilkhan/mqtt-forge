@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import type { ConnectionState, ConnectionStateResponse } from '../types/api';
+import type { BrokerLink, ConnectionState, ConnectionStateResponse } from '../types/api';
 import { getConnectionState } from './connection';
 import { queryKeys } from './queryKeys';
 
@@ -53,21 +53,21 @@ export function useBrokerAddress(): string | undefined {
 }
 
 /**
- * The saved broker whose rules apply: the one the live link was made from, or null for a link
- * typed in or picked from the history — which only the rules for every broker apply to.
+ * The link whose broker's rules apply: the one up now, or the last one that was.
  *
  * Held through a drop. A link that goes leaves its topics in the tree and its lines in the log,
  * and those are still that broker's; a tree repainted in another broker's colours the moment the
  * link went would say the outage changed what the topics were. The next link to come up is the
- * next answer.
+ * next answer. Null only before any link has come up at all.
  */
-export function useLinkProfile(): string | null {
+export function useHeldLink(): BrokerLink | null {
   const { link } = useConnectionState();
-  const [last, setLast] = useState<string | null>(null);
+  const [last, setLast] = useState<BrokerLink | null>(null);
 
   // Adjusted while rendering rather than in an effect, so the frame a link comes up in is already
-  // painted with its rules — not one frame in the last broker's colours first.
-  const now = link ? (link.profileId ?? null) : last;
+  // painted with its rules — not one frame in the last broker's colours first. The query shares
+  // structure between answers, so an unchanged link is the same object and this settles at once.
+  const now = link ?? last;
   if (now !== last) setLast(now);
 
   return now;

@@ -10,9 +10,49 @@
 /* New rule, at the top right of the page, over the list it adds to. */
 .toolbar {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 12px;
 }
+/* The same button the alerts panel puts at the end of its heading line, at the same size: there it
+   takes its padding from `.sectionTop > button`, and without this it was 2px shorter here, so the
+   button jumped under the pointer going from one panel to the other. */
+.toolbar > button { padding: 7px 12px; }
+
+/* Every rule, or the ones painting the broker that is up. Drawn as the flow tabs are, so the
+   console has one kind of tab: a framed word, and the chosen one underlined in the signal blue. */
+.tabs { display: flex; align-items: center; gap: 4px; min-width: 0; }
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 5px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--t-small);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+.tab[aria-selected='true'] { border-color: var(--signal); box-shadow: inset 0 -2px 0 var(--signal); }
+
+/* The broker's name, saved or its address: cut before the count is, since the count is the part
+   that changes as rules are written. Mono, because an address is read character by character. */
+.tabName {
+  min-width: 0;
+  max-width: 36ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+}
+
+.tabCount { font-family: var(--mono); font-size: var(--t-micro); color: var(--muted); }
 
 /* The one thing you do to the whole list, under it — and no rule over it: the list's own last
    row already ends it. */
@@ -27,25 +67,23 @@
 
    A table with a heading now, the same arrangement the alerts panel uses for the same reason:
    this is a list somebody keeps, and telling two entries in it apart should not mean opening
-   both. Seven columns, in reading order:
+   both. Six columns, in reading order:
 
      #        its place in the list, for pointing at a row out loud
      Topic    34px of swatch under a header wider than it. A head cell that does not fit does not
      Message  clip — it runs into the cell beside it, which read as one word, 'TOPICMESSAGE' — so
               each of the two is as wide as its heading
      Filter   two shares of the slack: it is the long thing and the thing that is read
-     Broker   between the filter and the count, because it is part of what the rule is — which
-              topics, on which broker — and the count is what that comes to
-     Painting a floor rather than a fraction: it is 'none' or '12 topics' and never needs more,
-              but it must not be squeezed to nothing when the panel narrows
+     Broker   after the filter, because it is part of what the rule is — which topics, on which
+              broker
      ×        one mark. The glass that used to stand beside it is in the filter cell, where the
               field it fills in is */
 .rules {
-  --rule-cols: 26px 52px 68px minmax(190px, 2fr) minmax(120px, 0.8fr) minmax(94px, 0.6fr) 34px;
+  --rule-cols: 26px 52px 68px minmax(190px, 2fr) minmax(140px, 1fr) 34px;
   /* It measures itself, as the alerts table does and for the reason written there: the panel is
      always narrower than the window by the rail and the pane's gutters. Keyed to the window, the
-     stack below did not start until 640px while these seven columns need 660 of the panel's own
-     width — so on every window in between the × was drawn past the row's right edge. */
+     stack below did not start until 640px while the columns needed more than that of the panel's
+     own width — so on every window in between the × was drawn past the row's right edge. */
   container-type: inline-size;
 }
 
@@ -55,7 +93,7 @@
   grid-template-columns: var(--rule-cols);
   gap: 10px;
   /* Centred, not on the baseline the alerts table uses: every cell here is one line and one of
-     them is a box 38px tall, so a baseline would hang the swatch and the count off its text. */
+     them is a box 38px tall, so a baseline would hang the swatch off its text. */
   align-items: center;
 }
 
@@ -123,18 +161,7 @@
   font-size: var(--t-small);
 }
 
-/* What the rule has actually taken, counted off the tree this panel is now covering. Figures of
-   one width, so 9 topics and 12 topics end their numbers in the same place down the column. */
-.painting {
-  font-family: var(--mono);
-  font-size: var(--t-small);
-  font-variant-numeric: tabular-nums;
-  color: var(--ink);
-  overflow-wrap: anywhere;
-}
-.painting[data-idle] { color: var(--warn); }
-
-/* The × at the end of a row, held to the row's right edge and away from the count. */
+/* The × at the end of a row, held to the row's right edge. */
 .rowActions {
   display: flex;
   align-items: center;
@@ -177,7 +204,7 @@
   margin-top: 8px;
 }
 
-/* -- where seven columns stop being seven columns --
+/* -- where six columns stop being six columns --
 
    One rule to a short stack: the row number, the two swatches, the filter and the × on the first
    line, and the rest under the filter's left edge. The header has nothing left to head, so it
@@ -188,24 +215,16 @@
     grid-template-columns: 26px 34px 34px minmax(0, 1fr) 30px;
     row-gap: 6px;
   }
-  /* The broker first and the count under it: which topics, on which broker, and then what that
-     comes to — the order the columns say it in.
+  /* The broker under the filter: which topics, and then on which broker.
 
-     Each pinned to its row, not merely told to span: an item given a column but no row is placed
+     Pinned to its row, not merely told to span: an item given a column but no row is placed
      by the auto cursor, and the cursor then carries on from there — which put the × on a line of
-     its own, at the far left, under a row it belongs to the end of. Definite in both axes, they
-     are placed before the auto items and leave their cursor where it was. */
+     its own, at the far left, under a row it belongs to the end of. Definite in both axes, it is
+     placed before the auto items and leaves their cursor where it was. */
   .broker {
     grid-column: 2 / -1;
     grid-row: 2;
   }
-  .painting {
-    grid-column: 2 / -1;
-    grid-row: 3;
-  }
-  /* A row with no filter has no count, and an empty line still spends its gap. The count used to
-     stand between the filter and the broker, so a new rule opened with a hole in the middle. */
-  .painting:empty { display: none; }
   .rowFault {
     grid-column: 2 / -1;
     margin-top: 0;

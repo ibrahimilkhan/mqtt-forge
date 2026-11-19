@@ -9,20 +9,28 @@ describe('rulesFor', () => {
   const staging: ColourRule = { filter: 'stage/#', colour: '#333333', profileId: 'staging-1' };
 
   it('applies the rules for every broker, and the broker that is up', () => {
-    expect(rulesFor([everywhere, lab, staging], 'lab-1')).toEqual([everywhere, lab]);
+    expect(rulesFor([everywhere, lab, staging], ['lab-1'])).toEqual([everywhere, lab]);
   });
 
-  // A link typed in, or none: no saved broker, so no broker's own rules.
-  it('applies only the rules for every broker to a link that is no saved broker', () => {
-    expect(rulesFor([everywhere, lab, staging], null)).toEqual([everywhere]);
+  // No link yet: nothing to be any broker's own.
+  it('applies only the rules for every broker before any link is up', () => {
+    expect(rulesFor([everywhere, lab, staging], [])).toEqual([everywhere]);
+  });
+
+  // A broker answers to its saved id and to its address, and a rule naming either is its own.
+  it('applies a rule written for the address of the broker that is up', () => {
+    const typed: ColourRule = { filter: 'hsl/#', colour: '#555555', profileId: 'mqtts://mqtt.hsl.fi:8883' };
+
+    expect(rulesFor([everywhere, lab, typed], ['lab-1', 'mqtts://mqtt.hsl.fi:8883'])).toEqual([everywhere, lab, typed]);
+    expect(rulesFor([everywhere, typed], ['mqtt://127.0.0.1:1883'])).toEqual([everywhere]);
   });
 
   // Two rules on one filter cannot both paint: the broker's own is the exception to the general.
   it("lets the broker's own rule overrule one for every broker on the same filter", () => {
     const own: ColourRule = { filter: 'plant/#', colour: '#444444', profileId: 'lab-1' };
 
-    expect(rulesFor([everywhere, own], 'lab-1')).toEqual([own]);
-    expect(rulesFor([everywhere, own], 'staging-1')).toEqual([everywhere]);
+    expect(rulesFor([everywhere, own], ['lab-1'])).toEqual([own]);
+    expect(rulesFor([everywhere, own], ['staging-1'])).toEqual([everywhere]);
   });
 });
 
@@ -57,6 +65,14 @@ describe('sortRules', () => {
     const sorted = sortRules([rule('sensors/#'), rule('sensors/+/temp')]);
 
     expect(sorted.map((r) => r.filter)).toEqual(['sensors/+/temp', 'sensors/#']);
+  });
+
+  // Handed what rulesFor kept, a rule naming a broker is the broker's that is up, and it is the
+  // reader saying how this tree should look.
+  it("puts the broker's own rules before the ones for every broker, however specific", () => {
+    const sorted = sortRules([rule('sensors/+/temp'), { ...rule('sensors/#'), profileId: 'lab-1' }]);
+
+    expect(sorted.map((r) => r.filter)).toEqual(['sensors/#', 'sensors/+/temp']);
   });
 
   it('drops a rule whose colour is not a hex triple', () => {

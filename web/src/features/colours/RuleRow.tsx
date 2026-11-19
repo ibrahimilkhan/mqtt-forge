@@ -1,10 +1,10 @@
 import panel from '../../styles/panel.module.css';
+import { isAddressKey, type BrokerScope } from '../../lib/brokerScope';
 import type { SavedProfile } from '../../types/api';
 import { TopicPicker } from '../alerts/TopicPicker';
 import { Search } from '../brand/icons';
 import { ColourPicker } from './ColourPicker';
 import styles from './ColoursPanel.module.css';
-import type { PaintingCell } from './painted';
 import type { DraftRule } from './ruleDraft';
 
 type Props = {
@@ -15,9 +15,10 @@ type Props = {
   fault: string | null;
   /** Every saved broker a rule can belong to; undefined until they have been read. */
   profiles: readonly SavedProfile[] | undefined;
+  /** The broker that is up, offered first; null before any link has come up. */
+  current: BrokerScope | null;
   /** Another broker's rule: drawn faded, and painting nothing while this broker is up. */
   elsewhere: boolean;
-  painting: PaintingCell;
   /** Whether this row's topic picker is the one that is open. */
   picking: boolean;
   onEdit: (change: Partial<DraftRule>) => void;
@@ -29,7 +30,7 @@ type Props = {
 
 /**
  * One colour rule, as a row of the table: its number, the topic's colour and the message's, the
- * filter with the glass that fills it in, the broker it belongs to, what it is painting, and the
+ * filter with the glass that fills it in, the broker it belongs to, and the
  * × that drops it. Under those, when there is something to say, why it cannot be saved and the
  * broker's tree to pick a topic from.
  *
@@ -41,8 +42,8 @@ export function RuleRow({
   index,
   fault,
   profiles,
+  current,
   elsewhere,
-  painting,
   picking,
   onEdit,
   onRemove,
@@ -57,9 +58,9 @@ export function RuleRow({
       data-elsewhere={elsewhere ? '' : undefined}
     >
       {/* Its place in the list, for pointing at a row in a sentence somebody says out
-          loud. NOT precedence: which rule paints a topic is decided by which filter says
-          more about it, wherever the two happen to sit. The Painting column is where that
-          is answered — a general rule under a specific one reads 'none'. */}
+          loud. NOT precedence: which rule paints a topic is decided by whose it is — this
+          broker's before every broker's — and then by which filter says more about it,
+          wherever the two happen to sit. See sortRules. */}
       <span className={panel.ruleNumber}>{index + 1}</span>
 
       <ColourPicker
@@ -115,37 +116,40 @@ export function RuleRow({
         </button>
       </span>
 
-      {/* Every broker, or one saved broker. One that has been deleted since is still named as
-          gone rather than quietly turned into every broker: the rule was written for it. */}
+      {/* The broker that is up first, since a rule is usually written about the tree in front of
+          the reader; then every broker, then the other saved ones. One that has been deleted since
+          is still named as gone rather than quietly turned into every broker: the rule was
+          written for it. One written for a broker that was never saved is named by its address. */}
       <select
         className={styles.broker}
         value={rule.profileId ?? ''}
         aria-label={`Broker for rule ${index + 1}`}
         onChange={(event) => onEdit({ profileId: event.target.value || null })}
       >
-        <option value="">All brokers</option>
-        {profiles?.map((profile) => (
-          <option key={profile.id} value={profile.id}>
-            {profile.name}
+        {current && (
+          <option value={current.own}>
+            {current.name} (connected)
           </option>
-        ))}
+        )}
+        <option value="">All brokers</option>
+        {profiles
+          ?.filter((profile) => profile.id !== current?.own)
+          .map((profile) => (
+            <option key={profile.id} value={profile.id}>
+              {profile.name}
+            </option>
+          ))}
         {rule.profileId !== null &&
-          profiles !== undefined &&
-          !profiles.some((profile) => profile.id === rule.profileId) && (
-            <option value={rule.profileId}>A deleted broker</option>
-          )}
+          rule.profileId !== current?.own &&
+          (isAddressKey(rule.profileId) ? (
+            <option value={rule.profileId}>{rule.profileId}</option>
+          ) : (
+            profiles !== undefined &&
+            !profiles.some((profile) => profile.id === rule.profileId) && (
+              <option value={rule.profileId}>A deleted broker</option>
+            )
+          ))}
       </select>
-
-      <span
-        className={styles.painting}
-        /* A rule painting nothing is the point of the column, so it is not drawn in the
-           same grey as a rule painting forty. Not the fault colour either: it is not
-           wrong, it is idle — usually a filter another rule has taken every topic off. */
-        data-idle={painting.idle ? '' : undefined}
-        title={painting.hint}
-      >
-        {painting.words}
-      </span>
 
       <span className={styles.rowActions}>
         <button

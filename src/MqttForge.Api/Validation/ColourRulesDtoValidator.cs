@@ -48,8 +48,10 @@ public sealed partial class ColourRulesDtoValidator : AbstractValidator<ColourRu
                 .Must(colour => colour is null || HexTriple.IsMatch(colour))
                 .WithMessage("'{PropertyValue}' is not a #rrggbb colour.");
 
-            // An id the server minted is 32 characters; anything far past that is not one of ours.
-            rule.RuleFor(x => x.ProfileId).MaximumLength(64);
+            // A saved broker's id, which the server mints at 32 characters, or the address of one
+            // that was never saved — `wss://` and a 253-character host in brackets and a port is
+            // 268. Past that it is neither.
+            rule.RuleFor(x => x.ProfileId).MaximumLength(300);
         });
     }
 

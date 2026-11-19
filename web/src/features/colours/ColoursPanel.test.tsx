@@ -9,14 +9,7 @@ import { useTopicTreeStore } from '../../stores/topicTreeStore';
 import { renderWithClient as render } from '../../test/renderWithClient';
 import { server } from '../../test/server';
 import { ColoursPanel } from './ColoursPanel';
-import { paintedBy } from './painted';
 import { PALETTE, SUGGESTED } from './palette';
-
-// The real count, watched: how often it is taken is what the panel's cost under traffic is.
-vi.mock('./painted', async (actual) => {
-  const real = await actual<typeof import('./painted')>();
-  return { ...real, paintedBy: vi.fn(real.paintedBy) };
-});
 
 type Wire = { filter: string; colour: string; bodyColour?: string | null };
 
@@ -279,100 +272,6 @@ describe('ColoursPanel', () => {
 
     await waitFor(() => expect(rows()).toHaveLength(1));
     expect(saveButton()).toBeEnabled();
-  });
-});
-
-/*
- * A colour rule's effect is somewhere else — it paints rows in a tree this panel now covers — so
- * the panel had no way of saying whether a rule was doing anything at all. A filter with a typo
- * in it and a filter painting forty topics were the same row.
- */
-describe('what each rule is painting', () => {
-  beforeEach(() => {
-    useTopicTreeStore.getState().reset();
-    act(() =>
-      useTopicTreeStore.getState().apply([
-        { topic: 'plant/boiler/temp', payload: '1' },
-        { topic: 'plant/boiler/flow', payload: '2' },
-        { topic: 'plant/kiln/temp', payload: '3' },
-        { topic: 'site/gateway/status', payload: '4' },
-      ] as never),
-    );
-  });
-
-  it('counts the topics the rule has taken', async () => {
-    stored({ filter: 'plant/#', colour: '#ab3520' });
-    renderPanel();
-
-    expect(await screen.findByText('3 topics')).toBeInTheDocument();
-  });
-
-  it('counts one topic in the singular', async () => {
-    stored({ filter: 'site/gateway/status', colour: '#ab3520' });
-    renderPanel();
-
-    expect(await screen.findByText('1 topic')).toBeInTheDocument();
-  });
-
-  // The commonest way a colour rule quietly does nothing, and the one thing a list of filters
-  // cannot show you: another rule says more about every topic this one covers.
-  it('says none for a rule a more specific one has taken every topic off', async () => {
-    stored(
-      { filter: 'plant/#', colour: '#ab3520' },
-      { filter: 'plant/+/+', colour: '#0d7a63' },
-    );
-    renderPanel();
-
-    await waitFor(() => expect(rows()).toHaveLength(2));
-    expect(within(rows()[0]).getByText('none')).toBeInTheDocument();
-    expect(within(rows()[1]).getByText('3 topics')).toBeInTheDocument();
-  });
-
-  it('answers the filter being typed rather than the one that was saved', async () => {
-    stored({ filter: 'plant/#', colour: '#ab3520' });
-    renderPanel();
-
-    await waitFor(() => expect(rows()).toHaveLength(1));
-    await userEvent.clear(filterBox(rows()[0]));
-    await userEvent.type(filterBox(rows()[0]), 'site/#');
-
-    expect(within(rows()[0]).getByText('1 topic')).toBeInTheDocument();
-  });
-
-  it('says nothing at all about a row with no filter in it yet', async () => {
-    renderPanel();
-    await waitFor(() => expect(addButton()).toBeEnabled());
-    await userEvent.click(addButton());
-
-    expect(within(rows()[0]).queryByText('none')).not.toBeInTheDocument();
-  });
-
-  // The count walks every topic on the broker, and the tree is new on every frame of traffic.
-  // Walked on every frame, the panel was what a busy broker stuttered on while it was open.
-  it('does not count again while only the readings on the topics move', async () => {
-    stored({ filter: 'plant/#', colour: '#ab3520' });
-    renderPanel();
-    await screen.findByText('3 topics');
-    const counted = vi.mocked(paintedBy).mock.calls.length;
-
-    for (let reading = 0; reading < 5; reading++) {
-      act(() =>
-        useTopicTreeStore.getState().apply([{ topic: 'plant/boiler/temp', payload: String(reading) }] as never),
-      );
-    }
-    await new Promise((settle) => setTimeout(settle, 50));
-
-    expect(vi.mocked(paintedBy).mock.calls.length).toBe(counted);
-  });
-
-  it('counts again once a new topic has arrived', async () => {
-    stored({ filter: 'plant/#', colour: '#ab3520' });
-    renderPanel();
-    await screen.findByText('3 topics');
-
-    act(() => useTopicTreeStore.getState().apply([{ topic: 'plant/kiln/flow', payload: '5' }] as never));
-
-    expect(await screen.findByText('4 topics')).toBeInTheDocument();
   });
 });
 
@@ -1149,19 +1048,22 @@ describe('when the rules cannot be saved', () => {
  * Rules that belong to one saved broker.
  *
  * Every rule is listed whichever broker is up, because this is where they are all managed; the
- * ones for another broker are drawn faded and say they are painting nothing here.
+ * ones for another broker are drawn faded.
  */
 describe('ColoursPanel, with rules for one broker', () => {
   // A topic picked in the tree by an earlier test would be written into the new row's filter.
   beforeEach(() => useSelectionStore.getState().clear());
 
-  const link = (profileId: string | null) =>
+  // A saved broker's address, as the API keeps it. Only the parts an address is made of matter here.
+  const at = (host: string) => ({ host, port: 1883, useTls: false, transport: 'tcp' });
+
+  const link = (profileId: string | null, host = 'lab.example') =>
     server.use(
       http.get('/api/connection', () =>
         HttpResponse.json({
           state: 'Connected',
           connection: {
-            host: 'lab.example', port: 1883, clientId: 'console', username: null, useTls: false,
+            host, port: 1883, clientId: 'console', username: null, useTls: false,
             connectedAt: '2026-11-13T10:00:00Z', sessionPresent: false, assignedClientId: null,
             serverKeepAlive: null, transport: 'tcp', protocolVersion: 'v500', profileId,
           },
@@ -1169,13 +1071,18 @@ describe('ColoursPanel, with rules for one broker', () => {
       ),
       http.get('/api/connection/profiles', () =>
         HttpResponse.json([
-          { id: 'lab-1', name: 'Lab', connection: {} },
-          { id: 'staging-1', name: 'Staging', connection: {} },
+          { id: 'lab-1', name: 'Lab', connection: at('lab.example') },
+          { id: 'staging-1', name: 'Staging', connection: at('staging.example') },
         ]),
       ),
     );
 
   const brokerOf = (row: HTMLElement) => within(row).getByRole('combobox', { name: /^Broker for rule/ });
+  // Another broker's rules are only on the whole list; the panel opens on this broker's.
+  const everyRule = async () => {
+    await waitFor(() => expect(screen.getByRole('tab', { name: /^All/ })).toBeEnabled());
+    await userEvent.click(screen.getByRole('tab', { name: /^All/ }));
+  };
 
   it("names each rule's broker, and every broker for a rule that has none", async () => {
     link('lab-1');
@@ -1183,22 +1090,22 @@ describe('ColoursPanel, with rules for one broker', () => {
     renderPanel();
 
     await waitFor(() => expect(rows()).toHaveLength(2));
-    await waitFor(() => expect(brokerOf(rows()[1])).toHaveDisplayValue('Lab'));
+    await waitFor(() => expect(brokerOf(rows()[1])).toHaveDisplayValue('Lab (connected)'));
     expect(brokerOf(rows()[0])).toHaveDisplayValue('All brokers');
   });
 
-  it("fades another broker's rule and says it is painting nothing here", async () => {
+  it("fades another broker's rule", async () => {
     link('lab-1');
     stored(
       { filter: 'lab/#', colour: '#ab3520', profileId: 'lab-1' } as Wire,
       { filter: 'stage/#', colour: '#1e40af', profileId: 'staging-1' } as Wire,
     );
     renderPanel();
+    await everyRule();
 
     await waitFor(() => expect(rows()).toHaveLength(2));
     expect(rows()[0]).not.toHaveAttribute('data-elsewhere');
     expect(rows()[1]).toHaveAttribute('data-elsewhere');
-    expect(within(rows()[1]).getByText('other broker')).toBeInTheDocument();
   });
 
   // A rule is usually written about what is in front of the reader, which is this broker's tree.
@@ -1216,8 +1123,9 @@ describe('ColoursPanel, with rules for one broker', () => {
     expect(sent[0]).toEqual([{ filter: 'lab/#', colour: SUGGESTED[0], bodyColour: null, profileId: 'lab-1' }]);
   });
 
-  it('gives a new rule to every broker over a link that is no saved broker', async () => {
-    link(null);
+  // Never saved, so known by its address — which is what the rule is written for.
+  it('gives a new rule to a broker that was never saved, by its address', async () => {
+    link(null, 'typed.example');
     const sent = capturePut();
     renderPanel();
     await waitFor(() => expect(addButton()).toBeEnabled());
@@ -1227,7 +1135,52 @@ describe('ColoursPanel, with rules for one broker', () => {
     await userEvent.click(saveButton());
 
     await waitFor(() => expect(sent).toHaveLength(1));
-    expect(sent[0]).toEqual([{ filter: 'plant/#', colour: SUGGESTED[0], bodyColour: null }]);
+    expect(sent[0]).toEqual([
+      { filter: 'plant/#', colour: SUGGESTED[0], bodyColour: null, profileId: 'mqtt://typed.example:1883' },
+    ]);
+  });
+
+  // Dialled from the history rather than its saved entry, it is still the same broker.
+  it('knows a saved broker reached another way by its address', async () => {
+    link(null, 'LAB.example');
+    stored({ filter: 'lab/#', colour: '#ab3520', profileId: 'lab-1' } as Wire);
+    renderPanel();
+
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    await waitFor(() => expect(brokerOf(rows()[0])).toHaveDisplayValue('Lab (connected)'));
+    expect(rows()[0]).not.toHaveAttribute('data-elsewhere');
+  });
+
+  it('paints with a rule written for the address of the broker that is up', async () => {
+    link(null, 'typed.example');
+    stored(
+      { filter: 'plant/#', colour: '#b45309', profileId: 'mqtt://typed.example:1883' } as Wire,
+      { filter: 'other/#', colour: '#1e40af', profileId: 'mqtt://elsewhere.example:1883' } as Wire,
+    );
+    renderPanel();
+    await everyRule();
+
+    await waitFor(() => expect(rows()).toHaveLength(2));
+    await waitFor(() => expect(brokerOf(rows()[0])).toHaveDisplayValue('mqtt://typed.example:1883 (connected)'));
+    expect(rows()[0]).not.toHaveAttribute('data-elsewhere');
+    // Another unsaved broker's rule names that broker by its address, not as one deleted.
+    expect(brokerOf(rows()[1])).toHaveDisplayValue('mqtt://elsewhere.example:1883');
+    expect(rows()[1]).toHaveAttribute('data-elsewhere');
+  });
+
+  // A rule is usually written about the tree in front of the reader.
+  it('offers the broker that is up first, before every broker and the other saved ones', async () => {
+    link('lab-1');
+    stored({ filter: 'plant/#', colour: '#b45309' });
+    renderPanel();
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    await waitFor(() => expect(within(brokerOf(rows()[0])).getAllByRole('option')).toHaveLength(3));
+
+    expect(within(brokerOf(rows()[0])).getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'Lab (connected)',
+      'All brokers',
+      'Staging',
+    ]);
   });
 
   it('moves a rule to every broker when that is picked', async () => {
@@ -1236,12 +1189,140 @@ describe('ColoursPanel, with rules for one broker', () => {
     const sent = capturePut();
     renderPanel();
     await waitFor(() => expect(rows()).toHaveLength(1));
-    await waitFor(() => expect(brokerOf(rows()[0])).toHaveDisplayValue('Lab'));
+    await waitFor(() => expect(brokerOf(rows()[0])).toHaveDisplayValue('Lab (connected)'));
 
     await userEvent.selectOptions(brokerOf(rows()[0]), 'All brokers');
     await userEvent.click(saveButton());
 
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toEqual([{ filter: 'lab/#', colour: '#ab3520', bodyColour: null }]);
+  });
+
+  describe('the two lists', () => {
+    const tab = (name: RegExp) => screen.getByRole('tab', { name });
+    // Named for the broker itself — its saved name or its address — and always the first.
+    const brokerTab = () => screen.getAllByRole('tab')[0];
+    const filters = () => rows().map((row) => filterBox(row)).map((box) => (box as HTMLInputElement).value);
+
+    const mixed = () =>
+      stored(
+        { filter: 'plant/#', colour: '#b45309' },
+        { filter: 'lab/#', colour: '#ab3520', profileId: 'lab-1' } as Wire,
+        { filter: 'stage/#', colour: '#1e40af', profileId: 'staging-1' } as Wire,
+        // For every broker, and overruled here by Lab's own rule on the same filter.
+        { filter: 'lab/#', colour: '#0f766e' },
+      );
+
+    // The tree behind the panel is drawn with this broker's rules, so they come first.
+    it("puts this broker's tab first, and opens on it", async () => {
+      link('lab-1');
+      mixed();
+      renderPanel();
+
+      await waitFor(() => expect(rows()).toHaveLength(2));
+      expect(screen.getAllByRole('tab').map((one) => one.textContent)).toEqual([
+        expect.stringMatching(/^Lab/),
+        expect.stringMatching(/^All/),
+      ]);
+      expect(brokerTab()).toHaveAttribute('aria-selected', 'true');
+    });
+
+    // The rows the tree is painting with, and no others: Lab's own, and the one for every broker
+    // that Lab has not overruled.
+    it("shows only the rules painting the broker that is up on this broker's tab", async () => {
+      link('lab-1');
+      mixed();
+      renderPanel();
+      await everyRule();
+      await waitFor(() => expect(rows()).toHaveLength(4));
+
+      await userEvent.click(brokerTab());
+
+      expect(brokerTab()).toHaveAttribute('aria-selected', 'true');
+      expect(brokerTab()).toHaveTextContent('Lab');
+      expect(filters()).toEqual(['plant/#', 'lab/#']);
+      expect(rows()[1]).not.toHaveAttribute('data-elsewhere');
+    });
+
+    // The number names the row to a screen reader, so it is the rule's, not the row's on screen.
+    it('keeps each rule numbered as it is on the whole list', async () => {
+      link('lab-1');
+      mixed();
+      renderPanel();
+      await waitFor(() => expect(brokerTab()).toBeEnabled());
+
+      await userEvent.click(brokerTab());
+
+      expect(brokerOf(rows()[1])).toHaveAccessibleName('Broker for rule 2');
+    });
+
+    it('says so when rules exist and none of them paints this broker', async () => {
+      link('lab-1');
+      stored({ filter: 'stage/#', colour: '#1e40af', profileId: 'staging-1' } as Wire);
+      renderPanel();
+      await waitFor(() => expect(brokerTab()).toBeEnabled());
+
+      await userEvent.click(brokerTab());
+
+      expect(screen.queryAllByTestId('colour-rule')).toHaveLength(0);
+      expect(screen.getByText(/No rule paints this broker/)).toBeInTheDocument();
+    });
+
+    // Never saved, and still a broker with rules of its own: it is named by its address.
+    it('narrows to a broker that was never saved, named by its address', async () => {
+      link(null, 'typed.example');
+      stored(
+        { filter: 'plant/#', colour: '#b45309' },
+        { filter: 'typed/#', colour: '#ab3520', profileId: 'mqtt://typed.example:1883' } as Wire,
+        { filter: 'lab/#', colour: '#1e40af', profileId: 'lab-1' } as Wire,
+      );
+      renderPanel();
+      await waitFor(() => expect(brokerTab()).toBeEnabled());
+
+      await userEvent.click(brokerTab());
+
+      expect(brokerTab()).toHaveTextContent('mqtt://typed.example:1883');
+      expect(filters()).toEqual(['plant/#', 'typed/#']);
+    });
+
+    // Before any link there is no 'this broker' to narrow to.
+    it('leaves the tab shut until a broker has been connected', async () => {
+      mixed();
+      renderPanel();
+      await waitFor(() => expect(rows()).toHaveLength(4));
+
+      expect(brokerTab()).toBeDisabled();
+      expect(tab(/^All/)).toHaveAttribute('aria-selected', 'true');
+    });
+
+    it('moves between the two with the arrow keys', async () => {
+      link('lab-1');
+      mixed();
+      renderPanel();
+      await waitFor(() => expect(brokerTab()).toBeEnabled());
+
+      brokerTab().focus();
+      await userEvent.keyboard('{ArrowRight}');
+
+      expect(tab(/^All/)).toHaveFocus();
+      expect(tab(/^All/)).toHaveAttribute('aria-selected', 'true');
+    });
+
+    // Narrowing the view is not narrowing the save: the rules off the list are still rules.
+    it("saves every rule from this broker's tab, not only the ones on it", async () => {
+      link('lab-1');
+      mixed();
+      const sent = capturePut();
+      renderPanel();
+      await waitFor(() => expect(brokerTab()).toBeEnabled());
+      await userEvent.click(brokerTab());
+
+      await userEvent.clear(filterBox(rows()[0]));
+      await userEvent.type(filterBox(rows()[0]), 'works/#');
+      await userEvent.click(saveButton());
+
+      await waitFor(() => expect(sent).toHaveLength(1));
+      expect(sent[0].map((rule) => rule.filter)).toEqual(['works/#', 'lab/#', 'stage/#', 'lab/#']);
+    });
   });
 });
