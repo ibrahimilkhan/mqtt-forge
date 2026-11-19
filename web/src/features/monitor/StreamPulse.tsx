@@ -16,21 +16,22 @@ const TALL = 20;
  *
  * Laid against a full minute from the start, the newest reading always at the right edge, so a
  * stream that has just begun grows in from the right rather than being stretched across the
- * button and then squeezed as the minute fills.
+ * button and then squeezed as the minute fills. The seconds before the first reading are drawn
+ * at nothing, so a broker that has only just connected already has its line: left out, the button
+ * stood a line shorter until the second reading came in, and then grew under the pointer.
  *
  * Decoration to anything reading the page aloud: the rate itself is in the control's tooltip.
  */
 export const StreamPulse = memo(function StreamPulse({ readings }: { readings: readonly number[] }) {
-  if (readings.length < 2) return null;
+  const minute = [...Array<number>(Math.max(0, RATE_SECONDS - readings.length)).fill(0), ...readings];
 
-  const high = Math.max(...readings);
-  const first = RATE_SECONDS - readings.length;
-  const x = (index: number) => ((first + index) / (RATE_SECONDS - 1)) * WIDE;
+  const high = Math.max(...minute);
+  const x = (index: number) => (index / (RATE_SECONDS - 1)) * WIDE;
   // A floor and a ceiling a little inside the box, so the line is never cut by the border.
   const y = (value: number) => (high === 0 ? TALL - 1 : TALL - 1 - (value / high) * (TALL - 3));
 
-  const line = readings.map((value, index) => `${x(index)},${y(value)}`).join(' ');
-  const area = `M${x(0)},${TALL} L${line.replaceAll(' ', ' L')} L${x(readings.length - 1)},${TALL} Z`;
+  const line = minute.map((value, index) => `${x(index)},${y(value)}`).join(' ');
+  const area = `M${x(0)},${TALL} L${line.replaceAll(' ', ' L')} L${x(minute.length - 1)},${TALL} Z`;
 
   return (
     <svg

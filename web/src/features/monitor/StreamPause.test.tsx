@@ -218,11 +218,12 @@ describe('the stream it stops', () => {
     expect(screen.getByRole('button')).not.toHaveTextContent('/s');
   });
 
-  it('waits for a second reading before drawing a line', () => {
-    streaming(400);
+  // Without it the button stood a line shorter until the second reading, and grew under the pointer.
+  it('draws the line at nothing before the first reading', () => {
+    streaming();
     render(<StreamPause live />);
 
-    expect(screen.queryByTestId('stream-pulse')).not.toBeInTheDocument();
+    expect(screen.getByTestId('stream-pulse')).toBeInTheDocument();
   });
 
   it('moves with the stream', () => {
