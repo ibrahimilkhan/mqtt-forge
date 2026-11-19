@@ -1,17 +1,154 @@
-/* In step with the selects in the settings panel, which this one sits beside in the rail. */
-.select {
-  width: 100%;
-  font-family: var(--mono);
-  font-size: var(--t-code);
-  color: var(--ink);
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: var(--r-control);
-  padding: 8px 9px;
+/* The panel's own width, not the window's. It takes the workspace, and how wide that is depends
+   on whether the rail beside it is open — which a media query cannot know, since the window is
+   the same size either way. */
+.frame { container: chart-panel / inline-size; }
+
+/* One column until there is room for two. The gap is the space between the panel's sections,
+   said once here rather than as a margin on the top of each. */
+.layout,
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+/* Held to a measure and centred, as the broker's form is. Past this the three readings to a row
+   become four with a river of white between each, and the preview drifts a hand's width from
+   the switches it answers. */
+.layout { max-width: 84rem; margin-inline: auto; }
+
+/* A container of its own — see the two questions under `with room`, at the foot of this sheet. */
+.settings { container: chart-settings / inline-size; }
+
+/* ---- the range ---- */
+
+.range {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.range > .heading { padding: 0; }
+
+/* Three across at every width. They are one choice, and stacked they were three screens' worth
+   of one choice in a narrow window; side by side they are read against each other, which is the
+   only way a range is ever chosen. */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+/* What the range that is on does, once across the row. A third of a narrow panel is a dozen
+   characters wide, and a sentence set in that is a column of single words — so there the cards
+   keep their names and this line carries the one sentence that matters now. */
+.cards::after {
+  content: attr(data-picked);
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  font-size: var(--t-small);
+  line-height: 1.4;
+  color: var(--muted);
 }
 
+/* A card and not a row of a list: there are three, they exclude one another, and the one that
+   is on has to be findable without reading any of them. Kept small — it is the first thing on
+   the panel and not the reason the panel is opened. */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 6px 5px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-plate);
+  /* Overrides the global label, which is uppercase mono for form fields. */
+  font-family: var(--sans);
+  font-size: var(--t-small);
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--ink);
+  cursor: pointer;
+}
+.card:hover { border-color: var(--muted); }
+/* Border and an inset line of the same blue: two pixels of it without the card growing by one
+   and nudging the two beside it. The tint is the part that reads across a room; the line is the
+   part that survives a screen with the contrast turned down. */
+.card[data-selected] {
+  border-color: var(--signal);
+  box-shadow: inset 0 0 0 1px var(--signal);
+  background: color-mix(in srgb, var(--signal) 5%, var(--surface));
+}
+.card:has(input:focus-visible) { outline: 2px solid var(--signal); outline-offset: 1px; }
+.card { position: relative; }
+/* On a phone the dot is put away and the card is the control, as the console's other one-of-a-
+   few choices are drawn: a third of that width is 'Logarithmic' and nothing else, and with a dot
+   in front of it the name was cut to its first letter. Out of sight, not out of the document —
+   it is still what takes the focus and what a screen reader finds. */
+.card input {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  accent-color: var(--signal);
+}
+/* The card carries the ring, so the dot inside it does not need a second one. */
+.card input:focus-visible { outline: none; }
+
+/* The name, and the chip under it. Left to wrap, the chip stayed beside 'Typical' and dropped
+   under 'Logarithmic', and three cards that are one row were set two different ways; a grid
+   puts it under the name on all three until there is room beside the name on all three. */
+.cardTop {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  justify-items: start;
+  gap: 3px 6px;
+  min-width: 0;
+}
+/* Cut rather than wrapped if it ever has to be: 'Logarithmic' broken over two lines makes one
+   card taller than its neighbours, and the row is read as a row. */
+.cardName {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  font-weight: 600;
+}
+/* The chip the chart prints for this range, where it can be matched against the row over a
+   plot without being mistaken for part of the name. */
+.cardTop > .chip { background: var(--surface); }
+
+/* In the card only where a card is wide enough to set a sentence in; under that, the line
+   across the row says it for the one that is on. Still what the radio is described by either
+   way — a description does not have to be drawn to be read out. */
+.card > .what { display: none; }
+
+/* Only where there is width to draw it at. */
+.sketch {
+  display: none;
+  width: 100%;
+  height: 1.5rem;
+  border-block: 1px solid var(--rule);
+}
+.sketch path {
+  fill: none;
+  stroke: var(--signal);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* ---- the readings ---- */
+
 /* A column of groups, not a row of fields. */
-.readings { margin-top: 18px; }
+.readings { min-width: 0; }
 
 /* The same heading the saved brokers, the broker events and the colours panel use, said once
    rather than copied out with one value changed: this block was `savedTitle` to the letter apart
@@ -23,14 +160,28 @@
 }
 
 /* A real fieldset, since these are groups of switches and the group's name is what says which
-   runs they apply to. No border of its own: the legend and the line of prose under it are enough,
-   and a box round five rows in a column this narrow reads as a nested panel. */
+   runs they apply to.
+
+   In a box at every width. It went without one while this panel was a column beside the tree —
+   a box round five rows in a column that narrow read as a nested panel — and a row under the
+   pointer was then tinted out past the edge everything else on the panel is set to, because
+   there was nothing for the tint to stop against. The panel is the window now; the box is what
+   says where a group's rows end when they run three across, and its padding is the room a tinted
+   row needs to stay inside the thing it belongs to. */
 .group {
-  margin: 14px 0 0;
-  padding: 0;
-  border: 0;
+  margin: 12px 0 0;
+  padding: 12px 8px 8px;
   min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-plate);
 }
+/* A legend is drawn across its fieldset's border, half in the box and half out of it. Floated,
+   it is the first line inside the box instead, which is where a card's title goes. */
+.group > .legend { float: left; width: 100%; }
+/* Six pixels in, like the rows under them: that is where a row's own padding puts its box. */
+.group > .legend,
+.groupTop { padding-inline: 6px; }
 
 .legend {
   padding: 0;
@@ -56,7 +207,11 @@
   grid-template-columns: auto minmax(0, 1fr);
   gap: 2px 8px;
   align-items: start;
-  margin: 0 0 7px;
+  /* The row is the target and the thing that is tinted, so the room round the text is the row's
+     own padding — inside it, and so inside the group's box with it. */
+  margin: 0;
+  padding: 4px 6px;
+  border-radius: var(--r-control);
   /* Overrides the global label, which is uppercase mono for form fields. */
   font-family: var(--sans);
   font-size: var(--t-small);
@@ -92,14 +247,35 @@
 
 /* ---- what the chips over the plot do ---- */
 
-/* The chip's own text beside the sentence explaining it, laid out like a reading so the two
-   sections of this panel read as one thing. */
+/* The panel's other fold, drawn as the console draws every quiet one — a rule, a mark, a line —
+   but with its summary set as the Readings heading is, since it names the second of the panel's
+   two sections and not some optional extra inside one. */
+.fold {
+  composes: more from '../../styles/panel.module.css';
+  /* The layout's gap is the space above it; `more` brings a margin of its own for folds that
+     stand in a form, and the two together were a hole. */
+  margin-top: 0;
+}
+.fold > summary {
+  font-size: var(--t-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* The chip over the sentence explaining it, the way a reading's label stands over its meaning, so
+   the two sections of this panel read as one thing. Beside it, a chip as wide as `temp, hum, …`
+   left its sentence a few words a line in a column this narrow. `flex-start` keeps the chip the
+   width of its text rather than a bar across the panel. */
 .control {
-  display: grid;
-  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
-  gap: 2px 8px;
-  align-items: start;
-  margin: 0 0 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  /* A cell of the group's grid, padded as a reading's row is so the chips stand under the
+     group's name on the same edge the tick boxes do. */
+  margin: 0;
+  padding: 4px 6px;
+  min-width: 0;
 }
 
 /* Set exactly as the chart sets it — same face, same size — so a reader can match the word here
@@ -118,32 +294,9 @@
 .what { font-size: var(--t-small); line-height: 1.4; color: var(--muted); }
 
 /* When a control is not always there. A reader who has never seen one should not go looking. */
-.when { color: var(--faint, var(--muted)); font-style: italic; }
+.when { font-size: var(--t-small); line-height: 1.4; color: var(--faint, var(--muted)); font-style: italic; }
 
 /* ---- where saved readings go ---- */
-
-/* The row's own label. A span rather than a <label>, because there is nothing here for `for` to
-   point at: the only control on the row is the button, and that is named for what pressing it
-   does — see its aria-label — rather than for the setting it changes.
-
-   Which is why it needed a class of its own, and why it had none: an unlabelled span inherits
-   the body, so SAVE FOLDER was printing at fifteen-point Inter in the panel's own ink, beside
-   RANGE and OPERATOR at eleven-and-a-half mono capitals in grey. It did not read as a label at
-   all. Set here exactly as the global `label` rule sets one, less the 6px it leaves under itself
-   for a box that in this row stands beside it rather than below.
-
-   `flex: 0 0 auto` against `.row > * { flex: 1 1 200px }`: two words were taking half the row,
-   and the path they are about — the part that actually varies — was being cut to fit the other
-   half. */
-.markLabel {
-  flex: 0 0 auto;
-  align-self: center;
-  font-family: var(--mono);
-  font-size: var(--t-label);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
 
 /* The path and the control that changes it. The path takes what is left, since it is the part
    that varies and the button's label never does. */
@@ -173,4 +326,288 @@
   font-size: var(--t-micro);
   direction: rtl;
   text-align: left;
+}
+
+/* ---- finding one reading among them ---- */
+
+/* The heading, the count and the reset on one line; the reset drops under when it must. */
+.readingsTop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+.readingsTitle { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-width: 0; }
+.readingsTitle > .heading { margin: 0; }
+
+/* The panel's notes are set for a form, with a line's worth of air under each. Here each one
+   closes a section, and the layout's gap is already the air under a section. */
+.saving > p { margin-bottom: 0; }
+.readings > p { margin: 6px 0 0; }
+
+/* How many of them are on, in the note's own face: it is a figure, and it changes as the
+   switches below are pressed. */
+.count {
+  font-family: var(--mono);
+  font-size: var(--t-label);
+  color: var(--ink);
+}
+/* The amber the console already uses for 'not as it was', and its weight is not carried by the
+   colour alone: the word is there, and so is a mark on every row it counts. */
+.countChanged { color: var(--warn); }
+
+.look { margin-top: 10px; }
+
+.nothing {
+  margin: 14px 0 0;
+  font-family: var(--mono);
+  font-size: var(--t-code);
+  color: var(--muted);
+}
+
+/* What the group is for, how many of it are on, and the two ways of setting all of it at once.
+   The prose takes the row and the rest keep to its end; under about twenty characters of room
+   the buttons wrap below it rather than squeezing it to a word a line. */
+.groupTop {
+  clear: both;
+  display: flex;
+  flex-wrap: wrap;
+  /* To the first line, so the count and the buttons stay where they are when the prose beside
+     them runs to a second. */
+  align-items: flex-start;
+  gap: 4px 6px;
+  margin: 2px 0 8px;
+}
+.groupTop > .about { flex: 1 1 12rem; margin: 0; }
+.groupCount {
+  /* The height of the buttons beside it, so its figures sit on their line and not half-way down
+     whatever the prose has run to. */
+  line-height: 1.4rem;
+  font-family: var(--mono);
+  font-size: var(--t-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  margin-right: 4px;
+}
+/* Small, because there are six of them and none is the point of the panel. */
+.mini { padding: 3px 8px; font-size: var(--t-micro); border-color: var(--rule); }
+
+
+/* Set off from the sentence it follows: that one says what the group is, this one says where
+   it is not. On a line of its own always, rather than on whichever line the width leaves it —
+   it fitted beside the first sentence in one group and broke after two words in the next. */
+.elsewhere,
+.pointer { display: block; font-style: italic; }
+
+/* As many to a row as fit with their meanings unbroken: one in a phone's width, three in the
+   window the console opens in. */
+.list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(11.5rem, 100%), 1fr)); gap: 2px 6px; }
+
+/* The row under the pointer or holding the focus. It is the one the preview is pointing at, and
+   a reader looking back from the preview needs to find which row that was. */
+.reading:hover,
+.reading[data-hot] { background: color-mix(in srgb, var(--signal) 7%, var(--surface)); }
+
+.readingHead { display: flex; align-items: center; gap: 6px; }
+
+/* A reading that is not as it shipped. A dot, since the word is already in the count above and
+   two dozen rows each saying 'changed' would be louder than the readings themselves. */
+.changed {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+
+/* ---- where saved readings go, continued ---- */
+
+.saving { min-width: 0; }
+/* Drawn as a field that cannot be typed in: the path is the value of this setting, and as bare
+   grey text it read as a remark about the button beside it. */
+.saving .folderPath {
+  padding: 8px 9px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-control);
+  line-height: 1.45;
+}
+.saving .folderPath[data-path] { color: var(--ink); }
+
+/* ---- what the chips over the plot do, continued ---- */
+
+/* The first box stands off the summary by the summary's own margin, not by a group's as well. */
+.fold > .group:first-of-type { margin-top: 0; }
+
+/* ---- the preview ---- */
+
+/* Above the settings until there is room beside them: it is what every one of them changes, and
+   under two dozen switches it would be a thing to scroll down and check rather than to watch. */
+.preview { order: -1; min-width: 0; }
+.previewCard {
+  padding: 10px 12px 12px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-plate);
+}
+
+.sample { margin: 0 -5px; padding: 0 5px; min-width: 0; }
+/* The chart clips its note at the note's own edge, and a cell standing exactly on that edge has
+   the line round it cut there on any screen whose scaling does not land the two on the same
+   device pixel — at 125% the left-hand cells lost their left side. Two pixels of the note's own
+   padding put every cell inside the clip instead of on it.
+
+   And a tenth character for the names: `off scale` and `quartiles` are nine, which is what the
+   chart allows them, and at nine they ran into the figure beside them. */
+.sample > figcaption {
+  margin-inline: -5px;
+  padding-inline: 2px;
+  --note-label: 10ch;
+}
+
+.plot {
+  position: relative;
+  /* Short while the preview is above the settings: on a display scaled to 150% the window is
+     five hundred and fifty pixels tall, and at full height the preview was all of it. */
+  height: 7rem;
+  border-block: 1px solid var(--rule);
+}
+.plot svg { display: block; width: 100%; height: 100%; }
+.quarters {
+  fill: none;
+  stroke: var(--rule);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+  vector-effect: non-scaling-stroke;
+}
+.trace {
+  fill: none;
+  stroke: var(--signal);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Round a reading past the fences, in the colour the chart rings them in. */
+.ring {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid var(--fault);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+/* With the `outliers` switch under the pointer, these are what it puts away. */
+.sample[data-hot='outliers'] .ring { width: 17px; height: 17px; border-width: 2.5px; }
+
+/* The two ends of the scale, on the plot's own ground so the line can pass behind them. */
+.high,
+.low {
+  position: absolute;
+  left: 0;
+  padding: 0 3px;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--t-nano);
+  line-height: 1.3;
+  color: var(--muted);
+}
+.high { top: 2px; }
+.low { bottom: 2px; }
+
+/* The chart sets a reading's name hard against its figure, right-aligned, because under a plot
+   the figures are what is read and the names are only found. Here it is the other way about —
+   a reader arrives from a switch with a name in hand and looks for it — so the names keep a
+   left edge to be run down, in line with the plot's own and the heading's above it. */
+.sample [data-slot] > span:first-child { text-align: left; }
+/* The first cell of a group carries the air above the group as a margin, and its neighbours on
+   the same line do not — so stretched to the row they stood a third of a line apart. Sat on the
+   row's floor, every cell on a line is on the same line. */
+.sample [data-slot] { align-self: end; }
+
+/* Room round every cell for the mark that one of them will wear, there whether it is worn or
+   not, so nothing moves when it lands. The figure is let out into the card's padding by the same
+   amount and the plot is not, which keeps the names on the plot's left edge. */
+.sample [data-slot] { padding: 1px 3px; border-radius: var(--r-control); }
+
+/* The cell for the reading whose switch is under the pointer. The line is drawn inside the cell:
+   the chart clips its note and each cell in it, so a ring drawn outside lost its left edge to
+   the one and its right edge to the other, and the mark did not fit the thing it marked. */
+.sample [data-hot] {
+  background: color-mix(in srgb, var(--signal) 10%, transparent);
+  box-shadow: inset 0 0 0 1px var(--signal);
+}
+
+.previewNote {
+  margin: 10px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--rule);
+  font-size: var(--t-small);
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+/* ---- with room ---- */
+
+/* Two questions, asked of two boxes. Whether the preview stands beside the settings is a matter
+   of how wide the panel is. What a range card or a group of readings can carry is a matter of
+   how wide the settings are once the preview has taken its share — and asked of the panel, those
+   answered for a column that was three hundred pixels narrower than the rule believed. */
+
+/* Forty-seven rems is where the settings keep two readings to a row with a chart beside them —
+   which takes in the window the console opens in on a display scaled to 125%, rail open. Under it the preview would be taking
+   width from the switches it is there to explain, and goes above them instead. */
+@container chart-panel (min-width: 47rem) {
+  .layout {
+    display: grid;
+    /* Twenty-three rems, and not a share of the panel. That is the narrowest the note can be
+       and still print its widest cell whole — two of `quartiles 21.27–21.57` side by side, each
+       with its ten characters of name — and the preview does not get better wider: it is a plot
+       and a dozen figures. Everything past it goes to the settings, which are prose three across
+       and do. */
+    grid-template-columns: minmax(0, 1fr) 23rem;
+    align-items: start;
+    gap: 28px;
+  }
+
+  /* Held at the top while the settings scroll past it, since every one of them changes it. */
+  .preview {
+    order: 0;
+    position: sticky;
+    top: 12px;
+  }
+  .plot { height: 11rem; }
+}
+
+/* From here a third of the settings has room for the dot and the name at the size the rest of
+   the panel is set in. */
+@container chart-settings (min-width: 26rem) {
+  .card input {
+    position: static;
+    flex: none;
+    width: auto;
+    height: auto;
+    opacity: 1;
+  }
+  .card { padding-inline: 8px; }
+  /* The dot in a column of its own, so the chip lines up under the name and not under the dot. */
+  .cardTop { grid-template-columns: auto minmax(0, 1fr); }
+  .cardTop > .chip { grid-column: 2; }
+  .cardName { font-size: var(--t-small); }
+}
+
+/* Thirty-four rems is where a third of the settings holds a sentence at five or six words a
+   line, and where the readings go more than one to a row. */
+@container chart-settings (min-width: 34rem) {
+  .card > .what { display: block; }
+  .cards::after { content: none; }
+  /* One line now: the chip at the far end of it, where it is matched against the chart's row. */
+  .cardTop { display: flex; }
+  .cardTop > .chip { margin-left: auto; }
+}
+
+/* And forty where a card is wide enough for the sketch to be a line and not a smudge. */
+@container chart-settings (min-width: 40rem) {
+  .sketch { display: block; }
 }

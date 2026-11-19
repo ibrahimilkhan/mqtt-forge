@@ -53,94 +53,94 @@ type Reading = {
 
 export const READING_GROUPS: Record<ReadingGroup, { title: string; about: string }> = {
   quantity: {
-    title: 'A quantity',
-    about: 'Something measurable: a temperature, a pressure, a voltage.',
+    title: 'Measurements',
+    about: 'Continuous values such as temperature, pressure or voltage.',
   },
   events: {
-    title: 'A switch or a pulse',
-    about: 'A run that rests somewhere and leaves it. Counted, not averaged.',
+    title: 'Switches and pulses',
+    about: 'Signals with a resting level. Counted, not averaged.',
   },
-  run: { title: 'Any run', about: 'True of every chart, whatever the readings are.' },
+  run: { title: 'All charts', about: 'Apply to every chart.' },
 };
 
 export const READINGS: Record<ReadingId, Reading> = {
-  n: { label: 'n', what: 'Readings on the chart.', group: 'quantity' },
+  n: { label: 'n', what: 'Number of readings.', group: 'quantity' },
   mean: {
     label: 'mean',
-    what: 'The average. One wild reading drags it.',
+    what: 'Arithmetic mean. Sensitive to outliers.',
     group: 'quantity',
   },
   median: {
     label: 'median',
-    what: 'The middle reading. A wild one barely moves it.',
+    what: 'Middle value. Robust to outliers.',
     group: 'quantity',
   },
   spread: {
     label: 'spread',
-    what: 'How far a reading usually sits from the mean (σ).',
+    what: 'Standard deviation (σ).',
     group: 'quantity',
   },
-  range: { label: 'range', what: 'Lowest reading to highest.', group: 'quantity' },
+  range: { label: 'range', what: 'Minimum to maximum.', group: 'quantity' },
   quartiles: {
     label: 'quartiles',
-    what: 'The middle half of the readings.',
+    what: 'Interquartile range (Q1–Q3).',
     group: 'quantity',
     off: true,
   },
   fences: {
     label: 'fences',
-    what: 'Past these, a reading counts as an outlier.',
+    what: 'Outlier thresholds.',
     group: 'quantity',
     off: true,
   },
   shape: {
     label: 'shape',
-    what: 'Which distribution the readings resemble.',
+    what: 'Closest-fitting distribution.',
     group: 'quantity',
   },
   trend: {
     label: 'trend',
-    what: 'Which way the run is going, and how fast.',
+    what: 'Direction and rate of change.',
     group: 'quantity',
   },
   step: {
     label: 'step',
-    what: 'Where the run changed level, and when.',
+    what: 'Level shifts and when they occurred.',
     group: 'quantity',
   },
   cycle: {
     label: 'cycle',
-    what: 'How many readings the run takes to repeat itself.',
+    what: 'Repeat period, in readings.',
     group: 'quantity',
   },
   outliers: {
     label: 'outliers',
-    what: 'Readings outside the fences, ringed on the line.',
+    what: 'Readings beyond the fences, circled on the plot.',
     group: 'quantity',
   },
-  levels: { label: 'levels', what: 'The level it rests at, and the one it goes to.', group: 'events' },
-  events: { label: 'events', what: 'How many separate times it left rest.', group: 'events' },
-  duty: { label: 'duty', what: 'What share of the readings sat away from rest.', group: 'events' },
-  width: { label: 'width', what: 'How long one excursion lasts.', group: 'events' },
-  period: { label: 'period', what: 'From one excursion to the next.', group: 'events' },
-  every: { label: 'every', what: 'The usual gap between arrivals, and its jitter.', group: 'run' },
+  levels: { label: 'levels', what: 'Resting and active levels.', group: 'events' },
+  events: { label: 'events', what: 'Number of departures from rest.', group: 'events' },
+  duty: { label: 'duty', what: 'Share of readings away from rest.', group: 'events' },
+  width: { label: 'width', what: 'Duration of a single excursion.', group: 'events' },
+  period: { label: 'period', what: 'Time between excursions.', group: 'events' },
+  every: { label: 'every', what: 'Typical arrival interval and jitter.', group: 'run' },
   offScale: {
     label: 'off scale',
-    what: "Readings past the plot's range, drawn on its edge.",
+    what: 'Readings outside the plot range, drawn at its edge.',
     group: 'run',
   },
   scale: {
     label: 'scale',
-    what: 'Said when the range asked for could not be used, and what was drawn instead.',
+    what: 'Shown when the selected range is unavailable, with the fallback used.',
     group: 'run',
   },
   window: {
     label: 'window',
-    what: "How much of the topic's history is on the chart.",
+    what: 'Portion of the topic history on the chart.',
     group: 'run',
   },
-  skipped: { label: 'skipped', what: 'Messages in view that carried no reading.', group: 'run' },
-  silence: { label: 'silence', what: 'How long the topic has been quiet.', group: 'run' },
+  skipped: { label: 'skipped', what: 'Messages in view without a numeric value.', group: 'run' },
+  silence: { label: 'silence', what: 'Time since the last message.', group: 'run' },
 };
 
 export const READING_IDS = Object.keys(READINGS) as ReadingId[];

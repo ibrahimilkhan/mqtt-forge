@@ -18,7 +18,7 @@ type Props = {
    * with the width when it does.
    *
    * Absent for the panels that are read against what is on screen — a filter against the tree it
-   * will narrow, a plot against the run it will draw. Those stay in their column.
+   * will narrow. Those stay in their column.
    *
    * `full` for the broker panel. Its form is read in one sitting and answered in one sitting:
    * nothing in the tree or the log means anything until the connection it describes is up. Its
@@ -38,6 +38,13 @@ type Props = {
    * paid back inside the panel instead: every row carries the glass that opens the same tree, the
    * one the alert editor wears. What a reader loses is the tree being on screen at the same time;
    * what they get is a page that says which of their rules is painting nothing.
+   *
+   * And for the chart's settings, which were in the first group too, read against the plot they
+   * change. Two dozen readings each with a line saying what it means did not fit a column: it was
+   * a screen and a half of scrolling to reach a switch, with the plot it changes long since off
+   * the top. The panel takes the workspace so they can be read three across, and pays the plot
+   * back the way colours pays back the tree — a sample chart of its own beside the switches,
+   * drawn by the chart's own code, answering each one as it is pressed.
    *
    * The other panes stay mounted underneath either way. A tree unmounted is a tree rebuilt from
    * nothing the next time the panel shuts, and the log would lose its history with it. Mounted is

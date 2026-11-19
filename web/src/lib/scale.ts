@@ -14,16 +14,16 @@ import type { Summary } from './stats';
  */
 export const SCALES = {
   extremes: {
-    label: 'Extremes — every reading inside the plot',
-    hint: "the lowest and highest readings are the plot's top and bottom",
+    label: 'Extremes — full range of readings',
+    hint: 'the plot spans the minimum to the maximum',
   },
   typical: {
-    label: 'Typical — scaled to where the readings mostly are',
-    hint: 'scaled to the middle of the run; readings past the edge are pinned and counted',
+    label: 'Typical — fitted to the bulk of readings',
+    hint: 'fitted to the bulk of the run; outliers are clipped and counted',
   },
   log: {
-    label: 'Logarithmic — each decade the same height',
-    hint: 'every decade the same height; positive runs only',
+    label: 'Logarithmic — equal height per decade',
+    hint: 'equal height per decade; positive values only',
   },
 } as const;
 

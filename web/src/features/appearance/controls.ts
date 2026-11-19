@@ -40,78 +40,78 @@ export const CONTROL_GROUPS = ['what', 'range', 'view'] as const;
 export type ControlGroup = (typeof CONTROL_GROUPS)[number];
 
 export const CONTROL_GROUP_TITLES: Record<ControlGroup, { title: string; about: string }> = {
-  what: { title: 'What is drawn', about: 'Which readings the plot is of.' },
-  range: { title: 'The range', about: 'How much height the run gets.' },
-  view: { title: 'The view', about: 'How the run is drawn, and how to save it.' },
+  what: { title: 'Data', about: 'Which values are plotted.' },
+  range: { title: 'Range', about: 'Vertical scaling.' },
+  view: { title: 'View', about: 'Display mode and export.' },
 };
 
 export const CONTROLS: Record<ControlId, Control & { group: ControlGroup }> = {
   body: {
     label: 'body',
     group: 'what',
-    what: 'The message itself, read as a number.',
-    when: 'When a topic sends both bare numbers and bodies.',
+    what: 'Plots the raw payload as a number.',
+    when: 'When a topic sends both plain numbers and JSON.',
   },
   field: {
     label: 'temp, hum, …',
     group: 'what',
-    what: 'Each number in a JSON body, by name. Opens on the busiest.',
-    when: 'When a body carries more than one number.',
+    what: 'Plots a named JSON field. Defaults to the most active.',
+    when: 'When the payload has several numeric fields.',
   },
   into: {
     label: 'radios ›',
     group: 'what',
-    what: 'A group of fields. Opens it; the title says how many.',
-    when: 'When a body nests its numbers.',
+    what: 'Opens a nested group; the tooltip shows its size.',
+    when: 'When the payload has nested fields.',
   },
   up: {
     label: '← radios',
     group: 'what',
-    what: 'Back out of a group. It names the one you are in.',
-    when: 'After opening one.',
+    what: 'Returns to the parent group.',
+    when: 'Inside a nested group.',
   },
   along: {
     label: '3 →',
     group: 'what',
-    what: 'How many field chips are off the end of the row. Steps onto them.',
-    when: 'When the row is wider than the pane.',
+    what: 'Count of hidden field chips; scrolls to them.',
+    when: 'When the chips overflow the pane.',
   },
   fewer: {
     label: '⌄',
     group: 'what',
-    what: 'Puts the field chips away, and brings them back.',
-    when: 'When a body carries more than one number.',
+    what: 'Shows or hides the field chips.',
+    when: 'When the payload has several numeric fields.',
   },
   branch: {
     label: '← all',
     group: 'what',
-    what: 'Back to every topic in the branch.',
-    when: 'After clicking into one of its plots.',
+    what: 'Returns to all topics in the branch.',
+    when: 'After opening a single plot.',
   },
   open: {
     label: '⤢',
     group: 'what',
-    what: 'Floats the chart over the console. Escape puts it back.',
+    what: 'Expands the chart over the console. Esc restores it.',
   },
   auto: {
     label: 'auto',
     group: 'range',
-    what: 'Measurements take Range above; pulses take their extremes.',
+    what: 'Measurements use the selected range; pulses use their extremes.',
   },
   time: {
     label: 'time',
     group: 'view',
-    what: 'The readings in the order they arrived.',
+    what: 'Readings in arrival order.',
   },
   dist: {
     label: 'dist',
     group: 'view',
-    what: 'The same readings as a distribution.',
+    what: 'Readings as a distribution.',
   },
   csv: {
     label: 'csv',
     group: 'view',
-    what: 'Saves the charted readings as CSV.',
+    what: 'Exports the plotted readings as CSV.',
   },
 };
 

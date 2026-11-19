@@ -132,6 +132,21 @@ describe('App', () => {
     ).not.toBeInTheDocument();
   });
 
+  // It was a column beside the plot it sets. Two dozen readings with a line of meaning each did
+  // not fit one, and the panel carries a sample chart of its own now — see Workspace's note.
+  it('gives the chart panel the workspace too', async () => {
+    renderApp();
+    await menu().findByRole('button', { name: 'Broker' });
+
+    await userEvent.click(menu().getByRole('button', { name: /^Chart/ }));
+
+    expect(await screen.findByRole('region', { name: 'Chart panel' })).toBeInTheDocument();
+    expect(screen.getByTestId('layout')).toHaveAttribute('data-panel', 'fill');
+    expect(
+      screen.queryByRole('separator', { name: 'Panel and topics boundary' }),
+    ).not.toBeInTheDocument();
+  });
+
   // The alarm wall is built and tested and off the console for now — see AlertWall.test.tsx. It
   // is the rail's badge and this panel that carry a standing alarm while it is away.
   it('keeps the alarm column off the console', async () => {

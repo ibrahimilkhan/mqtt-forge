@@ -54,6 +54,7 @@ export function ChartNote({
   silence = null,
   chosen = {},
   asked,
+  hot = null,
 }: {
   summary: Summary;
   /** What kind of run this is, which decides which of the readings below mean anything. */
@@ -79,6 +80,11 @@ export function ChartNote({
   chosen?: Partial<Record<ReadingId, boolean>>;
   /** The range that was asked for, which is not always the range that could be used. */
   asked: ScaleId;
+  /**
+   * A reading to point at. The Chart panel's preview passes the one whose switch is under the
+   * pointer, so the switch and the cell it puts away can be matched without reading both lists.
+   */
+  hot?: ReadingId | null;
 }) {
   const counted =
     shape.id === 'state' || shape.id === 'pulse'
@@ -166,6 +172,7 @@ export function ChartNote({
           // The first of a group opens a row, so a group is a block rather than a run of cells
           // that happens to be adjacent.
           data-opens={index === 0 && at > 0 ? '' : undefined}
+          data-hot={slot.id === hot ? '' : undefined}
           // The catalogue's own words, so hovering a cell says exactly what the Chart panel says.
           title={`${named(slot.id).what} — ${slot.title}`}
         >
