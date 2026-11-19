@@ -186,7 +186,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: digest-*
           merge-multiple: true
@@ -218,11 +218,11 @@ jobs:
 
       # Named one by one rather than "download everything": anything else a job
       # happens to upload would otherwise be attached to the release as a package.
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: { name: macos, path: artifacts }
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: { name: windows, path: artifacts }
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: { name: linux, path: artifacts }
 
       # The download links in the README point at /releases/latest/download/<name>,
