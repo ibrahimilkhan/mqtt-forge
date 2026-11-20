@@ -1,10 +1,44 @@
 import { useId, useRef, useState } from 'react';
 import { InfoMark } from '../../components/InfoTip';
+import { duration } from '../../lib/format';
 import panel from '../../styles/panel.module.css';
+import type { AlertRuleDto } from '../../types/api';
 import styles from './RuleLibrary.module.css';
 import { CONDITION_LABELS, ruleOf, type ConditionType, type DraftRule } from './ruleDraft';
 import { firesOn } from './ruleSummary';
 import { TEMPLATE_GROUPS, type RuleExample } from './templates';
+
+/** Conditions whose window is 'how many readings', shown when the example actually sets one. */
+const WINDOWED = new Set(['outlier', 'distributionShift', 'shapeChange', 'pulse']);
+
+/**
+ * The card's own line: `firesOn`, plus whatever it leaves out that a card is here to teach.
+ *
+ * `firesOn` is the rules table's cell, and a cell has to stay one clause for every kind of
+ * condition — that is what makes thirty rules scannable as a column. A card is one rule and has
+ * the room to say what actually makes it: how long it has to hold, where it clears, how large a
+ * sample it is judged against, or — for `all`/`any` — what each child actually tests, rather than
+ * how many of them there are.
+ */
+function cardLine(rule: AlertRuleDto): string {
+  const { condition } = rule;
+
+  let line =
+    condition.type === 'all' || condition.type === 'any'
+      ? condition.of
+          .map((child) => firesOn({ ...rule, condition: child }))
+          .join(condition.type === 'all' ? ' AND ' : ' OR ')
+      : firesOn(rule);
+
+  if (rule.for) line += ` · for ${duration(rule.for * 1000)}`;
+  if (rule.clear) line += ` · clears at ${firesOn({ ...rule, condition: rule.clear })}`;
+
+  if (WINDOWED.has(condition.type) && 'window' in condition && condition.window) {
+    line += ` · last ${condition.window} readings`;
+  }
+
+  return line;
+}
 
 /**
  * A worked example of every setting of every kind of rule, to start from.
@@ -151,7 +185,7 @@ function Card({
       ) : (
         <div className={styles.example}>
           <span className={styles.exampleTopic}>{rule.filter}</span>
-          <span>{firesOn(rule)}</span>
+          <span>{cardLine(rule)}</span>
         </div>
       )}
 

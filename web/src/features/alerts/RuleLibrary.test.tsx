@@ -78,6 +78,22 @@ describe('the rule library', () => {
     expect(screen.getByRole('note')).toHaveTextContent(/1.2 and 2.3/);
   });
 
+  it('shows the setting that makes a card different, not only firesOn', () => {
+    library();
+
+    const lasts = screen.getByRole('heading', { name: 'Only if it lasts' }).closest('li')!;
+    expect(within(lasts).getByText(/for 2 min/)).toBeInTheDocument();
+
+    const margin = screen.getByRole('heading', { name: 'Clears with a margin' }).closest('li')!;
+    expect(within(margin).getByText(/clears at/)).toBeInTheDocument();
+
+    const memory = screen.getByRole('heading', { name: 'Short memory' }).closest('li')!;
+    expect(within(memory).getByText(/last 50 readings/)).toBeInTheDocument();
+
+    const coldOrSilent = screen.getByRole('heading', { name: 'Cold or silent' }).closest('li')!;
+    expect(within(coldOrSilent).getByText(/ OR /)).toBeInTheDocument();
+  });
+
   it('starts from the example that was pressed, or from nothing, or goes back', async () => {
     const { onUse, onBlank, onBack } = library();
 
