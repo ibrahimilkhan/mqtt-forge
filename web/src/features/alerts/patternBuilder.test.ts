@@ -7,7 +7,6 @@ describe('writing a regex from words', () => {
     ['startsWith', 'ERR-', '^ERR-'],
     ['endsWith', 'timeout', 'timeout$'],
     ['exactly', 'OFFLINE', '^OFFLINE$'],
-    ['anyWord', 'fault\noffline', '^(?:fault|offline)$'],
   ] as const)('%s %j writes %j', (mode, text, regex) => {
     expect(regexOf(mode, text)).toBe(regex);
   });
@@ -18,33 +17,27 @@ describe('writing a regex from words', () => {
   });
 
   it('writes nothing for no text, whatever the mode', () => {
-    for (const mode of ['contains', 'startsWith', 'endsWith', 'exactly', 'anyWord'] as const) {
+    for (const mode of ['contains', 'startsWith', 'endsWith', 'exactly'] as const) {
       expect(regexOf(mode, '')).toBe('');
     }
-    expect(regexOf('anyWord', '\n  \n')).toBe('');
-  });
-
-  it('trims the words of a list and drops the blank lines', () => {
-    expect(regexOf('anyWord', ' fault \n\n offline\n')).toBe('^(?:fault|offline)$');
   });
 });
 
 describe('reading a regex back into words', () => {
-  const modes: WordMode[] = ['contains', 'startsWith', 'endsWith', 'exactly', 'anyWord'];
-  const texts = ['ERROR', 'a.b', '2.', 'x|y', 'fault\noffline', '$5 (net)'];
+  const modes: WordMode[] = ['contains', 'startsWith', 'endsWith', 'exactly'];
+  const texts = ['ERROR', 'a.b', '2.', 'x|y', '$5 (net)'];
 
   it('reads back every regex the builder can write, as the mode and text that wrote it', () => {
     for (const mode of modes) {
       for (const text of texts) {
         const regex = regexOf(mode, text);
-        if (mode !== 'anyWord' && text.includes('\n')) continue;
-
         const read = readPattern(regex);
         expect(regexOf(read.mode as WordMode, read.text)).toBe(regex);
       }
     }
     expect(readPattern('^OFFLINE$')).toEqual({ mode: 'exactly', text: 'OFFLINE' });
-    expect(readPattern('^(?:fault|offline)$')).toEqual({ mode: 'anyWord', text: 'fault\noffline' });
+    // A list of words is the List condition's job: the builder leaves one as the expression it is.
+    expect(readPattern('^(?:fault|offline)$')).toEqual({ mode: 'regex', text: '^(?:fault|offline)$' });
     expect(readPattern('^2\\.')).toEqual({ mode: 'startsWith', text: '2.' });
   });
 
@@ -84,11 +77,6 @@ describe('changing the mode', () => {
   it('carries the text across the single-text modes', () => {
     expect(switchMode('ERROR', 'contains', 'startsWith')).toBe('^ERROR');
     expect(switchMode('^ERROR', 'startsWith', 'exactly')).toBe('^ERROR$');
-  });
-
-  it('takes one word into a list, and the first word of a list out of it', () => {
-    expect(switchMode('^OFF$', 'exactly', 'anyWord')).toBe('^(?:OFF)$');
-    expect(switchMode('^(?:fault|offline)$', 'anyWord', 'contains')).toBe('fault');
   });
 
   it('keeps the regex going into regular expression mode', () => {

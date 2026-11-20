@@ -359,11 +359,8 @@ function conditionOf(draft: DraftCondition): AlertCondition {
   }
 }
 
-/**
- * A line each, trimmed, with the blank ones dropped: a trailing newline is not a value to match.
- * The list condition's textarea and the pattern builder's any-of-these-words box both read this way.
- */
-export const listOf = (text: string): string[] =>
+/** A line each, with the blank ones dropped: a trailing newline is not a value to match. */
+const listOf = (text: string): string[] =>
   text
     .split('\n')
     .map((line) => line.trim())
