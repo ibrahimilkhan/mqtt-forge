@@ -220,11 +220,46 @@ export function compilePattern(regex: string): Compiled {
 
 export type Verdict = 'fires' | 'quiet' | 'skipped';
 
-/** The rule's answer and not the expression's: negate is applied, and a missing field skips. */
+/**
+ * Whether `source` holds a `$` that is not escaped — not preceded by an odd run of backslashes.
+ *
+ * `^ERR$` anchors; `a\$` is the dollar sign itself. Only the first kind changes .NET's answer
+ * near a trailing newline, so this is the gate for that rule, not a literal-`$` test.
+ */
+function hasUnescapedDollar(source: string): boolean {
+  for (let i = 0; i < source.length; i++) {
+    if (source[i] !== '$') continue;
+
+    let backslashes = 0;
+    while (source[i - 1 - backslashes] === '\\') backslashes += 1;
+    if (backslashes % 2 === 0) return true;
+  }
+
+  return false;
+}
+
+/** Exactly one trailing `\n`: a second one makes the text end in something `$` does not reach. */
+const endsInOneNewline = (text: string): boolean => text.endsWith('\n') && !text.endsWith('\n\n');
+
+/**
+ * The rule's answer and not the expression's: negate is applied, and a missing field skips.
+ *
+ * .NET's `$` (the server's own engine, in `RegexOptions.None` and in `NonBacktracking`) matches
+ * not only at the end of the string but also just before a single trailing `\n` — unlike
+ * JavaScript's, which (without the `m` flag) only matches at the very end. Left alone, a pattern
+ * built here for "ends with" or "is exactly" would read a body such as "OFFLINE\n" as quiet while
+ * the server's copy of the same rule fires on it. So when the regex carries an unescaped `$`, the
+ * text is also tried with that one trailing newline stripped, and either attempt counts as a match
+ * — mirroring the server rather than only widening what the browser already does.
+ */
 export function verdictOf(regex: RegExp, negate: boolean, text: string | null): Verdict {
   if (text === null) return 'skipped';
 
-  return regex.test(text) !== negate ? 'fires' : 'quiet';
+  const matches =
+    regex.test(text) ||
+    (hasUnescapedDollar(regex.source) && endsInOneNewline(text) && regex.test(text.slice(0, -1)));
+
+  return matches !== negate ? 'fires' : 'quiet';
 }
 
 export type TriedText = { topic: string; text: string | null };

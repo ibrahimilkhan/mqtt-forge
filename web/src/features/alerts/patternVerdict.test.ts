@@ -80,6 +80,32 @@ describe('the verdict', () => {
     expect(verdictOf(error, true, null)).toBe('skipped');
   });
 
+  it('matches just before one trailing newline, as .NET’s $ does', () => {
+    expect(verdictOf(/^OFFLINE$/, false, 'OFFLINE\n')).toBe('fires');
+    expect(verdictOf(/^OFFLINE$/, false, 'OFFLINE\n\n')).toBe('quiet');
+  });
+
+  it('leaves a regex without an unescaped $ unaffected by a trailing newline', () => {
+    expect(verdictOf(/OFFLINE/, false, 'OFFLINE\n')).toBe('fires');
+    expect(verdictOf(/OFFLINE/, false, 'quiet\n')).toBe('quiet');
+  });
+
+  it('treats an escaped dollar as a literal character, not an anchor', () => {
+    // No unescaped '$' here, so this stays a plain RegExp test: it matches the literal "a$"
+    // wherever it sits, newline or not, and never tries the text with the newline stripped.
+    expect(verdictOf(/a\$/, false, 'a$\n')).toBe('fires');
+    expect(verdictOf(/a\$/, false, 'a\n')).toBe('quiet');
+
+    // The trailing '$' here IS unescaped, so the newline rule still applies around the escaped one.
+    expect(verdictOf(/^a\$$/, false, 'a$\n')).toBe('fires');
+    expect(verdictOf(/^a\$$/, false, 'a$\n\n')).toBe('quiet');
+  });
+
+  it('still flips the newline-aware match when negated', () => {
+    expect(verdictOf(/^OFFLINE$/, true, 'OFFLINE\n')).toBe('quiet');
+    expect(verdictOf(/^OFFLINE$/, true, 'OFFLINE\n\n')).toBe('fires');
+  });
+
   it('compiles an expression, or says why the browser cannot', () => {
     expect(compilePattern('^ERR').ok).toBe(true);
 
