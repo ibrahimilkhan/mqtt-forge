@@ -123,9 +123,12 @@ const NOWHERE: PatternSource = { filter: '', field: '' };
  * fields underneath would be eight questions they have to read before deciding they are not being
  * asked them.
  *
- * Controlled all the way down. Nothing here holds state of its own — every keystroke goes out
- * through `onChange` and comes back as a new `condition` — which is what lets the editor keep one
- * draft in one place and write it through to the map on every change.
+ * Controlled all the way down for the condition itself — every keystroke goes out through
+ * `onChange` and comes back as a new `condition` — which is what lets the editor keep one draft in
+ * one place and write it through to the map on every change. `PatternFields` and `PatternTry`,
+ * drawn for the pattern case, are the exception: the chosen mode and the any-word box text live in
+ * `PatternFields`, and the tried messages and typed text live in `PatternTry`, because none of that
+ * is part of the condition being saved.
  */
 export function ConditionFields({ condition, onChange, id, source = NOWHERE }: Props) {
   switch (condition.type) {
