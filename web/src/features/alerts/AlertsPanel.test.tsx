@@ -461,6 +461,7 @@ describe('AlertsPanel', () => {
     expect(screen.getByRole('heading', { name: 'Rule library' })).toBeInTheDocument();
     expect(screen.queryByTestId('alert-rule')).not.toBeInTheDocument();
 
+    await userEvent.click(screen.getByRole('radio', { name: 'Silence' }));
     await userEvent.click(screen.getByRole('button', { name: 'Use the Battery died example (Silence)' }));
 
     expect(screen.getByLabelText('Topic filter')).toHaveValue('sensors/loft/temp');
