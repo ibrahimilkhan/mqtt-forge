@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { Field } from '../../components/Field';
 import panel from '../../styles/panel.module.css';
 import { runFor, useLogStore, type LogEntry } from '../../stores/logStore';
@@ -50,7 +50,9 @@ export function PatternTry({
   const ownId = useId();
 
   const compiled = compilePattern(regex);
-  const rows = recentTexts(entries, source.field);
+  // Walking every entry's payload is work worth skipping on a keystroke that only retypes the
+  // expression: the rows themselves depend on the messages and the field, not on the regex.
+  const rows = useMemo(() => recentTexts(entries, source.field), [entries, source.field]);
   const wild = /[+#]/.test(source.filter);
   // An empty expression matches everything and judges nothing; the form already says it is needed.
   const judge = (text: string | null): Verdict | null =>
