@@ -314,7 +314,7 @@ function conditionDraft(condition: AlertCondition, nested = false): DraftConditi
 }
 
 /** The boxes, as the wire holds them. */
-export function conditionOf(draft: DraftCondition): AlertCondition {
+function conditionOf(draft: DraftCondition): AlertCondition {
   switch (draft.type) {
     case 'opaque':
       return draft.source;

@@ -113,7 +113,7 @@ function stopWatching(): void {
  * that never gets its sound. It is installed only when a tone has actually been missed, so a
  * reader who never turns the sound on never has a listener on their window at all.
  */
-export function armOnNextGesture(): void {
+function armOnNextGesture(): void {
   if (gesture || useSoundStore.getState().armed) return;
 
   const arm = () => {
