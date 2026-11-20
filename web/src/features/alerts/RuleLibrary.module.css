@@ -10,14 +10,13 @@
   gap: 12px;
 }
 
-/* A fixed height, not a minimum: eleven cards with one-line and three-line examples would
-   otherwise be eleven different sizes, and a card whose mark is pressed would push the row
-   under it down the page. */
+/* A fixed height, not a minimum: cards with one-line and three-line examples would otherwise be
+   different sizes, and a card whose mark is pressed would push the row under it down the page. */
 .card {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  height: 16.5rem;
+  height: 12.5rem;
   min-width: 0;
   padding: 14px 16px 16px;
   background: var(--surface);
@@ -32,6 +31,31 @@
   gap: 8px;
 }
 
+/* One chip a kind, wrapping on a narrow panel rather than scrolling sideways. */
+.kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 16px;
+}
+.kindChip {
+  padding: 4px 10px;
+  font-size: var(--t-small);
+}
+
+.group { margin: 0 0 20px; }
+.group:last-child { margin-bottom: 0; }
+
+.groupHead {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0 0 10px;
+  /* The chips scroll a heading to the top; this keeps it clear of the panel's own edge. */
+  scroll-margin-top: 12px;
+}
+
 .kind {
   margin: 0;
   font-family: var(--mono);
@@ -39,6 +63,15 @@
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+  color: var(--ink);
+}
+.kind:focus { outline: none; }
+.kind:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+.title {
+  margin: 0;
+  font-size: var(--t-body);
+  font-weight: 600;
   color: var(--ink);
 }
 
