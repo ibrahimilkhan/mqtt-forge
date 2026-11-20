@@ -1,4 +1,3 @@
-using System.Text;
 using MqttForge.Application.Alerts;
 using MqttForge.Domain.Enums;
 using MqttForge.Domain.Models;
@@ -45,26 +44,7 @@ public sealed record AlertDto(
             alert.Reason, alert.Value, Clip(alert.Sample),
             [.. alert.Actions.Select(AlertActionDto.NameOf)]);
 
-    /// <summary>The sample, cut to <see cref="SampleLimit"/> bytes without splitting a character.</summary>
-    // Bytes, because that is what the limit is about — the frame — and characters, because that is
-    // what the reader sees. A cut counted in bytes lands in the middle of one about a fifth of the
-    // time on a payload with any non-ASCII in it, and half a rune reaches the panel as a
-    // replacement character sitting in the one payload the reader most wants to look at.
-    //
-    // 10xxxxxx is a UTF-8 continuation byte; walking back off them lands on the first byte of the
-    // character the cut fell inside, and dropping that character whole is the answer.
-    public static string? Clip(string? sample)
-    {
-        if (sample is null) return null;
-
-        var bytes = Encoding.UTF8.GetBytes(sample);
-        if (bytes.Length <= SampleLimit) return sample;
-
-        var cut = SampleLimit;
-        while (cut > 0 && (bytes[cut] & 0xC0) == 0x80) cut--;
-
-        return Encoding.UTF8.GetString(bytes, 0, cut);
-    }
+    private static string? Clip(string? sample) => Utf8Clip.To(sample, SampleLimit);
 }
 
 /// <summary>Everything GET /api/alerts answers, and everything the panel draws.</summary>

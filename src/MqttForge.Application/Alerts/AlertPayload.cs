@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using MqttForge.Domain.Enums;
@@ -74,28 +73,7 @@ public static class AlertPayload
     private static string At(DateTimeOffset moment) =>
         moment.ToUniversalTime().ToString(Instant, CultureInfo.InvariantCulture);
 
-    /// <summary>The sample, cut to the byte budget and never in the middle of a character.</summary>
-    private static string? Clip(string? sample)
-    {
-        if (sample is null) return null;
-
-        // The ordinary path pays one comparison and allocates nothing. No character encodes to
-        // more than three UTF-8 bytes — the four-byte ones are surrogate pairs, which are two
-        // chars — so a string this short cannot possibly exceed the budget.
-        if (sample.Length <= SampleLimit / 3) return sample;
-
-        var bytes = Encoding.UTF8.GetBytes(sample);
-        if (bytes.Length <= SampleLimit) return sample;
-
-        var end = SampleLimit;
-
-        // Walk back off a continuation byte (10xxxxxx). Cutting the array at the budget can land
-        // inside a character, and half a character on the wire is either a U+FFFD in somebody's
-        // database or a body their parser rejects outright.
-        while (end > 0 && (bytes[end] & 0xC0) == 0x80) end--;
-
-        return Encoding.UTF8.GetString(bytes, 0, end);
-    }
+    private static string? Clip(string? sample) => Utf8Clip.To(sample, SampleLimit);
 
     /// <summary>The body, as a type, so its member order is the document's member order.</summary>
     // A record rather than a hand-written writer: the order is the declaration order, the names
