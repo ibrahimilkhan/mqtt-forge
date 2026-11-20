@@ -2,7 +2,7 @@ import { useId, useState } from 'react';
 import { Field } from '../../components/Field';
 import panel from '../../styles/panel.module.css';
 import { runFor, useLogStore, type LogEntry } from '../../stores/logStore';
-import { compilePattern, recentTexts, verdictOf, type Verdict } from './patternTry';
+import { compilePattern, recentTexts, verdictOf, type Verdict } from './patternVerdict';
 import styles from './PatternTry.module.css';
 
 /** The rule's topic filter and field, which decide what a pattern is tried against. */

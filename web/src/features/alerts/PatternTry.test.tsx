@@ -3,10 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { DecodedMessage } from '../../realtime/decodeIncoming';
 import { useLogStore } from '../../stores/logStore';
-// Explicit extension: this project's file system is case-insensitive, and an extension-less
-// './PatternTry' resolves to the already-committed lower-case './patternTry.ts' before ever
-// trying '.tsx' — the component file would otherwise never be the one under test.
-import { PatternTry } from './PatternTry.tsx';
+import { PatternTry } from './PatternTry';
 
 const message = (topic: string, payload: string): DecodedMessage => ({
   topic,

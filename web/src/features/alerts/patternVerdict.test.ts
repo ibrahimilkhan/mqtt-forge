@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { LogEntry } from '../../stores/logStore';
-import { compilePattern, recentTexts, textAt, verdictOf } from './patternTry';
+import { compilePattern, recentTexts, textAt, verdictOf } from './patternVerdict';
 
 describe('the text a rule tests', () => {
   it('is the body itself when the rule names no field', () => {
