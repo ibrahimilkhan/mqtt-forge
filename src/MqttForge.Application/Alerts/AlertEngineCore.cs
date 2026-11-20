@@ -1226,7 +1226,7 @@ public sealed class AlertEngineCore
         // walk from. ToArray so the dictionary can be written to inside the loop.
         foreach (var key in _pairs.Keys.ToArray())
         {
-            var reason = WhyDropped(key.RuleId, hashes, live);
+            var reason = Why(key.RuleId, now: hashes, live: live, before: _hashes);
             if (reason is null) continue;
 
             var state = _pairs[key];
@@ -1301,26 +1301,29 @@ public sealed class AlertEngineCore
     }
 
     /// <summary>
-    /// The three outcomes, in the order the spec names them, and null for the pair that is left
-    /// alone. Order matters where they overlap: a rule that is both absent from the list and was
-    /// disabled last time can only be reported once, and "rule removed" is the truer sentence —
-    /// the user's last act on it was to delete it.
+    /// Why a pair does not carry over from one rule set to another, or null when it does: the three
+    /// outcomes in the order the spec names them. Order matters where they overlap: a rule that is
+    /// both absent from the list and was disabled last time can only be reported once, and "rule
+    /// removed" is the truer sentence — the user's last act on it was to delete it.
     /// </summary>
-    private string? WhyDropped(
+    // One question asked at two moments. A save brings the new fingerprints (`now`) to an engine
+    // holding the old ones; a restart brings the old ones, from alert-state.json, to an engine
+    // holding the new. The strings are the same on purpose — "rule changed" means one thing to the
+    // person reading the console, whether their rule changed while the app was running or while it
+    // was off.
+    private static string? Why(
         string ruleId,
-        Dictionary<string, string> hashes,
-        Dictionary<string, AlertRule> live)
+        Dictionary<string, string> now,
+        Dictionary<string, AlertRule> live,
+        Dictionary<string, string> before)
     {
-        if (!hashes.TryGetValue(ruleId, out var hash)) return "rule removed";
+        if (!now.TryGetValue(ruleId, out var hash)) return "rule removed";
         if (!live.ContainsKey(ruleId)) return "rule disabled";
 
-        // A pair whose rule the engine holds no hash for cannot be shown to be the same rule,
-        // and "cannot be shown" has to read as changed: state restored from alert-state.json
-        // arrives that way, and keeping it on a guess is precisely the mistake this hash was
-        // written to stop.
-        return _hashes.TryGetValue(ruleId, out var previous) && previous == hash
-            ? null
-            : "rule changed";
+        // A pair with no earlier fingerprint cannot be shown to be the same rule, and "cannot be
+        // shown" has to read as changed: keeping an alarm on a guess is precisely the mistake this
+        // hash was written to stop.
+        return before.TryGetValue(ruleId, out var was) && was == hash ? null : "rule changed";
     }
 
     // ── The handover across a restart ────────────────────────────────────────────────────────
@@ -1440,7 +1443,7 @@ public sealed class AlertEngineCore
 
         foreach (var alert in state.Active)
         {
-            if (WhyStale(alert.RuleId, fingerprints) is { } reason)
+            if (Why(alert.RuleId, now: _hashes, live: _byId, before: fingerprints) is { } reason)
             {
                 // Through Remember rather than Close, and that is not an oversight: Close gives
                 // back a slot under the active ceiling, and this alert never took one — it comes
@@ -1500,27 +1503,10 @@ public sealed class AlertEngineCore
 
     /// <summary>The pair a restored mute or cooldown belongs to, or null when its rule has moved on.</summary>
     private RuleState? Reopen(string ruleId, string topic, Dictionary<string, string> fingerprints) =>
-        WhyStale(ruleId, fingerprints) is null ? Track(_byId[ruleId], topic) : null;
+        Why(ruleId, now: _hashes, live: _byId, before: fingerprints) is null
+            ? Track(_byId[ruleId], topic)
+            : null;
 
-    /// <summary>
-    /// Whether a restored record still belongs to the rule it was written under, and if not, what
-    /// to say about it.
-    /// </summary>
-    // WhyDropped's three answers, in WhyDropped's order, asked the other way round: there the
-    // engine holds the old fingerprints and the save brings the new ones, here the engine holds
-    // the new ones and the file brings the old. The strings are the same strings on purpose —
-    // "rule changed" means one thing to the person reading the console, whether their rule
-    // changed while the app was running or while it was off.
-    private string? WhyStale(string ruleId, Dictionary<string, string> fingerprints)
-    {
-        if (!_hashes.TryGetValue(ruleId, out var hash)) return "rule removed";
-        if (!_byId.ContainsKey(ruleId)) return "rule disabled";
-
-        // A record with no fingerprint cannot be shown to be the same rule, and "cannot be shown"
-        // reads as changed — the position WhyDropped already takes for exactly this case. Keeping
-        // an alarm on a guess is the mistake the hash was written to stop.
-        return fingerprints.TryGetValue(ruleId, out var was) && was == hash ? null : "rule changed";
-    }
 
     // The panel's vocabulary and the webhook's, in one place. Lower case and no articles, so that
     // they read inside the sentences above rather than beside them.
