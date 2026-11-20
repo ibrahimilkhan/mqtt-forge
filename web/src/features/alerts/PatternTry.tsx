@@ -2,7 +2,7 @@ import { useId, useState } from 'react';
 import { Field } from '../../components/Field';
 import panel from '../../styles/panel.module.css';
 import { runFor, useLogStore, type LogEntry } from '../../stores/logStore';
-import { compilePattern, recentTexts, verdictOf, type Verdict } from './patternVerdict';
+import { compilePattern, entryKey, recentTexts, verdictOf, type Verdict } from './patternVerdict';
 import styles from './PatternTry.module.css';
 
 /** The rule's topic filter and field, which decide what a pattern is tried against. */
@@ -80,7 +80,7 @@ export function PatternTry({
 
             return (
               <li
-                key={`${row.topic}\u0000${row.text ?? ''}`}
+                key={entryKey(row.topic, row.text)}
                 className={styles.row}
                 data-testid="try-row"
                 data-verdict={verdict ?? ''}

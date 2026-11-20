@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { LogEntry } from '../../stores/logStore';
-import { compilePattern, recentTexts, textAt, verdictOf } from './patternVerdict';
+import { compilePattern, entryKey, recentTexts, textAt, verdictOf } from './patternVerdict';
 
 describe('the text a rule tests', () => {
   it('is the body itself when the rule names no field', () => {
@@ -140,6 +140,10 @@ describe('the recent texts', () => {
       { topic: 'd/1/log', text: 'b' },
       { topic: 'd/2/log', text: 'c' },
     ]);
+  });
+
+  it('keys a missing field apart from a field that is just an empty string', () => {
+    expect(entryKey('t', '')).not.toBe(entryKey('t', null));
   });
 
   it('reads the field out of each, and leaves out binary bodies', () => {

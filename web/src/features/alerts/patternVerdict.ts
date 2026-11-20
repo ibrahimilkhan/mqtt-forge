@@ -265,6 +265,14 @@ export function verdictOf(regex: RegExp, negate: boolean, text: string | null): 
 export type TriedText = { topic: string; text: string | null };
 
 /**
+ * A key for one topic-and-text pair, with a missing field told apart from a field that is simply
+ * an empty string. '\u0001' cannot appear in `text` — it is a span of the payload's own bytes, or
+ * null — so it is free to stand for 'no text', the one value a real reading never holds.
+ */
+export const entryKey = (topic: string, text: string | null): string =>
+  `${topic}\u0000${text ?? '\u0001'}`;
+
+/**
  * The texts worth trying, newest first, each once.
  *
  * Distinct because a sensor saying 'ok' forty times is one row of evidence, not forty, and eight
@@ -280,7 +288,7 @@ export function recentTexts(entries: readonly LogEntry[], field: string, limit =
     if (entry.kind !== 'recv' || entry.mode === 'hex' || entry.topic === undefined) continue;
 
     const text = textAt(entry.body ?? '', field);
-    const key = `${entry.topic}\u0000${text ?? '\u0001'}`;
+    const key = entryKey(entry.topic, text);
     if (seen.has(key)) continue;
 
     seen.add(key);

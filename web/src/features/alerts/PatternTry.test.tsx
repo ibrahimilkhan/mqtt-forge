@@ -1,6 +1,6 @@
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DecodedMessage } from '../../realtime/decodeIncoming';
 import { useLogStore } from '../../stores/logStore';
 import { PatternTry } from './PatternTry';
@@ -85,6 +85,20 @@ describe('trying a pattern', () => {
     send(message('b', 'late arrival'));
     expect(screen.getAllByTestId('try-row')).toHaveLength(1);
     expect(screen.getByText('from b')).toBeInTheDocument();
+  });
+
+  it('gives a missing field a different row key from one that is just an empty string', () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    send(message('t', '{"msg":""}'), message('t', '{"other":1}'));
+    render(<PatternTry regex="." negate={false} source={{ filter: 't', field: 'msg' }} />);
+
+    expect(screen.getAllByTestId('try-row')).toHaveLength(2);
+    const keyWarning = errorSpy.mock.calls.some((args) =>
+      String(args[0]).includes('two children with the same key'),
+    );
+    expect(keyWarning).toBe(false);
+
+    errorSpy.mockRestore();
   });
 
   it('holds its rows still while traffic arrives, until Refresh', async () => {
