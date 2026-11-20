@@ -9,12 +9,7 @@ import { useAlertStore } from '../../stores/alertStore';
 import { logFault, useLogStore } from '../../stores/logStore';
 import { describeError } from '../../lib/problemDetails';
 import panel from '../../styles/panel.module.css';
-import type {
-  AlertDto,
-  AlertRuleDto,
-  AlertSeverity,
-  RuleDiagnosticDto,
-} from '../../types/api';
+import type { AlertDto, AlertRuleDto, RuleDiagnosticDto } from '../../types/api';
 import styles from './AlertsPanel.module.css';
 import { RuleEditor } from './RuleEditor';
 import { RuleLibrary } from './RuleLibrary';
@@ -29,25 +24,6 @@ import {
 } from './ruleDraft';
 import { firesOn } from './ruleSummary';
 import type { DraftRule } from './ruleDraft';
-
-/**
- * Which of three levels is the loudest, said as a number so it can be sorted on.
- *
- * Exported because the rail badge needs the same order and there must not be two answers to
- * 'which of these is the worst' in one console.
- */
-export const RANK: Record<AlertSeverity, number> = { critical: 0, warn: 1, info: 2 };
-
-/** The loudest level standing, or nothing at all. */
-export function worst(alerts: readonly AlertDto[]): AlertSeverity | null {
-  let found: AlertSeverity | null = null;
-
-  for (const alert of alerts) {
-    if (found === null || RANK[alert.severity] < RANK[found]) found = alert.severity;
-  }
-
-  return found;
-}
 
 /**
  * How often the engine's own report is read again while the panel is open.

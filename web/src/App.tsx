@@ -29,7 +29,8 @@ import { SubscribePanel } from './features/subscribe/SubscribePanel';
 import { Workspace } from './features/workspace/Workspace';
 import type { Hub } from './realtime/hub';
 import { useHubBridge } from './realtime/useHubBridge';
-import { AlertsPanel, worst } from './features/alerts/AlertsPanel';
+import { AlertsPanel } from './features/alerts/AlertsPanel';
+import { loudest as loudestOf } from './features/alerts/severity';
 import { SoundPrompt } from './features/alerts/SoundButton';
 import { useSoundStore } from './features/alerts/alertSound';
 import { useAlertStore } from './stores/alertStore';
@@ -95,7 +96,7 @@ export function App({ hub }: { hub: Hub }) {
   // time and the health strip is off by default, so the rail is the one place a standing alarm
   // is always visible.
   const alerting = useAlertStore((state) => state.active);
-  const loudest = worst(alerting);
+  const loudest = loudestOf(alerting.map((alert) => alert.severity));
   // The preference outlives the page and the armed audio context cannot, so the row has to be
   // able to say that the switch is on and no sound is coming.
   const soundWanted = useAppearanceStore((state) => state.alertSound);

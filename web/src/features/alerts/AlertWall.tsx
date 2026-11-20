@@ -2,7 +2,8 @@ import { useAlertStore } from '../../stores/alertStore';
 import { isFlowAlarm, useFlowAlarmStore } from '../../stores/flowAlarmStore';
 import type { AlertDto, AlertSeverity } from '../../types/api';
 import type { PanelId } from '../panels';
-import { clock, RANK } from './AlertsPanel';
+import { clock } from './AlertsPanel';
+import { RANK } from './severity';
 import styles from './AlertWall.module.css';
 
 /** The level in words. The wall is not a place where colour may be the only signal. */

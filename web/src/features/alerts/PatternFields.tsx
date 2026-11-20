@@ -7,7 +7,7 @@ import {
   readPattern,
   regexOf,
   switchMode,
-  textFor,
+  typedIn,
   type PatternMode,
 } from './patternBuilder';
 import { PatternTry, type PatternSource } from './PatternTry';
@@ -36,7 +36,7 @@ export function PatternFields({
 }) {
   const [chosen, setChosen] = useState<PatternMode>(() => readPattern(condition.regex).mode);
   const mode = modeOf(chosen, condition.regex);
-  const text = mode === 'regex' ? condition.regex : (textFor(mode, condition.regex) ?? '');
+  const text = typedIn(mode, condition.regex);
 
   const write = (typed: string) =>
     onChange({ ...condition, regex: mode === 'regex' ? typed : regexOf(mode, typed) });
@@ -74,24 +74,18 @@ export function PatternFields({
         </Field>
       </div>
 
-      {mode === 'regex' ? (
-        <Field label="Expression" htmlFor={id('regex')}>
-          <input
-            id={id('regex')}
-            value={text}
-            spellCheck={false}
-            placeholder="^ERR-[0-9]+"
-            onChange={(event) => write(event.target.value)}
-          />
-        </Field>
-      ) : mode === 'anyWord' ? (
+      {mode === 'anyWord' ? (
         <AnyWord id={id('words')} regex={condition.regex} onWrite={write} />
       ) : (
-        <Field label="Text" htmlFor={id('text')}>
+        <Field
+          label={mode === 'regex' ? 'Expression' : 'Text'}
+          htmlFor={id(mode === 'regex' ? 'regex' : 'text')}
+        >
           <input
-            id={id('text')}
+            id={id(mode === 'regex' ? 'regex' : 'text')}
             value={text}
             spellCheck={false}
+            placeholder={mode === 'regex' ? '^ERR-[0-9]+' : undefined}
             onChange={(event) => write(event.target.value)}
           />
         </Field>
@@ -127,8 +121,8 @@ function AnyWord({
   regex: string;
   onWrite: (typed: string) => void;
 }) {
-  const [typed, setTyped] = useState(() => textFor('anyWord', regex) ?? '');
-  const shown = regexOf('anyWord', typed) === regex ? typed : (textFor('anyWord', regex) ?? '');
+  const [typed, setTyped] = useState(() => typedIn('anyWord', regex));
+  const shown = regexOf('anyWord', typed) === regex ? typed : typedIn('anyWord', regex);
 
   return (
     <Field label="One word to a line" htmlFor={id}>

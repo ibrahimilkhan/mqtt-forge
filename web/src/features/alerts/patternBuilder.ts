@@ -1,3 +1,5 @@
+import { listOf } from './ruleDraft';
+
 /**
  * A pattern rule written in words, and the words read back out of a pattern.
  *
@@ -30,13 +32,6 @@ const SPECIAL = new Set('\\^$.|?*+()[]{}');
 const esc = (text: string): string =>
   [...text].map((character) => (SPECIAL.has(character) ? `\\${character}` : character)).join('');
 
-/** One word to a line, trimmed, blank lines gone — as the list condition reads its textarea. */
-const wordsOf = (text: string): string[] =>
-  text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line !== '');
-
 /**
  * The expression a mode writes.
  *
@@ -45,7 +40,7 @@ const wordsOf = (text: string): string[] =>
  */
 export function regexOf(mode: WordMode, text: string): string {
   if (mode === 'anyWord') {
-    const words = wordsOf(text);
+    const words = listOf(text);
 
     return words.length === 0 ? '' : `^(?:${words.map(esc).join('|')})$`;
   }
@@ -168,7 +163,7 @@ export function modeOf(chosen: PatternMode, regex: string): PatternMode {
 }
 
 /** What the reader typed, in whatever mode the expression is drawn in. */
-const typedIn = (mode: PatternMode, regex: string): string =>
+export const typedIn = (mode: PatternMode, regex: string): string =>
   mode === 'regex' ? regex : (textFor(mode, regex) ?? '');
 
 /** The expression after the mode select changes from `from` to `to`. */
@@ -180,7 +175,7 @@ export function switchMode(regex: string, from: PatternMode, to: PatternMode): s
   const read = from === 'regex' ? readPattern(regex) : { mode: from, text: typedIn(from, regex) };
   if (read.mode === 'regex') return '';
 
-  const text = to === 'anyWord' || read.mode !== 'anyWord' ? read.text : (wordsOf(read.text)[0] ?? '');
+  const text = to === 'anyWord' || read.mode !== 'anyWord' ? read.text : (listOf(read.text)[0] ?? '');
 
   return regexOf(to, text);
 }

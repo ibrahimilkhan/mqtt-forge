@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { useAppearanceStore } from '../../stores/appearanceStore';
 import type { AlertDto, AlertSeverity } from '../../types/api';
+import { loudest } from './severity';
 
 /**
  * What each severity sounds like: a pitch, and how many times it says it.
@@ -42,9 +43,6 @@ const PEAK = 0.18;
  * in a single click.
  */
 export const NOT_READY = 'Sound is not ready — click to turn it on';
-
-/** Loudest wins when a batch arrives together. */
-const RANK: Record<AlertSeverity, number> = { info: 0, warn: 1, critical: 2 };
 
 type SoundState = {
   /** A context exists and the browser is letting it run. Never persisted; see the note below. */
@@ -226,10 +224,10 @@ const quiet = (alert: AlertDto) =>
  * and cannot come out differently for a flow than for a rule.
  */
 export function soundLevels(levels: readonly AlertSeverity[]): boolean {
-  if (levels.length === 0) return false;
+  // Loudest wins when a batch arrives together.
+  const level = loudest(levels);
 
-  const worst = levels.reduce((found, level) => (RANK[level] > RANK[found] ? level : found));
-  return soundAlert(worst);
+  return level === null ? false : soundAlert(level);
 }
 
 /**
