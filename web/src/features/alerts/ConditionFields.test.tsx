@@ -19,7 +19,6 @@ const EVERY_FIELD = [
   'High',
   'Expression',
   'Text',
-  'One word to a line',
   'One value to a line',
   'Seconds of silence',
   'k',
@@ -234,15 +233,6 @@ describe('the pattern builder', () => {
 
     expect(held()).toEqual({ type: 'pattern', regex: '^ERR-2\\.', negate: false });
     expect(screen.getByTestId('pattern-regex')).toHaveTextContent('^ERR-2\\.');
-  });
-
-  it('takes a list one word to a line', async () => {
-    render(<Held start={blankCondition('pattern')} />);
-
-    await userEvent.selectOptions(screen.getByLabelText('How it matches'), 'anyWord');
-    await userEvent.type(screen.getByLabelText('One word to a line'), 'fault{enter}offline');
-
-    expect(held()).toMatchObject({ regex: '^(?:fault|offline)$' });
   });
 
   it('turns does-not-match on from the Fire when select', async () => {

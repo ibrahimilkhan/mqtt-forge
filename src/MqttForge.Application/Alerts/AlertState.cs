@@ -28,8 +28,8 @@ public sealed record AlertState(
     // Appended last with a default, the way MqttMessage.Replay was, so that a hand-built state
     // in a test or a caller that has nothing to fingerprint still constructs with three lists.
     // Null and empty mean the same thing and both mean 'cannot be shown to be the same rule',
-    // which AlertEngineCore.Restore reads as changed — see WhyDropped, which already takes that
-    // position for exactly this case.
+    // which AlertEngineCore.Restore reads as changed — see Why, which takes that position for a
+    // save and a restart alike.
     IReadOnlyList<RuleFingerprint>? Fingerprints = null);
 
 /// <summary>One pair that is still cooling down, and the moment it may ring again.</summary>

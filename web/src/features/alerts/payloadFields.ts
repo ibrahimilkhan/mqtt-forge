@@ -45,7 +45,7 @@ export type PayloadField = {
 };
 
 /** As many rows as the picker will draw. A telemetry frame is twenty fields; this is not one. */
-export const MOST_FIELDS = 400;
+const MOST_FIELDS = 400;
 
 /** The body parsed, or null when it is not a document at all. Mirrors the server's own gate. */
 export function parseBody(payload: string): Json | null {

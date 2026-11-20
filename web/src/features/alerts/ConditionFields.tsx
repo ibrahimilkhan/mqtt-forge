@@ -3,6 +3,7 @@ import { Example } from '../../components/InfoTip';
 import panel from '../../styles/panel.module.css';
 import type { OutlierMethod, PulseMetric, ThresholdOp } from '../../types/api';
 import { PatternFields } from './PatternFields';
+import { SIGN } from './ruleSummary';
 import type { PatternSource } from './PatternTry';
 import {
   blankCondition,
@@ -32,15 +33,11 @@ export function ConditionSummary({ type }: { type: ConditionType | 'opaque' }) {
   return <p className={panel.pickNote}>{CONDITION_SUMMARIES[type]}</p>;
 }
 
-/** The words for the six operators. '≠' is drawn rather than spelled: it is read at a glance. */
-const OPS: ReadonlyArray<{ value: ThresholdOp; label: string }> = [
-  { value: 'gt', label: '>' },
-  { value: 'gte', label: '≥' },
-  { value: 'lt', label: '<' },
-  { value: 'lte', label: '≤' },
-  { value: 'eq', label: '=' },
-  { value: 'neq', label: '≠' },
-];
+/**
+ * The six operators, as the select offers them: the same signs the rules table writes, so the
+ * form and the row it turns into cannot draw one comparison two ways.
+ */
+const OPS = (Object.keys(SIGN) as ThresholdOp[]).map((value) => ({ value, label: SIGN[value] }));
 
 /**
  * The four numbers a pulse rule can compare, under the names a signal's are usually given.

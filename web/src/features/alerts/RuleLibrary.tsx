@@ -1,5 +1,6 @@
-import { useId, useRef, useState } from 'react';
+import { useId, useState } from 'react';
 import { InfoMark } from '../../components/InfoTip';
+import { Segmented } from '../../components/Segmented';
 import { duration } from '../../lib/format';
 import panel from '../../styles/panel.module.css';
 import type { AlertRuleDto } from '../../types/api';
@@ -47,11 +48,14 @@ function cardLine(rule: AlertRuleDto): string {
  * presses New rule and gets an empty form, and somebody who does not can come here and leave with
  * a rule that already works on somebody's garage.
  *
- * Grouped under the kind, with the kind said once at its head, and a row of chips at the top to
- * reach a kind without scrolling past thirty cards. Every card is the same size, and stays that
- * size when its mark is pressed — the example gives way to the story rather than the card growing
- * under it. A grid whose cards change height is a grid whose other cards move while they are
- * being read.
+ * One kind at a time, and none until one is picked. Thirty-odd cards on one page is a page read
+ * by scrolling past most of it; the eleven names fit on two lines, and the reader who came here
+ * knowing they want a silence rule sees only the silence rules. The kind's one line stands under
+ * the picker, where Segmented puts a note about the chosen option.
+ *
+ * Every card is the same size, and stays that size when its mark is pressed — the example gives
+ * way to the story rather than the card growing under it. A grid whose cards change height is a
+ * grid whose other cards move while they are being read.
  */
 export function RuleLibrary({
   onUse,
@@ -62,18 +66,13 @@ export function RuleLibrary({
   onBlank: () => void;
   onBack: () => void;
 }) {
-  // One story at a time across the whole library: the mark is a question about one card, and a
-  // page of answers open at once is the prose the cards were made to avoid.
+  const [kind, setKind] = useState<ConditionType | null>(null);
+  // One story at a time: the mark is a question about one card, and a page of answers open at
+  // once is the prose the cards were made to avoid.
   const [told, setTold] = useState<string | null>(null);
-  const headings = useRef(new Map<ConditionType, HTMLHeadingElement>());
-  const base = useId();
+  const name = useId();
 
-  const jump = (type: ConditionType) => {
-    const heading = headings.current.get(type);
-    // Optional because jsdom has no scrolling; focus is what a keyboard reader is moved by anyway.
-    heading?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
-    heading?.focus({ preventScroll: true });
-  };
+  const group = TEMPLATE_GROUPS.find((one) => one.type === kind) ?? null;
 
   return (
     <section aria-label="Rule library">
@@ -90,59 +89,34 @@ export function RuleLibrary({
         </div>
       </div>
 
-      <nav aria-label="Kinds of rule" className={styles.kinds}>
-        {TEMPLATE_GROUPS.map((group) => (
-          <button
-            key={group.type}
-            type="button"
-            className={styles.kindChip}
-            onClick={() => jump(group.type)}
-          >
-            {CONDITION_LABELS[group.type]}
-          </button>
-        ))}
-      </nav>
+      <Segmented
+        label="Kind of rule"
+        name={name}
+        options={TEMPLATE_GROUPS.map((one) => ({ value: one.type, label: CONDITION_LABELS[one.type] }))}
+        value={kind}
+        onChange={(picked) => {
+          setKind(picked);
+          setTold(null);
+        }}
+        note={group?.says}
+      />
 
-      {TEMPLATE_GROUPS.map((group) => {
-        const label = CONDITION_LABELS[group.type];
-        const headingId = `${base}-${group.type}`;
-
-        return (
-          <section key={group.type} aria-labelledby={headingId} className={styles.group}>
-            <div className={styles.groupHead}>
-              <h4
-                id={headingId}
-                tabIndex={-1}
-                className={styles.kind}
-                ref={(element) => {
-                  if (element) headings.current.set(group.type, element);
-                  else headings.current.delete(group.type);
-                }}
-              >
-                {label}
-              </h4>
-              <p className={styles.says}>{group.says}</p>
-            </div>
-
-            <ul className={styles.cards}>
-              {group.examples.map((example) => {
-                const key = `${group.type}:${example.title}`;
-
-                return (
-                  <Card
-                    key={key}
-                    example={example}
-                    label={label}
-                    open={told === key}
-                    onTell={() => setTold((now) => (now === key ? null : key))}
-                    onUse={() => onUse(example.draft())}
-                  />
-                );
-              })}
-            </ul>
-          </section>
-        );
-      })}
+      {group === null ? (
+        <p className={panel.note}>Pick a kind to see its examples.</p>
+      ) : (
+        <ul className={styles.cards} aria-label={`${CONDITION_LABELS[group.type]} examples`}>
+          {group.examples.map((example) => (
+            <Card
+              key={example.title}
+              example={example}
+              label={CONDITION_LABELS[group.type]}
+              open={told === example.title}
+              onTell={() => setTold((now) => (now === example.title ? null : example.title))}
+              onUse={() => onUse(example.draft())}
+            />
+          ))}
+        </ul>
+      )}
     </section>
   );
 }

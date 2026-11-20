@@ -7,7 +7,7 @@
  * exact expression — and when none would, to show the expression as it is. A reader who opens a
  * rule to look at it must never save it back changed.
  */
-export type PatternMode = 'contains' | 'startsWith' | 'endsWith' | 'exactly' | 'anyWord' | 'regex';
+export type PatternMode = 'contains' | 'startsWith' | 'endsWith' | 'exactly' | 'regex';
 
 export type WordMode = Exclude<PatternMode, 'regex'>;
 
@@ -16,12 +16,11 @@ export const PATTERN_MODES: ReadonlyArray<{ value: PatternMode; label: string }>
   { value: 'startsWith', label: 'Starts with' },
   { value: 'endsWith', label: 'Ends with' },
   { value: 'exactly', label: 'Is exactly' },
-  { value: 'anyWord', label: 'Any of these words' },
   { value: 'regex', label: 'Regular expression' },
 ];
 
 /** Read in this order, so the most particular shape wins: '^a$' is exactly, not starts-with. */
-const READ_ORDER: readonly WordMode[] = ['anyWord', 'exactly', 'startsWith', 'endsWith', 'contains'];
+const READ_ORDER: readonly WordMode[] = ['exactly', 'startsWith', 'endsWith', 'contains'];
 
 // Every character either engine reads as syntax outside a class. '-', ',' and '/' are not among
 // them, and escaping them anyway would write expressions nobody reading the file expects.
@@ -30,13 +29,6 @@ const SPECIAL = new Set('\\^$.|?*+()[]{}');
 const esc = (text: string): string =>
   [...text].map((character) => (SPECIAL.has(character) ? `\\${character}` : character)).join('');
 
-/** One word to a line, trimmed, blank lines gone — as the list condition reads its textarea. */
-const wordsOf = (text: string): string[] =>
-  text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line !== '');
-
 /**
  * The expression a mode writes.
  *
@@ -44,11 +36,6 @@ const wordsOf = (text: string): string[] =>
  * message and passes the validator, which is the one outcome worse than a refusal.
  */
 export function regexOf(mode: WordMode, text: string): string {
-  if (mode === 'anyWord') {
-    const words = wordsOf(text);
-
-    return words.length === 0 ? '' : `^(?:${words.map(esc).join('|')})$`;
-  }
   if (text === '') return '';
 
   switch (mode) {
@@ -90,27 +77,6 @@ function unescape(text: string): string | null {
   return out;
 }
 
-/** The body of an any-word list split on its bare bars, each word unescaped. */
-function unescapeWords(body: string): string[] | null {
-  const words: string[] = [];
-  let start = 0;
-
-  for (let at = 0; at <= body.length; at += 1) {
-    if (body[at] === '\\') {
-      at += 1;
-      continue;
-    }
-    if (at === body.length || body[at] === '|') {
-      const word = unescape(body.slice(start, at));
-      if (word === null) return null;
-      words.push(word);
-      start = at + 1;
-    }
-  }
-
-  return words;
-}
-
 /** The text that writes this expression in this mode, or null when that mode cannot write it. */
 export function textFor(mode: WordMode, regex: string): string | null {
   let text: string | null;
@@ -128,12 +94,6 @@ export function textFor(mode: WordMode, regex: string): string | null {
     case 'exactly':
       text = regex.startsWith('^') && regex.endsWith('$') ? unescape(regex.slice(1, -1)) : null;
       break;
-    case 'anyWord': {
-      const words =
-        regex.startsWith('^(?:') && regex.endsWith(')$') ? unescapeWords(regex.slice(4, -2)) : null;
-      text = words === null ? null : words.join('\n');
-      break;
-    }
   }
 
   // Written again and compared, which is what makes 'this mode wrote it' a fact rather than a
@@ -168,7 +128,7 @@ export function modeOf(chosen: PatternMode, regex: string): PatternMode {
 }
 
 /** What the reader typed, in whatever mode the expression is drawn in. */
-const typedIn = (mode: PatternMode, regex: string): string =>
+export const typedIn = (mode: PatternMode, regex: string): string =>
   mode === 'regex' ? regex : (textFor(mode, regex) ?? '');
 
 /** The expression after the mode select changes from `from` to `to`. */
@@ -180,7 +140,5 @@ export function switchMode(regex: string, from: PatternMode, to: PatternMode): s
   const read = from === 'regex' ? readPattern(regex) : { mode: from, text: typedIn(from, regex) };
   if (read.mode === 'regex') return '';
 
-  const text = to === 'anyWord' || read.mode !== 'anyWord' ? read.text : (wordsOf(read.text)[0] ?? '');
-
-  return regexOf(to, text);
+  return regexOf(to, read.text);
 }

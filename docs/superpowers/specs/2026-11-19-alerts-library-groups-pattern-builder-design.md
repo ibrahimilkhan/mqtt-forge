@@ -236,3 +236,10 @@ Shown under the pattern fields in the rule editor (top-level condition and insid
 - Changing the wire shape or the server.
 - Templates for actions (webhook, publish) — the library is about conditions.
 - Nested composites in the editor.
+
+## Later change (2026-11-20): Any of these words removed
+
+The builder's "Any of these words" mode wrote `^(?:a|b)$`, which is the List condition written a
+second way — and a subtly different one, since .NET's `$` also accepts a final newline that List
+does not. The mode is gone; a list of exact words is the List condition's job. A rule saved with
+such an expression opens in Regular expression mode, unchanged.

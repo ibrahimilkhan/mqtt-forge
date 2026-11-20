@@ -7,7 +7,7 @@ import {
   readPattern,
   regexOf,
   switchMode,
-  textFor,
+  typedIn,
   type PatternMode,
 } from './patternBuilder';
 import { PatternTry, type PatternSource } from './PatternTry';
@@ -36,7 +36,7 @@ export function PatternFields({
 }) {
   const [chosen, setChosen] = useState<PatternMode>(() => readPattern(condition.regex).mode);
   const mode = modeOf(chosen, condition.regex);
-  const text = mode === 'regex' ? condition.regex : (textFor(mode, condition.regex) ?? '');
+  const text = typedIn(mode, condition.regex);
 
   const write = (typed: string) =>
     onChange({ ...condition, regex: mode === 'regex' ? typed : regexOf(mode, typed) });
@@ -74,28 +74,19 @@ export function PatternFields({
         </Field>
       </div>
 
-      {mode === 'regex' ? (
-        <Field label="Expression" htmlFor={id('regex')}>
-          <input
-            id={id('regex')}
-            value={text}
-            spellCheck={false}
-            placeholder="^ERR-[0-9]+"
-            onChange={(event) => write(event.target.value)}
-          />
-        </Field>
-      ) : mode === 'anyWord' ? (
-        <AnyWord id={id('words')} regex={condition.regex} onWrite={write} />
-      ) : (
-        <Field label="Text" htmlFor={id('text')}>
-          <input
-            id={id('text')}
-            value={text}
-            spellCheck={false}
-            onChange={(event) => write(event.target.value)}
-          />
-        </Field>
-      )}
+      {/* One box for every mode: only its name and its hint change with it. */}
+      <Field
+        label={mode === 'regex' ? 'Expression' : 'Text'}
+        htmlFor={id(mode === 'regex' ? 'regex' : 'text')}
+      >
+        <input
+          id={id(mode === 'regex' ? 'regex' : 'text')}
+          value={text}
+          spellCheck={false}
+          placeholder={mode === 'regex' ? '^ERR-[0-9]+' : undefined}
+          onChange={(event) => write(event.target.value)}
+        />
+      </Field>
 
       {/* The expression the words make, so a reader learns the syntax by watching it written —
           and can switch to Regular expression to take it further from there. */}
@@ -107,41 +98,5 @@ export function PatternFields({
 
       <PatternTry regex={condition.regex} negate={condition.negate} source={source} />
     </>
-  );
-}
-
-/**
- * The list box, which holds its own text.
- *
- * The one box whose typing cannot round-trip through the expression: a newline just pressed, or
- * a blank line between two words, writes the same expression as no newline at all, and a box
- * drawn back from the expression would swallow the keystroke. So it keeps what was typed and
- * only takes the expression's word when that no longer agrees with it.
- */
-function AnyWord({
-  id,
-  regex,
-  onWrite,
-}: {
-  id: string;
-  regex: string;
-  onWrite: (typed: string) => void;
-}) {
-  const [typed, setTyped] = useState(() => textFor('anyWord', regex) ?? '');
-  const shown = regexOf('anyWord', typed) === regex ? typed : (textFor('anyWord', regex) ?? '');
-
-  return (
-    <Field label="One word to a line" htmlFor={id}>
-      <textarea
-        id={id}
-        rows={4}
-        value={shown}
-        spellCheck={false}
-        onChange={(event) => {
-          setTyped(event.target.value);
-          onWrite(event.target.value);
-        }}
-      />
-    </Field>
   );
 }

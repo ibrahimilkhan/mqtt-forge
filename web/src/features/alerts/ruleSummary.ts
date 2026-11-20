@@ -2,7 +2,7 @@ import { duration } from '../../lib/format';
 import type { AlertCondition, AlertRuleDto, PulseMetric, ThresholdOp } from '../../types/api';
 
 /** The comparison as its sign. A word here would be as long as the rest of the line. */
-const SIGN: Record<ThresholdOp, string> = {
+export const SIGN: Record<ThresholdOp, string> = {
   gt: '>',
   gte: '≥',
   lt: '<',

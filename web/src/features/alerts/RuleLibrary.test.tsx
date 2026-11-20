@@ -14,41 +14,43 @@ const library = (onUse = vi.fn<(draft: DraftRule) => void>()) => {
   return { onUse, onBlank, onBack };
 };
 
-const group = (label: string) => screen.getByRole('region', { name: label });
+/** Choose a kind in the picker at the top, as a reader does before any card is shown. */
+const pick = (label: string) => userEvent.click(screen.getByRole('radio', { name: label }));
+
+const cards = () => screen.queryAllByTestId('rule-template');
 
 describe('the rule library', () => {
-  it('holds a section for every kind, each with its own examples under it', () => {
+  it('shows no examples until a kind is picked, and says so', () => {
+    library();
+
+    expect(cards()).toHaveLength(0);
+    expect(screen.getByText('Pick a kind to see its examples.')).toBeInTheDocument();
+    for (const type of CONDITION_TYPES) {
+      expect(screen.getByRole('radio', { name: CONDITION_LABELS[type] })).not.toBeChecked();
+    }
+  });
+
+  it('shows only the picked kind’s examples, and what that kind does', async () => {
     library();
 
     for (const type of CONDITION_TYPES) {
       const label = CONDITION_LABELS[type];
-      const expected = TEMPLATE_GROUPS.find((one) => one.type === type)!.examples;
+      const group = TEMPLATE_GROUPS.find((one) => one.type === type)!;
 
-      expect(within(group(label)).getByRole('heading', { name: label, level: 4 })).toBeInTheDocument();
-      expect(within(group(label)).getAllByTestId('rule-template')).toHaveLength(expected.length);
+      await pick(label);
+
+      expect(screen.getByRole('radio', { name: label })).toBeChecked();
+      const list = screen.getByRole('list', { name: `${label} examples` });
+      expect(within(list).getAllByTestId('rule-template')).toHaveLength(group.examples.length);
+      expect(cards()).toHaveLength(group.examples.length);
+      expect(screen.getByText(group.says)).toBeInTheDocument();
+      expect(screen.queryByText('Pick a kind to see its examples.')).not.toBeInTheDocument();
     }
-    expect(screen.getAllByTestId('rule-template')).toHaveLength(
-      TEMPLATE_GROUPS.reduce((sum, one) => sum + one.examples.length, 0),
-    );
-  });
-
-  it('says what each kind does once, under its heading', () => {
-    library();
-
-    expect(within(group('Silence')).getByText('No message for a set time.')).toBeInTheDocument();
-  });
-
-  it('moves to a kind from the chips at the top', async () => {
-    library();
-
-    const chips = screen.getByRole('navigation', { name: 'Kinds of rule' });
-    await userEvent.click(within(chips).getByRole('button', { name: 'Pulse' }));
-
-    expect(within(group('Pulse')).getByRole('heading', { name: 'Pulse', level: 4 })).toHaveFocus();
   });
 
   it('puts the story where the example was, behind the mark, and takes it away again', async () => {
     library();
+    await pick('Silence');
 
     const card = screen.getByRole('heading', { name: 'Battery died' }).closest('li')!;
 
@@ -68,28 +70,36 @@ describe('the rule library', () => {
     expect(within(card).queryByRole('note')).not.toBeInTheDocument();
   });
 
-  it('tells one story at a time, across every kind', async () => {
+  it('tells one story at a time, and closes it when the kind changes', async () => {
     library();
+    await pick('Range');
 
-    await userEvent.click(screen.getByRole('button', { name: 'What Upper limit means' }));
+    await userEvent.click(screen.getByRole('button', { name: 'What Leaves its range means' }));
     await userEvent.click(screen.getByRole('button', { name: 'What Clears with a margin means' }));
 
     expect(screen.getAllByRole('note')).toHaveLength(1);
     expect(screen.getByRole('note')).toHaveTextContent(/1.2 and 2.3/);
+
+    await pick('Threshold');
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
   });
 
-  it('shows the setting that makes a card different, not only firesOn', () => {
+  it('shows the setting that makes a card different, not only firesOn', async () => {
     library();
 
+    await pick('Threshold');
     const lasts = screen.getByRole('heading', { name: 'Only if it lasts' }).closest('li')!;
     expect(within(lasts).getByText(/for 2 min/)).toBeInTheDocument();
 
+    await pick('Range');
     const margin = screen.getByRole('heading', { name: 'Clears with a margin' }).closest('li')!;
     expect(within(margin).getByText(/clears at/)).toBeInTheDocument();
 
+    await pick('Outlier');
     const memory = screen.getByRole('heading', { name: 'Short memory' }).closest('li')!;
     expect(within(memory).getByText(/last 50 readings/)).toBeInTheDocument();
 
+    await pick('Any');
     const coldOrSilent = screen.getByRole('heading', { name: 'Cold or silent' }).closest('li')!;
     expect(within(coldOrSilent).getByText(/ OR /)).toBeInTheDocument();
   });
@@ -97,6 +107,7 @@ describe('the rule library', () => {
   it('starts from the example that was pressed, or from nothing, or goes back', async () => {
     const { onUse, onBlank, onBack } = library();
 
+    await pick('Outlier');
     await userEvent.click(screen.getByRole('button', { name: 'Use the Tukey fence example (Outlier)' }));
 
     expect(onUse).toHaveBeenCalledTimes(1);
