@@ -35,7 +35,7 @@ describe('the rule templates', () => {
     expect(first.draft().condition).not.toBe(first.draft().condition);
   });
 
-  it('covers every operator, method and metric the forms offer', () => {
+  it('covers the four comparisons, both fences, every pulse metric and both negations', () => {
     const conditions = EVERY.flatMap(([, , , example]) => {
       const { condition } = example.draft();
       return condition.type === 'all' || condition.type === 'any' ? condition.of : [condition];
