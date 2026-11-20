@@ -6,12 +6,16 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { hub } from './realtime/hub';
 import { startApplyingAppearance } from './features/appearance/applyAppearance';
 import { ConsoleReveal } from './features/shell/ConsoleReveal';
+import { stopAutofill } from './lib/noAutofill';
 import './styles/global.css';
 
 const queryClient = new QueryClient();
 
 // Applies the stored font/size before React paints, to avoid a flash of default type.
 startApplyingAppearance();
+
+// No box offers what was typed into it before. See lib/noAutofill.
+stopAutofill(document);
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

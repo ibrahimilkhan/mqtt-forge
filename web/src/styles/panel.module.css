@@ -96,6 +96,19 @@
 /* Inside the row, the row owns the spacing and the heading owns none. */
 .sectionTop > .sectionTitle { margin: 0; }
 
+/* The name of a whole screen inside a panel — New rule, Rule library — rather than of one part of
+   it. A section title is a field label's voice, and a screen named in that voice reads as one more
+   field: the reader cannot tell the page from its parts. This is the voice the broker panel names
+   its broker in, the one heading on a screen that is about the screen. */
+.screenTitle {
+  margin: 0 0 16px;
+  font-family: var(--sans);
+  font-size: var(--t-lead);
+  font-weight: 600;
+  color: var(--ink);
+}
+.sectionTop > .screenTitle { margin: 0; }
+
 /* Nothing in the list yet, in a panel the width of the workspace.
  *
  * The console's own `.empty` is a line ruled off at the left, and it is right where it is used:
@@ -252,6 +265,14 @@
 .fault {
   composes: note;
   color: var(--fault);
+}
+
+/* What is wrong with the box directly above, held to it the way a pickNote is. As a `.fault` it
+   stood 24px under its own box and nothing over the next field's label, so it read as a remark
+   about the field below — the one place a refusal must not be misread. */
+.fieldFault {
+  composes: fault;
+  margin: -6px 0 14px;
 }
 
 

@@ -153,12 +153,14 @@ const save = () => screen.getByRole('button', { name: 'Save' });
 
     const more = screen.getByText('Advanced').closest('details')!;
 
-    for (const label of ['Field', 'For, seconds', 'Cooldown, seconds']) {
+    for (const label of ['For, seconds', 'Cooldown, seconds']) {
       expect(more).toContainElement(screen.getByLabelText(label));
     }
     expect(more).toContainElement(screen.getByRole('checkbox', { name: 'Its own clear rule' }));
 
-    for (const label of ['Topic filter', 'Condition', 'Name']) {
+    // Field is the rest of the topic's answer — which part of the message — so it stands under
+    // the topic filter, in the open, rather than folded away.
+    for (const label of ['Topic filter', 'Field', 'Condition', 'Name']) {
       expect(more).not.toContainElement(screen.getByLabelText(label));
     }
     expect(document.querySelectorAll('fieldset')).toHaveLength(0);
