@@ -75,9 +75,9 @@ export function RuleLibrary({
   const group = TEMPLATE_GROUPS.find((one) => one.type === kind) ?? null;
 
   return (
-    <section aria-label="Rule library">
+    <section aria-label="Rule library" className={styles.library}>
       <div className={panel.sectionTop}>
-        <h3 className={panel.sectionTitle}>Rule library</h3>
+        <h3 className={panel.screenTitle}>Rule library</h3>
 
         <div className={styles.ways}>
           <button type="button" onClick={onBack}>

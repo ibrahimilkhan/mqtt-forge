@@ -83,3 +83,10 @@
   align-self: flex-start;
   padding: 6px 12px;
 }
+
+/* The picker's name in ink, as every name in the rule editor is: the grey line under the picker is
+   the note about it, and the two must not read as one shade of the same thing. */
+.library span:has(+ [role='radiogroup']) {
+  color: var(--ink);
+  font-weight: 600;
+}

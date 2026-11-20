@@ -20,7 +20,22 @@
   font-size: var(--t-label);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--muted);
+}
+
+/* Every name in the form — a field's label, a group's, Severity's, the Advanced fold — in ink and a
+   step heavier, so it stands over the grey sentence under it rather than beside it. Muted, a label
+   in this form was a shade of the same grey as the explanation it introduced and a size smaller,
+   and the reader could not tell which line was the question and which the note about it.
+
+   `label[for]` is a field's own label; a label wrapping its checkbox has no `for` and is an
+   answer, not a name, so it keeps its own voice. Severity's label is drawn by Segmented, which
+   knows nothing of this form, and is found as the line standing over the radio group. */
+.form label[for],
+.groupLabel,
+.more > summary,
+.form span:has(+ [role='radiogroup']) {
+  color: var(--ink);
+  font-weight: 600;
 }
 
 .severity { margin-bottom: 14px; }
@@ -39,9 +54,8 @@
   font-size: var(--t-label);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--muted);
 }
-.more > summary:hover { color: var(--ink); }
+.more > summary:hover { color: var(--signal); }
 .more > summary:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
 
 /* The rule read back in one line, edged in the colour of its level like the row it will become. */

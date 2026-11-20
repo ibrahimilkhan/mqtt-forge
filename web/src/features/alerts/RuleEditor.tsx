@@ -177,7 +177,7 @@ export function RuleEditor({
 
   return (
     <form className={styles.form} onSubmit={(event) => event.preventDefault()}>
-      <h3 className={panel.sectionTitle}>{draft.id === null ? 'New rule' : 'Edit rule'}</h3>
+      <h3 className={panel.screenTitle}>{draft.id === null ? 'New rule' : 'Edit rule'}</h3>
 
       {/* One column, read downwards in the order a rule is said aloud: what it watches, what
           sets it off, how loud it is, what it does about it, and only then what to call it. */}
@@ -214,7 +214,7 @@ export function RuleEditor({
           onClose={() => setPicking(null)}
         />
       )}
-      {faults.filter && <p className={panel.fault}>{faults.filter}</p>}
+      {faults.filter && <p className={panel.fieldFault}>{faults.filter}</p>}
 
       <Field label="Condition" htmlFor={id('condition')}>
         <select
@@ -246,7 +246,7 @@ export function RuleEditor({
         source={{ filter: draft.filter, field: draft.field }}
         onChange={(condition) => edit({ condition })}
       />
-      {faults.condition && <p className={panel.fault}>{faults.condition}</p>}
+      {faults.condition && <p className={panel.fieldFault}>{faults.condition}</p>}
 
       <div className={styles.severity}>
         <Segmented
@@ -404,7 +404,7 @@ export function RuleEditor({
             over — they were issued for the old one.
           </p>
 
-          {faults.webhook && <p className={panel.fault}>{faults.webhook}</p>}
+          {faults.webhook && <p className={panel.fieldFault}>{faults.webhook}</p>}
         </>
       )}
 
@@ -442,7 +442,7 @@ export function RuleEditor({
             </label>
           </div>
 
-          {faults.publish && <p className={panel.fault}>{faults.publish}</p>}
+          {faults.publish && <p className={panel.fieldFault}>{faults.publish}</p>}
         </>
       )}
 
@@ -457,7 +457,7 @@ export function RuleEditor({
         />
       </Field>
 
-      {faults.name && <p className={panel.fault}>{faults.name}</p>}
+      {faults.name && <p className={panel.fieldFault}>{faults.name}</p>}
 
       {/* Everything a first rule does not need. Open by itself when the rule being edited
           already uses one of these, or when one of them is what is stopping the save: a fault
@@ -531,8 +531,8 @@ export function RuleEditor({
           </Field>
         </div>
   
-        {faults.for && <p className={panel.fault}>{faults.for}</p>}
-        {faults.cooldown && <p className={panel.fault}>{faults.cooldown}</p>}
+        {faults.for && <p className={panel.fieldFault}>{faults.for}</p>}
+        {faults.cooldown && <p className={panel.fieldFault}>{faults.cooldown}</p>}
 
         {/* 'Clear on a condition of its own' was a nine-word instruction sitting where a switch's
             name goes, and it still did not say the thing worth saying — which is what happens
@@ -596,7 +596,7 @@ export function RuleEditor({
               source={{ filter: draft.filter, field: draft.field }}
               onChange={(clear) => edit({ clear })}
             />
-            {faults.clear && <p className={panel.fault}>{faults.clear}</p>}
+            {faults.clear && <p className={panel.fieldFault}>{faults.clear}</p>}
           </>
         )}
       </details>
