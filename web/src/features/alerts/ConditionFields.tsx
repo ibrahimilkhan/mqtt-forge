@@ -2,6 +2,8 @@ import { Field } from '../../components/Field';
 import { Example } from '../../components/InfoTip';
 import panel from '../../styles/panel.module.css';
 import type { OutlierMethod, PulseMetric, ThresholdOp } from '../../types/api';
+import { PatternFields } from './PatternFields';
+import type { PatternSource } from './PatternTry';
 import {
   blankCondition,
   conditionText,
@@ -107,7 +109,11 @@ type Props = {
   onChange: (condition: DraftCondition) => void;
   /** The window's own id maker, so two editors open at once do not share a field. */
   id: (name: string) => string;
+  /** The rule's topic filter and field, which a pattern is tried against. Absent tries nothing. */
+  source?: PatternSource;
 };
+
+const NOWHERE: PatternSource = { filter: '', field: '' };
 
 /**
  * The parameters of one condition, and only of that one.
@@ -117,11 +123,14 @@ type Props = {
  * fields underneath would be eight questions they have to read before deciding they are not being
  * asked them.
  *
- * Controlled all the way down. Nothing here holds state of its own — every keystroke goes out
- * through `onChange` and comes back as a new `condition` — which is what lets the editor keep one
- * draft in one place and write it through to the map on every change.
+ * Controlled all the way down for the condition itself — every keystroke goes out through
+ * `onChange` and comes back as a new `condition` — which is what lets the editor keep one draft in
+ * one place and write it through to the map on every change. `PatternFields` and `PatternTry`,
+ * drawn for the pattern case, are the exception: the chosen mode and the any-word box text live in
+ * `PatternFields`, and the tried messages and typed text live in `PatternTry`, because none of that
+ * is part of the condition being saved.
  */
-export function ConditionFields({ condition, onChange, id }: Props) {
+export function ConditionFields({ condition, onChange, id, source = NOWHERE }: Props) {
   switch (condition.type) {
     case 'threshold':
       return (
@@ -192,29 +201,7 @@ export function ConditionFields({ condition, onChange, id }: Props) {
       );
 
     case 'pattern':
-      return (
-        <>
-          <Field label="Expression" htmlFor={id('regex')}>
-            <input
-              id={id('regex')}
-              value={condition.regex}
-              spellCheck={false}
-              placeholder="^ERR-[0-9]+"
-              onChange={(event) => onChange({ ...condition, regex: event.target.value })}
-            />
-          </Field>
-          <div className={panel.checks}>
-            <label>
-              <input
-                type="checkbox"
-                checked={condition.negate}
-                onChange={(event) => onChange({ ...condition, negate: event.target.checked })}
-              />
-              Fire when it does NOT match
-            </label>
-          </div>
-        </>
-      );
+      return <PatternFields condition={condition} onChange={onChange} id={id} source={source} />;
 
     case 'oneOf':
       return (
@@ -448,6 +435,7 @@ export function ConditionFields({ condition, onChange, id }: Props) {
               <ConditionFields
                 condition={child}
                 id={(name) => id(`of-${index}-${name}`)}
+                source={source}
                 onChange={(next) =>
                   onChange({
                     ...condition,

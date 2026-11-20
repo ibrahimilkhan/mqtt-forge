@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { ConditionFields, ConditionSummary } from './ConditionFields';
 import { blankCondition, SIMPLE_TYPES, type DraftCondition } from './ruleDraft';
@@ -17,6 +18,8 @@ const EVERY_FIELD = [
   'Low',
   'High',
   'Expression',
+  'Text',
+  'One word to a line',
   'One value to a line',
   'Seconds of silence',
   'k',
@@ -44,9 +47,11 @@ describe('one form per condition', () => {
     expect(screen.getByLabelText('Inside the range')).toBeInTheDocument();
   });
 
-  it('draws a pattern as an expression', () => {
+  it('draws a pattern as words, with the expression they write shown under them', () => {
     draw(blankCondition('pattern'));
-    only('Expression');
+    only('Text');
+    expect(screen.getByLabelText('How it matches')).toHaveValue('contains');
+    expect(screen.getByLabelText('Fire when')).toHaveValue('match');
   });
 
   it('draws a list as a line each', () => {
@@ -205,5 +210,79 @@ describe('the conditions this form does not draw', () => {
 
     expect(screen.getByTestId('condition-source')).toHaveTextContent('"type": "any"');
     expect(screen.queryByLabelText('Value')).not.toBeInTheDocument();
+  });
+});
+
+describe('the pattern builder', () => {
+  /** A controlled form, so typed text goes round through the draft as the editor's does. */
+  function Held({ start }: { start: DraftCondition }) {
+    const [condition, setCondition] = useState(start);
+    return (
+      <>
+        <ConditionFields condition={condition} onChange={setCondition} id={(name) => `x-${name}`} />
+        <output data-testid="held">{JSON.stringify(condition)}</output>
+      </>
+    );
+  }
+  const held = () => JSON.parse(screen.getByTestId('held').textContent!) as DraftCondition;
+
+  it('writes the expression from the words and the mode', async () => {
+    render(<Held start={blankCondition('pattern')} />);
+
+    await userEvent.selectOptions(screen.getByLabelText('How it matches'), 'startsWith');
+    await userEvent.type(screen.getByLabelText('Text'), 'ERR-2.');
+
+    expect(held()).toEqual({ type: 'pattern', regex: '^ERR-2\\.', negate: false });
+    expect(screen.getByTestId('pattern-regex')).toHaveTextContent('^ERR-2\\.');
+  });
+
+  it('takes a list one word to a line', async () => {
+    render(<Held start={blankCondition('pattern')} />);
+
+    await userEvent.selectOptions(screen.getByLabelText('How it matches'), 'anyWord');
+    await userEvent.type(screen.getByLabelText('One word to a line'), 'fault{enter}offline');
+
+    expect(held()).toMatchObject({ regex: '^(?:fault|offline)$' });
+  });
+
+  it('turns does-not-match on from the Fire when select', async () => {
+    render(<Held start={{ type: 'pattern', regex: 'ERROR', negate: false }} />);
+
+    await userEvent.selectOptions(screen.getByLabelText('Fire when'), 'miss');
+
+    expect(held()).toMatchObject({ regex: 'ERROR', negate: true });
+  });
+
+  it('opens a hand-written expression as it is, and saves it untouched', () => {
+    render(<Held start={{ type: 'pattern', regex: '^ERR-[0-9]+', negate: false }} />);
+
+    expect(screen.getByLabelText('How it matches')).toHaveValue('regex');
+    expect(screen.getByLabelText('Expression')).toHaveValue('^ERR-[0-9]+');
+    expect(held()).toMatchObject({ regex: '^ERR-[0-9]+' });
+  });
+
+  it('opens an expression the words would write in those words', () => {
+    render(<Held start={{ type: 'pattern', regex: '^OFFLINE$', negate: false }} />);
+
+    expect(screen.getByLabelText('How it matches')).toHaveValue('exactly');
+    expect(screen.getByLabelText('Text')).toHaveValue('OFFLINE');
+  });
+
+  it('keeps the text when the mode changes', async () => {
+    render(<Held start={{ type: 'pattern', regex: 'timeout', negate: false }} />);
+
+    await userEvent.selectOptions(screen.getByLabelText('How it matches'), 'endsWith');
+
+    expect(screen.getByLabelText('Text')).toHaveValue('timeout');
+    expect(held()).toMatchObject({ regex: 'timeout$' });
+  });
+
+  it('holds an empty mode the reader chose, before anything is typed', async () => {
+    render(<Held start={blankCondition('pattern')} />);
+
+    await userEvent.selectOptions(screen.getByLabelText('How it matches'), 'exactly');
+
+    expect(screen.getByLabelText('How it matches')).toHaveValue('exactly');
+    expect(held()).toMatchObject({ regex: '' });
   });
 });

@@ -202,8 +202,9 @@ Shown under the pattern fields in the rule editor (top-level condition and insid
   validator (`faultsIn`) already refuses an expression the browser cannot compile, so a .NET-only
   construct such as a leading `(?i)` cannot be saved from this form either; the tester and the
   validator agree.
-- Live: recomputed on every keystroke; the message list is read once when the tester mounts and on
-  a "Refresh" button, so arriving traffic does not move rows under the reader.
+- Live: recomputed on every keystroke; the message list is re-read whenever the rule's topic filter
+  changes, and otherwise only when the mount happens or a "Refresh" button is pressed, so the rows
+  follow the filter but arriving traffic does not move them under the reader.
 
 ### Where existing behaviour is untouched
 
