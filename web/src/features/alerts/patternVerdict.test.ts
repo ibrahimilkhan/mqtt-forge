@@ -48,6 +48,10 @@ describe('the text a rule tests', () => {
     expect(textAt('{"a": -0.0}', 'a')).toBe('-0.0');
   });
 
+  it('keeps the last of a duplicate key, as the server’s TryProperty does', () => {
+    expect(textAt('{"a":1,"a":2}', 'a')).toBe('2');
+  });
+
   it('keeps an object or array span exactly as written, inner spacing included', () => {
     expect(textAt('{"o": {"x": 1,  "y": [ 2, 3 ]}}', 'o')).toBe('{"x": 1,  "y": [ 2, 3 ]}');
   });
