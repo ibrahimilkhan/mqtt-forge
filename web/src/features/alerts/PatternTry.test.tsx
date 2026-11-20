@@ -69,6 +69,24 @@ describe('trying a pattern', () => {
     expect(screen.queryByTestId('try-row')).not.toBeInTheDocument();
   });
 
+  it('follows the rule’s topic filter when it changes, as Use on a library example does', () => {
+    send(message('a', 'from a'), message('b', 'from b'));
+    const { rerender } = render(
+      <PatternTry regex="." negate={false} source={{ filter: 'a', field: '' }} />,
+    );
+
+    expect(screen.getByText('from a')).toBeInTheDocument();
+
+    rerender(<PatternTry regex="." negate={false} source={{ filter: 'b', field: '' }} />);
+    expect(screen.getByText('from b')).toBeInTheDocument();
+    expect(screen.queryByText('from a')).not.toBeInTheDocument();
+
+    // The new filter's rows hold still until Refresh, exactly as the old filter's did.
+    send(message('b', 'late arrival'));
+    expect(screen.getAllByTestId('try-row')).toHaveLength(1);
+    expect(screen.getByText('from b')).toBeInTheDocument();
+  });
+
   it('holds its rows still while traffic arrives, until Refresh', async () => {
     send(message('t', 'first'));
     render(<PatternTry regex="x" negate={false} source={{ filter: 't', field: '' }} />);

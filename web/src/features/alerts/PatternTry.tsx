@@ -20,10 +20,12 @@ const read = (filter: string): LogEntry[] =>
 /**
  * A pattern, tried on what the rule's topics have already said and on whatever the reader types.
  *
- * The messages are read once, and again on Refresh, rather than followed: a busy topic would
- * otherwise move every row under the reader's eye between one keystroke and the next, and the
- * question being asked — does this expression say what I mean — is about the expression, not
- * about what arrived in the last second.
+ * The rows follow the rule's own topic filter — Use on a library example, then changing the topic
+ * to the reader's own, must not go on showing the example's (empty) messages — but not arriving
+ * traffic: a busy topic would otherwise move every row under the reader's eye between one keystroke
+ * and the next, and the question being asked — does this expression say what I mean — is about the
+ * expression, not about what arrived in the last second. So the messages are read again whenever
+ * the filter itself changes, and otherwise only on Refresh.
  */
 export function PatternTry({
   regex,
@@ -34,7 +36,16 @@ export function PatternTry({
   negate: boolean;
   source: PatternSource;
 }) {
-  const [entries, setEntries] = useState(() => read(source.filter));
+  // Read during render rather than in an effect: an effect depending on `source` would fire on
+  // every render (a fresh object each time), and one depending on `source.filter` would still
+  // leave one render showing the old filter's rows before it caught up. Comparing the filter
+  // that produced `entries` to today's `source.filter`, and re-reading inline when they differ,
+  // means the rows shown are never behind the filter that is actually on screen.
+  const [state, setState] = useState(() => ({ filter: source.filter, entries: read(source.filter) }));
+  if (state.filter !== source.filter) {
+    setState({ filter: source.filter, entries: read(source.filter) });
+  }
+  const entries = state.entries;
   const [own, setOwn] = useState('');
   const ownId = useId();
 
@@ -50,7 +61,10 @@ export function PatternTry({
     <section aria-label="Try the pattern" className={styles.try}>
       <div className={styles.head}>
         <span className={styles.title}>Try it</span>
-        <button type="button" onClick={() => setEntries(read(source.filter))}>
+        <button
+          type="button"
+          onClick={() => setState({ filter: source.filter, entries: read(source.filter) })}
+        >
           Refresh
         </button>
       </div>
