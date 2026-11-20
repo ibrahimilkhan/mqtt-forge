@@ -187,7 +187,7 @@ const save = () => screen.getByRole('button', { name: 'Save' });
 
     expect(screen.getByLabelText('Condition 1')).toHaveValue('threshold');
     expect(screen.getByLabelText('Condition 2')).toHaveValue('pattern');
-    expect(screen.getByLabelText('Expression')).toHaveValue('^OFF$');
+    expect(screen.getByLabelText('Text')).toHaveValue('OFF');
 
     await userEvent.selectOptions(screen.getByLabelText('Condition'), 'any');
 
@@ -195,7 +195,7 @@ const save = () => screen.getByRole('button', { name: 'Save' });
     expect(screen.getByLabelText('Condition 1')).toHaveValue('threshold');
     expect(screen.getByLabelText('Condition 2')).toHaveValue('pattern');
     // The values inside the children, not merely the right number of empty ones.
-    expect(screen.getByLabelText('Expression')).toHaveValue('^OFF$');
+    expect(screen.getByLabelText('Text')).toHaveValue('OFF');
   });
 
   // The other half of the same rule: everything else still starts from nothing, because a

@@ -243,6 +243,7 @@ export function RuleEditor({
       <ConditionFields
         condition={draft.condition}
         id={(name) => id(`condition-${name}`)}
+        source={{ filter: draft.filter, field: draft.field }}
         onChange={(condition) => edit({ condition })}
       />
       {faults.condition && <p className={panel.fault}>{faults.condition}</p>}
@@ -592,6 +593,7 @@ export function RuleEditor({
             <ConditionFields
               condition={draft.clear}
               id={(name) => id(`clear-${name}`)}
+              source={{ filter: draft.filter, field: draft.field }}
               onChange={(clear) => edit({ clear })}
             />
             {faults.clear && <p className={panel.fault}>{faults.clear}</p>}
