@@ -41,6 +41,24 @@ describe('the text a rule tests', () => {
     expect(textAt(body, 'a.a.a.a.a.a')).not.toBeNull();
     expect(textAt(body, 'a.a.a.a.a.a.a')).toBeNull();
   });
+
+  it('is the value as the payload wrote it, not as JSON.stringify would write it again', () => {
+    expect(textAt('{"a": 1.50}', 'a')).toBe('1.50');
+    expect(textAt('{"a":1e5}', 'a')).toBe('1e5');
+    expect(textAt('{"a": -0.0}', 'a')).toBe('-0.0');
+  });
+
+  it('keeps an object or array span exactly as written, inner spacing included', () => {
+    expect(textAt('{"o": {"x": 1,  "y": [ 2, 3 ]}}', 'o')).toBe('{"x": 1,  "y": [ 2, 3 ]}');
+  });
+
+  it('indexes into an array span found by raw-text walking', () => {
+    expect(textAt('{"l": [ 1 , 2 ]}', 'l[1]')).toBe('2');
+  });
+
+  it('still decodes a string field, escapes and all', () => {
+    expect(textAt('{"s":"a\\u0041\\n"}', 's')).toBe('aA\n');
+  });
 });
 
 describe('the verdict', () => {

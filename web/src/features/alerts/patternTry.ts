@@ -1,5 +1,5 @@
 import type { LogEntry } from '../../stores/logStore';
-import { MAX_DEPTH, parseBody, type Json } from './payloadFields';
+import { MAX_DEPTH, parseBody } from './payloadFields';
 
 /**
  * What a pattern rule would say about the messages already on screen.
@@ -10,32 +10,43 @@ import { MAX_DEPTH, parseBody, type Json } from './payloadFields';
  */
 
 /**
- * The body, or the field's text: a string's contents, any other value as JSON. Null is 'the
- * topic did not say', which the engine treats as a skip rather than as a miss.
+ * The body, or the field's text: a string's contents, any other value as the payload's own text.
+ * Null is 'the topic did not say', which the engine treats as a skip rather than as a miss.
  */
-// JSON.stringify where the server keeps the raw text: the two differ only on how a number was
-// written ('1.50' arrives as '1.5' here), which is a difference a pattern rule can see and nobody
-// writing one is likely to be leaning on.
+// A span into the raw text, not a re-rendering of the parsed value: `GetRawText` on the server
+// hands back the bytes the device wrote, digits and spacing included, and a pattern is tried
+// against that same text. JSON.parse (via parseBody) is kept only as the validity gate — a body
+// it cannot read is still 'no document to look in' — and the walk below finds the field's own
+// slice of the string instead of asking the parsed value to print itself again.
 export function textAt(payload: string, field: string): string | null {
   if (field.trim() === '') return payload;
 
-  const body = parseBody(payload);
-  if (body === null) return null;
+  if (parseBody(payload) === null) return null;
 
-  const found = walk(body, field);
-  if (found === undefined) return null;
+  const body = payload.trim();
+  const span = walk(body, field);
+  if (span === undefined) return null;
 
-  return typeof found === 'string' ? found : JSON.stringify(found);
+  const [start, end] = span;
+  const slice = body.slice(start, end);
+
+  return slice.startsWith('"') ? (JSON.parse(slice) as string) : slice;
 }
 
-/** `TryWalk`: dots and brackets, an optional leading '$', at most MAX_DEPTH steps. */
-function walk(body: Json, path: string): Json | undefined {
+/** A span `[start, end)` into `text`, locating a value without parsing it into one. */
+type Span = readonly [number, number];
+
+/**
+ * `TryWalk`, stepping over spans of the raw text rather than over parsed values — the same
+ * grammar: dots and brackets, an optional leading '$', at most MAX_DEPTH steps.
+ */
+function walk(body: string, path: string): Span | undefined {
   let text = path.trim();
   if (text.startsWith('$') && (text.length === 1 || text[1] === '.' || text[1] === '[')) {
     text = text.slice(1);
   }
 
-  let found: Json = body;
+  let found: Span = [0, body.length];
   let at = 0;
   let steps = 0;
 
@@ -54,7 +65,7 @@ function walk(body: Json, path: string): Json | undefined {
       const close = text.indexOf(']', at);
       if (close < 0) return undefined;
 
-      const next = indexInto(found, text.slice(at + 1, close));
+      const next = indexInto(body, found, text.slice(at + 1, close));
       if (next === undefined) return undefined;
 
       found = next;
@@ -67,29 +78,134 @@ function walk(body: Json, path: string): Json | undefined {
     const name = end < 0 ? rest : rest.slice(0, end);
     at = end < 0 ? text.length : at + end;
 
-    if (Array.isArray(found)) {
-      const next = indexInto(found, name);
+    if (body[found[0]] === '[') {
+      const next = indexInto(body, found, name);
       if (next === undefined) return undefined;
 
       found = next;
       continue;
     }
 
-    if (found === null || typeof found !== 'object' || !Object.prototype.hasOwnProperty.call(found, name)) return undefined;
+    if (body[found[0]] !== '{') return undefined;
 
-    found = found[name];
+    const next = propertySpan(body, found, name);
+    if (next === undefined) return undefined;
+
+    found = next;
   }
 
   return found;
 }
 
-/** `TryIndex`: digits only, inside the array. */
-function indexInto(found: Json, digits: string): Json | undefined {
-  if (!Array.isArray(found) || !/^[0-9]+$/.test(digits)) return undefined;
+/** `TryIndex`: digits only, inside an array span. */
+function indexInto(body: string, span: Span, digits: string): Span | undefined {
+  if (body[span[0]] !== '[' || !/^[0-9]+$/.test(digits)) return undefined;
 
-  const index = Number(digits);
+  return elementSpan(body, span, Number(digits));
+}
 
-  return index < found.length ? found[index] : undefined;
+/** The span of the object's property of that name, the last of them when there are two. */
+// `JsonDocument.TryGetProperty` and `JSON.parse` both keep the last of a duplicate key, so the
+// loop below never stops at the first match — it keeps overwriting `result` as it walks on.
+function propertySpan(body: string, [start, end]: Span, name: string): Span | undefined {
+  let at = skipWs(body, start + 1, end);
+  let result: Span | undefined;
+
+  while (at < end && body[at] !== '}') {
+    const keyEnd = skipString(body, at);
+    const key = JSON.parse(body.slice(at, keyEnd)) as string;
+
+    at = skipWs(body, keyEnd, end) + 1; // past the ':'
+    at = skipWs(body, at, end);
+
+    const valueStart = at;
+    const valueEnd = skipValue(body, valueStart);
+    if (key === name) result = [valueStart, valueEnd];
+
+    at = skipWs(body, valueEnd, end);
+    if (body[at] === ',') at = skipWs(body, at + 1, end);
+  }
+
+  return result;
+}
+
+/** The span of the array's element at that index. */
+function elementSpan(body: string, [start, end]: Span, index: number): Span | undefined {
+  let at = skipWs(body, start + 1, end);
+  let seen = 0;
+
+  while (at < end && body[at] !== ']') {
+    const valueStart = at;
+    const valueEnd = skipValue(body, valueStart);
+    if (seen === index) return [valueStart, valueEnd];
+
+    seen += 1;
+    at = skipWs(body, valueEnd, end);
+    if (body[at] === ',') at = skipWs(body, at + 1, end);
+  }
+
+  return undefined;
+}
+
+/** The first offset at or after `at`, before `end`, that is not whitespace. */
+function skipWs(body: string, at: number, end: number): number {
+  let i = at;
+  while (i < end && /\s/.test(body[i])) i += 1;
+
+  return i;
+}
+
+/** The offset just past the closing quote of the string starting at `at`. */
+function skipString(body: string, at: number): number {
+  let i = at + 1;
+  while (i < body.length) {
+    if (body[i] === '\\') {
+      i += 2;
+      continue;
+    }
+    if (body[i] === '"') return i + 1;
+
+    i += 1;
+  }
+
+  return body.length;
+}
+
+/** The offset just past the closing bracket of the container starting at `at`. */
+function skipContainer(body: string, at: number, open: string, close: string): number {
+  let depth = 0;
+  let i = at;
+
+  while (i < body.length) {
+    if (body[i] === '"') {
+      i = skipString(body, i);
+      continue;
+    }
+    if (body[i] === open) depth += 1;
+    else if (body[i] === close) {
+      depth -= 1;
+      if (depth === 0) return i + 1;
+    }
+
+    i += 1;
+  }
+
+  return body.length;
+}
+
+/** The offset just past the JSON value starting at `at`: a string, an object, an array, or a bare token. */
+function skipValue(body: string, at: number): number {
+  const first = body[at];
+  if (first === '"') return skipString(body, at);
+  if (first === '{') return skipContainer(body, at, '{', '}');
+  if (first === '[') return skipContainer(body, at, '[', ']');
+
+  // A number, true, false, or null: the body is already known to parse, so scanning up to the
+  // next structural character or whitespace is enough to find where the token ends.
+  let i = at;
+  while (i < body.length && !/[,}\]\s]/.test(body[i])) i += 1;
+
+  return i;
 }
 
 export type Compiled = { ok: true; regex: RegExp } | { ok: false; message: string };
