@@ -164,7 +164,7 @@ export function RuleEditor({
    * Whether the folded part is open. It starts open on a rule that already uses what is in it.
    */
   const [more, setMore] = useState(
-    () => draft.field !== '' || draft.for !== '' || draft.cooldown !== '' || draft.clear !== null,
+    () => draft.for !== '' || draft.cooldown !== '' || draft.clear !== null,
   );
   const advancedFault =
     faults.for !== undefined || faults.cooldown !== undefined || faults.clear !== undefined;
@@ -215,6 +215,43 @@ export function RuleEditor({
         />
       )}
       {faults.filter && <p className={panel.fieldFault}>{faults.filter}</p>}
+
+      {/* Straight after the topic, because it is the rest of the same answer: which message, and
+          then which part of it. Folded under Advanced it was a box most readers never opened, on
+          the one question a JSON topic cannot be watched without. */}
+      <Field
+        label="Field"
+        htmlFor={id('field')}
+        aside={
+          <PickMark
+            label="fields in a message"
+            open={picking === 'field'}
+            onToggle={() => toggle('field')}
+          >
+            <Braces />
+          </PickMark>
+        }
+        help={<FieldHelp />}
+      >
+        <input
+          id={id('field')}
+          value={draft.field}
+          spellCheck={false}
+          placeholder="the whole message body"
+          onChange={(event) => edit({ field: event.target.value })}
+        />
+      </Field>
+
+      {picking === 'field' && (
+        <FieldPicker
+          filter={draft.filter}
+          onPick={(field) => {
+            edit({ field });
+            setPicking(null);
+          }}
+          onClose={() => setPicking(null)}
+        />
+      )}
 
       <Field label="Condition" htmlFor={id('condition')}>
         <select
@@ -468,40 +505,6 @@ export function RuleEditor({
         onToggle={(event) => setMore(event.currentTarget.open)}
       >
         <summary>Advanced</summary>
-
-        <Field
-          label="Field"
-          htmlFor={id('field')}
-          aside={
-            <PickMark
-              label="fields in a message"
-              open={picking === 'field'}
-              onToggle={() => toggle('field')}
-            >
-              <Braces />
-            </PickMark>
-          }
-          help={<FieldHelp />}
-        >
-          <input
-            id={id('field')}
-            value={draft.field}
-            spellCheck={false}
-            placeholder="the whole message body"
-            onChange={(event) => edit({ field: event.target.value })}
-          />
-        </Field>
-
-        {picking === 'field' && (
-          <FieldPicker
-            filter={draft.filter}
-            onPick={(field) => {
-              edit({ field });
-              setPicking(null);
-            }}
-            onClose={() => setPicking(null)}
-          />
-        )}
 
         <div className={`${panel.row} ${styles.timing}`}>
           <Field label="For, seconds" htmlFor={id('for')} narrow>
